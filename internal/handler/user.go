@@ -7,6 +7,7 @@ import (
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/repository"
 	"NEMBUS/internal/usecase"
+	"NEMBUS/utils" // Assuming your NewResponse is here
 
 	"github.com/gin-gonic/gin"
 )
@@ -59,12 +60,12 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 
 	// Bind JSON input
 	var req struct {
-		FirstName   string  `json:"first_name" binding:"required"`
-		LastName    string  `json:"last_name"`
-		Username    string  `json:"username" binding:"required"`
-		Email       string  `json:"email" binding:"required"`
-		IsActive    bool    `json:"is_active"`
-		Password    *string `json:"password,omitempty"`
+		FirstName    string  `json:"first_name" binding:"required"`
+		LastName     string  `json:"last_name"`
+		Username     string  `json:"username" binding:"required"`
+		Email        string  `json:"email" binding:"required"`
+		IsActive     bool    `json:"is_active"`
+		Password     *string `json:"password,omitempty"`
 		EmployeeCode *string `json:"employee_code,omitempty"`
 	}
 	if err := c.BindJSON(&req); err != nil {
@@ -73,17 +74,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 
 	// Call UseCase
-	user, err := h.useCase.CreateUser(c.Request.Context(), req.FirstName, req.LastName, req.Username, req.Email, req.IsActive, req.Password, req.EmployeeCode)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	response := h.useCase.CreateUser(c.Request.Context(), req.FirstName, req.LastName, req.Username, req.Email, req.IsActive, req.Password, req.EmployeeCode)
 
-	// Respond with success and user data
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "user created",
-		"user":    user,
-	})
+	// Respond with the response from use case
+	c.JSON(response.StatusCode, response)
 }
 
 // GetUser handles GET /users/:id
@@ -109,13 +103,13 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	id := c.Param("id")
-	user, err := h.useCase.GetUser(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	resp := h.useCase.GetUser(c.Request.Context(), id)
+	if resp.StatusCode != utils.CodeOK {
+		c.JSON(resp.StatusCode, gin.H{"error": resp.Message})
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, resp)
 }
 
 // ListUsers handles GET /users
@@ -155,11 +149,8 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		offset = 0
 	}
 
-	users, err := h.useCase.ListUsers(c.Request.Context(), int32(limit), int32(offset))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	resp := h.useCase.ListUsers(c.Request.Context(), int32(limit), int32(offset))
 
-	c.JSON(http.StatusOK, users)
+	// Return the standard response
+	c.JSON(resp.StatusCode, resp)
 }

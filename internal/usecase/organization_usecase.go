@@ -2,10 +2,10 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"strconv"
 
 	"NEMBUS/internal/repository"
+	"NEMBUS/utils" // Assuming your NewResponse is here
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -26,15 +26,15 @@ func (uc *OrganizationUseCase) SetRepository(repo *repository.Queries) {
 }
 
 // CreateOrganization creates a new organization
-func (uc *OrganizationUseCase) CreateOrganization(ctx context.Context, name, code string, legalName, taxID, currencyCode, fiscalYearVariant *string, isActive bool) (repository.Organization, error) {
+func (uc *OrganizationUseCase) CreateOrganization(ctx context.Context, name, code string, legalName, taxID, currencyCode, fiscalYearVariant *string, isActive bool) *repository.Response {
 	if uc.repo == nil {
-		return repository.Organization{}, errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 	if name == "" {
-		return repository.Organization{}, errors.New("name cannot be empty")
+		return utils.NewResponse(utils.CodeBadReq, "name cannot be empty", nil)
 	}
 	if code == "" {
-		return repository.Organization{}, errors.New("code cannot be empty")
+		return utils.NewResponse(utils.CodeBadReq, "code cannot be empty", nil)
 	}
 
 	// Prepare optional fields
@@ -61,7 +61,8 @@ func (uc *OrganizationUseCase) CreateOrganization(ctx context.Context, name, cod
 		fiscalYearVariantText = pgtype.Text{String: *fiscalYearVariant, Valid: true}
 	}
 
-	return uc.repo.CreateOrganization(ctx, repository.CreateOrganizationParams{
+	// Call repository
+	org, err := uc.repo.CreateOrganization(ctx, repository.CreateOrganizationParams{
 		Name:              name,
 		Code:              code,
 		LegalName:         legalNameText,
@@ -71,39 +72,53 @@ func (uc *OrganizationUseCase) CreateOrganization(ctx context.Context, name, cod
 		IsActive:          pgtype.Bool{Bool: isActive, Valid: true},
 		Metadata:          []byte("{}"),
 	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "organization created successfully", org)
 }
 
 // GetOrganization gets an organization by ID
-func (uc *OrganizationUseCase) GetOrganization(ctx context.Context, id string) (repository.Organization, error) {
+func (uc *OrganizationUseCase) GetOrganization(ctx context.Context, id string) *repository.Response {
 	if uc.repo == nil {
-		return repository.Organization{}, errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	// Parse ID as int32
 	orgID, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
-		return repository.Organization{}, errors.New("invalid organization ID")
+		return utils.NewResponse(utils.CodeError, "invalid organization ID", nil)
 	}
 
-	return uc.repo.GetOrganization(ctx, int32(orgID))
+	org, err := uc.repo.GetOrganization(ctx, int32(orgID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "organization fetched successfully", org)
 }
 
 // GetOrganizationByCode gets an organization by code
-func (uc *OrganizationUseCase) GetOrganizationByCode(ctx context.Context, code string) (repository.Organization, error) {
+func (uc *OrganizationUseCase) GetOrganizationByCode(ctx context.Context, code string) *repository.Response {
 	if uc.repo == nil {
-		return repository.Organization{}, errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 	if code == "" {
-		return repository.Organization{}, errors.New("code cannot be empty")
+		return utils.NewResponse(utils.CodeError, "code cannot be empty", nil)
 	}
 
-	return uc.repo.GetOrganizationByCode(ctx, code)
+	// Call repository to get organization by code
+	org, err := uc.repo.GetOrganizationByCode(ctx, code)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "organization fetched successfully", org)
 }
 
 // ListOrganizations lists all organizations
-func (uc *OrganizationUseCase) ListOrganizations(ctx context.Context, limit, offset int32, isActive *bool) ([]repository.Organization, error) {
+func (uc *OrganizationUseCase) ListOrganizations(ctx context.Context, limit, offset int32, isActive *bool) *repository.Response {
 	if uc.repo == nil {
-		return nil, errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	// Set default limit if not provided
@@ -121,23 +136,28 @@ func (uc *OrganizationUseCase) ListOrganizations(ctx context.Context, limit, off
 		isActiveBool = pgtype.Bool{Valid: false} // Don't filter by is_active
 	}
 
-	return uc.repo.ListOrganizations(ctx, repository.ListOrganizationsParams{
+	// Call repository
+	orgs, err := uc.repo.ListOrganizations(ctx, repository.ListOrganizationsParams{
 		Limit:    limit,
 		Offset:   offset,
 		IsActive: isActiveBool,
 	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "organizations fetched successfully", orgs)
 }
 
 // UpdateOrganization updates an organization
-func (uc *OrganizationUseCase) UpdateOrganization(ctx context.Context, id string, name, legalName, taxID, currencyCode, fiscalYearVariant *string, isActive *bool) (repository.Organization, error) {
+func (uc *OrganizationUseCase) UpdateOrganization(ctx context.Context, id string, name, legalName, taxID, currencyCode, fiscalYearVariant *string, isActive *bool) *repository.Response {
 	if uc.repo == nil {
-		return repository.Organization{}, errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	// Parse ID as int32
 	orgID, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
-		return repository.Organization{}, errors.New("invalid organization ID")
+		return utils.NewResponse(utils.CodeError, "invalid organization ID", nil)
 	}
 
 	// Prepare optional fields
@@ -171,29 +191,39 @@ func (uc *OrganizationUseCase) UpdateOrganization(ctx context.Context, id string
 		isActiveBool = pgtype.Bool{Bool: *isActive, Valid: true}
 	}
 
-	return uc.repo.UpdateOrganization(ctx, repository.UpdateOrganizationParams{
+	// Call repository
+	org, err := uc.repo.UpdateOrganization(ctx, repository.UpdateOrganizationParams{
+		ID:                int32(orgID),
 		Name:              nameText,
 		LegalName:         legalNameText,
 		TaxID:             taxIDText,
 		CurrencyCode:      currencyCodeText,
 		FiscalYearVariant: fiscalYearVariantText,
 		IsActive:          isActiveBool,
-		Metadata:          []byte("{}"), // Keep existing metadata or set default
-		ID:                int32(orgID),
+		Metadata:          []byte("{}"), // Default metadata
 	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "organization updated successfully", org)
 }
 
 // DeleteOrganization deletes an organization
-func (uc *OrganizationUseCase) DeleteOrganization(ctx context.Context, id string) error {
+func (uc *OrganizationUseCase) DeleteOrganization(ctx context.Context, id string) *repository.Response {
 	if uc.repo == nil {
-		return errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	// Parse ID as int32
 	orgID, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
-		return errors.New("invalid organization ID")
+		return utils.NewResponse(utils.CodeError, "invalid organization ID", nil)
 	}
 
-	return uc.repo.DeleteOrganization(ctx, int32(orgID))
+	err = uc.repo.DeleteOrganization(ctx, int32(orgID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "organization deleted successfully", nil)
 }
