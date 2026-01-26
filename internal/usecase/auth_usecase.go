@@ -2,11 +2,11 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"strconv"
 
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/repository"
+	"NEMBUS/utils" // Assuming your NewResponse is here
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -27,47 +27,47 @@ func (uc *AuthUseCase) SetRepository(repo *repository.Queries) {
 }
 
 // Login authenticates a user and returns a JWT token
-func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) (string, error) {
+func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *repository.Response {
 	if uc.repo == nil {
-		return "", errors.New("repository not set")
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	if userLogin == "" {
-		return "", errors.New("user_login cannot be empty")
+		return utils.NewResponse(utils.CodeBadReq, "user_login cannot be empty", nil)
 	}
 
 	if password == "" {
-		return "", errors.New("password cannot be empty")
+		return utils.NewResponse(utils.CodeBadReq, "password cannot be empty", nil)
 	}
 
 	// Get user by username
 	user, err := uc.repo.GetUserByUsername(ctx, userLogin)
 	if err != nil {
-		return "", errors.New("invalid credentials")
+		return utils.NewResponse(utils.CodeError, "invalid credentials", nil)
 	}
 
 	// Check if user is active
 	if !user.IsActive.Bool || !user.IsActive.Valid {
-		return "", errors.New("user account is inactive")
+		return utils.NewResponse(utils.CodeError, "user account is inactive", nil)
 	}
 
 	// Check if password_hash exists
 	if user.PasswordHash == "" {
-		return "", errors.New("password not set for this user")
+		return utils.NewResponse(utils.CodeError, "password not set for this user", nil)
 	}
 
 	// Compare password with hash
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		return "", errors.New("invalid credentials")
+		return utils.NewResponse(utils.CodeError, "invalid credentials", nil)
 	}
 
 	// Generate JWT token - convert user ID from int32 to string
 	userIDStr := strconv.FormatInt(int64(user.ID), 10)
 	token, err := middleware.GenerateJWTToken(userIDStr, userLogin)
 	if err != nil {
-		return "", errors.New("failed to generate token")
+		return utils.NewResponse(utils.CodeError, "failed to generate token", nil)
 	}
 
-	return token, nil
+	return utils.NewResponse(utils.CodeOK, "login successful", token)
 }
