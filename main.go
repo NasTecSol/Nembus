@@ -13,12 +13,12 @@ import (
 	router "NEMBUS/internal/routing"
 	"NEMBUS/internal/usecase"
 
+	_ "NEMBUS/docs/swagger" // Swagger generated docs
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-
-	_ "NEMBUS/docs/swagger" // Swagger generated docs
 )
 
 // @title           NEMBUS API

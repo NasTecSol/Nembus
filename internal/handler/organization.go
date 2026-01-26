@@ -7,6 +7,7 @@ import (
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/repository"
 	"NEMBUS/internal/usecase"
+	"NEMBUS/utils" // Assuming your NewResponse is here
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,19 +54,20 @@ func (h *OrganizationHandler) CreateOrganization(c *gin.Context) {
 	// Get repository from context and set it on use case
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
-		return // Error already handled in getRepositoryFromContext
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "repository not found", nil))
+		return
 	}
 	h.useCase.SetRepository(repo)
 
 	// Bind JSON input
 	var req CreateOrganizationRequest
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request: "+err.Error(), nil))
 		return
 	}
 
 	// Call UseCase
-	org, err := h.useCase.CreateOrganization(
+	resp := h.useCase.CreateOrganization(
 		c.Request.Context(),
 		req.Name,
 		req.Code,
@@ -75,13 +77,10 @@ func (h *OrganizationHandler) CreateOrganization(c *gin.Context) {
 		req.FiscalYearVariant,
 		req.IsActive,
 	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 
-	// Respond with success and organization data
-	c.JSON(http.StatusCreated, org)
+	// Respond with the standard response
+	c.JSON(resp.StatusCode, resp)
+
 }
 
 // GetOrganization handles GET /organizations/:id
@@ -102,18 +101,17 @@ func (h *OrganizationHandler) GetOrganization(c *gin.Context) {
 	// Get repository from context and set it on use case
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "repository not found", nil))
 		return
 	}
 	h.useCase.SetRepository(repo)
 
 	id := c.Param("id")
-	org, err := h.useCase.GetOrganization(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
 
-	c.JSON(http.StatusOK, org)
+	// Call UseCase
+	resp := h.useCase.GetOrganization(c.Request.Context(), id)
+	// Return the standard response
+	c.JSON(resp.StatusCode, resp)
 }
 
 // GetOrganizationByCode handles GET /organizations/code/:code
@@ -139,9 +137,9 @@ func (h *OrganizationHandler) GetOrganizationByCode(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	code := c.Param("code")
-	org, err := h.useCase.GetOrganizationByCode(c.Request.Context(), code)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	org := h.useCase.GetOrganizationByCode(c.Request.Context(), code)
+	if org.StatusCode != http.StatusOK {
+		c.JSON(org.StatusCode, org.Message)
 		return
 	}
 
@@ -168,6 +166,9 @@ func (h *OrganizationHandler) ListOrganizations(c *gin.Context) {
 	// Get repository from context and set it on use case
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
+		c.JSON(http.StatusInternalServerError,
+			utils.NewResponse(utils.CodeError, "repository not found", nil),
+		)
 		return
 	}
 	h.useCase.SetRepository(repo)
@@ -195,13 +196,14 @@ func (h *OrganizationHandler) ListOrganizations(c *gin.Context) {
 		}
 	}
 
-	orgs, err := h.useCase.ListOrganizations(c.Request.Context(), int32(limit), int32(offset), isActive)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	resp := h.useCase.ListOrganizations(
+		c.Request.Context(),
+		int32(limit),
+		int32(offset),
+		isActive,
+	)
 
-	c.JSON(http.StatusOK, orgs)
+	c.JSON(http.StatusOK, resp)
 }
 
 // UpdateOrganization handles PUT /organizations/:id
@@ -234,12 +236,13 @@ func (h *OrganizationHandler) UpdateOrganization(c *gin.Context) {
 	// Bind JSON input
 	var req UpdateOrganizationRequest
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request: "+err.Error(), nil))
 		return
 	}
 
 	// Call UseCase
-	org, err := h.useCase.UpdateOrganization(
+	// Call UseCase
+	resp := h.useCase.UpdateOrganization(
 		c.Request.Context(),
 		id,
 		req.Name,
@@ -249,12 +252,9 @@ func (h *OrganizationHandler) UpdateOrganization(c *gin.Context) {
 		req.FiscalYearVariant,
 		req.IsActive,
 	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 
-	c.JSON(http.StatusOK, org)
+	// Respond with the standard response
+	c.JSON(resp.StatusCode, resp)
 }
 
 // DeleteOrganization handles DELETE /organizations/:id
@@ -276,6 +276,7 @@ func (h *OrganizationHandler) DeleteOrganization(c *gin.Context) {
 	// Get repository from context and set it on use case
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "repository not found", nil))
 		return
 	}
 	h.useCase.SetRepository(repo)
@@ -283,11 +284,12 @@ func (h *OrganizationHandler) DeleteOrganization(c *gin.Context) {
 	id := c.Param("id")
 
 	// Call UseCase
-	err := h.useCase.DeleteOrganization(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	resp := h.useCase.DeleteOrganization(c.Request.Context(), id)
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(resp.StatusCode, resp)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "organization deleted successfully"})
+	// Return the standard response
+	c.JSON(resp.StatusCode, resp)
 }

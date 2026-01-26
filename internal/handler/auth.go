@@ -6,6 +6,7 @@ import (
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/repository"
 	"NEMBUS/internal/usecase"
+	"NEMBUS/utils" // Assuming your NewResponse is here
 
 	"github.com/gin-gonic/gin"
 )
@@ -65,15 +66,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Call UseCase
-	token, err := h.useCase.Login(c.Request.Context(), req.UserLogin, req.Password)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+	response := h.useCase.Login(c.Request.Context(), req.UserLogin, req.Password)
+	if response.StatusCode != utils.CodeOK {
+		c.JSON(response.StatusCode, response)
 		return
 	}
 
 	// Respond with token
-	c.JSON(http.StatusOK, gin.H{
-		"token": token,
-		"type":  "Bearer",
-	})
+	c.JSON(response.StatusCode, response)
 }
