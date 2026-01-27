@@ -59,7 +59,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, cfg *config.Config) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
@@ -102,6 +102,8 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 		router.RegisterUserRoutes(api, userHandler)
 		moduleHandler := handler.NewModuleHandler(moduleUC)
 		router.RegisterModuleRoutes(api, moduleHandler)
+		imageHandler := handler.NewImageHandler(imageUC)
+		router.RegisterImageRoutes(api, imageHandler)
 
 		organizationHandler := handler.NewOrganizationHandler(orgUC)
 		router.RegisterOrganizationRoutes(api, organizationHandler)
@@ -123,6 +125,8 @@ func healthCheck(c *gin.Context) {
 }
 
 func main() {
+
+	// Serve files under the "images" folder
 	// Get environment from command line or default to development
 	env := os.Getenv("ENV")
 	if env == "" {
@@ -150,9 +154,12 @@ func main() {
 	orgUC := usecase.NewOrganizationUseCase()
 	authUC := usecase.NewAuthUseCase()
 	moduleUC := usecase.NewModuleUseCase()
+	imageUC := usecase.NewImageUseCase()
 
 	// Setup Router
-	r := setupRouter(tenantManager, userUC, orgUC, authUC, moduleUC, cfg)
+	r := setupRouter(tenantManager, userUC, orgUC, authUC, moduleUC, imageUC, cfg)
+	// Serve the images folder under /images URL path
+	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
 	// Start Server
 	if err := r.Run(":" + cfg.Port); err != nil {
