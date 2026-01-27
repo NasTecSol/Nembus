@@ -59,7 +59,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, cfg *config.Config) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
@@ -100,6 +100,8 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 		// Initialize handlers (they will get repo from context)
 		userHandler := handler.NewUserHandler(userUC)
 		router.RegisterUserRoutes(api, userHandler)
+		moduleHandler := handler.NewModuleHandler(moduleUC)
+		router.RegisterModuleRoutes(api, moduleHandler)
 
 		organizationHandler := handler.NewOrganizationHandler(orgUC)
 		router.RegisterOrganizationRoutes(api, organizationHandler)
@@ -147,9 +149,10 @@ func main() {
 	userUC := usecase.NewUserUseCase()
 	orgUC := usecase.NewOrganizationUseCase()
 	authUC := usecase.NewAuthUseCase()
+	moduleUC := usecase.NewModuleUseCase()
 
 	// Setup Router
-	r := setupRouter(tenantManager, userUC, orgUC, authUC, cfg)
+	r := setupRouter(tenantManager, userUC, orgUC, authUC, moduleUC, cfg)
 
 	// Start Server
 	if err := r.Run(":" + cfg.Port); err != nil {
