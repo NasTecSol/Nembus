@@ -117,3 +117,13 @@ SELECT EXISTS(
     JOIN submenu_permissions sp ON rp.permission_id = sp.permission_id
     WHERE ur.user_id = $1 AND sp.submenu_id = $2
 ) AS has_access;
+
+-- name: CheckUserHasSubmenuAccessByCode :one
+SELECT EXISTS(
+    SELECT 1 
+    FROM user_roles ur
+    JOIN role_permissions rp ON ur.role_id = rp.role_id
+    JOIN submenu_permissions sp ON rp.permission_id = sp.permission_id
+    JOIN submenus s ON sp.submenu_id = s.id
+    WHERE ur.user_id = $1 AND s.code = $2 AND s.is_active = true
+) AS has_access;
