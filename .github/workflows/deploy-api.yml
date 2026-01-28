@@ -50,9 +50,16 @@ jobs:
             set -e
             cd /opt/app
 
+              # ensure directory exists and is writable
+              sudo mkdir -p /opt/app/api/bin
+              sudo chown -R ec2-user:ec2-user /opt/app/api/bin
+
             if [ -f /opt/app/api/bin/server ]; then
               sudo cp /opt/app/api/bin/server /opt/app/api/bin/server.prev || true
             fi
+
+            # IMPORTANT: remove any bad state (dir/file)
+            sudo rm -rf /opt/app/api/bin/server
 
             sudo mv /opt/app/api/bin/server.new /opt/app/api/bin/server
             sudo chmod +x /opt/app/api/bin/server
