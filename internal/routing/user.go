@@ -12,5 +12,8 @@ func RegisterUserRoutes(r *gin.RouterGroup, h *handler.UserHandler) {
 		user.POST("", h.CreateUser)
 		user.GET("/:id", h.GetUser)
 		user.GET("", h.ListUsers)
+
+		// 🔑 User Roles
+		user.POST("addUserRoles/:id", h.AssignRoleToUser)
 	}
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -152,5 +153,62 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 	resp := h.useCase.ListUsers(c.Request.Context(), int32(limit), int32(offset))
 
 	// Return the standard response
+	c.JSON(resp.StatusCode, resp)
+}
+
+// AssignRoleToUser handles POST /users/:id/roles
+func (h *UserHandler) AssignRoleToUser(c *gin.Context) {
+	// Get repository from context and set it on use case
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	// Parse user ID from path
+	userIDStr := c.Param("id")
+	userID, err := strconv.ParseInt(userIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(
+			utils.CodeBadReq,
+			"invalid user id",
+			nil,
+		))
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		RoleID   int32       `json:"role_id"`
+		Metadata interface{} `json:"metadata"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(
+			utils.CodeBadReq,
+			"invalid request body",
+			nil,
+		))
+		return
+	}
+
+	metadataBytes, err := json.Marshal(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(
+			utils.CodeError,
+			"failed to process metadata",
+			nil,
+		))
+		return
+	}
+	// Call usecase
+	resp := h.useCase.AssignRoleToUser(
+		c.Request.Context(),
+		int32(userID),
+		req.RoleID,
+		metadataBytes,
+	)
+
+	// Return standard response
 	c.JSON(resp.StatusCode, resp)
 }
