@@ -157,6 +157,22 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 }
 
 // AssignRoleToUser handles POST /users/:id/roles
+// @Summary      Assign role to user
+// @Description  Assign a specific role to a user with optional metadata
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "User ID"
+// @Param        body          body      object  true  "Role assignment data (role_id, metadata)"
+// @Success      201           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/users/addUserRoles/{id} [post]
 func (h *UserHandler) AssignRoleToUser(c *gin.Context) {
 	// Get repository from context and set it on use case
 	repo := h.getRepositoryFromContext(c)

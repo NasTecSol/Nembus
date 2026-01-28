@@ -33,6 +33,20 @@ func (h *ModuleHandler) getRepositoryFromContext(c *gin.Context) *repository.Que
 }
 
 // CreateModule handles POST /modules
+// @Summary      Create a new module
+// @Description  Create a new module with required name and code
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string             true  "Tenant identifier"
+// @Param        Authorization header    string             true  "Bearer token"
+// @Param        module        body      CreateModuleRequest true  "Module data"
+// @Success      201           {object}  ModuleResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/modules [post]
 func (h *ModuleHandler) CreateModule(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -59,6 +73,19 @@ func (h *ModuleHandler) CreateModule(c *gin.Context) {
 }
 
 // GetModule handles GET /modules/:id
+// @Summary      Get module by ID
+// @Description  Retrieve a specific module by its ID
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Module ID"
+// @Success      200           {object}  ModuleResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/modules/{id} [get]
 func (h *ModuleHandler) GetModule(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -72,6 +99,19 @@ func (h *ModuleHandler) GetModule(c *gin.Context) {
 }
 
 // GetModuleByCode handles GET /modules/code/:code
+// @Summary      Get module by code
+// @Description  Retrieve a specific module by its code
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        code          path      string  true  "Module code"
+// @Success      200           {object}  ModuleResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/modules/code/{code} [get]
 func (h *ModuleHandler) GetModuleByCode(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -84,7 +124,20 @@ func (h *ModuleHandler) GetModuleByCode(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// ListModules handles GET /modules?is_active=true
+// ListModules handles GET /modules
+// @Summary      List all modules
+// @Description  Retrieve a list of all modules, optionally filtered by active status
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        is_active     query     bool    false "Filter by active status"
+// @Success      200           {array}   ModuleResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/modules [get]
 func (h *ModuleHandler) ListModules(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -107,6 +160,22 @@ func (h *ModuleHandler) ListModules(c *gin.Context) {
 }
 
 // UpdateModule handles PUT /modules/:id
+// @Summary      Update a module
+// @Description  Update an existing module by its ID
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string              true  "Tenant identifier"
+// @Param        Authorization header    string              true  "Bearer token"
+// @Param        id            path      string              true  "Module ID"
+// @Param        module        body      UpdateModuleRequest true  "Module data"
+// @Success      200           {object}  ModuleResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/modules/{id} [put]
 func (h *ModuleHandler) UpdateModule(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -134,6 +203,20 @@ func (h *ModuleHandler) UpdateModule(c *gin.Context) {
 }
 
 // DeleteModule handles DELETE /modules/:id
+// @Summary      Delete a module
+// @Description  Delete a module by its ID
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Module ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/modules/{id} [delete]
 func (h *ModuleHandler) DeleteModule(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -147,6 +230,18 @@ func (h *ModuleHandler) DeleteModule(c *gin.Context) {
 }
 
 // GetNavigationHierarchy handles GET /modules/navigation
+// @Summary      Get navigation hierarchy
+// @Description  Retrieve full navigation hierarchy (modules, menus, submenus)
+// @Tags         modules
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Success      200           {object}  SuccessResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/modules/navigation [get]
 func (h *ModuleHandler) GetNavigationHierarchy(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
