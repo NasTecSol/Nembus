@@ -2,50 +2,71 @@ name: Deploy Go API
 
 on:
   push:
-    branches: [ "development" ]
+    branches: [ "main" ]
     paths:
-      - "api/**"
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "docs/**"
+      - "internal/**"
+      - "cmd/**"
+      - "migrations/**"
       - ".github/workflows/deploy-api.yml"
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Generate swagger + build linux binary
-        working-directory: api
+      - name: Build linux binary + swagger
         run: |
           go mod download
           go install github.com/swaggo/swag/cmd/swag@latest
           $(go env GOPATH)/bin/swag init -g main.go -o docs/swagger --parseDependency --parseInternal
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o server .
 
-      - name: Prepare SSH
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Upload binary
         run: |
-          scp -i ~/.ssh/id_rsa api/server ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/api/bin/server.new
+          scp -i ~/.ssh/id_rsa server ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/api/bin/server.new
 
-      - name: Activate + restart api
+      - name: Activate + restart (rollback on failure)
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOF'
             set -e
             cd /opt/app
+
+            if [ -f /opt/app/api/bin/server ]; then
+              sudo cp /opt/app/api/bin/server /opt/app/api/bin/server.prev || true
+            fi
+
             sudo mv /opt/app/api/bin/server.new /opt/app/api/bin/server
             sudo chmod +x /opt/app/api/bin/server
-            docker compose up -d --no-deps api
+
+            docker compose up -d --no-deps --force-recreate api
+
+            # smoke-check swagger via nginx
+            if ! curl -kfsS https://nembus.nashrms.com/api/swagger/index.html >/dev/null; then
+              echo "Health check failed. Rolling back..."
+              if [ -f /opt/app/api/bin/server.prev ]; then
+                sudo cp /opt/app/api/bin/server.prev /opt/app/api/bin/server
+                sudo chmod +x /opt/app/api/bin/server
+                docker compose up -d --no-deps --force-recreate api
+              fi
+              exit 1
+            fi
           EOF
