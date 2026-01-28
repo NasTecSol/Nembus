@@ -75,6 +75,29 @@ func (q *Queries) CheckUserHasSubmenuAccess(ctx context.Context, arg CheckUserHa
 	return has_access, err
 }
 
+const checkUserHasSubmenuAccessByCode = `-- name: CheckUserHasSubmenuAccessByCode :one
+SELECT EXISTS(
+    SELECT 1 
+    FROM user_roles ur
+    JOIN role_permissions rp ON ur.role_id = rp.role_id
+    JOIN submenu_permissions sp ON rp.permission_id = sp.permission_id
+    JOIN submenus s ON sp.submenu_id = s.id
+    WHERE ur.user_id = $1 AND s.code = $2 AND s.is_active = true
+) AS has_access
+`
+
+type CheckUserHasSubmenuAccessByCodeParams struct {
+	UserID int32  `json:"user_id"`
+	Code   string `json:"code"`
+}
+
+func (q *Queries) CheckUserHasSubmenuAccessByCode(ctx context.Context, arg CheckUserHasSubmenuAccessByCodeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkUserHasSubmenuAccessByCode, arg.UserID, arg.Code)
+	var has_access bool
+	err := row.Scan(&has_access)
+	return has_access, err
+}
+
 const createMenuPermission = `-- name: CreateMenuPermission :one
 INSERT INTO menu_permissions (
     menu_id,
