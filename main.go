@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"strings"
 
 	"NEMBUS/internal/config"
 	"NEMBUS/internal/handler"
@@ -73,18 +72,7 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 	// CORS Middleware (DROP-IN)
 	// -------------------------
 	r.Use(func(c *gin.Context) {
-		origin := c.Request.Header.Get("Origin")
-
-		// Allow any localhost origin in dev or a specific production origin
-		if cfg.Env == "development" || cfg.Env == "dev" {
-			if origin != "" && (strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1")) {
-				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			}
-		} else {
-			// Replace with your production frontend domain
-			//c.Writer.Header().Set("Access-Control-Allow-Origin", "https://your-production-frontend.com")
-		}
-
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200") // allow all origins in dev
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
@@ -95,8 +83,8 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 			c.AbortWithStatus(204)
 			return
 		}
-
 		c.Next()
+
 	})
 
 	// Apply logger middleware globally to all routes
