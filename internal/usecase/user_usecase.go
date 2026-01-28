@@ -187,3 +187,64 @@ func (uc *UserUseCase) ListUsers(ctx context.Context, limit, offset int32) *repo
 
 	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
 }
+
+// AssignRoleToUser assigns a role to a user
+func (uc *UserUseCase) AssignRoleToUser(
+	ctx context.Context,
+	userID int32,
+	roleID int32,
+	metadata []byte,
+) *repository.Response {
+
+	// 1. Repo check
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	// 2. Validation
+	if userID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid user id", nil)
+	}
+
+	if roleID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid role id", nil)
+	}
+
+	if metadata == nil {
+		metadata = []byte("{}")
+	}
+
+	// 3. Check if user already has role
+	hasRole, err := uc.repo.CheckUserHasRole(ctx, repository.CheckUserHasRoleParams{
+		UserID: userID,
+		RoleID: roleID,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to check user role", nil)
+	}
+
+	if hasRole {
+		return utils.NewResponse(
+			utils.CodeBadReq,
+			"user already has this role",
+			nil,
+		)
+	}
+
+	// 4. Assign role
+	userRole, err := uc.repo.AssignRoleToUser(ctx, repository.AssignRoleToUserParams{
+		UserID:   userID,
+		RoleID:   roleID,
+		Metadata: metadata,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to assign role", nil)
+	}
+
+	// 5. Success
+	return utils.NewResponse(
+		utils.CodeCreated,
+		"role assigned successfully",
+		userRole,
+	)
+}
