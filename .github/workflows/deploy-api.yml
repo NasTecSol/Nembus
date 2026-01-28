@@ -1,0 +1,51 @@
+name: Deploy Go API
+
+on:
+  push:
+    branches: [ "development" ]
+    paths:
+      - "api/**"
+      - ".github/workflows/deploy-api.yml"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      - name: Generate swagger + build linux binary
+        working-directory: api
+        run: |
+          go mod download
+          go install github.com/swaggo/swag/cmd/swag@latest
+          $(go env GOPATH)/bin/swag init -g main.go -o docs/swagger --parseDependency --parseInternal
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o server .
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Upload binary
+        run: |
+          scp -i ~/.ssh/id_rsa api/server ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/app/api/bin/server.new
+
+      - name: Activate + restart api
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOF'
+            set -e
+            cd /opt/app
+            sudo mv /opt/app/api/bin/server.new /opt/app/api/bin/server
+            sudo chmod +x /opt/app/api/bin/server
+            docker compose up -d --no-deps api
+          EOF
