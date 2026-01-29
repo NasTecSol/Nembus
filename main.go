@@ -51,7 +51,6 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	if err != nil {
 		return nil, nil, err
 	}
-	//testing
 	// Initialize SQLC repository
 	queries := repository.New(pool)
 
@@ -160,7 +159,6 @@ func main() {
 	if env == "" {
 		env = "development"
 	}
-
 	// Load configuration based on environment
 	cfg := config.LoadConfig(env)
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
