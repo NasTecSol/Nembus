@@ -6,7 +6,6 @@ A scalable, clean-architecture backend built with **Go**, **PostgreSQL**, **SQLC
 ---
 
 ## 🚀 Tech Stack
-
 | Layer | Technology |
 |-----|-----------|
 | Language | Go (Golang) |
