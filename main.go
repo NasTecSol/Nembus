@@ -51,7 +51,6 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	if err != nil {
 		return nil, nil, err
 	}
-	//testing
 	// Initialize SQLC repository
 	queries := repository.New(pool)
 
