@@ -159,7 +159,7 @@ func main() {
 	if env == "" {
 		env = "development"
 	}
-
+	//testing
 	// Load configuration based on environment
 	cfg := config.LoadConfig(env)
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
