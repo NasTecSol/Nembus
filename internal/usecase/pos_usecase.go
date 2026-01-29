@@ -90,6 +90,21 @@ func (uc *POSUseCase) GetPOSCategories(ctx context.Context, repo *repository.Que
 	return utils.NewResponse(utils.CodeOK, "categories fetched successfully", categories)
 }
 
+// GetPOSPromotedProducts fetches all products on promotion for a store
+func (uc *POSUseCase) GetPOSPromotedProducts(ctx context.Context, repo *repository.Queries, storeID *int32) *repository.Response {
+	var pgStoreID pgtype.Int4
+	if storeID != nil {
+		pgStoreID = pgtype.Int4{Int32: *storeID, Valid: true}
+	}
+
+	products, err := repo.GetPOSPromotedProducts(ctx, pgStoreID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "promoted products fetched successfully", products)
+}
+
 // CreateProduct creates a new product
 func (uc *POSUseCase) CreateProduct(ctx context.Context, repo *repository.Queries, arg repository.CreateProductParams) *repository.Response {
 	product, err := repo.CreateProduct(ctx, arg)

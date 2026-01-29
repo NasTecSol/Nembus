@@ -14,6 +14,7 @@ func RegisterPOSRoutes(r *gin.RouterGroup, h *handler.POSHandler) {
 		pos.GET("/products/:id", h.GetPOSProductByID)
 		pos.GET("/products/search", h.SearchPOSProducts)
 		pos.GET("/categories", h.GetPOSCategories)
+		pos.GET("/promotions", h.GetPOSPromotedProducts)
 		pos.POST("/products", h.CreateProduct)
 	}
 }

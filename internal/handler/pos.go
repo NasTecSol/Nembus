@@ -140,6 +140,25 @@ func (h *POSHandler) GetPOSCategories(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// GetPOSPromotedProducts handles GET /api/pos/promotions
+func (h *POSHandler) GetPOSPromotedProducts(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var storeID *int32
+	if storeIDStr := c.Query("store_id"); storeIDStr != "" {
+		if id, err := strconv.ParseInt(storeIDStr, 10, 32); err == nil {
+			id32 := int32(id)
+			storeID = &id32
+		}
+	}
+
+	resp := h.useCase.GetPOSPromotedProducts(c.Request.Context(), repo, storeID)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // CreateProduct handles POST /api/pos/products
 func (h *POSHandler) CreateProduct(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
