@@ -763,3 +763,57 @@ type UserStoreAccess struct {
 	Metadata  []byte           `json:"metadata"`
 	GrantedAt pgtype.Timestamp `json:"granted_at"`
 }
+
+type VwPosCategory struct {
+	CategoryID         int32       `json:"category_id"`
+	CategoryCode       string      `json:"category_code"`
+	CategoryName       string      `json:"category_name"`
+	ParentCategoryID   pgtype.Int4 `json:"parent_category_id"`
+	ParentCategoryName pgtype.Text `json:"parent_category_name"`
+	ProductCount       int64       `json:"product_count"`
+	InStockCount       int64       `json:"in_stock_count"`
+	CategoryMetadata   []byte      `json:"category_metadata"`
+}
+
+type VwPosProductCatalog struct {
+	ProductID            int32          `json:"product_id"`
+	Sku                  string         `json:"sku"`
+	ProductName          string         `json:"product_name"`
+	Description          pgtype.Text    `json:"description"`
+	ProductType          pgtype.Text    `json:"product_type"`
+	CategoryID           pgtype.Int4    `json:"category_id"`
+	CategoryName         pgtype.Text    `json:"category_name"`
+	CategoryCode         pgtype.Text    `json:"category_code"`
+	ParentCategoryID     pgtype.Int4    `json:"parent_category_id"`
+	ParentCategoryName   pgtype.Text    `json:"parent_category_name"`
+	BrandID              pgtype.Int4    `json:"brand_id"`
+	BrandName            pgtype.Text    `json:"brand_name"`
+	UomID                pgtype.Int4    `json:"uom_id"`
+	UomCode              pgtype.Text    `json:"uom_code"`
+	UomName              pgtype.Text    `json:"uom_name"`
+	DecimalPlaces        pgtype.Int4    `json:"decimal_places"`
+	Barcode              pgtype.Text    `json:"barcode"`
+	BarcodeType          pgtype.Text    `json:"barcode_type"`
+	TaxCategoryID        pgtype.Int4    `json:"tax_category_id"`
+	TaxCategoryName      pgtype.Text    `json:"tax_category_name"`
+	TaxRate              pgtype.Numeric `json:"tax_rate"`
+	TaxIsInclusive       pgtype.Bool    `json:"tax_is_inclusive"`
+	RetailPrice          pgtype.Numeric `json:"retail_price"`
+	RetailPriceID        pgtype.Int4    `json:"retail_price_id"`
+	PromoPrice           pgtype.Numeric `json:"promo_price"`
+	PromoPriceID         pgtype.Int4    `json:"promo_price_id"`
+	PromoMinQuantity     pgtype.Numeric `json:"promo_min_quantity"`
+	PromoValidFrom       pgtype.Date    `json:"promo_valid_from"`
+	PromoValidTo         pgtype.Date    `json:"promo_valid_to"`
+	PromotionName        pgtype.Text    `json:"promotion_name"`
+	DiscountPercent      pgtype.Text    `json:"discount_percent"`
+	EffectivePrice       pgtype.Numeric `json:"effective_price"`
+	HasActivePromotion   bool           `json:"has_active_promotion"`
+	IsActive             pgtype.Bool    `json:"is_active"`
+	IsSellable           pgtype.Bool    `json:"is_sellable"`
+	IsSerialized         pgtype.Bool    `json:"is_serialized"`
+	IsBatchManaged       pgtype.Bool    `json:"is_batch_managed"`
+	AllowDecimalQuantity pgtype.Bool    `json:"allow_decimal_quantity"`
+	TrackInventory       pgtype.Bool    `json:"track_inventory"`
+	ProductMetadata      []byte         `json:"product_metadata"`
+}
