@@ -2,7 +2,7 @@ name: Deploy Go API
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "development" ]
     paths:
       - "**/*.go"
       - "go.mod"
