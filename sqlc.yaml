@@ -20,3 +20,7 @@ sql:
               type: "Time"
           - db_type: "jsonb"
             go_type: "encoding/json.RawMessage"
+          - column: "vw_pos_product_catalog.promotion_name"
+            go_type: "github.com/jackc/pgx/v5/pgtype.Text"
+          - column: "vw_pos_product_catalog.discount_percent"
+            go_type: "github.com/jackc/pgx/v5/pgtype.Text"

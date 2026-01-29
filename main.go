@@ -58,7 +58,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, posUC *usecase.POSUseCase, cfg *config.Config) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
@@ -134,6 +134,9 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 
 		roleHandler := handler.NewRoleHandler(roleUC)
 		router.RegisterRoleRoutes(api, roleHandler)
+
+		posHandler := handler.NewPOSHandler(posUC)
+		router.RegisterPOSRoutes(api, posHandler)
 	}
 
 	return r
@@ -185,9 +188,10 @@ func main() {
 	navigationUC := usecase.NewNavigationUseCase()
 	permissionUC := usecase.NewPermissionUseCase()
 	roleUC := usecase.NewRoleUseCase()
+	posUC := usecase.NewPOSUseCase()
 
 	// Setup Router
-	r := setupRouter(tenantManager, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, cfg)
+	r := setupRouter(tenantManager, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, posUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
