@@ -43,7 +43,7 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 	// Get user by username
 	user, err := uc.repo.GetUserByUsername(ctx, userLogin)
 	if err != nil {
-		return utils.NewResponse(utils.CodeError, "invalid credentials", nil)
+		return utils.NewResponse(utils.CodeNotFound, "invalid credentials", nil)
 	}
 
 	// Check if user is active

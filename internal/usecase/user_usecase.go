@@ -248,3 +248,17 @@ func (uc *UserUseCase) AssignRoleToUser(
 		userRole,
 	)
 }
+
+// GetUsersByRole fetches all active users assigned to a specific role
+func (uc *UserUseCase) GetUsersByRole(ctx context.Context, roleID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	users, err := uc.repo.GetUsersWithRole(ctx, roleID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
+}
