@@ -126,7 +126,7 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 		organizationHandler := handler.NewOrganizationHandler(orgUC)
 		router.RegisterOrganizationRoutes(api, organizationHandler)
 
-		navigationHandler := handler.NewNavigationHandler(navigationUC)
+		navigationHandler := handler.NewNavigationHandler(navigationUC, roleUC, userUC)
 		router.RegisterNavigationRoutes(api, navigationHandler)
 
 		permissionHandler := handler.NewPermissionHandler(permissionUC)
@@ -155,14 +155,35 @@ func main() {
 
 	// Serve files under the "images" folder
 	// Get environment from command line or default to development
-	env := os.Getenv("ENV")
+	//env := os.Getenv("ENV")
+	env := "development" // default
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		switch arg {
+		case "stg":
+			env = "stg"
+		case "dev":
+			env = "dev"
+		case "prod":
+			env = "prod"
+		default:
+			log.Fatalf("Unknown environment: %s. Use dev, stg, or prod.", arg)
+		}
+	} else if os.Getenv("ENV") != "" {
+		env = os.Getenv("ENV")
+	}
 	if env == "" {
 		env = "development"
 	}
-	//testing
 	// Load configuration based on environment
 	cfg := config.LoadConfig(env)
-	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
+	//log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
+	// 3️⃣ Print startup info
+	log.Printf("===================================")
+	log.Printf("🚀 Starting NEMBUS\n")
+	log.Printf("Environment : %s\n", cfg.Env)
+	log.Printf("Port        : %s\n", cfg.Port)
+	log.Println("===================================")
 
 	ctx := context.Background()
 

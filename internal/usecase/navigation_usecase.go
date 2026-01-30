@@ -35,3 +35,17 @@ func (uc *NavigationUseCase) GetUserNavigation(ctx context.Context, userID int32
 
 	return utils.NewResponse(utils.CodeOK, "navigation fetched successfully", navigation)
 }
+
+// GetNavigationByRoleCode fetches complete navigation structure for a given role code
+func (uc *NavigationUseCase) GetNavigationByRoleCode(ctx context.Context, roleCode string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeNotFound, "repository not set", nil)
+	}
+
+	navigation, err := uc.repo.GetCompleteNavigationByRoleCode(ctx, roleCode)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "navigation fetched successfully", navigation)
+}
