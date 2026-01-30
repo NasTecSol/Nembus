@@ -148,3 +148,14 @@ type AssignPermissionToRoleRequest struct {
 	PermissionID int32   `json:"permission_id" binding:"required" example:"1"`
 	Scope        *string `json:"scope,omitempty" example:"read,write"`
 }
+
+// RoleNavigationResponse represents the response for GetNavigationByRoleCodeWithUserCounts
+type RoleNavigationResponse struct {
+	StatusCode int    `json:"statusCode"`
+	Message    string `json:"message"`
+	Data       struct {
+		Navigation interface{} `json:"navigation"` // JSON structure returned by navigation use case
+		UserCount  int         `json:"user_count"` // Number of users assigned to this role
+		// Users []User `json:"users,omitempty"` // optional, if you want to include full user list
+	} `json:"data"`
+}
