@@ -9,6 +9,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type RolePermissionInput struct {
+	PermissionID int32
+	Scope        *string
+	Metadata     []byte
+}
+
 // RoleUseCase handles business logic for roles.
 type RoleUseCase struct {
 	repo *repository.Queries
@@ -201,13 +207,10 @@ func (uc *RoleUseCase) DeleteRole(ctx context.Context, id int32) *repository.Res
 	return utils.NewResponse(utils.CodeOK, "role deleted successfully", nil)
 }
 
-// AssignPermissionToRole assigns a permission to a role.
 func (uc *RoleUseCase) AssignPermissionToRole(
 	ctx context.Context,
 	roleID int32,
-	permissionID int32,
-	scope *string,
-	metadata []byte,
+	permissions []RolePermissionInput,
 ) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
@@ -215,30 +218,36 @@ func (uc *RoleUseCase) AssignPermissionToRole(
 	if roleID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid role id", nil)
 	}
-	if permissionID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "invalid permission id", nil)
+
+	var results []repository.RolePermission
+	for _, p := range permissions {
+		if p.PermissionID <= 0 {
+			return utils.NewResponse(utils.CodeBadReq, "invalid permission id", nil)
+		}
+
+		var scopeText pgtype.Text
+		if p.Scope != nil && *p.Scope != "" {
+			scopeText = pgtype.Text{String: *p.Scope, Valid: true}
+		}
+
+		if p.Metadata == nil {
+			p.Metadata = []byte("{}")
+		}
+
+		rolePermission, err := uc.repo.AssignPermissionToRole(ctx, repository.AssignPermissionToRoleParams{
+			RoleID:       roleID,
+			PermissionID: p.PermissionID,
+			Scope:        scopeText,
+			Metadata:     p.Metadata,
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+
+		results = append(results, rolePermission)
 	}
 
-	var scopeText pgtype.Text
-	if scope != nil && *scope != "" {
-		scopeText = pgtype.Text{String: *scope, Valid: true}
-	}
-
-	if metadata == nil {
-		metadata = []byte("{}")
-	}
-
-	rolePermission, err := uc.repo.AssignPermissionToRole(ctx, repository.AssignPermissionToRoleParams{
-		RoleID:       roleID,
-		PermissionID: permissionID,
-		Scope:        scopeText,
-		Metadata:     metadata,
-	})
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-
-	return utils.NewResponse(utils.CodeCreated, "permission assigned to role successfully", rolePermission)
+	return utils.NewResponse(utils.CodeCreated, "permissions assigned to role successfully", results)
 }
 
 // RemovePermissionFromRole removes a permission from a role.
