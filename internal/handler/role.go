@@ -383,16 +383,16 @@ func (h *RoleHandler) ToggleRoleActive(c *gin.Context) {
 }
 
 // AssignPermissionToRole handles POST /api/roles/:id/permissions
-// @Summary      Assign permission to role
-// @Description  Assign a specific permission to a role with optional scope and metadata
+// @Summary      Assign permissions to role
+// @Description  Assign one or more permissions to a role with optional scope and metadata
 // @Tags         roles
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id     header    string  true  "Tenant identifier"
-// @Param        Authorization   header    string  true  "Bearer token"
-// @Param        id              path      int                            true  "Role ID"
-// @Param        permission_data body      AssignPermissionToRoleRequest  true  "Permission assignment data"
+// @Param        x-tenant-id     header    string                        true  "Tenant identifier"
+// @Param        Authorization   header    string                        true  "Bearer token"
+// @Param        id              path      int                           true  "Role ID"
+// @Param permission_data body AssignPermissionToRoleRequest true "Array of permissions to assign"
 // @Success      201             {object}  SuccessResponse
 // @Failure      400             {object}  ErrorResponse
 // @Failure      401             {object}  ErrorResponse
@@ -414,31 +414,41 @@ func (h *RoleHandler) AssignPermissionToRole(c *gin.Context) {
 	}
 
 	var req struct {
-		PermissionID int32       `json:"permission_id" binding:"required"`
-		Scope        *string     `json:"scope,omitempty"`
-		Metadata     interface{} `json:"metadata"`
+		Permissions []struct {
+			PermissionID int32       `json:"permission_id" binding:"required"`
+			Scope        *string     `json:"scope,omitempty"`
+			Metadata     interface{} `json:"metadata"`
+		} `json:"permissions" binding:"required"`
 	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
 
-	var metadataBytes []byte
-	if req.Metadata != nil {
-		b, err := json.Marshal(req.Metadata)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
-			return
+	// Convert metadata to []byte for each permission
+	var permissions []usecase.RolePermissionInput
+	for _, p := range req.Permissions {
+		metaBytes := []byte("{}")
+		if p.Metadata != nil {
+			b, err := json.Marshal(p.Metadata)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+				return
+			}
+			metaBytes = b
 		}
-		metadataBytes = b
+		permissions = append(permissions, usecase.RolePermissionInput{
+			PermissionID: p.PermissionID,
+			Scope:        p.Scope,
+			Metadata:     metaBytes,
+		})
 	}
 
 	resp := h.useCase.AssignPermissionToRole(
 		c.Request.Context(),
 		int32(roleID),
-		req.PermissionID,
-		req.Scope,
-		metadataBytes,
+		permissions,
 	)
 	c.JSON(resp.StatusCode, resp)
 }
