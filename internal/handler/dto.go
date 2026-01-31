@@ -143,10 +143,16 @@ type UpdateRoleRequest struct {
 	IsActive    bool    `json:"is_active" example:"true"`
 }
 
-// AssignPermissionToRoleRequest represents permission assignment to a role
+// AssignPermissionItem represents one permission assignment
+type AssignPermissionItem struct {
+	PermissionID int32  `json:"permission_id" example:"1"`
+	Scope        string `json:"scope,omitempty" example:"read,write"`
+	Metadata     string `json:"metadata,omitempty" example:"{\"level\":\"admin\"}"`
+}
+
+// AssignPermissionToRoleRequest represents assigning multiple permissions to a role
 type AssignPermissionToRoleRequest struct {
-	PermissionID int32   `json:"permission_id" binding:"required" example:"1"`
-	Scope        *string `json:"scope,omitempty" example:"read,write"`
+	Permissions []AssignPermissionItem `json:"permissions"`
 }
 
 // RoleNavigationResponse represents the response for GetNavigationByRoleCodeWithUserCounts
