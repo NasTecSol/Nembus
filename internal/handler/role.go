@@ -453,23 +453,22 @@ func (h *RoleHandler) AssignPermissionToRole(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// RemovePermissionFromRole handles DELETE /api/roles/:id/permissions/:permission_id
-// @Summary      Remove permission from role
-// @Description  Remove a specific permission from a role
+// RemovePermissionFromRole handles DELETE /api/roles/:id/permissions
+// @Summary      Remove permissions from role
+// @Description  Remove one or more permissions from a role
 // @Tags         roles
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id    header    string  true  "Tenant identifier"
-// @Param        Authorization  header    string  true  "Bearer token"
-// @Param        id             path      int     true  "Role ID"
-// @Param        permission_id  path      int     true  "Permission ID"
-// @Success      200            {object}  SuccessResponse
-// @Failure      400            {object}  ErrorResponse
-// @Failure      401            {object}  ErrorResponse
-// @Failure      404            {object}  ErrorResponse
-// @Failure      500            {object}  ErrorResponse
-// @Router       /api/roles/{id}/permissions/{permission_id} [delete]
+// @Param        x-tenant-id header string true "Tenant identifier"
+// @Param        Authorization header string true "Bearer token"
+// @Param        id path int true "Role ID"
+// @Param        permission_data body handler.RemovePermissionFromRoleRequest true "Permissions to remove"
+// @Success      200 {object} SuccessResponse
+// @Failure      400 {object} ErrorResponse
+// @Failure      401 {object} ErrorResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /api/roles/{id}/permissions [delete]
 func (h *RoleHandler) RemovePermissionFromRole(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -484,14 +483,21 @@ func (h *RoleHandler) RemovePermissionFromRole(c *gin.Context) {
 		return
 	}
 
-	permIDStr := c.Param("permission_id")
-	permID, err := strconv.ParseInt(permIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid permission id", nil))
+	var req struct {
+		PermissionIDs []int32 `json:"permission_ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
 
-	resp := h.useCase.RemovePermissionFromRole(c.Request.Context(), int32(roleID), int32(permID))
+	resp := h.useCase.RemovePermissionFromRole(
+		c.Request.Context(),
+		int32(roleID),
+		req.PermissionIDs,
+	)
+
 	c.JSON(resp.StatusCode, resp)
 }
 

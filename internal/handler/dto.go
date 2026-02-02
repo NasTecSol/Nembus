@@ -155,6 +155,11 @@ type AssignPermissionToRoleRequest struct {
 	Permissions []AssignPermissionItem `json:"permissions"`
 }
 
+// RemovePermissionFromRoleRequest represents request body for bulk permission removal
+type RemovePermissionFromRoleRequest struct {
+	PermissionIDs []int32 `json:"permission_ids" example:"[2,3,4]"`
+}
+
 // RoleNavigationResponse represents the response for GetNavigationByRoleCodeWithUserCounts
 type RoleNavigationResponse struct {
 	StatusCode int    `json:"statusCode"`
