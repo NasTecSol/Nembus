@@ -254,7 +254,7 @@ func (uc *RoleUseCase) AssignPermissionToRole(
 func (uc *RoleUseCase) RemovePermissionFromRole(
 	ctx context.Context,
 	roleID int32,
-	permissionID int32,
+	permissionIDs []int32,
 ) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
@@ -262,16 +262,22 @@ func (uc *RoleUseCase) RemovePermissionFromRole(
 	if roleID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid role id", nil)
 	}
-	if permissionID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "invalid permission id", nil)
+	if len(permissionIDs) == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "permission ids are required", nil)
 	}
 
-	err := uc.repo.RemovePermissionFromRole(ctx, repository.RemovePermissionFromRoleParams{
-		RoleID:       roleID,
-		PermissionID: permissionID,
-	})
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	for _, permID := range permissionIDs {
+		if permID <= 0 {
+			return utils.NewResponse(utils.CodeBadReq, "invalid permission id", nil)
+		}
+
+		err := uc.repo.RemovePermissionFromRole(ctx, repository.RemovePermissionFromRoleParams{
+			RoleID:       roleID,
+			PermissionID: permID,
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
 	}
 
 	return utils.NewResponse(utils.CodeOK, "permission removed from role successfully", nil)
