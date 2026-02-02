@@ -383,16 +383,16 @@ func (h *RoleHandler) ToggleRoleActive(c *gin.Context) {
 }
 
 // AssignPermissionToRole handles POST /api/roles/:id/permissions
-// @Summary      Assign permission to role
-// @Description  Assign a specific permission to a role with optional scope and metadata
+// @Summary      Assign permissions to role
+// @Description  Assign one or more permissions to a role with optional scope and metadata
 // @Tags         roles
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id     header    string  true  "Tenant identifier"
-// @Param        Authorization   header    string  true  "Bearer token"
-// @Param        id              path      int                            true  "Role ID"
-// @Param        permission_data body      AssignPermissionToRoleRequest  true  "Permission assignment data"
+// @Param        x-tenant-id     header    string                        true  "Tenant identifier"
+// @Param        Authorization   header    string                        true  "Bearer token"
+// @Param        id              path      int                           true  "Role ID"
+// @Param permission_data body AssignPermissionToRoleRequest true "Array of permissions to assign"
 // @Success      201             {object}  SuccessResponse
 // @Failure      400             {object}  ErrorResponse
 // @Failure      401             {object}  ErrorResponse
@@ -414,52 +414,61 @@ func (h *RoleHandler) AssignPermissionToRole(c *gin.Context) {
 	}
 
 	var req struct {
-		PermissionID int32       `json:"permission_id" binding:"required"`
-		Scope        *string     `json:"scope,omitempty"`
-		Metadata     interface{} `json:"metadata"`
+		Permissions []struct {
+			PermissionID int32       `json:"permission_id" binding:"required"`
+			Scope        *string     `json:"scope,omitempty"`
+			Metadata     interface{} `json:"metadata"`
+		} `json:"permissions" binding:"required"`
 	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
 
-	var metadataBytes []byte
-	if req.Metadata != nil {
-		b, err := json.Marshal(req.Metadata)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
-			return
+	// Convert metadata to []byte for each permission
+	var permissions []usecase.RolePermissionInput
+	for _, p := range req.Permissions {
+		metaBytes := []byte("{}")
+		if p.Metadata != nil {
+			b, err := json.Marshal(p.Metadata)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+				return
+			}
+			metaBytes = b
 		}
-		metadataBytes = b
+		permissions = append(permissions, usecase.RolePermissionInput{
+			PermissionID: p.PermissionID,
+			Scope:        p.Scope,
+			Metadata:     metaBytes,
+		})
 	}
 
 	resp := h.useCase.AssignPermissionToRole(
 		c.Request.Context(),
 		int32(roleID),
-		req.PermissionID,
-		req.Scope,
-		metadataBytes,
+		permissions,
 	)
 	c.JSON(resp.StatusCode, resp)
 }
 
-// RemovePermissionFromRole handles DELETE /api/roles/:id/permissions/:permission_id
-// @Summary      Remove permission from role
-// @Description  Remove a specific permission from a role
+// RemovePermissionFromRole handles DELETE /api/roles/:id/permissions
+// @Summary      Remove permissions from role
+// @Description  Remove one or more permissions from a role
 // @Tags         roles
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id    header    string  true  "Tenant identifier"
-// @Param        Authorization  header    string  true  "Bearer token"
-// @Param        id             path      int     true  "Role ID"
-// @Param        permission_id  path      int     true  "Permission ID"
-// @Success      200            {object}  SuccessResponse
-// @Failure      400            {object}  ErrorResponse
-// @Failure      401            {object}  ErrorResponse
-// @Failure      404            {object}  ErrorResponse
-// @Failure      500            {object}  ErrorResponse
-// @Router       /api/roles/{id}/permissions/{permission_id} [delete]
+// @Param        x-tenant-id header string true "Tenant identifier"
+// @Param        Authorization header string true "Bearer token"
+// @Param        id path int true "Role ID"
+// @Param        permission_data body handler.RemovePermissionFromRoleRequest true "Permissions to remove"
+// @Success      200 {object} SuccessResponse
+// @Failure      400 {object} ErrorResponse
+// @Failure      401 {object} ErrorResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /api/roles/{id}/permissions [delete]
 func (h *RoleHandler) RemovePermissionFromRole(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -474,14 +483,21 @@ func (h *RoleHandler) RemovePermissionFromRole(c *gin.Context) {
 		return
 	}
 
-	permIDStr := c.Param("permission_id")
-	permID, err := strconv.ParseInt(permIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid permission id", nil))
+	var req struct {
+		PermissionIDs []int32 `json:"permission_ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
 
-	resp := h.useCase.RemovePermissionFromRole(c.Request.Context(), int32(roleID), int32(permID))
+	resp := h.useCase.RemovePermissionFromRole(
+		c.Request.Context(),
+		int32(roleID),
+		req.PermissionIDs,
+	)
+
 	c.JSON(resp.StatusCode, resp)
 }
 

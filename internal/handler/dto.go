@@ -143,10 +143,180 @@ type UpdateRoleRequest struct {
 	IsActive    bool    `json:"is_active" example:"true"`
 }
 
-// AssignPermissionToRoleRequest represents permission assignment to a role
+// AssignPermissionItem represents one permission assignment
+type AssignPermissionItem struct {
+	PermissionID int32  `json:"permission_id" example:"1"`
+	Scope        string `json:"scope,omitempty" example:"read,write"`
+	Metadata     string `json:"metadata,omitempty" example:"{\"level\":\"admin\"}"`
+}
+
+// AssignPermissionToRoleRequest represents assigning multiple permissions to a role
 type AssignPermissionToRoleRequest struct {
-	PermissionID int32   `json:"permission_id" binding:"required" example:"1"`
-	Scope        *string `json:"scope,omitempty" example:"read,write"`
+	Permissions []AssignPermissionItem `json:"permissions"`
+}
+
+// RemovePermissionFromRoleRequest represents request body for bulk permission removal
+type RemovePermissionFromRoleRequest struct {
+	PermissionIDs []int32 `json:"permission_ids" example:"[2,3,4]"`
+}
+
+// RoleNavigationResponse represents the response for GetNavigationByRoleCodeWithUserCounts
+type RoleNavigationResponse struct {
+	StatusCode int    `json:"statusCode"`
+	Message    string `json:"message"`
+	Data       struct {
+		Navigation interface{} `json:"navigation"` // JSON structure returned by navigation use case
+		UserCount  int         `json:"user_count"` // Number of users assigned to this role
+		// Users []User `json:"users,omitempty"` // optional, if you want to include full user list
+	} `json:"data"`
+}
+
+/// MenuResponse represents a menu in API responses
+type MenuResponse struct {
+	ID           int32   `json:"id" example:"1"`
+	ModuleID     int32   `json:"module_id" example:"1"`
+	ParentMenuID *int32  `json:"parent_menu_id,omitempty" example:"2"`
+	Name         string  `json:"name" example:"Dashboard"`
+	Code         string  `json:"code" example:"DASHBOARD"`
+	RoutePath    *string `json:"route_path,omitempty" example:"/dashboard"`
+	Icon         *string `json:"icon,omitempty" example:"dashboard-icon"`
+	DisplayOrder *int32  `json:"display_order,omitempty" example:"1"`
+	IsActive     bool    `json:"is_active" example:"true"`
+	Metadata     string  `json:"metadata,omitempty" example:"{\"color\":\"blue\"}"`
+
+	CreatedAt string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt string `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// CreateMenuRequest represents menu creation request
+type CreateMenuRequest struct {
+	ModuleID     int32   `json:"module_id" binding:"required" example:"1"`
+	ParentMenuID *int32  `json:"parent_menu_id,omitempty" example:"2"`
+	Name         string  `json:"name" binding:"required" example:"Dashboard"`
+	Code         string  `json:"code" binding:"required" example:"DASHBOARD"`
+	RoutePath    *string `json:"route_path,omitempty" example:"/dashboard"`
+	Icon         *string `json:"icon,omitempty" example:"dashboard-icon"`
+	DisplayOrder *int32  `json:"display_order,omitempty" example:"1"`
+	IsActive     bool    `json:"is_active" example:"true"`
+	Metadata     string  `json:"metadata,omitempty" example:"{\"color\":\"blue\"}"`
+}
+
+// UpdateMenuRequest represents menu update request
+type UpdateMenuRequest struct {
+	ParentMenuID *int32  `json:"parent_menu_id,omitempty" example:"2"`
+	Name         string  `json:"name" example:"Dashboard"`
+	RoutePath    *string `json:"route_path,omitempty" example:"/dashboard"`
+	Icon         *string `json:"icon,omitempty" example:"dashboard-icon"`
+	DisplayOrder *int32  `json:"display_order,omitempty" example:"1"`
+	IsActive     bool    `json:"is_active" example:"true"`
+	Metadata     string  `json:"metadata,omitempty" example:"{\"color\":\"blue\"}"`
+}
+
+// ToggleMenuActiveRequest represents request body to toggle menu active status
+type ToggleMenuActiveRequest struct {
+	IsActive bool `json:"is_active" example:"true"`
+}
+
+// ListMenusResponse represents a list of menus
+type ListMenusResponse struct {
+	Menus []MenuResponse `json:"menus"`
+}
+
+// GetMenuByCodeResponse represents response for GetMenuByCode
+type GetMenuByCodeResponse struct {
+	Menu MenuResponse `json:"menu"`
+}
+
+// ListMenusByParentResponse represents response for listing menus by parent
+type ListMenusByParentResponse struct {
+	ParentID int32          `json:"parent_id" example:"2"`
+	Menus    []MenuResponse `json:"menus"`
+}
+
+// ListMenusByModuleResponse represents response for listing menus by module
+type ListMenusByModuleResponse struct {
+	ModuleID int32          `json:"module_id" example:"1"`
+	Menus    []MenuResponse `json:"menus"`
+}
+
+// ListActiveMenusByModuleResponse represents response for listing active menus by module
+type ListActiveMenusByModuleResponse struct {
+	ModuleID int32          `json:"module_id" example:"1"`
+	Menus    []MenuResponse `json:"menus"`
+}
+
+// SubmenuResponse represents a submenu in API responses
+type SubmenuResponse struct {
+	ID              int32   `json:"id" example:"1"`
+	MenuID          int32   `json:"menu_id" example:"1"`
+	ParentSubmenuID *int32  `json:"parent_submenu_id,omitempty" example:"2"`
+	Name            string  `json:"name" example:"User Management"`
+	Code            string  `json:"code" example:"USER_MANAGEMENT"`
+	RoutePath       *string `json:"route_path,omitempty" example:"/users"`
+	Icon            *string `json:"icon,omitempty" example:"user-icon"`
+	DisplayOrder    *int32  `json:"display_order,omitempty" example:"1"`
+	IsActive        bool    `json:"is_active" example:"true"`
+	Metadata        string  `json:"metadata,omitempty" example:"{\"color\":\"blue\"}"`
+
+	CreatedAt string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt string `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// CreateSubmenuRequest represents submenu creation request
+type CreateSubmenuRequest struct {
+	MenuID          int32   `json:"menu_id" binding:"required" example:"1"`
+	ParentSubmenuID *int32  `json:"parent_submenu_id,omitempty" example:"2"`
+	Name            string  `json:"name" binding:"required" example:"User Management"`
+	Code            string  `json:"code" binding:"required" example:"USER_MANAGEMENT"`
+	RoutePath       *string `json:"route_path,omitempty" example:"/users"`
+	Icon            *string `json:"icon,omitempty" example:"user-icon"`
+	DisplayOrder    *int32  `json:"display_order,omitempty" example:"1"`
+	IsActive        bool    `json:"is_active" example:"true"`
+	Metadata        string  `json:"metadata,omitempty" example:"{\"color\":\"blue\"}"`
+}
+
+// UpdateSubmenuRequest represents submenu update request
+type UpdateSubmenuRequest struct {
+	ParentSubmenuID *int32  `json:"parent_submenu_id,omitempty" example:"2"`
+	Name            string  `json:"name" example:"User Management"`
+	RoutePath       *string `json:"route_path,omitempty" example:"/users"`
+	Icon            *string `json:"icon,omitempty" example:"user-icon"`
+	DisplayOrder    *int32  `json:"display_order,omitempty" example:"1"`
+	IsActive        bool    `json:"is_active" example:"true"`
+	Metadata        string  `json:"metadata,omitempty" example:"{\"color\":\"blue\"}"`
+}
+
+// ToggleSubmenuActiveRequest represents request body to toggle submenu active status
+type ToggleSubmenuActiveRequest struct {
+	IsActive bool `json:"is_active" example:"true"`
+}
+
+// ListSubmenusResponse represents a list of submenus
+type ListSubmenusResponse struct {
+	Submenus []SubmenuResponse `json:"submenus"`
+}
+
+// GetSubmenuByCodeResponse represents response for GetSubmenuByCode
+type GetSubmenuByCodeResponse struct {
+	Submenu SubmenuResponse `json:"submenu"`
+}
+
+// ListSubmenusByParentResponse represents response for listing submenus by parent
+type ListSubmenusByParentResponse struct {
+	ParentID int32             `json:"parent_id" example:"2"`
+	Submenus []SubmenuResponse `json:"submenus"`
+}
+
+// ListSubmenusByMenuResponse represents response for listing submenus by menu
+type ListSubmenusByMenuResponse struct {
+	MenuID   int32             `json:"menu_id" example:"1"`
+	Submenus []SubmenuResponse `json:"submenus"`
+}
+
+// ListActiveSubmenusByMenuResponse represents response for listing active submenus by menu
+type ListActiveSubmenusByMenuResponse struct {
+	MenuID   int32             `json:"menu_id" example:"1"`
+	Submenus []SubmenuResponse `json:"submenus"`
 }
 
 // =====================================================
