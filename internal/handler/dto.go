@@ -318,3 +318,50 @@ type ListActiveSubmenusByMenuResponse struct {
 	MenuID   int32             `json:"menu_id" example:"1"`
 	Submenus []SubmenuResponse `json:"submenus"`
 }
+
+// =====================================================
+// POS module
+// =====================================================
+
+// CreatePosProductRequest represents POS "add product" request.
+type CreatePosProductRequest struct {
+	OrganizationID       int32   `json:"organization_id" binding:"required"`
+	SKU                  string  `json:"sku" binding:"required"`
+	Name                 string  `json:"name" binding:"required"`
+	Description          *string `json:"description,omitempty"`
+	CategoryID           *int32  `json:"category_id,omitempty"`
+	BrandID              *int32  `json:"brand_id,omitempty"`
+	BaseUomID            *int32  `json:"base_uom_id,omitempty"`
+	ProductType          *string `json:"product_type,omitempty"`
+	TaxCategoryID        *int32  `json:"tax_category_id,omitempty"`
+	IsSerialized         *bool   `json:"is_serialized,omitempty"`
+	IsBatchManaged       *bool   `json:"is_batch_managed,omitempty"`
+	IsActive             *bool   `json:"is_active,omitempty"`
+	IsSellable           *bool   `json:"is_sellable,omitempty"`
+	IsPurchasable        *bool   `json:"is_purchasable,omitempty"`
+	AllowDecimalQuantity *bool   `json:"allow_decimal_quantity,omitempty"`
+	TrackInventory       *bool   `json:"track_inventory,omitempty"`
+	Barcode              *string `json:"barcode,omitempty"`
+	RetailPrice          *string `json:"retail_price,omitempty"` // decimal as string, e.g. "12.50"
+}
+
+type AddProductRequest struct {
+	OrganizationID       int32   `json:"organization_id" binding:"required"`
+	SKU                  string  `json:"sku" binding:"required"`
+	Name                 string  `json:"name" binding:"required"`
+	Description          *string `json:"description"`
+	CategoryID           *int32  `json:"category_id"`
+	BrandID              *int32  `json:"brand_id"`
+	BaseUomID            *int32  `json:"base_uom_id"`
+	ProductType          *string `json:"product_type"`
+	TaxCategoryID        *int32  `json:"tax_category_id"`
+	IsSerialized         *bool   `json:"is_serialized"`
+	IsBatchManaged       *bool   `json:"is_batch_managed"`
+	IsActive             *bool   `json:"is_active"`
+	IsSellable           *bool   `json:"is_sellable"`
+	IsPurchasable        *bool   `json:"is_purchasable"`
+	AllowDecimalQuantity *bool   `json:"allow_decimal_quantity"`
+	TrackInventory       *bool   `json:"track_inventory"`
+	Barcode              *string `json:"barcode"`
+	RetailPrice          *string `json:"retail_price"`
+}
