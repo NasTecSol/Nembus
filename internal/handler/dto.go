@@ -365,3 +365,30 @@ type AddProductRequest struct {
 	Barcode              *string `json:"barcode"`
 	RetailPrice          *string `json:"retail_price"`
 }
+
+type CreateTenantRequest struct {
+	TenantName string                 `json:"tenant_name" example:"Acme Corporation"`
+	Slug       string                 `json:"slug" example:"acme"`
+	DbConnStr  string                 `json:"db_conn_str" example:"postgres://user:pass@localhost:5432/acme_db"`
+	IsActive   bool                   `json:"is_active" example:"true"`
+	Settings   map[string]interface{} `json:"settings"`
+}
+
+type UpdateTenantRequest struct {
+	TenantName *string                `json:"tenant_name,omitempty" example:"Acme Corp"`
+	Slug       *string                `json:"slug,omitempty" example:"acme-updated"`
+	DbConnStr  *string                `json:"db_conn_str,omitempty" example:"postgres://user:pass@localhost:5432/new_db"`
+	IsActive   *bool                  `json:"is_active,omitempty" example:"false"`
+	Settings   map[string]interface{} `json:"settings"`
+}
+
+type TenantResponse struct {
+	ID         string                 `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	TenantName string                 `json:"tenant_name" example:"Acme Corporation"`
+	Slug       string                 `json:"slug" example:"acme"`
+	DbConnStr  string                 `json:"db_conn_str" example:"postgres://user:pass@localhost:5432/acme_db"`
+	IsActive   bool                   `json:"is_active" example:"true"`
+	Settings   map[string]interface{} `json:"settings"`
+	CreatedAt  string                 `json:"created_at" example:"2025-01-01T10:00:00Z"`
+	UpdatedAt  string                 `json:"updated_at" example:"2025-01-01T10:00:00Z"`
+}
