@@ -392,3 +392,50 @@ type TenantResponse struct {
 	CreatedAt  string                 `json:"created_at" example:"2025-01-01T10:00:00Z"`
 	UpdatedAt  string                 `json:"updated_at" example:"2025-01-01T10:00:00Z"`
 }
+
+type AssignRoleToUserRequest struct {
+	RoleID   int32       `json:"role_id" example:"1"`
+	StoreID  *int32      `json:"store_id,omitempty" example:"2"`
+	Metadata interface{} `json:"metadata"`
+}
+
+// CreateStoreRequest represents request body for creating a store
+type CreateStoreRequest struct {
+	Name          string                 `json:"name" example:"Main Warehouse"`
+	Code          string                 `json:"code" example:"MAIN_WH"`
+	StoreType     *string                `json:"store_type,omitempty" example:"warehouse"`
+	ParentStoreID *int32                 `json:"parent_store_id,omitempty"` // no example`
+	IsWarehouse   bool                   `json:"is_warehouse" example:"true"`
+	IsPOSEnabled  bool                   `json:"is_pos_enabled" example:"false"`
+	Timezone      *string                `json:"timezone,omitempty" example:"Asia/Karachi"`
+	IsActive      bool                   `json:"is_active" example:"true"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateStoreRequest represents request body for updating a store
+type UpdateStoreRequest struct {
+	Name         *string                `json:"name,omitempty"`
+	StoreType    *string                `json:"store_type,omitempty"`
+	IsWarehouse  *bool                  `json:"is_warehouse,omitempty"`
+	IsPOSEnabled *bool                  `json:"is_pos_enabled,omitempty"`
+	Timezone     *string                `json:"timezone,omitempty"`
+	IsActive     *bool                  `json:"is_active,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// StoreResponse represents a store object in responses
+type StoreResponse struct {
+	ID             int32                  `json:"id" example:"1"`
+	OrganizationID int32                  `json:"organization_id" example:"1"`
+	ParentStoreID  *int32                 `json:"parent_store_id,omitempty"` // no example
+	Name           string                 `json:"name" example:"Main Warehouse"`
+	Code           string                 `json:"code" example:"MAIN_WH"`
+	StoreType      string                 `json:"store_type" example:"warehouse"`
+	IsWarehouse    bool                   `json:"is_warehouse" example:"true"`
+	IsPOSEnabled   bool                   `json:"is_pos_enabled" example:"false"`
+	Timezone       string                 `json:"timezone" example:"Asia/Karachi"`
+	IsActive       bool                   `json:"is_active" example:"true"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt      string                 `json:"created_at" example:"2026-02-04T10:15:30Z"`
+	UpdatedAt      string                 `json:"updated_at" example:"2026-02-04T10:15:30Z"`
+}

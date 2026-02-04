@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"strconv"
 
 	"NEMBUS/internal/repository"
@@ -188,29 +190,49 @@ func (uc *UserUseCase) ListUsers(ctx context.Context, limit, offset int32) *repo
 	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
 }
 
+func decodeJSONMetadata(b []byte) (map[string]interface{}, error) {
+	if len(b) == 0 {
+		return map[string]interface{}{}, nil
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(b, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 // AssignRoleToUser assigns a role to a user
 func (uc *UserUseCase) AssignRoleToUser(
 	ctx context.Context,
 	userID int32,
 	roleID int32,
+	storeID *int32, // 👈 optional
 	metadata []byte,
 ) *repository.Response {
 
+	log.Printf("[AssignRoleToUser] start | userID=%d roleID=%d storeID=%v", userID, roleID, storeID)
+
 	// 1. Repo check
 	if uc.repo == nil {
+		log.Println("[AssignRoleToUser] repository not set")
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	// 2. Validation
 	if userID <= 0 {
+		log.Println("[AssignRoleToUser] invalid user id")
 		return utils.NewResponse(utils.CodeBadReq, "invalid user id", nil)
 	}
 
 	if roleID <= 0 {
+		log.Println("[AssignRoleToUser] invalid role id")
 		return utils.NewResponse(utils.CodeBadReq, "invalid role id", nil)
 	}
 
 	if metadata == nil {
+		log.Println("[AssignRoleToUser] metadata is nil, defaulting to {}")
 		metadata = []byte("{}")
 	}
 
@@ -220,10 +242,12 @@ func (uc *UserUseCase) AssignRoleToUser(
 		RoleID: roleID,
 	})
 	if err != nil {
+		log.Printf("[AssignRoleToUser] failed to check user role | err=%v", err)
 		return utils.NewResponse(utils.CodeError, "failed to check user role", nil)
 	}
 
 	if hasRole {
+		log.Printf("[AssignRoleToUser] user already has role | userID=%d roleID=%d", userID, roleID)
 		return utils.NewResponse(
 			utils.CodeBadReq,
 			"user already has this role",
@@ -232,14 +256,82 @@ func (uc *UserUseCase) AssignRoleToUser(
 	}
 
 	// 4. Assign role
+	log.Printf("[AssignRoleToUser] assigning role | userID=%d roleID=%d", userID, roleID)
 	userRole, err := uc.repo.AssignRoleToUser(ctx, repository.AssignRoleToUserParams{
 		UserID:   userID,
 		RoleID:   roleID,
 		Metadata: metadata,
 	})
 	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to assign role", nil)
+		log.Printf("[AssignRoleToUser] failed to assign role | err=%v", err)
+		return utils.NewResponse(utils.CodeBadReq, "failed to assign role", nil)
 	}
+
+	// After Assigning Role → assign store access
+	log.Println("[AssignRoleToUser] role assigned, fetching role metadata")
+
+	// 3. Fetch role
+	role, err := uc.repo.GetRole(ctx, roleID)
+	if err != nil {
+		log.Printf("[AssignRoleToUser] failed to fetch role | roleID=%d err=%v", roleID, err)
+		return utils.NewResponse(utils.CodeBadReq, "failed to fetch role", nil)
+	}
+
+	// 4. Decode role metadata (BASE64 → JSON)
+	roleMetadata, err := decodeJSONMetadata(role.Metadata)
+	if err != nil {
+		log.Printf("[AssignRoleToUser] failed to decode role metadata | err=%v", err)
+		return utils.NewResponse(utils.CodeBadReq, "invalid role metadata", nil)
+	}
+
+	scope, ok := roleMetadata["scope"].(string)
+	if !ok || scope == "" {
+		log.Println("[AssignRoleToUser] role scope missing")
+		return utils.NewResponse(utils.CodeError, "role scope missing", nil)
+	}
+
+	log.Printf("[AssignRoleToUser] role scope detected | scope=%s", scope)
+
+	switch scope {
+
+	case "own":
+		log.Println("[AssignRoleToUser] processing OWN scope")
+
+		if storeID == nil || *storeID <= 0 {
+			log.Println("[AssignRoleToUser] store_id missing for own scope")
+			return utils.NewResponse(
+				utils.CodeBadReq,
+				"store_id is required for own scope",
+				nil,
+			)
+		}
+
+		ownMetadata := map[string]interface{}{
+			"scope":    "own",
+			"storeids": *storeID,
+		}
+
+		metaBytes, _ := json.Marshal(ownMetadata)
+		metadata = metaBytes
+
+		log.Printf("[AssignRoleToUser] own scope metadata attached | storeID=%d", *storeID)
+
+	case "all":
+		log.Println("[AssignRoleToUser] ALL scope detected (no action yet)")
+
+	case "specific":
+		log.Println("[AssignRoleToUser] SPECIFIC scope detected (no action yet)")
+
+	default:
+		log.Printf("[AssignRoleToUser] invalid role scope | scope=%s", scope)
+		return utils.NewResponse(
+			utils.CodeBadReq,
+			"invalid role scope",
+			nil,
+		)
+	}
+
+	log.Printf("[AssignRoleToUser] success | userID=%d roleID=%d scope=%s", userID, roleID, scope)
 
 	// 5. Success
 	return utils.NewResponse(
