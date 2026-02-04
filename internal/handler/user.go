@@ -166,7 +166,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "User ID"
-// @Param        body          body      object  true  "Role assignment data (role_id, metadata)"
+// @Param        body          body      AssignRoleToUserRequest  true  "Role assignment data (role_id, store_id optional, metadata)"
 // @Success      201           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -194,10 +194,7 @@ func (h *UserHandler) AssignRoleToUser(c *gin.Context) {
 	}
 
 	// Parse request body
-	var req struct {
-		RoleID   int32       `json:"role_id"`
-		Metadata interface{} `json:"metadata"`
-	}
+	var req AssignRoleToUserRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(
@@ -222,6 +219,7 @@ func (h *UserHandler) AssignRoleToUser(c *gin.Context) {
 		c.Request.Context(),
 		int32(userID),
 		req.RoleID,
+		req.StoreID,
 		metadataBytes,
 	)
 
