@@ -2,12 +2,41 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 
 	"NEMBUS/internal/repository"
 	"NEMBUS/utils"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// RoleOutput is the response shape for role APIs. Metadata is json.RawMessage
+// so JSONB from DB marshals as embedded JSON instead of bytes.
+type RoleOutput struct {
+	ID           int32            `json:"id"`
+	Name         string           `json:"name"`
+	Code         string           `json:"code"`
+	Description  pgtype.Text      `json:"description"`
+	IsSystemRole pgtype.Bool      `json:"is_system_role"`
+	IsActive     pgtype.Bool      `json:"is_active"`
+	Metadata     json.RawMessage  `json:"metadata"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func roleToOutput(r repository.Role) RoleOutput {
+	return RoleOutput{
+		ID:           r.ID,
+		Name:         r.Name,
+		Code:         r.Code,
+		Description:  r.Description,
+		IsSystemRole: r.IsSystemRole,
+		IsActive:     r.IsActive,
+		Metadata:     utils.BytesToJSONRawMessage(r.Metadata),
+		CreatedAt:    r.CreatedAt,
+		UpdatedAt:    r.UpdatedAt,
+	}
+}
 
 type RolePermissionInput struct {
 	PermissionID int32
@@ -73,7 +102,7 @@ func (uc *RoleUseCase) CreateRole(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "role created successfully", role)
+	return utils.NewResponse(utils.CodeCreated, "role created successfully", roleToOutput(role))
 }
 
 // GetRole gets a role by ID.
@@ -87,7 +116,7 @@ func (uc *RoleUseCase) GetRole(ctx context.Context, id int32) *repository.Respon
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "role fetched successfully", role)
+	return utils.NewResponse(utils.CodeOK, "role fetched successfully", roleToOutput(role))
 }
 
 // GetRoleByCode gets a role by its code.
@@ -104,7 +133,7 @@ func (uc *RoleUseCase) GetRoleByCode(ctx context.Context, code string) *reposito
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "role fetched successfully", role)
+	return utils.NewResponse(utils.CodeOK, "role fetched successfully", roleToOutput(role))
 }
 
 // ListRoles lists all roles.
@@ -117,8 +146,11 @@ func (uc *RoleUseCase) ListRoles(ctx context.Context) *repository.Response {
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "roles fetched successfully", roles)
+	out := make([]RoleOutput, len(roles))
+	for i := range roles {
+		out[i] = roleToOutput(roles[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "roles fetched successfully", out)
 }
 
 // ListActiveRoles lists all active roles.
@@ -131,8 +163,11 @@ func (uc *RoleUseCase) ListActiveRoles(ctx context.Context) *repository.Response
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "active roles fetched successfully", roles)
+	out := make([]RoleOutput, len(roles))
+	for i := range roles {
+		out[i] = roleToOutput(roles[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "active roles fetched successfully", out)
 }
 
 // ListNonSystemRoles lists all non-system roles.
@@ -145,8 +180,11 @@ func (uc *RoleUseCase) ListNonSystemRoles(ctx context.Context) *repository.Respo
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "non-system roles fetched successfully", roles)
+	out := make([]RoleOutput, len(roles))
+	for i := range roles {
+		out[i] = roleToOutput(roles[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "non-system roles fetched successfully", out)
 }
 
 // UpdateRole updates an existing role.
@@ -188,7 +226,7 @@ func (uc *RoleUseCase) UpdateRole(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "role updated successfully", role)
+	return utils.NewResponse(utils.CodeOK, "role updated successfully", roleToOutput(role))
 }
 
 // DeleteRole deletes a role by ID.
@@ -321,7 +359,7 @@ func (uc *RoleUseCase) ToggleRoleActive(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "role status updated successfully", role)
+	return utils.NewResponse(utils.CodeOK, "role status updated successfully", roleToOutput(role))
 }
 
 // CheckRoleHasPermission checks if a role has a specific permission.

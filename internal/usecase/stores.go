@@ -11,6 +11,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// StoreOutput is the response shape for store APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
+type StoreOutput struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	ParentStoreID  pgtype.Int4      `json:"parent_store_id"`
+	Name           string           `json:"name"`
+	Code           string           `json:"code"`
+	StoreType      pgtype.Text      `json:"store_type"`
+	IsWarehouse    pgtype.Bool      `json:"is_warehouse"`
+	IsPosEnabled   pgtype.Bool      `json:"is_pos_enabled"`
+	Timezone       pgtype.Text      `json:"timezone"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+func storeToOutput(s repository.Store) StoreOutput {
+	return StoreOutput{
+		ID:             s.ID,
+		OrganizationID: s.OrganizationID,
+		ParentStoreID:  s.ParentStoreID,
+		Name:           s.Name,
+		Code:           s.Code,
+		StoreType:      s.StoreType,
+		IsWarehouse:    s.IsWarehouse,
+		IsPosEnabled:   s.IsPosEnabled,
+		Timezone:       s.Timezone,
+		IsActive:       s.IsActive,
+		Metadata:       utils.BytesToJSONRawMessage(s.Metadata),
+		CreatedAt:      s.CreatedAt,
+		UpdatedAt:      s.UpdatedAt,
+	}
+}
+
 type StoreUseCase struct {
 	repo *repository.Queries
 }
@@ -122,7 +157,7 @@ func (uc *StoreUseCase) CreateStore(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "store created successfully", store)
+	return utils.NewResponse(utils.CodeCreated, "store created successfully", storeToOutput(store))
 }
 
 // --------------------------------------------------
@@ -144,7 +179,7 @@ func (uc *StoreUseCase) GetStore(ctx context.Context, id string) *repository.Res
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "store fetched successfully", store)
+	return utils.NewResponse(utils.CodeOK, "store fetched successfully", storeToOutput(store))
 }
 
 // --------------------------------------------------
@@ -188,8 +223,11 @@ func (uc *StoreUseCase) ListStores(
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "stores fetched successfully", stores)
+	out := make([]StoreOutput, len(stores))
+	for i := range stores {
+		out[i] = storeToOutput(stores[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "stores fetched successfully", out)
 }
 
 // --------------------------------------------------
@@ -268,7 +306,7 @@ func (uc *StoreUseCase) UpdateStore(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "store updated successfully", store)
+	return utils.NewResponse(utils.CodeOK, "store updated successfully", storeToOutput(store))
 }
 
 // --------------------------------------------------
@@ -310,8 +348,11 @@ func (uc *StoreUseCase) ListPOSEnabledStores(ctx context.Context) *repository.Re
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "POS enabled stores fetched successfully", stores)
+	out := make([]StoreOutput, len(stores))
+	for i := range stores {
+		out[i] = storeToOutput(stores[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "POS enabled stores fetched successfully", out)
 }
 
 // --------------------------------------------------
@@ -332,8 +373,11 @@ func (uc *StoreUseCase) ListWarehouseStores(ctx context.Context) *repository.Res
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "warehouse stores fetched successfully", stores)
+	out := make([]StoreOutput, len(stores))
+	for i := range stores {
+		out[i] = storeToOutput(stores[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "warehouse stores fetched successfully", out)
 }
 
 // --------------------------------------------------
@@ -356,8 +400,11 @@ func (uc *StoreUseCase) ListStoresByParent(ctx context.Context, parentStoreID in
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "stores by parent fetched successfully", stores)
+	out := make([]StoreOutput, len(stores))
+	for i := range stores {
+		out[i] = storeToOutput(stores[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "stores by parent fetched successfully", out)
 }
 
 // --------------------------------------------------
