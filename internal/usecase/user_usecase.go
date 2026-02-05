@@ -354,3 +354,281 @@ func (uc *UserUseCase) GetUsersByRole(ctx context.Context, roleID int32) *reposi
 
 	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
 }
+
+// UpdateUser updates user details
+func (uc *UserUseCase) UpdateUser(
+	ctx context.Context,
+	id int32,
+	email, firstName, lastName, employeeCode *string,
+	isActive *bool,
+	metadata []byte,
+) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	var emailText, firstNameText, lastNameText, employeeCodeText pgtype.Text
+	if email != nil {
+		emailText = pgtype.Text{String: *email, Valid: true}
+	}
+	if firstName != nil {
+		firstNameText = pgtype.Text{String: *firstName, Valid: true}
+	}
+	if lastName != nil {
+		lastNameText = pgtype.Text{String: *lastName, Valid: true}
+	}
+	if employeeCode != nil {
+		employeeCodeText = pgtype.Text{String: *employeeCode, Valid: true}
+	}
+
+	var isActivePG pgtype.Bool
+	if isActive != nil {
+		isActivePG = pgtype.Bool{Bool: *isActive, Valid: true}
+	} else {
+		isActivePG = pgtype.Bool{Valid: false}
+	}
+
+	user, err := uc.repo.UpdateUser(ctx, repository.UpdateUserParams{
+		Email:        emailText,
+		FirstName:    firstNameText,
+		LastName:     lastNameText,
+		EmployeeCode: employeeCodeText,
+		IsActive:     isActivePG,
+		Metadata:     metadata,
+		ID:           id,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "user updated successfully", user)
+}
+
+// UpdateUserPassword updates a user's password
+func (uc *UserUseCase) UpdateUserPassword(ctx context.Context, userID int32, newPassword string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to hash password", nil)
+	}
+
+	row, err := uc.repo.UpdateUserPassword(ctx, repository.UpdateUserPasswordParams{
+		ID:           userID,
+		PasswordHash: string(hashed),
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "password updated successfully", row)
+}
+
+// GrantStoreAccess grants a user access to a store
+func (uc *UserUseCase) GrantStoreAccess(
+	ctx context.Context,
+	userID, storeID int32,
+	isPrimary bool,
+	metadata []byte,
+) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	access, err := uc.repo.GrantStoreAccessToUser(ctx, repository.GrantStoreAccessToUserParams{
+		UserID:    userID,
+		StoreID:   storeID,
+		IsPrimary: pgtype.Bool{Bool: isPrimary, Valid: true},
+		Metadata:  metadata,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "store access granted successfully", access)
+}
+
+// SetUserPrimaryStore unsets other primary stores for a user
+func (uc *UserUseCase) SetUserPrimaryStore(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	if err := uc.repo.SetUserPrimaryStore(ctx, userID); err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "user primary store unset successfully", nil)
+}
+
+// RevokeRole revokes a specific role from a user
+func (uc *UserUseCase) RevokeRole(ctx context.Context, userID, roleID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	if err := uc.repo.RevokeRoleFromUser(ctx, repository.RevokeRoleFromUserParams{
+		UserID: userID,
+		RoleID: roleID,
+	}); err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "role revoked successfully", nil)
+}
+
+// RevokeAllRoles revokes all roles from a user
+func (uc *UserUseCase) RevokeAllRoles(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	if err := uc.repo.RevokeAllRolesFromUser(ctx, userID); err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "all roles revoked successfully", nil)
+}
+
+// RevokeStoreAccess revokes a user's access to a store
+func (uc *UserUseCase) RevokeStoreAccess(ctx context.Context, userID, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	if err := uc.repo.RevokeStoreAccessFromUser(ctx, repository.RevokeStoreAccessFromUserParams{
+		UserID:  userID,
+		StoreID: storeID,
+	}); err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "store access revoked successfully", nil)
+}
+
+// RevokeAllStoreAccess revokes all store access from a user
+func (uc *UserUseCase) RevokeAllStoreAccess(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	if err := uc.repo.RevokeAllStoreAccessFromUser(ctx, userID); err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "all store access revoked successfully", nil)
+}
+
+// SearchUsers searches users by term
+func (uc *UserUseCase) SearchUsers(ctx context.Context, searchTerm string, limit, offset int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	orgResp := uc.getOrganizationID(ctx)
+	if orgResp.StatusCode != utils.CodeOK {
+		return orgResp
+	}
+	orgID := orgResp.Data.(int32)
+
+	users, err := uc.repo.SearchUsers(ctx, repository.SearchUsersParams{
+		OrganizationID: orgID,
+		Column2:        pgtype.Text{String: searchTerm, Valid: true},
+		Limit:          limit,
+		Offset:         offset,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
+}
+
+// GetUserWithDetails fetches user with roles and stores
+func (uc *UserUseCase) GetUserWithDetails(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	user, err := uc.repo.GetUserWithDetails(ctx, userID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "user fetched with details successfully", user)
+}
+
+// ListUsersWithDetails lists users with roles and stores
+func (uc *UserUseCase) ListUsersWithDetails(ctx context.Context, limit, offset int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	orgResp := uc.getOrganizationID(ctx)
+	if orgResp.StatusCode != utils.CodeOK {
+		return orgResp
+	}
+	orgID := orgResp.Data.(int32)
+
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	users, err := uc.repo.ListUsersWithDetails(ctx, repository.ListUsersWithDetailsParams{
+		OrganizationID: orgID,
+		Limit:          limit,
+		Offset:         offset,
+		IsActive:       pgtype.Bool{Valid: false},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched with details successfully", users)
+}
+
+// GetStoreUsers fetches all users for a store
+func (uc *UserUseCase) GetStoreUsers(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	users, err := uc.repo.GetStoreUsers(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched for store successfully", users)
+}
+
+// GetUserPrimaryStore fetches user's primary store
+func (uc *UserUseCase) GetUserPrimaryStore(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	store, err := uc.repo.GetUserPrimaryStore(ctx, userID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "user primary store fetched successfully", store)
+}
+
+// GetUserStores fetches all stores for a user
+func (uc *UserUseCase) GetUserStores(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	stores, err := uc.repo.GetUserStores(ctx, userID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "user stores fetched successfully", stores)
+}

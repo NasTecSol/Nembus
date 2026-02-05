@@ -18,6 +18,7 @@ func RegisterTenantRoutes(r *gin.RouterGroup, h *handler.TenantHandler) {
 
 		// Special cases
 		tenants.GET("/:slug/any", h.GetTenantBySlugAny)
-		tenants.PUT("/:id/deactivate", h.DeactivateTenant)
+		tenants.PUT("/deactivate/:slug", h.DeactivateTenant)
+
 	}
 }

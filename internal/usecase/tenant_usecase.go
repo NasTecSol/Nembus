@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"NEMBUS/internal/repository"
 	"NEMBUS/utils"
@@ -36,7 +38,41 @@ func (uc *TenantUseCase) CreateTenant(ctx context.Context, req repository.Create
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "tenant created successfully", tenant)
+	// --- Decode settings ---
+	var decodedSettings any
+	if len(tenant.Settings) > 0 {
+		if err := json.Unmarshal(tenant.Settings, &decodedSettings); err != nil {
+			decodedSettings = string(tenant.Settings)
+		}
+	}
+
+	// --- Convert pgtype / uuid to Go-native ---
+	// --- Convert pgtype / uuid to Go-native ---
+	isActive := tenant.IsActive.Bool
+	createdAt := tenant.CreatedAt.Time
+	updatedAt := tenant.UpdatedAt.Time
+
+	responseTenant := struct {
+		ID         string    `json:"id"`
+		TenantName string    `json:"tenant_name"`
+		Slug       string    `json:"slug"`
+		DbConnStr  string    `json:"db_conn_str"`
+		IsActive   bool      `json:"is_active"`
+		Settings   any       `json:"settings"`
+		CreatedAt  time.Time `json:"created_at"`
+		UpdatedAt  time.Time `json:"updated_at"`
+	}{
+		ID:         tenant.ID.String(),
+		TenantName: tenant.TenantName,
+		Slug:       tenant.Slug,
+		DbConnStr:  tenant.DbConnStr,
+		IsActive:   isActive,
+		Settings:   decodedSettings,
+		CreatedAt:  createdAt,
+		UpdatedAt:  updatedAt,
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "tenant created successfully", responseTenant)
 }
 
 // GetTenantBySlug returns only active tenant
@@ -106,25 +142,67 @@ func (uc *TenantUseCase) UpdateTenant(
 	}
 
 	req.ID = id
-
 	tenant, err := uc.repo.UpdateTenant(ctx, req)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "tenant updated successfully", tenant)
+	// Optional: decode settings for response
+	var decodedSettings any
+	if len(tenant.Settings) > 0 {
+		if err := json.Unmarshal(tenant.Settings, &decodedSettings); err != nil {
+			decodedSettings = string(tenant.Settings)
+		}
+	}
+
+	responseTenant := struct {
+		ID         string    `json:"id"`
+		TenantName string    `json:"tenant_name"`
+		Slug       string    `json:"slug"`
+		DbConnStr  string    `json:"db_conn_str"`
+		IsActive   bool      `json:"is_active"`
+		Settings   any       `json:"settings"`
+		CreatedAt  time.Time `json:"created_at"`
+		UpdatedAt  time.Time `json:"updated_at"`
+	}{
+		ID:         tenant.ID.String(),
+		TenantName: tenant.TenantName,
+		Slug:       tenant.Slug,
+		DbConnStr:  tenant.DbConnStr,
+		IsActive:   tenant.IsActive.Bool,
+		Settings:   decodedSettings,
+		CreatedAt:  tenant.CreatedAt.Time,
+		UpdatedAt:  tenant.UpdatedAt.Time,
+	}
+
+	return utils.NewResponse(utils.CodeOK, "tenant updated successfully", responseTenant)
 }
 
-// DeactivateTenant is a soft-disable helper
-func (uc *TenantUseCase) DeactivateTenant(ctx context.Context, id uuid.UUID) *repository.Response {
+func (uc *TenantUseCase) DeactivateTenant(ctx context.Context, slug string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	tenant, err := uc.repo.UpdateTenant(ctx, repository.UpdateTenantParams{
-		ID:       id,
-		IsActive: pgtype.Bool{Bool: false, Valid: true},
-	})
+	// 1️⃣ Fetch current tenant by slug
+	currentResp := uc.GetTenantBySlugAny(ctx, slug)
+	if currentResp.StatusCode != utils.CodeOK {
+		return utils.NewResponse(utils.CodeError, "tenant not found", nil)
+	}
+
+	currentTenant := currentResp.Data.(repository.Tenant) // cast to Tenant
+
+	// 2️⃣ Prepare update using existing values, only change IsActive
+	update := repository.UpdateTenantParams{
+		ID:         currentTenant.ID,
+		TenantName: currentTenant.TenantName,
+		Slug:       currentTenant.Slug,
+		DbConnStr:  currentTenant.DbConnStr,
+		IsActive:   pgtype.Bool{Bool: false, Valid: true}, // only deactivate
+		Settings:   currentTenant.Settings,
+	}
+
+	// 3️⃣ Call repository to update
+	tenant, err := uc.repo.UpdateTenant(ctx, update)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
