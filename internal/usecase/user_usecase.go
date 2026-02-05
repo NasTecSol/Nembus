@@ -7,12 +7,45 @@ import (
 	"strconv"
 
 	"NEMBUS/internal/repository"
-
-	"NEMBUS/utils" // Assuming your NewResponse is here
+	"NEMBUS/utils"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// UserOutput is the response shape for user APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
+// PasswordHash is never serialized to API responses.
+type UserOutput struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	Username       string           `json:"username"`
+	Email          string           `json:"email"`
+	PasswordHash   string           `json:"-"` // never expose in API
+	FirstName      pgtype.Text      `json:"first_name"`
+	LastName       pgtype.Text      `json:"last_name"`
+	EmployeeCode   pgtype.Text      `json:"employee_code"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+func userToOutput(u repository.User) UserOutput {
+	return UserOutput{
+		ID:             u.ID,
+		OrganizationID: u.OrganizationID,
+		Username:       u.Username,
+		Email:          u.Email,
+		PasswordHash:   "", // never sent (json:"-")
+		FirstName:      u.FirstName,
+		LastName:       u.LastName,
+		EmployeeCode:   u.EmployeeCode,
+		IsActive:       u.IsActive,
+		Metadata:       utils.BytesToJSONRawMessage(u.Metadata),
+		CreatedAt:      u.CreatedAt,
+		UpdatedAt:      u.UpdatedAt,
+	}
+}
 
 type UserUseCase struct {
 	repo *repository.Queries
@@ -133,7 +166,7 @@ func (uc *UserUseCase) CreateUser(ctx context.Context, firstName, lastName, user
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	// Return success response
-	return utils.NewResponse(utils.CodeCreated, "user created successfully", user)
+	return utils.NewResponse(utils.CodeCreated, "user created successfully", userToOutput(user))
 }
 
 // GetUser gets a user by ID
@@ -153,7 +186,7 @@ func (uc *UserUseCase) GetUser(ctx context.Context, id string) *repository.Respo
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "user fetched successfully", user)
+	return utils.NewResponse(utils.CodeOK, "user fetched successfully", userToOutput(user))
 }
 
 // ListUsers lists all users for the organization
@@ -186,8 +219,11 @@ func (uc *UserUseCase) ListUsers(ctx context.Context, limit, offset int32) *repo
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
+	out := make([]UserOutput, len(users))
+	for i := range users {
+		out[i] = userToOutput(users[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "users fetched successfully", out)
 }
 
 func decodeJSONMetadata(b []byte) (map[string]interface{}, error) {
@@ -351,8 +387,11 @@ func (uc *UserUseCase) GetUsersByRole(ctx context.Context, roleID int32) *reposi
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
+	out := make([]UserOutput, len(users))
+	for i := range users {
+		out[i] = userToOutput(users[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "users fetched successfully", out)
 }
 
 // UpdateUser updates user details

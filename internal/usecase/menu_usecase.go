@@ -2,12 +2,46 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 
 	"NEMBUS/internal/repository"
 	"NEMBUS/utils"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// MenuOutput is the response shape for menu APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
+type MenuOutput struct {
+	ID           int32            `json:"id"`
+	ModuleID     int32            `json:"module_id"`
+	ParentMenuID pgtype.Int4      `json:"parent_menu_id"`
+	Name         string           `json:"name"`
+	Code         string           `json:"code"`
+	RoutePath    pgtype.Text      `json:"route_path"`
+	Icon         pgtype.Text      `json:"icon"`
+	DisplayOrder pgtype.Int4      `json:"display_order"`
+	IsActive     pgtype.Bool      `json:"is_active"`
+	Metadata     json.RawMessage  `json:"metadata"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func menuToOutput(m repository.Menu) MenuOutput {
+	return MenuOutput{
+		ID:           m.ID,
+		ModuleID:     m.ModuleID,
+		ParentMenuID: m.ParentMenuID,
+		Name:         m.Name,
+		Code:         m.Code,
+		RoutePath:    m.RoutePath,
+		Icon:         m.Icon,
+		DisplayOrder: m.DisplayOrder,
+		IsActive:     m.IsActive,
+		Metadata:     utils.BytesToJSONRawMessage(m.Metadata),
+		CreatedAt:    m.CreatedAt,
+		UpdatedAt:    m.UpdatedAt,
+	}
+}
 
 type MenuUseCase struct {
 	repo *repository.Queries
@@ -67,7 +101,7 @@ func (uc *MenuUseCase) CreateMenu(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "menu created successfully", menu)
+	return utils.NewResponse(utils.CodeCreated, "menu created successfully", menuToOutput(menu))
 }
 
 // 🔍 Get Menu by ID
@@ -81,7 +115,7 @@ func (uc *MenuUseCase) GetMenu(ctx context.Context, id int32) *repository.Respon
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "menu fetched successfully", menu)
+	return utils.NewResponse(utils.CodeOK, "menu fetched successfully", menuToOutput(menu))
 }
 
 // Get Menu by Code
@@ -108,7 +142,7 @@ func (uc *MenuUseCase) GetMenuByCode(
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "menu fetched successfully", menu)
+	return utils.NewResponse(utils.CodeOK, "menu fetched successfully", menuToOutput(menu))
 }
 
 // 📋 List Menus
@@ -121,8 +155,11 @@ func (uc *MenuUseCase) ListMenus(ctx context.Context) *repository.Response {
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "menus fetched successfully", menus)
+	out := make([]MenuOutput, len(menus))
+	for i := range menus {
+		out[i] = menuToOutput(menus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "menus fetched successfully", out)
 }
 
 // 📦 List Menus by Module
@@ -139,8 +176,11 @@ func (uc *MenuUseCase) ListMenusByModule(
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "menus fetched successfully", menus)
+	out := make([]MenuOutput, len(menus))
+	for i := range menus {
+		out[i] = menuToOutput(menus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "menus fetched successfully", out)
 }
 
 // 🟢 List Active Menus by Module
@@ -157,8 +197,11 @@ func (uc *MenuUseCase) ListActiveMenusByModule(
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "active menus fetched successfully", menus)
+	out := make([]MenuOutput, len(menus))
+	for i := range menus {
+		out[i] = menuToOutput(menus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "active menus fetched successfully", out)
 }
 
 // 🌳 List Menus by Parent
@@ -175,8 +218,11 @@ func (uc *MenuUseCase) ListMenusByParent(
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "child menus fetched successfully", menus)
+	out := make([]MenuOutput, len(menus))
+	for i := range menus {
+		out[i] = menuToOutput(menus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "child menus fetched successfully", out)
 }
 
 // ✏️ Update Menu
@@ -215,7 +261,7 @@ func (uc *MenuUseCase) UpdateMenu(
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "menu updated successfully", menu)
+	return utils.NewResponse(utils.CodeOK, "menu updated successfully", menuToOutput(menu))
 }
 
 // 🔁 Toggle Menu Active
@@ -238,7 +284,7 @@ func (uc *MenuUseCase) ToggleMenuActive(
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "menu status updated successfully", menu)
+	return utils.NewResponse(utils.CodeOK, "menu status updated successfully", menuToOutput(menu))
 }
 
 // 🗑 Delete Menu
