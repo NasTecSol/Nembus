@@ -157,7 +157,7 @@ type AssignPermissionToRoleRequest struct {
 
 // RemovePermissionFromRoleRequest represents request body for bulk permission removal
 type RemovePermissionFromRoleRequest struct {
-	PermissionIDs []int32 `json:"permission_ids" example:"[2,3,4]"`
+	PermissionIDs []int32 `json:"permission_ids"`
 }
 
 // RoleNavigationResponse represents the response for GetNavigationByRoleCodeWithUserCounts
@@ -394,9 +394,9 @@ type TenantResponse struct {
 }
 
 type AssignRoleToUserRequest struct {
-	RoleID   int32       `json:"role_id" example:"1"`
-	StoreID  *int32      `json:"store_id,omitempty" example:"2"`
-	Metadata interface{} `json:"metadata"`
+	RoleID   int32                  `json:"role_id" binding:"required" example:"1"`
+	StoreID  *int32                 `json:"store_id,omitempty" example:"10"` // optional
+	Metadata map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // CreateStoreRequest represents request body for creating a store
@@ -438,4 +438,34 @@ type StoreResponse struct {
 	Metadata       map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 	CreatedAt      string                 `json:"created_at" example:"2026-02-04T10:15:30Z"`
 	UpdatedAt      string                 `json:"updated_at" example:"2026-02-04T10:15:30Z"`
+}
+
+// UpdateUserRequest defines the request body for updating a user
+type UpdateUserRequest struct {
+	Email        *string                `json:"email,omitempty"`
+	FirstName    *string                `json:"first_name,omitempty"`
+	LastName     *string                `json:"last_name,omitempty"`
+	EmployeeCode *string                `json:"employee_code,omitempty"`
+	IsActive     *bool                  `json:"is_active,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// UpdateUserPasswordRequest defines the request body for updating a user's password
+type UpdateUserPasswordRequest struct {
+	NewPassword string `json:"new_password" binding:"required"`
+}
+
+// GrantStoreAccessRequest defines the request body for granting store access to a user
+type GrantStoreAccessRequest struct {
+	StoreID   int32                  `json:"store_id" binding:"required"` // ID of the store to grant access
+	IsPrimary bool                   `json:"is_primary"`                  // Whether this store should be the primary store
+	Metadata  map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type RevokeRoleRequest struct {
+	RoleID int32 `json:"role_id" binding:"required" example:"1"`
+}
+
+type RevokeStoreAccessRequest struct {
+	StoreID int32 `json:"store_id" binding:"required" example:"10"`
 }

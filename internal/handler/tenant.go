@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"NEMBUS/internal/middleware"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TenantHandler holds the use case
@@ -55,14 +57,28 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	var req repository.CreateTenantParams
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var reqBody struct {
+		TenantName string          `json:"tenant_name" binding:"required"`
+		Slug       string          `json:"slug" binding:"required"`
+		DbConnStr  string          `json:"db_conn_str" binding:"required"`
+		IsActive   bool            `json:"is_active" binding:"required"`
+		Settings   json.RawMessage `json:"settings"`
+	}
+
+	if err := c.ShouldBindJSON(&reqBody); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(
 			utils.CodeBadReq,
-			"invalid request body",
+			"invalid request body: "+err.Error(),
 			nil,
 		))
 		return
+	}
+	req := repository.CreateTenantParams{
+		TenantName: reqBody.TenantName,
+		Slug:       reqBody.Slug,
+		DbConnStr:  reqBody.DbConnStr,
+		IsActive:   pgtype.Bool{Bool: reqBody.IsActive}, // no Status
+		Settings:   []byte(reqBody.Settings),
 	}
 
 	resp := h.useCase.CreateTenant(c.Request.Context(), req)
@@ -172,6 +188,7 @@ func (h *TenantHandler) ListAllTenants(c *gin.Context) {
 // @Failure      400  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /api/tenants/{id} [put]
+// Handler for PUT /tenants/:id
 func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -179,6 +196,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
+	// Parse tenant ID from path
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -190,31 +208,50 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 		return
 	}
 
-	var req repository.UpdateTenantParams
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// Bind JSON to an intermediate struct
+	var reqBody struct {
+		TenantName string          `json:"tenant_name"`
+		Slug       string          `json:"slug"`
+		DbConnStr  string          `json:"db_conn_str"`
+		IsActive   bool            `json:"is_active"`
+		Settings   json.RawMessage `json:"settings"`
+	}
+
+	if err := c.ShouldBindJSON(&reqBody); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(
 			utils.CodeBadReq,
-			"invalid request body",
+			"invalid request body: "+err.Error(),
 			nil,
 		))
 		return
+	}
+
+	// Convert to repository type
+	req := repository.UpdateTenantParams{
+		ID:         id,
+		TenantName: reqBody.TenantName,
+		Slug:       reqBody.Slug,
+		DbConnStr:  reqBody.DbConnStr,
+		IsActive:   pgtype.Bool{Bool: reqBody.IsActive}, // no Status needed for pgx/v5
+		Settings:   []byte(reqBody.Settings),
 	}
 
 	resp := h.useCase.UpdateTenant(c.Request.Context(), id, req)
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeactivateTenant handles PUT /tenants/:id/deactivate
+// DeactivateTenant handles PUT /tenants/deactivate/:slug
 // @Summary      Deactivate tenant
 // @Description  Soft deactivate tenant
 // @Tags         tenants
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        id  path  string  true  "Tenant ID"
+// @Param        slug  path  string  true  "Tenant Slug"
 // @Success      200  {object}  TenantResponse
+// @Failure      400  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
-// @Router       /api/tenants/{id}/deactivate [put]
+// @Router       /api/tenants/deactivate/{slug} [put]
 func (h *TenantHandler) DeactivateTenant(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -222,17 +259,18 @@ func (h *TenantHandler) DeactivateTenant(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	idStr := c.Param("id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
+	// 1️⃣ Get tenant slug from path
+	slug := c.Param("slug")
+	if slug == "" {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(
 			utils.CodeBadReq,
-			"invalid tenant id",
+			"invalid tenant slug",
 			nil,
 		))
 		return
 	}
 
-	resp := h.useCase.DeactivateTenant(c.Request.Context(), id)
+	// 2️⃣ Call use case
+	resp := h.useCase.DeactivateTenant(c.Request.Context(), slug)
 	c.JSON(resp.StatusCode, resp)
 }
