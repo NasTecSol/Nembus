@@ -215,29 +215,31 @@ func (uc *TenantUseCase) DeactivateTenant(ctx context.Context, slug string) *rep
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	// 1️⃣ Fetch current tenant by slug
+	// 1️⃣ Fetch current tenant by slug (active or inactive)
 	currentResp := uc.GetTenantBySlugAny(ctx, slug)
 	if currentResp.StatusCode != utils.CodeOK {
 		return utils.NewResponse(utils.CodeError, "tenant not found", nil)
 	}
 
-	currentTenant := currentResp.Data.(repository.Tenant) // cast to Tenant
+	// 2️⃣ Cast to TenantOutput (safe)
+	tenantOutput := currentResp.Data.(TenantOutput)
 
-	// 2️⃣ Prepare update using existing values, only change IsActive
+	// 3️⃣ Prepare update params: only deactivate
 	update := repository.UpdateTenantParams{
-		ID:         currentTenant.ID,
-		TenantName: currentTenant.TenantName,
-		Slug:       currentTenant.Slug,
-		DbConnStr:  currentTenant.DbConnStr,
-		IsActive:   pgtype.Bool{Bool: false, Valid: true}, // only deactivate
-		Settings:   currentTenant.Settings,
+		ID:         tenantOutput.ID,
+		TenantName: tenantOutput.TenantName,
+		Slug:       tenantOutput.Slug,
+		DbConnStr:  tenantOutput.DbConnStr,
+		IsActive:   pgtype.Bool{Bool: false, Valid: true}, // deactivate
+		Settings:   tenantOutput.Settings,
 	}
 
-	// 3️⃣ Call repository to update
+	// 4️⃣ Call repository to update
 	tenant, err := uc.repo.UpdateTenant(ctx, update)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
+	// 5️⃣ Return updated tenant as TenantOutput
 	return utils.NewResponse(utils.CodeOK, "tenant deactivated successfully", tenantToOutput(tenant))
 }
