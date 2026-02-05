@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
 	"NEMBUS/internal/repository"
@@ -9,6 +10,35 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// ModuleOutput is the response shape for module APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
+type ModuleOutput struct {
+	ID           int32            `json:"id"`
+	Name         string           `json:"name"`
+	Code         string           `json:"code"`
+	Description  pgtype.Text      `json:"description"`
+	Icon         pgtype.Text      `json:"icon"`
+	IsActive     pgtype.Bool      `json:"is_active"`
+	DisplayOrder pgtype.Int4      `json:"display_order"`
+	Metadata     json.RawMessage  `json:"metadata"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+}
+
+func moduleToOutput(m repository.Module) ModuleOutput {
+	return ModuleOutput{
+		ID:           m.ID,
+		Name:         m.Name,
+		Code:         m.Code,
+		Description:  m.Description,
+		Icon:         m.Icon,
+		IsActive:     m.IsActive,
+		DisplayOrder: m.DisplayOrder,
+		Metadata:     utils.BytesToJSONRawMessage(m.Metadata),
+		CreatedAt:    m.CreatedAt,
+		UpdatedAt:    m.UpdatedAt,
+	}
+}
 
 type ModuleUseCase struct {
 	repo *repository.Queries
@@ -71,7 +101,7 @@ func (uc *ModuleUseCase) CreateModule(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "module created successfully", module)
+	return utils.NewResponse(utils.CodeCreated, "module created successfully", moduleToOutput(module))
 }
 
 // MODULE FETCH USECASE BY ID
@@ -90,7 +120,7 @@ func (uc *ModuleUseCase) GetModule(ctx context.Context, id string) *repository.R
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "module fetched successfully", module)
+	return utils.NewResponse(utils.CodeOK, "module fetched successfully", moduleToOutput(module))
 }
 
 // MODULE FETCH USECASE BY CODE
@@ -108,7 +138,7 @@ func (uc *ModuleUseCase) GetModuleByCode(ctx context.Context, code string) *repo
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "module fetched successfully", module)
+	return utils.NewResponse(utils.CodeOK, "module fetched successfully", moduleToOutput(module))
 }
 
 // MODULE LISTING USECASE
@@ -132,8 +162,11 @@ func (uc *ModuleUseCase) ListModules(
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "modules fetched successfully", modules)
+	out := make([]ModuleOutput, len(modules))
+	for i := range modules {
+		out[i] = moduleToOutput(modules[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "modules fetched successfully", out)
 }
 
 // MODULE UPDATE USECASE
@@ -185,7 +218,7 @@ func (uc *ModuleUseCase) UpdateModule(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "module updated successfully", module)
+	return utils.NewResponse(utils.CodeOK, "module updated successfully", moduleToOutput(module))
 }
 
 // MODULE DELETION USECASE

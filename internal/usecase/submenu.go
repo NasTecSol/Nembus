@@ -2,12 +2,46 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 
 	"NEMBUS/internal/repository"
 	"NEMBUS/utils"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// SubmenuOutput is the response shape for submenu APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
+type SubmenuOutput struct {
+	ID              int32            `json:"id"`
+	MenuID          int32            `json:"menu_id"`
+	ParentSubmenuID pgtype.Int4      `json:"parent_submenu_id"`
+	Name            string           `json:"name"`
+	Code            string           `json:"code"`
+	RoutePath       pgtype.Text      `json:"route_path"`
+	Icon            pgtype.Text      `json:"icon"`
+	DisplayOrder    pgtype.Int4      `json:"display_order"`
+	IsActive        pgtype.Bool      `json:"is_active"`
+	Metadata        json.RawMessage  `json:"metadata"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+}
+
+func submenuToOutput(s repository.Submenu) SubmenuOutput {
+	return SubmenuOutput{
+		ID:              s.ID,
+		MenuID:          s.MenuID,
+		ParentSubmenuID: s.ParentSubmenuID,
+		Name:            s.Name,
+		Code:            s.Code,
+		RoutePath:       s.RoutePath,
+		Icon:            s.Icon,
+		DisplayOrder:    s.DisplayOrder,
+		IsActive:        s.IsActive,
+		Metadata:        utils.BytesToJSONRawMessage(s.Metadata),
+		CreatedAt:       s.CreatedAt,
+		UpdatedAt:       s.UpdatedAt,
+	}
+}
 
 type SubmenuUseCase struct {
 	repo *repository.Queries
@@ -69,7 +103,7 @@ func (uc *SubmenuUseCase) CreateSubmenu(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "submenu created successfully", submenu)
+	return utils.NewResponse(utils.CodeCreated, "submenu created successfully", submenuToOutput(submenu))
 }
 
 // GetSubmenu by ID
@@ -83,7 +117,7 @@ func (uc *SubmenuUseCase) GetSubmenu(ctx context.Context, id int32) *repository.
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "submenu fetched successfully", submenu)
+	return utils.NewResponse(utils.CodeOK, "submenu fetched successfully", submenuToOutput(submenu))
 }
 
 // GetSubmenuByCode fetches submenu by menu ID and code
@@ -105,7 +139,7 @@ func (uc *SubmenuUseCase) GetSubmenuByCode(ctx context.Context, menuID int32, co
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "submenu fetched successfully", submenu)
+	return utils.NewResponse(utils.CodeOK, "submenu fetched successfully", submenuToOutput(submenu))
 }
 
 // ListSubmenus lists all submenus
@@ -118,8 +152,11 @@ func (uc *SubmenuUseCase) ListSubmenus(ctx context.Context) *repository.Response
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "submenus fetched successfully", submenus)
+	out := make([]SubmenuOutput, len(submenus))
+	for i := range submenus {
+		out[i] = submenuToOutput(submenus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "submenus fetched successfully", out)
 }
 
 // ListSubmenusByMenu lists submenus under a specific menu
@@ -132,8 +169,11 @@ func (uc *SubmenuUseCase) ListSubmenusByMenu(ctx context.Context, menuID int32) 
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "submenus fetched successfully", submenus)
+	out := make([]SubmenuOutput, len(submenus))
+	for i := range submenus {
+		out[i] = submenuToOutput(submenus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "submenus fetched successfully", out)
 }
 
 // ListActiveSubmenusByMenu lists only active submenus under a menu
@@ -146,8 +186,11 @@ func (uc *SubmenuUseCase) ListActiveSubmenusByMenu(ctx context.Context, menuID i
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "active submenus fetched successfully", submenus)
+	out := make([]SubmenuOutput, len(submenus))
+	for i := range submenus {
+		out[i] = submenuToOutput(submenus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "active submenus fetched successfully", out)
 }
 
 // ListSubmenusByParent lists child submenus by parent submenu
@@ -160,8 +203,11 @@ func (uc *SubmenuUseCase) ListSubmenusByParent(ctx context.Context, parentSubmen
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	return utils.NewResponse(utils.CodeOK, "child submenus fetched successfully", submenus)
+	out := make([]SubmenuOutput, len(submenus))
+	for i := range submenus {
+		out[i] = submenuToOutput(submenus[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "child submenus fetched successfully", out)
 }
 
 // UpdateSubmenu updates a submenu
@@ -204,7 +250,7 @@ func (uc *SubmenuUseCase) UpdateSubmenu(
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "submenu updated successfully", submenu)
+	return utils.NewResponse(utils.CodeOK, "submenu updated successfully", submenuToOutput(submenu))
 }
 
 // ToggleSubmenuActive toggles submenu status
@@ -222,7 +268,7 @@ func (uc *SubmenuUseCase) ToggleSubmenuActive(ctx context.Context, id int32, isA
 		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "submenu status updated successfully", submenu)
+	return utils.NewResponse(utils.CodeOK, "submenu status updated successfully", submenuToOutput(submenu))
 }
 
 // DeleteSubmenu deletes a submenu

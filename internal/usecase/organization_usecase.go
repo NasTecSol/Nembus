@@ -2,13 +2,45 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
 	"NEMBUS/internal/repository"
-	"NEMBUS/utils" // Assuming your NewResponse is here
+	"NEMBUS/utils"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// OrganizationOutput is the response shape for organization APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
+type OrganizationOutput struct {
+	ID                int32            `json:"id"`
+	Name              string           `json:"name"`
+	Code              string           `json:"code"`
+	LegalName         pgtype.Text      `json:"legal_name"`
+	TaxID             pgtype.Text      `json:"tax_id"`
+	CurrencyCode      pgtype.Text      `json:"currency_code"`
+	FiscalYearVariant pgtype.Text      `json:"fiscal_year_variant"`
+	IsActive          pgtype.Bool      `json:"is_active"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+}
+
+func orgToOutput(o repository.Organization) OrganizationOutput {
+	return OrganizationOutput{
+		ID:                o.ID,
+		Name:              o.Name,
+		Code:              o.Code,
+		LegalName:         o.LegalName,
+		TaxID:             o.TaxID,
+		CurrencyCode:      o.CurrencyCode,
+		FiscalYearVariant: o.FiscalYearVariant,
+		IsActive:          o.IsActive,
+		Metadata:          utils.BytesToJSONRawMessage(o.Metadata),
+		CreatedAt:         o.CreatedAt,
+		UpdatedAt:         o.UpdatedAt,
+	}
+}
 
 type OrganizationUseCase struct {
 	repo *repository.Queries
@@ -75,7 +107,7 @@ func (uc *OrganizationUseCase) CreateOrganization(ctx context.Context, name, cod
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeCreated, "organization created successfully", org)
+	return utils.NewResponse(utils.CodeCreated, "organization created successfully", orgToOutput(org))
 }
 
 // GetOrganization gets an organization by ID
@@ -95,7 +127,7 @@ func (uc *OrganizationUseCase) GetOrganization(ctx context.Context, id string) *
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "organization fetched successfully", org)
+	return utils.NewResponse(utils.CodeOK, "organization fetched successfully", orgToOutput(org))
 }
 
 // GetOrganizationByCode gets an organization by code
@@ -112,7 +144,7 @@ func (uc *OrganizationUseCase) GetOrganizationByCode(ctx context.Context, code s
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "organization fetched successfully", org)
+	return utils.NewResponse(utils.CodeOK, "organization fetched successfully", orgToOutput(org))
 }
 
 // ListOrganizations lists all organizations
@@ -145,7 +177,11 @@ func (uc *OrganizationUseCase) ListOrganizations(ctx context.Context, limit, off
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "organizations fetched successfully", orgs)
+	out := make([]OrganizationOutput, len(orgs))
+	for i := range orgs {
+		out[i] = orgToOutput(orgs[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "organizations fetched successfully", out)
 }
 
 // UpdateOrganization updates an organization
@@ -206,7 +242,7 @@ func (uc *OrganizationUseCase) UpdateOrganization(ctx context.Context, id string
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "organization updated successfully", org)
+	return utils.NewResponse(utils.CodeOK, "organization updated successfully", orgToOutput(org))
 }
 
 // DeleteOrganization deletes an organization
