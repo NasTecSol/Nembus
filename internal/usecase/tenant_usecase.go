@@ -59,6 +59,13 @@ func (uc *TenantUseCase) CreateTenant(ctx context.Context, req repository.Create
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
+	// --- Ensure is_active is set properly ---
+	if !req.IsActive.Valid {
+		req.IsActive = pgtype.Bool{
+			Bool:  true,
+			Valid: true,
+		}
+	}
 
 	tenant, err := uc.repo.CreateTenant(ctx, req)
 	if err != nil {
@@ -172,6 +179,9 @@ func (uc *TenantUseCase) UpdateTenant(
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
+
+	// --- Mark IsActive as valid if user sent a value ---
+	req.IsActive.Valid = true
 
 	req.ID = id
 	tenant, err := uc.repo.UpdateTenant(ctx, req)
