@@ -342,21 +342,171 @@ func (uc *UserUseCase) AssignRoleToUser(
 			)
 		}
 
-		ownMetadata := map[string]interface{}{
-			"scope":    "own",
-			"storeids": *storeID,
-		}
+		ownMetadata := map[string]interface{}{}
 
 		metaBytes, _ := json.Marshal(ownMetadata)
 		metadata = metaBytes
+		// 🔹 Grant store access immediately
+		resp := uc.GrantStoreAccess(ctx, userID, *storeID, true, metadata)
+		if resp.StatusCode != utils.CodeCreated {
+			log.Printf("[AssignRoleToUser] failed to grant store access | err=%v", resp.Message)
+			return utils.NewResponse(utils.CodeBadReq, "failed to grant store access", nil)
+		}
 
 		log.Printf("[AssignRoleToUser] own scope metadata attached | storeID=%d", *storeID)
 
 	case "all":
-		log.Println("[AssignRoleToUser] ALL scope detected (no action yet)")
+		log.Println("[AssignRoleToUser] ALL scope detected")
+
+		// 1️⃣ Get organization ID (same logic as StoreUseCase)
+		orgResp := uc.getOrganizationID(ctx)
+		if orgResp.StatusCode != utils.CodeOK {
+			return orgResp
+		}
+		orgID := orgResp.Data.(int32)
+
+		bodyStoreID := int32(0)
+		if storeID != nil && *storeID > 0 {
+			bodyStoreID = *storeID
+		}
+
+		// 2️⃣ Fetch ALL stores (no pagination, no filters)
+		stores, err := uc.repo.ListStores(ctx, repository.ListStoresParams{
+			OrganizationID: orgID,
+			Limit:          1000, // 0 = no limit (sqlc style)
+			Offset:         0,
+			IsActive:       pgtype.Bool{}, // not filtering
+			StoreType:      pgtype.Text{},
+		})
+		if err != nil {
+			log.Printf("[AssignRoleToUser] failed to fetch stores | err=%v", err)
+			return utils.NewResponse(
+				utils.CodeError,
+				"failed to fetch stores",
+				nil,
+			)
+		}
+
+		// 3️⃣ Grant secondary access to all stores except primary
+		for _, store := range stores {
+			if store.ID == bodyStoreID {
+				continue // skip primary store for now
+			}
+
+			secondaryMetadata := map[string]interface{}{}
+			metaBytes, _ := json.Marshal(secondaryMetadata)
+
+			log.Printf(
+				"[AssignRoleToUser] granting access (secondary) | userID=%d storeID=%d",
+				userID,
+				store.ID,
+			)
+
+			resp := uc.GrantStoreAccess(ctx, userID, store.ID, false, metaBytes)
+			if resp.StatusCode != utils.CodeCreated {
+				log.Printf(
+					"[AssignRoleToUser] failed to grant access | storeID=%d err=%v",
+					store.ID,
+					resp.Message,
+				)
+				return utils.NewResponse(
+					utils.CodeBadReq,
+					"failed to grant access to one of the stores",
+					nil,
+				)
+			}
+		}
+
+		// 4️⃣ Grant PRIMARY store from request body
+		if bodyStoreID > 0 {
+			primaryMetadata := map[string]interface{}{
+				"scope":    "all",
+				"store_id": bodyStoreID,
+			}
+			metaBytes, _ := json.Marshal(primaryMetadata)
+
+			log.Printf(
+				"[AssignRoleToUser] granting access (primary) | userID=%d storeID=%d",
+				userID,
+				bodyStoreID,
+			)
+
+			resp := uc.GrantStoreAccess(ctx, userID, bodyStoreID, true, metaBytes)
+			if resp.StatusCode != utils.CodeCreated {
+				log.Printf(
+					"[AssignRoleToUser] failed to grant primary store access | err=%v",
+					resp.Message,
+				)
+				return utils.NewResponse(
+					utils.CodeBadReq,
+					"failed to grant access to the primary store",
+					nil,
+				)
+			}
+		}
 
 	case "specific":
-		log.Println("[AssignRoleToUser] SPECIFIC scope detected (no action yet)")
+		log.Println("[AssignRoleToUser] SPECIFIC scope detected")
+
+		bodyStoreID := int32(0)
+		if storeID != nil && *storeID > 0 {
+			bodyStoreID = *storeID
+		}
+
+		// 1️⃣ Grant access for all stores in role metadata, skip request body store
+		storeIDsRaw, ok := roleMetadata["ids"]
+		if ok {
+			storeIDsInterface, ok := storeIDsRaw.([]interface{})
+			if ok {
+				for _, sid := range storeIDsInterface {
+					idFloat, ok := sid.(float64)
+					if !ok {
+						log.Printf("[AssignRoleToUser] invalid store ID type in role metadata: %v", sid)
+						continue
+					}
+					sidInt := int32(idFloat)
+
+					// skip if it's the same as the request body primary store
+					if sidInt == bodyStoreID {
+						continue
+					}
+
+					// Store-specific metadata
+					storeMetadata := map[string]interface{}{}
+					metaBytes, _ := json.Marshal(storeMetadata)
+
+					log.Printf("[AssignRoleToUser] granting access (secondary) | userID=%d storeID=%d metadata=%s", userID, sidInt, string(metaBytes))
+
+					resp := uc.GrantStoreAccess(ctx, userID, sidInt, false, metaBytes)
+					if resp.StatusCode != utils.CodeCreated {
+						log.Printf("[AssignRoleToUser] failed to grant access to store %d | err=%v", sidInt, resp.Message)
+						return utils.NewResponse(
+							utils.CodeBadReq,
+							"failed to grant access to one of the specific stores",
+							nil,
+						)
+					}
+				}
+			}
+		}
+
+		// 2️⃣ Grant access to the store ID from request body as PRIMARY
+		if bodyStoreID > 0 {
+			primaryMetadata := map[string]interface{}{}
+			metaBytes, _ := json.Marshal(primaryMetadata)
+
+			log.Printf("[AssignRoleToUser] granting access (primary) | userID=%d storeID=%d metadata=%s", userID, bodyStoreID, string(metaBytes))
+
+			resp := uc.GrantStoreAccess(ctx, userID, bodyStoreID, true, metaBytes)
+			if resp.StatusCode != utils.CodeCreated {
+				log.Printf("[AssignRoleToUser] failed to grant primary store access | err=%v", resp.Message)
+				return utils.NewResponse(
+					utils.CodeBadReq,
+					"failed to grant access to the primary store",
+					nil,
+				)
+			}
+		}
 
 	default:
 		log.Printf("[AssignRoleToUser] invalid role scope | scope=%s", scope)
