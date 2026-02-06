@@ -1333,25 +1333,27 @@ BEGIN
         cat.is_serialized,
         cat.is_batch_managed,
         cat.product_metadata,
-        (SELECT COALESCE(jsonb_agg(rec ORDER BY pl_code, uom_code), '[]'::jsonb)
+        (SELECT COALESCE(jsonb_agg(s.rec ORDER BY s.pl_code, s.uom_code), '[]'::jsonb)
          FROM (
-             SELECT pl.code AS pl_code, uom.code AS uom_code,
-                    jsonb_build_object(
-                        'price_list_id', pl.id,
-                        'price_list_code', pl.code,
-                        'price_list_name', pl.name,
-                        'price_list_type', pl.price_list_type,
-                        'currency_code', pl.currency_code,
-                        'uom_id', uom.id,
-                        'uom_code', uom.code,
-                        'uom_name', uom.name,
-                        'decimal_places', uom.decimal_places,
-                        'price', pp.price,
-                        'min_quantity', pp.min_quantity,
-                        'max_quantity', pp.max_quantity,
-                        'valid_from', pp.valid_from,
-                        'valid_to', pp.valid_to
-                    ) AS rec
+             SELECT 
+                 pl.code AS pl_code,
+                 uom.code AS uom_code,
+                 jsonb_build_object(
+                     'price_list_id', pl.id,
+                     'price_list_code', pl.code,
+                     'price_list_name', pl.name,
+                     'price_list_type', pl.price_list_type,
+                     'currency_code', pl.currency_code,
+                     'uom_id', uom.id,
+                     'uom_code', uom.code,
+                     'uom_name', uom.name,
+                     'decimal_places', uom.decimal_places,
+                     'price', pp.price,
+                     'min_quantity', pp.min_quantity,
+                     'max_quantity', pp.max_quantity,
+                     'valid_from', pp.valid_from,
+                     'valid_to', pp.valid_to
+                 ) AS rec
              FROM product_prices pp
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
@@ -1359,7 +1361,7 @@ BEGIN
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) s)
+         ) AS s)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE 
@@ -1428,25 +1430,27 @@ BEGIN
         cat.is_serialized,
         cat.is_batch_managed,
         cat.product_metadata,
-        (SELECT COALESCE(jsonb_agg(rec ORDER BY pl_code, uom_code), '[]'::jsonb)
+        (SELECT COALESCE(jsonb_agg(s.rec ORDER BY s.pl_code, s.uom_code), '[]'::jsonb)
          FROM (
-             SELECT pl.code AS pl_code, uom.code AS uom_code,
-                    jsonb_build_object(
-                        'price_list_id', pl.id,
-                        'price_list_code', pl.code,
-                        'price_list_name', pl.name,
-                        'price_list_type', pl.price_list_type,
-                        'currency_code', pl.currency_code,
-                        'uom_id', uom.id,
-                        'uom_code', uom.code,
-                        'uom_name', uom.name,
-                        'decimal_places', uom.decimal_places,
-                        'price', pp.price,
-                        'min_quantity', pp.min_quantity,
-                        'max_quantity', pp.max_quantity,
-                        'valid_from', pp.valid_from,
-                        'valid_to', pp.valid_to
-                    ) AS rec
+             SELECT 
+                 pl.code AS pl_code,
+                 uom.code AS uom_code,
+                 jsonb_build_object(
+                     'price_list_id', pl.id,
+                     'price_list_code', pl.code,
+                     'price_list_name', pl.name,
+                     'price_list_type', pl.price_list_type,
+                     'currency_code', pl.currency_code,
+                     'uom_id', uom.id,
+                     'uom_code', uom.code,
+                     'uom_name', uom.name,
+                     'decimal_places', uom.decimal_places,
+                     'price', pp.price,
+                     'min_quantity', pp.min_quantity,
+                     'max_quantity', pp.max_quantity,
+                     'valid_from', pp.valid_from,
+                     'valid_to', pp.valid_to
+                 ) AS rec
              FROM product_prices pp
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
@@ -1454,7 +1458,7 @@ BEGIN
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) s)
+         ) AS s)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE cat.barcode = p_barcode
@@ -1497,25 +1501,27 @@ BEGIN
         cat.promotion_name::VARCHAR,
         COALESCE(inv.quantity_available, 0)::NUMERIC,
         (COALESCE(inv.quantity_available, 0) > 0),
-        (SELECT COALESCE(jsonb_agg(rec ORDER BY pl_code, uom_code), '[]'::jsonb)
+        (SELECT COALESCE(jsonb_agg(s.rec ORDER BY s.pl_code, s.uom_code), '[]'::jsonb)
          FROM (
-             SELECT pl.code AS pl_code, uom.code AS uom_code,
-                    jsonb_build_object(
-                        'price_list_id', pl.id,
-                        'price_list_code', pl.code,
-                        'price_list_name', pl.name,
-                        'price_list_type', pl.price_list_type,
-                        'currency_code', pl.currency_code,
-                        'uom_id', uom.id,
-                        'uom_code', uom.code,
-                        'uom_name', uom.name,
-                        'decimal_places', uom.decimal_places,
-                        'price', pp.price,
-                        'min_quantity', pp.min_quantity,
-                        'max_quantity', pp.max_quantity,
-                        'valid_from', pp.valid_from,
-                        'valid_to', pp.valid_to
-                    ) AS rec
+             SELECT 
+                 pl.code AS pl_code,
+                 uom.code AS uom_code,
+                 jsonb_build_object(
+                     'price_list_id', pl.id,
+                     'price_list_code', pl.code,
+                     'price_list_name', pl.name,
+                     'price_list_type', pl.price_list_type,
+                     'currency_code', pl.currency_code,
+                     'uom_id', uom.id,
+                     'uom_code', uom.code,
+                     'uom_name', uom.name,
+                     'decimal_places', uom.decimal_places,
+                     'price', pp.price,
+                     'min_quantity', pp.min_quantity,
+                     'max_quantity', pp.max_quantity,
+                     'valid_from', pp.valid_from,
+                     'valid_to', pp.valid_to
+                 ) AS rec
              FROM product_prices pp
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
@@ -1523,7 +1529,7 @@ BEGIN
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) s)
+         ) AS s)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE 
@@ -1578,25 +1584,27 @@ BEGIN
             WHEN cat.product_name ILIKE '%' || p_search_term || '%' THEN 50
             ELSE 40
         END)::INTEGER,
-        (SELECT COALESCE(jsonb_agg(rec ORDER BY pl_code, uom_code), '[]'::jsonb)
+        (SELECT COALESCE(jsonb_agg(s.rec ORDER BY s.pl_code, s.uom_code), '[]'::jsonb)
          FROM (
-             SELECT pl.code AS pl_code, uom.code AS uom_code,
-                    jsonb_build_object(
-                        'price_list_id', pl.id,
-                        'price_list_code', pl.code,
-                        'price_list_name', pl.name,
-                        'price_list_type', pl.price_list_type,
-                        'currency_code', pl.currency_code,
-                        'uom_id', uom.id,
-                        'uom_code', uom.code,
-                        'uom_name', uom.name,
-                        'decimal_places', uom.decimal_places,
-                        'price', pp.price,
-                        'min_quantity', pp.min_quantity,
-                        'max_quantity', pp.max_quantity,
-                        'valid_from', pp.valid_from,
-                        'valid_to', pp.valid_to
-                    ) AS rec
+             SELECT 
+                 pl.code AS pl_code,
+                 uom.code AS uom_code,
+                 jsonb_build_object(
+                     'price_list_id', pl.id,
+                     'price_list_code', pl.code,
+                     'price_list_name', pl.name,
+                     'price_list_type', pl.price_list_type,
+                     'currency_code', pl.currency_code,
+                     'uom_id', uom.id,
+                     'uom_code', uom.code,
+                     'uom_name', uom.name,
+                     'decimal_places', uom.decimal_places,
+                     'price', pp.price,
+                     'min_quantity', pp.min_quantity,
+                     'max_quantity', pp.max_quantity,
+                     'valid_from', pp.valid_from,
+                     'valid_to', pp.valid_to
+                 ) AS rec
              FROM product_prices pp
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
@@ -1604,7 +1612,7 @@ BEGIN
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) s)
+         ) AS s)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE 
