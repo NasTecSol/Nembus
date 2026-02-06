@@ -16,36 +16,37 @@ type PosGetProductsWithStockParams struct {
 
 // PosProductWithStockRow maps fn_pos_get_products_with_stock result.
 type PosProductWithStockRow struct {
-	ProductID         int32          `json:"product_id"`
-	Sku               string         `json:"sku"`
-	ProductName       string         `json:"product_name"`
-	Description       pgtype.Text    `json:"description"`
-	CategoryID        pgtype.Int4    `json:"category_id"`
-	CategoryName      pgtype.Text    `json:"category_name"`
-	BrandName         pgtype.Text    `json:"brand_name"`
-	Barcode           pgtype.Text    `json:"barcode"`
-	UomCode           pgtype.Text    `json:"uom_code"`
-	DecimalPlaces     pgtype.Int4    `json:"decimal_places"`
-	RetailPrice       pgtype.Numeric `json:"retail_price"`
-	PromoPrice        pgtype.Numeric `json:"promo_price"`
-	EffectivePrice    pgtype.Numeric `json:"effective_price"`
-	HasPromotion      pgtype.Bool    `json:"has_promotion"`
-	PromotionName     pgtype.Text    `json:"promotion_name"`
-	DiscountPercent   pgtype.Text    `json:"discount_percent"`
-	PromoMinQuantity  pgtype.Numeric `json:"promo_min_quantity"`
-	TaxRate           pgtype.Numeric `json:"tax_rate"`
-	TaxIsInclusive    pgtype.Bool    `json:"tax_is_inclusive"`
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	QuantityOnHand    pgtype.Numeric `json:"quantity_on_hand"`
-	QuantityAllocated pgtype.Numeric `json:"quantity_allocated"`
-	IsInStock         pgtype.Bool    `json:"is_in_stock"`
-	IsLowStock        pgtype.Bool    `json:"is_low_stock"`
-	ReorderLevel      pgtype.Numeric `json:"reorder_level"`
-	AllowDecimalQty   pgtype.Bool    `json:"allow_decimal_quantity"`
-	IsSerialized      pgtype.Bool    `json:"is_serialized"`
-	IsBatchManaged    pgtype.Bool    `json:"is_batch_managed"`
-	ProductMetadata   []byte         `json:"product_metadata"`
-	PriceLists        []byte         `json:"price_lists"`
+	ProductID             int32          `json:"product_id"`
+	Sku                   string         `json:"sku"`
+	ProductName           string         `json:"product_name"`
+	Description           pgtype.Text    `json:"description"`
+	CategoryID            pgtype.Int4    `json:"category_id"`
+	CategoryName          pgtype.Text    `json:"category_name"`
+	BrandName             pgtype.Text    `json:"brand_name"`
+	Barcode               pgtype.Text    `json:"barcode"`
+	UomCode               pgtype.Text    `json:"uom_code"`
+	DecimalPlaces         pgtype.Int4    `json:"decimal_places"`
+	RetailPrice           pgtype.Numeric `json:"retail_price"`
+	PromoPrice            pgtype.Numeric `json:"promo_price"`
+	EffectivePrice        pgtype.Numeric `json:"effective_price"`
+	HasPromotion          pgtype.Bool    `json:"has_promotion"`
+	PromotionName         pgtype.Text    `json:"promotion_name"`
+	DiscountPercent       pgtype.Text    `json:"discount_percent"`
+	PromoMinQuantity      pgtype.Numeric `json:"promo_min_quantity"`
+	TaxRate               pgtype.Numeric `json:"tax_rate"`
+	TaxIsInclusive        pgtype.Bool    `json:"tax_is_inclusive"`
+	QuantityAvailable     pgtype.Numeric `json:"quantity_available"`
+	QuantityOnHand        pgtype.Numeric `json:"quantity_on_hand"`
+	QuantityAllocated     pgtype.Numeric `json:"quantity_allocated"`
+	IsInStock             pgtype.Bool    `json:"is_in_stock"`
+	IsLowStock            pgtype.Bool    `json:"is_low_stock"`
+	ReorderLevel          pgtype.Numeric `json:"reorder_level"`
+	AllowDecimalQty       pgtype.Bool    `json:"allow_decimal_quantity"`
+	IsSerialized          pgtype.Bool    `json:"is_serialized"`
+	IsBatchManaged        pgtype.Bool    `json:"is_batch_managed"`
+	ProductMetadata       []byte         `json:"product_metadata"`
+	PackageNPrice         []byte         `json:"package_n_price"`
+	ProductUomConversions []byte         `json:"product_uom_conversions"`
 }
 
 // PosGetProductsWithStock calls fn_pos_get_products_with_stock.
@@ -65,7 +66,7 @@ func (q *Queries) PosGetProductsWithStock(ctx context.Context, arg PosGetProduct
 			&i.EffectivePrice, &i.HasPromotion, &i.PromotionName, &i.DiscountPercent, &i.PromoMinQuantity,
 			&i.TaxRate, &i.TaxIsInclusive, &i.QuantityAvailable, &i.QuantityOnHand, &i.QuantityAllocated,
 			&i.IsInStock, &i.IsLowStock, &i.ReorderLevel, &i.AllowDecimalQty, &i.IsSerialized, &i.IsBatchManaged,
-			&i.ProductMetadata, &i.PriceLists,
+			&i.ProductMetadata, &i.PackageNPrice, &i.ProductUomConversions,
 		)
 		if err != nil {
 			return nil, err
@@ -79,7 +80,7 @@ const posGetProductsWithStockSQL = `SELECT product_id, sku, product_name, descri
     barcode, uom_code, decimal_places, retail_price, promo_price, effective_price,
     has_promotion, promotion_name, discount_percent, promo_min_quantity, tax_rate, tax_is_inclusive,
     quantity_available, quantity_on_hand, quantity_allocated, is_in_stock, is_low_stock,
-    reorder_level, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, price_lists
+    reorder_level, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, package_n_price, product_uom_conversions
 FROM fn_pos_get_products_with_stock($1, $2, $3, $4)`
 
 // PosGetProductByBarcode calls fn_pos_get_product_by_barcode.
@@ -91,43 +92,44 @@ func (q *Queries) PosGetProductByBarcode(ctx context.Context, barcode string, st
 		&i.Barcode, &i.UomCode, &i.DecimalPlaces, &i.RetailPrice, &i.PromoPrice, &i.EffectivePrice,
 		&i.HasPromotion, &i.PromotionName, &i.PromoMinQuantity, &i.TaxRate, &i.TaxIsInclusive,
 		&i.QuantityAvailable, &i.IsInStock, &i.AllowDecimalQty, &i.IsSerialized, &i.IsBatchManaged,
-		&i.ProductMetadata, &i.PriceLists,
+		&i.ProductMetadata, &i.PackageNPrice, &i.ProductUomConversions,
 	)
 	return i, err
 }
 
 // PosProductByBarcodeRow maps fn_pos_get_product_by_barcode result.
 type PosProductByBarcodeRow struct {
-	ProductID         int32          `json:"product_id"`
-	Sku               string         `json:"sku"`
-	ProductName       string         `json:"product_name"`
-	Description       pgtype.Text    `json:"description"`
-	CategoryName      pgtype.Text    `json:"category_name"`
-	BrandName         pgtype.Text    `json:"brand_name"`
-	Barcode           pgtype.Text    `json:"barcode"`
-	UomCode           pgtype.Text    `json:"uom_code"`
-	DecimalPlaces     pgtype.Int4    `json:"decimal_places"`
-	RetailPrice       pgtype.Numeric `json:"retail_price"`
-	PromoPrice        pgtype.Numeric `json:"promo_price"`
-	EffectivePrice    pgtype.Numeric `json:"effective_price"`
-	HasPromotion      pgtype.Bool    `json:"has_promotion"`
-	PromotionName     pgtype.Text    `json:"promotion_name"`
-	PromoMinQuantity  pgtype.Numeric `json:"promo_min_quantity"`
-	TaxRate           pgtype.Numeric `json:"tax_rate"`
-	TaxIsInclusive    pgtype.Bool    `json:"tax_is_inclusive"`
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	IsInStock         pgtype.Bool    `json:"is_in_stock"`
-	AllowDecimalQty   pgtype.Bool    `json:"allow_decimal_quantity"`
-	IsSerialized      pgtype.Bool    `json:"is_serialized"`
-	IsBatchManaged    pgtype.Bool    `json:"is_batch_managed"`
-	ProductMetadata   []byte         `json:"product_metadata"`
-	PriceLists        []byte         `json:"price_lists"`
+	ProductID             int32          `json:"product_id"`
+	Sku                   string         `json:"sku"`
+	ProductName           string         `json:"product_name"`
+	Description           pgtype.Text    `json:"description"`
+	CategoryName          pgtype.Text    `json:"category_name"`
+	BrandName             pgtype.Text    `json:"brand_name"`
+	Barcode               pgtype.Text    `json:"barcode"`
+	UomCode               pgtype.Text    `json:"uom_code"`
+	DecimalPlaces         pgtype.Int4    `json:"decimal_places"`
+	RetailPrice           pgtype.Numeric `json:"retail_price"`
+	PromoPrice            pgtype.Numeric `json:"promo_price"`
+	EffectivePrice        pgtype.Numeric `json:"effective_price"`
+	HasPromotion          pgtype.Bool    `json:"has_promotion"`
+	PromotionName         pgtype.Text    `json:"promotion_name"`
+	PromoMinQuantity      pgtype.Numeric `json:"promo_min_quantity"`
+	TaxRate               pgtype.Numeric `json:"tax_rate"`
+	TaxIsInclusive        pgtype.Bool    `json:"tax_is_inclusive"`
+	QuantityAvailable     pgtype.Numeric `json:"quantity_available"`
+	IsInStock             pgtype.Bool    `json:"is_in_stock"`
+	AllowDecimalQty       pgtype.Bool    `json:"allow_decimal_quantity"`
+	IsSerialized          pgtype.Bool    `json:"is_serialized"`
+	IsBatchManaged        pgtype.Bool    `json:"is_batch_managed"`
+	ProductMetadata       []byte         `json:"product_metadata"`
+	PackageNPrice         []byte         `json:"package_n_price"`
+	ProductUomConversions []byte         `json:"product_uom_conversions"`
 }
 
 const posGetProductByBarcodeSQL = `SELECT product_id, sku, product_name, description, category_name, brand_name,
     barcode, uom_code, decimal_places, retail_price, promo_price, effective_price,
     has_promotion, promotion_name, promo_min_quantity, tax_rate, tax_is_inclusive,
-    quantity_available, is_in_stock, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, price_lists
+    quantity_available, is_in_stock, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, package_n_price, product_uom_conversions
 FROM fn_pos_get_product_by_barcode($1, $2) LIMIT 1`
 
 // PosSearchProductsParams holds args for fn_pos_search_products.
@@ -139,18 +141,19 @@ type PosSearchProductsParams struct {
 
 // PosSearchProductRow maps fn_pos_search_products result.
 type PosSearchProductRow struct {
-	ProductID         int32          `json:"product_id"`
-	Sku               string         `json:"sku"`
-	ProductName       string         `json:"product_name"`
-	CategoryName      pgtype.Text    `json:"category_name"`
-	BrandName         pgtype.Text    `json:"brand_name"`
-	Barcode           pgtype.Text    `json:"barcode"`
-	EffectivePrice    pgtype.Numeric `json:"effective_price"`
-	HasPromotion      pgtype.Bool    `json:"has_promotion"`
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	IsInStock         pgtype.Bool    `json:"is_in_stock"`
-	RelevanceScore    pgtype.Int4    `json:"relevance_score"`
-	PriceLists        []byte         `json:"price_lists"`
+	ProductID             int32          `json:"product_id"`
+	Sku                   string         `json:"sku"`
+	ProductName           string         `json:"product_name"`
+	CategoryName          pgtype.Text    `json:"category_name"`
+	BrandName             pgtype.Text    `json:"brand_name"`
+	Barcode               pgtype.Text    `json:"barcode"`
+	EffectivePrice        pgtype.Numeric `json:"effective_price"`
+	HasPromotion          pgtype.Bool    `json:"has_promotion"`
+	QuantityAvailable     pgtype.Numeric `json:"quantity_available"`
+	IsInStock             pgtype.Bool    `json:"is_in_stock"`
+	RelevanceScore        pgtype.Int4    `json:"relevance_score"`
+	PackageNPrice         []byte         `json:"package_n_price"`
+	ProductUomConversions []byte         `json:"product_uom_conversions"`
 }
 
 // PosSearchProducts calls fn_pos_search_products.
@@ -169,7 +172,7 @@ func (q *Queries) PosSearchProducts(ctx context.Context, arg PosSearchProductsPa
 		var i PosSearchProductRow
 		err := rows.Scan(
 			&i.ProductID, &i.Sku, &i.ProductName, &i.CategoryName, &i.BrandName, &i.Barcode,
-			&i.EffectivePrice, &i.HasPromotion, &i.QuantityAvailable, &i.IsInStock, &i.RelevanceScore, &i.PriceLists,
+			&i.EffectivePrice, &i.HasPromotion, &i.QuantityAvailable, &i.IsInStock, &i.RelevanceScore, &i.PackageNPrice, &i.ProductUomConversions,
 		)
 		if err != nil {
 			return nil, err
@@ -180,7 +183,7 @@ func (q *Queries) PosSearchProducts(ctx context.Context, arg PosSearchProductsPa
 }
 
 const posSearchProductsSQL = `SELECT product_id, sku, product_name, category_name, brand_name, barcode,
-    effective_price, has_promotion, quantity_available, is_in_stock, relevance_score, price_lists
+    effective_price, has_promotion, quantity_available, is_in_stock, relevance_score, package_n_price, product_uom_conversions
 FROM fn_pos_search_products($1, $2, $3)`
 
 // PosGetProductsByCategoryParams holds args for fn_pos_get_products_by_category.
@@ -192,18 +195,19 @@ type PosGetProductsByCategoryParams struct {
 
 // PosProductByCategoryRow maps fn_pos_get_products_by_category result.
 type PosProductByCategoryRow struct {
-	ProductID         int32          `json:"product_id"`
-	Sku               string         `json:"sku"`
-	ProductName       string         `json:"product_name"`
-	CategoryName      pgtype.Text    `json:"category_name"`
-	BrandName         pgtype.Text    `json:"brand_name"`
-	Barcode           pgtype.Text    `json:"barcode"`
-	EffectivePrice    pgtype.Numeric `json:"effective_price"`
-	HasPromotion      pgtype.Bool    `json:"has_promotion"`
-	PromotionName     pgtype.Text    `json:"promotion_name"`
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	IsInStock         pgtype.Bool    `json:"is_in_stock"`
-	PriceLists        []byte         `json:"price_lists"`
+	ProductID             int32          `json:"product_id"`
+	Sku                   string         `json:"sku"`
+	ProductName           string         `json:"product_name"`
+	CategoryName          pgtype.Text    `json:"category_name"`
+	BrandName             pgtype.Text    `json:"brand_name"`
+	Barcode               pgtype.Text    `json:"barcode"`
+	EffectivePrice        pgtype.Numeric `json:"effective_price"`
+	HasPromotion          pgtype.Bool    `json:"has_promotion"`
+	PromotionName         pgtype.Text    `json:"promotion_name"`
+	QuantityAvailable     pgtype.Numeric `json:"quantity_available"`
+	IsInStock             pgtype.Bool    `json:"is_in_stock"`
+	PackageNPrice         []byte         `json:"package_n_price"`
+	ProductUomConversions []byte         `json:"product_uom_conversions"`
 }
 
 // PosGetProductsByCategory calls fn_pos_get_products_by_category.
@@ -218,7 +222,7 @@ func (q *Queries) PosGetProductsByCategory(ctx context.Context, arg PosGetProduc
 		var i PosProductByCategoryRow
 		err := rows.Scan(
 			&i.ProductID, &i.Sku, &i.ProductName, &i.CategoryName, &i.BrandName, &i.Barcode,
-			&i.EffectivePrice, &i.HasPromotion, &i.PromotionName, &i.QuantityAvailable, &i.IsInStock, &i.PriceLists,
+			&i.EffectivePrice, &i.HasPromotion, &i.PromotionName, &i.QuantityAvailable, &i.IsInStock, &i.PackageNPrice, &i.ProductUomConversions,
 		)
 		if err != nil {
 			return nil, err
@@ -229,7 +233,7 @@ func (q *Queries) PosGetProductsByCategory(ctx context.Context, arg PosGetProduc
 }
 
 const posGetProductsByCategorySQL = `SELECT product_id, sku, product_name, category_name, brand_name, barcode,
-    effective_price, has_promotion, promotion_name, quantity_available, is_in_stock, price_lists
+    effective_price, has_promotion, promotion_name, quantity_available, is_in_stock, package_n_price, product_uom_conversions
 FROM fn_pos_get_products_by_category($1, $2, $3)`
 
 // PosCategoryRow maps vw_pos_categories result.

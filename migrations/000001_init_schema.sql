@@ -1299,7 +1299,8 @@ RETURNS TABLE (
     is_serialized BOOLEAN,
     is_batch_managed BOOLEAN,
     product_metadata JSONB,
-    price_lists JSONB
+    package_n_price JSONB,
+    product_uom_conversions JSONB
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -1339,29 +1340,48 @@ BEGIN
                  pl.code AS pl_code,
                  uom.code AS uom_code,
                  jsonb_build_object(
+                     'product_name', p.name,
                      'price_list_id', pl.id,
                      'price_list_code', pl.code,
                      'price_list_name', pl.name,
+                     'price_list', pl.name,
                      'price_list_type', pl.price_list_type,
                      'currency_code', pl.currency_code,
                      'uom_id', uom.id,
                      'uom_code', uom.code,
+                     'uom', uom.code,
                      'uom_name', uom.name,
                      'decimal_places', uom.decimal_places,
                      'price', pp.price,
                      'min_quantity', pp.min_quantity,
                      'max_quantity', pp.max_quantity,
                      'valid_from', pp.valid_from,
-                     'valid_to', pp.valid_to
+                     'valid_to', pp.valid_to,
+                     'metadata', COALESCE(pp.metadata, '{}'::jsonb),
+                     'barcodes', (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb) FROM product_barcodes pb WHERE pb.product_id = pp.product_id)
                  ) AS rec
              FROM product_prices pp
+             INNER JOIN products p ON pp.product_id = p.id
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) AS s)
+         ) AS s),
+        (SELECT COALESCE(jsonb_agg(conv.cv ORDER BY conv.fu_code, conv.tu_code), '[]'::jsonb)
+         FROM (
+             SELECT fu.code AS fu_code, tu.code AS tu_code,
+                    jsonb_build_object(
+                        'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
+                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                        'conversion_factor', puc.conversion_factor
+                    ) AS cv
+             FROM product_uom_conversions puc
+             JOIN units_of_measure fu ON puc.from_uom_id = fu.id
+             JOIN units_of_measure tu ON puc.to_uom_id = tu.id
+             WHERE puc.product_id = cat.product_id
+         ) AS conv)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE 
@@ -1402,7 +1422,8 @@ RETURNS TABLE (
     is_serialized BOOLEAN,
     is_batch_managed BOOLEAN,
     product_metadata JSONB,
-    price_lists JSONB
+    package_n_price JSONB,
+    product_uom_conversions JSONB
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -1436,29 +1457,48 @@ BEGIN
                  pl.code AS pl_code,
                  uom.code AS uom_code,
                  jsonb_build_object(
+                     'product_name', p.name,
                      'price_list_id', pl.id,
                      'price_list_code', pl.code,
                      'price_list_name', pl.name,
+                     'price_list', pl.name,
                      'price_list_type', pl.price_list_type,
                      'currency_code', pl.currency_code,
                      'uom_id', uom.id,
                      'uom_code', uom.code,
+                     'uom', uom.code,
                      'uom_name', uom.name,
                      'decimal_places', uom.decimal_places,
                      'price', pp.price,
                      'min_quantity', pp.min_quantity,
                      'max_quantity', pp.max_quantity,
                      'valid_from', pp.valid_from,
-                     'valid_to', pp.valid_to
+                     'valid_to', pp.valid_to,
+                     'metadata', COALESCE(pp.metadata, '{}'::jsonb),
+                     'barcodes', (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb) FROM product_barcodes pb WHERE pb.product_id = pp.product_id)
                  ) AS rec
              FROM product_prices pp
+             INNER JOIN products p ON pp.product_id = p.id
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) AS s)
+         ) AS s),
+        (SELECT COALESCE(jsonb_agg(conv.cv ORDER BY conv.fu_code, conv.tu_code), '[]'::jsonb)
+         FROM (
+             SELECT fu.code AS fu_code, tu.code AS tu_code,
+                    jsonb_build_object(
+                        'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
+                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                        'conversion_factor', puc.conversion_factor
+                    ) AS cv
+             FROM product_uom_conversions puc
+             JOIN units_of_measure fu ON puc.from_uom_id = fu.id
+             JOIN units_of_measure tu ON puc.to_uom_id = tu.id
+             WHERE puc.product_id = cat.product_id
+         ) AS conv)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE cat.barcode = p_barcode
@@ -1485,7 +1525,8 @@ RETURNS TABLE (
     promotion_name VARCHAR,
     quantity_available NUMERIC,
     is_in_stock BOOLEAN,
-    price_lists JSONB
+    package_n_price JSONB,
+    product_uom_conversions JSONB
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -1507,29 +1548,48 @@ BEGIN
                  pl.code AS pl_code,
                  uom.code AS uom_code,
                  jsonb_build_object(
+                     'product_name', p.name,
                      'price_list_id', pl.id,
                      'price_list_code', pl.code,
                      'price_list_name', pl.name,
+                     'price_list', pl.name,
                      'price_list_type', pl.price_list_type,
                      'currency_code', pl.currency_code,
                      'uom_id', uom.id,
                      'uom_code', uom.code,
+                     'uom', uom.code,
                      'uom_name', uom.name,
                      'decimal_places', uom.decimal_places,
                      'price', pp.price,
                      'min_quantity', pp.min_quantity,
                      'max_quantity', pp.max_quantity,
                      'valid_from', pp.valid_from,
-                     'valid_to', pp.valid_to
+                     'valid_to', pp.valid_to,
+                     'metadata', COALESCE(pp.metadata, '{}'::jsonb),
+                     'barcodes', (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb) FROM product_barcodes pb WHERE pb.product_id = pp.product_id)
                  ) AS rec
              FROM product_prices pp
+             INNER JOIN products p ON pp.product_id = p.id
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) AS s)
+         ) AS s),
+        (SELECT COALESCE(jsonb_agg(conv.cv ORDER BY conv.fu_code, conv.tu_code), '[]'::jsonb)
+         FROM (
+             SELECT fu.code AS fu_code, tu.code AS tu_code,
+                    jsonb_build_object(
+                        'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
+                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                        'conversion_factor', puc.conversion_factor
+                    ) AS cv
+             FROM product_uom_conversions puc
+             JOIN units_of_measure fu ON puc.from_uom_id = fu.id
+             JOIN units_of_measure tu ON puc.to_uom_id = tu.id
+             WHERE puc.product_id = cat.product_id
+         ) AS conv)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE 
@@ -1559,7 +1619,8 @@ RETURNS TABLE (
     quantity_available NUMERIC,
     is_in_stock BOOLEAN,
     relevance_score INTEGER,
-    price_lists JSONB
+    package_n_price JSONB,
+    product_uom_conversions JSONB
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -1590,29 +1651,48 @@ BEGIN
                  pl.code AS pl_code,
                  uom.code AS uom_code,
                  jsonb_build_object(
+                     'product_name', p.name,
                      'price_list_id', pl.id,
                      'price_list_code', pl.code,
                      'price_list_name', pl.name,
+                     'price_list', pl.name,
                      'price_list_type', pl.price_list_type,
                      'currency_code', pl.currency_code,
                      'uom_id', uom.id,
                      'uom_code', uom.code,
+                     'uom', uom.code,
                      'uom_name', uom.name,
                      'decimal_places', uom.decimal_places,
                      'price', pp.price,
                      'min_quantity', pp.min_quantity,
                      'max_quantity', pp.max_quantity,
                      'valid_from', pp.valid_from,
-                     'valid_to', pp.valid_to
+                     'valid_to', pp.valid_to,
+                     'metadata', COALESCE(pp.metadata, '{}'::jsonb),
+                     'barcodes', (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb) FROM product_barcodes pb WHERE pb.product_id = pp.product_id)
                  ) AS rec
              FROM product_prices pp
+             INNER JOIN products p ON pp.product_id = p.id
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
-         ) AS s)
+         ) AS s),
+        (SELECT COALESCE(jsonb_agg(conv.cv ORDER BY conv.fu_code, conv.tu_code), '[]'::jsonb)
+         FROM (
+             SELECT fu.code AS fu_code, tu.code AS tu_code,
+                    jsonb_build_object(
+                        'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
+                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                        'conversion_factor', puc.conversion_factor
+                    ) AS cv
+             FROM product_uom_conversions puc
+             JOIN units_of_measure fu ON puc.from_uom_id = fu.id
+             JOIN units_of_measure tu ON puc.to_uom_id = tu.id
+             WHERE puc.product_id = cat.product_id
+         ) AS conv)
     FROM vw_pos_product_catalog cat
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE 

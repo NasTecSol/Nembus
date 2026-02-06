@@ -103,9 +103,10 @@ func (uc *PosUseCase) ListProductsForStore(
 			"is_serialized":          row.IsSerialized,
 			"is_batch_managed":       row.IsBatchManaged,
 
-			// 🔑 FIXED jsonb fields
-			"product_metadata": utils.BytesToJSONRawMessage(row.ProductMetadata),
-			"price_lists":      utils.BytesToJSONRawMessage(row.PriceLists),
+			// 🔑 FIXED jsonb fields: package_n_price (packages/UOMs with prices), product_uom_conversions (e.g. 1 box = 10 packs, 1 pack = 150 ml)
+			"product_metadata":        utils.BytesToJSONRawMessage(row.ProductMetadata),
+			"package_n_price":         utils.BytesToJSONRawMessage(row.PackageNPrice),
+			"product_uom_conversions": utils.BytesToJSONRawMessage(row.ProductUomConversions),
 		})
 	}
 
