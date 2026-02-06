@@ -366,6 +366,50 @@ type AddProductRequest struct {
 	RetailPrice          *string `json:"retail_price"`
 }
 
+// CreatePOSTerminalRequest is the request body for creating a POS terminal.
+type CreatePOSTerminalRequest struct {
+	StoreID      int32   `json:"store_id" binding:"required"`
+	TerminalCode string  `json:"terminal_code" binding:"required"`
+	TerminalName *string `json:"terminal_name,omitempty"`
+	DeviceID     *string `json:"device_id,omitempty"`
+	IsActive     *bool   `json:"is_active,omitempty"`
+}
+
+// UpdatePOSTerminalRequest is the request body for updating a POS terminal.
+type UpdatePOSTerminalRequest struct {
+	TerminalName *string `json:"terminal_name,omitempty"`
+	DeviceID     *string `json:"device_id,omitempty"`
+	IsActive     *bool   `json:"is_active,omitempty"`
+}
+
+// TogglePOSTerminalActiveRequest is the request body for toggling terminal active state.
+type TogglePOSTerminalActiveRequest struct {
+	IsActive bool `json:"is_active"`
+}
+
+// CreateStorageLocationRequest is the request body for creating a storage location.
+type CreateStorageLocationRequest struct {
+	StoreID          int32   `json:"store_id" binding:"required"`
+	Code             string  `json:"code" binding:"required"`
+	Name             string  `json:"name" binding:"required"`
+	LocationType     *string `json:"location_type,omitempty"`
+	ParentLocationID *int32  `json:"parent_location_id,omitempty"`
+	IsActive         *bool   `json:"is_active,omitempty"`
+}
+
+// UpdateStorageLocationRequest is the request body for updating a storage location.
+type UpdateStorageLocationRequest struct {
+	Name             *string `json:"name,omitempty"`
+	LocationType     *string `json:"location_type,omitempty"`
+	ParentLocationID *int32  `json:"parent_location_id,omitempty"`
+	IsActive         *bool   `json:"is_active,omitempty"`
+}
+
+// ToggleStorageLocationActiveRequest is the request body for toggling storage location active state.
+type ToggleStorageLocationActiveRequest struct {
+	IsActive bool `json:"is_active"`
+}
+
 type CreateTenantRequest struct {
 	TenantName string                 `json:"tenant_name" example:"Acme Corporation"`
 	Slug       string                 `json:"slug" example:"acme"`
