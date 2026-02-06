@@ -25,29 +25,95 @@ func (uc *PosUseCase) SetRepository(repo *repository.Queries) {
 }
 
 // ListProductsForStore returns POS products with stock for a store (categories, prices, barcode).
-func (uc *PosUseCase) ListProductsForStore(ctx context.Context, storeID int32, categoryID *int32, searchTerm *string, includeOutOfStock bool) *repository.Response {
+func (uc *PosUseCase) ListProductsForStore(
+	ctx context.Context,
+	storeID int32,
+	categoryID *int32,
+	searchTerm *string,
+	includeOutOfStock bool,
+) *repository.Response {
+
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
+
+	// Validate store
 	_, err := uc.repo.GetStore(ctx, storeID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "store not found", nil)
 	}
+
+	// Build query params
 	arg := repository.PosGetProductsWithStockParams{
 		StoreID:           storeID,
 		IncludeOutOfStock: includeOutOfStock,
 	}
+
 	if categoryID != nil {
-		arg.CategoryID = pgtype.Int4{Int32: *categoryID, Valid: true}
+		arg.CategoryID = pgtype.Int4{
+			Int32: *categoryID,
+			Valid: true,
+		}
 	}
+
 	if searchTerm != nil && strings.TrimSpace(*searchTerm) != "" {
-		arg.SearchTerm = pgtype.Text{String: strings.TrimSpace(*searchTerm), Valid: true}
+		arg.SearchTerm = pgtype.Text{
+			String: strings.TrimSpace(*searchTerm),
+			Valid:  true,
+		}
 	}
+
+	// Query DB
 	rows, err := uc.repo.PosGetProductsWithStock(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "products fetched successfully", rows)
+
+	// Map rows → API response (decode jsonb fields)
+	result := make([]map[string]interface{}, 0, len(rows))
+
+	for _, row := range rows {
+		result = append(result, map[string]interface{}{
+			"product_id":             row.ProductID,
+			"sku":                    row.Sku,
+			"product_name":           row.ProductName,
+			"description":            row.Description,
+			"category_id":            row.CategoryID,
+			"category_name":          row.CategoryName,
+			"brand_name":             row.BrandName,
+			"barcode":                row.Barcode,
+			"uom_code":               row.UomCode,
+			"decimal_places":         row.DecimalPlaces,
+			"retail_price":           row.RetailPrice,
+			"promo_price":            row.PromoPrice,
+			"effective_price":        row.EffectivePrice,
+			"has_promotion":          row.HasPromotion,
+			"promotion_name":         row.PromotionName,
+			"discount_percent":       row.DiscountPercent,
+			"promo_min_quantity":     row.PromoMinQuantity,
+			"tax_rate":               row.TaxRate,
+			"tax_is_inclusive":       row.TaxIsInclusive,
+			"quantity_available":     row.QuantityAvailable,
+			"quantity_on_hand":       row.QuantityOnHand,
+			"quantity_allocated":     row.QuantityAllocated,
+			"is_in_stock":            row.IsInStock,
+			"is_low_stock":           row.IsLowStock,
+			"reorder_level":          row.ReorderLevel,
+			"allow_decimal_quantity": row.AllowDecimalQty,
+			"is_serialized":          row.IsSerialized,
+			"is_batch_managed":       row.IsBatchManaged,
+
+			// 🔑 FIXED jsonb fields
+			"product_metadata": utils.BytesToJSONRawMessage(row.ProductMetadata),
+			"price_lists":      utils.BytesToJSONRawMessage(row.PriceLists),
+		})
+	}
+
+	return utils.NewResponse(
+		utils.CodeOK,
+		"products fetched successfully",
+		result,
+	)
 }
 
 // SearchProduct searches by barcode (exact), id (exact), or name/sku (fuzzy).
