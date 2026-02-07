@@ -543,6 +543,7 @@ CREATE TABLE stock_counts (
     id SERIAL PRIMARY KEY,
     count_number VARCHAR(50) UNIQUE NOT NULL,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    storage_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,
     count_type VARCHAR(50),
     status VARCHAR(50) DEFAULT 'planned',
     scheduled_date DATE,
@@ -559,9 +560,13 @@ CREATE TABLE stock_count_lines (
     stock_count_id INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    storage_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,
     expected_quantity DECIMAL(15,3) DEFAULT 0,
+    system_quantity DECIMAL(15,3) DEFAULT 0,
     counted_quantity DECIMAL(15,3) DEFAULT 0,
     variance DECIMAL(15,3) DEFAULT 0,
+    variance_value DECIMAL(15,2) DEFAULT 0,
+    counted_at TIMESTAMP,
     uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
     batch_number VARCHAR(100),
     serial_number VARCHAR(100),
@@ -578,6 +583,8 @@ CREATE TABLE suppliers (
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    supplier_type VARCHAR(50),
+    credit_limit DECIMAL(15,2) DEFAULT 0,
     contact_person VARCHAR(100),
     email VARCHAR(255),
     phone VARCHAR(50),
@@ -601,6 +608,9 @@ CREATE TABLE customers (
     phone VARCHAR(50),
     address TEXT,
     customer_type VARCHAR(50),
+    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    credit_limit DECIMAL(15,2) DEFAULT 0,
+    outstanding_balance DECIMAL(15,2) DEFAULT 0,
     loyalty_points DECIMAL(15,2) DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
@@ -626,6 +636,7 @@ CREATE TABLE purchase_orders (
     discount_amount DECIMAL(15,2) DEFAULT 0,
     tax_amount DECIMAL(15,2) DEFAULT 0,
     total_amount DECIMAL(15,2) DEFAULT 0,
+    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     metadata JSONB DEFAULT '{}',
@@ -644,6 +655,7 @@ CREATE TABLE purchase_order_lines (
     discount_amount DECIMAL(15,2) DEFAULT 0,
     tax_amount DECIMAL(15,2) DEFAULT 0,
     subtotal DECIMAL(15,2) NOT NULL,
+    line_total DECIMAL(15,2) DEFAULT 0,
     received_quantity DECIMAL(15,3) DEFAULT 0,
     line_number INTEGER,
     metadata JSONB DEFAULT '{}',
@@ -663,6 +675,7 @@ CREATE TABLE sales_orders (
     discount_amount DECIMAL(15,2) DEFAULT 0,
     tax_amount DECIMAL(15,2) DEFAULT 0,
     total_amount DECIMAL(15,2) DEFAULT 0,
+    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -680,6 +693,7 @@ CREATE TABLE sales_order_lines (
     discount_amount DECIMAL(15,2) DEFAULT 0,
     tax_amount DECIMAL(15,2) DEFAULT 0,
     subtotal DECIMAL(15,2) NOT NULL,
+    line_total DECIMAL(15,2) DEFAULT 0,
     shipped_quantity DECIMAL(15,3) DEFAULT 0,
     line_number INTEGER,
     metadata JSONB DEFAULT '{}',
@@ -696,15 +710,21 @@ CREATE TABLE pos_transactions (
     cashier_id INTEGER NOT NULL REFERENCES cashiers(id) ON DELETE CASCADE,
     cashier_session_id INTEGER NOT NULL REFERENCES cashier_sessions(id) ON DELETE CASCADE,
     customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
     transaction_number VARCHAR(50) UNIQUE NOT NULL,
     transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    transaction_type VARCHAR(50),
     subtotal DECIMAL(15,2) DEFAULT 0,
     discount_amount DECIMAL(15,2) DEFAULT 0,
     tax_amount DECIMAL(15,2) DEFAULT 0,
     total_amount DECIMAL(15,2) DEFAULT 0,
+    total_cost DECIMAL(15,2) DEFAULT 0,
     amount_paid DECIMAL(15,2) DEFAULT 0,
     change_given DECIMAL(15,2) DEFAULT 0,
     status VARCHAR(50) DEFAULT 'completed',
+    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    voided_at TIMESTAMP,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -720,6 +740,8 @@ CREATE TABLE pos_transaction_lines (
     discount_amount DECIMAL(15,2) DEFAULT 0,
     tax_amount DECIMAL(15,2) DEFAULT 0,
     subtotal DECIMAL(15,2) NOT NULL,
+    line_total DECIMAL(15,2) DEFAULT 0,
+    cost_price DECIMAL(15,2) DEFAULT 0,
     line_number INTEGER,
     serial_number VARCHAR(100),
     batch_number VARCHAR(100),
@@ -733,9 +755,196 @@ CREATE TABLE pos_payments (
     payment_method VARCHAR(50) NOT NULL,
     amount DECIMAL(15,2) NOT NULL,
     payment_reference VARCHAR(100),
+    reference_number VARCHAR(100),
     payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- RESTAURANT MODULE TABLES
+-- =====================================================
+
+CREATE TABLE restaurant_tables (
+    id                  SERIAL PRIMARY KEY,
+    store_id            INTEGER     NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    table_number        VARCHAR(20) NOT NULL,
+    table_name          VARCHAR(100),
+    section             VARCHAR(50),
+    capacity            INTEGER     DEFAULT 4,
+    is_active           BOOLEAN     DEFAULT true,
+    metadata            JSONB       DEFAULT '{}',
+    created_at          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, table_number)
+);
+
+CREATE TABLE menu_categories (
+    id                  SERIAL PRIMARY KEY,
+    store_id            INTEGER     NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    parent_category_id  INTEGER     REFERENCES menu_categories(id) ON DELETE SET NULL,
+    name                VARCHAR(255) NOT NULL,
+    code                VARCHAR(50)  NOT NULL,
+    description         TEXT,
+    category_level      INTEGER      DEFAULT 1,
+    display_order       INTEGER      DEFAULT 0,
+    icon                VARCHAR(100),
+    image_url           TEXT,
+    is_active           BOOLEAN      DEFAULT true,
+    metadata            JSONB        DEFAULT '{}',
+    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, code)
+);
+
+CREATE TABLE menu_items (
+    id                  SERIAL PRIMARY KEY,
+    store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    menu_category_id    INTEGER      NOT NULL REFERENCES menu_categories(id) ON DELETE CASCADE,
+    product_id          INTEGER      REFERENCES products(id) ON DELETE SET NULL,
+    recipe_id           INTEGER,
+    name                VARCHAR(255) NOT NULL,
+    short_name          VARCHAR(50),
+    description         TEXT,
+    image_url           TEXT,
+    base_price          DECIMAL(15,2) NOT NULL,
+    cost_price          DECIMAL(15,2) DEFAULT 0,
+    preparation_time_min INTEGER     DEFAULT 0,
+    tax_category_id     INTEGER      REFERENCES tax_categories(id) ON DELETE SET NULL,
+    is_available        BOOLEAN      DEFAULT true,
+    is_active           BOOLEAN      DEFAULT true,
+    display_order       INTEGER      DEFAULT 0,
+    metadata            JSONB        DEFAULT '{}',
+    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE menu_item_modifiers (
+    id                  SERIAL PRIMARY KEY,
+    menu_item_id        INTEGER     NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    modifier_name       VARCHAR(100) NOT NULL,
+    modifier_type       VARCHAR(30)  NOT NULL DEFAULT 'addon',
+    price_adjustment    DECIMAL(15,2) DEFAULT 0,
+    is_active           BOOLEAN     DEFAULT true,
+    display_order       INTEGER     DEFAULT 0,
+    metadata            JSONB       DEFAULT '{}',
+    created_at          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE recipes (
+    id                    SERIAL PRIMARY KEY,
+    organization_id       INTEGER     NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    recipe_code           VARCHAR(50) NOT NULL,
+    recipe_name           VARCHAR(255) NOT NULL,
+    description           TEXT,
+    finished_product_id   INTEGER     REFERENCES products(id) ON DELETE SET NULL,
+    yield_quantity        DECIMAL(15,3) DEFAULT 1,
+    yield_uom_id          INTEGER     REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    preparation_steps     TEXT,
+    preparation_time_min  INTEGER     DEFAULT 0,
+    cooking_time_min      INTEGER     DEFAULT 0,
+    is_active             BOOLEAN     DEFAULT true,
+    metadata              JSONB       DEFAULT '{}',
+    created_at            TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(organization_id, recipe_code)
+);
+
+CREATE TABLE recipe_ingredients (
+    id                  SERIAL PRIMARY KEY,
+    recipe_id           INTEGER      NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+    product_id          INTEGER      NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id  INTEGER      REFERENCES product_variants(id) ON DELETE SET NULL,
+    quantity            DECIMAL(15,3) NOT NULL,
+    uom_id              INTEGER      REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    is_optional         BOOLEAN      DEFAULT false,
+    is_byproduct        BOOLEAN      DEFAULT false,
+    line_number         INTEGER,
+    metadata            JSONB        DEFAULT '{}',
+    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(recipe_id, product_id, product_variant_id)
+);
+
+ALTER TABLE menu_items
+    ADD CONSTRAINT fk_menu_items_recipe
+    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE SET NULL;
+
+CREATE TABLE restaurant_orders (
+    id                    SERIAL PRIMARY KEY,
+    store_id              INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    table_id              INTEGER      REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    cashier_id            INTEGER      REFERENCES cashiers(id) ON DELETE SET NULL,
+    cashier_session_id    INTEGER      REFERENCES cashier_sessions(id) ON DELETE SET NULL,
+    customer_id           INTEGER      REFERENCES customers(id) ON DELETE SET NULL,
+    order_number          VARCHAR(50)  NOT NULL,
+    order_source          VARCHAR(30)  NOT NULL DEFAULT 'counter',
+    status                VARCHAR(30)  NOT NULL DEFAULT 'pending',
+    subtotal              DECIMAL(15,2) DEFAULT 0,
+    discount_amount       DECIMAL(15,2) DEFAULT 0,
+    tax_amount            DECIMAL(15,2) DEFAULT 0,
+    total_amount          DECIMAL(15,2) DEFAULT 0,
+    amount_paid           DECIMAL(15,2) DEFAULT 0,
+    change_given          DECIMAL(15,2) DEFAULT 0,
+    notes                 TEXT,
+    pos_transaction_id    INTEGER      REFERENCES pos_transactions(id) ON DELETE SET NULL,
+    ordered_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at          TIMESTAMP,
+    served_at             TIMESTAMP,
+    paid_at               TIMESTAMP,
+    metadata              JSONB        DEFAULT '{}',
+    created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, order_number)
+);
+
+CREATE TABLE restaurant_order_items (
+    id                  SERIAL PRIMARY KEY,
+    order_id            INTEGER      NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
+    menu_item_id        INTEGER      NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    quantity            DECIMAL(15,3) NOT NULL DEFAULT 1,
+    unit_price          DECIMAL(15,4) NOT NULL,
+    modifiers_snapshot  JSONB        DEFAULT '[]',
+    modifiers_total     DECIMAL(15,2) DEFAULT 0,
+    discount_amount     DECIMAL(15,2) DEFAULT 0,
+    tax_amount          DECIMAL(15,2) DEFAULT 0,
+    subtotal            DECIMAL(15,2) NOT NULL,
+    line_number         INTEGER,
+    notes               TEXT,
+    status              VARCHAR(30)  DEFAULT 'pending',
+    metadata            JSONB        DEFAULT '{}',
+    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE waste_logs (
+    id                  SERIAL PRIMARY KEY,
+    store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    product_id          INTEGER      REFERENCES products(id) ON DELETE SET NULL,
+    menu_item_id        INTEGER      REFERENCES menu_items(id) ON DELETE SET NULL,
+    recipe_id           INTEGER      REFERENCES recipes(id) ON DELETE SET NULL,
+    waste_source        VARCHAR(30)  NOT NULL DEFAULT 'kitchen',
+    quantity            DECIMAL(15,3) NOT NULL,
+    uom_id              INTEGER      REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    unit_cost           DECIMAL(15,4) DEFAULT 0,
+    total_cost          DECIMAL(15,2) DEFAULT 0,
+    reason              TEXT,
+    logged_by           INTEGER      REFERENCES users(id) ON DELETE SET NULL,
+    order_id            INTEGER      REFERENCES restaurant_orders(id) ON DELETE SET NULL,
+    wasted_at           TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    metadata            JSONB        DEFAULT '{}',
+    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE kiosk_sessions (
+    id                  SERIAL PRIMARY KEY,
+    pos_terminal_id     INTEGER      NOT NULL REFERENCES pos_terminals(id) ON DELETE CASCADE,
+    store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    session_token       VARCHAR(255) NOT NULL UNIQUE,
+    status              VARCHAR(20)  DEFAULT 'active',
+    opened_at           TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    closed_at           TIMESTAMP,
+    metadata            JSONB        DEFAULT '{}',
+    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =====================================================
@@ -773,6 +982,7 @@ CREATE TABLE purchase_analytics (
     store_id INTEGER,
     supplier_id INTEGER,
     product_id INTEGER,
+    category_id INTEGER,
     date DATE NOT NULL,
     month INTEGER,
     quarter INTEGER,
@@ -783,6 +993,12 @@ CREATE TABLE purchase_analytics (
     taxes DECIMAL(15,2) DEFAULT 0,
     net_cost DECIMAL(15,2) DEFAULT 0,
     orders INTEGER DEFAULT 0,
+    total_orders INTEGER DEFAULT 0,
+    total_quantity DECIMAL(15,3) DEFAULT 0,
+    total_amount DECIMAL(15,2) DEFAULT 0,
+    discounts_received DECIMAL(15,2) DEFAULT 0,
+    taxes_paid DECIMAL(15,2) DEFAULT 0,
+    net_amount DECIMAL(15,2) DEFAULT 0,
     average_order_value DECIMAL(15,2),
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -794,6 +1010,7 @@ CREATE TABLE inventory_analytics (
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     store_id INTEGER,
     product_id INTEGER,
+    category_id INTEGER,
     date DATE NOT NULL,
     month INTEGER,
     quarter INTEGER,
@@ -801,9 +1018,15 @@ CREATE TABLE inventory_analytics (
     opening_stock DECIMAL(15,3) DEFAULT 0,
     stock_in DECIMAL(15,3) DEFAULT 0,
     stock_out DECIMAL(15,3) DEFAULT 0,
+    receipts DECIMAL(15,3) DEFAULT 0,
+    issues DECIMAL(15,3) DEFAULT 0,
+    adjustments DECIMAL(15,3) DEFAULT 0,
     closing_stock DECIMAL(15,3) DEFAULT 0,
+    average_stock DECIMAL(15,3) DEFAULT 0,
     stock_value DECIMAL(15,2) DEFAULT 0,
     turnover_rate DECIMAL(5,2),
+    stock_turnover_ratio DECIMAL(5,2),
+    days_of_inventory DECIMAL(15,3) DEFAULT 0,
     days_in_stock DECIMAL(5,2),
     low_stock_alerts INTEGER DEFAULT 0,
     out_of_stock_days INTEGER DEFAULT 0,
@@ -846,6 +1069,10 @@ ALTER TABLE purchase_analytics
     ADD CONSTRAINT fk_purchase_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 
+ALTER TABLE purchase_analytics
+    ADD CONSTRAINT fk_purchase_analytics_category
+    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
+
 -- Inventory Analytics
 ALTER TABLE inventory_analytics 
     ADD CONSTRAINT fk_inventory_analytics_store 
@@ -854,6 +1081,10 @@ ALTER TABLE inventory_analytics
 ALTER TABLE inventory_analytics 
     ADD CONSTRAINT fk_inventory_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+
+ALTER TABLE inventory_analytics
+    ADD CONSTRAINT fk_inventory_analytics_category
+    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
 
 -- Profit Loss Analytics
 ALTER TABLE profit_loss_analytics 
@@ -917,6 +1148,14 @@ CREATE TRIGGER update_purchase_analytics_updated_at BEFORE UPDATE ON purchase_an
 CREATE TRIGGER update_inventory_analytics_updated_at BEFORE UPDATE ON inventory_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_profit_loss_analytics_updated_at BEFORE UPDATE ON profit_loss_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_discount_analytics_updated_at BEFORE UPDATE ON discount_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Restaurant triggers
+CREATE TRIGGER trg_restaurant_tables_updated_at BEFORE UPDATE ON restaurant_tables FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_menu_categories_updated_at BEFORE UPDATE ON menu_categories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_recipes_updated_at BEFORE UPDATE ON recipes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_restaurant_orders_updated_at BEFORE UPDATE ON restaurant_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_restaurant_order_items_updated_at BEFORE UPDATE ON restaurant_order_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================================
 -- INDEXES FOR PERFORMANCE
@@ -1170,6 +1409,65 @@ CREATE INDEX idx_discount_analytics_organization_id ON discount_analytics(organi
 CREATE INDEX idx_discount_analytics_store_id ON discount_analytics(store_id);
 CREATE INDEX idx_discount_analytics_cashier_id ON discount_analytics(cashier_id);
 CREATE INDEX idx_discount_analytics_date ON discount_analytics(date);
+
+-- Restaurant Module Indexes
+CREATE INDEX idx_restaurant_tables_store_id         ON restaurant_tables(store_id);
+CREATE INDEX idx_restaurant_tables_is_active        ON restaurant_tables(is_active);
+CREATE INDEX idx_restaurant_tables_section          ON restaurant_tables(section);
+
+CREATE INDEX idx_menu_categories_store_id           ON menu_categories(store_id);
+CREATE INDEX idx_menu_categories_parent_id          ON menu_categories(parent_category_id);
+CREATE INDEX idx_menu_categories_is_active          ON menu_categories(is_active);
+CREATE INDEX idx_menu_categories_display_order      ON menu_categories(display_order);
+
+CREATE INDEX idx_menu_items_store_id                ON menu_items(store_id);
+CREATE INDEX idx_menu_items_category_id             ON menu_items(menu_category_id);
+CREATE INDEX idx_menu_items_product_id              ON menu_items(product_id);
+CREATE INDEX idx_menu_items_recipe_id               ON menu_items(recipe_id);
+CREATE INDEX idx_menu_items_is_active               ON menu_items(is_active);
+CREATE INDEX idx_menu_items_is_available            ON menu_items(is_available);
+CREATE INDEX idx_menu_items_display_order           ON menu_items(display_order);
+
+CREATE INDEX idx_menu_item_modifiers_item_id        ON menu_item_modifiers(menu_item_id);
+CREATE INDEX idx_menu_item_modifiers_is_active      ON menu_item_modifiers(is_active);
+
+CREATE INDEX idx_recipes_organization_id            ON recipes(organization_id);
+CREATE INDEX idx_recipes_finished_product_id        ON recipes(finished_product_id);
+CREATE INDEX idx_recipes_is_active                  ON recipes(is_active);
+CREATE INDEX idx_recipes_code                       ON recipes(recipe_code);
+
+CREATE INDEX idx_recipe_ingredients_recipe_id       ON recipe_ingredients(recipe_id);
+CREATE INDEX idx_recipe_ingredients_product_id      ON recipe_ingredients(product_id);
+CREATE INDEX idx_recipe_ingredients_variant_id      ON recipe_ingredients(product_variant_id);
+
+CREATE INDEX idx_restaurant_orders_store_id         ON restaurant_orders(store_id);
+CREATE INDEX idx_restaurant_orders_table_id         ON restaurant_orders(table_id);
+CREATE INDEX idx_restaurant_orders_cashier_id       ON restaurant_orders(cashier_id);
+CREATE INDEX idx_restaurant_orders_session_id       ON restaurant_orders(cashier_session_id);
+CREATE INDEX idx_restaurant_orders_customer_id      ON restaurant_orders(customer_id);
+CREATE INDEX idx_restaurant_orders_status           ON restaurant_orders(status);
+CREATE INDEX idx_restaurant_orders_source           ON restaurant_orders(order_source);
+CREATE INDEX idx_restaurant_orders_ordered_at       ON restaurant_orders(ordered_at);
+CREATE INDEX idx_restaurant_orders_pos_txn_id       ON restaurant_orders(pos_transaction_id);
+CREATE INDEX idx_restaurant_orders_store_status_time ON restaurant_orders(store_id, status, ordered_at);
+
+CREATE INDEX idx_restaurant_order_items_order_id    ON restaurant_order_items(order_id);
+CREATE INDEX idx_restaurant_order_items_menu_item   ON restaurant_order_items(menu_item_id);
+CREATE INDEX idx_restaurant_order_items_status      ON restaurant_order_items(status);
+
+CREATE INDEX idx_waste_logs_store_id                ON waste_logs(store_id);
+CREATE INDEX idx_waste_logs_product_id              ON waste_logs(product_id);
+CREATE INDEX idx_waste_logs_menu_item_id            ON waste_logs(menu_item_id);
+CREATE INDEX idx_waste_logs_recipe_id               ON waste_logs(recipe_id);
+CREATE INDEX idx_waste_logs_waste_source            ON waste_logs(waste_source);
+CREATE INDEX idx_waste_logs_wasted_at               ON waste_logs(wasted_at);
+CREATE INDEX idx_waste_logs_order_id                ON waste_logs(order_id);
+CREATE INDEX idx_waste_logs_store_source_date       ON waste_logs(store_id, waste_source, wasted_at);
+
+CREATE INDEX idx_kiosk_sessions_terminal_id         ON kiosk_sessions(pos_terminal_id);
+CREATE INDEX idx_kiosk_sessions_store_id            ON kiosk_sessions(store_id);
+CREATE INDEX idx_kiosk_sessions_status              ON kiosk_sessions(status);
+CREATE INDEX idx_kiosk_sessions_token               ON kiosk_sessions(session_token);
 
 -- Additional POS Indexes
 CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode_lookup 
@@ -1724,9 +2022,343 @@ GROUP BY pc.id, pc.code, pc.name, pc.parent_category_id, pc_parent.name, pc.meta
 HAVING COUNT(DISTINCT p.id) > 0
 ORDER BY pc_parent.name NULLS FIRST, pc.name;
 
+-- =====================================================
+-- RESTAURANT MODULE VIEWS
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_restaurant_menu AS
+SELECT
+    mi.id                       AS menu_item_id,
+    mi.store_id,
+    mi.name                     AS item_name,
+    mi.short_name,
+    mi.description,
+    mi.image_url,
+    mi.base_price,
+    mi.cost_price,
+    mi.preparation_time_min,
+    mi.is_available,
+    mi.is_active,
+    mi.display_order,
+    mi.metadata                 AS item_metadata,
+    mc.id                       AS category_id,
+    mc.name                     AS category_name,
+    mc.code                     AS category_code,
+    mc.parent_category_id,
+    mc.display_order            AS category_display_order,
+    mc.image_url                AS category_image_url,
+    mc_parent.name              AS parent_category_name,
+    tc.id                       AS tax_category_id,
+    tc.tax_rate,
+    tc.is_inclusive             AS tax_is_inclusive,
+    mi.recipe_id,
+    r.recipe_name,
+    r.yield_quantity            AS recipe_yield,
+    mi.product_id,
+    p.sku                       AS product_sku,
+    (SELECT COUNT(*) FROM menu_item_modifiers m WHERE m.menu_item_id = mi.id AND m.is_active = true)::INTEGER
+                                AS active_modifier_count,
+    CASE
+        WHEN mi.base_price > 0 AND mi.cost_price > 0
+        THEN ROUND(((mi.base_price - mi.cost_price) / mi.base_price) * 100, 2)
+        ELSE NULL
+    END                         AS margin_percent
+FROM menu_items mi
+JOIN menu_categories mc         ON mi.menu_category_id = mc.id
+LEFT JOIN menu_categories mc_parent ON mc.parent_category_id = mc_parent.id
+LEFT JOIN tax_categories tc     ON mi.tax_category_id = tc.id
+LEFT JOIN recipes r             ON mi.recipe_id = r.id
+LEFT JOIN products p            ON mi.product_id = p.id
+WHERE mi.is_active = true;
+
+CREATE OR REPLACE VIEW vw_recipe_bom AS
+SELECT
+    r.id                        AS recipe_id,
+    r.recipe_code,
+    r.recipe_name,
+    r.yield_quantity,
+    r.organization_id,
+    ri.id                       AS ingredient_line_id,
+    ri.line_number,
+    ri.quantity                 AS ingredient_qty,
+    ri.is_optional,
+    ri.is_byproduct,
+    p.id                        AS product_id,
+    p.sku,
+    p.name                      AS product_name,
+    pv.id                       AS variant_id,
+    pv.variant_name,
+    uom.id                      AS uom_id,
+    uom.code                    AS uom_code,
+    uom.name                    AS uom_name,
+    pp.price                    AS unit_cost_estimate,
+    ROUND(ri.quantity * COALESCE(pp.price, 0), 4) AS line_cost_estimate
+FROM recipes r
+JOIN recipe_ingredients ri      ON r.id = ri.recipe_id
+JOIN products p                 ON ri.product_id = p.id
+LEFT JOIN product_variants pv   ON ri.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom  ON ri.uom_id = uom.id
+LEFT JOIN product_prices pp     ON p.id = pp.product_id
+    AND pp.price_list_id        = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
+    AND pp.is_active            = true
+WHERE r.is_active = true;
+
+CREATE OR REPLACE VIEW vw_active_restaurant_orders AS
+SELECT
+    ro.id                       AS order_id,
+    ro.order_number,
+    ro.store_id,
+    ro.order_source,
+    ro.status                   AS order_status,
+    ro.subtotal,
+    ro.tax_amount,
+    ro.total_amount,
+    ro.notes,
+    ro.ordered_at,
+    ro.confirmed_at,
+    rt.id                       AS table_id,
+    rt.table_number,
+    rt.table_name,
+    rt.section                  AS table_section,
+    c.id                        AS cashier_id,
+    u.first_name || ' ' || u.last_name AS waiter_name,
+    ro.customer_id,
+    cust.name                   AS customer_name,
+    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0 AS minutes_since_ordered
+FROM restaurant_orders ro
+LEFT JOIN restaurant_tables rt  ON ro.table_id = rt.id
+LEFT JOIN cashiers c            ON ro.cashier_id = c.id
+LEFT JOIN users u               ON c.user_id = u.id
+LEFT JOIN customers cust        ON ro.customer_id = cust.id
+WHERE ro.status NOT IN ('paid', 'voided');
+
+CREATE OR REPLACE VIEW vw_waste_daily_summary AS
+SELECT
+    wl.store_id,
+    DATE(wl.wasted_at)          AS waste_date,
+    wl.waste_source,
+    COUNT(*)                    AS waste_entries,
+    SUM(wl.quantity)            AS total_quantity_wasted,
+    SUM(wl.total_cost)          AS total_cost_wasted,
+    AVG(wl.total_cost)          AS avg_cost_per_entry
+FROM waste_logs wl
+GROUP BY wl.store_id, DATE(wl.wasted_at), wl.waste_source;
+
+-- =====================================================
+-- RESTAURANT MODULE FUNCTIONS
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_restaurant_menu(
+    p_store_id          INTEGER,
+    p_category_id       INTEGER  DEFAULT NULL,
+    p_include_unavail   BOOLEAN  DEFAULT false
+)
+RETURNS TABLE (
+    menu_item_id            INTEGER,
+    item_name               VARCHAR,
+    short_name              VARCHAR,
+    description             TEXT,
+    image_url               TEXT,
+    base_price              NUMERIC,
+    preparation_time_min    INTEGER,
+    is_available            BOOLEAN,
+    category_id             INTEGER,
+    category_name           VARCHAR,
+    parent_category_name    VARCHAR,
+    tax_rate                NUMERIC,
+    tax_is_inclusive        BOOLEAN,
+    recipe_id               INTEGER,
+    product_id              INTEGER,
+    active_modifier_count   INTEGER,
+    margin_percent          NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        vm.menu_item_id,
+        vm.item_name::VARCHAR,
+        vm.short_name::VARCHAR,
+        vm.description,
+        vm.image_url,
+        vm.base_price,
+        vm.preparation_time_min,
+        vm.is_available,
+        vm.category_id,
+        vm.category_name::VARCHAR,
+        vm.parent_category_name::VARCHAR,
+        vm.tax_rate,
+        vm.tax_is_inclusive,
+        vm.recipe_id,
+        vm.product_id,
+        vm.active_modifier_count,
+        vm.margin_percent
+    FROM vw_restaurant_menu vm
+    WHERE vm.store_id = p_store_id
+      AND (p_category_id IS NULL OR vm.category_id = p_category_id)
+      AND (p_include_unavail = true OR vm.is_available = true)
+    ORDER BY vm.category_display_order, vm.display_order;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_item_modifiers(
+    p_menu_item_id INTEGER
+)
+RETURNS TABLE (
+    modifier_id         INTEGER,
+    modifier_name       VARCHAR,
+    modifier_type       VARCHAR,
+    price_adjustment    NUMERIC,
+    display_order       INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        m.id,
+        m.modifier_name::VARCHAR,
+        m.modifier_type::VARCHAR,
+        m.price_adjustment,
+        m.display_order
+    FROM menu_item_modifiers m
+    WHERE m.menu_item_id = p_menu_item_id
+      AND m.is_active    = true
+    ORDER BY m.display_order;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_calculate_recipe_cost(
+    p_recipe_id INTEGER
+)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_total_cost NUMERIC := 0;
+BEGIN
+    SELECT COALESCE(SUM(vb.line_cost_estimate), 0)
+      INTO v_total_cost
+    FROM vw_recipe_bom vb
+    WHERE vb.recipe_id    = p_recipe_id
+      AND vb.is_byproduct = false
+      AND vb.is_optional  = false;
+
+    RETURN v_total_cost;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_waste_report(
+    p_store_id      INTEGER,
+    p_from_date     DATE,
+    p_to_date       DATE,
+    p_waste_source  VARCHAR DEFAULT NULL
+)
+RETURNS TABLE (
+    waste_date          DATE,
+    waste_source        VARCHAR,
+    product_id          INTEGER,
+    product_name        VARCHAR,
+    menu_item_id        INTEGER,
+    menu_item_name      VARCHAR,
+    quantity            NUMERIC,
+    uom_code            VARCHAR,
+    total_cost          NUMERIC,
+    reason              TEXT,
+    logged_by_name      VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        DATE(wl.wasted_at),
+        wl.waste_source::VARCHAR,
+        wl.product_id,
+        p.name::VARCHAR,
+        wl.menu_item_id,
+        mi.name::VARCHAR,
+        wl.quantity,
+        uom.code::VARCHAR,
+        wl.total_cost,
+        wl.reason,
+        (u.first_name || ' ' || u.last_name)::VARCHAR
+    FROM waste_logs wl
+    LEFT JOIN products p            ON wl.product_id   = p.id
+    LEFT JOIN menu_items mi         ON wl.menu_item_id = mi.id
+    LEFT JOIN units_of_measure uom  ON wl.uom_id       = uom.id
+    LEFT JOIN users u               ON wl.logged_by    = u.id
+    WHERE wl.store_id           = p_store_id
+      AND DATE(wl.wasted_at)    BETWEEN p_from_date AND p_to_date
+      AND (p_waste_source IS NULL OR wl.waste_source = p_waste_source)
+    ORDER BY wl.wasted_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_kds_orders(
+    p_store_id      INTEGER,
+    p_statuses      VARCHAR[] DEFAULT ARRAY['pending','confirmed','preparing']
+)
+RETURNS TABLE (
+    order_id            INTEGER,
+    order_number        VARCHAR,
+    table_number        VARCHAR,
+    waiter_name         VARCHAR,
+    order_status        VARCHAR,
+    ordered_at          TIMESTAMP,
+    minutes_elapsed     NUMERIC,
+    item_id             INTEGER,
+    item_name           VARCHAR,
+    item_short_name     VARCHAR,
+    item_qty            NUMERIC,
+    item_notes          TEXT,
+    item_modifiers      JSONB,
+    item_status         VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        ro.id,
+        ro.order_number::VARCHAR,
+        rt.table_number::VARCHAR,
+        (u.first_name || ' ' || u.last_name)::VARCHAR,
+        ro.status::VARCHAR,
+        ro.ordered_at,
+        ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0, 1),
+        roi.id,
+        mi.name::VARCHAR,
+        mi.short_name::VARCHAR,
+        roi.quantity,
+        roi.notes,
+        roi.modifiers_snapshot,
+        roi.status::VARCHAR
+    FROM restaurant_orders ro
+    LEFT JOIN restaurant_tables rt      ON ro.table_id = rt.id
+    LEFT JOIN cashiers c                ON ro.cashier_id = c.id
+    LEFT JOIN users u                   ON c.user_id = u.id
+    JOIN  restaurant_order_items roi    ON ro.id = roi.order_id
+    JOIN  menu_items mi                 ON roi.menu_item_id = mi.id
+    WHERE ro.store_id = p_store_id
+      AND ro.status = ANY(p_statuses)
+    ORDER BY ro.ordered_at, roi.line_number;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
 -- +goose Down
 
 DROP VIEW IF EXISTS vw_pos_categories CASCADE;
+DROP FUNCTION IF EXISTS fn_get_kds_orders CASCADE;
+DROP FUNCTION IF EXISTS fn_get_waste_report CASCADE;
+DROP FUNCTION IF EXISTS fn_calculate_recipe_cost CASCADE;
+DROP FUNCTION IF EXISTS fn_get_item_modifiers CASCADE;
+DROP FUNCTION IF EXISTS fn_get_restaurant_menu CASCADE;
+DROP VIEW IF EXISTS vw_waste_daily_summary CASCADE;
+DROP VIEW IF EXISTS vw_active_restaurant_orders CASCADE;
+DROP VIEW IF EXISTS vw_recipe_bom CASCADE;
+DROP VIEW IF EXISTS vw_restaurant_menu CASCADE;
 DROP FUNCTION IF EXISTS fn_pos_search_products CASCADE;
 DROP FUNCTION IF EXISTS fn_pos_get_products_by_category CASCADE;
 DROP FUNCTION IF EXISTS fn_pos_get_product_by_barcode CASCADE;
@@ -1740,6 +2372,13 @@ DROP INDEX IF EXISTS idx_product_barcodes_barcode_lookup;
 
 DROP TRIGGER IF EXISTS update_discount_analytics_updated_at ON discount_analytics;
 DROP TRIGGER IF EXISTS update_profit_loss_analytics_updated_at ON profit_loss_analytics;
+
+DROP TRIGGER IF EXISTS trg_restaurant_order_items_updated_at ON restaurant_order_items;
+DROP TRIGGER IF EXISTS trg_restaurant_orders_updated_at ON restaurant_orders;
+DROP TRIGGER IF EXISTS trg_recipes_updated_at ON recipes;
+DROP TRIGGER IF EXISTS trg_menu_items_updated_at ON menu_items;
+DROP TRIGGER IF EXISTS trg_menu_categories_updated_at ON menu_categories;
+DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;
 DROP TRIGGER IF EXISTS update_inventory_analytics_updated_at ON inventory_analytics;
 DROP TRIGGER IF EXISTS update_purchase_analytics_updated_at ON purchase_analytics;
 DROP TRIGGER IF EXISTS update_sales_analytics_updated_at ON sales_analytics;
@@ -1771,6 +2410,56 @@ DROP TRIGGER IF EXISTS update_organizations_updated_at ON organizations;
 DROP FUNCTION IF EXISTS update_updated_at_column CASCADE;
 
 DROP INDEX IF EXISTS idx_discount_analytics_date;
+
+DROP INDEX IF EXISTS idx_kiosk_sessions_token;
+DROP INDEX IF EXISTS idx_kiosk_sessions_status;
+DROP INDEX IF EXISTS idx_kiosk_sessions_store_id;
+DROP INDEX IF EXISTS idx_kiosk_sessions_terminal_id;
+DROP INDEX IF EXISTS idx_waste_logs_store_source_date;
+DROP INDEX IF EXISTS idx_waste_logs_order_id;
+DROP INDEX IF EXISTS idx_waste_logs_wasted_at;
+DROP INDEX IF EXISTS idx_waste_logs_waste_source;
+DROP INDEX IF EXISTS idx_waste_logs_recipe_id;
+DROP INDEX IF EXISTS idx_waste_logs_menu_item_id;
+DROP INDEX IF EXISTS idx_waste_logs_product_id;
+DROP INDEX IF EXISTS idx_waste_logs_store_id;
+DROP INDEX IF EXISTS idx_restaurant_order_items_status;
+DROP INDEX IF EXISTS idx_restaurant_order_items_menu_item;
+DROP INDEX IF EXISTS idx_restaurant_order_items_order_id;
+DROP INDEX IF EXISTS idx_restaurant_orders_store_status_time;
+DROP INDEX IF EXISTS idx_restaurant_orders_pos_txn_id;
+DROP INDEX IF EXISTS idx_restaurant_orders_ordered_at;
+DROP INDEX IF EXISTS idx_restaurant_orders_source;
+DROP INDEX IF EXISTS idx_restaurant_orders_status;
+DROP INDEX IF EXISTS idx_restaurant_orders_customer_id;
+DROP INDEX IF EXISTS idx_restaurant_orders_session_id;
+DROP INDEX IF EXISTS idx_restaurant_orders_cashier_id;
+DROP INDEX IF EXISTS idx_restaurant_orders_table_id;
+DROP INDEX IF EXISTS idx_restaurant_orders_store_id;
+DROP INDEX IF EXISTS idx_recipe_ingredients_variant_id;
+DROP INDEX IF EXISTS idx_recipe_ingredients_product_id;
+DROP INDEX IF EXISTS idx_recipe_ingredients_recipe_id;
+DROP INDEX IF EXISTS idx_recipes_code;
+DROP INDEX IF EXISTS idx_recipes_is_active;
+DROP INDEX IF EXISTS idx_recipes_finished_product_id;
+DROP INDEX IF EXISTS idx_recipes_organization_id;
+DROP INDEX IF EXISTS idx_menu_item_modifiers_is_active;
+DROP INDEX IF EXISTS idx_menu_item_modifiers_item_id;
+DROP INDEX IF EXISTS idx_menu_items_display_order;
+DROP INDEX IF EXISTS idx_menu_items_is_available;
+DROP INDEX IF EXISTS idx_menu_items_is_active;
+DROP INDEX IF EXISTS idx_menu_items_recipe_id;
+DROP INDEX IF EXISTS idx_menu_items_product_id;
+DROP INDEX IF EXISTS idx_menu_items_category_id;
+DROP INDEX IF EXISTS idx_menu_items_store_id;
+DROP INDEX IF EXISTS idx_menu_categories_display_order;
+DROP INDEX IF EXISTS idx_menu_categories_is_active;
+DROP INDEX IF EXISTS idx_menu_categories_parent_id;
+DROP INDEX IF EXISTS idx_menu_categories_store_id;
+DROP INDEX IF EXISTS idx_restaurant_tables_section;
+DROP INDEX IF EXISTS idx_restaurant_tables_is_active;
+DROP INDEX IF EXISTS idx_restaurant_tables_store_id;
+
 DROP INDEX IF EXISTS idx_discount_analytics_cashier_id;
 DROP INDEX IF EXISTS idx_discount_analytics_store_id;
 DROP INDEX IF EXISTS idx_discount_analytics_organization_id;
@@ -1935,6 +2624,17 @@ DROP TABLE IF EXISTS profit_loss_analytics CASCADE;
 DROP TABLE IF EXISTS inventory_analytics CASCADE;
 DROP TABLE IF EXISTS purchase_analytics CASCADE;
 DROP TABLE IF EXISTS sales_analytics CASCADE;
+DROP TABLE IF EXISTS kiosk_sessions CASCADE;
+DROP TABLE IF EXISTS waste_logs CASCADE;
+DROP TABLE IF EXISTS restaurant_order_items CASCADE;
+DROP TABLE IF EXISTS restaurant_orders CASCADE;
+DROP TABLE IF EXISTS recipe_ingredients CASCADE;
+DROP TABLE IF EXISTS recipes CASCADE;
+DROP TABLE IF EXISTS menu_item_modifiers CASCADE;
+DROP TABLE IF EXISTS menu_items CASCADE;
+DROP TABLE IF EXISTS menu_categories CASCADE;
+DROP TABLE IF EXISTS restaurant_tables CASCADE;
+
 DROP TABLE IF EXISTS pos_payments CASCADE;
 DROP TABLE IF EXISTS pos_transaction_lines CASCADE;
 DROP TABLE IF EXISTS pos_transactions CASCADE;
