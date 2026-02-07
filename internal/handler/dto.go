@@ -513,3 +513,161 @@ type RevokeRoleRequest struct {
 type RevokeStoreAccessRequest struct {
 	StoreID int32 `json:"store_id" binding:"required" example:"10"`
 }
+
+// =====================================================
+// Restaurant Module
+// =====================================================
+
+type CreateRestaurantTableRequest struct {
+	StoreID     int32  `json:"store_id" binding:"required"`
+	TableNumber string `json:"table_number" binding:"required"`
+	TableName   string `json:"table_name"`
+	Section     string `json:"section"`
+	Capacity    int32  `json:"capacity"`
+	IsActive    bool   `json:"is_active"`
+	Metadata    string `json:"metadata"`
+}
+
+type CreateMenuCategoryRequest struct {
+	StoreID          int32  `json:"store_id" binding:"required"`
+	ParentCategoryID *int32 `json:"parent_category_id"`
+	Name             string `json:"name" binding:"required"`
+	Code             string `json:"code" binding:"required"`
+	Description      string `json:"description"`
+	CategoryLevel    int32  `json:"category_level"`
+	DisplayOrder     int32  `json:"display_order"`
+	Icon             string `json:"icon"`
+	ImageUrl         string `json:"image_url"`
+	IsActive         bool   `json:"is_active"`
+	Metadata         string `json:"metadata"`
+}
+
+type CreateMenuItemRequest struct {
+	StoreID            int32  `json:"store_id" binding:"required"`
+	MenuCategoryID     int32  `json:"menu_category_id" binding:"required"`
+	ProductID          *int32 `json:"product_id"`
+	RecipeID           *int32 `json:"recipe_id"`
+	Name               string `json:"name" binding:"required"`
+	ShortName          string `json:"short_name"`
+	Description        string `json:"description"`
+	ImageUrl           string `json:"image_url"`
+	BasePrice          string `json:"base_price" binding:"required"`
+	PreparationTimeMin int32  `json:"preparation_time_min"`
+	TaxCategoryID      *int32 `json:"tax_category_id"`
+	IsAvailable        bool   `json:"is_available"`
+	IsActive           bool   `json:"is_active"`
+	DisplayOrder       int32  `json:"display_order"`
+	Metadata           string `json:"metadata"`
+}
+
+type CreateRecipeRequest struct {
+	OrganizationID      int32  `json:"organization_id" binding:"required"`
+	RecipeCode          string `json:"recipe_code" binding:"required"`
+	RecipeName          string `json:"recipe_name" binding:"required"`
+	Description         string `json:"description"`
+	FinishedProductID   *int32 `json:"finished_product_id"`
+	YieldQuantity       string `json:"yield_quantity"`
+	YieldUomID          *int32 `json:"yield_uom_id"`
+	PreparationSteps    string `json:"preparation_steps"`
+	PreparationTimeMin  int32  `json:"preparation_time_min"`
+	CookingTimeMin      int32  `json:"cooking_time_min"`
+	IsActive            bool   `json:"is_active"`
+	Metadata            string `json:"metadata"`
+}
+
+type CreateRecipeIngredientRequest struct {
+	RecipeID         int32  `json:"recipe_id"`
+	ProductID        int32  `json:"product_id" binding:"required"`
+	ProductVariantID *int32 `json:"product_variant_id"`
+	Quantity         string `json:"quantity" binding:"required"`
+	UomID            *int32 `json:"uom_id"`
+	IsOptional       bool   `json:"is_optional"`
+	IsByproduct      bool   `json:"is_byproduct"`
+	LineNumber       int32  `json:"line_number"`
+	Metadata         string `json:"metadata"`
+}
+
+type CreateRestaurantOrderRequest struct {
+	StoreID          int32  `json:"store_id" binding:"required"`
+	TableID          *int32 `json:"table_id"`
+	CashierID        *int32 `json:"cashier_id"`
+	CashierSessionID *int32 `json:"cashier_session_id"`
+	CustomerID       *int32 `json:"customer_id"`
+	OrderNumber      string `json:"order_number"`
+	OrderSource      string `json:"order_source"`
+	Status           string `json:"status"`
+	Subtotal         string `json:"subtotal"`
+	DiscountAmount   string `json:"discount_amount"`
+	TaxAmount        string `json:"tax_amount"`
+	TotalAmount      string `json:"total_amount"`
+	AmountPaid       string `json:"amount_paid"`
+	ChangeGiven      string `json:"change_given"`
+	Notes            string `json:"notes"`
+	PosTransactionID *int32 `json:"pos_transaction_id"`
+	Metadata         string `json:"metadata"`
+}
+
+type CreateMenuItemModifierRequest struct {
+	MenuItemID      int32  `json:"menu_item_id" binding:"required"`
+	ModifierName    string `json:"modifier_name" binding:"required"`
+	ModifierType    string `json:"modifier_type"`
+	PriceAdjustment string `json:"price_adjustment"`
+	IsActive        bool   `json:"is_active"`
+	DisplayOrder    int32  `json:"display_order"`
+	Metadata        string `json:"metadata"`
+}
+
+type CreateWasteLogRequest struct {
+	StoreID     int32  `json:"store_id" binding:"required"`
+	ProductID   *int32 `json:"product_id"`
+	MenuItemID  *int32 `json:"menu_item_id"`
+	RecipeID    *int32 `json:"recipe_id"`
+	WasteSource string `json:"waste_source"`
+	Quantity    string `json:"quantity" binding:"required"`
+	UomID       *int32 `json:"uom_id"`
+	UnitCost    string `json:"unit_cost"`
+	TotalCost   string `json:"total_cost"`
+	Reason      string `json:"reason"`
+	LoggedBy    *int32 `json:"logged_by"`
+	OrderID     *int32 `json:"order_id"`
+	WastedAt    string `json:"wasted_at"`
+	Metadata    string `json:"metadata"`
+}
+
+type CreateKioskSessionRequest struct {
+	PosTerminalID int32  `json:"pos_terminal_id" binding:"required"`
+	StoreID       int32  `json:"store_id" binding:"required"`
+	SessionToken  string `json:"session_token" binding:"required"`
+	Status        string `json:"status"`
+	OpenedAt      string `json:"opened_at"`
+	Metadata      string `json:"metadata"`
+}
+
+type CreateOnlineOrderRequest struct {
+	StoreID    int32                                `json:"store_id" binding:"required"`
+	CustomerID *int32                               `json:"customer_id"`
+	Items      []CreateRestaurantOrderItemRequest `json:"items" binding:"required"`
+}
+
+type UpdateStatusRequest struct {
+	Status string `json:"status" binding:"required"`
+}
+
+type SettleOrderRequest struct {
+	PosTransactionID int32 `json:"pos_transaction_id" binding:"required"`
+}
+
+type CreateRestaurantOrderItemRequest struct {
+	MenuItemID        int32  `json:"menu_item_id" binding:"required"`
+	Quantity          string `json:"quantity" binding:"required"`
+	UnitPrice         string `json:"unit_price" binding:"required"`
+	ModifiersSnapshot string `json:"modifiers_snapshot"`
+	ModifiersTotal    string `json:"modifiers_total"`
+	DiscountAmount    string `json:"discount_amount"`
+	TaxAmount         string `json:"tax_amount"`
+	Subtotal          string `json:"subtotal" binding:"required"`
+	LineNumber        int32  `json:"line_number"`
+	Notes             string `json:"notes"`
+	Status            string `json:"status"`
+	Metadata          string `json:"metadata"`
+}

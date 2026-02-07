@@ -38,7 +38,7 @@ INSERT INTO pos_transactions (
 type CreatePosTransactionParams struct {
 	TransactionNumber string           `json:"transaction_number"`
 	StoreID           int32            `json:"store_id"`
-	PosTerminalID     int32            `json:"pos_terminal_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
 	CashierSessionID  int32            `json:"cashier_session_id"`
 	CashierID         int32            `json:"cashier_id"`
 	CustomerID        pgtype.Int4      `json:"customer_id"`
@@ -100,7 +100,7 @@ INSERT INTO pos_transaction_lines (
 
 type CreatePosTransactionLineParams struct {
 	TransactionID    int32          `json:"transaction_id"`
-	LineNumber       int32          `json:"line_number"`
+	LineNumber       pgtype.Int4    `json:"line_number"`
 	ProductID        int32          `json:"product_id"`
 	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
 	SerialNumber     pgtype.Text    `json:"serial_number"`
@@ -183,7 +183,7 @@ type GetPosTransactionFullRow struct {
 	TerminalName      pgtype.Text      `json:"terminal_name"`
 	SessionNumber     string           `json:"session_number"`
 	CustomerName      pgtype.Text      `json:"customer_name"`
-	LineNumber        int32            `json:"line_number"`
+	LineNumber        pgtype.Int4      `json:"line_number"`
 	ProductID         int32            `json:"product_id"`
 	Quantity          pgtype.Numeric   `json:"quantity"`
 	UnitPrice         pgtype.Numeric   `json:"unit_price"`

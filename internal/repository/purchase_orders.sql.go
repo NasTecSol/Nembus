@@ -41,7 +41,7 @@ type GetPurchaseOrderWithReceivedQtyRow struct {
 	TotalAmount          pgtype.Numeric `json:"total_amount"`
 	ExpectedDeliveryDate pgtype.Date    `json:"expected_delivery_date"`
 	SupplierName         string         `json:"supplier_name"`
-	LineNumber           int32          `json:"line_number"`
+	LineNumber           pgtype.Int4    `json:"line_number"`
 	ProductID            int32          `json:"product_id"`
 	OrderedQty           pgtype.Numeric `json:"ordered_qty"`
 	ReceivedQty          pgtype.Numeric `json:"received_qty"`
