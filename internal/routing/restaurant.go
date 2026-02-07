@@ -11,68 +11,68 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 
 	// Tables
 	rest.POST("/tables", h.CreateTable)
-	rest.GET("/tables/:id", h.GetTable)
-	rest.PUT("/tables/:id", h.UpdateTable)
-	rest.DELETE("/tables/:id", h.DeleteTable)
+	rest.GET("/tables/:table_id", h.GetTable)
+	rest.PUT("/tables/:table_id", h.UpdateTable)
+	rest.DELETE("/tables/:table_id", h.DeleteTable)
 
 	// Menu Categories
 	rest.POST("/menu-categories", h.CreateMenuCategory)
-	rest.GET("/menu-categories/:id", h.GetMenuCategory)
-	rest.PUT("/menu-categories/:id", h.UpdateMenuCategory)
-	rest.DELETE("/menu-categories/:id", h.DeleteMenuCategory)
+	rest.GET("/menu-categories/:category_id", h.GetMenuCategory)
+	rest.PUT("/menu-categories/:category_id", h.UpdateMenuCategory)
+	rest.DELETE("/menu-categories/:category_id", h.DeleteMenuCategory)
 	rest.GET("/menu-categories/:category_id/items", h.ListMenuItems)
 
 	// Menu Items
 	rest.POST("/menu-items", h.CreateMenuItem)
-	rest.GET("/menu-items/:id", h.GetMenuItem)
-	rest.PUT("/menu-items/:id", h.UpdateMenuItem)
-	rest.DELETE("/menu-items/:id", h.DeleteMenuItem)
+	rest.GET("/menu-items/:item_id", h.GetMenuItem)
+	rest.PUT("/menu-items/:item_id", h.UpdateMenuItem)
+	rest.DELETE("/menu-items/:item_id", h.DeleteMenuItem)
 	rest.GET("/menu-items/:item_id/modifiers", h.ListModifiers)
 
 	// Modifiers
 	rest.POST("/modifiers", h.CreateModifier)
-	rest.GET("/modifiers/:id", h.GetModifier)
-	rest.PUT("/modifiers/:id", h.UpdateModifier)
-	rest.DELETE("/modifiers/:id", h.DeleteModifier)
+	rest.GET("/modifiers/:modifier_id", h.GetModifier)
+	rest.PUT("/modifiers/:modifier_id", h.UpdateModifier)
+	rest.DELETE("/modifiers/:modifier_id", h.DeleteModifier)
 
 	// Orders
 	rest.POST("/orders", h.CreateOrder)
 	rest.POST("/orders/online", h.CreateOnlineOrder)
-	rest.GET("/orders/:id", h.GetOrder)
-	rest.PUT("/orders/:id", h.UpdateOrder)
-	rest.DELETE("/orders/:id", h.DeleteOrder)
-	rest.PATCH("/orders/:id/status", h.UpdateOrderStatus)
-	rest.POST("/orders/:id/settle", h.SettleOrder)
+	rest.GET("/orders/:order_id", h.GetOrder)
+	rest.PUT("/orders/:order_id", h.UpdateOrder)
+	rest.DELETE("/orders/:order_id", h.DeleteOrder)
+	rest.PATCH("/orders/:order_id/status", h.UpdateOrderStatus)
+	rest.POST("/orders/:order_id/settle", h.SettleOrder)
 
 	// Order Items
-	rest.GET("/order-items/:id", h.GetOrderItem)
-	rest.PUT("/order-items/:id", h.UpdateOrderItem)
-	rest.DELETE("/order-items/:id", h.DeleteOrderItem)
+	rest.GET("/order-items/:order_item_id", h.GetOrderItem)
+	rest.PUT("/order-items/:order_item_id", h.UpdateOrderItem)
+	rest.DELETE("/order-items/:order_item_id", h.DeleteOrderItem)
 
 	// Recipes
 	rest.POST("/recipes", h.CreateRecipe)
-	rest.GET("/recipes/:id", h.GetRecipe)
-	rest.PUT("/recipes/:id", h.UpdateRecipe)
-	rest.DELETE("/recipes/:id", h.DeleteRecipe)
-	rest.POST("/recipes/:id/ingredients", h.AddRecipeIngredient)
+	rest.GET("/recipes/:recipe_id", h.GetRecipe)
+	rest.PUT("/recipes/:recipe_id", h.UpdateRecipe)
+	rest.DELETE("/recipes/:recipe_id", h.DeleteRecipe)
+	rest.POST("/recipes/:recipe_id/ingredients", h.AddRecipeIngredient)
 
 	// Recipe Ingredients
-	rest.GET("/recipe-ingredients/:id", h.GetRecipeIngredient)
-	rest.PUT("/recipe-ingredients/:id", h.UpdateRecipeIngredient)
-	rest.DELETE("/recipe-ingredients/:id", h.DeleteRecipeIngredient)
+	rest.GET("/recipe-ingredients/:recipe_ingredient_id", h.GetRecipeIngredient)
+	rest.PUT("/recipe-ingredients/:recipe_ingredient_id", h.UpdateRecipeIngredient)
+	rest.DELETE("/recipe-ingredients/:recipe_ingredient_id", h.DeleteRecipeIngredient)
 
 	// Waste
 	rest.POST("/waste-logs", h.CreateWasteLog)
-	rest.GET("/waste-logs/:id", h.GetWasteLog)
-	rest.PUT("/waste-logs/:id", h.UpdateWasteLog)
-	rest.DELETE("/waste-logs/:id", h.DeleteWasteLog)
+	rest.GET("/waste-logs/:waste_log_id", h.GetWasteLog)
+	rest.PUT("/waste-logs/:waste_log_id", h.UpdateWasteLog)
+	rest.DELETE("/waste-logs/:waste_log_id", h.DeleteWasteLog)
 
 	// Kiosk
 	rest.POST("/kiosk/sessions", h.CreateKioskSession)
+	rest.PUT("/kiosk/sessions/:session_id", h.UpdateKioskSession)
+	rest.DELETE("/kiosk/sessions/:session_id", h.DeleteKioskSession)
 	rest.GET("/kiosk/sessions/:token", h.GetKioskSession)
-	rest.GET("/kiosk/sessions/id/:id", h.GetKioskSessionByID)
-	rest.PUT("/kiosk/sessions/:id", h.UpdateKioskSession)
-	rest.DELETE("/kiosk/sessions/:id", h.DeleteKioskSession)
+	rest.GET("/kiosk/sessions/id/:session_id", h.GetKioskSessionByID)
 
 	// Store-specific lookups
 	stores := rest.Group("/stores/:store_id")

@@ -74,13 +74,13 @@ func (h *RestaurantHandler) ListTables(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Table ID"
+// @Param        table_id     path      int     true   "Table ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/tables/{id} [get]
+// @Router       /api/restaurant/tables/{table_id} [get]
 func (h *RestaurantHandler) GetTable(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -150,13 +150,13 @@ func (h *RestaurantHandler) CreateTable(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Table ID"
+// @Param        table_id     path      int     true   "Table ID"
 // @Param        body         body      CreateRestaurantTableRequest  true  "Updated table data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/tables/{id} [put]
+// @Router       /api/restaurant/tables/{table_id} [put]
 func (h *RestaurantHandler) UpdateTable(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -201,12 +201,12 @@ func (h *RestaurantHandler) UpdateTable(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Table ID"
+// @Param        table_id     path      int     true   "Table ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/tables/{id} [delete]
+// @Router       /api/restaurant/tables/{table_id} [delete]
 func (h *RestaurantHandler) DeleteTable(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -265,13 +265,13 @@ func (h *RestaurantHandler) ListMenuCategories(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Category ID"
+// @Param        category_id  path      int     true   "Category ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/menu-categories/{id} [get]
+// @Router       /api/restaurant/menu-categories/{category_id} [get]
 func (h *RestaurantHandler) GetMenuCategory(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -345,13 +345,13 @@ func (h *RestaurantHandler) CreateMenuCategory(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Category ID"
+// @Param        category_id  path      int     true   "Category ID"
 // @Param        body         body      CreateMenuCategoryRequest  true  "Updated category data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/menu-categories/{id} [put]
+// @Router       /api/restaurant/menu-categories/{category_id} [put]
 func (h *RestaurantHandler) UpdateMenuCategory(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -400,12 +400,12 @@ func (h *RestaurantHandler) UpdateMenuCategory(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Category ID"
+// @Param        category_id  path      int     true   "Category ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/menu-categories/{id} [delete]
+// @Router       /api/restaurant/menu-categories/{category_id} [delete]
 func (h *RestaurantHandler) DeleteMenuCategory(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -464,13 +464,13 @@ func (h *RestaurantHandler) ListMenuItems(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Menu Item ID"
+// @Param        item_id      path      int     true   "Menu Item ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/menu-items/{id} [get]
+// @Router       /api/restaurant/menu-items/{item_id} [get]
 func (h *RestaurantHandler) GetMenuItem(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -550,13 +550,13 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Menu Item ID"
+// @Param        item_id      path      int     true   "Menu Item ID"
 // @Param        body         body      CreateMenuItemRequest  true  "Updated item data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/menu-items/{id} [put]
+// @Router       /api/restaurant/menu-items/{item_id} [put]
 func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -611,12 +611,12 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Menu Item ID"
+// @Param        item_id      path      int     true   "Menu Item ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/menu-items/{id} [delete]
+// @Router       /api/restaurant/menu-items/{item_id} [delete]
 func (h *RestaurantHandler) DeleteMenuItem(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -667,7 +667,7 @@ func (h *RestaurantHandler) ListModifiers(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetModifier handles GET /api/restaurant/modifiers/:id
+// GetModifier handles GET /api/restaurant/modifiers/:modifier_id
 // @Summary      Get item modifier
 // @Description  Returns a single item modifier by ID.
 // @Tags         restaurant
@@ -675,13 +675,13 @@ func (h *RestaurantHandler) ListModifiers(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Modifier ID"
+// @Param        modifier_id  path      int     true   "Modifier ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/modifiers/{id} [get]
+// @Router       /api/restaurant/modifiers/{modifier_id} [get]
 func (h *RestaurantHandler) GetModifier(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -689,7 +689,7 @@ func (h *RestaurantHandler) GetModifier(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -745,7 +745,7 @@ func (h *RestaurantHandler) CreateModifier(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateModifier handles PUT /api/restaurant/modifiers/:id
+// UpdateModifier handles PUT /api/restaurant/modifiers/:modifier_id
 // @Summary      Update item modifier
 // @Description  Updates an existing item modifier.
 // @Tags         restaurant
@@ -753,13 +753,13 @@ func (h *RestaurantHandler) CreateModifier(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Modifier ID"
+// @Param        modifier_id  path      int     true   "Modifier ID"
 // @Param        body         body      CreateMenuItemModifierRequest  true  "Updated modifier data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/modifiers/{id} [put]
+// @Router       /api/restaurant/modifiers/{modifier_id} [put]
 func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -767,7 +767,7 @@ func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -798,7 +798,7 @@ func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteModifier handles DELETE /api/restaurant/modifiers/:id
+// DeleteModifier handles DELETE /api/restaurant/modifiers/:modifier_id
 // @Summary      Delete item modifier
 // @Description  Deletes an item modifier by ID.
 // @Tags         restaurant
@@ -806,12 +806,12 @@ func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Modifier ID"
+// @Param        modifier_id  path      int     true   "Modifier ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/modifiers/{id} [delete]
+// @Router       /api/restaurant/modifiers/{modifier_id} [delete]
 func (h *RestaurantHandler) DeleteModifier(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -819,7 +819,7 @@ func (h *RestaurantHandler) DeleteModifier(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -978,7 +978,7 @@ func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateOrder handles PUT /api/restaurant/orders/:id
+// UpdateOrder handles PUT /api/restaurant/orders/:order_id
 // @Summary      Update restaurant order
 // @Description  Updates an existing restaurant order.
 // @Tags         restaurant
@@ -986,13 +986,13 @@ func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order ID"
+// @Param        order_id     path      int     true   "Order ID"
 // @Param        body         body      CreateRestaurantOrderRequest  true  "Updated order data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/orders/{id} [put]
+// @Router       /api/restaurant/orders/{order_id} [put]
 func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1000,7 +1000,7 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1044,7 +1044,7 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteOrder handles DELETE /api/restaurant/orders/:id
+// DeleteOrder handles DELETE /api/restaurant/orders/:order_id
 // @Summary      Delete restaurant order
 // @Description  Deletes a restaurant order by ID.
 // @Tags         restaurant
@@ -1052,12 +1052,12 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order ID"
+// @Param        order_id     path      int     true   "Order ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/orders/{id} [delete]
+// @Router       /api/restaurant/orders/{order_id} [delete]
 func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1065,7 +1065,7 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1075,7 +1075,7 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetOrder handles GET /api/restaurant/orders/:id
+// GetOrder handles GET /api/restaurant/orders/:order_id
 // @Summary      Get restaurant order
 // @Description  Returns a single restaurant order with its items by ID.
 // @Tags         restaurant
@@ -1083,13 +1083,13 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order ID"
+// @Param        order_id     path      int     true   "Order ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/orders/{id} [get]
+// @Router       /api/restaurant/orders/{order_id} [get]
 func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1097,7 +1097,7 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1107,7 +1107,7 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateOrderStatus handles PATCH /api/restaurant/orders/:id/status
+// UpdateOrderStatus handles PATCH /api/restaurant/orders/:order_id/status
 // @Summary      Update order status
 // @Description  Updates the status of a restaurant order.
 // @Tags         restaurant
@@ -1115,13 +1115,13 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order ID"
+// @Param        order_id     path      int     true   "Order ID"
 // @Param        body         body      UpdateStatusRequest  true  "Status data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/orders/{id}/status [patch]
+// @Router       /api/restaurant/orders/{order_id}/status [patch]
 func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1129,7 +1129,7 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1145,7 +1145,7 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// SettleOrder handles POST /api/restaurant/orders/:id/settle
+// SettleOrder handles POST /api/restaurant/orders/:order_id/settle
 // @Summary      Settle restaurant order
 // @Description  Marks a restaurant order as paid and links it to a POS transaction.
 // @Tags         restaurant
@@ -1153,13 +1153,13 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order ID"
+// @Param        order_id     path      int     true   "Order ID"
 // @Param        body         body      SettleOrderRequest  true  "Settlement data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/orders/{id}/settle [post]
+// @Router       /api/restaurant/orders/{order_id}/settle [post]
 func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1167,7 +1167,7 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1247,21 +1247,21 @@ func (h *RestaurantHandler) CreateOnlineOrder(c *gin.Context) {
 
 // === Order Items ===
 
-// GetOrderItem handles GET /api/restaurant/order-items/:id
+// GetOrderItem handles GET /api/restaurant/order-items/:order_item_id
 // @Summary      Get order item
 // @Description  Returns a single restaurant order item by ID.
 // @Tags         restaurant
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order Item ID"
-// @Success      200          {object}  SuccessResponse
-// @Failure      400          {object}  ErrorResponse
-// @Failure      401          {object}  ErrorResponse
-// @Failure      404          {object}  ErrorResponse
-// @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/order-items/{id} [get]
+// @Param        x-tenant-id    header    string  true   "Tenant identifier"
+// @Param        order_item_id  path      int     true   "Order Item ID"
+// @Success      200            {object}  SuccessResponse
+// @Failure      400            {object}  ErrorResponse
+// @Failure      401            {object}  ErrorResponse
+// @Failure      404            {object}  ErrorResponse
+// @Failure      500            {object}  ErrorResponse
+// @Router       /api/restaurant/order-items/{order_item_id} [get]
 func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1269,7 +1269,7 @@ func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1279,21 +1279,21 @@ func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateOrderItem handles PUT /api/restaurant/order-items/:id
+// UpdateOrderItem handles PUT /api/restaurant/order-items/:order_item_id
 // @Summary      Update order item
 // @Description  Updates an existing restaurant order item.
 // @Tags         restaurant
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order Item ID"
-// @Param        body         body      CreateRestaurantOrderItemRequest  true  "Updated item data"
-// @Success      200          {object}  SuccessResponse
-// @Failure      400          {object}  ErrorResponse
-// @Failure      401          {object}  ErrorResponse
-// @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/order-items/{id} [put]
+// @Param        x-tenant-id    header    string  true   "Tenant identifier"
+// @Param        order_item_id  path      int     true   "Order Item ID"
+// @Param        body           body      CreateRestaurantOrderItemRequest  true  "Updated item data"
+// @Success      200            {object}  SuccessResponse
+// @Failure      400            {object}  ErrorResponse
+// @Failure      401            {object}  ErrorResponse
+// @Failure      500            {object}  ErrorResponse
+// @Router       /api/restaurant/order-items/{order_item_id} [put]
 func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1301,7 +1301,7 @@ func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1346,20 +1346,20 @@ func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteOrderItem handles DELETE /api/restaurant/order-items/:id
+// DeleteOrderItem handles DELETE /api/restaurant/order-items/:order_item_id
 // @Summary      Delete order item
 // @Description  Deletes a restaurant order item by ID.
 // @Tags         restaurant
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Order Item ID"
-// @Success      200          {object}  SuccessResponse
-// @Failure      400          {object}  ErrorResponse
-// @Failure      401          {object}  ErrorResponse
-// @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/order-items/{id} [delete]
+// @Param        x-tenant-id    header    string  true   "Tenant identifier"
+// @Param        order_item_id  path      int     true   "Order Item ID"
+// @Success      200            {object}  SuccessResponse
+// @Failure      400            {object}  ErrorResponse
+// @Failure      401            {object}  ErrorResponse
+// @Failure      500            {object}  ErrorResponse
+// @Router       /api/restaurant/order-items/{order_item_id} [delete]
 func (h *RestaurantHandler) DeleteOrderItem(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1367,7 +1367,7 @@ func (h *RestaurantHandler) DeleteOrderItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1434,7 +1434,7 @@ func (h *RestaurantHandler) CreateWasteLog(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetWasteLog handles GET /api/restaurant/waste-logs/:id
+// GetWasteLog handles GET /api/restaurant/waste-logs/:waste_log_id
 // @Summary      Get waste log
 // @Description  Returns a single waste log entry by ID.
 // @Tags         restaurant
@@ -1442,13 +1442,13 @@ func (h *RestaurantHandler) CreateWasteLog(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Waste Log ID"
+// @Param        waste_log_id path      int     true   "Waste Log ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/waste-logs/{id} [get]
+// @Router       /api/restaurant/waste-logs/{waste_log_id} [get]
 func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1456,7 +1456,7 @@ func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1466,7 +1466,7 @@ func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateWasteLog handles PUT /api/restaurant/waste-logs/:id
+// UpdateWasteLog handles PUT /api/restaurant/waste-logs/:waste_log_id
 // @Summary      Update waste log
 // @Description  Updates an existing waste log entry.
 // @Tags         restaurant
@@ -1474,13 +1474,13 @@ func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Waste Log ID"
+// @Param        waste_log_id path      int     true   "Waste Log ID"
 // @Param        body         body      CreateWasteLogRequest  true  "Updated waste data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/waste-logs/{id} [put]
+// @Router       /api/restaurant/waste-logs/{waste_log_id} [put]
 func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1488,7 +1488,7 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1528,7 +1528,7 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteWasteLog handles DELETE /api/restaurant/waste-logs/:id
+// DeleteWasteLog handles DELETE /api/restaurant/waste-logs/:waste_log_id
 // @Summary      Delete waste log
 // @Description  Deletes a waste log entry by ID.
 // @Tags         restaurant
@@ -1536,12 +1536,12 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Waste Log ID"
+// @Param        waste_log_id path      int     true   "Waste Log ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/waste-logs/{id} [delete]
+// @Router       /api/restaurant/waste-logs/{waste_log_id} [delete]
 func (h *RestaurantHandler) DeleteWasteLog(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1549,7 +1549,7 @@ func (h *RestaurantHandler) DeleteWasteLog(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1625,7 +1625,7 @@ func (h *RestaurantHandler) ListRecipes(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetRecipe handles GET /api/restaurant/recipes/:id
+// GetRecipe handles GET /api/restaurant/recipes/:recipe_id
 // @Summary      Get recipe
 // @Description  Returns a single recipe with ingredients and cost by ID.
 // @Tags         restaurant
@@ -1633,13 +1633,13 @@ func (h *RestaurantHandler) ListRecipes(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Recipe ID"
+// @Param        recipe_id    path      int     true   "Recipe ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipes/{id} [get]
+// @Router       /api/restaurant/recipes/{recipe_id} [get]
 func (h *RestaurantHandler) GetRecipe(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1647,7 +1647,7 @@ func (h *RestaurantHandler) GetRecipe(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1687,18 +1687,18 @@ func (h *RestaurantHandler) CreateRecipe(c *gin.Context) {
 	yieldQty, _ := repo.ParseNumeric(c.Request.Context(), req.YieldQuantity)
 
 	params := repository.CreateRecipeParams{
-		OrganizationID:      req.OrganizationID,
-		RecipeCode:          req.RecipeCode,
-		RecipeName:          req.RecipeName,
-		Description:         pgtype.Text{String: req.Description, Valid: req.Description != ""},
-		FinishedProductID:   pgtype.Int4{Int32: utils.DerefInt32(req.FinishedProductID), Valid: req.FinishedProductID != nil},
-		YieldQuantity:       yieldQty,
-		YieldUomID:          pgtype.Int4{Int32: utils.DerefInt32(req.YieldUomID), Valid: req.YieldUomID != nil},
-		PreparationSteps:    pgtype.Text{String: req.PreparationSteps, Valid: req.PreparationSteps != ""},
-		PreparationTimeMin:  pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
-		CookingTimeMin:      pgtype.Int4{Int32: req.CookingTimeMin, Valid: true},
-		IsActive:            pgtype.Bool{Bool: req.IsActive, Valid: true},
-		Metadata:            []byte(req.Metadata),
+		OrganizationID:     req.OrganizationID,
+		RecipeCode:         req.RecipeCode,
+		RecipeName:         req.RecipeName,
+		Description:        pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		FinishedProductID:  pgtype.Int4{Int32: utils.DerefInt32(req.FinishedProductID), Valid: req.FinishedProductID != nil},
+		YieldQuantity:      yieldQty,
+		YieldUomID:         pgtype.Int4{Int32: utils.DerefInt32(req.YieldUomID), Valid: req.YieldUomID != nil},
+		PreparationSteps:   pgtype.Text{String: req.PreparationSteps, Valid: req.PreparationSteps != ""},
+		PreparationTimeMin: pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
+		CookingTimeMin:     pgtype.Int4{Int32: req.CookingTimeMin, Valid: true},
+		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:           []byte(req.Metadata),
 	}
 	if req.Metadata == "" {
 		params.Metadata = []byte("{}")
@@ -1708,7 +1708,7 @@ func (h *RestaurantHandler) CreateRecipe(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateRecipe handles PUT /api/restaurant/recipes/:id
+// UpdateRecipe handles PUT /api/restaurant/recipes/:recipe_id
 // @Summary      Update recipe
 // @Description  Updates an existing recipe header.
 // @Tags         restaurant
@@ -1716,13 +1716,13 @@ func (h *RestaurantHandler) CreateRecipe(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Recipe ID"
+// @Param        recipe_id    path      int     true   "Recipe ID"
 // @Param        body         body      CreateRecipeRequest  true  "Updated recipe data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipes/{id} [put]
+// @Router       /api/restaurant/recipes/{recipe_id} [put]
 func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1730,7 +1730,7 @@ func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1745,18 +1745,18 @@ func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 	yieldQty, _ := repo.ParseNumeric(c.Request.Context(), req.YieldQuantity)
 
 	params := repository.UpdateRecipeParams{
-		ID:                  int32(id),
-		RecipeCode:          req.RecipeCode,
-		RecipeName:          req.RecipeName,
-		Description:         pgtype.Text{String: req.Description, Valid: req.Description != ""},
-		FinishedProductID:   pgtype.Int4{Int32: utils.DerefInt32(req.FinishedProductID), Valid: req.FinishedProductID != nil},
-		YieldQuantity:       yieldQty,
-		YieldUomID:          pgtype.Int4{Int32: utils.DerefInt32(req.YieldUomID), Valid: req.YieldUomID != nil},
-		PreparationSteps:    pgtype.Text{String: req.PreparationSteps, Valid: req.PreparationSteps != ""},
-		PreparationTimeMin:  pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
-		CookingTimeMin:      pgtype.Int4{Int32: req.CookingTimeMin, Valid: true},
-		IsActive:            pgtype.Bool{Bool: req.IsActive, Valid: true},
-		Metadata:            []byte(req.Metadata),
+		ID:                 int32(id),
+		RecipeCode:         req.RecipeCode,
+		RecipeName:         req.RecipeName,
+		Description:        pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		FinishedProductID:  pgtype.Int4{Int32: utils.DerefInt32(req.FinishedProductID), Valid: req.FinishedProductID != nil},
+		YieldQuantity:      yieldQty,
+		YieldUomID:         pgtype.Int4{Int32: utils.DerefInt32(req.YieldUomID), Valid: req.YieldUomID != nil},
+		PreparationSteps:   pgtype.Text{String: req.PreparationSteps, Valid: req.PreparationSteps != ""},
+		PreparationTimeMin: pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
+		CookingTimeMin:     pgtype.Int4{Int32: req.CookingTimeMin, Valid: true},
+		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:           []byte(req.Metadata),
 	}
 	if req.Metadata == "" {
 		params.Metadata = []byte("{}")
@@ -1766,7 +1766,7 @@ func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteRecipe handles DELETE /api/restaurant/recipes/:id
+// DeleteRecipe handles DELETE /api/restaurant/recipes/:recipe_id
 // @Summary      Delete recipe
 // @Description  Deletes a recipe and its ingredients by ID.
 // @Tags         restaurant
@@ -1774,12 +1774,12 @@ func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Recipe ID"
+// @Param        recipe_id    path      int     true   "Recipe ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipes/{id} [delete]
+// @Router       /api/restaurant/recipes/{recipe_id} [delete]
 func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1787,7 +1787,7 @@ func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1797,7 +1797,7 @@ func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// AddRecipeIngredient handles POST /api/restaurant/recipes/:id/ingredients
+// AddRecipeIngredient handles POST /api/restaurant/recipes/:recipe_id/ingredients
 // @Summary      Add recipe ingredient
 // @Description  Adds an ingredient line to a recipe.
 // @Tags         restaurant
@@ -1805,13 +1805,13 @@ func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Recipe ID"
+// @Param        recipe_id    path      int     true   "Recipe ID"
 // @Param        body         body      CreateRecipeIngredientRequest  true  "Ingredient data"
 // @Success      201          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipes/{id}/ingredients [post]
+// @Router       /api/restaurant/recipes/{recipe_id}/ingredients [post]
 func (h *RestaurantHandler) AddRecipeIngredient(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1819,7 +1819,7 @@ func (h *RestaurantHandler) AddRecipeIngredient(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, _ := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, _ := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	var req CreateRecipeIngredientRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
@@ -1849,21 +1849,21 @@ func (h *RestaurantHandler) AddRecipeIngredient(c *gin.Context) {
 
 // === Recipe Ingredients ===
 
-// GetRecipeIngredient handles GET /api/restaurant/recipe-ingredients/:id
+// GetRecipeIngredient handles GET /api/restaurant/recipe-ingredients/:recipe_ingredient_id
 // @Summary      Get recipe ingredient
 // @Description  Returns a single recipe ingredient line by ID.
 // @Tags         restaurant
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Ingredient ID"
-// @Success      200          {object}  SuccessResponse
-// @Failure      400          {object}  ErrorResponse
-// @Failure      401          {object}  ErrorResponse
-// @Failure      404          {object}  ErrorResponse
-// @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipe-ingredients/{id} [get]
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        recipe_ingredient_id  path      int     true   "Ingredient ID"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      404                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/recipe-ingredients/{recipe_ingredient_id} [get]
 func (h *RestaurantHandler) GetRecipeIngredient(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1871,7 +1871,7 @@ func (h *RestaurantHandler) GetRecipeIngredient(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1881,21 +1881,21 @@ func (h *RestaurantHandler) GetRecipeIngredient(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateRecipeIngredient handles PUT /api/restaurant/recipe-ingredients/:id
+// UpdateRecipeIngredient handles PUT /api/restaurant/recipe-ingredients/:recipe_ingredient_id
 // @Summary      Update recipe ingredient
 // @Description  Updates an existing recipe ingredient line.
 // @Tags         restaurant
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Ingredient ID"
-// @Param        body         body      CreateRecipeIngredientRequest  true  "Updated ingredient data"
-// @Success      200          {object}  SuccessResponse
-// @Failure      400          {object}  ErrorResponse
-// @Failure      401          {object}  ErrorResponse
-// @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipe-ingredients/{id} [put]
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        recipe_ingredient_id  path      int     true   "Ingredient ID"
+// @Param        body                  body      CreateRecipeIngredientRequest  true  "Updated ingredient data"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/recipe-ingredients/{recipe_ingredient_id} [put]
 func (h *RestaurantHandler) UpdateRecipeIngredient(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1903,7 +1903,7 @@ func (h *RestaurantHandler) UpdateRecipeIngredient(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -1936,20 +1936,20 @@ func (h *RestaurantHandler) UpdateRecipeIngredient(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteRecipeIngredient handles DELETE /api/restaurant/recipe-ingredients/:id
+// DeleteRecipeIngredient handles DELETE /api/restaurant/recipe-ingredients/:recipe_ingredient_id
 // @Summary      Delete recipe ingredient
 // @Description  Deletes a recipe ingredient line by ID.
 // @Tags         restaurant
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Ingredient ID"
-// @Success      200          {object}  SuccessResponse
-// @Failure      400          {object}  ErrorResponse
-// @Failure      401          {object}  ErrorResponse
-// @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/recipe-ingredients/{id} [delete]
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        recipe_ingredient_id  path      int     true   "Ingredient ID"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/recipe-ingredients/{recipe_ingredient_id} [delete]
 func (h *RestaurantHandler) DeleteRecipeIngredient(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -1957,7 +1957,7 @@ func (h *RestaurantHandler) DeleteRecipeIngredient(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -2012,7 +2012,7 @@ func (h *RestaurantHandler) CreateKioskSession(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdateKioskSession handles PUT /api/restaurant/kiosk/sessions/:id
+// UpdateKioskSession handles PUT /api/restaurant/kiosk/sessions/:session_id
 // @Summary      Update kiosk session
 // @Description  Updates an existing kiosk session.
 // @Tags         restaurant
@@ -2020,13 +2020,13 @@ func (h *RestaurantHandler) CreateKioskSession(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Session ID"
+// @Param        session_id   path      int     true   "Session ID"
 // @Param        body         body      CreateKioskSessionRequest  true  "Updated session data"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/kiosk/sessions/{id} [put]
+// @Router       /api/restaurant/kiosk/sessions/{session_id} [put]
 func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -2034,7 +2034,7 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -2059,7 +2059,7 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeleteKioskSession handles DELETE /api/restaurant/kiosk/sessions/:id
+// DeleteKioskSession handles DELETE /api/restaurant/kiosk/sessions/:session_id
 // @Summary      Delete kiosk session
 // @Description  Deletes a kiosk session by ID.
 // @Tags         restaurant
@@ -2067,12 +2067,12 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Session ID"
+// @Param        session_id   path      int     true   "Session ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/kiosk/sessions/{id} [delete]
+// @Router       /api/restaurant/kiosk/sessions/{session_id} [delete]
 func (h *RestaurantHandler) DeleteKioskSession(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -2080,7 +2080,7 @@ func (h *RestaurantHandler) DeleteKioskSession(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -2117,7 +2117,7 @@ func (h *RestaurantHandler) GetKioskSession(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetKioskSessionByID handles GET /api/restaurant/kiosk/sessions/id/:id
+// GetKioskSessionByID handles GET /api/restaurant/kiosk/sessions/id/:session_id
 // @Summary      Get kiosk session by ID
 // @Description  Returns kiosk session details by ID.
 // @Tags         restaurant
@@ -2125,13 +2125,13 @@ func (h *RestaurantHandler) GetKioskSession(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true   "Tenant identifier"
-// @Param        id           path      int     true   "Session ID"
+// @Param        session_id   path      int     true   "Session ID"
 // @Success      200          {object}  SuccessResponse
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Failure      404          {object}  ErrorResponse
 // @Failure      500          {object}  ErrorResponse
-// @Router       /api/restaurant/kiosk/sessions/id/{id} [get]
+// @Router       /api/restaurant/kiosk/sessions/id/{session_id} [get]
 func (h *RestaurantHandler) GetKioskSessionByID(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -2139,7 +2139,7 @@ func (h *RestaurantHandler) GetKioskSessionByID(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, _ := strconv.ParseInt(c.Param("id"), 10, 32)
+	id, _ := strconv.ParseInt(c.Param("session_id"), 10, 32)
 	resp := h.useCase.GetKioskSessionByID(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }

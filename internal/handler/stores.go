@@ -110,11 +110,11 @@ func (h *StoreHandler) CreateStore(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id    header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id             path      string  true  "Store ID"
+// @Param        store_id       path      string  true  "Store ID"
 // @Success      200  {object}  StoreResponse
 // @Failure      401  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
-// @Router       /api/stores/{id} [get]
+// @Router       /api/stores/{store_id} [get]
 func (h *StoreHandler) GetStore(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -122,8 +122,8 @@ func (h *StoreHandler) GetStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id := c.Param("id")
-	resp := h.useCase.GetStore(c.Request.Context(), id)
+	storeID := c.Param("store_id")
+	resp := h.useCase.GetStore(c.Request.Context(), storeID)
 
 	if resp.StatusCode != utils.CodeOK {
 		c.JSON(resp.StatusCode, gin.H{"error": resp.Message})
@@ -210,11 +210,11 @@ func (h *StoreHandler) ListStores(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id    header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id             path      string  true  "Store ID"
+// @Param        store_id       path      string  true  "Store ID"
 // @Success      200  {object}  SuccessResponse
 // @Failure      401  {object}  ErrorResponse
 // @Failure      404  {object}  ErrorResponse
-// @Router       /api/stores/{id} [delete]
+// @Router       /api/stores/{store_id} [delete]
 func (h *StoreHandler) DeleteStore(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -222,8 +222,8 @@ func (h *StoreHandler) DeleteStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id := c.Param("id")
-	resp := h.useCase.DeleteStore(c.Request.Context(), id)
+	storeID := c.Param("store_id")
+	resp := h.useCase.DeleteStore(c.Request.Context(), storeID)
 
 	c.JSON(resp.StatusCode, resp)
 }
@@ -341,12 +341,12 @@ func (h *StoreHandler) ListStoresByParent(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id    header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id             path      int     true  "Store ID"
+// @Param        store_id       path      int     true  "Store ID"
 // @Param        is_active      query     bool    false "Filter locations by active status"
 // @Success 200 {array} object
 // @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
-// @Router       /api/stores/{id}/locations [get]
+// @Router       /api/stores/{store_id}/locations [get]
 func (h *StoreHandler) GetStorageLocationHierarchy(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -354,7 +354,7 @@ func (h *StoreHandler) GetStorageLocationHierarchy(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeIDStr := c.Param("id")
+	storeIDStr := c.Param("store_id")
 	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid store ID"})
@@ -385,13 +385,13 @@ func (h *StoreHandler) GetStorageLocationHierarchy(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id    header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        id             path      string  true  "Store ID"
+// @Param        store_id       path      string  true  "Store ID"
 // @Param        store          body      UpdateStoreRequest  true  "Store fields to update"
 // @Success      200  {object}  SuccessResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
-// @Router       /api/stores/{id} [patch]
+// @Router       /api/stores/{store_id} [patch]
 func (h *StoreHandler) UpdateStore(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -399,7 +399,7 @@ func (h *StoreHandler) UpdateStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id := c.Param("id")
+	storeID := c.Param("store_id")
 
 	var req struct {
 		Name         *string     `json:"name,omitempty"`
@@ -421,7 +421,7 @@ func (h *StoreHandler) UpdateStore(c *gin.Context) {
 
 	resp := h.useCase.UpdateStore(
 		c.Request.Context(),
-		id,
+		storeID,
 		req.Name,
 		req.StoreType,
 		req.IsWarehouse,
