@@ -32,7 +32,7 @@ INSERT INTO purchase_analytics (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16
-) RETURNING id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at
+) RETURNING id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at
 `
 
 type CreatePurchaseAnalyticsParams struct {
@@ -85,12 +85,17 @@ func (q *Queries) CreatePurchaseAnalytics(ctx context.Context, arg CreatePurchas
 		&i.Month,
 		&i.Quarter,
 		&i.Year,
-		&i.TotalOrders,
-		&i.TotalQuantity,
-		&i.TotalAmount,
+		&i.UnitsPurchased,
+		&i.TotalCost,
 		&i.DiscountsReceived,
 		&i.TaxesPaid,
 		&i.NetAmount,
+		&i.NetCost,
+		&i.Orders,
+		&i.TotalOrders,
+		&i.TotalQuantity,
+		&i.TotalAmount,
+		&i.AverageOrderValue,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -109,7 +114,7 @@ func (q *Queries) DeletePurchaseAnalytics(ctx context.Context, id int32) error {
 }
 
 const getPurchaseAnalytics = `-- name: GetPurchaseAnalytics :one
-SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at FROM purchase_analytics
+SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at FROM purchase_analytics
 WHERE id = $1
 `
 
@@ -127,12 +132,17 @@ func (q *Queries) GetPurchaseAnalytics(ctx context.Context, id int32) (PurchaseA
 		&i.Month,
 		&i.Quarter,
 		&i.Year,
-		&i.TotalOrders,
-		&i.TotalQuantity,
-		&i.TotalAmount,
+		&i.UnitsPurchased,
+		&i.TotalCost,
 		&i.DiscountsReceived,
 		&i.TaxesPaid,
 		&i.NetAmount,
+		&i.NetCost,
+		&i.Orders,
+		&i.TotalOrders,
+		&i.TotalQuantity,
+		&i.TotalAmount,
+		&i.AverageOrderValue,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -141,7 +151,7 @@ func (q *Queries) GetPurchaseAnalytics(ctx context.Context, id int32) (PurchaseA
 }
 
 const getPurchaseAnalyticsByDateRange = `-- name: GetPurchaseAnalyticsByDateRange :many
-SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at FROM purchase_analytics
+SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at FROM purchase_analytics
 WHERE organization_id = $1
   AND date >= $2 AND date <= $3
 ORDER BY date DESC
@@ -173,12 +183,17 @@ func (q *Queries) GetPurchaseAnalyticsByDateRange(ctx context.Context, arg GetPu
 			&i.Month,
 			&i.Quarter,
 			&i.Year,
-			&i.TotalOrders,
-			&i.TotalQuantity,
-			&i.TotalAmount,
+			&i.UnitsPurchased,
+			&i.TotalCost,
 			&i.DiscountsReceived,
 			&i.TaxesPaid,
 			&i.NetAmount,
+			&i.NetCost,
+			&i.Orders,
+			&i.TotalOrders,
+			&i.TotalQuantity,
+			&i.TotalAmount,
+			&i.AverageOrderValue,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -194,7 +209,7 @@ func (q *Queries) GetPurchaseAnalyticsByDateRange(ctx context.Context, arg GetPu
 }
 
 const getPurchaseAnalyticsByProduct = `-- name: GetPurchaseAnalyticsByProduct :many
-SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at FROM purchase_analytics
+SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at FROM purchase_analytics
 WHERE organization_id = $1 AND product_id = $2
   AND date >= $3 AND date <= $4
 ORDER BY date DESC
@@ -232,12 +247,17 @@ func (q *Queries) GetPurchaseAnalyticsByProduct(ctx context.Context, arg GetPurc
 			&i.Month,
 			&i.Quarter,
 			&i.Year,
-			&i.TotalOrders,
-			&i.TotalQuantity,
-			&i.TotalAmount,
+			&i.UnitsPurchased,
+			&i.TotalCost,
 			&i.DiscountsReceived,
 			&i.TaxesPaid,
 			&i.NetAmount,
+			&i.NetCost,
+			&i.Orders,
+			&i.TotalOrders,
+			&i.TotalQuantity,
+			&i.TotalAmount,
+			&i.AverageOrderValue,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -253,7 +273,7 @@ func (q *Queries) GetPurchaseAnalyticsByProduct(ctx context.Context, arg GetPurc
 }
 
 const getPurchaseAnalyticsByStore = `-- name: GetPurchaseAnalyticsByStore :many
-SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at FROM purchase_analytics
+SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at FROM purchase_analytics
 WHERE organization_id = $1 AND store_id = $2
   AND date >= $3 AND date <= $4
 ORDER BY date DESC
@@ -291,12 +311,17 @@ func (q *Queries) GetPurchaseAnalyticsByStore(ctx context.Context, arg GetPurcha
 			&i.Month,
 			&i.Quarter,
 			&i.Year,
-			&i.TotalOrders,
-			&i.TotalQuantity,
-			&i.TotalAmount,
+			&i.UnitsPurchased,
+			&i.TotalCost,
 			&i.DiscountsReceived,
 			&i.TaxesPaid,
 			&i.NetAmount,
+			&i.NetCost,
+			&i.Orders,
+			&i.TotalOrders,
+			&i.TotalQuantity,
+			&i.TotalAmount,
+			&i.AverageOrderValue,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -312,7 +337,7 @@ func (q *Queries) GetPurchaseAnalyticsByStore(ctx context.Context, arg GetPurcha
 }
 
 const getPurchaseAnalyticsBySupplier = `-- name: GetPurchaseAnalyticsBySupplier :many
-SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at FROM purchase_analytics
+SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at FROM purchase_analytics
 WHERE organization_id = $1 AND supplier_id = $2
   AND date >= $3 AND date <= $4
 ORDER BY date DESC
@@ -350,12 +375,17 @@ func (q *Queries) GetPurchaseAnalyticsBySupplier(ctx context.Context, arg GetPur
 			&i.Month,
 			&i.Quarter,
 			&i.Year,
-			&i.TotalOrders,
-			&i.TotalQuantity,
-			&i.TotalAmount,
+			&i.UnitsPurchased,
+			&i.TotalCost,
 			&i.DiscountsReceived,
 			&i.TaxesPaid,
 			&i.NetAmount,
+			&i.NetCost,
+			&i.Orders,
+			&i.TotalOrders,
+			&i.TotalQuantity,
+			&i.TotalAmount,
+			&i.AverageOrderValue,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -480,7 +510,7 @@ func (q *Queries) GetTopSuppliersByPurchaseAmount(ctx context.Context, arg GetTo
 }
 
 const listPurchaseAnalytics = `-- name: ListPurchaseAnalytics :many
-SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at FROM purchase_analytics
+SELECT id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at FROM purchase_analytics
 WHERE organization_id = $1
 ORDER BY date DESC
 LIMIT $2 OFFSET $3
@@ -512,12 +542,17 @@ func (q *Queries) ListPurchaseAnalytics(ctx context.Context, arg ListPurchaseAna
 			&i.Month,
 			&i.Quarter,
 			&i.Year,
-			&i.TotalOrders,
-			&i.TotalQuantity,
-			&i.TotalAmount,
+			&i.UnitsPurchased,
+			&i.TotalCost,
 			&i.DiscountsReceived,
 			&i.TaxesPaid,
 			&i.NetAmount,
+			&i.NetCost,
+			&i.Orders,
+			&i.TotalOrders,
+			&i.TotalQuantity,
+			&i.TotalAmount,
+			&i.AverageOrderValue,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -543,7 +578,7 @@ SET
     net_amount = $7,
     metadata = $8
 WHERE id = $1
-RETURNING id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, total_orders, total_quantity, total_amount, discounts_received, taxes_paid, net_amount, metadata, created_at, updated_at
+RETURNING id, organization_id, store_id, supplier_id, product_id, category_id, date, month, quarter, year, units_purchased, total_cost, discounts_received, taxes_paid, net_amount, net_cost, orders, total_orders, total_quantity, total_amount, average_order_value, metadata, created_at, updated_at
 `
 
 type UpdatePurchaseAnalyticsParams struct {
@@ -580,12 +615,17 @@ func (q *Queries) UpdatePurchaseAnalytics(ctx context.Context, arg UpdatePurchas
 		&i.Month,
 		&i.Quarter,
 		&i.Year,
-		&i.TotalOrders,
-		&i.TotalQuantity,
-		&i.TotalAmount,
+		&i.UnitsPurchased,
+		&i.TotalCost,
 		&i.DiscountsReceived,
 		&i.TaxesPaid,
 		&i.NetAmount,
+		&i.NetCost,
+		&i.Orders,
+		&i.TotalOrders,
+		&i.TotalQuantity,
+		&i.TotalAmount,
+		&i.AverageOrderValue,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,

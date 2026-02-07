@@ -56,7 +56,6 @@ func (h *PosHandler) ListProducts(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -80,7 +79,7 @@ func (h *PosHandler) ListProducts(c *gin.Context) {
 	}
 	includeOutOfStock := c.Query("include_out_of_stock") == "true" || c.Query("include_out_of_stock") == "1"
 
-	resp := h.useCase.ListProductsForStore(c.Request.Context(), int32(storeID), categoryID, searchTerm, includeOutOfStock)
+	resp := h.useCase.ListProductsForStore(c.Request.Context(), repo, int32(storeID), categoryID, searchTerm, includeOutOfStock)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -107,7 +106,6 @@ func (h *PosHandler) GetProductsByCategory(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -121,7 +119,7 @@ func (h *PosHandler) GetProductsByCategory(c *gin.Context) {
 	}
 	includeSubcategories := c.Query("include_subcategories") != "false" && c.Query("include_subcategories") != "0"
 
-	resp := h.useCase.GetProductsByCategory(c.Request.Context(), int32(storeID), int32(categoryID), includeSubcategories)
+	resp := h.useCase.GetProductsByCategory(c.Request.Context(), repo, int32(storeID), int32(categoryID), includeSubcategories)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -148,7 +146,6 @@ func (h *PosHandler) SearchProduct(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -167,7 +164,7 @@ func (h *PosHandler) SearchProduct(c *gin.Context) {
 		}
 	}
 
-	resp := h.useCase.SearchProduct(c.Request.Context(), int32(storeID), q, limit)
+	resp := h.useCase.SearchProduct(c.Request.Context(), repo, int32(storeID), q, limit)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -189,9 +186,7 @@ func (h *PosHandler) GetCategories(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
-
-	resp := h.useCase.GetCategories(c.Request.Context())
+	resp := h.useCase.GetCategories(c.Request.Context(), repo)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -215,7 +210,6 @@ func (h *PosHandler) AddProduct(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req AddProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -223,27 +217,69 @@ func (h *PosHandler) AddProduct(c *gin.Context) {
 		return
 	}
 
-	input := &usecase.PosAddProductInput{
-		OrganizationID:       req.OrganizationID,
-		SKU:                  req.SKU,
-		Name:                 req.Name,
-		Description:          req.Description,
-		CategoryID:           req.CategoryID,
-		BrandID:              req.BrandID,
-		BaseUomID:            req.BaseUomID,
-		ProductType:          req.ProductType,
-		TaxCategoryID:        req.TaxCategoryID,
-		IsSerialized:         req.IsSerialized,
-		IsBatchManaged:       req.IsBatchManaged,
-		IsActive:             req.IsActive,
-		IsSellable:           req.IsSellable,
-		IsPurchasable:        req.IsPurchasable,
-		AllowDecimalQuantity: req.AllowDecimalQuantity,
-		TrackInventory:       req.TrackInventory,
-		Barcode:              req.Barcode,
-		RetailPrice:          req.RetailPrice,
+	barcodes := make([]usecase.BarcodeItemInput, len(req.Barcodes))
+	for i, b := range req.Barcodes {
+		barcodes[i] = usecase.BarcodeItemInput{
+			Barcode:     b.Barcode,
+			BarcodeType: b.BarcodeType,
+			IsPrimary:   b.IsPrimary,
+			Metadata:    b.Metadata,
+		}
 	}
 
-	resp := h.useCase.AddProduct(c.Request.Context(), input)
+	prices := make([]usecase.PriceItemInput, len(req.Prices))
+	for i, p := range req.Prices {
+		prices[i] = usecase.PriceItemInput{
+			PriceListID: p.PriceListID,
+			UomID:       p.UomID,
+			Price:       p.Price,
+			MinQuantity: p.MinQuantity,
+			MaxQuantity: p.MaxQuantity,
+			ValidFrom:   p.ValidFrom,
+			ValidTo:     p.ValidTo,
+			IsActive:    p.IsActive,
+			Metadata:    p.Metadata,
+		}
+	}
+
+	conversions := make([]usecase.ConversionItemInput, len(req.Conversions))
+	for i, conv := range req.Conversions {
+		conversions[i] = usecase.ConversionItemInput{
+			FromUomID:        conv.FromUomID,
+			ToUomID:          conv.ToUomID,
+			ConversionFactor: conv.ConversionFactor,
+			IsDefault:        conv.IsDefault,
+			Metadata:         conv.Metadata,
+		}
+	}
+
+	input := &usecase.PosAddProductFullInput{
+		PosAddProductInput: usecase.PosAddProductInput{
+			OrganizationID:       req.OrganizationID,
+			SKU:                  req.SKU,
+			Name:                 req.Name,
+			Description:          req.Description,
+			CategoryID:           req.CategoryID,
+			BrandID:              req.BrandID,
+			BaseUomID:            req.BaseUomID,
+			ProductType:          req.ProductType,
+			TaxCategoryID:        req.TaxCategoryID,
+			IsSerialized:         req.IsSerialized,
+			IsBatchManaged:       req.IsBatchManaged,
+			IsActive:             req.IsActive,
+			IsSellable:           req.IsSellable,
+			IsPurchasable:        req.IsPurchasable,
+			AllowDecimalQuantity: req.AllowDecimalQuantity,
+			TrackInventory:       req.TrackInventory,
+			Barcode:              req.Barcode,
+			RetailPrice:          req.RetailPrice,
+			Metadata:             req.Metadata,
+		},
+		Barcodes:    barcodes,
+		Prices:      prices,
+		Conversions: conversions,
+	}
+
+	resp := h.useCase.AddProductFull(c.Request.Context(), repo, input)
 	c.JSON(resp.StatusCode, resp)
 }

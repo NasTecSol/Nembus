@@ -74,7 +74,7 @@ func (q *Queries) CreateSalesOrderHeader(ctx context.Context, arg CreateSalesOrd
 
 const getSalesOrderFull = `-- name: GetSalesOrderFull :many
 SELECT 
-    so.id, so.order_number, so.organization_id, so.customer_id, so.store_id, so.order_date, so.delivery_date, so.price_list_id, so.status, so.subtotal, so.tax_amount, so.discount_amount, so.total_amount, so.created_by, so.approved_by, so.metadata, so.created_at, so.updated_at,
+    so.id, so.organization_id, so.order_number, so.customer_id, so.store_id, so.price_list_id, so.order_date, so.delivery_date, so.status, so.subtotal, so.discount_amount, so.tax_amount, so.total_amount, so.created_by, so.metadata, so.created_at, so.updated_at,
     c.name AS customer_name,
     c.customer_code,
     st.name AS store_name,
@@ -104,20 +104,19 @@ ORDER BY sol.line_number NULLS LAST
 
 type GetSalesOrderFullRow struct {
 	ID               int32            `json:"id"`
-	OrderNumber      string           `json:"order_number"`
 	OrganizationID   int32            `json:"organization_id"`
+	OrderNumber      string           `json:"order_number"`
 	CustomerID       pgtype.Int4      `json:"customer_id"`
 	StoreID          int32            `json:"store_id"`
+	PriceListID      pgtype.Int4      `json:"price_list_id"`
 	OrderDate        pgtype.Date      `json:"order_date"`
 	DeliveryDate     pgtype.Date      `json:"delivery_date"`
-	PriceListID      pgtype.Int4      `json:"price_list_id"`
 	Status           pgtype.Text      `json:"status"`
 	Subtotal         pgtype.Numeric   `json:"subtotal"`
-	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
 	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
 	TotalAmount      pgtype.Numeric   `json:"total_amount"`
 	CreatedBy        pgtype.Int4      `json:"created_by"`
-	ApprovedBy       pgtype.Int4      `json:"approved_by"`
 	Metadata         []byte           `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
@@ -149,20 +148,19 @@ func (q *Queries) GetSalesOrderFull(ctx context.Context, id int32) ([]GetSalesOr
 		var i GetSalesOrderFullRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.OrderNumber,
 			&i.OrganizationID,
+			&i.OrderNumber,
 			&i.CustomerID,
 			&i.StoreID,
+			&i.PriceListID,
 			&i.OrderDate,
 			&i.DeliveryDate,
-			&i.PriceListID,
 			&i.Status,
 			&i.Subtotal,
-			&i.TaxAmount,
 			&i.DiscountAmount,
+			&i.TaxAmount,
 			&i.TotalAmount,
 			&i.CreatedBy,
-			&i.ApprovedBy,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,

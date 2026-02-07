@@ -2,7 +2,7 @@ package usecase
 
 import (
 	"context"
-	"math/big"
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -13,32 +13,28 @@ import (
 )
 
 type PosUseCase struct {
-	repo *repository.Queries
 }
 
 func NewPosUseCase() *PosUseCase {
 	return &PosUseCase{}
 }
 
-func (uc *PosUseCase) SetRepository(repo *repository.Queries) {
-	uc.repo = repo
-}
-
 // ListProductsForStore returns POS products with stock for a store (categories, prices, barcode).
 func (uc *PosUseCase) ListProductsForStore(
 	ctx context.Context,
+	repo *repository.Queries,
 	storeID int32,
 	categoryID *int32,
 	searchTerm *string,
 	includeOutOfStock bool,
 ) *repository.Response {
 
-	if uc.repo == nil {
+	if repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
 	// Validate store
-	_, err := uc.repo.GetStore(ctx, storeID)
+	_, err := repo.GetStore(ctx, storeID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "store not found", nil)
 	}
@@ -64,7 +60,7 @@ func (uc *PosUseCase) ListProductsForStore(
 	}
 
 	// Query DB
-	rows, err := uc.repo.PosGetProductsWithStock(ctx, arg)
+	rows, err := repo.PosGetProductsWithStock(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -118,21 +114,21 @@ func (uc *PosUseCase) ListProductsForStore(
 }
 
 // SearchProduct searches by barcode (exact), id (exact), or name/sku (fuzzy).
-func (uc *PosUseCase) SearchProduct(ctx context.Context, storeID int32, q string, limit int32) *repository.Response {
-	if uc.repo == nil {
+func (uc *PosUseCase) SearchProduct(ctx context.Context, repo *repository.Queries, storeID int32, q string, limit int32) *repository.Response {
+	if repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 	q = strings.TrimSpace(q)
 	if q == "" {
 		return utils.NewResponse(utils.CodeBadReq, "search term required", nil)
 	}
-	_, err := uc.repo.GetStore(ctx, storeID)
+	_, err := repo.GetStore(ctx, storeID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "store not found", nil)
 	}
 
 	// 1. Exact barcode
-	byBarcode, err := uc.repo.PosGetProductByBarcode(ctx, q, storeID)
+	byBarcode, err := repo.PosGetProductByBarcode(ctx, q, storeID)
 	if err == nil {
 		return utils.NewResponse(utils.CodeOK, "product found by barcode", byBarcode)
 	}
@@ -141,15 +137,15 @@ func (uc *PosUseCase) SearchProduct(ctx context.Context, storeID int32, q string
 	if isNumericID(q) {
 		id, _ := strconv.ParseInt(q, 10, 32)
 		pid := int32(id)
-		prod, err := uc.repo.GetProduct(ctx, pid)
+		prod, err := repo.GetProduct(ctx, pid)
 		if err == nil {
-			stock, _ := uc.repo.GetAvailableStockForPos(ctx, repository.GetAvailableStockForPosParams{
+			stock, _ := repo.GetAvailableStockForPos(ctx, repository.GetAvailableStockForPosParams{
 				ProductID:        prod.ID,
 				ProductVariantID: pgtype.Int4{},
 				StoreID:          storeID,
 			})
-			detail, _ := uc.repo.GetProductWithDetails(ctx, prod.ID)
-			primaryBarcode, _ := uc.repo.GetPrimaryBarcode(ctx, prod.ID)
+			detail, _ := repo.GetProductWithDetails(ctx, prod.ID)
+			primaryBarcode, _ := repo.GetPrimaryBarcode(ctx, prod.ID)
 			isInStock := isPositiveNumeric(stock.QuantityAvailable)
 			out := map[string]interface{}{
 				"product_id":         prod.ID,
@@ -173,7 +169,7 @@ func (uc *PosUseCase) SearchProduct(ctx context.Context, storeID int32, q string
 		limit = 50
 	}
 	searchArg := repository.PosSearchProductsParams{SearchTerm: q, StoreID: storeID, Limit: limit}
-	rows, err := uc.repo.PosSearchProducts(ctx, searchArg)
+	rows, err := repo.PosSearchProducts(ctx, searchArg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -197,11 +193,11 @@ func isPositiveNumeric(n pgtype.Numeric) bool {
 }
 
 // GetProductsByCategory returns products in a category (and optionally subcategories) for a store.
-func (uc *PosUseCase) GetProductsByCategory(ctx context.Context, storeID int32, categoryID int32, includeSubcategories bool) *repository.Response {
-	if uc.repo == nil {
+func (uc *PosUseCase) GetProductsByCategory(ctx context.Context, repo *repository.Queries, storeID int32, categoryID int32, includeSubcategories bool) *repository.Response {
+	if repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	_, err := uc.repo.GetStore(ctx, storeID)
+	_, err := repo.GetStore(ctx, storeID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "store not found", nil)
 	}
@@ -210,7 +206,7 @@ func (uc *PosUseCase) GetProductsByCategory(ctx context.Context, storeID int32, 
 		StoreID:              storeID,
 		IncludeSubcategories: includeSubcategories,
 	}
-	rows, err := uc.repo.PosGetProductsByCategory(ctx, arg)
+	rows, err := repo.PosGetProductsByCategory(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -218,11 +214,11 @@ func (uc *PosUseCase) GetProductsByCategory(ctx context.Context, storeID int32, 
 }
 
 // GetCategories returns POS categories with product counts.
-func (uc *PosUseCase) GetCategories(ctx context.Context) *repository.Response {
-	if uc.repo == nil {
+func (uc *PosUseCase) GetCategories(ctx context.Context, repo *repository.Queries) *repository.Response {
+	if repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	rows, err := uc.repo.PosGetCategories(ctx)
+	rows, err := repo.PosGetCategories(ctx)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -249,61 +245,144 @@ type PosAddProductInput struct {
 	TrackInventory       *bool
 	Barcode              *string
 	RetailPrice          *string
+	Metadata             *string
 }
 
-// AddProduct creates a product and optionally barcode + retail price.
-func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *repository.Response {
-	if uc.repo == nil {
+type PosAddProductFullInput struct {
+	PosAddProductInput
+	Barcodes    []BarcodeItemInput
+	Prices      []PriceItemInput
+	Conversions []ConversionItemInput
+}
+
+type BarcodeItemInput struct {
+	Barcode     string                 `json:"barcode"`
+	BarcodeType string                 `json:"barcode_type"`
+	IsPrimary   bool                   `json:"is_primary"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type PriceItemInput struct {
+	PriceListID int32                  `json:"price_list_id"`
+	UomID       *int32                 `json:"uom_id"`
+	Price       string                 `json:"price"`
+	MinQuantity float64                `json:"min_quantity"`
+	MaxQuantity *float64               `json:"max_quantity"`
+	ValidFrom   *string                `json:"valid_from"`
+	ValidTo     *string                `json:"valid_to"`
+	IsActive    bool                   `json:"is_active"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type ConversionItemInput struct {
+	FromUomID        int32                  `json:"from_uom_id"`
+	ToUomID          int32                  `json:"to_uom_id"`
+	ConversionFactor float64                `json:"conversion_factor"`
+	IsDefault        bool                   `json:"is_default"`
+	Metadata         map[string]interface{} `json:"metadata"`
+}
+
+func (uc *PosUseCase) AddProductFull(ctx context.Context, repo *repository.Queries, in *PosAddProductFullInput) *repository.Response {
+	if repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	params := posAddProductToCreateParams(in)
-	prod, err := uc.repo.CreateProduct(ctx, params)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
+
+	// Handle backward compatibility for single Barcode/RetailPrice
 	if in.Barcode != nil && *in.Barcode != "" {
-		exist, _ := uc.repo.CheckBarcodeExists(ctx, *in.Barcode)
-		if !exist {
-			_, _ = uc.repo.CreateProductBarcode(ctx, repository.CreateProductBarcodeParams{
-				ProductID:        prod.ID,
-				ProductVariantID: pgtype.Int4{},
-				Barcode:          *in.Barcode,
-				BarcodeType:      pgtype.Text{},
-				IsPrimary:        pgtype.Bool{Bool: true, Valid: true},
-				Metadata:         nil,
+		found := false
+		for _, b := range in.Barcodes {
+			if b.Barcode == *in.Barcode {
+				found = true
+				break
+			}
+		}
+		if !found {
+			in.Barcodes = append(in.Barcodes, BarcodeItemInput{
+				Barcode:   *in.Barcode,
+				IsPrimary: true,
 			})
 		}
 	}
+
 	if in.RetailPrice != nil && *in.RetailPrice != "" {
-		pl, err := uc.repo.GetPriceListByCode(ctx, "RETAIL_SAR")
-		if err == nil {
-			price, err := uc.repo.ParseNumeric(ctx, strings.TrimSpace(*in.RetailPrice))
-			if err == nil {
-				minQty, err2 := uc.repo.ParseNumeric(ctx, "1")
-				if err2 != nil {
-					minQty = pgtype.Numeric{Int: big.NewInt(1), Exp: 0}
-				}
-				uomID := pgtype.Int4{}
-				if prod.BaseUomID.Valid {
-					uomID = prod.BaseUomID
-				}
-				_, _ = uc.repo.CreateProductPrice(ctx, repository.CreateProductPriceParams{
-					ProductID:        prod.ID,
-					ProductVariantID: pgtype.Int4{},
-					PriceListID:      pl.ID,
-					UomID:            uomID,
-					Price:            price,
-					MinQuantity:      minQty,
-					MaxQuantity:      pgtype.Numeric{},
-					ValidFrom:        pgtype.Date{},
-					ValidTo:          pgtype.Date{},
-					IsActive:         pgtype.Bool{Bool: true, Valid: true},
-					Metadata:         nil,
-				})
+		found := false
+		pl, _ := repo.GetPriceListByCode(ctx, "RETAIL_SAR")
+		for _, p := range in.Prices {
+			if p.PriceListID == pl.ID {
+				found = true
+				break
 			}
 		}
+		if !found && pl.ID != 0 {
+			in.Prices = append(in.Prices, PriceItemInput{
+				PriceListID: pl.ID,
+				Price:       *in.RetailPrice,
+				MinQuantity: 1,
+				IsActive:    true,
+			})
+		}
 	}
-	return utils.NewResponse(utils.CodeCreated, "product created", prod)
+
+	barcodesJSON, _ := json.Marshal(in.Barcodes)
+	pricesJSON, _ := json.Marshal(in.Prices)
+	conversionsJSON, _ := json.Marshal(in.Conversions)
+
+	params := repository.CreateProductFullParams{
+		OrganizationID:       in.OrganizationID,
+		Sku:                  in.SKU,
+		Name:                 in.Name,
+		Description:          pgtype.Text{String: getString(in.Description), Valid: in.Description != nil},
+		CategoryID:           pgtype.Int4{Int32: getInt32(in.CategoryID), Valid: in.CategoryID != nil},
+		BrandID:              pgtype.Int4{Int32: getInt32(in.BrandID), Valid: in.BrandID != nil},
+		BaseUomID:            pgtype.Int4{Int32: getInt32(in.BaseUomID), Valid: in.BaseUomID != nil},
+		ProductType:          pgtype.Text{String: getString(in.ProductType), Valid: in.ProductType != nil},
+		TaxCategoryID:        pgtype.Int4{Int32: getInt32(in.TaxCategoryID), Valid: in.TaxCategoryID != nil},
+		IsSerialized:         pgtype.Bool{Bool: getBool(in.IsSerialized), Valid: in.IsSerialized != nil},
+		IsBatchManaged:       pgtype.Bool{Bool: getBool(in.IsBatchManaged), Valid: in.IsBatchManaged != nil},
+		IsActive:             pgtype.Bool{Bool: getBool(in.IsActive, true), Valid: true},
+		IsSellable:           pgtype.Bool{Bool: getBool(in.IsSellable, true), Valid: true},
+		IsPurchasable:        pgtype.Bool{Bool: getBool(in.IsPurchasable, false), Valid: true},
+		AllowDecimalQuantity: pgtype.Bool{Bool: getBool(in.AllowDecimalQuantity, false), Valid: true},
+		TrackInventory:       pgtype.Bool{Bool: getBool(in.TrackInventory, true), Valid: true},
+		Metadata:             []byte(getString(in.Metadata, "{}")),
+		Barcodes:             barcodesJSON,
+		Prices:               pricesJSON,
+		Conversions:          conversionsJSON,
+	}
+
+	productID, err := repo.CreateProductFull(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "product created successfully", map[string]interface{}{"product_id": productID})
+}
+
+func getString(s *string, def ...string) string {
+	if s == nil {
+		if len(def) > 0 {
+			return def[0]
+		}
+		return ""
+	}
+	return *s
+}
+
+func getInt32(i *int32) int32 {
+	if i == nil {
+		return 0
+	}
+	return *i
+}
+
+func getBool(b *bool, def ...bool) bool {
+	if b == nil {
+		if len(def) > 0 {
+			return def[0]
+		}
+		return false
+	}
+	return *b
 }
 
 func parseNumericFromString(s string) (pgtype.Numeric, error) {
@@ -328,64 +407,3 @@ func parseNumericFromString(s string) (pgtype.Numeric, error) {
 	return n, err
 }
 
-func posAddProductToCreateParams(in *PosAddProductInput) repository.CreateProductParams {
-	params := repository.CreateProductParams{
-		OrganizationID:       in.OrganizationID,
-		Sku:                  in.SKU,
-		Name:                 in.Name,
-		Description:          pgtype.Text{},
-		CategoryID:           pgtype.Int4{},
-		BrandID:              pgtype.Int4{},
-		BaseUomID:            pgtype.Int4{},
-		ProductType:          pgtype.Text{},
-		TaxCategoryID:        pgtype.Int4{},
-		IsSerialized:         pgtype.Bool{Bool: false, Valid: true},
-		IsBatchManaged:       pgtype.Bool{Bool: false, Valid: true},
-		IsActive:             pgtype.Bool{Bool: true, Valid: true},
-		IsSellable:           pgtype.Bool{Bool: true, Valid: true},
-		IsPurchasable:        pgtype.Bool{Bool: false, Valid: true},
-		AllowDecimalQuantity: pgtype.Bool{Bool: false, Valid: true},
-		TrackInventory:       pgtype.Bool{Bool: true, Valid: true},
-		Metadata:             nil,
-	}
-	if in.Description != nil {
-		params.Description = pgtype.Text{String: *in.Description, Valid: true}
-	}
-	if in.CategoryID != nil {
-		params.CategoryID = pgtype.Int4{Int32: *in.CategoryID, Valid: true}
-	}
-	if in.BrandID != nil {
-		params.BrandID = pgtype.Int4{Int32: *in.BrandID, Valid: true}
-	}
-	if in.BaseUomID != nil {
-		params.BaseUomID = pgtype.Int4{Int32: *in.BaseUomID, Valid: true}
-	}
-	if in.ProductType != nil {
-		params.ProductType = pgtype.Text{String: *in.ProductType, Valid: true}
-	}
-	if in.TaxCategoryID != nil {
-		params.TaxCategoryID = pgtype.Int4{Int32: *in.TaxCategoryID, Valid: true}
-	}
-	if in.IsSerialized != nil {
-		params.IsSerialized = pgtype.Bool{Bool: *in.IsSerialized, Valid: true}
-	}
-	if in.IsBatchManaged != nil {
-		params.IsBatchManaged = pgtype.Bool{Bool: *in.IsBatchManaged, Valid: true}
-	}
-	if in.IsActive != nil {
-		params.IsActive = pgtype.Bool{Bool: *in.IsActive, Valid: true}
-	}
-	if in.IsSellable != nil {
-		params.IsSellable = pgtype.Bool{Bool: *in.IsSellable, Valid: true}
-	}
-	if in.IsPurchasable != nil {
-		params.IsPurchasable = pgtype.Bool{Bool: *in.IsPurchasable, Valid: true}
-	}
-	if in.AllowDecimalQuantity != nil {
-		params.AllowDecimalQuantity = pgtype.Bool{Bool: *in.AllowDecimalQuantity, Valid: true}
-	}
-	if in.TrackInventory != nil {
-		params.TrackInventory = pgtype.Bool{Bool: *in.TrackInventory, Valid: true}
-	}
-	return params
-}

@@ -323,47 +323,56 @@ type ListActiveSubmenusByMenuResponse struct {
 // POS module
 // =====================================================
 
-// CreatePosProductRequest represents POS "add product" request.
-type CreatePosProductRequest struct {
-	OrganizationID       int32   `json:"organization_id" binding:"required"`
-	SKU                  string  `json:"sku" binding:"required"`
-	Name                 string  `json:"name" binding:"required"`
-	Description          *string `json:"description,omitempty"`
-	CategoryID           *int32  `json:"category_id,omitempty"`
-	BrandID              *int32  `json:"brand_id,omitempty"`
-	BaseUomID            *int32  `json:"base_uom_id,omitempty"`
-	ProductType          *string `json:"product_type,omitempty"`
-	TaxCategoryID        *int32  `json:"tax_category_id,omitempty"`
-	IsSerialized         *bool   `json:"is_serialized,omitempty"`
-	IsBatchManaged       *bool   `json:"is_batch_managed,omitempty"`
-	IsActive             *bool   `json:"is_active,omitempty"`
-	IsSellable           *bool   `json:"is_sellable,omitempty"`
-	IsPurchasable        *bool   `json:"is_purchasable,omitempty"`
-	AllowDecimalQuantity *bool   `json:"allow_decimal_quantity,omitempty"`
-	TrackInventory       *bool   `json:"track_inventory,omitempty"`
-	Barcode              *string `json:"barcode,omitempty"`
-	RetailPrice          *string `json:"retail_price,omitempty"` // decimal as string, e.g. "12.50"
+type AddProductRequest struct {
+	OrganizationID       int32            `json:"organization_id" binding:"required"`
+	SKU                  string           `json:"sku" binding:"required"`
+	Name                 string           `json:"name" binding:"required"`
+	Description          *string          `json:"description"`
+	CategoryID           *int32           `json:"category_id"`
+	BrandID              *int32           `json:"brand_id"`
+	BaseUomID            *int32           `json:"base_uom_id"`
+	ProductType          *string          `json:"product_type"`
+	TaxCategoryID        *int32           `json:"tax_category_id"`
+	IsSerialized         *bool            `json:"is_serialized"`
+	IsBatchManaged       *bool            `json:"is_batch_managed"`
+	IsActive             *bool            `json:"is_active"`
+	IsSellable           *bool            `json:"is_sellable"`
+	IsPurchasable        *bool            `json:"is_purchasable"`
+	AllowDecimalQuantity *bool            `json:"allow_decimal_quantity"`
+	TrackInventory       *bool            `json:"track_inventory"`
+	Barcode              *string          `json:"barcode"`      // for backward compatibility
+	RetailPrice          *string          `json:"retail_price"` // for backward compatibility
+	Barcodes             []BarcodeItem    `json:"barcodes"`
+	Prices               []PriceItem      `json:"prices"`
+	Conversions          []ConversionItem `json:"conversions"`
+	Metadata             *string          `json:"metadata"`
 }
 
-type AddProductRequest struct {
-	OrganizationID       int32   `json:"organization_id" binding:"required"`
-	SKU                  string  `json:"sku" binding:"required"`
-	Name                 string  `json:"name" binding:"required"`
-	Description          *string `json:"description"`
-	CategoryID           *int32  `json:"category_id"`
-	BrandID              *int32  `json:"brand_id"`
-	BaseUomID            *int32  `json:"base_uom_id"`
-	ProductType          *string `json:"product_type"`
-	TaxCategoryID        *int32  `json:"tax_category_id"`
-	IsSerialized         *bool   `json:"is_serialized"`
-	IsBatchManaged       *bool   `json:"is_batch_managed"`
-	IsActive             *bool   `json:"is_active"`
-	IsSellable           *bool   `json:"is_sellable"`
-	IsPurchasable        *bool   `json:"is_purchasable"`
-	AllowDecimalQuantity *bool   `json:"allow_decimal_quantity"`
-	TrackInventory       *bool   `json:"track_inventory"`
-	Barcode              *string `json:"barcode"`
-	RetailPrice          *string `json:"retail_price"`
+type BarcodeItem struct {
+	Barcode     string                 `json:"barcode"`
+	BarcodeType string                 `json:"barcode_type"`
+	IsPrimary   bool                   `json:"is_primary"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type PriceItem struct {
+	PriceListID int32                  `json:"price_list_id"`
+	UomID       *int32                 `json:"uom_id"`
+	Price       string                 `json:"price"` // decimal string
+	MinQuantity float64                `json:"min_quantity"`
+	MaxQuantity *float64               `json:"max_quantity"`
+	ValidFrom   *string                `json:"valid_from"` // date string YYYY-MM-DD
+	ValidTo     *string                `json:"valid_to"`
+	IsActive    bool                   `json:"is_active"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type ConversionItem struct {
+	FromUomID        int32                  `json:"from_uom_id"`
+	ToUomID          int32                  `json:"to_uom_id"`
+	ConversionFactor float64                `json:"conversion_factor"`
+	IsDefault        bool                   `json:"is_default"`
+	Metadata         map[string]interface{} `json:"metadata"`
 }
 
 // CreatePOSTerminalRequest is the request body for creating a POS terminal.
