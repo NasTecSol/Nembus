@@ -71,9 +71,9 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 	// CORS Middleware (DROP-IN)
 	// -------------------------
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // allow all origins in dev
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200") // allow all origins in dev
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -82,8 +82,8 @@ func setupRouter(tenantManager *manager.Manager, userUC *usecase.UserUseCase, or
 			c.AbortWithStatus(204)
 			return
 		}
-
 		c.Next()
+
 	})
 
 	// Apply logger middleware globally to all routes
