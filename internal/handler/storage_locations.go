@@ -106,7 +106,7 @@ func (h *StorageLocationsHandler) GetStorageLocation(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetStorageLocationByCode handles GET /api/stores/:store_id/storage-locations/code/:code
+// GetStorageLocationByCode handles GET /api/stores/:id/storage-locations/code/:code
 // @Summary      Get storage location by code
 // @Description  Returns a storage location by store ID and code
 // @Tags         storage-locations
@@ -115,14 +115,14 @@ func (h *StorageLocationsHandler) GetStorageLocation(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        store_id      path      int     true  "Store ID"
+// @Param        id            path      int     true  "Store ID"
 // @Param        code          path      string  true  "Location code"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
-// @Router       /api/stores/{store_id}/storage-locations/code/{code} [get]
+// @Router       /api/stores/{id}/storage-locations/code/{code} [get]
 func (h *StorageLocationsHandler) GetStorageLocationByCode(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -130,7 +130,7 @@ func (h *StorageLocationsHandler) GetStorageLocationByCode(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	storeID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
 		return
@@ -168,7 +168,7 @@ func (h *StorageLocationsHandler) ListStorageLocations(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// ListStorageLocationsByStore handles GET /api/stores/:store_id/storage-locations
+// ListStorageLocationsByStore handles GET /api/stores/:id/storage-locations
 // @Summary      List storage locations by store
 // @Description  Returns all storage locations for a store
 // @Tags         storage-locations
@@ -177,13 +177,13 @@ func (h *StorageLocationsHandler) ListStorageLocations(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        store_id      path      int     true  "Store ID"
+// @Param        id            path      int     true  "Store ID"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
-// @Router       /api/stores/{store_id}/storage-locations [get]
+// @Router       /api/stores/{id}/storage-locations [get]
 func (h *StorageLocationsHandler) ListStorageLocationsByStore(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -191,7 +191,7 @@ func (h *StorageLocationsHandler) ListStorageLocationsByStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	storeID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
 		return
@@ -200,7 +200,7 @@ func (h *StorageLocationsHandler) ListStorageLocationsByStore(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// ListActiveStorageLocationsByStore handles GET /api/stores/:store_id/storage-locations/active
+// ListActiveStorageLocationsByStore handles GET /api/stores/:id/storage-locations/active
 // @Summary      List active storage locations by store
 // @Description  Returns active storage locations for a store
 // @Tags         storage-locations
@@ -209,13 +209,13 @@ func (h *StorageLocationsHandler) ListStorageLocationsByStore(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        store_id      path      int     true  "Store ID"
+// @Param        id            path      int     true  "Store ID"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
-// @Router       /api/stores/{store_id}/storage-locations/active [get]
+// @Router       /api/stores/{id}/storage-locations/active [get]
 func (h *StorageLocationsHandler) ListActiveStorageLocationsByStore(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -223,7 +223,7 @@ func (h *StorageLocationsHandler) ListActiveStorageLocationsByStore(c *gin.Conte
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	storeID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
 		return
@@ -268,7 +268,7 @@ func (h *StorageLocationsHandler) ListStorageLocationsByParent(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// ListStorageLocationsByType handles GET /api/stores/:store_id/storage-locations/type/:location_type
+// ListStorageLocationsByType handles GET /api/stores/:id/storage-locations/type/:location_type
 // @Summary      List storage locations by type
 // @Description  Returns storage locations for a store filtered by location type
 // @Tags         storage-locations
@@ -277,14 +277,14 @@ func (h *StorageLocationsHandler) ListStorageLocationsByParent(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id     header    string  true  "Tenant identifier"
 // @Param        Authorization   header    string  true  "Bearer token"
-// @Param        store_id        path      int     true  "Store ID"
+// @Param        id              path      int     true  "Store ID"
 // @Param        location_type   path      string  true  "Location type"
 // @Success      200             {object}  SuccessResponse
 // @Failure      400             {object}  ErrorResponse
 // @Failure      401             {object}  ErrorResponse
 // @Failure      404             {object}  ErrorResponse
 // @Failure      500             {object}  ErrorResponse
-// @Router       /api/stores/{store_id}/storage-locations/type/{location_type} [get]
+// @Router       /api/stores/{id}/storage-locations/type/{location_type} [get]
 func (h *StorageLocationsHandler) ListStorageLocationsByType(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -292,7 +292,7 @@ func (h *StorageLocationsHandler) ListStorageLocationsByType(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	storeID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
 		return
