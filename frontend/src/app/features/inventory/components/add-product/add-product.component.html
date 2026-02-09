@@ -1,0 +1,56 @@
+<section>
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div class="mb-3 flex items-center gap-3">
+      <!-- <div>
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div> -->
+      <h2 translate>INVENTORY.ADD_PRODUCT</h2>
+    </div>
+
+    <!-- Tabs for role selection -->
+    <div class="mb-3 grid grid-cols-1">
+      <div class="tabs-container" role="tablist">
+        <button
+          *ngFor="let tab of roleTabs"
+          (click)="setActiveTab(tab)"
+          class="btn-tab"
+          [ngClass]="[
+            roleActiveTab === tab ? 'btn-tab-active' : 'btn-tab-not-active',
+          ]"
+        >
+          {{ tabTranslationMap[tab] | translate }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Form Card -->
+    <div
+      class="dashboard-card custom-shadow border-white-light relative my-6 flex min-h-screen flex-col px-5 py-3"
+    >
+      <div *ngIf="roleActiveTab === 'Item Details'">
+        <add-item-detail></add-item-detail>
+      </div>
+      <div *ngIf="roleActiveTab === 'Dimensions'">
+        <add-dimension></add-dimension>
+      </div>
+      <div *ngIf="roleActiveTab === 'Inventory Details'">
+        <add-inventory-detail></add-inventory-detail>
+      </div>
+      <div *ngIf="roleActiveTab === 'Tax Info'">
+        <add-tax-info></add-tax-info>
+      </div>
+      <div *ngIf="roleActiveTab === 'WholeSale & UoM'">
+        <add-wholesale></add-wholesale>
+      </div>
+       <div *ngIf="roleActiveTab === 'Packaging'">
+        <app-packaging></app-packaging>
+      </div>
+      <div *ngIf="roleActiveTab === 'Prices'">
+        <add-price></add-price>
+      </div>
+    </div>
+  </div>
+</section>

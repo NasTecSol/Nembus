@@ -1,0 +1,116 @@
+<aside class="bg-primary flex h-screen flex-col" style="overflow: visible;">
+  <!-- Logo Section -->
+  <div class="ml-3 flex justify-center items-center px-2" style="border-bottom: 1px solid #ffffff;">
+    <img src="images/logo.svg" class="h-20 w-40" alt="dashboard logo" />
+  </div>
+
+  <!-- Scrollable Navigation Section -->
+  <div class="flex-1 mt-4 ml-4 pr-2 scrollbar-hide" style="overflow-y: auto; overflow-x: visible;" (scroll)="onSidebarScroll()">
+    <nav class="text-secondary-bold flex flex-col items-start space-y-1" style="overflow: visible;">
+      <ng-container *ngFor="let item of menuItems">
+        <!-- Parent Menu Item (no children) -->
+        <div class="w-full">
+          <a
+            *ngIf="!item.children"
+            [routerLink]="item.path"
+            routerLinkActive
+            #rla="routerLinkActive"
+            class="group flex items-center justify-between w-full py-2.5 pr-5 pl-3 transition-all duration-200 cursor-pointer rounded-[20px]"
+            [ngClass]="{
+              'bg-secondary text-primary': rla.isActive,
+              'bg-primary text-secondary hover:bg-secondary/10': !rla.isActive
+            }"
+          >
+            <div class="flex items-center space-x-3">
+              <i [ngClass]="[item.icon, 'text-lg w-5']"></i>
+              <span class="text-sm font-medium">{{ item.name | translate }}</span>
+            </div>
+          </a>
+
+          <!-- Parent Item with Children -->
+          <div *ngIf="item.children" class="w-full">
+            <button
+              (click)="toggleMenu(item.id)"
+              (mouseenter)="onMenuHover(item.id, $event)"
+              (mouseleave)="onMenuLeave(item.id)"
+              class="group flex items-center justify-between w-full py-2.5 pr-5 pl-3 transition-all duration-200 cursor-pointer rounded-[20px]"
+              [ngClass]="{
+                'bg-secondary/10 text-secondary': item.expanded || isMenuActive(item),
+                'bg-primary text-secondary hover:bg-secondary/10': !(item.expanded || isMenuActive(item))
+              }"
+            >
+              <div class="flex items-center space-x-3">
+                <i [ngClass]="[item.icon, 'text-lg w-5']"></i>
+                <span class="text-sm font-medium">{{ item.name | translate }}</span>
+              </div>
+              <i class="fas fa-chevron-right text-xs transition-transform duration-200" [ngClass]="{'rotate-90': item.expanded}"></i>
+            </button>
+
+            <!-- Accordion Submenu (persistent when expanded) -->
+            <div
+              class="overflow-hidden transition-all duration-300 ease-in-out"
+              [ngClass]="{ 'max-h-96 opacity-100': item.expanded, 'max-h-0 opacity-0': !item.expanded }"
+            >
+              <div class="mt-1 ml-3 space-y-1 border-l-2 border-secondary/20 pl-3">
+                <a
+                  *ngFor="let child of item.children"
+                  [routerLink]="child.path"
+                  routerLinkActive
+                  #childRla="routerLinkActive"
+                  class="group flex items-center w-full py-2 pr-4 pl-3 transition-all duration-200 cursor-pointer rounded-[20px]"
+                  [ngClass]="{
+                    'bg-selectedobj text-secondary': childRla.isActive,
+                    'text-secondary/80 hover:bg-secondary/10 hover:text-secondary': !childRla.isActive
+                  }"
+                >
+                  <div class="flex items-center space-x-3">
+                    <i [ngClass]="[child.icon, 'text-sm w-4']"></i>
+                    <span class="text-sm">{{ child.name | translate }}</span>
+                  </div>
+                </a>
+              </div>
+            </div>
+
+            <!-- Floating Submenu (temporary on hover when NOT expanded) -->
+            <div
+              *ngIf="hoveredMenuId === item.id"
+              (mouseenter)="keepSubmenuOpen(item.id)"
+              (mouseleave)="closeSubmenu()"
+              class="fixed z-[9999] min-w-[220px] rounded-2xl bg-primary shadow-2xl border border-secondary/20 py-2"
+              [style.left.px]="submenuLeft"
+              [style.top.px]="submenuTop"
+            >
+              <a
+                *ngFor="let child of item.children"
+                [routerLink]="child.path"
+                routerLinkActive
+                #childRla="routerLinkActive"
+                class="group flex items-center w-60 px-4 py-2.5 transition-all duration-200 cursor-pointer rounded-lg mx-2"
+                [ngClass]="{
+                  'bg-selectedobj text-secondary': childRla.isActive,
+                  'text-secondary/80 hover:bg-secondary/10 hover:text-secondary': !childRla.isActive
+                }"
+              >
+                <div class="flex items-center space-x-3">
+                  <i [ngClass]="[child.icon, 'text-sm w-4']"></i>
+                  <span class="text-sm">{{ child.name | translate }}</span>
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+    </nav>
+  </div>
+
+  <!-- Logout Button - Fixed at Bottom -->
+  <div class="mt-auto border-t border-secondary/20 p-4">
+    <a
+      (click)="logout()"
+      class="group flex items-center space-x-3 w-full rounded-lg px-3 py-2.5 cursor-pointer transition-all duration-200 text-secondary hover:bg-secondary/10"
+    >
+      <i class="fas fa-sign-out-alt text-lg w-5"></i>
+      <span class="text-sm font-medium">{{ "SIDEBAR.LOG_OUT" | translate }}</span>
+    </a>
+  </div>
+</aside>

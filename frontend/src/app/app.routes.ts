@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
-import { SetupComponent } from './features/setup/setup.component';
-import { LoginComponent } from './features/login/login.component';
+// import { SetupComponent } from './features/setup/setup.component';
+// import { LoginComponent } from './features/login/login.component';
 import { HomeComponent } from './features/home/home.component';
 
 // export const routes: Routes = [
@@ -13,15 +13,16 @@ import { HomeComponent } from './features/home/home.component';
 
 export const routes: Routes = [
   {
-    path: "",
-    loadChildren: () =>
-      import("./features/auth/auth-routes").then((m) => m.Auth_ROUTES),
+    path: "auth",
+    loadChildren: () => import("./features/auth/auth-routes").then((m) => m.Auth_ROUTES),
   },
-//   {
-//     path: "",
-//     loadChildren: () =>
-//       import("./features/dashboard-layout/dashboard-layout.routes").then(
-//         (m) => m.DASHBOARD_LAYOUT_ROUTES
-//       ),
-//   },
+  {
+    path: "",
+    redirectTo: "auth/setup",
+    pathMatch: "full"
+  },
+  {
+    path: "**",
+    redirectTo: "auth/setup"
+  }
 ];

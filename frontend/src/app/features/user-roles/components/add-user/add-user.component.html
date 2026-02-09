@@ -1,0 +1,229 @@
+<section class="mb-5">
+  <div class="container px-3 py-1">
+    <!-- Page Title Section -->
+    <div class="mb-3 flex items-center gap-3">
+      <!-- <div>
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div> -->
+      <h2 translate>USER_ROLES.ADD_NEW_USER</h2>
+    </div>
+    <form>
+      <div
+        class="dashboard-card custom-shadow border-white-light mb-3 px-5 py-3 md:pb-20">
+        <!-- User Details Inputs -->
+        <div class="form-row">
+          <div class="form-group">
+            <label>
+              {{ "USER_ROLES.FIRST_NAME" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <input class="input border-white-light" type="text"
+              placeholder="{{ 'USER_ROLES.ENTER' | translate }}"
+              required [(ngModel)]="firstName" name="firstName" />
+          </div>
+
+          <div class="form-group">
+            <label>
+              {{ "USER_ROLES.SURNAME" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <input class="input border-white-light" type="text"
+              placeholder="{{ 'USER_ROLES.ENTER' | translate }}"
+              required [(ngModel)]="lastName" name="lastName" />
+          </div>
+
+          <div class="form-group">
+            <label>
+              {{ "USER_ROLES.EMAIL" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <input class="input border-white-light" type="email"
+              placeholder="{{ 'USER_ROLES.ENTER_EMAIL' | translate }}" required
+              [(ngModel)]="email" name="email" />
+          </div>
+
+          <div class="flex items-center gap-2 md:mt-12 md:ml-10">
+            <input class="accent-primary block" type="checkbox"
+              [(ngModel)]="isActive" name="isActive" />
+            <label class="text-slate-gray">
+              {{ "USER_ROLES.BOOKED" | translate }}
+            </label>
+          </div>
+
+        </div>
+
+        <!-- Contact and Login Details -->
+        <div
+          class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+          <div class="form-group">
+            <label>{{ "USER_ROLES.PHONE_NUMBER" | translate }}</label>
+            <div
+              class="border-white-light mt-2 flex items-center rounded border">
+              <select
+                class="border-white-light block bg-white px-2 py-2 outline-none"
+                [(ngModel)]="selectedDialCode"
+                name="dialCode">
+                <option *ngFor="let country of countries"
+                  [value]="country.dial_code">
+                  {{ country.flag }} &nbsp; {{ country.code }}
+                </option>
+              </select>
+              <span class="text-slate-gray ml-3 flex items-center font-medium">
+                {{ selectedDialCode }}
+              </span>
+              <input class="ml-2 block rounded px-2 py-2 outline-none"
+                type="text" [(ngModel)]="phoneNumber" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>{{ "USER_ROLES.LOGIN_ID" | translate }}</label>
+            <input class="input border-white-light" type="text"
+              placeholder="ID" />
+          </div>
+
+          <div class="form-group">
+            <label>
+              {{ "USER_ROLES.PASSWORD" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <input class="input border-white-light" type="password"
+              placeholder="{{ 'USER_ROLES.ENTER_PASSWORD' | translate }}"
+              required [(ngModel)]="password"
+              name="password" />
+          </div>
+        </div>
+
+        <!-- Address Section -->
+        <div
+          class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+          <div class="form-group md:col-span-2">
+            <label>{{ "USER_ROLES.ADDRESS" | translate }}</label>
+            <input class="input border-white-light" type="text"
+              placeholder="{{ 'USER_ROLES.ENTER_ADDRESS' | translate }}" />
+          </div>
+
+          <div class="form-group">
+            <label>{{ "USER_ROLES.CITY" | translate }}</label>
+            <input class="input border-white-light" type="text"
+              placeholder="{{ 'USER_ROLES.ENTER_CITY' | translate }}" />
+          </div>
+        </div>
+
+        <div
+          class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+          <div class="form-group md:col-span-2">
+            <label>{{ "USER_ROLES.ADDRESS2" | translate }}</label>
+            <input class="input border-white-light" type="text"
+              placeholder="{{ 'USER_ROLES.ENTER_ADDRESS2' | translate }}" />
+          </div>
+
+          <div class="form-group flex w-full gap-5">
+            <div class="w-1/2">
+              <label class="block">{{ "USER_ROLES.STATE" | translate }}</label>
+              <select class="input border-white-light">
+                <option>Select</option>
+              </select>
+            </div>
+
+            <div class="w-1/2">
+              <label class="block">{{ "USER_ROLES.ZIP" | translate }}</label>
+              <input class="input border-white-light" type="text"
+                placeholder="{{ 'USER_ROLES.ENTER_ZIP' | translate }}" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Authorization and Security Inputs -->
+        <div
+          class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+          <div class="form-group">
+            <label>
+              {{ "USER_ROLES.AUTH_CARD_NO" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <input class="input border-white-light" type="password"
+              placeholder="{{ 'USER_ROLES.ENTER_CARD' | translate }}"
+              required />
+          </div>
+
+          <div class="form-group">
+            <label>
+              {{ "USER_ROLES.PIN_POS" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <input class="input border-white-light" type="password"
+              placeholder="{{ 'USER_ROLES.ENTER_PIN' | translate }}" required />
+          </div>
+
+          <div class="form-group">
+            <label>{{ "USER_ROLES.CASH_DRAWER" | translate }}</label>
+            <input class="input border-white-light" type="text"
+              placeholder="{{ 'USER_ROLES.ENTER_DRAWER' | translate }}" />
+          </div>
+        </div>
+
+        <!-- Biometrics + Role Selection -->
+        <div
+          class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+          <!-- Biometrics -->
+          <div class="form-group">
+            <label class="mb-2 block">
+              {{ "USER_ROLES.BIOMETRICS" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <div class="relative">
+              <input class="input border-white-light" type="text"
+                placeholder="{{ 'USER_ROLES.ADD_FINGERPRINTS' | translate }}"
+                required />
+              <span class="absolute inset-y-0 right-2 flex items-center pl-3">
+                <i class="fas fa-fingerprint text-slate-gray text-2xl"></i>
+              </span>
+            </div>
+          </div>
+
+          <!-- Role Dropdown -->
+          <div class="form-group">
+            <label class="mb-2 block">
+              {{ "USER_ROLES.ROLE" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <select class="input border-white-light" [(ngModel)]="selectedRole"
+              name="role" required>
+              <option [ngValue]="null" disabled>Select Role</option>
+              <option *ngFor="let role of roles" [ngValue]="role.id">
+                {{ role.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Store Dropdown -->
+          <div class="form-group">
+            <label class="mb-2 block">
+              {{ "USER_ROLES.STORE" | translate }}
+              <span class="text-red">*</span>
+            </label>
+            <select class="input border-white-light" [(ngModel)]="selectedStore"
+              name="store" required>
+              <option [ngValue]="null" disabled>Select Store</option>
+              <option *ngFor="let store of stores" [ngValue]="store.id">
+                {{ store.name }}
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="form-group flex justify-center md:mt-10">
+        <button type="submit" (click)="submit()"
+          class="btn-primary h-12 md:w-30">
+          {{ "USER_ROLES.SUBMIT" | translate }}
+        </button>
+      </div>
+    </form>
+
+  </div>
+</section>

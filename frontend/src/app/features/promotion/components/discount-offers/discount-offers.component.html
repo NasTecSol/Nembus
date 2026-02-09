@@ -1,0 +1,207 @@
+<div class="my-3 grid grid-cols-1 gap-3 py-2 md:grid-cols-3">
+  <!-- Left Column - Discount Offers Table -->
+  <div class="left-col-wrapper dashboard-card custom-shadow">
+    <table class="data-table">
+      <thead>
+        <tr class="text-dark-bold-lg">
+          <th translate>PROMOTIONS.NUMBER</th>
+          <th translate>PROMOTIONS.CODE</th>
+          <th translate>PROMOTIONS.NAME</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          *ngFor="let item of discountOffers"
+          (click)="setActiveRow(item)"
+          class="text-[#666666]"
+          [ngClass]="{ 'text-white': activeRow === item }"
+          [class.selected-row]="activeRow === item"
+          [class.hoverable-row]="activeRow !== item"
+        >
+          <td
+            class="font-bold text-black"
+            [ngClass]="{ 'rounded-l-lg text-white': activeRow === item }"
+          >
+            {{ item.number }}
+          </td>
+          <td>{{ item.code }}</td>
+          <td [ngClass]="{ 'rounded-r-lg': activeRow === item }">
+            {{ item.name }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Right Column - Discount Offer Form -->
+  <div class="right-col-wrapper dashboard-card custom-shadow md:col-span-2">
+    <div class="flex min-h-screen flex-col justify-between">
+      <div>
+        <h3 class="text-primary-lg" translate>PROMOTIONS.TITLE</h3>
+        <form class="mb-2 flex-grow">
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.NAME</label>
+              <input
+                class="input general-input"
+                type="number"
+                [placeholder]="'PROMOTIONS.ID_OR_CODE' | translate"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.NUMBER</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.STORE_NAME' | translate"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.TYPE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT_DISCOUNT_TYPE" | translate }}
+                </option>
+                <option translate>PROMOTIONS.DISCOUNT_FOR_BILL</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.PERCENTAGE</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.PERCENTAGE' | translate"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.SYMBOL</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.SYMBOL' | translate"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.AMOUNT</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.AMOUNT' | translate"
+              />
+            </div>
+          </div>
+
+          <div class="promotion-form-row">
+            <div class="form-group md:col-span-2">
+              <label translate>PROMOTIONS.DESCRIPTION</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.DESCRIPTION' | translate"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.POS</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT_POS" | translate }}
+                </option>
+                <option translate>PROMOTIONS.POS_1</option>
+                <option translate>PROMOTIONS.POS_2</option>
+              </select>
+            </div>
+          </div>
+
+          <div
+            class="form-group lg-gap-3 mx-1 flex flex-col flex-wrap gap-3 md:mt-11 md:flex-row md:items-center"
+          >
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.BLOCKED
+              </label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.IS_VOUCHER
+              </label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.IS_DISPOSABLE
+              </label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.RESTRICTED_DISCOUNT
+              </label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.WORKS_ON_PROMOTION
+              </label>
+            </div>
+          </div>
+
+          <div
+            class="form-group lg-gap-3 mx-1 flex flex-col flex-wrap gap-3 md:mt-11 md:flex-row md:items-center"
+          >
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.DISCOUNT_HOTEL_SPA
+              </label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.DISCOUNT_HOTEL_ALEMENATION
+              </label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.DISCOUNT_ADDITIONAL_SERVICES
+              </label>
+            </div>
+          </div>
+
+          <div
+            class="form-group lg-gap-3 mx-1 flex flex-col flex-wrap gap-3 md:mt-11 md:flex-row md:items-center"
+          >
+            <div class="checkbox-wrapper">
+              <input class="checkbox-input" type="checkbox" />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.DISCOUNT_HOTEL_SPA
+              </label>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="btn-action-wrapper">
+        <button class="btn-base btn-red">
+          <i class="fa fa-trash text-3xl"></i>
+          <span translate>PROMOTIONS.DELETE</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-print text-3xl"></i>
+          <span translate>PROMOTIONS.PRINT</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-edit text-3xl"></i>
+          <span translate>PROMOTIONS.EDIT</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

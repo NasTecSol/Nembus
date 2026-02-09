@@ -1,0 +1,87 @@
+<div *ngIf="showSwitch">
+  <div
+    *ngFor="let item of items; let i = index"
+    class="bg-secondary mt-4 overflow-hidden rounded-md"
+  >
+    <!-- Accordion header -->
+    <div
+      class="accordion-header flex cursor-pointer items-center justify-between p-4"
+      (click)="toggle(i)"
+    >
+      <span class="text-lg font-semibold">{{ item.name }}</span>
+
+      <!-- Icon rotates when active -->
+      <i
+        class="fa fa-sort-down transition-transform duration-300"
+        [ngClass]="item.open ? 'rotate-180' : 'rotate-0'"
+      ></i>
+    </div>
+
+    <!-- Accordion content -->
+    <div
+      *ngIf="showSwitch"
+      class="accordion-content overflow-hidden transition-all duration-300"
+      [ngStyle]="{
+        maxHeight: item.open ? '1000px' : '0',
+        opacity: item.open ? '1' : '0',
+        paddingTop: item.open ? '1rem' : '0',
+        paddingBottom: item.open ? '1rem' : '0',
+      }"
+    >
+      <div class="flex items-center justify-between px-4">
+        <ul *ngFor="let listItem of item.itemList">
+          <li [ngClass]="itemListClass">{{ listItem }}</li>
+        </ul>
+
+        <!-- Switch -->
+        <label class="switch" (click)="$event.stopPropagation()">
+          <input
+            type="checkbox"
+            class="peer sr-only"
+            [(ngModel)]="item.enabled"
+          />
+          <div class="switch-background"></div>
+          <div class="switch-dot"></div>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="!showSwitch">
+  <div *ngFor="let item of items; let i = index" class="overflow-hidden">
+    <!-- Accordion header -->
+    <div
+      class="accordion-header bg-secondary flex cursor-pointer items-center justify-between rounded-md"
+      [ngClass]="item?.itemList?.length ? 'my-1' : 'my-0'"
+      (click)="toggle(i)"
+    >
+      <span class="text-lg font-semibold">{{ item.name }}</span>
+      <!-- Icon rotates when active -->
+      <i
+        class="fa fa-sort-down transition-transform duration-300"
+        [ngClass]="item.open ? 'rotate-180' : 'rotate-0'"
+      ></i>
+    </div>
+    <div
+      class="overflow-hidden transition-all duration-300"
+      [ngStyle]="{
+        maxHeight: item.open ? '1000px' : '0',
+        opacity: item.open ? '1' : '0',
+        paddingTop: item.open ? '.2rem' : '0',
+        paddingBottom: item.open ? '.2rem' : '0',
+      }"
+    >
+      <div *ngIf="item.itemList?.length">
+        <ul *ngFor="let listItem of item.itemList">
+          <li
+            [ngClass]="itemListClass"
+            class="bg-secondary text-primary my-1 ml-5 rounded px-4 py-4 font-bold"
+          >
+            {{ listItem }}
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>

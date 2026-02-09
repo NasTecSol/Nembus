@@ -1,0 +1,304 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+    <!-- Page Header -->
+    <div class="mb-3">
+      <h2 class="mb-1 text-2xl font-bold tracking-tight text-slate-900">
+        Add New Tenant
+      </h2>
+      <p class="text-sm text-slate-500">
+        Create a new tenant environment with custom configuration
+      </p>
+    </div>
+
+    <!-- Form Card -->
+    <div class="dashboard-card overflow-hidden rounded-2xl border-0 bg-white shadow-sm">
+      <form [formGroup]="tenantForm" (ngSubmit)="onSubmit()">
+        <!-- Basic Information Section -->
+        <div class="border-b border-slate-100 bg-slate-50 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+              <i class="fas fa-building text-sm text-primary"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-slate-900">Basic Information</h3>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
+          <!-- Tenant Name -->
+          <div class="md:col-span-2">
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Tenant Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              formControlName="tenant_name"
+              placeholder="Enter tenant name (e.g., Acme Corporation)"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              [class.border-red-300]="tenantForm.get('tenant_name')?.invalid && tenantForm.get('tenant_name')?.touched"
+            />
+            <p 
+              *ngIf="tenantForm.get('tenant_name')?.invalid && tenantForm.get('tenant_name')?.touched"
+              class="mt-1 text-xs text-red-500"
+            >
+              Tenant name is required (minimum 3 characters)
+            </p>
+          </div>
+
+          <!-- Slug -->
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Tenant Code <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              formControlName="slug"
+              placeholder="tenant-code"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              [class.border-red-300]="tenantForm.get('slug')?.invalid && tenantForm.get('slug')?.touched"
+            />
+            <p class="mt-1 text-xs text-slate-500">
+              <i class="fas fa-info-circle text-[10px]"></i>
+              Auto-generated from tenant name (lowercase, no spaces)
+            </p>
+            <p 
+              *ngIf="tenantForm.get('slug')?.invalid && tenantForm.get('slug')?.touched"
+              class="mt-1 text-xs text-red-500"
+            >
+              Only lowercase letters, numbers, and hyphens allowed
+            </p>
+          </div>
+
+          <!-- Status -->
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Initial Status
+            </label>
+            <div class="flex items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5">
+              <label class="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  formControlName="is_active"
+                  [value]="true"
+                  class="h-4 w-4 cursor-pointer border-slate-300 text-primary focus:ring-2 focus:ring-primary/20"
+                />
+                <span class="text-sm text-slate-700">Active</span>
+              </label>
+              <label class="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  formControlName="is_active"
+                  [value]="false"
+                  class="h-4 w-4 cursor-pointer border-slate-300 text-slate-400 focus:ring-2 focus:ring-slate-200"
+                />
+                <span class="text-sm text-slate-700">Inactive</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Database Configuration Section -->
+        <div class="border-b border-slate-100 bg-slate-50 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
+              <i class="fas fa-database text-sm text-blue-600"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-slate-900">Database Configuration</h3>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
+          <!-- Database Name -->
+          <!-- <div class="md:col-span-2">
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Database Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              formControlName="db_name"
+              placeholder="database_name"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              [class.border-red-300]="tenantForm.get('db_name')?.invalid && tenantForm.get('db_name')?.touched"
+            />
+            <p class="mt-1 text-xs text-slate-500">
+              <i class="fas fa-info-circle text-[10px]"></i>
+              Auto-generated from slug
+            </p>
+          </div> -->
+
+          <!-- Database Host -->
+          <!-- <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Database Host <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              formControlName="db_host"
+              placeholder="postgres"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div> -->
+
+          <!-- Database Port -->
+          <!-- <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Database Port <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              formControlName="db_port"
+              placeholder="5432"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div> -->
+
+          <!-- Database Username -->
+          <div class="md:col-span-2">
+          <label class="mb-2 block text-sm font-medium text-slate-700">
+            Database Connection String <span class="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            formControlName="db_conn_str"
+            placeholder="postgres://user:password@host:port/database?sslmode=disable"
+            class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            [class.border-red-300]="tenantForm.get('db_conn_str')?.invalid && tenantForm.get('db_conn_str')?.touched"
+          />
+          <p class="mt-1 text-xs text-slate-500">
+            <i class="fas fa-info-circle text-[10px]"></i>
+            Auto-generated from tenant name, but you can edit it
+          </p>
+        </div>
+
+          <!-- Database Password -->
+          <!-- <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Database Password <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="password"
+              formControlName="db_password"
+              placeholder="••••••••"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              [class.border-red-300]="tenantForm.get('db_password')?.invalid && tenantForm.get('db_password')?.touched"
+            />
+          </div> -->
+        </div>
+
+        <!-- Settings Section -->
+        <div class="border-b border-slate-100 bg-slate-50 px-6 py-4">
+          <div class="flex items-center gap-2">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50">
+              <i class="fas fa-cog text-sm text-purple-600"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-slate-900">Subscription & Features</h3>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
+          <!-- Plan -->
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Subscription Plan <span class="text-red-500">*</span>
+            </label>
+            <select
+              formControlName="plan"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              <option *ngFor="let plan of planOptions" [value]="plan.value">
+                {{ plan.label }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Max Users -->
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">
+              Maximum Users <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              formControlName="max_users"
+              placeholder="100"
+              min="1"
+              class="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <!-- Features -->
+          <div class="md:col-span-2">
+            <label class="mb-3 block text-sm font-medium text-slate-700">
+              Features <span class="text-red-500">*</span>
+            </label>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <button
+                *ngFor="let feature of featureOptions"
+                type="button"
+                (click)="toggleFeature(feature.value)"
+                class="flex items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all"
+                [class.border-primary]="isFeatureSelected(feature.value)"
+                [class.bg-primary5]="isFeatureSelected(feature.value)"
+                [class.border-slate-200]="!isFeatureSelected(feature.value)"
+                [class.bg-white]="!isFeatureSelected(feature.value)"
+              >
+                <div
+                  class="flex h-5 w-5 items-center justify-center rounded border-2 transition-all"
+                  [class.border-primary]="isFeatureSelected(feature.value)"
+                  [class.bg-primary]="isFeatureSelected(feature.value)"
+                  [class.border-slate-300]="!isFeatureSelected(feature.value)"
+                >
+                  <i
+                    *ngIf="isFeatureSelected(feature.value)"
+                    class="fas fa-check text-[10px] text-white"
+                  ></i>
+                </div>
+                <span
+                  class="flex-1 font-medium"
+                  [class.text-primary]="isFeatureSelected(feature.value)"
+                  [class.text-slate-700]="!isFeatureSelected(feature.value)"
+                >
+                  {{ feature.label }}
+                </span>
+              </button>
+            </div>
+            <p 
+              *ngIf="selectedFeatures.length === 0"
+              class="mt-2 text-xs text-red-500"
+            >
+              Please select at least one feature
+            </p>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
+          <button
+            type="button"
+            (click)="onCancel()"
+            class="rounded-lg border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            [disabled]="isSubmitting"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="rounded-lg px-6 py-2.5 text-sm font-medium text-white transition-all"
+            [class.bg-primary]="isFormValid && !isSubmitting"
+            [class.hover:bg-primary90]="isFormValid && !isSubmitting"
+            [class.bg-slate-300]="!isFormValid || isSubmitting"
+            [class.cursor-not-allowed]="!isFormValid || isSubmitting"
+            [disabled]="!isFormValid || isSubmitting"
+          >
+            <span *ngIf="!isSubmitting" class="flex items-center gap-2">
+              <i class="fas fa-plus-circle"></i>
+              Create Tenant
+            </span>
+            <span *ngIf="isSubmitting" class="flex items-center gap-2">
+              <i class="fas fa-spinner fa-spin"></i>
+              Creating...
+            </span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>

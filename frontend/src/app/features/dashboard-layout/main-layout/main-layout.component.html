@@ -1,0 +1,20 @@
+<!-- Layout Wrapper -->
+<div class="flex h-screen bg-white">
+  <!-- Sidebar -->
+  <div class="bg-primary w-72">
+    <app-sidebar></app-sidebar>
+  </div>
+
+  <!-- Right Section (Header + Content) -->
+  <div class="flex flex-1 flex-col">
+    <!-- Header -->
+    <div class="container h-auto">
+      <app-header></app-header>
+    </div>
+
+    <!-- Main Content -->
+    <div class="w-full flex-1 overflow-y-auto">
+      <router-outlet></router-outlet>
+    </div>
+  </div>
+</div>

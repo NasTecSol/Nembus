@@ -1,0 +1,135 @@
+<!-- Form Inputs -->
+<div class="flex min-h-screen flex-col justify-between">
+  <div class="form-group space-y-8 p-4">
+    <!-- First Row -->
+    <div class="grid grid-cols-2 gap-12 md:grid-cols-4">
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.ID_NUMBER" | translate }}
+        </label>
+        <input type="number" value="22222222" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.NAME" | translate }}
+        </label>
+        <input type="text" value="Amir" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.SURNAME" | translate }}
+        </label>
+        <input type="text" value="Shaaqe" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.PHONE_NUMBER" | translate }}
+        </label>
+        <input type="tel" value="22222222" class="input-style" />
+      </div>
+    </div>
+
+    <!-- Second Row -->
+    <div class="grid grid-cols-2 gap-12 md:grid-cols-4">
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.ROLE" | translate }}
+        </label>
+        <input type="text" value="Admin" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.LOGIN_ID" | translate }}
+        </label>
+        <input type="text" value="Amir" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.PASSWORD" | translate }}
+        </label>
+        <span class="flex items-center">
+          <input type="password" value="*********" class="input-style" />
+          <i class="fa fa-eye"></i>
+        </span>
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.AUTH_CARD_NO" | translate }}
+        </label>
+        <span class="flex items-center">
+          <input type="password" value="*********" class="input-style" />
+          <i class="fa fa-eye"></i>
+        </span>
+      </div>
+    </div>
+
+    <!-- Third Row -->
+    <div class="grid grid-cols-2 gap-12 md:grid-cols-4">
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.PIN_POS" | translate }}
+        </label>
+        <span class="flex items-center">
+          <input type="password" value="*********" class="input-style" />
+          <i class="fa fa-eye"></i>
+        </span>
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.MAX_OPENED_BILLS" | translate }}
+        </label>
+        <input type="number" value="10" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.CASH_DRAWER" | translate }}
+        </label>
+        <span class="flex items-center">
+          <input type="password" value="*********" class="input-style" />
+          <i class="fa fa-eye"></i>
+        </span>
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.BLOCKED" | translate }}
+        </label>
+        <div class="flex items-center gap-2">
+          <span>{{ "USER_ROLES.NOT_BLOCKED" | translate }}</span>
+          <input type="checkbox" class="accent-primary h-4 w-4" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Fourth Row -->
+    <div class="grid grid-cols-2 gap-12 md:grid-cols-4">
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.EMAIL" | translate }}
+        </label>
+        <input type="email" value="admin@example.com" class="input-style" />
+      </div>
+      <div>
+        <label class="text-dark-bold mb-1 block">
+          {{ "USER_ROLES.USER_WINDOW" | translate }}
+        </label>
+        <input type="text" value="MainWindow" class="input-style" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="mb-5 flex flex-wrap justify-end gap-4 md:gap-8">
+    <button class="btn-base btn-red">
+      <i class="fa fa-trash text-3xl"></i>
+      <span>{{ "USER_ROLES.DELETE_USER" | translate }}</span>
+    </button>
+    <button class="btn-base bg-primary">
+      <i class="fa fa-fingerprint text-3xl"></i>
+      <span>{{ "USER_ROLES.ADD_FINGERPRINTS" | translate }}</span>
+    </button>
+    <button class="btn-base bg-primary">
+      <i class="fa fa-edit text-3xl"></i>
+      <span>{{ "USER_ROLES.EDIT_USER_DETAILS" | translate }}</span>
+    </button>
+  </div>
+</div>

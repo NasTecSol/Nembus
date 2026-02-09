@@ -1,57 +1,144 @@
-<div class="min-h-screen bg-[#0f172a] text-slate-200 flex flex-col items-center justify-center p-4">
-    <div
-        class="max-w-md w-full space-y-8 bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 p-10 rounded-3xl shadow-2xl relative overflow-hidden">
-        <div class="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-blue-600/10 rounded-full blur-3xl"></div>
-        <div class="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-emerald-600/10 rounded-full blur-3xl"></div>
+<!-- sign-in.html -->
+<div class="grad-vertical-tb flex h-screen flex-col md:flex-row">
+  <!-- Left container -->
+  <div class="flex-box-col h-full w-full gap-5 p-8 md:w-3/3 md:gap-10">
+    <div>
+      <h1 class="text-center text-3xl font-[400] text-white md:text-5xl">
+        Need full control over your business operations?
+        <br />
+        <span class="text-primary font-[800]">NASPOS Backoffice</span> <br />
+        powers everything behind your POS.
+      </h1>
 
-        <div class="text-center relative">
-            <div
-                class="mx-auto w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-6">
-                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-            </div>
-            <h2 class="text-3xl font-bold text-white tracking-tight">Welcome back</h2>
-            <p class="mt-2 text-slate-400">Please enter your details to sign in</p>
-        </div>
-
-        <form class="mt-8 space-y-6" (submit)="login()">
-            <div class="space-y-4">
-                <div>
-                    <label for="username" class="block text-sm font-medium text-slate-400 mb-1.5 ml-1">Username</label>
-                    <input id="username" name="username" type="text" [(ngModel)]="username" required
-                        class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                        placeholder="admin">
-                </div>
-                <div>
-                    <label for="password" class="block text-sm font-medium text-slate-400 mb-1.5 ml-1">Password</label>
-                    <input id="password" name="password" type="password" [(ngModel)]="password" required
-                        class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                        placeholder="••••••••">
-                </div>
-            </div>
-
-            <div class="flex items-center justify-between">
-                <div class="flex items-center">
-                    <input id="remember-me" name="remember-me" type="checkbox"
-                        class="h-4 w-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500/50">
-                    <label for="remember-me" class="ml-2 block text-sm text-slate-400">Remember me</label>
-                </div>
-                <div class="text-sm">
-                    <a href="#" class="font-medium text-blue-400 hover:text-blue-300 transition-colors">Forgot
-                        password?</a>
-                </div>
-            </div>
-
-            <button type="submit"
-                class="group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]">
-                Sign in
-            </button>
-        </form>
-
-        <div class="mt-6 text-center">
-            <p class="text-slate-500 text-xs">NEMBUS Desktop Edition v1.0.0</p>
-        </div>
     </div>
+    <div>
+      <img src="images/logo-curved.svg" alt="Logo" class="h-50 w-50" />
+    </div>
+  </div>
+
+  <!-- Right container -->
+<div
+  class="flex-box-row h-full w-full rounded-t-2xl bg-white p-8 md:w-2/3 md:rounded-tl-[50px] md:rounded-tr-none md:rounded-br-none md:rounded-bl-[50px]"
+>
+  <div
+    class="flex w-full flex-col justify-center gap-6 p-2 sm:w-3/4 md:gap-16 lg:w-1/2"
+  >
+    <!-- Welcome Screen (shown when form is hidden) -->
+    <div *ngIf="!showLoginForm" class="flex flex-col items-center gap-8">
+      <!-- Welcome Text -->
+      <div class="text-center">
+        <h1 class="text-3xl md:text-4xl font-bold text-selectedobj mb-3">
+          Welcome Back!
+        </h1>
+        <p class="text-gray-600 text-base md:text-lg">
+          Please select your organization to continue
+        </p>
+      </div>
+
+      <!-- Tenant Selection Dropdown -->
+      <div class="relative w-full max-w-xs">
+        <button 
+          class="btn-primary w-full flex items-center justify-center"
+          (click)="toggleDropdown()"
+          [disabled]="loadingTenants"
+        >
+          <span *ngIf="loadingTenants">Loading...</span>
+          <span *ngIf="!loadingTenants">
+            {{ selectedTenant ? selectedTenant.tenant_name : 'Select Organization' }}
+          </span>
+          <span class="ml-2" *ngIf="!loadingTenants">{{ showDropdown ? '▲' : '▼' }}</span>
+        </button>
+        
+        <!-- Dropdown Menu -->
+        <div 
+          *ngIf="showDropdown && !loadingTenants" 
+          class="absolute top-full left-0 right-0 mt-2 w-full rounded-lg bg-white shadow-lg border border-gray-200 z-10 overflow-hidden max-h-60 overflow-y-auto"
+        >
+          <ul class="py-1">
+            <li 
+              *ngFor="let tenant of tenants"
+              class="px-4 py-3 hover:bg-gray-100 cursor-pointer transition-colors duration-150 border-b border-gray-100 last:border-b-0"
+              (click)="selectTenant(tenant)"
+            >
+              <div class="flex flex-col">
+                <span class="text-gray-800 font-medium">{{ tenant.tenant_name }}</span>
+                <span class="text-gray-500 text-xs mt-1">{{ tenant.slug }}</span>
+              </div>
+            </li>
+            
+            <!-- Empty state -->
+            <li *ngIf="tenants.length === 0" class="px-4 py-3 text-gray-500 text-center">
+              No organizations found
+            </li>
+          </ul>
+        </div>
+      </div>
+      
+      <!-- Error message -->
+      <p *ngIf="errorMsg && !showLoginForm" class="text-red-500 text-sm text-center">
+        {{ errorMsg }}
+      </p>
+    </div>
+
+    <!-- Login Form (shown after selecting tenant) -->
+    <div *ngIf="showLoginForm" class="animate-fadeIn">
+      <!-- Selected Tenant Info -->
+      <div class="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <p class="text-xs text-gray-500 mb-1">Logging in to:</p>
+        <p class="text-sm font-semibold text-selectedobj">{{ selectedTenant?.tenant_name }}</p>
+      </div>
+
+      <p class="mb-6 text-center text-2xl font-semibold md:text-left text-selectedobj">
+        {{ 'SIGNIN.TITLE' | translate }}
+      </p>
+
+      <div class="flex flex-col gap-y-6">
+        <!-- Email field -->
+        <div class="flex flex-col">
+          <input
+            type="email"
+            class="login-input-field"
+            [placeholder]="'SIGNIN.EMAIL' | translate"
+            pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,4}"
+            required
+            [(ngModel)]="email"
+            name="email"
+          />
+        </div>
+
+        <!-- Password field -->
+        <div class="flex flex-col">
+          <input
+            type="password"
+            class="login-input-field"
+            [placeholder]="'SIGNIN.PASSWORD' | translate"
+            minlength="6"
+            required
+            [(ngModel)]="password"
+            name="password"
+          />
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="mt-6">
+        <button class="btn-primary w-full" (click)="onLogin()">
+          {{ 'SIGNIN.LOGIN_BUTTON' | translate }}
+        </button>
+        
+        <p *ngIf="errorMsg" class="text-red-500 mt-3 text-center text-sm">
+          {{ errorMsg }}
+        </p>
+        
+        <!-- Back button -->
+        <button 
+          class="mt-4 text-sm text-gray-600 hover:text-selectedobj w-full text-center transition-colors duration-150"
+          (click)="goBack()"
+        >
+          ← Change organization
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 </div>

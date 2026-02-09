@@ -1,0 +1,124 @@
+<div class="container mb-10 px-3 py-1">
+  <!-- Header Section -->
+  <div class="mb-3 flex items-center gap-3">
+    <div>
+      <button (click)="goBack()">
+        <i class="fa fa-circle-chevron-left btn-back"></i>
+      </button>
+    </div>
+    <h2 translate>PROMOTIONS.CREATE_COUPON_TYPE</h2>
+  </div>
+
+  <!-- Main Form Card -->
+  <div class="dashboard-card custom-shadow border-1 border-black/5 px-5 py-4">
+    <div class="flex min-h-screen flex-col justify-between">
+      <!-- Coupon Form -->
+      <div>
+        <h3 class="text-primary-lg" translate>PROMOTIONS.COUPON</h3>
+        <form class="mb-2 flex-grow">
+          <!-- Row 1 -->
+          <div class="add-coupon-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.NAME</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="{{ 'PROMOTIONS.ENTER' | translate }}"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PROMOTIONS.CODE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label translate>PROMOTIONS.VOUCHER_TYPE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="add-coupon-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.FORM_OF_PAYMENT</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label translate>PROMOTIONS.VALUE</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.ENTER' | translate }}"
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PROMOTIONS.VALID_MONTHS</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.ENTER' | translate }}"
+              />
+            </div>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="add-coupon-row">
+            <div class="form-group md:col-span-2">
+              <label translate>PROMOTIONS.DESCRIPTION</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.COMMENT' | translate }}"
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PROMOTIONS.VALID_DAYS</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.ENTER' | translate }}"
+              />
+            </div>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="add-coupon-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.KEY</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="{{ 'PROMOTIONS.ENTER' | translate }}"
+                required
+              />
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Save Button -->
+      <div class="my-8 flex justify-center">
+        <button (click)="submit()" class="btn-submit">
+          <span translate>PROMOTIONS.SAVE_CHANGES</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,434 @@
+<div class=" animate-fade-in p-4">
+    <div class="p-1 lg:grid-cols-4 ">
+        <h2 class="text-xl font-semibold text-default-black">UI Modules</h2>
+    </div>
+    <div class="flex items-center justify-between px-1 py-1 ">
+        <div class="flex gap-2 shadow-[0px_4px_11.1px_0px_#0000002B] bg-[#F3F3F3] ">
+            <button class="px-3 py-1 text-gray hover:text-primary transition-colors">
+                Dashboard
+            </button>
+            <button class="px-1 py-1 text-gray hover:text-primary transition-colors">
+                Users
+            </button>
+            <button class="flex items-center gap-2 px-3 py-1 bg-primary text-white rounded">
+                UI Modules
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
+                    </path>
+                </svg>
+            </button>
+        </div>
+        <button (click)="openAddModuleOverlay()"
+            class="px-3 py-1 bg-primary text-white rounded hover:bg-opacity-90 transition-colors">
+            Add Module
+        </button>
+    </div>
+    <div class=" animate-fade-in my-3 container px-3 py-1  rounded-lg shadow-sm">
+
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-0">
+
+            <!-- Menu Section -->
+            <div class="md:col-span-1 shadow-[2px_0px_8px_0px_#00000014] bg-white">
+
+                <div class="p-2 flex items-center justify-between">
+                    <span class="font-semibold text-default-black">Menu</span>
+                    <button (click)="openAddMenuOverlay()"
+                        class="px-2 py-1 bg-primary text-white text-sm rounded hover:bg-opacity-90 transition-colors">
+                        Add Menu
+                    </button>
+                </div>
+
+                <div class="p-3">
+                    <button (click)="setActiveSideMenu('menu-modules')"
+                        [class.bg-primary]="activeSideMenu === 'menu-modules'"
+                        [class.text-white]="activeSideMenu === 'menu-modules'"
+                        [class.bg-transparent]="activeSideMenu !== 'menu-modules'"
+                        [class.text-default-black]="activeSideMenu !== 'menu-modules'"
+                        class="w-full flex items-center justify-between px-3 py-2 rounded mb-2 transition-colors">
+
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5" />
+                            </svg>
+                            <span class="text-sm">Menu And Modules</span>
+                        </div>
+
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z">
+                            </path>
+                        </svg>
+                    </button>
+
+                    <div class="px-3 py-2 text-sm text-gray">
+                        User Roles and permissions
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submenu Section -->
+            <div class="md:col-span-3 border-gray-light2">
+                <div class="p-4 bg-white flex items-center justify-between">
+                    <span class="text-sm text-gray">Submenu</span>
+
+                    <!-- Buttons aligned RIGHT -->
+                    <div class="flex gap-2 justify-end">
+                        <button (click)="openEditSubmenuOverlay()"
+                            class="px-2 py-1 bg-primary text-white text-xs rounded hover:bg-opacity-90 transition-colors">
+                            Edit Submenu
+                        </button>
+
+                        <button (click)="openAddSubmenuOverlay()"
+                            class="px-2 py-1 bg-primary text-white text-xs rounded hover:bg-opacity-90 transition-colors">
+                            Add Submenu
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+
+
+<!-- Overlay for Add/Edit Module -->
+<div *ngIf="overlayType === 'module'"
+  class="fixed top-0 right-0 bottom-0 left-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
+  (click)="closeOverlay()">
+
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-xl p-6"
+       (click)="$event.stopPropagation()">
+
+    <h2 class="text-lg font-semibold text-default-black mb-6">
+      {{ getOverlayTitle() }}
+    </h2>
+
+    <!-- FORM GRID -->
+    <div class="grid grid-cols-2 gap-4">
+
+      <!-- Module Name -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Module Name</label>
+        <input type="text" [(ngModel)]="moduleForm.name" placeholder="Enter"
+          class="w-full px-3 py-2 border border-gray-light2 rounded focus:outline-none focus:border-primary">
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Description</label>
+        <input type="text" [(ngModel)]="moduleForm.description" placeholder="Enter"
+          class="w-full px-3 py-2 border border-gray-light2 rounded focus:outline-none focus:border-primary">
+      </div>
+
+      <!-- Display Order -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Display Order</label>
+        <input type="number" [(ngModel)]="moduleForm.displayOrder" placeholder="Enter"
+          class="w-full px-3 py-2 border border-gray-light2 rounded focus:outline-none focus:border-primary">
+
+        <!-- Toggle UNDER Display Order -->
+        <div class="flex items-center gap-2 mt-3">
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" [(ngModel)]="moduleForm.isActive" class="sr-only peer">
+            <div
+              class="w-11 h-6 bg-gray-light2 rounded-full peer-checked:bg-primary
+              after:content-[''] after:absolute after:top-[2px] after:start-[2px]
+              after:bg-white after:border after:border-gray-light2 after:rounded-full
+              after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+            </div>
+          </label>
+          <span class="text-sm text-gray">Is Active?</span>
+        </div>
+      </div>
+
+      <!-- Icon Upload -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Icon</label>
+        <div class="flex items-center gap-2">
+          <input type="text" [value]="selectedFileName" placeholder="Upload" readonly
+            class="flex-1 px-3 py-2 border border-gray-light2 rounded bg-gray-light3 cursor-pointer"
+            (click)="triggerFileInput('moduleIconInput')">
+
+          <button (click)="triggerFileInput('moduleIconInput')"
+            class="p-2 border border-gray-light2 rounded hover:bg-gray-light3 transition-colors">
+            <svg class="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+          </button>
+
+          <input id="moduleIconInput" type="file"
+            (change)="onFileSelected($event)" class="hidden" accept="image/*">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ACTION BUTTONS CENTER -->
+    <div class="flex justify-center gap-4 mt-8">
+      <button (click)="closeOverlay()"
+        class="px-6 py-2 text-red border border-red rounded hover:bg-red hover:text-white transition-colors">
+        Cancel
+      </button>
+
+      <button (click)="submitModule()"
+        class="px-6 py-2 bg-primary text-white rounded hover:bg-opacity-90 transition-colors">
+        {{ overlayMode === 'add' ? 'Add Module' : 'Save Changes' }}
+      </button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Overlay for Add Menu -->
+<div *ngIf="overlayType === 'menu'"
+  class="fixed top-0 right-0 bottom-0 left-0 bg-black/15 backdrop-blur-[2px] flex items-center justify-center z-50"
+  (click)="closeOverlay()">
+
+  <div class="bg-white rounded-lg shadow-xl w-full max-w-xl p-6"
+       (click)="$event.stopPropagation()">
+
+    <h2 class="text-lg font-semibold text-default-black mb-6">
+      {{ getOverlayTitle() }}
+    </h2>
+
+    <!-- FORM GRID -->
+    <div class="grid grid-cols-2 gap-4">
+
+      <!-- Select Menu -->
+      <!-- <div>
+        <label class="block text-sm font-medium text-gray mb-2">Select Menu</label>
+        <select
+          class="w-full px-3 py-2 border border-gray-light2 rounded
+                 focus:outline-none focus:ring-2 focus:ring-primary bg-white">
+          <option value="">Select</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div> -->
+
+      <!-- Menu Name -->
+      <div>
+        <label class="block text-sm font-medium text-gray mb-2">Menu Name</label>
+        <input type="text" [(ngModel)]="menuForm.name" placeholder="Admin"
+          class="w-full px-3 py-2 border border-gray-light2 rounded
+                 focus:outline-none focus:ring-2 focus:ring-primary">
+      </div>
+
+      <!-- Route Path -->
+      <div>
+        <label class="block text-sm font-medium text-gray mb-2">Route Path</label>
+        <input type="text" [(ngModel)]="menuForm.routePath" placeholder="example"
+          class="w-full px-3 py-2 border border-gray-light2 rounded
+                 focus:outline-none focus:ring-2 focus:ring-primary">
+      </div>
+
+      <!-- Display Order -->
+      <div>
+        <label class="block text-sm font-medium text-gray mb-2">Display Order</label>
+        <input type="number" [(ngModel)]="menuForm.displayOrder" placeholder="1"
+          class="w-full px-3 py-2 border border-gray-light2 rounded
+                 focus:outline-none focus:ring-2 focus:ring-primary">
+
+        <!-- Toggle under Display Order -->
+        <div class="flex items-center gap-3 mt-3">
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" [(ngModel)]="menuForm.isActive" class="sr-only peer">
+            <div
+              class="w-11 h-6 bg-gray-light2 rounded-full peer-checked:bg-primary
+                     after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                     after:bg-white after:rounded-full after:h-5 after:w-5
+                     after:transition-all peer-checked:after:translate-x-full">
+            </div>
+          </label>
+          <span class="text-sm text-gray">Is Active?</span>
+        </div>
+      </div>
+
+      <!-- Icon -->
+      <div>
+        <label class="block text-sm font-medium text-gray mb-2">Icon</label>
+        <div class="flex items-center gap-2">
+          <input type="text" [value]="selectedFileName || 'pdf-icon'" readonly
+            class="flex-1 px-3 py-2 border border-gray-light2 rounded bg-white text-gray-light cursor-pointer"
+            (click)="triggerFileInput('menuIconInput')">
+
+          <button (click)="triggerFileInput('menuIconInput')"
+            class="p-2 border border-gray-light2 rounded hover:bg-gray-light3 transition-colors">
+            <svg class="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+          </button>
+
+          <input id="menuIconInput" type="file"
+            (change)="onFileSelected($event)" class="hidden" accept="image/*">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- BUTTONS CENTER -->
+    <div class="flex justify-center gap-4 mt-8">
+      <button (click)="closeOverlay()"
+        class="px-6 py-2 text-red border border-red rounded hover:bg-red hover:text-white transition-colors">
+        Cancel
+      </button>
+
+      <button (click)="submitMenu()"
+        class="px-6 py-2 bg-primary text-white rounded hover:bg-opacity-90 transition-colors">
+        Add Menu
+      </button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Overlay for Add Submenu -->
+<div *ngIf="overlayType === 'submenu'"
+  class="fixed top-0 right-0 bottom-0 left-0 bg-black/15 backdrop-blur-[2px] flex items-center justify-center z-50"
+  (click)="closeOverlay()">
+
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-xl p-6"
+       (click)="$event.stopPropagation()">
+
+    <h2 class="text-lg font-semibold text-default-black mb-6">
+      {{ getOverlayTitle() }}
+    </h2>
+
+    <!-- GRID -->
+    <div class="grid grid-cols-3 gap-4">
+
+      <!-- Submenu Name -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Submenu Name</label>
+        <input type="text" [(ngModel)]="submenuForm.name" placeholder="Enter"
+          class="w-full px-3 py-2 border border-gray-light2 rounded focus:outline-none focus:border-primary">
+      </div>
+
+      <!-- Route Path -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Route Path</label>
+        <input type="text" [(ngModel)]="submenuForm.routePath" placeholder="Enter"
+          class="w-full px-3 py-2 border border-gray-light2 rounded focus:outline-none focus:border-primary">
+      </div>
+
+      <!-- Is Page Toggle -->
+      <div class="flex items-end pb-1">
+        <div class="flex items-center gap-2">
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" [(ngModel)]="submenuForm.isPage" class="sr-only peer">
+            <div
+              class="w-11 h-6 bg-gray-light2 rounded-full peer-checked:bg-primary
+                     after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                     after:bg-white after:border after:border-gray-light2 after:rounded-full
+                     after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+            </div>
+          </label>
+          <span class="text-sm text-gray">Is Page?</span>
+        </div>
+      </div>
+
+      <!-- Display Order -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Display Order</label>
+        <input type="number" [(ngModel)]="submenuForm.displayOrder" placeholder="Enter"
+          class="w-full px-3 py-2 border border-gray-light2 rounded focus:outline-none focus:border-primary">
+
+        <!-- STACKED TOGGLES UNDER DISPLAY ORDER -->
+        <div class="flex flex-col gap-3 mt-4">
+
+          <!-- Is Active -->
+          <div class="flex items-center gap-2">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" [(ngModel)]="submenuForm.isActive" class="sr-only peer">
+              <div
+                class="w-11 h-6 bg-gray-light2 rounded-full peer-checked:bg-primary
+                       after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                       after:bg-white after:border after:border-gray-light2 after:rounded-full
+                       after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+              </div>
+            </label>
+            <span class="text-sm text-gray">Is Active</span>
+          </div>
+
+          <!-- Add Pagination -->
+          <div class="flex items-center gap-2">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" [(ngModel)]="submenuForm.addPagination" class="sr-only peer">
+              <div
+                class="w-11 h-6 bg-gray-light2 rounded-full peer-checked:bg-primary
+                       after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                       after:bg-white after:border after:border-gray-light2 after:rounded-full
+                       after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+              </div>
+            </label>
+            <span class="text-sm text-gray">Add Pagination</span>
+          </div>
+
+          <!-- Add Filters -->
+          <div class="flex items-center gap-2">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" [(ngModel)]="submenuForm.addFilters" class="sr-only peer">
+              <div
+                class="w-11 h-6 bg-gray-light2 rounded-full peer-checked:bg-primary
+                       after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                       after:bg-white after:border after:border-gray-light2 after:rounded-full
+                       after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+              </div>
+            </label>
+            <span class="text-sm text-gray">Add Filters</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Icon -->
+      <div>
+        <label class="block text-sm text-gray mb-1">Icon</label>
+        <div class="flex items-center gap-2">
+          <input type="text" [value]="selectedFileName" placeholder="Upload" readonly
+            class="flex-1 px-3 py-2 border border-gray-light2 rounded bg-gray-light3 cursor-pointer"
+            (click)="triggerFileInput('submenuIconInput')">
+
+          <button (click)="triggerFileInput('submenuIconInput')"
+            class="p-2 border border-gray-light2 rounded hover:bg-gray-light3 transition-colors">
+            <svg class="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+          </button>
+
+          <input id="submenuIconInput" type="file"
+            (change)="onFileSelected($event)" class="hidden" accept="image/*">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- BUTTONS CENTER -->
+    <div class="flex justify-center gap-4 mt-8">
+      <button (click)="closeOverlay()"
+        class="px-6 py-2 text-red border border-red rounded hover:bg-red hover:text-white transition-colors">
+        Cancel
+      </button>
+
+      <button (click)="submitSubmenu()"
+        class="px-6 py-2 bg-primary text-white rounded hover:bg-opacity-90 transition-colors">
+        Add Submenu
+      </button>
+    </div>
+
+  </div>
+</div>
+
+
+
+

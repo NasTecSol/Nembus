@@ -1,0 +1,66 @@
+<section class="mb-5 min-h-screen">
+  <div class="container px-3 py-1">
+    <div class="mb-3 flex items-center gap-3">
+      <div>
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div>
+      <h2 translate>PURCHASING.LIST_OF_PRODUCTS</h2>
+    </div>
+
+    <div
+      class="dashboard-card border-secondary animate-slide-diagonal-down my-4 grid grid-cols-1 overflow-x-auto rounded-2xl shadow-lg"
+    >
+      <div class="md:min-h-screen">
+        <table class="product-table">
+          <thead>
+            <tr class="table-heading-row text-dark-bold-lg">
+              <th class="border-l-0" translate>PURCHASING.PRODUCT_ID</th>
+              <th translate>PURCHASING.PRODUCT_NAME</th>
+              <th translate>PURCHASING.UOM</th>
+              <th translate>PURCHASING.QUANTITY</th>
+              <th translate>PURCHASING.PRICE_PER_UNIT</th>
+              <th translate>PURCHASING.STOCK_AVAILABLE</th>
+              <th translate>PURCHASING.DISCOUNT</th>
+              <th translate>PURCHASING.TOTAL</th>
+              <th translate>PURCHASING.TOTAL_WITH_TAX</th>
+              <th class="border-r-0" translate>PURCHASING.VAT_GROUP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let product of productList; let i = index"
+              class="table-body-row text-[#666666]"
+            >
+              <td class="border-l-0">{{ product.productId }}</td>
+              <td>{{ product.productName }}</td>
+              <td>{{ product.uom }}</td>
+              <td>{{ product.quantity }}</td>
+              <td>{{ product.pricePerUnit }}</td>
+              <td>
+                <span *ngIf="product.stockAvailable !== 'Out Of Stock'">
+                  {{ product.stockAvailable }}
+                </span>
+                <span
+                  *ngIf="product.stockAvailable === 'Out Of Stock'"
+                  class="text-red-difference"
+                >
+                  {{ product.stockAvailable }}
+                </span>
+              </td>
+              <td>{{ product.discount }}</td>
+              <td>{{ product.total }}</td>
+              <td>{{ product.totalWithTax }}</td>
+              <td class="status border-r-0">
+                <select class="input input-general">
+                  <option>{{ product.vatGroup }}</option>
+                </select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>

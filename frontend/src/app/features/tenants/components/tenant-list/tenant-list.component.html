@@ -1,0 +1,303 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+    <!-- Page Header -->
+    <div class="mb-3 flex flex-col md:flex-row md:items-center md:justify-between">
+      <div>
+        <h2 class="mb-1 text-2xl font-bold tracking-tight text-slate-900">
+          Tenants Management
+        </h2>
+        <p class="text-sm text-slate-500">
+          Manage multi-tenant environments, configurations, and database connections
+        </p>
+      </div>
+      <div class="mt-3 flex gap-2 md:mt-0">
+        <button class="btn-secondary" role="button">
+          <i class="fas fa-download"></i>
+          <span>Export</span>
+        </button>
+        <!-- <button (click)="addTenant()" class="btn-add" role="button">
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span>Add Tenant</span>
+        </button> -->
+      </div>
+    </div>
+
+    <!-- Search and Filter Bar -->
+    <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
+      <div class="relative flex-1">
+        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+        <input
+          type="text"
+          
+          (input)="filterTenants()"
+          placeholder="Search tenants by name or slug..."
+          class="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+      <div class="flex gap-2">
+        <select
+          
+          (change)="filterTenants()"
+          class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+        >
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+    </div>
+    <!-- Statistics Cards -->
+    <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div class="dashboard-card rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Total Tenants</p>
+            <p class="mt-2 text-2xl font-bold text-slate-900">{{ getTotalTenants() }}</p>
+          </div>
+          <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+            <i class="fas fa-building text-xl text-primary"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-card rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Active</p>
+            <p class="mt-2 text-2xl font-bold text-emerald-600">{{ getActiveTenants() }}</p>
+          </div>
+          <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50">
+            <i class="fas fa-check-circle text-xl text-emerald-600"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-card rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Inactive</p>
+            <p class="mt-2 text-2xl font-bold text-red-600">{{ getInactiveTenants() }}</p>
+          </div>
+          <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50">
+            <i class="fas fa-power-off text-xl text-red-600"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-card rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wider text-slate-500">This Month</p>
+            <p class="mt-2 text-2xl font-bold text-blue-600">{{ getTenantsThisMonth() }}</p>
+          </div>
+          <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50">
+            <i class="fas fa-calendar-plus text-xl text-blue-600"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div *ngIf="isLoading" class="flex items-center justify-center py-16">
+  <div class="flex flex-col items-center gap-3">
+    <div class="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+    <p class="text-sm text-slate-500">Loading tenants...</p>
+  </div>
+</div>
+    <!-- Tenants List -->
+    <div *ngIf="!isLoading" class="dashboard-card overflow-hidden rounded-2xl border-0 bg-white shadow-sm">
+      <!-- Table Header -->
+      <div class="border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <div class="grid grid-cols-12 items-center gap-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div class="col-span-3">Tenant Details</div>
+          <div class="col-span-3">Environment</div>
+          <div class="col-span-2">Database</div>
+          <div class="col-span-2 text-center">Status</div>
+          <div class="col-span-2 text-center">Actions</div>
+        </div>
+      </div>
+
+      <!-- Table Body -->
+      <div class="divide-y divide-slate-100">
+        <div
+          *ngFor="let tenant of filteredTenants"
+          class="group grid grid-cols-12 items-center gap-4 px-4 py-4 transition-colors hover:bg-slate-50"
+          [ngClass]="{
+            'bg-red-50/50': !tenant.is_active
+          }"
+        >
+          <!-- Tenant Details -->
+          <div class="col-span-3 flex items-center gap-3">
+            <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-lg font-bold text-white shadow-sm">
+              {{ getTenantInitial(tenant.tenant_name) }}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="truncate font-semibold text-slate-900">
+                {{ tenant.tenant_name }}
+              </div>
+              <div class="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                <i class="fas fa-clock text-[10px]"></i>
+                <span>Created {{ formatDate(tenant.created_at) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Environment -->
+          <div class="col-span-3">
+  <div class="flex flex-col gap-1.5">
+    <div class="flex items-center gap-2 text-sm text-slate-700">
+      <i class="fas fa-globe text-xs text-slate-400"></i>
+      <span class="truncate font-medium">{{ tenant.tenant_name }}.{{ getBaseDomain() }}</span>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-slate-500">
+      <i class="fas fa-server text-[10px]"></i>
+      <span>Last updated {{ formatDate(tenant.updated_at) }}</span>
+    </div>
+  </div>
+</div>
+
+          <!-- Database -->
+          <div class="col-span-2">
+            <div class="flex items-center gap-2">
+              <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
+                <i class="fas fa-database text-sm text-blue-600"></i>
+              </div>
+              <div class="flex flex-col">
+                 <span class="text-xs font-medium text-slate-700">{{ tenant.slug }}</span>
+                <span class="text-[10px] text-slate-500">Connected</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status -->
+          <div class="col-span-2 flex justify-center">
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
+              [ngClass]="{
+                'bg-emerald-50 text-emerald-700 border border-emerald-100': tenant.is_active,
+                'bg-red-50 text-red-700 border border-red-100': !tenant.is_active
+              }"
+            >
+              <span
+                class="h-1.5 w-1.5 rounded-full"
+                [ngClass]="{
+                  'bg-emerald-500': tenant.is_active,
+                  'bg-red-500': !tenant.is_active
+                }"
+              ></span>
+              {{ tenant.is_active ? 'Active' : 'Inactive' }}
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="col-span-2 flex items-center justify-center gap-2">
+            <button
+              (click)="editConfiguration(tenant.id)"
+              class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-all hover:border-primary hover:bg-primary hover:text-white hover:shadow-sm"
+              title="Edit Configuration"
+            >
+              <i class="fas fa-cog text-sm"></i>
+            </button>
+    <button
+  (click)="toggleTenantStatus(tenant)"
+  class="flex h-9 w-9 items-center justify-center rounded-lg border transition-all"
+  [ngClass]="{
+    'border-red-200 bg-red-50 text-red-600 hover:bg-red-100': tenant.is_active,
+    'border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100': !tenant.is_active
+  }"
+  [title]="tenant.is_active ? 'Deactivate Tenant' : 'Activate Tenant'"
+>
+  <i
+    class="fas text-sm"
+    [ngClass]="{
+      'fa-power-off': tenant.is_active,
+      'fa-check-circle': !tenant.is_active
+    }"
+  ></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div
+        *ngIf="filteredTenants.length === 0"
+        class="flex flex-col items-center justify-center py-16"
+      >
+        <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+          <i class="fas fa-building text-2xl text-slate-400"></i>
+        </div>
+        <h3 class="mb-2 text-lg font-semibold text-slate-900">No tenants found</h3>
+        <p class="mb-6 text-sm text-slate-500">
+          {{ searchQuery ? 'Try adjusting your search criteria' : 'Get started by adding your first tenant' }}
+        </p>
+        <button
+          *ngIf="!searchQuery"
+          (click)="addTenant()"
+          class="btn-add"
+          role="button"
+        >
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span>Add First Tenant</span>
+        </button>
+      </div>
+    </div>
+
+
+  </div>
+</section>
+
+<!-- Confirmation Modal -->
+<div
+  *ngIf="showConfirmModal"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200"
+  (click)="cancelStatusChange()"
+>
+  <div
+    class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl animate-in zoom-in-95 duration-200"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+      [ngClass]="{
+        'bg-red-100': selectedTenant?.is_active,
+        'bg-emerald-100': !selectedTenant?.is_active
+      }">
+      <i
+        class="text-xl"
+        [ngClass]="{
+          'fas fa-exclamation-triangle text-red-600': selectedTenant?.is_active,
+          'fas fa-check-circle text-emerald-600': !selectedTenant?.is_active
+        }"
+      ></i>
+    </div>
+    <h3 class="mb-2 text-xl font-bold text-slate-900">
+      {{ selectedTenant?.is_active ? 'Deactivate Tenant' : 'Activate Tenant' }}
+    </h3>
+    <p class="mb-6 text-sm text-slate-600">
+      <span *ngIf="selectedTenant?.is_active">
+        Are you sure you want to deactivate <strong>{{ selectedTenant?.tenant_name }}</strong>? 
+        This will suspend all operations for this tenant.
+      </span>
+      <span *ngIf="!selectedTenant?.is_active">
+        Are you sure you want to activate <strong>{{ selectedTenant?.tenant_name }}</strong>? 
+        This will restore all operations for this tenant.
+      </span>
+    </p>
+    <div class="flex gap-3">
+      <button
+        (click)="cancelStatusChange()"
+        class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+      >
+        Cancel
+      </button>
+      <button
+        (click)="confirmStatusChange()"
+        class="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors"
+        [ngClass]="{
+          'bg-red-600 hover:bg-red-700': selectedTenant?.is_active,
+          'bg-emerald-600 hover:bg-emerald-700': !selectedTenant?.is_active
+        }"
+      >
+        {{ selectedTenant?.is_active ? 'Deactivate' : 'Activate' }}
+      </button>
+    </div>
+  </div>
+</div>

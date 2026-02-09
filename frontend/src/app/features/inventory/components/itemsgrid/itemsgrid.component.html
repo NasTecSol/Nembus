@@ -1,0 +1,54 @@
+<!-- Category List -->
+<div
+  class="my-6 grid grid-cols-1 gap-4 py-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12"
+>
+  <div
+    *ngFor="let cat of categories"
+    (click)="selectCategory(cat)"
+    class="cat-card primary-shadow transition-shadow"
+    [ngClass]="selectedCategory.id === cat.id ? 'ring-primary ring-2' : ''"
+  >
+    <div class="bg-secondary relative w-full flex-grow-[11] overflow-hidden">
+      <img [src]="cat.image" [alt]="cat.name" class="car-img" />
+    </div>
+    <div class="flex flex-grow-[1] items-center justify-center">
+      <p class="text-sm text-black">{{ cat.name }}</p>
+    </div>
+  </div>
+</div>
+
+<!-- Product List -->
+<div class="my-6 py-2 md:px-4">
+  <div
+    *ngIf="filteredProducts.length > 0; else noProducts"
+    class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6"
+  >
+    <a
+      *ngFor="let product of filteredProducts"
+      (click)="viewProductDetail(product)"
+      class="prod-card"
+    >
+      <div class="flex justify-center">
+        <div
+          class="custom-shadow bg-secondary inline-block rounded-full p-2 shadow-2xl"
+        >
+          <img
+            [src]="product.image"
+            [alt]="product.name"
+            class="h-30 w-30 rounded-full object-cover"
+          />
+        </div>
+      </div>
+      <div class="font-barlow p-4 text-center text-black">
+        <p class="mb-2 font-bold">{{ product.name }}</p>
+        <p>RS&nbsp;{{ product.price }}</p>
+      </div>
+    </a>
+  </div>
+
+  <ng-template #noProducts>
+    <div class="py-12 text-center text-lg font-semibold text-gray-500">
+      <p>No products available.</p>
+    </div>
+  </ng-template>
+</div>

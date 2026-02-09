@@ -1,0 +1,140 @@
+@theme {
+
+  --animate-fade-in: fadeIn 1s ease-in-out forwards;
+
+  @keyframes fadeIn {
+    0% {
+      opacity: 0;
+    }
+
+    100% {
+      opacity: 1;
+    }
+  }
+
+  --animate-fade-in-bg: fadeInBg 0.5s ease-in-out forwards;
+
+  @keyframes fadeInBg {
+    0% {
+      background-color: rgba(0, 0, 0, 0);
+    }
+
+    100% {
+      background-color: rgba(0, 0, 0, 0.2);
+    }
+  }
+
+  --animate-fade-out: fadeOut 1s ease-in-out forwards;
+
+  @keyframes fadeOut {
+    0% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+
+  --animate-slide-up: slideUp 0.5s ease-out forwards;
+
+  @keyframes slideUp {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  --animate-slide-down: slideDown 0.7s ease-out forwards;
+
+  @keyframes slideDown {
+    0% {
+      transform: translateY(-8%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  --animate-slide-diagonal-down: slideDiagonalDown 0.5s ease-out forwards;
+
+  @keyframes slideDiagonalDown {
+    0% {
+      transform: translate(-2%, -2%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translate(0, 0);
+      opacity: 1;
+    }
+  }
+
+  --animate-slide-diagonal-up: slideDiagonalUp 0.5s ease-out forwards;
+
+  @keyframes slideDiagonalUp {
+    0% {
+      transform: translate(2%, 2%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translate(0, 0);
+      opacity: 1;
+    }
+  }
+
+  --animate-slide-right-tab: slideRightTab 0.3s ease-out forwards;
+
+  @keyframes slideRightTab {
+    0% {
+      transform: translate(0%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translate(2%);
+      opacity: 1;
+    }
+  }
+
+  --animate-slide-left-tab: slideLeftTab 0.3s ease-out forwards;
+
+  @keyframes slideLeftTab {
+    0% {
+      transform: translate(0%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translate(-2%);
+      opacity: 1;
+    }
+  }
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  /* Internet Explorer 10+ */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+  /* Safari and Chrome */
+}
+
+/* Smooth Animations */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}

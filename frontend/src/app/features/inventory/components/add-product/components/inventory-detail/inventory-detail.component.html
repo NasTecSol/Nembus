@@ -1,0 +1,106 @@
+<form class="flex-grow">
+  <!-- First Grid Section -->
+  <div class="form-row">
+    <div class="form-group">
+      <label for="committedOrder2" translate>INVENTORY.IS_COMMITTED</label>
+      <input
+        id="committedOrder2"
+        name="committedOrder2"
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="onHand2" translate>INVENTORY.ON_HAND</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        id="onHand2"
+        name="onHand2"
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="numberInBuy2" translate>INVENTORY.NUMBER_IN_BUY</label>
+      <input
+        id="numberInBuy2"
+        name="numberInBuy2"
+        class="input border-white-light"
+        type="number"
+        [placeholder]="'INVENTORY.ENTER_UNITS_PER_CARTON' | translate"
+        required
+      />
+    </div>
+
+    <div class="flex items-center gap-2 md:mt-12 md:ml-10">
+      <input
+        id="isInventoryItem2"
+        name="isInventoryItem2"
+        class="accent-primary block"
+        type="checkbox"
+        value="true"
+      />
+      <label for="isInventoryItem2" translate>
+        INVENTORY.IS_INVENTORY_ITEM
+      </label>
+    </div>
+  </div>
+
+  <!-- Second Grid Section -->
+  <div class="form-row">
+    <div class="form-group">
+      <label for="vatGroup2" class="block" translate>INVENTORY.VAT_GROUP</label>
+      <select id="vatGroup2" name="vatGroup2" class="input border-white-light">
+        <option value="">{{ "INVENTORY.SELECT_GROUP" | translate }}</option>
+        <option value="first">{{ "INVENTORY.FIRST" | translate }}</option>
+        <option value="second">{{ "INVENTORY.SECOND" | translate }}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="minOrderQty2" translate>INVENTORY.MIN_ORDER_QTY</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        id="minOrderQty2"
+        name="minOrderQty2"
+        class="input border-white-light"
+        type="number"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="maxOrderQty2" translate>INVENTORY.MAX_ORDER_QTY</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        id="maxOrderQty2"
+        name="maxOrderQty2"
+        class="input border-white-light"
+        type="number"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required
+      />
+    </div>
+  </div>
+
+  <!-- Submit button: pinned at bottom center on md+ -->
+  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
+    <button type="submit" class="btn-primary h-12 md:w-30" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+
+  <!-- Submit button for small screens -->
+  <div class="mt-5 flex justify-center md:hidden">
+    <button type="submit" class="btn-primary h-12 md:w-30" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+</form>

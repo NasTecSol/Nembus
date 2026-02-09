@@ -1,0 +1,75 @@
+<form class="flex-grow">
+  <div class="form-row">
+    <div class="form-group">
+      <label translate>INVENTORY.CURRENT_COUNT_DATE</label>
+      <input
+        class="input border-white-light"
+        type="date"
+        [placeholder]="'INVENTORY.SELECT_DATE' | translate"
+      />
+    </div>
+
+    <div class="form-group">
+      <label translate>INVENTORY.WHOLESALE_NUMBER</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+      />
+    </div>
+    <div class="form-group">
+      <label translate>INVENTORY.WHOLESALE_UNITS_MEASURE</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER_UNITS' | translate"
+      />
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label translate>INVENTORY.BULK_VOLUME</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER_UNITS' | translate"
+      />
+    </div>
+    <div class="form-group">
+      <label translate>INVENTORY.BULK_VOLUME_UNITS</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER_UNITS' | translate"
+      />
+    </div>
+    <div class="form-group">
+      <label translate>INVENTORY.INVENTORY_UOM</label>
+      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER_UNITS' | translate"
+      />
+    </div>
+  </div>
+
+  <!-- Submit button: pinned at bottom center on md+ -->
+  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
+    <button type="submit" class="btn-primary h-12 md:w-30" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+
+  <!-- Submit button for small screens (normal flow) -->
+  <div class="mt-5 flex justify-center md:hidden">
+    <button type="submit" class="btn-primary h-12 md:w-30" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+</form>
