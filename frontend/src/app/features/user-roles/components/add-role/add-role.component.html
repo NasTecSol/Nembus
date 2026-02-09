@@ -1,0 +1,308 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+    <!-- Page Header -->
+    <div
+      class="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-900">{{ 'role_builder.title' |
+          translate }}</h2>
+        <p class="mt-1 text-sm text-gray-600">{{ 'role_builder.subtitle' |
+          translate }}</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button (click)="handleCloneExisting()"
+          class="btn-secondary flex items-center gap-2">
+          <i class="fa fa-copy"></i>
+          <span>{{ 'role_builder.button.clone_existing' | translate }}</span>
+        </button>
+        <button
+          (click)="handleSave()"
+          [disabled]="!roleName || getSelectedCount() === 0"
+          class="btn-submit flex items-center gap-2"
+          [ngClass]="{ 'opacity-50 cursor-not-allowed': !roleName || getSelectedCount() === 0 }">
+          <i class="fa fa-save"></i>
+          <span>{{ 'role_builder.button.save_role' | translate }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Grid Layout -->
+    <div
+      class="custom-shadow border-white-light relative my-6 min-h-screen px-5 py-3 w-full max-w-[83vw] overflow-x-auto">
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <!-- Left Column - Role Details -->
+        <div class="space-y-6 lg:col-span-1">
+          <!-- Basic Info Card -->
+          <div class="dashboard-card custom-shadow bg-white">
+            <h3 class="mb-4 text-lg font-semibold text-gray-900">{{
+              'role_builder.section.role_details' | translate }}</h3>
+            <div class="space-y-4">
+              <!-- Role Name Input -->
+              <div>
+                <label class="mb-1.5 block text-sm font-medium text-gray-700">{{
+                  'role_builder.label.role_name' | translate }}</label>
+                <input
+                  type="text"
+                  [(ngModel)]="roleName"
+                  [placeholder]="'role_builder.placeholder.role_name' | translate"
+                  class="w-full rounded-lg border-1 border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+              </div>
+              <!-- Description Textarea -->
+              <div>
+                <label class="mb-1.5 block text-sm font-medium text-gray-700">{{
+                  'role_builder.label.description' | translate }}</label>
+                <textarea
+                  [(ngModel)]="roleDescription"
+                  [placeholder]="'role_builder.placeholder.description' | translate"
+                  rows="3"
+                  class="w-full resize-none rounded-lg border-1 border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Templates Card -->
+          <div class="dashboard-card custom-shadow bg-white">
+            <h3 class="mb-4 text-lg font-semibold text-gray-900">{{
+              'role_builder.section.start_from_template' | translate }}</h3>
+            <div class="space-y-2">
+              <button
+                *ngFor="let template of roleTemplates"
+                (click)="handleTemplateSelect(template.id)"
+                class="w-full rounded-lg border-2 p-3 text-left transition-all"
+                [ngClass]="{
+                  'border-selectedobj bg-primary/5': selectedTemplate === template.id,
+                  'border-gray-200 hover:border-gray-300': selectedTemplate !== template.id
+                }">
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="font-medium text-gray-900">{{ template.name
+                      }}</div>
+                    <div class="mt-1 text-xs text-gray-500">{{
+                      template.description }}</div>
+                  </div>
+                  <i *ngIf="selectedTemplate === template.id"
+                    class="fa fa-check flex-shrink-0 text-selectedobj"></i>
+                </div>
+                <div class="mt-2 flex items-center gap-1 text-xs text-gray-500">
+                  <i class="fa fa-users"></i>
+                  <span>{{ 'role_builder.template.users_have_this_role' |
+                    translate:{count: template.userCount} }}</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Permission Scope Card -->
+          <div class="dashboard-card custom-shadow bg-white">
+            <h3 class="mb-4 text-lg font-semibold text-gray-900">
+              {{ 'role_builder.section.permission_scope' | translate }}
+            </h3>
+
+            <div class="space-y-3">
+              <!-- ALL STORES -->
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="scope"
+                  value="all"
+                  [(ngModel)]="permissionScope"
+                  style="accent-color: var(--color-selectedobj)"
+                  (change)="onScopeChange('all')"
+                  class="form-radio mt-0.5" />
+                <div class="flex-1">
+                  <div class="font-medium text-gray-900">
+                    {{ 'role_builder.scope.all_stores' | translate }}
+                  </div>
+                </div>
+              </label>
+
+              <!-- OWN STORE -->
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="scope"
+                  value="own_store"
+                  [(ngModel)]="permissionScope"
+                  (change)="onScopeChange('own_store')"
+                  style="accent-color: var(--color-selectedobj)"
+                  class="form-radio mt-0.5" />
+                <div class="flex-1">
+                  <div class="font-medium text-gray-900">
+                    {{ 'role_builder.scope.own_store_only' | translate }}
+                  </div>
+                </div>
+              </label>
+
+              <!-- SPECIFIC -->
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="scope"
+                  value="specific"
+                  [(ngModel)]="permissionScope"
+                  (change)="onScopeChange('specific')"
+                  style="accent-color: var(--color-selectedobj)"
+                  class="form-radio mt-0.5" />
+                <div class="flex-1">
+                  <div class="font-medium text-gray-900">
+                    {{ 'role_builder.scope.specific_stores' | translate }}
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <!-- ✅ THIS PART WAS MISSING -->
+            <!-- STORES LIST (VISIBLE ONLY WHEN SPECIFIC IS SELECTED) -->
+            <div *ngIf="permissionScope === 'specific'"
+              class="mt-4 space-y-2 pl-6 border-t pt-3">
+
+              <div *ngFor="let store of stores" class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  [id]="'store_' + store.id"
+                  style="accent-color: var(--color-selectedobj)"
+                  (change)="onStoreToggle(store.id, $event)" />
+
+                <label [for]="'store_' + store.id"
+                  class="text-sm text-gray-700">
+                  {{ store.name }}
+                </label>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Summary Card -->
+          <div
+            class="dashboard-card custom-shadow border-primary/20 bg-primary/5">
+            <div class="flex items-start gap-3">
+              <i
+                class="fa fa-circle-info mt-0.5 flex-shrink-0 text-primary"></i>
+              <div class="flex-1">
+                <div class="mb-2 font-semibold text-primary">
+                  {{ 'role_builder.summary.permissions_selected' |
+                  translate:{count: getSelectedCount()} }}
+                </div>
+                <div class="text-sm text-primary/80">
+                  {{ 'role_builder.summary.of_total' | translate:{selected:
+                  getSelectedCount(), total: getTotalCount()} }}
+                </div>
+                <div *ngIf="getSelectedCount() > 0"
+                  class="mt-2 h-2 overflow-hidden rounded-full bg-primary/20">
+                  <div
+                    class="h-full bg-selectedobj transition-all"
+                    [style.width.%]="getProgressPercentage()"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column - Permission Tree -->
+        <div class="lg:col-span-2">
+          <div class="dashboard-card custom-shadow bg-white">
+            <div class="max-h-max space-y-2 overflow-y-auto">
+              <div *ngFor="let module of modules"
+                class="overflow-hidden rounded-lg border-1 border-gray-200">
+                <!-- Module Level -->
+                <div class="border-b-1 border-gray-200 bg-gray-50">
+                  <div class="flex items-center gap-3 p-3">
+                    <button (click)="toggleModule(module.id)"
+                      class="text-gray-400 hover:text-gray-600">
+                      <i class="fa"
+                        [ngClass]="{'fa-chevron-down': isModuleExpanded(module.id), 'fa-chevron-right': !isModuleExpanded(module.id)}"></i>
+                    </button>
+                    <input
+                      type="checkbox"
+                      [checked]="isAllChecked(getChildIds(module))"
+                      [indeterminate]="isIndeterminate(module)"
+                      (change)="togglePermission(module.id, true, getChildIds(module))"
+
+                      style="accent-color: var(--color-selectedobj)"
+                      class="form-checkbox h-5 w-5 cursor-pointer rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/20" />
+                    <div class="flex-1">
+                      <div class="font-semibold text-gray-900">{{ module.name
+                        }}</div>
+                      <div class="text-xs text-gray-500">
+                        {{ 'role_builder.permission_count.menus' |
+                        translate:{count: module.menus.length} }} •
+                        {{ 'role_builder.permission_count.permissions' |
+                        translate:{count: getChildIds(module).length} }}
+                      </div>
+                    </div>
+                    <span
+                      class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+                      {{ 'role_builder.badge.module' | translate }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Menu Level -->
+                <div *ngIf="isModuleExpanded(module.id)" class="bg-white">
+                  <div *ngFor="let menu of module.menus; let lastMenu = last"
+                    [ngClass]="{'border-b-1 border-gray-100': !lastMenu}">
+                    <div class="flex items-center gap-3 p-3 pl-12">
+                      <button *ngIf="menu.submenus && menu.submenus.length > 0"
+                        (click)="toggleMenu(menu.id)"
+                        class="text-gray-400 hover:text-gray-600">
+                        <i class="fa text-sm"
+                          [ngClass]="{'fa-chevron-down': isMenuExpanded(menu.id), 'fa-chevron-right': !isMenuExpanded(menu.id)}"></i>
+                      </button>
+                      <div *ngIf="!menu.submenus || menu.submenus.length === 0"
+                        class="w-4"></div>
+
+                      <input
+                        type="checkbox"
+                        [checked]="isChecked(module.id + '-' + menu.id) || isAllChecked(getChildIds(module, menu.id))"
+                        [indeterminate]="isIndeterminate(module, menu.id)"
+                        (change)="togglePermission(module.id + '-' + menu.id, true, getChildIds(module, menu.id))"
+
+                        style="accent-color: var(--color-selectedobj)"
+                        class="form-checkbox h-5 w-5 cursor-pointer rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/20" />
+
+                      <div class="flex-1">
+                        <div class="text-sm font-medium text-gray-900">{{
+                          menu.label }}</div>
+                        <div *ngIf="menu.submenus && menu.submenus.length > 0"
+                          class="text-xs text-gray-500">
+                          {{ 'role_builder.permission_count.submenus' |
+                          translate:{count: menu.submenus.length} }}
+                        </div>
+                      </div>
+                      <span
+                        class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        {{ 'role_builder.badge.menu' | translate }}
+                      </span>
+                    </div>
+
+                    <!-- Submenu Level -->
+                    <div *ngIf="isMenuExpanded(menu.id) && menu.submenus"
+                      class="bg-gray-50/50">
+                      <div *ngFor="let submenu of menu.submenus"
+                        class="flex items-center gap-3 p-2.5 pl-24 transition-colors hover:bg-gray-100">
+                        <input
+                          type="checkbox"
+                          [checked]="isChecked(module.id + '-' + menu.id + '-' + submenu.id)"
+                          (change)="togglePermission(module.id + '-' + menu.id + '-' + submenu.id, false)"
+                          style="accent-color: var(--color-selectedobj)"
+                          class="form-checkbox h-4 w-4 cursor-pointer rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/20" />
+                        <div class="flex-1">
+                          <div class="text-sm text-gray-700">{{ submenu.label
+                            }}</div>
+                        </div>
+                        <span
+                          class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+                          {{ 'role_builder.badge.action' | translate }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

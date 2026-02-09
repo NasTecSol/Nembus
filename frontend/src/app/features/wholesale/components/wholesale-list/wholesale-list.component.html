@@ -1,0 +1,229 @@
+<!-- Main Wholesale Products Section -->
+<section class="animate-fade-in mb-5 min-h-screen">
+  <div class="container px-3 py-1">
+    <!-- Header Section -->
+    <div
+      class="grid w-full grid-cols-1 items-center gap-3 px-3 py-1 md:grid-cols-2"
+    >
+      <h2 class="md:text-start" translate>WHOLESALE.TITLE</h2>
+
+      <!-- Buttons -->
+      <div
+        class="flex w-full flex-col flex-wrap items-center gap-2 md:flex-row md:justify-end"
+      >
+        <!-- Import Button -->
+        <div
+          role="button"
+          class="border-primary flex w-full overflow-hidden rounded-lg border md:w-auto"
+        >
+          <button role="button" class="btn-add">
+            <i class="fa fa-plus-circle plus-icon"></i>
+            <span translate>WHOLESALE.IMPORT_PRODUCTS</span>
+          </button>
+        </div>
+
+        <!-- Sidebar Toggle -->
+        <div
+          role="tablist"
+          class="border-primary flex w-full overflow-hidden rounded-lg border md:w-auto"
+        >
+          <button
+            role="tab"
+            class="btn-add"
+            [ngClass]="{
+              'bg-primary text-white': showSidebar,
+              'text-primary bg-white': !showSidebar,
+            }"
+            (click)="toggleSidebar()"
+          >
+            <ng-container *ngIf="!showSidebar; else activeSidebar">
+              <i class="fa fa-plus-circle plus-icon"></i>
+              <i class="fa fa-bars"></i>
+            </ng-container>
+            <ng-template #activeSidebar>
+              <i class="fa fa-times-circle"></i>
+            </ng-template>
+
+            {{
+              showSidebar
+                ? ("WHOLESALE.CLOSE_SIDEBAR" | translate)
+                : ("WHOLESALE.SIDEBAR" | translate)
+            }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Grid -->
+    <div class="mt-3 grid grid-cols-1 gap-3 py-2 md:grid-cols-6">
+      <!-- Product Table -->
+      <div
+        [ngClass]="showSidebar ? 'md:col-span-4' : 'md:col-span-6'"
+        class="transition-all duration-300"
+      >
+        <div
+          class="dashboard-card border-secondary min-h-screen flex-grow overflow-x-auto rounded-2xl shadow-lg"
+        >
+          <table class="product-table">
+            <thead>
+              <tr class="table-heading-row text-dark-bold-lg">
+                <th class="border-l-0" translate>WHOLESALE.SNO</th>
+                <th translate>WHOLESALE.ITEM_CODE</th>
+                <th translate>WHOLESALE.ITEM_NAME</th>
+                <th translate>WHOLESALE.UOM</th>
+                <th translate>WHOLESALE.QUANTITY</th>
+                <th translate>WHOLESALE.PRICE_PER_UNIT</th>
+                <th translate>WHOLESALE.STOCK_AVAILABLE</th>
+                <th translate>WHOLESALE.TOTAL</th>
+                <th class="border-r-0" translate>WHOLESALE.TOTAL_WITH_TAX</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                *ngFor="let product of wholesaleProducts"
+                class="table-body-row text-[#666666]"
+              >
+                <td class="border-l-0">{{ product.sno }}</td>
+                <td>{{ product.itemCode }}</td>
+                <td>{{ product.itemName }}</td>
+                <td>{{ product.uom }}</td>
+                <td>{{ product.quantity }}</td>
+                <td>{{ product.pricePerUnit }}</td>
+                <td>{{ product.stockAvailable }}</td>
+                <td>{{ product.total }}</td>
+                <td class="border-r-0">{{ product.totalWithTax }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Sidebar -->
+      <div
+        *ngIf="showSidebar"
+        class="transition-all duration-300 md:col-span-2"
+      >
+        <div
+          class="dashboard-card min-h-screen flex-grow overflow-x-auto rounded-2xl border-0 bg-[#E6E6E633] p-4 shadow-none"
+        >
+          <!-- Filter Buttons -->
+          <div
+            class="mt-3 flex w-full flex-wrap items-center justify-center gap-5 lg:flex-nowrap"
+          >
+            <button
+              (click)="activeBtn = 'price'"
+              class="btn-wholesale"
+              [ngClass]="activeBtn === 'price' ? 'btn-active' : 'btn-inactive'"
+            >
+              <span class="block"><i class="fa fa-clock text-lg"></i></span>
+              <span class="block" translate>WHOLESALE.LAST_PURCHASE_PRICE</span>
+            </button>
+
+            <button
+              (click)="activeBtn = 'item'"
+              class="btn-wholesale"
+              [ngClass]="activeBtn === 'item' ? 'btn-active' : 'btn-inactive'"
+            >
+              <span class="block">
+                <i class="fa fa-shopping-basket text-lg"></i>
+              </span>
+              <span class="block" translate>WHOLESALE.WAREHOUSE_INVENTORY</span>
+            </button>
+
+            <button
+              (click)="activeBtn = 'short'"
+              class="btn-wholesale relative"
+              [ngClass]="activeBtn === 'short' ? 'btn-active' : 'btn-inactive'"
+            >
+              <div
+                class="bg-red-difference absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full"
+              >
+                <span class="text-white">1</span>
+              </div>
+              <span class="block">
+                <i class="fa fa-sort-amount-down text-lg"></i>
+              </span>
+              <span class="block" translate>
+                WHOLESALE.SHORT_QUANTITY_ITEMS
+              </span>
+            </button>
+          </div>
+
+          <!-- Tables -->
+          <div
+            class="dashboard-card border-secondary mt-4 min-h-[50vh] overflow-x-auto rounded-2xl bg-white shadow-lg"
+          >
+            <!-- Last Purchase Table -->
+            <table *ngIf="activeBtn === 'price'" class="product-table">
+              <thead>
+                <tr class="table-heading-row text-dark-bold-lg">
+                  <th class="border-l-0" translate>WHOLESALE.DATE</th>
+                  <th translate>WHOLESALE.NAME</th>
+                  <th translate>WHOLESALE.BOUGHT_FROM</th>
+                  <th class="border-r-0" translate>WHOLESALE.PRICE</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table-body-row shadow-sm">
+                  <td class="border-l-0">09/03/25</td>
+                  <td>Noodles</td>
+                  <td>Knorr</td>
+                  <td class="border-r-0">130</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Inventory Table -->
+            <table *ngIf="activeBtn === 'item'" class="product-table">
+              <thead>
+                <tr class="table-heading-row text-dark-bold-lg">
+                  <th class="border-l-0" translate>WHOLESALE.WAREHOUSE_NAME</th>
+                  <th class="border-r-0" translate>
+                    WHOLESALE.REMAINING_STOCK
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table-body-row shadow-sm">
+                  <td class="border-l-0">Qadsiya Warehouse</td>
+                  <td class="border-r-0">32</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Short Quantity Table -->
+            <table *ngIf="activeBtn === 'short'" class="product-table">
+              <thead>
+                <tr class="text-dark-bold-lg">
+                  <th class="border-l-0" translate>WHOLESALE.NAME</th>
+                  <th translate>WHOLESALE.REMAINING_STOCK</th>
+                  <th class="border-r-0" translate>WHOLESALE.NOTIFY_ADMIN</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table-body-row shadow-sm">
+                  <td class="border-l-0">Qadsiya Warehouse</td>
+                  <td>32</td>
+                  <td class="border-r-0">
+                    <button
+                      (click)="notify()"
+                      class="btn-submit flex min-w-30 gap-2"
+                    >
+                      <i
+                        [ngClass]="
+                          !notified ? 'far fa-bell' : 'fa fa-check-circle'
+                        "
+                      ></i>
+                      <span *ngIf="!notified" translate>WHOLESALE.NOTIFY</span>
+                      <span *ngIf="notified" translate>WHOLESALE.NOTIFIED</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

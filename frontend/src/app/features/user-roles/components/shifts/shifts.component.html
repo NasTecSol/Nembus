@@ -1,0 +1,46 @@
+<div class="mt-4 grid grid-cols-1">
+  <div class="min-h-screen overflow-x-auto">
+    <table class="data-table shift-table">
+      <thead>
+        <tr>
+          <th>{{ "USER_ROLES.NAME" | translate }}</th>
+          <th>{{ "USER_ROLES.SHIFTS" | translate }}</th>
+          <th>
+            <div class="flex justify-end">
+              <button (click)="openAssignShiftModal()" class="btn-submit">
+                <i class="fa fa-circle-plus plus-icon"></i>
+                <span class="font-normal">
+                  {{ "USER_ROLES.ASSIGN_SHIFT" | translate }}
+                </span>
+              </button>
+            </div>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="text-left text-wrap text-[#444658]">
+          <td>{{ "Midnight" | translate }}</td>
+          <td>12am - 8am</td>
+          <td>
+            <div class="flex justify-end">
+              <button (click)="openChangeShiftModal()" class="btn-add">
+                <i class="fa fa-right-left text-xl"></i>
+                {{ "USER_ROLES.CHANGE" | translate }}
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<assign-shift-modal
+  *ngIf="showAddShiftModal"
+  (close)="confirmAssignShift($event)"
+></assign-shift-modal>
+
+<change-shift-modal
+  *ngIf="showChangeShiftModal"
+  (close)="confirmChangeShift($event)"
+></change-shift-modal>

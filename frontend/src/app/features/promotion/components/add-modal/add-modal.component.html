@@ -1,0 +1,214 @@
+<div
+  *ngIf="isOpen"
+  class="fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center overflow-auto bg-black/20"
+>
+  <div
+    class="relative h-[99%] w-full overflow-auto rounded-lg bg-white px-5 py-3 shadow-lg md:h-auto md:max-w-[550px]"
+  >
+    <!-- Header -->
+    <div class="flex-box-row-between my-3">
+      <h3 class="text-xl font-semibold" translate>PROMOTIONS.ADD_ITEM</h3>
+      <button (click)="handleClose()">
+        <i class="fa fa-times-circle text-2xl text-black"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form (ngSubmit)="handleSubmit()" class="mb-2 flex-grow">
+      <!-- Row 1 -->
+      <div class="add-promotion-row">
+        <div class="form-group">
+          <label translate>PROMOTIONS.CODE</label>
+          <input
+            class="input general-input"
+            type="number"
+            required
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+        <div class="form-group">
+          <label translate>PROMOTIONS.SHORTCUT</label>
+          <input
+            class="input general-input"
+            type="text"
+            required
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+        <div class="form-group">
+          <label translate>PROMOTIONS.DISCOUNT_PERCENTAGE</label>
+          <input
+            class="input general-input"
+            type="text"
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="add-promotion-row">
+        <div class="form-group">
+          <label translate>PROMOTIONS.NAME</label>
+          <input
+            class="input general-input"
+            type="number"
+            required
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+        <div class="form-group">
+          <label translate>PROMOTIONS.SIZE</label>
+          <input
+            class="input general-input"
+            type="text"
+            required
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+        <div class="form-group">
+          <label translate>PROMOTIONS.PRICE</label>
+          <input
+            class="input general-input"
+            type="text"
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+      </div>
+
+      <!-- Row 3 -->
+      <div class="add-promotion-row">
+        <div class="form-group">
+          <label translate>PROMOTIONS.DISCOUNT_AMOUNT</label>
+          <input
+            class="input general-input"
+            type="number"
+            required
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+        <div class="form-group">
+          <label translate>PROMOTIONS.QUANTITY_MIN</label>
+          <input
+            class="input general-input"
+            type="text"
+            required
+            [placeholder]="'PROMOTIONS.ENTER' | translate"
+          />
+        </div>
+        <div class="custom-checkbox-wrapper form-group md:mt-11">
+          <label>
+            <input
+              type="checkbox"
+              checked
+              id="check1"
+              class="peer checkbox-teal"
+            />
+            <span class="checkbox-svg">
+              <check-icon />
+            </span>
+          </label>
+          <span class="checkbox-label-text" translate>PROMOTIONS.OR_MORE</span>
+        </div>
+      </div>
+
+      <!-- Promotion Checkboxes -->
+      <div class="custom-checkbox-wrapper form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked
+            id="check1"
+            class="peer checkbox-teal"
+          />
+          <span class="checkbox-svg"><check-icon /></span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          PROMOTIONS.ALL_ARTICLES_PROMO
+        </span>
+      </div>
+
+      <div class="custom-checkbox-wrapper form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked
+            id="check1"
+            class="peer checkbox-red"
+          />
+          <span class="checkbox-svg"><check-icon /></span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          PROMOTIONS.REQUIRED_ON_BILL
+        </span>
+      </div>
+
+      <div class="custom-checkbox-wrapper form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked
+            id="check1"
+            class="peer checkbox-orange"
+          />
+          <span class="checkbox-svg"><check-icon /></span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          PROMOTIONS.ARTICLE_SOLD_AT_PRICE
+        </span>
+      </div>
+
+      <div class="custom-checkbox-wrapper form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked
+            id="check1"
+            class="peer checkbox-emerald"
+          />
+          <span class="checkbox-svg"><check-icon /></span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          PROMOTIONS.ARTICLE_DISCOUNT_PERCENT
+        </span>
+      </div>
+
+      <div class="custom-checkbox-wrapper form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked
+            id="check1"
+            class="peer checkbox-purple"
+          />
+          <span class="checkbox-svg"><check-icon /></span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          PROMOTIONS.ARTICLE_DISCOUNT_AMOUNT
+        </span>
+      </div>
+
+      <div class="custom-checkbox-wrapper form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked
+            id="check1"
+            class="peer checkbox-red-crimson"
+          />
+          <span class="checkbox-svg"><check-icon /></span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          PROMOTIONS.CHEAPEST_ITEMS_PROMO
+        </span>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="mt-10 flex items-center justify-center">
+        <button type="submit" class="btn-submit">
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span translate>PROMOTIONS.ADD_ITEM</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

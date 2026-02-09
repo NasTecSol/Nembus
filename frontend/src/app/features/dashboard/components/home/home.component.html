@@ -1,0 +1,214 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div class="mb-3">
+      <h2>{{ "DASHBOARD.TITLE" | translate }}</h2>
+    </div>
+
+    <!-- Top 3 Cards: Daily Sales, Most Selling, Closings -->
+    <div class="mb-7 grid grid-cols-1 gap-6 md:gap-12 lg:grid-cols-3">
+      <!-- Daily Sales -->
+      <div class="dashboard-card custom-shadow">
+        <div class="flex-box-row-between">
+          <div>
+            <h3 class="text-dark-bold-lg mb-1">
+              {{ "DASHBOARD.DAILY_SALES" | translate }}
+            </h3>
+            <p class="text-secondary-normal">$1300000</p>
+          </div>
+          <i class="fas fa-ellipsis-h text-[#6C737F]"></i>
+        </div>
+
+        <div id="chart" class="py-4">
+          <apx-chart
+            [series]="lineChartOptions.series"
+            [chart]="lineChartOptions.chart"
+            [xaxis]="lineChartOptions.xaxis"
+            [dataLabels]="lineChartOptions.dataLabels"
+            [grid]="lineChartOptions.grid"
+            [stroke]="lineChartOptions.stroke"
+            [title]="lineChartOptions.title"
+          ></apx-chart>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="grad-yellow h-10 w-10 rounded-full"></div>
+          <div>
+            <p class="text-dark-bold">{{ "DASHBOARD.BRANCH_1" | translate }}</p>
+            <p class="text-emerald">
+              <i class="fas fa-chevron-up text-vsm mr-1"></i>
+              0.56%
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Most Selling -->
+      <div class="dashboard-card custom-shadow">
+        <div class="flex-box-row-between">
+          <div>
+            <h3 class="text-dark-bold-lg mb-1">
+              {{ "DASHBOARD.MOST_SELLING" | translate }}
+            </h3>
+            <p class="text-secondary-normal">$1300000</p>
+          </div>
+          <i class="fas fa-ellipsis-h text-[#6C737F]"></i>
+        </div>
+
+        <ul class="py-4">
+          <li
+            class="flex-box-row-between mb-2 rounded-lg bg-[#EDF9FC] px-4 py-3"
+            *ngFor="let item of topItems"
+          >
+            <p class="text-dark-bold">{{ item.code }}</p>
+            <p class="text-dark-bold">{{ item.desc }}</p>
+            <p class="text-emerald">
+              <i class="fas fa-chevron-up text-vsm mr-1"></i>
+              0.56%
+            </p>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Today's Closings -->
+      <div class="dashboard-card custom-shadow">
+        <div class="flex-box-row-between">
+          <div>
+            <h3 class="text-dark-bold-lg mb-1">
+              {{ "DASHBOARD.TODAYS_CLOSINGS" | translate }}
+            </h3>
+            <p class="text-secondary-normal">$1300000</p>
+          </div>
+          <i class="fas fa-ellipsis-h text-[#6C737F]"></i>
+        </div>
+
+        <div id="chart" class="py-4">
+          <apx-chart
+            [series]="lineChartOptions.series"
+            [chart]="lineChartOptions.chart"
+            [xaxis]="lineChartOptions.xaxis"
+            [dataLabels]="lineChartOptions.dataLabels"
+            [grid]="lineChartOptions.grid"
+            [stroke]="lineChartOptions.stroke"
+            [title]="lineChartOptions.title"
+          ></apx-chart>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="bg-blue-light h-10 w-10 rounded-full"></div>
+          <div>
+            <p class="text-dark-bold">
+              {{ "DASHBOARD.ALL_BRANCHES" | translate }}
+            </p>
+            <p class="text-emerald">
+              <i class="fas fa-chevron-up text-vsm mr-1"></i>
+              0.56%
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Branch-wise Sales & Stock Notifications -->
+    <div class="mb-7 grid grid-cols-1 gap-6 md:gap-12 lg:grid-cols-3">
+      <!-- Branch-wise Sales -->
+      <div class="dashboard-card custom-shadow lg:col-span-2">
+        <h3 class="text-dark-bold-lg mb-1">
+          {{ "DASHBOARD.BRANCH_WISE_SALES" | translate }}
+        </h3>
+        <p class="text-secondary-normal">
+          {{ "DASHBOARD.BALANCE_NOTE" | translate }}
+        </p>
+
+        <div class="flex items-center gap-10 py-4 pl-2">
+          <div id="chart">
+            <apx-chart
+              [series]="donutChartOptioins.series"
+              [chart]="donutChartOptioins.chart"
+              [labels]="donutChartOptioins.labels"
+              [responsive]="donutChartOptioins.responsive"
+            ></apx-chart>
+          </div>
+
+          <div class="w-full">
+            <p class="text-secondary-normal">
+              {{ "DASHBOARD.TOTAL_BALANCE" | translate }}
+            </p>
+            <h2 class="my-2">$35,916.81</h2>
+
+            <p class="text-secondary-normal my-4 mb-2">
+              {{ "DASHBOARD.AVAILABLE_AMOUNT" | translate }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stock Notifications -->
+      <div class="dashboard-card custom-shadow md:col-span-1">
+        <div class="flex-box-row-between">
+          <h3 class="text-dark-bold-lg mb-1">
+            {{ "DASHBOARD.STOCK_NOTIFICATIONS" | translate }}
+          </h3>
+          <p>2</p>
+        </div>
+
+        <ul class="py-4">
+          <li
+            class="flex-box-row-between border-gray-light2 mb-2 rounded-lg border-1 px-4 py-3"
+            *ngFor="let stock of stockItems"
+          >
+            <div class="flex gap-2">
+              <div class="grad-yellow h-5 w-5 rounded-full"></div>
+              <p class="text-dark-bold">{{ stock.name }}</p>
+            </div>
+            <p class="text-red">{{ stock.qty }}</p>
+          </li>
+        </ul>
+
+        <div class="mb-2">
+          <button class="btn-primary h-12">
+            {{ "DASHBOARD.REMINDER" | translate }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Selling Products -->
+    <div class="mb-7 grid grid-cols-1 gap-6 md:gap-12 lg:grid-cols-3">
+      <div class="dashboard-card custom-shadow py-3 lg:col-span-2">
+        <h3 class="text-dark-bold-lg mb-1">
+          {{ "DASHBOARD.TOP_SELLING_PRODUCTS" | translate }}
+        </h3>
+
+        <ul class="py-4">
+          <li
+            class="flex-box-row-between border-secondary flex-wrap border-b-1 p-3"
+          >
+            <div class="flex items-center gap-4">
+              <a
+                class="flex-box-row bg-emerald/10 min-h-10 min-w-10 rounded-full"
+              >
+                <img src="/images/icons/arrow-up-right.svg" alt="Icon" />
+              </a>
+              <p class="text-dark-bold">
+                Cadbury Chocolate
+                <br />
+                <span class="text-secondary-normal">01.29.2024 / 09:36 AM</span>
+              </p>
+            </div>
+            <p class="text-emerald">
+              &#43; 337
+              <br />
+              <span class="text-secondary-normal">$ 4,805.00</span>
+            </p>
+          </li>
+        </ul>
+
+        <a class="text-dark-bold p-3">
+          {{ "DASHBOARD.SEE_ALL" | translate }}
+          <i class="fa fa-arrow-right ml-2"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>

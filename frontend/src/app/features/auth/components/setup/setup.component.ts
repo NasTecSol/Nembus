@@ -132,4 +132,13 @@ export class SetupComponent {
         console.log('App launched');
         this.router.navigate(['/home']);
     }
+
+    // setup.component.ts
+    navigateToLogin() {
+        console.log('Navigating to login from setup...');
+        this.router.navigate(['/auth/login']).then(success => {
+            console.log('Navigation success:', success);
+            console.log('Current URL:', this.router.url);
+        });
+    }
 }

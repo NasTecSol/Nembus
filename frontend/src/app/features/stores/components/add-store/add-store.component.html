@@ -1,0 +1,565 @@
+<section>
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div class="mb-3 flex items-center gap-3">
+      <div *ngIf="storeActiveTab === 'General'">
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div>
+      <h2 translate>STORES_LOCATIONS.ADD_NEW_STORE</h2>
+    </div>
+
+    <div
+      class="dashboard-card border-secondary flex-grow overflow-x-auto rounded-2xl shadow-lg md:mb-10"
+    >
+      <!-- Tabs for role selection -->
+      <div class="mt-1 mb-3">
+        <div class="flex items-center gap-5 rounded">
+          <div class="tabs-container" role="tablist">
+            <button
+              *ngFor="let tab of storeTabs"
+              (click)="setActiveTab(tab)"
+              class="btn-tab"
+              [ngClass]="[
+                storeActiveTab === tab
+                  ? 'btn-tab-active'
+                  : 'btn-tab-not-active',
+              ]"
+            >
+              {{ storeTabTranslationMap[tab] | translate }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p
+        *ngIf="storeActiveTab === 'Cash Counters'"
+        class="mt-2 mb-1 text-sm font-semibold md:mt-0 md:text-end"
+      >
+        <span translate>STORES_LOCATIONS.AVAILABLE_CASH_COUNTERS_LIMIT</span>
+        : 4
+      </p>
+      <hr />
+
+      <!-- Form Card -->
+      <div
+        class="dashboard-card relative flex min-h-screen flex-col justify-between border-0 px-2 pt-0"
+      >
+        <div *ngIf="storeActiveTab === 'General'">
+          <form class="mb-2 flex-grow">
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.STORE_NUMBER</label>
+                <input
+                  class="input general-input"
+                  type="number"
+                  value="101"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.STORE_NAME</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="TechMart Superstore"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.LOCATION</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="Downtown Plaza"
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.STREET_PO_BOX</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="P.O. Box 4567"
+                />
+              </div>
+            </div>
+
+            <div class="add-store-row">
+              <div class="form-group">
+                <label class="block" translate>STORES_LOCATIONS.STATE</label>
+                <select class="input general-input">
+                  <option value="arizona" selected>Arizona</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.CITY</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="Phoenix"
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.ADDRESS</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="1234 Tech Street"
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.POST_CODE</label>
+                <input class="input general-input" type="text" value="85001" />
+              </div>
+            </div>
+
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.VAT_NUMBER</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="US123456789"
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.GLN</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="9876543210123"
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.TAX_OFFICE</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="Phoenix Tax Dept."
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.ADDRESS_2</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="Suite 5, 2nd Floor"
+                />
+              </div>
+            </div>
+
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.ADDRESS_3</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  value="Building B"
+                />
+              </div>
+              <div
+                class="lg-gap-3 col-span-3 mb-3 flex items-center gap-2 md:mt-11 md:mb-0"
+              >
+                <div class="flex gap-2">
+                  <input class="accent-primary block" type="checkbox" checked />
+                  <label class="text-slate-gray" translate>
+                    STORES_LOCATIONS.INACTIVE_QUESTION
+                  </label>
+                </div>
+                <div class="flex gap-2">
+                  <input class="accent-primary block" type="checkbox" />
+                  <label class="text-slate-gray" translate>
+                    STORES_LOCATIONS.NETTABLE_QUESTION
+                  </label>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div *ngIf="storeActiveTab === 'Accounting'">
+          <h2 translate>STORES_LOCATIONS.ACCOUNTING</h2>
+        </div>
+
+        <div *ngIf="storeActiveTab === 'Shifts'">
+          <form *ngIf="isShiftAdded" class="mb-2 flex-grow">
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.SHIFT_NAME</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.FROM_DATE</label>
+                <input
+                  class="input general-input"
+                  type="date"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.FROM_TIME</label>
+                <input
+                  class="input general-input"
+                  type="time"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.TO_TIME</label>
+                <input
+                  class="input general-input"
+                  type="time"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <button
+                  (click)="deleteShift()"
+                  class="btn-add bg-red-crimson border-0 md:mt-6 md:mr-2"
+                  role="button"
+                >
+                  <i class="fa fa-trash plus-icon"></i>
+                  <span translate>STORES_LOCATIONS.DELETE</span>
+                </button>
+              </div>
+            </div>
+          </form>
+          <form class="mb-2 flex-grow">
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.SHIFT_NAME</label>
+                <input
+                  class="input general-input"
+                  type="text"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="mt-5 flex justify-between md:mt-14 md:justify-around">
+                <span class="text-primary" translate>
+                  STORES_LOCATIONS.AUTO
+                </span>
+                <div>
+                  <label class="switch" (click)="$event.stopPropagation()">
+                    <input type="checkbox" class="peer sr-only" />
+                    <div class="switch-background"></div>
+                    <div class="switch-dot"></div>
+                  </label>
+                </div>
+                <span class="font-semibold text-black" translate>
+                  STORES_LOCATIONS.MANUAL
+                </span>
+              </div>
+            </div>
+
+            <div class="add-store-row">
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.FROM_DATE</label>
+                <input
+                  class="input general-input"
+                  type="date"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.FROM_TIME</label>
+                <input
+                  class="input general-input"
+                  type="time"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>STORES_LOCATIONS.TO_TIME</label>
+                <input
+                  class="input general-input"
+                  type="time"
+                  placeholder="Enter"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <button
+                  (click)="addShift()"
+                  class="btn-add md:mt-6 md:mr-2"
+                  role="button"
+                >
+                  <i class="fa fa-plus-circle plus-icon"></i>
+                  <span translate>STORES_LOCATIONS.ADD</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div *ngIf="storeActiveTab === 'Employees'">
+          <div
+            class="flex flex-col items-center gap-1 px-2 md:my-2 md:flex-row md:justify-between"
+          >
+            <p class="font-semibold">
+              <span translate>STORES_LOCATIONS.ADD_EXISTING_EMPLOYEE</span>
+            </p>
+            <button (click)="openModal()" class="btn-submit" role="tab">
+              <i class="fa fa-plus-circle plus-icon"></i>
+              <span translate>STORES_LOCATIONS.ADD_EMPLOYEE</span>
+            </button>
+          </div>
+          <!-- Create Employee Modal -->
+          <app-create-employee-modal
+            *ngIf="showModal"
+            [buttonText]="'USER_ROLES.CREATE_EMPLOYEE'"
+            (close)="confirmCreateEmployee($event)"
+          ></app-create-employee-modal>
+
+          <div
+            class="relative my-3 flex-1 rounded-lg border-1 border-[#E0E6ED]"
+          >
+            <span
+              class="absolute top-1/2 left-3 -translate-y-1/2 transform text-gray-500"
+            >
+              <i class="fas fa-search"></i>
+            </span>
+            <input
+              id="search"
+              type="text"
+              class="w-full bg-transparent py-2 pr-4 pl-10 outline-none"
+              [placeholder]="'STORES_LOCATIONS.SEARCH' | translate"
+            />
+          </div>
+
+          <div
+            class="dashboard-card border-secondary mb-10 overflow-x-auto rounded-2xl pb-10 shadow-lg"
+          >
+            <table class="product-table store-table">
+              <thead>
+                <tr class="table-heading-row">
+                  <th><span translate>STORES_LOCATIONS.ID_NUMBER</span></th>
+                  <th><span translate>STORES_LOCATIONS.NAME</span></th>
+                  <th><span translate>STORES_LOCATIONS.SURNAME</span></th>
+                  <th><span translate>STORES_LOCATIONS.ROLE</span></th>
+                  <th><span translate>STORES_LOCATIONS.ACTION</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let emp of employees" class="table-body-row">
+                  <td>{{ emp.id }}</td>
+                  <td>{{ emp.name }}</td>
+                  <td>{{ emp.surname }}</td>
+                  <td>{{ emp.position }}</td>
+                  <td>
+                    <button><i class="fa fa-trash-can text-red"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div *ngIf="storeActiveTab === 'Cash Counters'">
+          <form *ngIf="isCashCounterAdded" class="mb-2 flex-grow">
+            <div class="add-store-row">
+              <div class="form-group">
+                <label><span translate>STORES_LOCATIONS.FROM_DATE</span></label>
+                <input class="input general-input" type="date" required />
+              </div>
+              <div class="form-group">
+                <label><span translate>STORES_LOCATIONS.FROM_TIME</span></label>
+                <input class="input general-input" type="time" required />
+              </div>
+              <div class="form-group">
+                <label><span translate>STORES_LOCATIONS.TO_TIME</span></label>
+                <input class="input general-input" type="time" required />
+              </div>
+              <div class="form-group">
+                <button
+                  (click)="deleteCashCounter()"
+                  class="btn-add bg-red-crimson border-0 md:mt-6 md:mr-2"
+                  role="button"
+                >
+                  <i class="fa fa-trash plus-icon"></i>
+                  <span translate>STORES_LOCATIONS.DELETE</span>
+                </button>
+              </div>
+            </div>
+          </form>
+          <form class="mb-2 flex-grow">
+            <div class="add-store-row">
+              <div class="form-group">
+                <label><span translate>STORES_LOCATIONS.FROM_DATE</span></label>
+                <input class="input general-input" type="date" required />
+              </div>
+              <div class="form-group">
+                <label><span translate>STORES_LOCATIONS.FROM_TIME</span></label>
+                <input class="input general-input" type="time" required />
+              </div>
+              <div class="form-group">
+                <label><span translate>STORES_LOCATIONS.TO_TIME</span></label>
+                <input class="input general-input" type="time" required />
+              </div>
+              <div class="form-group">
+                <button
+                  (click)="addCashCounter()"
+                  class="btn-add md:mt-6 md:mr-2"
+                  role="button"
+                >
+                  <i class="fa fa-plus-circle plus-icon"></i>
+                  <span translate>STORES_LOCATIONS.ADD</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div *ngIf="storeActiveTab === 'Inventory'">
+          <h3
+            class="text-primary mt-5 text-center text-2xl font-bold md:text-start"
+          >
+            <span translate>STORES_LOCATIONS.COSTING_STRATEGY</span>
+          </h3>
+          <hr class="mt-5" />
+          <form class="mb-2 flex-grow">
+            <p class="mt-5 text-lg">
+              <span translate>STORES_LOCATIONS.COSTING_STRATEGY_DESC</span>
+            </p>
+
+            <div class="add-store-row mt-5 space-y-4">
+              <!-- LIFO Option -->
+              <div class="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="costingMethod"
+                  value="LIFO"
+                  class="accent-teal h-5 w-5 rounded-full"
+                  checked
+                />
+                <label class="text-slate-gray" translate>
+                  STORES_LOCATIONS.LIFO
+                </label>
+              </div>
+
+              <!-- FIFO Option -->
+              <div class="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="costingMethod"
+                  value="FIFO"
+                  class="accent-teal h-5 w-5 rounded-full"
+                />
+                <label class="text-slate-gray" translate>
+                  STORES_LOCATIONS.FIFO
+                </label>
+              </div>
+
+              <!-- Average Costing Option -->
+              <div class="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="costingMethod"
+                  value="Average"
+                  class="accent-teal h-5 w-5 rounded-full"
+                />
+                <label class="text-slate-gray" translate>
+                  STORES_LOCATIONS.AVERAGE_COST
+                </label>
+              </div>
+            </div>
+
+            <h3
+              class="text-primary mt-10 text-center text-2xl font-bold md:text-start"
+            >
+              <span translate>STORES_LOCATIONS.STOCK_ALERT</span>
+            </h3>
+            <hr class="mt-5" />
+            <p class="mt-5 text-lg">
+              <span translate>STORES_LOCATIONS.ALERT_QUANTITY_DESC</span>
+            </p>
+
+            <div class="mt-5 flex w-full items-center space-y-4">
+              <div class="flex items-center justify-between gap-2 md:gap-4">
+                <input
+                  type="checkbox"
+                  class="accent-primary h-5 w-5 rounded-full"
+                  checked
+                />
+                <label class="text-slate-gray" translate>
+                  STORES_LOCATIONS.MAX_ALERT
+                </label>
+                <div>
+                  <input
+                    class="input general-input mt-0 w-20"
+                    type="number"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5 flex items-center space-y-4">
+              <div class="flex items-center justify-between gap-2 md:gap-4">
+                <input
+                  type="checkbox"
+                  class="accent-primary h-5 w-5 rounded-full"
+                  checked
+                />
+                <label class="text-slate-gray" translate>
+                  STORES_LOCATIONS.MIN_ALERT
+                </label>
+                <div>
+                  <input
+                    class="input general-input mt-0 w-20"
+                    type="number"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="flex justify-center gap-2 md:mb-10">
+          <ng-container *ngIf="storeActiveTab === 'General'">
+            <button
+              (click)="cancel()"
+              class="btn-submit border-primary text-primary border bg-white"
+            >
+              <span translate>STORES_LOCATIONS.CANCEL</span>
+            </button>
+          </ng-container>
+          <ng-container *ngIf="storeActiveTab !== 'General'">
+            <button
+              (click)="previousTab()"
+              class="btn-submit border-primary text-primary border bg-white"
+            >
+              <span translate>STORES_LOCATIONS.BACK</span>
+            </button>
+          </ng-container>
+          <ng-container *ngIf="storeActiveTab !== 'Inventory'">
+            <button (click)="nextTab()" class="btn-submit">
+              <span translate>STORES_LOCATIONS.NEXT</span>
+            </button>
+          </ng-container>
+          <ng-container *ngIf="storeActiveTab === 'Inventory'">
+            <button (click)="finish()" class="btn-submit">
+              <span translate>STORES_LOCATIONS.FINISH</span>
+            </button>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

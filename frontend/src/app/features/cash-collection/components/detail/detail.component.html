@@ -1,0 +1,232 @@
+<!-- Cash Collection Page -->
+<section>
+  <div class="container px-3 py-1">
+    <!-- Page Title and Back Button -->
+    <div class="mb-3 flex items-center gap-3">
+      <div>
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div>
+      <h2>{{ "CASH_COLLECTION.TITLE" | translate }}</h2>
+    </div>
+
+    <!-- Cash Collection Dashboard Card -->
+    <div
+      class="dashboard-card border-secondary mb-10 flex flex-grow flex-col justify-between rounded-2xl px-5 pb-10 shadow-lg"
+    >
+      <div class="mx-2">
+        <!-- Header and Print Button -->
+        <div
+          class="flex flex-col items-center justify-center md:flex-row md:justify-between"
+        >
+          <h3 class="text-primary my-3 text-2xl font-bold">
+            {{ "CASH_COLLECTION.VIEW_COUNTERS" | translate }}
+          </h3>
+          <button class="btn-submit">
+            <i class="fa fa-print mr-2"></i>
+            {{ "CASH_COLLECTION.PRINT" | translate }}
+          </button>
+        </div>
+
+        <hr />
+
+        <!-- Cash Total Section -->
+        <div class="my-4">
+          <p class="flex items-center gap-10">
+            <span>{{ "CASH_COLLECTION.CASH" | translate }}</span>
+            <span class="text-slate-gray">
+              {{ "CASH_COLLECTION.CASH_TOTAL" | translate }}:
+            </span>
+            <span class="font-bold">{{ employeeData.netTotal }}</span>
+          </p>
+        </div>
+
+        <!-- Cash Notes Grid -->
+        <div class="my-9 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
+          <div
+            *ngFor="let note of notes"
+            class="flex-box-row border-white-light rounded-lg border-1 px-4 py-2"
+          >
+            <div class="border-white-light w-50 border-r-1 text-center">
+              <p class="mr-10">{{ note.quantity }}</p>
+            </div>
+            <div class="w-50 text-center">
+              <p class="text-slate-gray">&times;{{ note.denomination }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Credit Card Total -->
+        <div class="my-4">
+          <p class="flex items-center gap-10">
+            <span>{{ "CASH_COLLECTION.CREDIT_CARD" | translate }}</span>
+            <span class="text-slate-gray">
+              {{ "CASH_COLLECTION.CASH_TOTAL" | translate }}:
+            </span>
+            <span class="font-bold">{{ employeeData.card }}</span>
+          </p>
+        </div>
+
+        <!-- Credit Card Grid -->
+        <div class="my-9 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
+          <div
+            *ngFor="let item of creditCards"
+            class="flex-box-row border-white-light rounded-lg border-1 px-4 py-2"
+          >
+            <div class="border-white-light w-50 border-r-1 text-center">
+              <p class="mr-10">{{ item.amount }}</p>
+            </div>
+            <div class="w-50 text-center">
+              <p class="text-slate-gray">{{ item.cardType }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Receipts & Coupons Total -->
+        <div class="my-4">
+          <p class="flex items-center gap-10">
+            <span>{{ "CASH_COLLECTION.RECEIPTS_COUPONS" | translate }}</span>
+            <span class="text-slate-gray">
+              {{ "CASH_COLLECTION.CASH_TOTAL" | translate }}:
+            </span>
+            <span class="font-bold">{{ employeeData.receipt }}</span>
+          </p>
+        </div>
+
+        <!-- Receipts Grid -->
+        <div class="my-9 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
+          <div
+            class="flex-box-row border-white-light rounded-lg border-1 px-4 py-2"
+          >
+            <div class="border-white-light w-50 border-r-1 text-center">
+              <p>{{ employeeData.receipt }}</p>
+            </div>
+            <div class="w-50 text-center">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.CASH_TOTAL" | translate }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <hr />
+
+        <!-- Final Summary Section -->
+        <div class="my-3 grid grid-cols-1 items-center gap-4 lg:grid-cols-3">
+          <!-- Left Column -->
+          <div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.LEFTOVER_AMOUNT" | translate }}:
+              </p>
+              <p class="text-dark-bold-lg">{{ employeeData.leftoverAmount }}</p>
+            </div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.CASHIER" | translate }}:
+              </p>
+              <p class="text-dark-bold-lg">{{ employeeData.empName }}</p>
+            </div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.MANAGER" | translate }}:
+              </p>
+              <p class="text-dark-bold-lg">Shoaib Akram</p>
+            </div>
+          </div>
+
+          <!-- Middle Column -->
+          <div>
+            <div
+              class="flex-box-row border-white-light rounded-lg border-1 px-4 py-2"
+            >
+              <div class="border-white-light w-50 border-r-1 text-center">
+                <p class="text-slate-gray">
+                  {{ "CASH_COLLECTION.RECEIVED_AMOUNT" | translate }}
+                </p>
+              </div>
+              <div class="w-50 text-center">
+                <p>500</p>
+              </div>
+            </div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.DIFFERENCE" | translate }}:
+              </p>
+              <p class="text-red-difference text-lg font-bold">
+                {{ employeeData.difference }}
+              </p>
+            </div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.STATUS" | translate }}:
+              </p>
+              <p class="status text-dark-bold-lg">
+                <span *ngIf="employeeData.status === 'Pending'" class="pending">
+                  {{ "CASH_COLLECTION.PENDING" | translate }}
+                </span>
+                <span
+                  *ngIf="employeeData.status === 'Submitted'"
+                  class="submitted"
+                >
+                  {{ "CASH_COLLECTION.SUBMITTED" | translate }}
+                </span>
+                <span
+                  *ngIf="employeeData.status === 'Approval Pending'"
+                  class="pending-approval"
+                >
+                  {{ "CASH_COLLECTION.APPROVAL_PENDING" | translate }}
+                </span>
+                <span
+                  *ngIf="employeeData.status === 'Re-Count'"
+                  class="recount"
+                >
+                  {{ "CASH_COLLECTION.RE_COUNT" | translate }}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <!-- Right Column -->
+          <div class="items-end lg:flex lg:flex-col">
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.NET_TOTAL_AMOUNT" | translate }}:
+              </p>
+              <p class="text-dark-bold-lg">{{ employeeData.netTotal }}</p>
+            </div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.DATE" | translate }}:
+              </p>
+              <p class="text-dark-bold-lg">02-july-2025</p>
+            </div>
+            <div class="my-3 flex gap-3">
+              <p class="text-slate-gray">
+                {{ "CASH_COLLECTION.TIME" | translate }}:
+              </p>
+              <p class="text-dark-bold-lg">12:44 PM</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="mt-10 flex flex-wrap gap-2 md:justify-end">
+        <button class="btn-submit bg-gradient-to-r from-[#335C67] to-[#2D9596]">
+          <i class="fas fa-check-circle mr-1"></i>
+          {{ "CASH_COLLECTION.ACCEPT" | translate }}
+        </button>
+        <button class="btn-submit bg-gradient-to-r from-[#FF4D4D] to-[#992E2E]">
+          <i class="fas fa-times-circle mr-1"></i>
+          {{ "CASH_COLLECTION.REJECT" | translate }}
+        </button>
+        <button class="btn-submit bg-gradient-to-r from-[#FF4D4D] to-[#8E3224]">
+          <i class="fas fa-sync-alt mr-1"></i>
+          {{ "CASH_COLLECTION.RE_COUNT" | translate }}
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

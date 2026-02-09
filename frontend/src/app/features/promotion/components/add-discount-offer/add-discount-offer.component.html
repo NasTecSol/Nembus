@@ -1,0 +1,172 @@
+<div class="container mb-10 px-3 py-1">
+  <!-- Header -->
+  <div class="mb-3 flex items-center gap-3">
+    <div>
+      <button (click)="goBack()">
+        <i class="fa fa-circle-chevron-left btn-back"></i>
+      </button>
+    </div>
+    <h2 translate>PROMOTIONS.ADD_DISCOUNT_OFFER</h2>
+  </div>
+
+  <!-- Form Card -->
+  <div class="dashboard-card custom-shadow border-1 border-black/5 px-5 py-4">
+    <div class="flex min-h-screen flex-col justify-between">
+      <div>
+        <h3 class="text-primary-lg" translate>PROMOTIONS.DISCOUNT_OFFERS</h3>
+
+        <form class="mb-2 flex-grow">
+          <!-- Row 1 -->
+          <div class="add-coupon-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.NAME</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="{{ 'PROMOTIONS.ENTER_ID' | translate }}"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.NUMBER</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.ENTER_STORE_NAME' | translate }}"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.TYPE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT_DISCOUNT_TYPE" | translate }}
+                </option>
+                <option translate>PROMOTIONS.DISCOUNT_FOR_BILL</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="add-coupon-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.PERCENTAGE</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{
+                  'PROMOTIONS.ENTER_DISCOUNT_PERCENTAGE' | translate
+                }}"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.SYMBOL</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.ENTER_SYMBOL' | translate }}"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.AMOUNT</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.ENTER_AMOUNT' | translate }}"
+              />
+            </div>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="add-coupon-row">
+            <div class="form-group md:col-span-2">
+              <label translate>PROMOTIONS.DESCRIPTION</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="{{ 'PROMOTIONS.COMMENT' | translate }}"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.POS</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT_POS" | translate }}
+                </option>
+                <option>POS 1</option>
+                <option>POS 2</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 4 - General Checkboxes -->
+          <div
+            class="form-group lg-gap-3 mx-1 flex flex-col flex-wrap gap-3 md:mt-11 md:flex-row md:items-center"
+          >
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.BLOCKED</label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.IS_VOUCHER</label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.IS_DISPOSABLE</label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.RESTRICTED_DISCOUNT</label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.WORK_ON_PROMOTION</label>
+            </div>
+          </div>
+
+          <!-- Row 5 - Hotel Discounts -->
+          <div
+            class="form-group lg-gap-3 mx-1 flex flex-col flex-wrap gap-3 md:mt-11 md:flex-row md:items-center"
+          >
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.HOTEL_SPA</label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.HOTEL_FOOD</label>
+            </div>
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.HOTEL_SERVICES</label>
+            </div>
+          </div>
+
+          <!-- Row 6 - Repeat SPA Discount -->
+          <div
+            class="form-group lg-gap-3 mx-1 flex flex-col flex-wrap gap-3 md:mt-11 md:flex-row md:items-center"
+          >
+            <div class="checkbox-wrapper">
+              <input type="checkbox" />
+              <label translate>PROMOTIONS.HOTEL_SPA</label>
+            </div>
+          </div>
+        </form>
+      </div>
+      <!-- Action Buttons -->
+      <div class="my-8 flex flex-col justify-center gap-5 md:flex-row">
+        <button
+          class="btn-submit bg-primary/10 text-primary"
+          (click)="submit()"
+          translate
+        >
+          PROMOTIONS.CANCEL
+        </button>
+        <button class="btn-submit" (click)="submit()" translate>
+          PROMOTIONS.CREATE_DISCOUNT_OFFER
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,414 @@
+/* Selection Info Bar */
+.selection-info-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #5b5fef;
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px rgba(91, 95, 239, 0.15);
+  width: 100%;
+  animation: slideDown 0.2s ease-out;
+}
+
+.selection-count-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Action Buttons - Small */
+.btn-action-small {
+  padding: 0.5rem 0.875rem;
+  background-color: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-action-small:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-danger-small {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-danger-small:hover {
+  background-color: #dc2626;
+}
+
+/* Secondary Button */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background-color: white;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* Submit Button (Primary) */
+.btn-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background-color: #5b5fef;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-submit:hover {
+  background-color: #4c4fdb;
+  box-shadow: 0 4px 6px rgba(91, 95, 239, 0.2);
+}
+
+.btn-submit:active,
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.plus-icon {
+  font-size: 1rem;
+}
+
+/* Filter Button */
+.btn-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  background-color: transparent;
+  color: #6b7280;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-filter:hover {
+  color: #5b5fef;
+  background-color: #f3f4f6;
+}
+
+/* Tenant Avatar */
+.tenant-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background-color: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* Tenant Name and Region */
+.tenant-name {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 0.875rem;
+}
+
+.tenant-region {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.125rem;
+}
+
+/* Domain Text */
+.domain-text {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.status-badge-active {
+  background-color: #d1fae5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.status-badge-suspended {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+/* Plan Badge */
+.plan-badge {
+  display: inline-block;
+  padding: 0.375rem 0.75rem;
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Stats Text */
+.stats-text {
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+/* Action Menu Button */
+.action-menu-btn {
+  padding: 0.5rem 0.75rem;
+  background-color: transparent;
+  border: none;
+  border-radius: 0.375rem;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-menu-btn:hover {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+/* Dropdown Menu */
+.dropdown-menu-custom {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.5rem;
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  min-width: 12rem;
+  padding: 0.25rem;
+  z-index: 50;
+  animation: dropdown 0.1s ease-out;
+}
+
+.dropdown-item-custom,
+.dropdown-item-danger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background-color: transparent;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dropdown-item-custom {
+  color: #4b5563;
+}
+
+.dropdown-item-custom:hover {
+  background-color: #f9fafb;
+  color: #5b5fef;
+}
+
+.dropdown-item-danger {
+  color: #ef4444;
+}
+
+.dropdown-item-danger:hover {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background-color: #e5e7eb;
+  margin: 0.25rem 0;
+}
+
+/* Dropdown Backdrop */
+.dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background-color: transparent;
+}
+
+/* Table Enhancements */
+.data-table thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+}
+
+.data-table tbody td {
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+}
+
+/* Row Styles */
+.selected-row {
+  background-color: #eef2ff !important;
+}
+
+.hoverable-row {
+  transition: background-color 0.15s ease;
+}
+
+.hoverable-row:hover {
+  background-color: #f9fafb;
+}
+
+/* Responsive Utilities */
+.flex-responsive {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Animations */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dropdown {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Custom Checkbox (if needed beyond form-checkbox) */
+input[type="checkbox"].form-checkbox {
+  cursor: pointer;
+  width: 1rem;
+  height: 1rem;
+}
+
+input[type="checkbox"].form-checkbox:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(91, 95, 239, 0.1);
+}
+
+/* Icon Spacing */
+.fa {
+  flex-shrink: 0;
+}
+
+/* Text Utilities */
+.text-end {
+  text-align: end;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .selection-info-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .flex-responsive {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .flex.justify-end {
+    justify-content: flex-start;
+  }
+
+  .data-table {
+    font-size: 0.8125rem;
+  }
+
+  .data-table tbody td,
+  .data-table thead th {
+    padding: 0.625rem 0.5rem;
+  }
+
+  .tenant-avatar {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.875rem;
+  }
+}
+
+/* Focus States for Accessibility */
+button:focus-visible {
+  outline: 2px solid #5b5fef;
+  outline-offset: 2px;
+}
+
+/* Smooth Transitions */
+* {
+  transition-property: background-color, border-color, color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}

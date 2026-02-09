@@ -1,0 +1,113 @@
+<section class="animate-fade-in mb-5 min-h-screen">
+  <div class="container px-3 py-1">
+    <!-- Header Section -->
+    <div class="grid grid-cols-1 gap-3 px-3 py-1 lg:grid-cols-4">
+      <!-- Title based on active tab -->
+      <div class="lg:col-span-1">
+        <h2 *ngIf="activeTab === 'items'" translate>INVENTORY.TITLE</h2>
+        <h2 *ngIf="activeTab === 'bills'" translate>INVENTORY.BILLS</h2>
+      </div>
+
+      <!-- Buttons and Tabs -->
+      <div
+        class="flex flex-col flex-wrap gap-2 md:flex-row md:justify-end lg:col-span-3"
+      >
+        <!-- Item View Switcher (Only when items tab is active) -->
+        <div
+          *ngIf="activeTab === 'items'"
+          role="tablist"
+          class="border-primary flex w-full overflow-hidden rounded-lg border md:w-auto"
+        >
+          <!-- Grid View Button -->
+          <button
+            role="tab"
+            class="min-h-12 w-1/2 px-4 text-lg md:w-auto"
+            [ngClass]="{
+              'btn-tab-active': activeItemTab === 'grid',
+              'btn-tab-not-active': activeItemTab !== 'grid',
+            }"
+            (click)="setActiveItemTab('grid')"
+          >
+            <i class="fa fa-grip text-2xl"></i>
+          </button>
+
+          <!-- List View Button -->
+          <button
+            role="tab"
+            class="min-h-12 w-1/2 px-4 text-lg md:w-auto"
+            [ngClass]="{
+              'btn-tab-active': activeItemTab === 'list',
+              'btn-tab-not-active': activeItemTab !== 'list',
+            }"
+            (click)="setActiveItemTab('list')"
+          >
+            <i class="fa fa-list text-2xl"></i>
+          </button>
+        </div>
+
+        <!-- Add Product Button -->
+        <button
+          *ngIf="activeTab === 'items'"
+          (click)="addProduct()"
+          role="button"
+          class="btn-add"
+        >
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span translate>INVENTORY.ADD_PRODUCT</span>
+        </button>
+
+        <!-- Import Products Button -->
+        <button *ngIf="activeTab === 'items'" role="button" class="btn-add">
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span translate>INVENTORY.IMPORT_PRODUCTS</span>
+        </button>
+
+        <!-- Main Tab Switcher (Items / Bills) -->
+        <div
+          role="tablist"
+          class="border-primary flex w-full overflow-hidden rounded-lg border md:w-auto"
+        >
+          <!-- Items Tab -->
+          <button
+            role="tab"
+            class="min-h-12 w-1/2 px-4 text-lg md:w-auto"
+            [ngClass]="{
+              'bg-primary text-white': activeTab === 'items',
+              'text-primary bg-white': activeTab !== 'items',
+            }"
+            (click)="setActiveTab('items')"
+          >
+            <span translate>INVENTORY.ITEMS</span>
+          </button>
+
+          <!-- Bills Tab -->
+          <button
+            role="tab"
+            class="min-h-12 w-1/2 px-4 text-lg md:w-auto"
+            [ngClass]="{
+              'bg-primary text-white': activeTab === 'bills',
+              'text-primary bg-white': activeTab !== 'bills',
+            }"
+            (click)="setActiveTab('bills')"
+          >
+            <span translate>INVENTORY.BILLS</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Items Tab Content -->
+    <div *ngIf="activeTab === 'items' && activeItemTab === 'grid'">
+      <app-itemsgrid></app-itemsgrid>
+    </div>
+
+    <div *ngIf="activeTab === 'items' && activeItemTab === 'list'">
+      <app-itemslist></app-itemslist>
+    </div>
+
+    <!-- Bills Tab Content -->
+    <div *ngIf="activeTab === 'bills'">
+      <app-bills></app-bills>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,282 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+
+<!-- Page Header -->
+<div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+  <!-- Left: Back + Title -->
+  <div class="flex items-center gap-3">
+    <button
+      *ngIf="isEditMode"
+      (click)="navigateBack()"
+      class="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700">
+      <i class="fa fa-arrow-left text-sm"></i>
+    </button>
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">
+        {{ isEditMode ? 'Edit Organization' : 'Add Organization' }}
+      </h2>
+      <p class="mt-0.5 text-sm text-gray-600">
+        {{ isEditMode
+          ? 'Update the details for this organization'
+          : 'Fill in the details to create a new organization' }}
+      </p>
+    </div>
+  </div>
+
+  <!-- Right: Status (edit only) + Cancel (add only) + Submit -->
+  <div class="flex items-center gap-3">
+    <!-- Status badge only in edit mode -->
+    <div *ngIf="isEditMode" class="flex items-center gap-2">
+      <span
+        *ngIf="form.is_active"
+        class="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800">
+        <i class="fa fa-check-circle me-1"></i>
+        <span translate>ORGANIZATIONS.STATUS_ACTIVE</span>
+      </span>
+      <span
+        *ngIf="!form.is_active"
+        class="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-800">
+        <i class="fa fa-times-circle me-1"></i>
+        <span translate>ORGANIZATIONS.STATUS_INACTIVE</span>
+      </span>
+    </div>
+
+    <!-- Cancel button only in add mode -->
+    <!-- <button
+      *ngIf="isEditMode"
+      (click)="navigateBack()"
+      class="btn-secondary flex items-center gap-2">
+      <i class="fa fa-times"></i>
+      <span translate>Cancel</span>
+    </button> -->
+
+    <!-- Submit button -->
+    <button
+      (click)="onSubmit()"
+      [disabled]="isSaving"
+      class="btn-submit flex items-center gap-2"
+      [ngClass]="{ 'opacity-50 cursor-not-allowed': isSaving }">
+      <i class="fa" [ngClass]="isSaving ? 'fa-spinner fa-spin' : (isEditMode ? 'fa-save' : 'fa-circle-plus')"></i>
+      <span>{{ isSaving ? 'Saving...' : (isEditMode ? 'Update Organization' : 'Create Organization') }}</span>
+    </button>
+  </div>
+</div>
+
+    <!-- Loading skeleton while fetching in edit mode -->
+    <div *ngIf="isLoading" class="dashboard-card custom-shadow bg-white">
+      <div class="flex items-center justify-center py-16">
+        <i class="fa fa-spinner fa-spin text-primary me-2"></i>
+        <span class="text-sm text-gray-500">Loading organization details...</span>
+      </div>
+    </div>
+
+    <!-- Form (shown once loaded) -->
+    <ng-container *ngIf="!isLoading">
+
+      <!-- ─── Basic Information ─── -->
+      <div class="dashboard-card custom-shadow mb-4 bg-white">
+        <!-- Card Header -->
+        <div class="mb-5 flex items-center gap-3 border-b border-gray-100 pb-4">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <i class="fa fa-building text-sm"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-gray-900">Basic Information</h3>
+            <p class="text-xs text-gray-500">Organization name, code and status</p>
+          </div>
+        </div>
+
+        <!-- Fields -->
+        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+          <!-- Name -->
+          <div>
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">
+              Organization Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              [(ngModel)]="form.name"
+              type="text"
+              placeholder="e.g. Qitaf Group"
+              class="w-full rounded-lg border-1 border-gray-300 px-4 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              [ngClass]="{ 'border-red-400 focus:ring-red-200': errors.name }"
+            />
+            <p *ngIf="errors.name" class="mt-1 text-xs text-red-500">{{ errors.name }}</p>
+          </div>
+
+          <!-- Code -->
+          <div>
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">
+              Organization Code <span class="text-red-500">*</span>
+            </label>
+            <input
+              [(ngModel)]="form.code"
+              type="text"
+              placeholder="e.g. ORG001"
+              [disabled]="isEditMode"
+              class="w-full rounded-lg border-1 border-gray-300 px-4 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              [ngClass]="{
+                'border-red-400 focus:ring-red-200': errors.code,
+                'bg-gray-50 text-gray-500 cursor-not-allowed': isEditMode
+              }"
+            />
+            <p *ngIf="errors.code" class="mt-1 text-xs text-red-500">{{ errors.code }}</p>
+            <p *ngIf="isEditMode" class="mt-1 text-xs text-gray-400">Code cannot be changed after creation</p>
+          </div>
+
+          <!-- Active Toggle (spans full width) -->
+          <div class="md:col-span-2">
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">Status</label>
+            <div class="flex items-center gap-3">
+              <!-- Switch -->
+              <button
+                type="button"
+                (click)="form.is_active = !form.is_active"
+                class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none"
+                [ngClass]="form.is_active ? 'bg-primary' : 'bg-gray-300'"
+              >
+                <span
+                  class="inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200"
+                  [ngClass]="form.is_active ? 'translate-x-5' : 'translate-x-0.5'"
+                ></span>
+              </button>
+              <!-- Label next to toggle -->
+              <span class="text-sm text-gray-600">
+                {{ form.is_active ? 'Active' : 'Inactive' }}
+              </span>
+              <span
+                *ngIf="form.is_active"
+                class="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                Enabled
+              </span>
+              <span
+                *ngIf="!form.is_active"
+                class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+                Disabled
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─── Legal Details ─── -->
+      <div class="dashboard-card custom-shadow mb-4 bg-white">
+        <!-- Card Header -->
+        <div class="mb-5 flex items-center gap-3 border-b border-gray-100 pb-4">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+            <i class="fa fa-file-alt text-sm"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-gray-900">Legal Details</h3>
+            <p class="text-xs text-gray-500">Legal entity name and tax information</p>
+          </div>
+        </div>
+
+        <!-- Fields -->
+        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+          <!-- Legal Name -->
+          <div>
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">Legal Name</label>
+            <input
+              [(ngModel)]="form.legal_name"
+              type="text"
+              placeholder="e.g. Qitaf Group LLC"
+              class="w-full rounded-lg border-1 border-gray-300 px-4 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <p class="mt-1 text-xs text-gray-400">Official registered name of the entity</p>
+          </div>
+
+          <!-- Tax ID -->
+          <div>
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">Tax ID</label>
+            <input
+              [(ngModel)]="form.tax_id"
+              type="text"
+              placeholder="e.g. TAX123456789"
+              class="w-full rounded-lg border-1 border-gray-300 px-4 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <p class="mt-1 text-xs text-gray-400">Unique tax identification number</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─── Financial Configuration ─── -->
+      <div class="dashboard-card custom-shadow mb-6 bg-white">
+        <!-- Card Header -->
+        <div class="mb-5 flex items-center gap-3 border-b border-gray-100 pb-4">
+          <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+            <i class="fa fa-globe text-sm"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-gray-900">Financial Configuration</h3>
+            <p class="text-xs text-gray-500">Currency and fiscal year settings</p>
+          </div>
+        </div>
+
+        <!-- Fields -->
+        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+
+          <!-- Currency -->
+          <div>
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">
+              Currency <span class="text-red-500">*</span>
+            </label>
+            <select
+              [(ngModel)]="form.currency_code"
+              class="w-full rounded-lg border-1 border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              [ngClass]="{ 'border-red-400 focus:ring-red-200': errors.currency_code }"
+            >
+              <option value="" disabled>Select currency</option>
+              <option *ngFor="let c of currencies" [value]="c.code">
+                {{ c.code }} — {{ c.name }}
+              </option>
+            </select>
+            <p *ngIf="errors.currency_code" class="mt-1 text-xs text-red-500">{{ errors.currency_code }}</p>
+          </div>
+
+          <!-- Fiscal Year -->
+          <div>
+            <label class="mb-1.5 block text-sm font-medium text-gray-700">Fiscal Year</label>
+            <select
+              [(ngModel)]="form.fiscal_year_variant"
+              class="w-full rounded-lg border-1 border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              <option *ngFor="let fy of fiscalYearOptions" [value]="fy.value">
+                {{ fy.label }}
+              </option>
+            </select>
+            <p class="mt-1 text-xs text-gray-400">Defines the start and end months of the fiscal year</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─── Footer: Cancel + Submit ─── -->
+      <!-- <div class="dashboard-card custom-shadow bg-white">
+        <div class="flex items-center justify-between">
+          <button
+            (click)="navigateBack()"
+            class="btn-secondary flex items-center gap-2">
+            <i class="fa fa-arrow-left"></i>
+            <span>Cancel</span>
+          </button>
+
+          <button
+            (click)="onSubmit()"
+            [disabled]="isSaving"
+            class="btn-submit flex items-center gap-2"
+            [ngClass]="{ 'opacity-50 cursor-not-allowed': isSaving }"
+          >
+            <i class="fa" [ngClass]="isSaving ? 'fa-spinner fa-spin' : (isEditMode ? 'fa-save' : 'fa-circle-plus')"></i>
+            <span>{{ isSaving ? 'Saving...' : (isEditMode ? 'Update Organization' : 'Create Organization') }}</span>
+          </button>
+        </div>
+      </div> -->
+
+    </ng-container>
+  </div>
+</section>

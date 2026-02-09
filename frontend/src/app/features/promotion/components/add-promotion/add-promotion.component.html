@@ -1,0 +1,259 @@
+<div class="relative container mb-10 px-3 py-1">
+  <!-- Page Title and Back Button -->
+  <div class="mb-3 flex items-center gap-3">
+    <div>
+      <button (click)="goBack()">
+        <i class="fa fa-circle-chevron-left btn-back"></i>
+      </button>
+    </div>
+    <h2 translate>PROMOTIONS.ADD_NEW_PROMOTION</h2>
+  </div>
+
+  <div class="mb-7 grid grid-cols-1 gap-10 px-6 py-4 md:grid-cols-5">
+    <!-- Promotion Form -->
+    <div class="bg-white md:col-span-3">
+      <form class="mb-2 flex-grow">
+        <div class="add-promotion-row">
+          <div class="form-group">
+            <label translate>PROMOTIONS.PROMOTION_CODE</label>
+            <input
+              class="input general-input"
+              type="number"
+              required
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.PROMOTION_NAME</label>
+            <input
+              class="input general-input"
+              type="text"
+              required
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.SYMBOL</label>
+            <input
+              class="input general-input"
+              type="text"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+        </div>
+
+        <div class="add-promotion-row">
+          <div class="form-group">
+            <label class="block" translate>PROMOTIONS.START_DATE_TIME</label>
+            <input
+              class="input general-input"
+              type="datetime-local"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label class="block" translate>PROMOTIONS.END_DATE_TIME</label>
+            <input
+              class="input general-input"
+              type="datetime-local"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label class="block" translate>PROMOTIONS.TIME_FROM_TO</label>
+            <input
+              class="input general-input"
+              type="datetime-local"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+        </div>
+
+        <div class="add-promotion-row">
+          <div class="form-group">
+            <label translate>PROMOTIONS.SELECT_WEEK_DAYS</label>
+            <select class="input general-input">
+              <option translate>PROMOTIONS.SELECT</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.CURRENT_BILL_MAX_QTY</label>
+            <input
+              class="input general-input"
+              type="number"
+              required
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.CURRENT_BILL_MIN_VALUE</label>
+            <input
+              class="input general-input"
+              type="number"
+              required
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <div class="form-group">
+            <label translate>PROMOTIONS.QUANTITY_DAILY</label>
+            <input
+              class="input general-input"
+              type="text"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.QUANTITY_TOTAL</label>
+            <input
+              class="input general-input"
+              type="text"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.QUANTITY_PERIOD</label>
+            <input
+              class="input general-input"
+              type="text"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>PROMOTIONS.QUANTITY_TOTAL</label>
+            <input
+              class="input general-input"
+              type="text"
+              [placeholder]="'PROMOTIONS.ENTER' | translate"
+            />
+          </div>
+          <div class="lg-gap-3 mb-3 flex items-center gap-2 md:mt-11 md:mb-0">
+            <div class="flex gap-2">
+              <input class="accent-primary block" type="checkbox" checked />
+              <label class="text-slate-gray" translate>
+                PROMOTIONS.BLOCKED
+              </label>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Categories Section -->
+    <div
+      class="dashboard-card custom-shadow bg-white-snow rounded-xl px-3 py-4 md:col-span-2"
+    >
+      <h3 class="text-primary-lg" translate>PROMOTIONS.CATEGORIES</h3>
+      <hr class="mt-2" />
+      <app-accordion [items]="categories" [showSwitch]="false"></app-accordion>
+    </div>
+
+    <!-- Selected Items -->
+    <div
+      class="dashboard-card custom-shadow bg-white-snow rounded-xl px-3 py-4 md:col-span-3"
+    >
+      <h3 class="text-primary-lg" translate>PROMOTIONS.SELECTED_ITEMS</h3>
+      <hr class="mt-2" />
+      <div class="overflow-x-auto">
+        <table class="data-table promotion-table">
+          <thead>
+            <tr>
+              <th translate>PROMOTIONS.ITEM_NAME</th>
+              <th translate>PROMOTIONS.TOTAL_PRICE</th>
+              <th translate>PROMOTIONS.SETTINGS</th>
+              <th class="text-center" translate>PROMOTIONS.ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="rounded-l-lg">Pepsi 1litre</td>
+              <td>500</td>
+              <td>
+                <!-- Settings Checkboxes -->
+                <div class="flex flex-wrap gap-2">
+                  <ng-container
+                    *ngFor="
+                      let color of [
+                        'teal',
+                        'red',
+                        'orange',
+                        'emerald',
+                        'purple',
+                        'red-crimson',
+                      ]
+                    "
+                  >
+                    <div class="custom-checkbox-wrapper">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked
+                          class="peer checkbox-{{ color }} rounded-full"
+                        />
+                        <span class="checkbox-svg"><check-icon /></span>
+                      </label>
+                    </div>
+                  </ng-container>
+                </div>
+              </td>
+              <td class="rounded-r-lg text-center">
+                <button>
+                  <i class="fa fa-trash text-red"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Items List -->
+    <div
+      class="dashboard-card custom-shadow bg-white-snow overflow-x-auto rounded-xl px-3 py-4 md:col-span-2"
+    >
+      <h3 class="text-primary-lg" translate>PROMOTIONS.ITEMS</h3>
+      <hr class="mt-2" />
+      <div class="relative my-3 flex-1 rounded-lg bg-[#87888C1A]">
+        <span
+          class="absolute top-1/2 left-3 -translate-y-1/2 transform text-gray-500"
+        >
+          <i class="fas fa-search"></i>
+        </span>
+        <input
+          id="search"
+          type="text"
+          [placeholder]="'PROMOTIONS.SEARCH' | translate"
+          class="w-full bg-transparent py-4 pr-4 pl-10 outline-none"
+        />
+      </div>
+      <div
+        *ngFor="let product of products"
+        class="bg-secondary flex-box-row-between mb-2 rounded-lg px-3 py-4"
+      >
+        <p class="text-primary-sm">{{ product.name }}</p>
+        <button (click)="addProduct(product)">
+          <i class="fa fa-plus-circle text-primary cursor-pointer text-2xl"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Form Buttons -->
+  <div class="flex flex-col gap-3 md:flex-row md:justify-center">
+    <button (click)="submit()" class="btn-add" translate>
+      PROMOTIONS.SAVE_AS_DRAFT
+    </button>
+    <button (click)="submit()" class="btn-add" translate>
+      PROMOTIONS.CREATE_PROMOTION
+    </button>
+  </div>
+</div>
+
+<app-add-modal
+  [isOpen]="showModal"
+  [product]="selectedProduct"
+  (close)="showModal = false"
+  (submit)="handlePromotionSubmit($event)"
+></app-add-modal>

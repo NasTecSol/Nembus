@@ -1,0 +1,121 @@
+<div class="grid grid-cols-1 gap-3 py-2 md:grid-cols-4">
+  <!-- Left: Bill Table (3/4 width) -->
+  <div class="flex md:col-span-3">
+    <div
+      class="dashboard-card flex-grow overflow-x-auto rounded-2xl border-0 bg-[#F2F4F7] p-4 shadow-none"
+    >
+      <div>
+        <table class="data-table">
+          <thead>
+            <tr class="text-dark-bold-lg">
+              <th translate>INVENTORY.BILL_NO</th>
+              <th translate>INVENTORY.AMOUNT</th>
+              <th translate>INVENTORY.USER</th>
+              <th translate>INVENTORY.PAYMENT_METHOD</th>
+              <th translate>INVENTORY.DATE_TIME</th>
+              <th translate>INVENTORY.DESCRIPTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let bill of bills"
+              (click)="selectUser(bill)"
+              [class.selected-row]="selectedBill === bill"
+              [class.hoverable-row]="selectedBill !== bill"
+            >
+              <td
+                class="font-bold"
+                [ngClass]="{ 'rounded-s-lg': selectedBill === bill }"
+              >
+                {{ bill.billNo }}
+              </td>
+              <td>{{ bill.amount }}</td>
+              <td>{{ bill.user }}</td>
+              <td>{{ bill.paymentMethod }}</td>
+              <td>{{ bill.dateTime }}</td>
+              <td
+                class="max-w-[200px] truncate"
+                [ngClass]="{ 'rounded-e-lg': selectedBill === bill }"
+              >
+                {{ bill.description }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Bill Details (1/4 width) -->
+  <div class="flex md:col-span-1">
+    <div
+      class="dashboard-card flex-grow rounded-2xl border-0 bg-[#F2F4F7] p-4 shadow-none"
+    >
+      <div class="flex h-full flex-col justify-between">
+        <!-- Customer Info & Items -->
+        <div>
+          <div class="flex items-center gap-3">
+            <img
+              src="https://i.pravatar.cc/300"
+              alt="Avatar Bottom"
+              class="mt-auto block w-10 rounded-full object-cover"
+            />
+            <div>
+              <h3 class="text-dark-bold-lg" translate>Rehan</h3>
+              <p translate>INVENTORY.CUSTOMER</p>
+            </div>
+          </div>
+
+          <h3 class="text-dark-bold-lg my-5" translate>INVENTORY.BILL_ITEMS</h3>
+
+          <!-- Bill Items List -->
+          <ul>
+            <li
+              *ngFor="let item of items"
+              class="my-6 flex items-center justify-between"
+            >
+              <div class="flex gap-5">
+                <img
+                  [src]="item.avatar"
+                  alt="Avatar"
+                  class="mt-auto block h-10 w-10 rounded-full object-cover"
+                />
+                <div>
+                  <p class="font-bold">{{ item.name }}</p>
+                  <p>&times; {{ item.quantity }}</p>
+                </div>
+              </div>
+              <p class="font-bold">{{ item.price }}</p>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mb-10">
+          <h3 class="text-dark-bold-lg my-5" translate>INVENTORY.ACTIONS</h3>
+          <div class="flex w-full items-center justify-center gap-10">
+            <!-- Log Bill -->
+            <button
+              class="bg-secondary text-primary hover:bg-secondary/50 h-28 w-28 rounded-lg font-bold shadow-lg"
+            >
+              <span class="block">
+                <i class="fa fa-microscope text-lg"></i>
+              </span>
+              <span class="block" translate>INVENTORY.LOG_BILL</span>
+            </button>
+
+            <!-- Edit Bill -->
+            <button
+              class="bg-secondary text-primary hover:bg-secondary/50 h-28 w-28 rounded-lg font-bold shadow-lg"
+            >
+              <span class="block">
+                <i class="fa fa-edit text-lg"></i>
+              </span>
+              <span class="block" translate>INVENTORY.EDIT_BILL</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

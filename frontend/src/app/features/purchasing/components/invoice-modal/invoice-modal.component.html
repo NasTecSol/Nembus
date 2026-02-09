@@ -1,0 +1,134 @@
+<!-- Modal Wrapper -->
+<div
+  *ngIf="isOpen"
+  class="modal-overlay animate-fade-in-bg"
+  (click)="handleClose()"
+>
+  <div
+    class="modal-content animate-slide-up h-[100vh] max-h-[100vh] md:h-auto md:max-w-[600px]"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Invoice Header Section -->
+    <div class="my-3 rounded-xl bg-[#F2F5F9] p-5">
+      <!-- Title and Invoice Number -->
+      <div class="mb-7 grid grid-cols-2">
+        <h3 class="text-xl font-bold" translate>PURCHASING.INVOICE</h3>
+        <p class="flex flex-col items-end">
+          <span class="text-invoice1" translate>PURCHASING.INVOICE_NO</span>
+          <span class="font-bold">#03214</span>
+        </p>
+      </div>
+
+      <!-- Billing Info and Date Section -->
+      <div class="grid grid-cols-2">
+        <p class="flex flex-col gap-3">
+          <span class="text-invoice1" translate>PURCHASING.BILLED_TO</span>
+          <span class="font-semi-bold">Supplier 1</span>
+          <span class="text-invoice2" translate>
+            PURCHASING.ADDRESS_CONTACT
+          </span>
+        </p>
+
+        <p class="mt-6 flex flex-col items-end">
+          <span class="text-invoice1" translate>PURCHASING.ISSUED_ON</span>
+          <span class="text-invoice2">December 7, 2022</span>
+          <span class="text-invoice1 mt-5" translate>
+            PURCHASING.PAYMENT_DUE
+          </span>
+          <span class="text-invoice2">December 7, 2022</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Invoice Table -->
+    <div class="mx-2 grid grid-cols-1 overflow-auto">
+      <table class="product-table invoice-table">
+        <thead>
+          <tr>
+            <th class="pr-5 font-bold text-black" translate>
+              PURCHASING.PRODUCTS
+            </th>
+            <th class="text-invoice1" translate>PURCHASING.QTY</th>
+            <th class="text-invoice1" translate>PURCHASING.PRICE</th>
+            <th class="text-invoice1" translate>PURCHASING.DISCOUNT</th>
+            <th class="text-invoice1" translate>PURCHASING.TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of invoiceItems" class="text-invoice1">
+            <td class="text-invoice2 pr-5">{{ item.productName }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.price | number: "1.0-2" }}</td>
+            <td>{{ item.discount }}</td>
+            <td class="text-invoice2">{{ item.total | number: "1.0-2" }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Total Section -->
+    <div class="mx-2 my-5 flex items-center justify-between">
+      <div class="divider flex-grow opacity-40"></div>
+
+      <div
+        class="flex-box-row-between gap-10 overflow-hidden rounded-xl bg-[#F2F5F9] px-4 py-3"
+      >
+        <div>
+          <span class="text-invoice1" translate>PURCHASING.TOTAL</span>
+          <span class="text-invoice1">
+            (
+            <span class="text-invoice2 px-1" translate>
+              PURCHASING.CURRENCY
+            </span>
+            )
+          </span>
+        </div>
+        <span class="text-base font-bold">19,000.00</span>
+      </div>
+    </div>
+
+    <!-- Logo -->
+    <div class="mb-3">
+      <img src="images/logo-invoice.svg" class="h-15 w-15" />
+    </div>
+
+    <!-- Footer Info -->
+    <div class="mx-2 mb-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+      <div class="flex flex-col gap-2">
+        <p class="font-bold">NASPOS</p>
+        <p class="text-invoice2" translate>PURCHASING.ADDRESS_CONTACT</p>
+        <p class="text-[#334BC8]">info&#64;nastecsol.com</p>
+        <p class="text-invoice1" translate>PURCHASING.TAX_ID</p>
+        <p class="text-invoice1">456546-45645-456</p>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <p class="text-invoice2 font-bold" translate>
+          PURCHASING.PAYMENT_INSTRUCTIONS
+        </p>
+        <p class="text-invoice1" translate>PURCHASING.PAYMENT_DESC</p>
+
+        <p class="flex flex-col">
+          <span class="text-invoice1" translate>PURCHASING.SWIFT</span>
+          <span class="text-invoice2">1234567890-123</span>
+        </p>
+        <p class="flex flex-col">
+          <span class="text-invoice1" translate>PURCHASING.IBAN</span>
+          <span class="text-invoice2">ABC-0987654321</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Buttons -->
+    <div class="mt-10 mb-3 flex flex-wrap justify-end gap-2">
+      <button class="btn-submit text-sm">
+        <i class="fa fa-download mr-2"></i>
+        <span translate>PURCHASING.SAVE_TO_DEVICE</span>
+      </button>
+      <button class="btn-submit text-sm">
+        <i class="fa fa-print mr-2"></i>
+        <span translate>PURCHASING.PRINT_INVOICE</span>
+      </button>
+    </div>
+  </div>
+</div>

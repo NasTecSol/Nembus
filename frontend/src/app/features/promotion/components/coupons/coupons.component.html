@@ -1,0 +1,189 @@
+<!-- Layout with 1 column on small screens and 3 columns on medium+ -->
+<div class="my-3 grid grid-cols-1 gap-3 py-2 md:grid-cols-3">
+  <!-- Left Panel: List of discount offers -->
+  <div class="left-col-wrapper dashboard-card custom-shadow">
+    <table class="data-table">
+      <thead>
+        <tr class="text-dark-bold-lg">
+          <th translate>PROMOTIONS.NUMBER</th>
+          <th translate>PROMOTIONS.CODE</th>
+          <th translate>PROMOTIONS.NAME</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Display each offer with click event and active styling -->
+        <tr
+          *ngFor="let item of discountOffers"
+          (click)="setActiveRow(item)"
+          [ngClass]="{
+            'selected-row text-white': activeRow === item,
+            'hoverable-row text-[#666666]': activeRow !== item,
+          }"
+        >
+          <td
+            class="font-bold text-black"
+            [ngClass]="{ 'rounded-l-lg text-white': activeRow === item }"
+          >
+            {{ item.number }}
+          </td>
+          <td>{{ item.code }}</td>
+          <td [ngClass]="{ 'rounded-r-lg': activeRow === item }">
+            {{ item.name }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Right Panel: Coupon settings form -->
+  <div class="right-col-wrapper dashboard-card custom-shadow">
+    <div class="flex min-h-screen flex-col justify-between">
+      <!-- Form Section -->
+      <div>
+        <h3 class="text-primary-lg" translate>PROMOTIONS.COUPON_SETTINGS</h3>
+        <form class="mb-2 flex-grow">
+          <!-- Input Rows (Grouped) -->
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.VOUCHER_TYPE</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="Enter"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.ON_STORE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected translate>
+                  PROMOTIONS.SELECT
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.REBATE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected translate>
+                  PROMOTIONS.SELECT
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- More grouped inputs -->
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.FORM_OF_PAYMENT</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected translate>
+                  PROMOTIONS.SELECT
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.NUMBER_OF_COUPONS</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="Enter"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.TO_DATE</label>
+              <input class="input general-input" type="date" />
+            </div>
+          </div>
+
+          <div class="promotion-form-row">
+            <div class="form-group md:col-span-2">
+              <label translate>PROMOTIONS.DESCRIPTION</label>
+              <input
+                class="input general-input"
+                type="text"
+                placeholder="Leave a comment.."
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.AGAINST_PROMOTION</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected translate>
+                  PROMOTIONS.SELECT
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.CREATED_BY_OPERATOR</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="Enter"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.USED_TIMES</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="Enter"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.CREATED_BY_POS</label>
+              <input
+                class="input general-input"
+                type="number"
+                placeholder="Enter"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.AGAINST_PROMOTION</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected translate>
+                  PROMOTIONS.SELECT
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.AGAINST_OFFER</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected translate>
+                  PROMOTIONS.SELECT
+                </option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="btn-action-wrapper">
+        <button class="btn-base btn-red">
+          <i class="fa fa-trash text-3xl"></i>
+          <span translate>PROMOTIONS.DELETE</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span translate>PROMOTIONS.GENERATE_VOUCHERS</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-print text-3xl"></i>
+          <span translate>PROMOTIONS.PRINT_VOUCHERS</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-edit text-3xl"></i>
+          <span translate>PROMOTIONS.EDIT_DETAILS</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

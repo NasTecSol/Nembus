@@ -1,0 +1,137 @@
+<div class="flex-grow">
+  <div class="form-row">
+    <div class="form-group">
+      <label translate>INVENTORY.LAST_PURCHASE_DATE</label>
+      <input class="input border-white-light" type="date" />
+    </div>
+
+    <div class="form-group">
+      <label translate>INVENTORY.LAST_PURCHASE_PRICE</label>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+      />
+    </div>
+
+    <div class="form-group">
+      <label class="block" translate>INVENTORY.LAST_PURCHASE_CURRENCY</label>
+      <select class="input border-white-light">
+        <option value="">SAR</option>
+        <option value="sar2">SAR2</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label translate>INVENTORY.LAST_SALE_DATE</label>
+      <input class="input border-white-light" type="date" />
+    </div>
+
+    <div class="form-group">
+      <label translate>INVENTORY.LATEST_SALE_PRICE</label>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER_UNITS' | translate"
+      />
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 md:mt-11 lg:flex-nowrap">
+      <div class="custom-checkbox-wrapper">
+        <label>
+          <input type="checkbox" checked class="peer checkbox-teal" />
+          <span class="checkbox-svg">
+            <check-icon />
+          </span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          INVENTORY.IS_SALE_ITEM
+        </span>
+      </div>
+      <div class="custom-checkbox-wrapper">
+        <label>
+          <input type="checkbox" class="peer checkbox-teal" />
+          <span class="checkbox-svg">
+            <check-icon />
+          </span>
+        </label>
+        <span class="checkbox-label-text" translate>
+          INVENTORY.IS_PURCHASE_ITEM
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-row flex-wrap">
+    <div class="form-group flex w-full gap-5">
+      <div class="w-1/2">
+        <label class="block" translate>INVENTORY.SALE_PRICE_TYPE</label>
+        <select class="input border-white-light">
+          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+        </select>
+      </div>
+      <div class="w-1/2">
+        <label translate>INVENTORY.PRICING_UNIT</label>
+        <input
+          class="input border-white-light"
+          type="text"
+          [placeholder]="'INVENTORY.ENTER' | translate"
+        />
+      </div>
+    </div>
+
+    <div class="form-group flex w-full gap-5">
+      <div class="w-1/2">
+        <label class="block" translate>INVENTORY.UNIT_PRICE</label>
+        <select class="input border-white-light">
+          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+        </select>
+      </div>
+      <div class="w-1/2">
+        <label class="block" translate>INVENTORY.PRICE_LIST</label>
+        <select class="input border-white-light">
+          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-row flex-wrap">
+    <div class="form-group flex w-full gap-5">
+      <div class="w-1/2">
+        <label class="block" translate>INVENTORY.SELECT_STORE</label>
+        <select class="input border-white-light">
+          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
+        </select>
+      </div>
+      <div class="w-1/2">
+        <label translate>INVENTORY.PRICE_IN_STORE</label>
+        <input
+          class="input border-white-light"
+          type="text"
+          [placeholder]="'INVENTORY.ENTER' | translate"
+        />
+      </div>
+    </div>
+  </div>
+
+  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
+    <button class="btn-primary h-12 md:w-30" type="submit" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+
+  <div class="mt-5 flex justify-center md:hidden">
+    <button class="btn-primary h-12 md:w-30" type="submit" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+</div>

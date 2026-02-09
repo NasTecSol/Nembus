@@ -1,0 +1,107 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div class="mb-3">
+      <h2>{{ "USER_ROLES.TITLE" | translate }}</h2>
+    </div>
+
+    <!-- Tabs and Add User Button -->
+    <div class="flex-responsive mb-3 gap-3">
+      <!-- Role Tab Buttons -->
+      <div class="tabs-container" role="tablist">
+        <button
+          *ngFor="let tab of roleTabs"
+          (click)="setActiveTab(tab)"
+          class="btn-tab"
+          [ngClass]="{
+            'btn-tab-active': roleActiveTab === tab,
+            'btn-tab-not-active': roleActiveTab !== tab,
+          }"
+        >
+          {{ roleTabTranslateMap[tab] | translate }}
+        </button>
+      </div>
+
+      <!-- Add User Button -->
+      <div class="px-3 text-lg text-white">
+        <div class="flex justify-end">
+          <button (click)="navigateToAddUser()" class="btn-submit" role="tab">
+            <i class="fa fa-circle-plus plus-icon"></i>
+            {{ "USER_ROLES.ADD_NEW_USER" | translate }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div
+      class="custom-shadow border-gray/10 mb-7 grid grid-cols-1 gap-10 rounded border-1 px-6 py-4 md:grid-cols-5"
+    >
+      <!-- User Table Section -->
+      <div class="dashboard-card border-0 bg-white shadow-none md:col-span-2">
+        <div class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr class="text-dark-bold">
+                <th>{{ "USER_ROLES.ID_NUMBER" | translate }}</th>
+                <th>{{ "USER_ROLES.NAME" | translate }}</th>
+                <th>{{ "USER_ROLES.SURNAME" | translate }}</th>
+                <th>{{ "USER_ROLES.BLOCKED" | translate }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                *ngFor="let user of users"
+                (click)="selectUser(user)"
+                [class.selected-row]="selectedUser === user"
+                [class.hoverable-row]="selectedUser !== user"
+              >
+                <td class="rounded-s-lg">{{ user.id }}</td>
+                <td>{{ user.name }}</td>
+                <td>{{ user.sName }}</td>
+                <td class="rounded-e-lg">
+                  <input type="checkbox" class="form-checkbox accent-primary" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- User Form Section -->
+      <div class="dashboard-card custom-shadow bg-white-snow md:col-span-3">
+        <!-- Form Tabs -->
+        <div class="tabs-container flex-wrap" role="tablist">
+          <button
+            *ngFor="let tab of visibleFormTabs"
+            (click)="setFormActiveTab(tab)"
+            class="btn-tab"
+            [ngClass]="{
+              'btn-tab-active': formActiveTab === tab,
+              'btn-tab-not-active': formActiveTab !== tab,
+            }"
+          >
+            {{ translateKeyMap[tab] | translate }}
+          </button>
+        </div>
+
+        <!-- Tab Content -->
+        <ng-container *ngIf="formActiveTab === 'User Details'">
+          <user-details></user-details>
+        </ng-container>
+        <ng-container *ngIf="formActiveTab === 'Permissions'">
+          <permissions></permissions>
+        </ng-container>
+        <ng-container *ngIf="formActiveTab === 'Shifts'">
+          <shifts></shifts>
+        </ng-container>
+        <ng-container *ngIf="formActiveTab === 'Cash Counters'">
+          <cash-counters></cash-counters>
+        </ng-container>
+        <ng-container *ngIf="formActiveTab === 'Employees'">
+          <employees></employees>
+        </ng-container>
+      </div>
+    </div>
+  </div>
+</section>

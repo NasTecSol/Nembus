@@ -1,0 +1,676 @@
+<section class="animate-fade-in">
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div
+      class="mb-3 flex flex-col md:flex-row md:items-center md:justify-between"
+    >
+      <h2 class="mb-3">
+        <span translate>STORES_LOCATIONS.STORES_LOCATION</span>
+      </h2>
+      <button (click)="addStore()" class="btn-add md:mr-2" role="button">
+        <i class="fa fa-plus-circle plus-icon"></i>
+        <span translate>STORES_LOCATIONS.ADD_STORE</span>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 py-2 md:grid-cols-2">
+      <!-- Left: Store List Table -->
+      <div
+        class="dashboard-card flex-grow overflow-x-auto rounded-2xl border-0 bg-[#F2F4F7] p-4 shadow-none"
+      >
+        <table class="data-table w-full">
+          <thead>
+            <tr class="text-dark-bold-lg">
+              <th><span translate>STORES_LOCATIONS.STORE_NO</span></th>
+              <th><span translate>STORES_LOCATIONS.STORE_NAME</span></th>
+              <th><span translate>STORES_LOCATIONS.LOCATION</span></th>
+              <th><span translate>STORES_LOCATIONS.INACTIVE</span></th>
+              <th><span translate>STORES_LOCATIONS.NETTABLE</span></th>
+              <th><span translate>STORES_LOCATIONS.BIN_LOCATIONS</span></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr
+              *ngFor="let store of stores"
+              (click)="selectStore(store)"
+              class="text-[#666666]"
+              [ngClass]="{
+                'text-white': selectedStore === store,
+                'selected-row': selectedStore === store,
+                'hoverable-row': selectedStore !== store,
+              }"
+            >
+              <td
+                class="font-bold text-black"
+                [ngClass]="{
+                  'rounded-s-lg text-white': selectedStore === store,
+                }"
+              >
+                {{ store.storeNo }}
+              </td>
+              <td>{{ store.storeName }}</td>
+              <td>{{ store.location }}</td>
+              <td>{{ store.inactive }}</td>
+              <td>{{ store.nettable }}</td>
+              <td [ngClass]="{ 'rounded-e-lg': selectedStore === store }">
+                {{ store.binLocations }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Right: Store Form -->
+      <div class="dashboard-card custom-shadow rounded-2xl p-4">
+        <div role="tablist" class="tabs-container flex-wrap">
+          <button
+            *ngFor="let tab of tabs"
+            (click)="setFormActiveTab(tab)"
+            class="btn-tab"
+            [ngClass]="{
+              'btn-tab-active': activeTab === tab,
+              'btn-tab-not-active': activeTab !== tab,
+            }"
+          >
+            {{ "STORES_LOCATIONS." + tabTranslationMap[tab] | translate }}
+          </button>
+        </div>
+
+        <div class="flex h-full flex-col">
+          <hr class="mt-3" />
+
+          <!-- General Tab -->
+          <div *ngIf="activeTab === 'General'">
+            <form class="mb-2 flex-grow">
+              <div class="general-row">
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.STORE_NUMBER</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="number"
+                    value="101"
+                    required
+                  />
+                </div>
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.STORE_NAME</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="TechMart Superstore"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div class="general-row">
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.LOCATION</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="Downtown Plaza"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.STREET_PO_BOX</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="P.O. Box 4567"
+                  />
+                </div>
+              </div>
+
+              <div class="general-row">
+                <div class="form-group">
+                  <label class="block">
+                    <span translate>STORES_LOCATIONS.STATE</span>
+                  </label>
+                  <select class="input general-input">
+                    <option value="arizona" selected>Arizona</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label><span translate>STORES_LOCATIONS.CITY</span></label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="Phoenix"
+                  />
+                </div>
+              </div>
+
+              <div class="general-row">
+                <div class="form-group">
+                  <label><span translate>STORES_LOCATIONS.ADDRESS</span></label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="1234 Tech Street"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.POST_CODE</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="85001"
+                  />
+                </div>
+              </div>
+
+              <div class="general-row">
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.VAT_NUMBER</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="US123456789"
+                  />
+                </div>
+                <div class="form-group">
+                  <label><span translate>STORES_LOCATIONS.GLN</span></label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="9876543210123"
+                  />
+                </div>
+              </div>
+
+              <div class="general-row">
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.TAX_OFFICE</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="Phoenix Tax Dept."
+                  />
+                </div>
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.ADDRESS_2</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="Suite 5, 2nd Floor"
+                  />
+                </div>
+              </div>
+
+              <div class="general-row">
+                <div class="form-group">
+                  <label>
+                    <span translate>STORES_LOCATIONS.ADDRESS_3</span>
+                  </label>
+                  <input
+                    class="input general-input"
+                    type="text"
+                    value="Building B"
+                  />
+                </div>
+                <div
+                  class="form-group lg-gap-3 flex items-center gap-2 md:mt-11"
+                >
+                  <div class="flex gap-2">
+                    <input
+                      class="accent-primary block"
+                      type="checkbox"
+                      checked
+                    />
+                    <label class="text-slate-gray">
+                      <span translate>STORES_LOCATIONS.INACTIVE_QUESTION</span>
+                    </label>
+                  </div>
+                  <div class="flex gap-2">
+                    <input class="accent-primary block" type="checkbox" />
+                    <label class="text-slate-gray">
+                      <span translate>STORES_LOCATIONS.NETTABLE_QUESTION</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2">
+                <div class="form-group">
+                  <div class="flex gap-2">
+                    <input
+                      class="accent-primary block"
+                      type="checkbox"
+                      checked
+                    />
+                    <label class="text-slate-gray">
+                      <span translate>
+                        STORES_LOCATIONS.ENABLE_BIN_LOCATION
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <!-- Accounting Tab -->
+          <div *ngIf="activeTab === 'Accounting'">
+            <h2 translate>STORES_LOCATIONS.ACCOUNTING</h2>
+          </div>
+
+          <!-- Employees Tab -->
+          <div *ngIf="activeTab === 'Employees'">
+            <div *ngIf="!showAddEmployeeForm" class="my-4 md:float-end">
+              <button (click)="onAddEmployeeClick()" class="btn-add" role="tab">
+                <i class="fa fa-plus-circle plus-icon"></i>
+                <span translate>STORES_LOCATIONS.ADD_EMPLOYEE</span>
+              </button>
+            </div>
+
+            <div *ngIf="!showAddEmployeeForm" class="px-2">
+              <table class="product-table store-table">
+                <thead>
+                  <tr class="table-heading-row">
+                    <th><span translate>STORES_LOCATIONS.ID_NUMBER</span></th>
+                    <th><span translate>STORES_LOCATIONS.NAME</span></th>
+                    <th><span translate>STORES_LOCATIONS.ROLE</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let emp of employees" class="table-body-row">
+                    <td>{{ emp.id }}</td>
+                    <td>{{ emp.name }}</td>
+                    <td>{{ emp.position }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div *ngIf="showAddEmployeeForm">
+              <form class="mb-2 flex flex-col justify-between md:min-h-screen">
+                <div>
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.FIRST_NAME</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.SURNAME</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div class="general-row">
+                    <!-- Phone Number with Country Select -->
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.PHONE_NUMBER</span>
+                      </label>
+                      <div
+                        class="border-white-light mt-2 flex items-center rounded border"
+                      >
+                        <select
+                          class="border-white-light block bg-white px-2 py-2 outline-none"
+                          [(ngModel)]="selectedDialCode"
+                          name="dialCode"
+                        >
+                          <option
+                            *ngFor="let country of countries"
+                            [value]="country.dial_code"
+                          >
+                            {{ country.flag }} &nbsp; {{ country.code }}
+                          </option>
+                        </select>
+                        <span
+                          class="text-slate-gray ml-3 flex items-center font-medium"
+                        >
+                          {{ selectedDialCode }}
+                        </span>
+                        <input
+                          class="text-slate-gray ml-2 block rounded px-2 py-2 outline-none"
+                          type="text"
+                          [(ngModel)]="phoneNumber"
+                          placeholder=""
+                        />
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.LOGIN_ID</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.PASSWORD</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="password"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.EMAIL</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="email"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.ADDRESS</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.POS_PIN</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.AUTH_CARD_NO</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-10 flex flex-wrap justify-center gap-5">
+                  <button
+                    class="btn-submit border-primary text-primary border bg-white"
+                    type="button"
+                  >
+                    <span translate>STORES_LOCATIONS.CANCEL</span>
+                  </button>
+                  <button class="btn-submit" type="submit">
+                    <span translate>STORES_LOCATIONS.CREATE_EMPLOYEE</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Cash Counters Tab -->
+          <div *ngIf="activeTab === 'Cash Counters'">
+            <div *ngIf="!showCashForm" class="my-4 md:float-end">
+              <button (click)="onAddCashClick()" class="btn-add" role="button">
+                <i class="fa fa-plus-circle plus-icon"></i>
+                <span translate>STORES_LOCATIONS.ADD_CASH_COUNTER</span>
+              </button>
+            </div>
+
+            <div *ngIf="!showCashForm" class="px-2">
+              <table class="product-table store-table">
+                <thead>
+                  <tr class="table-heading-row">
+                    <th>
+                      <span translate>STORES_LOCATIONS.COUNTER_NAME</span>
+                    </th>
+                    <th><span translate>STORES_LOCATIONS.COUNTER_ID</span></th>
+                    <th><span translate>STORES_LOCATIONS.ASSIGNED_TO</span></th>
+                    <th><span translate>STORES_LOCATIONS.SHIFTS</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    *ngFor="let counter of cashCounters"
+                    class="table-body-row"
+                  >
+                    <td>{{ counter.counterId }}</td>
+                    <td>{{ counter.name }}</td>
+                    <td>{{ counter.assignedTo }}</td>
+                    <td>{{ counter.shifts }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div *ngIf="showCashForm">
+              <form class="mb-2 flex flex-col justify-between md:min-h-screen">
+                <div class="mb-30 md:mb-2">
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.COUNTER_ID</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.COUNTER_NAME</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label for="vatGroup2" class="block">
+                        <span translate>STORES_LOCATIONS.SELECT_SHIFT</span>
+                      </label>
+                      <select
+                        id="vatGroup2"
+                        name="vatGroup2"
+                        class="input text-slate-gray border-white-light"
+                      >
+                        <option value="">{{ "SELECT" | translate }}</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="vatGroup2" class="block">
+                        <span translate>STORES_LOCATIONS.ASSIGN_CASHIER</span>
+                      </label>
+                      <select
+                        id="vatGroup2"
+                        name="vatGroup2"
+                        class="input text-slate-gray border-white-light"
+                      >
+                        <option value="">{{ "SELECT" | translate }}</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-10 flex flex-wrap justify-center gap-5">
+                  <button
+                    class="btn-submit border-primary text-primary border bg-white"
+                    type="button"
+                  >
+                    <span translate>STORES_LOCATIONS.CANCEL</span>
+                  </button>
+                  <button class="btn-submit" type="submit">
+                    <span translate>STORES_LOCATIONS.CREATE_CASH_COUNTER</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Shifts Tab -->
+          <div *ngIf="activeTab === 'Shifts'">
+            <div *ngIf="!showShiftForm" class="my-4 md:float-end">
+              <button (click)="onAddShiftClick()" class="btn-add" role="button">
+                <i class="fa fa-plus-circle plus-icon"></i>
+                <span translate>STORES_LOCATIONS.ADD_SHIFT</span>
+              </button>
+            </div>
+
+            <div *ngIf="!showShiftForm" class="px-2">
+              <table class="product-table store-table">
+                <thead>
+                  <tr class="table-heading-row">
+                    <th><span translate>STORES_LOCATIONS.SHIFT_TIME</span></th>
+                    <th><span translate>STORES_LOCATIONS.NAME</span></th>
+                    <th><span translate>STORES_LOCATIONS.ASSIGNED_TO</span></th>
+                    <th><span translate>STORES_LOCATIONS.SETTING</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let shift of shifts" class="table-body-row">
+                    <td>{{ shift.shiftTime }}</td>
+                    <td>{{ shift.name }}</td>
+                    <td>{{ shift.assignedTo }}</td>
+                    <td>{{ shift.setting }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div *ngIf="showShiftForm">
+              <form class="mb-2 flex flex-col justify-between md:min-h-screen">
+                <div class="mb-30 md:mb-2">
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.SHIFT_NAME</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="text"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.FROM_DATE</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="date"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div class="general-row">
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.FROM_TIME</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="time"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label>
+                        <span translate>STORES_LOCATIONS.TO_TIME</span>
+                      </label>
+                      <input
+                        class="input general-input"
+                        type="time"
+                        placeholder="Enter"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-10 flex flex-wrap justify-center gap-5">
+                  <button
+                    class="btn-submit border-primary text-primary border bg-white"
+                    type="button"
+                  >
+                    <span translate>STORES_LOCATIONS.CANCEL</span>
+                  </button>
+                  <button class="btn-submit" type="submit">
+                    <span translate>STORES_LOCATIONS.CREATE_SHIFT</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Settings Tab -->
+          <div *ngIf="activeTab === 'Settings'">
+            <div class="mx-auto mt-6">
+              <app-accordion
+                [items]="settings"
+                [showSwitch]="true"
+              ></app-accordion>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

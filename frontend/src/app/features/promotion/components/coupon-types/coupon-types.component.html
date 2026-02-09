@@ -1,0 +1,153 @@
+<!-- Grid layout: 1 column on small screens, 3 on medium+ -->
+<div class="my-3 grid grid-cols-1 gap-3 py-2 md:grid-cols-3">
+  <!-- Left Panel: List of discount offers -->
+  <div class="left-col-wrapper dashboard-card custom-shadow">
+    <table class="data-table">
+      <thead>
+        <tr class="text-dark-bold-lg">
+          <th translate>PROMOTIONS.NUMBER</th>
+          <th translate>PROMOTIONS.CODE</th>
+          <th translate>PROMOTIONS.NAME</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Offer list with row highlighting and click event -->
+        <tr
+          *ngFor="let item of discountOffers"
+          (click)="setActiveRow(item)"
+          class="text-[#666666]"
+          [ngClass]="{ 'text-white': activeRow === item }"
+          [class.selected-row]="activeRow === item"
+          [class.hoverable-row]="activeRow !== item"
+        >
+          <td
+            class="font-bold text-black"
+            [ngClass]="{ 'rounded-l-lg text-white': activeRow === item }"
+          >
+            {{ item.number }}
+          </td>
+          <td>{{ item.code }}</td>
+          <td [ngClass]="{ 'rounded-r-lg': activeRow === item }">
+            {{ item.name }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Right Panel: Coupon Settings Form -->
+  <div class="right-col-wrapper dashboard-card custom-shadow">
+    <div class="flex min-h-screen flex-col justify-between">
+      <!-- Form section -->
+      <div>
+        <h3 class="text-primary-lg" translate>PROMOTIONS.COUPON_SETTINGS</h3>
+        <form class="mb-2 flex-grow">
+          <!-- Row 1 -->
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.NAME</label>
+              <input
+                class="input general-input"
+                type="number"
+                [placeholder]="'PROMOTIONS.ENTER' | translate"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.CODE</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.REBATE_FROM</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.FORM_OF_PAYMENT</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.VALUE</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.ENTER' | translate"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.VALID_MONTHS</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.ENTER' | translate"
+              />
+            </div>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="promotion-form-row">
+            <div class="form-group md:col-span-2">
+              <label translate>PROMOTIONS.DESCRIPTION</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.COMMENT' | translate"
+              />
+            </div>
+            <div class="form-group">
+              <label translate>PROMOTIONS.VALID_DAYS</label>
+              <select class="input general-input" required>
+                <option value="" disabled selected>
+                  {{ "PROMOTIONS.SELECT" | translate }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="promotion-form-row">
+            <div class="form-group">
+              <label translate>PROMOTIONS.KEY</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'PROMOTIONS.ENTER' | translate"
+              />
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="btn-action-wrapper">
+        <button class="btn-base btn-red">
+          <i class="fa fa-trash text-3xl"></i>
+          <span translate>PROMOTIONS.DELETE</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-print text-3xl"></i>
+          <span translate>PROMOTIONS.PRINT_VOUCHERS</span>
+        </button>
+        <button class="btn-base bg-primary">
+          <i class="fa fa-edit text-3xl"></i>
+          <span translate>PROMOTIONS.EDIT_DETAILS</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
