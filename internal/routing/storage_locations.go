@@ -20,7 +20,7 @@ func RegisterStorageLocationsRoutes(r *gin.RouterGroup, h *handler.StorageLocati
 		locations.PATCH("/:id/active", h.ToggleStorageLocationActive)
 	}
 	// Store-specific storage locations
-	stores := r.Group("/stores/:store_id")
+	stores := r.Group("/stores/:id")
 	storeLocations := stores.Group("/storage-locations")
 	{
 		storeLocations.GET("", h.ListStorageLocationsByStore)
