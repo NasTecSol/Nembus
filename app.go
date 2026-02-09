@@ -128,9 +128,9 @@ func (a *App) migrate(dbURL string) error {
 }
 
 // FetchCloudTenants fetches available tenants from the cloud URL
-func (a *App) FetchCloudTenants() interface{} {
-	url := fmt.Sprintf("%s/api/tenants", a.cfg.CloudURL)
-	log.Printf("Fetching cloud tenants from: %s", url)
+func (a *App) FetchCloudTenants(slug string) interface{} {
+	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
+	log.Printf("Fetching cloud tenant from: %s", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Sprintf("Error creating request: %v", err)
@@ -141,7 +141,7 @@ func (a *App) FetchCloudTenants() interface{} {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("FetchCloudTenants Error: %v", err)
-		return fmt.Sprintf("Error fetching tenants: %v", err)
+		return fmt.Sprintf("Error fetching tenant: %v", err)
 	}
 	defer resp.Body.Close()
 

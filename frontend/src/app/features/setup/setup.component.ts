@@ -14,6 +14,7 @@ export class SetupComponent {
     statusMessage = '';
     tenants: any[] = [];
     selectedTenant: any = null;
+    searchSlug: string = '';
 
     dbConfig = {
         username: 'postgres',
@@ -69,13 +70,22 @@ export class SetupComponent {
     }
 
     async fetchTenants() {
-        this.statusMessage = 'Fetching tenants from cloud...';
+        if (!this.searchSlug) {
+            this.statusMessage = 'Please enter a tenant slug to search.';
+            return;
+        }
+
+        this.statusMessage = `Searching for tenant "${this.searchSlug}"...`;
         try {
             // @ts-ignore
-            const result = await window.go.main.App.FetchCloudTenants();
-            if (Array.isArray(result)) {
+            const result = await window.go.main.App.FetchCloudTenants(this.searchSlug);
+            if (result && typeof result === 'object' && !Array.isArray(result)) {
+                this.tenants = [result];
+                this.selectedTenant = result;
+            } else if (Array.isArray(result)) {
                 this.tenants = result;
             } else {
+                this.tenants = [];
                 this.statusMessage = 'Error: ' + result;
             }
         } catch (err) {

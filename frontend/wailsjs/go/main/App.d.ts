@@ -9,7 +9,7 @@ export function CreateInitialOrganization(arg1:string,arg2:string):Promise<strin
 
 export function CreateInitialTenant(arg1:string,arg2:string):Promise<string>;
 
-export function FetchCloudTenants():Promise<any>;
+export function FetchCloudTenants(arg1:string):Promise<any>;
 
 export function GetDBStatus():Promise<string>;
 

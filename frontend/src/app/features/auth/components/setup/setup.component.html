@@ -97,16 +97,32 @@
             </div>
 
             <div *ngIf="step === 4" class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold text-white">Search Cloud Tenant</h2>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <div class="relative">
+                        <input [(ngModel)]="searchSlug" (keyup.enter)="fetchTenants()"
+                            placeholder="Enter tenant slug (e.g., acme)"
+                            class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all pl-11">
+                        <div class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <button (click)="fetchTenants()"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
+                            Search
+                        </button>
+                    </div>
+                    <p class="text-xs text-slate-500">Enter the slug provided by your cloud administrator to find your
+                        tenant.</p>
+                </div>
+
                 <div class="flex items-center justify-between mb-2">
-                    <h2 class="text-xl font-semibold text-white">Select Cloud Tenant</h2>
-                    <button (click)="fetchTenants()"
-                        class="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Refresh
-                    </button>
+                    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Search Results</h2>
                 </div>
 
                 <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">

@@ -18,8 +18,8 @@ export function CreateInitialTenant(arg1, arg2) {
   return window['go']['main']['App']['CreateInitialTenant'](arg1, arg2);
 }
 
-export function FetchCloudTenants() {
-  return window['go']['main']['App']['FetchCloudTenants']();
+export function FetchCloudTenants(arg1) {
+  return window['go']['main']['App']['FetchCloudTenants'](arg1);
 }
 
 export function GetDBStatus() {

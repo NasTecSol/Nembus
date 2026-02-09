@@ -4,17 +4,18 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 @Component({
-  selector: 'app-setup',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './setup.component.html',
-  // styleUrl: './setup.component.scss'
+    selector: 'app-setup',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './setup.component.html',
+    // styleUrl: './setup.component.scss'
 })
-export class SetupComponent  {
+export class SetupComponent {
     step = 1;
     statusMessage = '';
     tenants: any[] = [];
     selectedTenant: any = null;
+    searchSlug: string = '';
 
     dbConfig = {
         username: 'postgres',
@@ -70,13 +71,22 @@ export class SetupComponent  {
     }
 
     async fetchTenants() {
-        this.statusMessage = 'Fetching tenants from cloud...';
+        if (!this.searchSlug) {
+            this.statusMessage = 'Please enter a tenant slug to search.';
+            return;
+        }
+
+        this.statusMessage = `Searching for tenant "${this.searchSlug}"...`;
         try {
             // @ts-ignore
-            const result = await window.go.main.App.FetchCloudTenants();
-            if (Array.isArray(result)) {
+            const result = await window.go.main.App.FetchCloudTenants(this.searchSlug);
+            if (result && typeof result === 'object' && !Array.isArray(result)) {
+                this.tenants = [result];
+                this.selectedTenant = result;
+            } else if (Array.isArray(result)) {
                 this.tenants = result;
             } else {
+                this.tenants = [];
                 this.statusMessage = 'Error: ' + result;
             }
         } catch (err) {
