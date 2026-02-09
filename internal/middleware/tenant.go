@@ -46,3 +46,14 @@ func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// MasterRepositoryMiddleware returns a Gin middleware that injects the master repository
+// This is used for public endpoints that need to access the master database
+func MasterRepositoryMiddleware(masterRepo *repository.Queries) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Injects the master repository into the request context
+		ctx := context.WithValue(c.Request.Context(), RepoKey, masterRepo)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
+}
