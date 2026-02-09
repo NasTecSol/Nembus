@@ -13,7 +13,7 @@ func RegisterTenantRoutes(r *gin.RouterGroup, h *handler.TenantHandler) {
 		tenants.POST("", h.CreateTenant)
 		tenants.GET("", h.ListActiveTenants)
 		tenants.GET("/all", h.ListAllTenants)
-		tenants.GET("/:slug", h.GetTenantBySlug)
+		// Note: GET /:slug is registered as a public route in main.go
 		tenants.PUT("/:id", h.UpdateTenant)
 
 		// Special cases

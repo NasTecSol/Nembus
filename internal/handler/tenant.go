@@ -87,11 +87,10 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 
 // GetTenantBySlug handles GET /tenants/:slug
 // @Summary      Get tenant by slug
-// @Description  Get active tenant by slug
+// @Description  Get active tenant by slug (public endpoint, no authentication required)
 // @Tags         tenants
 // @Accept       json
 // @Produce      json
-// @Security     BearerAuth
 // @Param        slug  path  string  true  "Tenant slug"
 // @Success      200  {object}  TenantResponse
 // @Failure      404  {object}  ErrorResponse
