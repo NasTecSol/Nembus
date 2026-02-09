@@ -23,7 +23,7 @@ INSERT INTO suppliers (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8
-) RETURNING id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at
+) RETURNING id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at
 `
 
 type CreateSupplierParams struct {
@@ -52,11 +52,17 @@ func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Name,
 		&i.Code,
+		&i.Name,
 		&i.SupplierType,
-		&i.PaymentTerms,
 		&i.CreditLimit,
+		&i.ContactPerson,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CurrencyCode,
+		&i.PaymentTerms,
+		&i.TaxID,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -76,7 +82,7 @@ func (q *Queries) DeleteSupplier(ctx context.Context, id int32) error {
 }
 
 const getSupplier = `-- name: GetSupplier :one
-SELECT id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at FROM suppliers
+SELECT id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at FROM suppliers
 WHERE id = $1
 `
 
@@ -86,11 +92,17 @@ func (q *Queries) GetSupplier(ctx context.Context, id int32) (Supplier, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Name,
 		&i.Code,
+		&i.Name,
 		&i.SupplierType,
-		&i.PaymentTerms,
 		&i.CreditLimit,
+		&i.ContactPerson,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CurrencyCode,
+		&i.PaymentTerms,
+		&i.TaxID,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -100,7 +112,7 @@ func (q *Queries) GetSupplier(ctx context.Context, id int32) (Supplier, error) {
 }
 
 const getSupplierByCode = `-- name: GetSupplierByCode :one
-SELECT id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at FROM suppliers
+SELECT id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at FROM suppliers
 WHERE organization_id = $1 AND code = $2
 `
 
@@ -115,11 +127,17 @@ func (q *Queries) GetSupplierByCode(ctx context.Context, arg GetSupplierByCodePa
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Name,
 		&i.Code,
+		&i.Name,
 		&i.SupplierType,
-		&i.PaymentTerms,
 		&i.CreditLimit,
+		&i.ContactPerson,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CurrencyCode,
+		&i.PaymentTerms,
+		&i.TaxID,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -129,7 +147,7 @@ func (q *Queries) GetSupplierByCode(ctx context.Context, arg GetSupplierByCodePa
 }
 
 const listActiveSuppliers = `-- name: ListActiveSuppliers :many
-SELECT id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at FROM suppliers
+SELECT id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at FROM suppliers
 WHERE organization_id = $1 AND is_active = true
 ORDER BY name
 `
@@ -146,11 +164,17 @@ func (q *Queries) ListActiveSuppliers(ctx context.Context, organizationID int32)
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
-			&i.Name,
 			&i.Code,
+			&i.Name,
 			&i.SupplierType,
-			&i.PaymentTerms,
 			&i.CreditLimit,
+			&i.ContactPerson,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.CurrencyCode,
+			&i.PaymentTerms,
+			&i.TaxID,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -167,7 +191,7 @@ func (q *Queries) ListActiveSuppliers(ctx context.Context, organizationID int32)
 }
 
 const listSuppliers = `-- name: ListSuppliers :many
-SELECT id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at FROM suppliers
+SELECT id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at FROM suppliers
 WHERE organization_id = $1
 ORDER BY name
 `
@@ -184,11 +208,17 @@ func (q *Queries) ListSuppliers(ctx context.Context, organizationID int32) ([]Su
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
-			&i.Name,
 			&i.Code,
+			&i.Name,
 			&i.SupplierType,
-			&i.PaymentTerms,
 			&i.CreditLimit,
+			&i.ContactPerson,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.CurrencyCode,
+			&i.PaymentTerms,
+			&i.TaxID,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -205,7 +235,7 @@ func (q *Queries) ListSuppliers(ctx context.Context, organizationID int32) ([]Su
 }
 
 const listSuppliersByType = `-- name: ListSuppliersByType :many
-SELECT id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at FROM suppliers
+SELECT id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at FROM suppliers
 WHERE organization_id = $1 AND supplier_type = $2
 ORDER BY name
 `
@@ -227,11 +257,17 @@ func (q *Queries) ListSuppliersByType(ctx context.Context, arg ListSuppliersByTy
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
-			&i.Name,
 			&i.Code,
+			&i.Name,
 			&i.SupplierType,
-			&i.PaymentTerms,
 			&i.CreditLimit,
+			&i.ContactPerson,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.CurrencyCode,
+			&i.PaymentTerms,
+			&i.TaxID,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -248,7 +284,7 @@ func (q *Queries) ListSuppliersByType(ctx context.Context, arg ListSuppliersByTy
 }
 
 const searchSuppliers = `-- name: SearchSuppliers :many
-SELECT id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at FROM suppliers
+SELECT id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at FROM suppliers
 WHERE organization_id = $1 
   AND (name ILIKE $2 OR code ILIKE $2)
 ORDER BY name
@@ -273,11 +309,17 @@ func (q *Queries) SearchSuppliers(ctx context.Context, arg SearchSuppliersParams
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
-			&i.Name,
 			&i.Code,
+			&i.Name,
 			&i.SupplierType,
-			&i.PaymentTerms,
 			&i.CreditLimit,
+			&i.ContactPerson,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.CurrencyCode,
+			&i.PaymentTerms,
+			&i.TaxID,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -297,7 +339,7 @@ const toggleSupplierActive = `-- name: ToggleSupplierActive :one
 UPDATE suppliers
 SET is_active = $2
 WHERE id = $1
-RETURNING id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at
 `
 
 type ToggleSupplierActiveParams struct {
@@ -311,11 +353,17 @@ func (q *Queries) ToggleSupplierActive(ctx context.Context, arg ToggleSupplierAc
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Name,
 		&i.Code,
+		&i.Name,
 		&i.SupplierType,
-		&i.PaymentTerms,
 		&i.CreditLimit,
+		&i.ContactPerson,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CurrencyCode,
+		&i.PaymentTerms,
+		&i.TaxID,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -334,7 +382,7 @@ SET
     is_active = $6,
     metadata = $7
 WHERE id = $1
-RETURNING id, organization_id, name, code, supplier_type, payment_terms, credit_limit, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, code, name, supplier_type, credit_limit, contact_person, email, phone, address, currency_code, payment_terms, tax_id, is_active, metadata, created_at, updated_at
 `
 
 type UpdateSupplierParams struct {
@@ -361,11 +409,17 @@ func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Name,
 		&i.Code,
+		&i.Name,
 		&i.SupplierType,
-		&i.PaymentTerms,
 		&i.CreditLimit,
+		&i.ContactPerson,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CurrencyCode,
+		&i.PaymentTerms,
+		&i.TaxID,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,

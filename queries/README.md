@@ -4,7 +4,7 @@ This directory contains the raw SQL query definitions used by [SQLC](https://sql
 
 ## 📂 Directory Contents
 
-- **`*.sql`**: Each file contains SQL queries for a specific module or entity (e.g., `users.sql`, `products.sql`, `orders.sql`).
+- **`*.sql`**: Each file contains SQL queries for a specific module or entity (e.g., `users.sql`, `products.sql`, `orders.sql`, `restaurant.sql`).
 - Queries are annotated with SQLC-specific comments to define function names and return types.
 
 ## ✍️ Writing Queries

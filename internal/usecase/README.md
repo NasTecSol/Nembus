@@ -46,6 +46,7 @@ Each file in this directory should correspond to a logical domain:
 - `user_usecase.go`: User management, registration, and role assignment.
 - `auth_usecase.go`: Authentication and token generation logic.
 - `pos_usecase.go`: Point of Sale specific business logic.
+- `restaurant_usecase.go`: Restaurant-specific logic (tables, menu management, orders).
 - ...and so on.
 
 ## ⚠️ Guidelines

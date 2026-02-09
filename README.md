@@ -1,7 +1,7 @@
 # NEMBUS Backend  
 **Nasar Entity-driven Modular Business Unified System**
 
-A scalable, clean-architecture backend built with **Go**, **PostgreSQL**, **SQLC**, and **Gin**, designed for enterprise-grade business systems such as ERP, HR, POS, and IAM platforms.
+A scalable, clean-architecture backend built with **Go**, **PostgreSQL**, **SQLC**, and **Gin**, designed for enterprise-grade business systems such as ERP, Retail, and **Restaurant/Cafe** platforms.
 
 ---
 
@@ -47,6 +47,8 @@ This project follows **Clean Architecture principles** with a focus on:
 ├── migrations/              # Database migration files (Goose format)
 ├── queries/                 # SQLC query definitions (.sql files)
 ├── scripts/                 # Utility scripts for development/deployment
+│   ├── init-Data-Dump.sql            # Core retail/wholesale master data
+│   └── init-Restaurant-Data-Dump.sql # Restaurant-specific master data (menus, ingredients, tables)
 ├── utils/                   # Shared utility functions
 ├── .env.dev                 # Local development environment variables
 ├── ENVIRONMENTS.md          # Guide for environment setup

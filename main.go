@@ -164,6 +164,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		storeHandler := handler.NewStoreHandler(storesUC)
 		router.RegisterStoreRoutes(api, storeHandler)
 
+		restaurantHandler := handler.NewRestaurantHandler(restaurantUC)
+		router.RegisterRestaurantRoutes(api, restaurantHandler)
+
 	}
 
 	return r
@@ -243,6 +246,7 @@ func main() {
 	storageLocationsUC := usecase.NewStorageLocationsUseCase()
 	tenantUC := usecase.NewTenantUseCase()
 	storesUC := usecase.NewStoreUseCase()
+	restaurantUC := usecase.NewRestaurantUseCase()
 
 	// Setup Router
 	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cfg)
