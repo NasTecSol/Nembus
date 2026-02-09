@@ -1,0 +1,197 @@
+<div class="min-h-screen bg-[#0f172a] text-slate-200 flex flex-col items-center justify-center p-4">
+    <div
+        class="max-w-2xl w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden">
+        <!-- Header -->
+        <div
+            class="p-8 border-b border-slate-700/50 flex items-center gap-4 bg-gradient-to-r from-blue-600/10 to-transparent">
+            <div class="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
+                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">NEMBUS Setup Wizard</h1>
+                <p class="text-slate-400 text-sm">Configure your embedded PostgreSQL environment</p>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="p-8">
+            <div *ngIf="step === 1" class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <h2 class="text-xl font-semibold text-white">Welcome</h2>
+                <p class="text-slate-300 leading-relaxed">
+                    NEMBUS now uses an embedded PostgreSQL database. This allows for a fully portable experience on
+                    Windows
+                    without requiring a system-wide database installation.
+                </p>
+                <div class="bg-blue-600/10 border border-blue-500/20 rounded-xl p-4 flex gap-3">
+                    <svg class="w-5 h-5 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-sm text-blue-300">
+                        The database binaries and data will be stored in your local application directory.
+                    </p>
+                </div>
+                <button (click)="nextStep()"
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]">
+                    Get Started
+                </button>
+            </div>
+
+            <div *ngIf="step === 2" class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <h2 class="text-xl font-semibold text-white">Database Settings</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2 col-span-2">
+                        <label class="text-sm font-medium text-slate-400">Database Name</label>
+                        <input [(ngModel)]="dbConfig.database"
+                            class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-slate-400">Username</label>
+                        <input [(ngModel)]="dbConfig.username"
+                            class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-slate-400">Password</label>
+                        <input type="password" [(ngModel)]="dbConfig.password"
+                            class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all">
+                    </div>
+                    <div class="space-y-2 col-span-2">
+                        <label class="text-sm font-medium text-slate-400">Port</label>
+                        <input type="number" [(ngModel)]="dbConfig.port"
+                            class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all">
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <button (click)="prevStep()"
+                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl transition-all active:scale-[0.98]">
+                        Back
+                    </button>
+                    <button (click)="startSetup()"
+                        class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]">
+                        Initialize Database
+                    </button>
+                </div>
+            </div>
+
+            <div *ngIf="step === 3"
+                class="space-y-8 py-8 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="relative">
+                    <div class="w-20 h-20 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin">
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <svg class="w-8 h-8 text-blue-500 animate-pulse" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 7v10l8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-center space-y-2">
+                    <h2 class="text-xl font-semibold text-white">Initializing...</h2>
+                    <p class="text-slate-400">Starting embedded PostgreSQL and preparing schema</p>
+                    <p class="text-xs text-slate-500 font-mono mt-4">{{statusMessage}}</p>
+                </div>
+            </div>
+
+            <div *ngIf="step === 4" class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-xl font-semibold text-white">Select Cloud Tenant</h2>
+                    <button (click)="fetchTenants()"
+                        class="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+
+                <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div *ngIf="tenants.length === 0"
+                        class="text-center py-8 text-slate-500 border-2 border-dashed border-slate-700 rounded-xl">
+                        No tenants found on cloud.
+                    </div>
+                    <div *ngFor="let t of tenants" (click)="selectTenant(t)"
+                        [class]="'group cursor-pointer p-4 rounded-xl border transition-all ' + (selectedTenant?.slug === t.slug ? 'bg-blue-600/20 border-blue-500 shadow-lg shadow-blue-600/10' : 'bg-slate-900/30 border-slate-700/50 hover:bg-slate-800/50')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="font-bold text-white group-hover:text-blue-300 transition-colors">
+                                    {{t.tenant_name}}</h3>
+                                <p class="text-xs text-slate-500 font-mono mt-0.5">{{t.slug}}</p>
+                            </div>
+                            <div *ngIf="selectedTenant?.slug === t.slug"
+                                class="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center animate-in zoom-in duration-300">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 pt-2">
+                    <button (click)="prevStep()"
+                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98]">
+                        Back
+                    </button>
+                    <button (click)="confirmClone()" [disabled]="!selectedTenant"
+                        [class]="'flex-[2] font-semibold py-3.5 rounded-xl transition-all shadow-lg active:scale-[0.98] ' + (selectedTenant ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20' : 'bg-slate-700 text-slate-500 cursor-not-allowed')">
+                        Select & Clone Tenant
+                    </button>
+                </div>
+            </div>
+
+            <div *ngIf="step === 5"
+                class="space-y-8 py-8 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="relative">
+                    <div class="w-20 h-20 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin">
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <svg class="w-10 h-10 text-blue-500 animate-pulse" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-center space-y-2">
+                    <h2 class="text-xl font-semibold text-white">Cloning Data...</h2>
+                    <p class="text-slate-400">Pulling master records from Cloud ERP</p>
+                    <p class="text-xs text-slate-500 font-mono mt-4">{{statusMessage}}</p>
+                </div>
+            </div>
+
+            <div *ngIf="step === 7"
+                class="space-y-6 flex flex-col items-center py-4 animate-in fade-in zoom-in duration-500">
+                <div
+                    class="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/20 mb-2">
+                    <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <div class="text-center space-y-2">
+                    <h2 class="text-3xl font-bold text-white tracking-tight">Setup Complete!</h2>
+                    <p class="text-slate-400 text-lg">Your tenant has been cloned and is ready for use.</p>
+                </div>
+                <button (click)="launchApp()"
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-4 rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98] mt-4">
+                    Enter Application
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-8 py-4 bg-slate-900/30 border-t border-slate-700/50 flex justify-between items-center">
+            <div class="flex gap-1.5">
+                <div *ngFor="let s of [1,2,3,4,5,6,7]"
+                    [class]="'w-2 h-2 rounded-full transition-all duration-500 ' + (step >= s ? 'bg-blue-500 w-4' : 'bg-slate-700')">
+                </div>
+            </div>
+            <span class="text-[10px] font-medium uppercase tracking-widest text-slate-500">Step {{step}} of 7</span>
+        </div>
+    </div>
+</div>
