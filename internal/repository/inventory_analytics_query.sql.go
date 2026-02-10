@@ -34,13 +34,13 @@ INSERT INTO inventory_analytics (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18
-) RETURNING id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at
+) RETURNING id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at
 `
 
 type CreateInventoryAnalyticsParams struct {
 	OrganizationID     int32          `json:"organization_id"`
-	StoreID            int32          `json:"store_id"`
-	ProductID          int32          `json:"product_id"`
+	StoreID            pgtype.Int4    `json:"store_id"`
+	ProductID          pgtype.Int4    `json:"product_id"`
 	CategoryID         pgtype.Int4    `json:"category_id"`
 	Date               pgtype.Date    `json:"date"`
 	Month              pgtype.Int4    `json:"month"`
@@ -91,14 +91,20 @@ func (q *Queries) CreateInventoryAnalytics(ctx context.Context, arg CreateInvent
 		&i.Quarter,
 		&i.Year,
 		&i.OpeningStock,
-		&i.ClosingStock,
-		&i.AverageStock,
-		&i.StockValue,
+		&i.StockIn,
+		&i.StockOut,
 		&i.Receipts,
 		&i.Issues,
 		&i.Adjustments,
+		&i.ClosingStock,
+		&i.AverageStock,
+		&i.StockValue,
+		&i.TurnoverRate,
 		&i.StockTurnoverRatio,
 		&i.DaysOfInventory,
+		&i.DaysInStock,
+		&i.LowStockAlerts,
+		&i.OutOfStockDays,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -141,10 +147,10 @@ type GetFastMovingProductsParams struct {
 }
 
 type GetFastMovingProductsRow struct {
-	ProductID          int32   `json:"product_id"`
-	AvgTurnoverRatio   float64 `json:"avg_turnover_ratio"`
-	AvgDaysOfInventory float64 `json:"avg_days_of_inventory"`
-	TotalIssues        int64   `json:"total_issues"`
+	ProductID          pgtype.Int4 `json:"product_id"`
+	AvgTurnoverRatio   float64     `json:"avg_turnover_ratio"`
+	AvgDaysOfInventory float64     `json:"avg_days_of_inventory"`
+	TotalIssues        int64       `json:"total_issues"`
 }
 
 func (q *Queries) GetFastMovingProducts(ctx context.Context, arg GetFastMovingProductsParams) ([]GetFastMovingProductsRow, error) {
@@ -179,7 +185,7 @@ func (q *Queries) GetFastMovingProducts(ctx context.Context, arg GetFastMovingPr
 }
 
 const getInventoryAnalytics = `-- name: GetInventoryAnalytics :one
-SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at FROM inventory_analytics
+SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at FROM inventory_analytics
 WHERE id = $1
 `
 
@@ -197,14 +203,20 @@ func (q *Queries) GetInventoryAnalytics(ctx context.Context, id int32) (Inventor
 		&i.Quarter,
 		&i.Year,
 		&i.OpeningStock,
-		&i.ClosingStock,
-		&i.AverageStock,
-		&i.StockValue,
+		&i.StockIn,
+		&i.StockOut,
 		&i.Receipts,
 		&i.Issues,
 		&i.Adjustments,
+		&i.ClosingStock,
+		&i.AverageStock,
+		&i.StockValue,
+		&i.TurnoverRate,
 		&i.StockTurnoverRatio,
 		&i.DaysOfInventory,
+		&i.DaysInStock,
+		&i.LowStockAlerts,
+		&i.OutOfStockDays,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -213,7 +225,7 @@ func (q *Queries) GetInventoryAnalytics(ctx context.Context, id int32) (Inventor
 }
 
 const getInventoryAnalyticsByDateRange = `-- name: GetInventoryAnalyticsByDateRange :many
-SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at FROM inventory_analytics
+SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at FROM inventory_analytics
 WHERE organization_id = $1
   AND date >= $2 AND date <= $3
 ORDER BY date DESC
@@ -245,14 +257,20 @@ func (q *Queries) GetInventoryAnalyticsByDateRange(ctx context.Context, arg GetI
 			&i.Quarter,
 			&i.Year,
 			&i.OpeningStock,
-			&i.ClosingStock,
-			&i.AverageStock,
-			&i.StockValue,
+			&i.StockIn,
+			&i.StockOut,
 			&i.Receipts,
 			&i.Issues,
 			&i.Adjustments,
+			&i.ClosingStock,
+			&i.AverageStock,
+			&i.StockValue,
+			&i.TurnoverRate,
 			&i.StockTurnoverRatio,
 			&i.DaysOfInventory,
+			&i.DaysInStock,
+			&i.LowStockAlerts,
+			&i.OutOfStockDays,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -268,7 +286,7 @@ func (q *Queries) GetInventoryAnalyticsByDateRange(ctx context.Context, arg GetI
 }
 
 const getInventoryAnalyticsByProduct = `-- name: GetInventoryAnalyticsByProduct :many
-SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at FROM inventory_analytics
+SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at FROM inventory_analytics
 WHERE organization_id = $1 AND product_id = $2
   AND date >= $3 AND date <= $4
 ORDER BY date DESC
@@ -276,7 +294,7 @@ ORDER BY date DESC
 
 type GetInventoryAnalyticsByProductParams struct {
 	OrganizationID int32       `json:"organization_id"`
-	ProductID      int32       `json:"product_id"`
+	ProductID      pgtype.Int4 `json:"product_id"`
 	Date           pgtype.Date `json:"date"`
 	Date_2         pgtype.Date `json:"date_2"`
 }
@@ -306,14 +324,20 @@ func (q *Queries) GetInventoryAnalyticsByProduct(ctx context.Context, arg GetInv
 			&i.Quarter,
 			&i.Year,
 			&i.OpeningStock,
-			&i.ClosingStock,
-			&i.AverageStock,
-			&i.StockValue,
+			&i.StockIn,
+			&i.StockOut,
 			&i.Receipts,
 			&i.Issues,
 			&i.Adjustments,
+			&i.ClosingStock,
+			&i.AverageStock,
+			&i.StockValue,
+			&i.TurnoverRate,
 			&i.StockTurnoverRatio,
 			&i.DaysOfInventory,
+			&i.DaysInStock,
+			&i.LowStockAlerts,
+			&i.OutOfStockDays,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -329,7 +353,7 @@ func (q *Queries) GetInventoryAnalyticsByProduct(ctx context.Context, arg GetInv
 }
 
 const getInventoryAnalyticsByStore = `-- name: GetInventoryAnalyticsByStore :many
-SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at FROM inventory_analytics
+SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at FROM inventory_analytics
 WHERE organization_id = $1 AND store_id = $2
   AND date >= $3 AND date <= $4
 ORDER BY date DESC
@@ -337,7 +361,7 @@ ORDER BY date DESC
 
 type GetInventoryAnalyticsByStoreParams struct {
 	OrganizationID int32       `json:"organization_id"`
-	StoreID        int32       `json:"store_id"`
+	StoreID        pgtype.Int4 `json:"store_id"`
 	Date           pgtype.Date `json:"date"`
 	Date_2         pgtype.Date `json:"date_2"`
 }
@@ -367,14 +391,20 @@ func (q *Queries) GetInventoryAnalyticsByStore(ctx context.Context, arg GetInven
 			&i.Quarter,
 			&i.Year,
 			&i.OpeningStock,
-			&i.ClosingStock,
-			&i.AverageStock,
-			&i.StockValue,
+			&i.StockIn,
+			&i.StockOut,
 			&i.Receipts,
 			&i.Issues,
 			&i.Adjustments,
+			&i.ClosingStock,
+			&i.AverageStock,
+			&i.StockValue,
+			&i.TurnoverRate,
 			&i.StockTurnoverRatio,
 			&i.DaysOfInventory,
+			&i.DaysInStock,
+			&i.LowStockAlerts,
+			&i.OutOfStockDays,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -471,10 +501,10 @@ type GetSlowMovingProductsParams struct {
 }
 
 type GetSlowMovingProductsRow struct {
-	ProductID          int32   `json:"product_id"`
-	AvgTurnoverRatio   float64 `json:"avg_turnover_ratio"`
-	AvgDaysOfInventory float64 `json:"avg_days_of_inventory"`
-	TotalStock         int64   `json:"total_stock"`
+	ProductID          pgtype.Int4 `json:"product_id"`
+	AvgTurnoverRatio   float64     `json:"avg_turnover_ratio"`
+	AvgDaysOfInventory float64     `json:"avg_days_of_inventory"`
+	TotalStock         int64       `json:"total_stock"`
 }
 
 func (q *Queries) GetSlowMovingProducts(ctx context.Context, arg GetSlowMovingProductsParams) ([]GetSlowMovingProductsRow, error) {
@@ -509,7 +539,7 @@ func (q *Queries) GetSlowMovingProducts(ctx context.Context, arg GetSlowMovingPr
 }
 
 const listInventoryAnalytics = `-- name: ListInventoryAnalytics :many
-SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at FROM inventory_analytics
+SELECT id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at FROM inventory_analytics
 WHERE organization_id = $1
 ORDER BY date DESC
 LIMIT $2 OFFSET $3
@@ -541,14 +571,20 @@ func (q *Queries) ListInventoryAnalytics(ctx context.Context, arg ListInventoryA
 			&i.Quarter,
 			&i.Year,
 			&i.OpeningStock,
-			&i.ClosingStock,
-			&i.AverageStock,
-			&i.StockValue,
+			&i.StockIn,
+			&i.StockOut,
 			&i.Receipts,
 			&i.Issues,
 			&i.Adjustments,
+			&i.ClosingStock,
+			&i.AverageStock,
+			&i.StockValue,
+			&i.TurnoverRate,
 			&i.StockTurnoverRatio,
 			&i.DaysOfInventory,
+			&i.DaysInStock,
+			&i.LowStockAlerts,
+			&i.OutOfStockDays,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -577,7 +613,7 @@ SET
     days_of_inventory = $10,
     metadata = $11
 WHERE id = $1
-RETURNING id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, closing_stock, average_stock, stock_value, receipts, issues, adjustments, stock_turnover_ratio, days_of_inventory, metadata, created_at, updated_at
+RETURNING id, organization_id, store_id, product_id, category_id, date, month, quarter, year, opening_stock, stock_in, stock_out, receipts, issues, adjustments, closing_stock, average_stock, stock_value, turnover_rate, stock_turnover_ratio, days_of_inventory, days_in_stock, low_stock_alerts, out_of_stock_days, metadata, created_at, updated_at
 `
 
 type UpdateInventoryAnalyticsParams struct {
@@ -620,14 +656,20 @@ func (q *Queries) UpdateInventoryAnalytics(ctx context.Context, arg UpdateInvent
 		&i.Quarter,
 		&i.Year,
 		&i.OpeningStock,
-		&i.ClosingStock,
-		&i.AverageStock,
-		&i.StockValue,
+		&i.StockIn,
+		&i.StockOut,
 		&i.Receipts,
 		&i.Issues,
 		&i.Adjustments,
+		&i.ClosingStock,
+		&i.AverageStock,
+		&i.StockValue,
+		&i.TurnoverRate,
 		&i.StockTurnoverRatio,
 		&i.DaysOfInventory,
+		&i.DaysInStock,
+		&i.LowStockAlerts,
+		&i.OutOfStockDays,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,

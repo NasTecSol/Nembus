@@ -58,135 +58,107 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cfg *config.Config) *gin.Engine {
-	// Set Gin mode based on environment
+func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, uomUC *usecase.UOMUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Create router
 	r := gin.Default()
 
-	// -------------------------
-	// CORS Middleware (DROP-IN)
-	// -------------------------
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200") // allow all origins in dev
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
-		// Handle preflight OPTIONS request
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
 		}
 		c.Next()
-
 	})
 
-	// Apply logger middleware globally to all routes
 	r.Use(middleware.LoggerMiddleware())
-
-	// Swagger documentation endpoint
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// Public Routes (e.g., Health Check)
 	r.GET("/health", healthCheck)
 
-	// Dev Routes (only available in development mode)
 	if cfg.Env == "development" || cfg.Env == "dev" {
 		devHandler := handler.NewDevHandler()
 		r.GET("/dev/token", devHandler.GetDevToken)
 	}
 
-	// Public Auth Routes (Login - requires tenant but not JWT)
 	auth := r.Group("/api/auth")
-	auth.Use(middleware.TenantMiddleware(tenantManager)) // Tenant middleware for repository access
+	auth.Use(middleware.TenantMiddleware(tenantManager))
 	{
 		authHandler := handler.NewAuthHandler(authUC)
 		auth.POST("/login", authHandler.Login)
 	}
 
-	// Public Tenant Routes (no authentication required)
 	publicTenants := r.Group("/api/tenants")
-	publicTenants.Use(middleware.MasterRepositoryMiddleware(masterRepo)) // Master repository middleware
+	publicTenants.Use(middleware.MasterRepositoryMiddleware(masterRepo))
 	{
 		tenantHandler := handler.NewTenantHandler(tenantUC)
-		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug) // Public endpoint to get tenant by slug
+		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug)
 	}
 
-	// Tenant-Specific Routes (Wrapped in TenantMiddleware and JWT Auth)
-	// These routes require the 'x-tenant-id' header and JWT authentication
 	api := r.Group("/api")
-	api.Use(middleware.JWTAuthMiddleware())             // JWT authentication first
-	api.Use(middleware.TenantMiddleware(tenantManager)) // Then tenant middleware
+	api.Use(middleware.JWTAuthMiddleware())
+	api.Use(middleware.TenantMiddleware(tenantManager))
 	{
-		// Initialize handlers (they will get repo from context)
 		userHandler := handler.NewUserHandler(userUC)
 		router.RegisterUserRoutes(api, userHandler)
 		moduleHandler := handler.NewModuleHandler(moduleUC)
 		router.RegisterModuleRoutes(api, moduleHandler)
 		imageHandler := handler.NewImageHandler(imageUC)
 		router.RegisterImageRoutes(api, imageHandler)
-
 		organizationHandler := handler.NewOrganizationHandler(orgUC)
 		router.RegisterOrganizationRoutes(api, organizationHandler)
-
 		navigationHandler := handler.NewNavigationHandler(navigationUC, roleUC, userUC)
 		router.RegisterNavigationRoutes(api, navigationHandler)
-
 		permissionHandler := handler.NewPermissionHandler(permissionUC)
 		router.RegisterPermissionRoutes(api, permissionHandler)
-
 		roleHandler := handler.NewRoleHandler(roleUC)
 		router.RegisterRoleRoutes(api, roleHandler)
-
 		menuHandler := handler.NewMenuHandler(menuUC)
 		router.RegisterMenuRoutes(api, menuHandler)
-
 		submenuHandler := handler.NewSubmenuHandler(submenuUC)
 		router.RegisterSubmenuRoutes(api, submenuHandler)
-
 		posHandler := handler.NewPosHandler(posUC)
 		router.RegisterPosRoutes(api, posHandler)
-		// POS Terminals: GET/POST /api/pos/terminals, GET/PUT/DELETE/PATCH /api/pos/terminals/:id, store-scoped list/get by code
 		posTerminalsHandler := handler.NewPosTerminalsHandler(posTerminalsUC)
 		router.RegisterPosTerminalsRoutes(api, posTerminalsHandler)
-
 		storageLocationsHandler := handler.NewStorageLocationsHandler(storageLocationsUC)
 		router.RegisterStorageLocationsRoutes(api, storageLocationsHandler)
-
 		tenantHandler := handler.NewTenantHandler(tenantUC)
 		router.RegisterTenantRoutes(api, tenantHandler)
-
 		storeHandler := handler.NewStoreHandler(storesUC)
 		router.RegisterStoreRoutes(api, storeHandler)
+		priceListsHandler := handler.NewPriceListsHandler(priceListsUC)
+		router.RegisterPriceListRoutes(api, priceListsHandler)
+		taxCategoriesHandler := handler.NewTaxCategoriesHandler(taxCategoriesUC)
+		router.RegisterTaxCategoryRoutes(api, taxCategoriesHandler)
+		uomHandler := handler.NewUOMHandler(uomUC)
+		router.RegisterUOMRoutes(api, uomHandler)
+		restaurantHandler := handler.NewRestaurantHandler(restaurantUC)
+		router.RegisterRestaurantRoutes(api, restaurantHandler)
 
+		// [NEW] Cart and Order Modules
+		cartHandler := handler.NewCartHandler(cartUC)
+		router.RegisterCartRoutes(api, cartHandler)
+		orderHandler := handler.NewOrderHandler(orderUC)
+		router.RegisterOrderRoutes(api, orderHandler)
 	}
 
 	return r
 }
 
-// healthCheck handles the health check endpoint
-// @Summary      Health check
-// @Description  Returns the health status of the API
-// @Tags         health
-// @Accept       json
-// @Produce      json
-// @Success      200  {object}  map[string]string  "status"
-// @Router       /health [get]
 func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
 }
 
 func main() {
-
-	// Serve files under the "images" folder
-	// Get environment from command line or default to development
-	//env := os.Getenv("ENV")
-	env := "development" // default
+	env := "development"
 	if len(os.Args) > 1 {
 		arg := os.Args[1]
 		switch arg {
@@ -196,38 +168,24 @@ func main() {
 			env = "dev"
 		case "prod":
 			env = "prod"
-		default:
-			log.Fatalf("Unknown environment: %s. Use dev, stg, or prod.", arg)
 		}
 	} else if os.Getenv("ENV") != "" {
 		env = os.Getenv("ENV")
 	}
-	if env == "" {
-		env = "development"
-	}
-	// Load configuration based on environment
+
 	cfg := config.LoadConfig(env)
-	//log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
-	// 3️⃣ Print startup info
-	log.Printf("===================================")
-	log.Printf("🚀 Starting NEMBUS\n")
-	log.Printf("Environment : %s\n", cfg.Env)
-	log.Printf("Port        : %s\n", cfg.Port)
-	log.Println("===================================")
+	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
 
 	ctx := context.Background()
-
-	// Setup Master Database Connection
 	masterPool, masterRepo, err := setupDatabase(ctx, cfg)
 	if err != nil {
 		log.Fatalf("Unable to connect to Master DB: %v", err)
 	}
 	defer masterPool.Close()
 
-	// Initialize Tenant Manager
 	tenantManager := manager.NewManager(masterRepo)
 
-	// Initialize Use Cases (without repository - will be injected per request)
+	// Initialize Use Cases
 	userUC := usecase.NewUserUseCase()
 	orgUC := usecase.NewOrganizationUseCase()
 	authUC := usecase.NewAuthUseCase()
@@ -243,9 +201,17 @@ func main() {
 	storageLocationsUC := usecase.NewStorageLocationsUseCase()
 	tenantUC := usecase.NewTenantUseCase()
 	storesUC := usecase.NewStoreUseCase()
+	restaurantUC := usecase.NewRestaurantUseCase()
+	uomUC := usecase.NewUOMUseCase()
+	priceListsUC := usecase.NewPriceListsUseCase()
+	taxCategoriesUC := usecase.NewTaxCategoriesUseCase()
+
+	// [NEW]
+	cartUC := usecase.NewCartUseCase()
+	orderUC := usecase.NewOrderUseCase()
 
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cfg)
+	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, uomUC, priceListsUC, taxCategoriesUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 

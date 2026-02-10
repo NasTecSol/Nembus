@@ -87,3 +87,7 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
   - `GET /api/employees` - List all employees
   - `GET /api/employees/{id}` - Get employee by ID
   - `POST /api/employees` - Create new employee
+- **Restaurant**:
+  - `GET /api/restaurant/tables` - List tables
+  - `GET /api/restaurant/orders/{order_id}` - Get order by specific ID
+  - `POST /api/restaurant/orders` - Create restaurant order

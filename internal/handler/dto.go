@@ -513,3 +513,468 @@ type RevokeRoleRequest struct {
 type RevokeStoreAccessRequest struct {
 	StoreID int32 `json:"store_id" binding:"required" example:"10"`
 }
+
+// =====================================================
+// Restaurant Module
+// =====================================================
+
+type CreateRestaurantTableRequest struct {
+	StoreID     int32  `json:"store_id" binding:"required"`
+	TableNumber string `json:"table_number" binding:"required"`
+	TableName   string `json:"table_name"`
+	Section     string `json:"section"`
+	Capacity    int32  `json:"capacity"`
+	IsActive    bool   `json:"is_active"`
+	Metadata    string `json:"metadata"`
+}
+
+type CreateMenuCategoryRequest struct {
+	StoreID          int32  `json:"store_id" binding:"required"`
+	ParentCategoryID *int32 `json:"parent_category_id"`
+	Name             string `json:"name" binding:"required"`
+	Code             string `json:"code" binding:"required"`
+	Description      string `json:"description"`
+	CategoryLevel    int32  `json:"category_level"`
+	DisplayOrder     int32  `json:"display_order"`
+	Icon             string `json:"icon"`
+	ImageUrl         string `json:"image_url"`
+	IsActive         bool   `json:"is_active"`
+	Metadata         string `json:"metadata"`
+}
+
+type CreateMenuItemRequest struct {
+	StoreID            int32  `json:"store_id" binding:"required"`
+	MenuCategoryID     int32  `json:"menu_category_id" binding:"required"`
+	ProductID          *int32 `json:"product_id"`
+	RecipeID           *int32 `json:"recipe_id"`
+	Name               string `json:"name" binding:"required"`
+	ShortName          string `json:"short_name"`
+	Description        string `json:"description"`
+	ImageUrl           string `json:"image_url"`
+	BasePrice          string `json:"base_price" binding:"required"`
+	PreparationTimeMin int32  `json:"preparation_time_min"`
+	TaxCategoryID      *int32 `json:"tax_category_id"`
+	IsAvailable        bool   `json:"is_available"`
+	IsActive           bool   `json:"is_active"`
+	DisplayOrder       int32  `json:"display_order"`
+	Metadata           string `json:"metadata"`
+}
+
+type CreateRecipeRequest struct {
+	OrganizationID      int32  `json:"organization_id" binding:"required"`
+	RecipeCode          string `json:"recipe_code" binding:"required"`
+	RecipeName          string `json:"recipe_name" binding:"required"`
+	Description         string `json:"description"`
+	FinishedProductID   *int32 `json:"finished_product_id"`
+	YieldQuantity       string `json:"yield_quantity"`
+	YieldUomID          *int32 `json:"yield_uom_id"`
+	PreparationSteps    string `json:"preparation_steps"`
+	PreparationTimeMin  int32  `json:"preparation_time_min"`
+	CookingTimeMin      int32  `json:"cooking_time_min"`
+	IsActive            bool   `json:"is_active"`
+	Metadata            string `json:"metadata"`
+}
+
+type CreateRecipeIngredientRequest struct {
+	RecipeID         int32  `json:"recipe_id"`
+	ProductID        int32  `json:"product_id" binding:"required"`
+	ProductVariantID *int32 `json:"product_variant_id"`
+	Quantity         string `json:"quantity" binding:"required"`
+	UomID            *int32 `json:"uom_id"`
+	IsOptional       bool   `json:"is_optional"`
+	IsByproduct      bool   `json:"is_byproduct"`
+	LineNumber       int32  `json:"line_number"`
+	Metadata         string `json:"metadata"`
+}
+
+type CreateRestaurantOrderRequest struct {
+	StoreID          int32  `json:"store_id" binding:"required"`
+	TableID          *int32 `json:"table_id"`
+	CashierID        *int32 `json:"cashier_id"`
+	CashierSessionID *int32 `json:"cashier_session_id"`
+	CustomerID       *int32 `json:"customer_id"`
+	OrderNumber      string `json:"order_number"`
+	OrderSource      string `json:"order_source"`
+	Status           string `json:"status"`
+	Subtotal         string `json:"subtotal"`
+	DiscountAmount   string `json:"discount_amount"`
+	TaxAmount        string `json:"tax_amount"`
+	TotalAmount      string `json:"total_amount"`
+	AmountPaid       string `json:"amount_paid"`
+	ChangeGiven      string `json:"change_given"`
+	Notes            string `json:"notes"`
+	PosTransactionID *int32 `json:"pos_transaction_id"`
+	Metadata         string `json:"metadata"`
+}
+
+type CreateMenuItemModifierRequest struct {
+	MenuItemID      int32  `json:"menu_item_id" binding:"required"`
+	ModifierName    string `json:"modifier_name" binding:"required"`
+	ModifierType    string `json:"modifier_type"`
+	PriceAdjustment string `json:"price_adjustment"`
+	IsActive        bool   `json:"is_active"`
+	DisplayOrder    int32  `json:"display_order"`
+	Metadata        string `json:"metadata"`
+}
+
+type CreateWasteLogRequest struct {
+	StoreID     int32  `json:"store_id" binding:"required"`
+	ProductID   *int32 `json:"product_id"`
+	MenuItemID  *int32 `json:"menu_item_id"`
+	RecipeID    *int32 `json:"recipe_id"`
+	WasteSource string `json:"waste_source"`
+	Quantity    string `json:"quantity" binding:"required"`
+	UomID       *int32 `json:"uom_id"`
+	UnitCost    string `json:"unit_cost"`
+	TotalCost   string `json:"total_cost"`
+	Reason      string `json:"reason"`
+	LoggedBy    *int32 `json:"logged_by"`
+	OrderID     *int32 `json:"order_id"`
+	WastedAt    string `json:"wasted_at"`
+	Metadata    string `json:"metadata"`
+}
+
+type CreateKioskSessionRequest struct {
+	PosTerminalID int32  `json:"pos_terminal_id" binding:"required"`
+	StoreID       int32  `json:"store_id" binding:"required"`
+	SessionToken  string `json:"session_token" binding:"required"`
+	Status        string `json:"status"`
+	OpenedAt      string `json:"opened_at"`
+	Metadata      string `json:"metadata"`
+}
+
+type CreateOnlineOrderRequest struct {
+	StoreID    int32                                `json:"store_id" binding:"required"`
+	CustomerID *int32                               `json:"customer_id"`
+	Items      []CreateRestaurantOrderItemRequest `json:"items" binding:"required"`
+}
+
+type UpdateStatusRequest struct {
+	Status string `json:"status" binding:"required"`
+}
+
+type SettleOrderRequest struct {
+	PosTransactionID int32 `json:"pos_transaction_id" binding:"required"`
+}
+
+type CreateRestaurantOrderItemRequest struct {
+	MenuItemID        int32  `json:"menu_item_id" binding:"required"`
+	Quantity          string `json:"quantity" binding:"required"`
+	UnitPrice         string `json:"unit_price" binding:"required"`
+	ModifiersSnapshot string `json:"modifiers_snapshot"`
+	ModifiersTotal    string `json:"modifiers_total"`
+	DiscountAmount    string `json:"discount_amount"`
+	TaxAmount         string `json:"tax_amount"`
+	Subtotal          string `json:"subtotal" binding:"required"`
+	LineNumber        int32  `json:"line_number"`
+	Notes             string `json:"notes"`
+	Status            string `json:"status"`
+	Metadata          string `json:"metadata"`
+}
+
+// =====================================================
+// Cart + Order (Enhanced schema) DTOs
+// =====================================================
+
+// CreateCartRequest represents request body for creating a cart.
+type CreateCartRequest struct {
+	CartNumber      string                 `json:"cart_number" binding:"required" example:"CART-20260210-0001"`
+	OrganizationID  int32                  `json:"organization_id" binding:"required" example:"1"`
+	StoreID         *int32                 `json:"store_id,omitempty" example:"10"`
+	CustomerID      *int32                 `json:"customer_id,omitempty" example:"123"`
+	GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-device-abc"`
+	GuestEmail      *string                `json:"guest_email,omitempty" example:"guest@example.com"`
+	GuestPhone      *string                `json:"guest_phone,omitempty" example:"+15551234567"`
+	CartStatus      string                 `json:"cart_status" binding:"required" example:"active"`
+	CartType        string                 `json:"cart_type" binding:"required" example:"standard"`
+	Channel         *string                `json:"channel,omitempty" example:"web"`
+	DeviceInfo      map[string]interface{} `json:"device_info,omitempty" swaggertype:"object"`
+	CreatedByUserID *int32                 `json:"created_by_user_id,omitempty" example:"1"`
+	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
+	PosTerminalID   *int32                 `json:"pos_terminal_id,omitempty" example:"1"`
+	ShippingAddress map[string]interface{} `json:"shipping_address,omitempty" swaggertype:"object"`
+	BillingAddress  map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
+	ShippingMethod  *string                `json:"shipping_method,omitempty" example:"standard"`
+	CouponCode      *string                `json:"coupon_code,omitempty" example:"WELCOME10"`
+	DiscountCode    *string                `json:"discount_code,omitempty" example:"DISC10"`
+	ExpiresAt       *string                `json:"expires_at,omitempty" example:"2026-02-12T10:00:00Z"`
+	Notes           *string                `json:"notes,omitempty" example:"Customer requested gift wrap"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateCartRequest represents request body for updating a cart header totals and metadata.
+// Decimal fields are accepted as strings to preserve precision, e.g. "12.50".
+type UpdateCartRequest struct {
+	Subtotal         string                 `json:"subtotal" binding:"required" example:"100.00"`
+	DiscountAmount   string                 `json:"discount_amount" binding:"required" example:"10.00"`
+	TaxAmount        string                 `json:"tax_amount" binding:"required" example:"5.00"`
+	ShippingAmount   string                 `json:"shipping_amount" binding:"required" example:"0.00"`
+	TotalAmount      string                 `json:"total_amount" binding:"required" example:"95.00"`
+	CouponCode       *string                `json:"coupon_code,omitempty" example:"WELCOME10"`
+	DiscountCode     *string                `json:"discount_code,omitempty" example:"DISC10"`
+	PromotionalCreds *string                `json:"promotional_credits,omitempty" example:"0.00"`
+	ShippingAddress  map[string]interface{} `json:"shipping_address,omitempty" swaggertype:"object"`
+	BillingAddress   map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
+	ShippingMethod   *string                `json:"shipping_method,omitempty" example:"standard"`
+	Notes            *string                `json:"notes,omitempty" example:"Updated by cashier"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateCartStatusRequest struct {
+	CartStatus          string  `json:"cart_status" binding:"required" example:"active"`
+	ConvertedToOrderID  *string `json:"converted_to_order_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ConvertedAtISO8601  *string `json:"converted_at,omitempty" example:"2026-02-10T10:00:00Z"`
+}
+
+type UpdateCartCustomerRequest struct {
+	CustomerID int32 `json:"customer_id" binding:"required" example:"123"`
+}
+
+type AddToCartRequest struct {
+	OrganizationID int32   `json:"organization_id" binding:"required" example:"1"`
+	ProductID      int32   `json:"product_id" binding:"required" example:"1001"`
+	Quantity       float64 `json:"quantity" binding:"required" example:"2"`
+}
+
+// CartItemUpsertRequest is for directly creating cart item via SQLC CreateCartItem.
+// Decimal fields are strings for precision.
+type CreateCartItemRequest struct {
+	OrganizationID       int32                  `json:"organization_id" binding:"required" example:"1"`
+	ProductID            int32                  `json:"product_id" binding:"required" example:"1001"`
+	ProductVariantID     *int32                 `json:"product_variant_id,omitempty" example:"2001"`
+	Quantity             string                 `json:"quantity" binding:"required" example:"2.00"`
+	UomID                *int32                 `json:"uom_id,omitempty" example:"1"`
+	UnitPrice            string                 `json:"unit_price" binding:"required" example:"50.00"`
+	DiscountAmount       *string                `json:"discount_amount,omitempty" example:"0.00"`
+	TaxAmount            *string                `json:"tax_amount,omitempty" example:"0.00"`
+	LineTotal            string                 `json:"line_total" binding:"required" example:"100.00"`
+	PriceListID          *int32                 `json:"price_list_id,omitempty" example:"1"`
+	TaxCategoryID        *int32                 `json:"tax_category_id,omitempty" example:"1"`
+	BatchNumber          *string                `json:"batch_number,omitempty" example:"BATCH-001"`
+	SerialNumber         *string                `json:"serial_number,omitempty" example:"SN-001"`
+	CustomizationDetails map[string]interface{} `json:"customization_details,omitempty" swaggertype:"object"`
+	Notes                *string                `json:"notes,omitempty" example:"No onions"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateCartItemRequest struct {
+	Quantity       string                 `json:"quantity" binding:"required" example:"2.00"`
+	UnitPrice      string                 `json:"unit_price" binding:"required" example:"50.00"`
+	DiscountAmount string                 `json:"discount_amount" binding:"required" example:"0.00"`
+	TaxAmount      string                 `json:"tax_amount" binding:"required" example:"0.00"`
+	LineTotal      string                 `json:"line_total" binding:"required" example:"100.00"`
+	Notes          *string                `json:"notes,omitempty" example:"updated"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateCartItemQuantityRequest struct {
+	DeltaQuantity string `json:"delta_quantity" binding:"required" example:"1.00"`
+}
+
+type CreateCartActivityRequest struct {
+	OrganizationID    int32                  `json:"organization_id" binding:"required" example:"1"`
+	ActivityType      string                 `json:"activity_type" binding:"required" example:"item_added"`
+	Description       *string                `json:"description,omitempty" example:"Added product 1001"`
+	PerformedByUserID *int32                 `json:"performed_by_user_id,omitempty" example:"1"`
+	IpAddress         *string                `json:"ip_address,omitempty" example:"127.0.0.1"`
+	UserAgent         *string                `json:"user_agent,omitempty" example:"Mozilla/5.0"`
+	OldValue          map[string]interface{} `json:"old_value,omitempty" swaggertype:"object"`
+	NewValue          map[string]interface{} `json:"new_value,omitempty" swaggertype:"object"`
+}
+
+type ApplyCouponRequest struct {
+	CouponCode      string `json:"coupon_code" binding:"required" example:"WELCOME10"`
+	DiscountAmount  string `json:"discount_amount" binding:"required" example:"10.00"`
+}
+
+type MergeGuestCartRequest struct {
+	TargetCartID string `json:"target_cart_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
+}
+
+// Order DTOs
+type CreateSalesOrderV2Request struct {
+	OrderNumber          string                 `json:"order_number" binding:"required" example:"ORD-20260210-0001"`
+	OrganizationID       int32                  `json:"organization_id" binding:"required" example:"1"`
+	StoreID              *int32                 `json:"store_id,omitempty" example:"10"`
+	CustomerID           *int32                 `json:"customer_id,omitempty" example:"123"`
+	CustomerName         *string                `json:"customer_name,omitempty" example:"John Doe"`
+	CustomerEmail        *string                `json:"customer_email,omitempty" example:"john@example.com"`
+	CustomerPhone        *string                `json:"customer_phone,omitempty" example:"+15551234567"`
+	OrderType            string                 `json:"order_type" binding:"required" example:"standard"`
+	OrderStatus          string                 `json:"order_status" binding:"required" example:"pending"`
+	PaymentStatus        string                 `json:"payment_status" binding:"required" example:"unpaid"`
+	FulfillmentStatus    string                 `json:"fulfillment_status" binding:"required" example:"unfulfilled"`
+	SalesChannel         *string                `json:"sales_channel,omitempty" example:"web"`
+	OrderSource          *string                `json:"order_source,omitempty" example:"checkout"`
+	ReferralSource       *string                `json:"referral_source,omitempty" example:"campaign-1"`
+	SourceCartID         *string                `json:"source_cart_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CreatedByUserID      *int32                 `json:"created_by_user_id,omitempty" example:"1"`
+	AssignedToUserID     *int32                 `json:"assigned_to_user_id,omitempty" example:"2"`
+	OrderDate            *string                `json:"order_date,omitempty" example:"2026-02-10T10:00:00Z"`
+	ExpectedDeliveryDate *string                `json:"expected_delivery_date,omitempty" example:"2026-02-12"`
+	ShippingAddress      map[string]interface{} `json:"shipping_address,omitempty" swaggertype:"object"`
+	BillingAddress       map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
+	ShippingMethod       *string                `json:"shipping_method,omitempty" example:"standard"`
+	PaymentMethod        *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentTerms         *string                `json:"payment_terms,omitempty" example:"net_30"`
+	PaymentDueDate       *string                `json:"payment_due_date,omitempty" example:"2026-03-11"`
+	PosTerminalID        *int32                 `json:"pos_terminal_id,omitempty" example:"1"`
+	CashierID            *int32                 `json:"cashier_id,omitempty" example:"1"`
+	IsGift               *bool                  `json:"is_gift,omitempty" example:"false"`
+	GiftMessage          *string                `json:"gift_message,omitempty" example:"Happy Birthday"`
+	SpecialInstructions  *string                `json:"special_instructions,omitempty" example:"Leave at door"`
+	InternalNotes        *string                `json:"internal_notes,omitempty" example:"VIP"`
+	Tags                 []string               `json:"tags,omitempty"`
+	Priority             *string                `json:"priority,omitempty" example:"normal"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateSalesOrderV2Request struct {
+	CustomerID           *int32                 `json:"customer_id,omitempty" example:"123"`
+	CustomerName         *string                `json:"customer_name,omitempty" example:"John Doe"`
+	CustomerEmail        *string                `json:"customer_email,omitempty" example:"john@example.com"`
+	CustomerPhone        *string                `json:"customer_phone,omitempty" example:"+15551234567"`
+	ExpectedDeliveryDate *string                `json:"expected_delivery_date,omitempty" example:"2026-02-12"`
+	ShippingAddress      map[string]interface{} `json:"shipping_address,omitempty" swaggertype:"object"`
+	BillingAddress       map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
+	ShippingMethod       *string                `json:"shipping_method,omitempty" example:"standard"`
+	PaymentMethod        *string                `json:"payment_method,omitempty" example:"cash"`
+	SpecialInstructions  *string                `json:"special_instructions,omitempty"`
+	InternalNotes        *string                `json:"internal_notes,omitempty"`
+	Tags                 []string               `json:"tags,omitempty"`
+	Priority             *string                `json:"priority,omitempty" example:"normal"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateOrderStatusRequest struct {
+	OrderStatus string `json:"order_status" binding:"required" example:"confirmed"`
+}
+
+type UpdateOrderPaymentStatusRequest struct {
+	PaymentStatus string `json:"payment_status" binding:"required" example:"paid"`
+	PaidAmount    string `json:"paid_amount" binding:"required" example:"95.00"`
+}
+
+type UpdateOrderFulfillmentStatusRequest struct {
+	FulfillmentStatus string `json:"fulfillment_status" binding:"required" example:"fulfilled"`
+}
+
+type UpdateOrderTotalsRequest struct {
+	Subtotal         string `json:"subtotal" binding:"required" example:"100.00"`
+	DiscountAmount   string `json:"discount_amount" binding:"required" example:"10.00"`
+	TaxAmount        string `json:"tax_amount" binding:"required" example:"5.00"`
+	ShippingAmount   string `json:"shipping_amount" binding:"required" example:"0.00"`
+	AdjustmentAmount string `json:"adjustment_amount" binding:"required" example:"0.00"`
+	TotalAmount      string `json:"total_amount" binding:"required" example:"95.00"`
+}
+
+type UpdateOrderDeliveryRequest struct {
+	ShippingCarrier    *string `json:"shipping_carrier,omitempty" example:"DHL"`
+	TrackingNumber     *string `json:"tracking_number,omitempty" example:"TRACK123"`
+	TrackingUrl        *string `json:"tracking_url,omitempty" example:"https://tracking.example.com/TRACK123"`
+	ActualDeliveryDate *string `json:"actual_delivery_date,omitempty" example:"2026-02-15"`
+}
+
+type AssignOrderRequest struct {
+	AssignedToUserID int32 `json:"assigned_to_user_id" binding:"required" example:"2"`
+}
+
+type CreateSalesOrderLineV2Request struct {
+	OrganizationID     int32                  `json:"organization_id" binding:"required" example:"1"`
+	LineNumber         int32                  `json:"line_number" binding:"required" example:"1"`
+	ProductID          int32                  `json:"product_id" binding:"required" example:"1001"`
+	ProductVariantID   *int32                 `json:"product_variant_id,omitempty" example:"2001"`
+	ProductName        string                 `json:"product_name" binding:"required" example:"Burger"`
+	ProductSku         *string                `json:"product_sku,omitempty" example:"SKU-001"`
+	QuantityOrdered    string                 `json:"quantity_ordered" binding:"required" example:"2.00"`
+	UomID              *int32                 `json:"uom_id,omitempty" example:"1"`
+	UnitPrice          string                 `json:"unit_price" binding:"required" example:"50.00"`
+	DiscountAmount     *string                `json:"discount_amount,omitempty" example:"0.00"`
+	DiscountPercentage *string                `json:"discount_percentage,omitempty" example:"0.00"`
+	TaxAmount          *string                `json:"tax_amount,omitempty" example:"0.00"`
+	LineTotal          string                 `json:"line_total" binding:"required" example:"100.00"`
+	TaxCategoryID      *int32                 `json:"tax_category_id,omitempty"`
+	TaxRate            *string                `json:"tax_rate,omitempty" example:"0.00"`
+	BatchNumber        *string                `json:"batch_number,omitempty"`
+	SerialNumbers      []string               `json:"serial_numbers,omitempty"`
+	ExpiryDate         *string                `json:"expiry_date,omitempty" example:"2026-12-31"`
+	LineStatus         *string                `json:"line_status,omitempty" example:"pending"`
+	Customization      map[string]interface{} `json:"customization_details,omitempty" swaggertype:"object"`
+	UnitCost           *string                `json:"unit_cost,omitempty" example:"0.00"`
+	Notes              *string                `json:"notes,omitempty"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateSalesOrderLineV2Request struct {
+	QuantityOrdered    string                 `json:"quantity_ordered" binding:"required" example:"2.00"`
+	UnitPrice          string                 `json:"unit_price" binding:"required" example:"50.00"`
+	DiscountAmount     string                 `json:"discount_amount" binding:"required" example:"0.00"`
+	DiscountPercentage string                 `json:"discount_percentage" binding:"required" example:"0.00"`
+	TaxAmount          string                 `json:"tax_amount" binding:"required" example:"0.00"`
+	LineTotal          string                 `json:"line_total" binding:"required" example:"100.00"`
+	Notes              *string                `json:"notes,omitempty"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateOrderLineFulfillmentRequest struct {
+	QuantityFulfilled string `json:"quantity_fulfilled" binding:"required" example:"1.00"`
+}
+
+type UpdateOrderLineStatusRequest struct {
+	LineStatus string `json:"line_status" binding:"required" example:"fulfilled"`
+}
+
+type CreateOrderStatusHistoryRequest struct {
+	OrganizationID    int32   `json:"organization_id" binding:"required" example:"1"`
+	FromStatus        *string `json:"from_status,omitempty" example:"pending"`
+	ToStatus          string  `json:"to_status" binding:"required" example:"confirmed"`
+	Reason            *string `json:"reason,omitempty" example:"customer_confirmed"`
+	Notes             *string `json:"notes,omitempty"`
+	ChangedByUserID   *int32  `json:"changed_by_user_id,omitempty" example:"1"`
+}
+
+type CreateOrderFulfillmentRequest struct {
+	OrganizationID        int32                  `json:"organization_id" binding:"required" example:"1"`
+	FulfillmentNumber     string                 `json:"fulfillment_number" binding:"required" example:"FUL-0001"`
+	FulfillmentStatus     *string                `json:"fulfillment_status,omitempty" example:"created"`
+	ShipmentStatus        *string                `json:"shipment_status,omitempty" example:"pending"`
+	FulfillmentStoreID    *int32                 `json:"fulfillment_store_id,omitempty" example:"10"`
+	ShippingCarrier       *string                `json:"shipping_carrier,omitempty" example:"DHL"`
+	ShippingMethod        *string                `json:"shipping_method,omitempty" example:"standard"`
+	TrackingNumber        *string                `json:"tracking_number,omitempty" example:"TRACK123"`
+	TrackingUrl           *string                `json:"tracking_url,omitempty" example:"https://tracking.example.com/TRACK123"`
+	EstimatedDeliveryDate *string                `json:"estimated_delivery_date,omitempty" example:"2026-02-15"`
+	Notes                 *string                `json:"notes,omitempty"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateOrderFulfillmentRequest struct {
+	FulfillmentStatus     *string                `json:"fulfillment_status,omitempty"`
+	ShipmentStatus        *string                `json:"shipment_status,omitempty"`
+	ShippingCarrier       *string                `json:"shipping_carrier,omitempty"`
+	TrackingNumber        *string                `json:"tracking_number,omitempty"`
+	TrackingUrl           *string                `json:"tracking_url,omitempty"`
+	EstimatedDeliveryDate *string                `json:"estimated_delivery_date,omitempty" example:"2026-02-15"`
+	ActualDeliveryDate    *string                `json:"actual_delivery_date,omitempty" example:"2026-02-16"`
+	Notes                 *string                `json:"notes,omitempty"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateFulfillmentShipmentRequest struct {
+	ShipmentStatus string `json:"shipment_status" binding:"required" example:"shipped"`
+}
+
+type UpdateFulfillmentPickPackRequest struct {
+	PickedAt        *string `json:"picked_at,omitempty" example:"2026-02-10T10:00:00Z"`
+	PackedAt        *string `json:"packed_at,omitempty" example:"2026-02-10T12:00:00Z"`
+	PickedByUserID  *int32  `json:"picked_by_user_id,omitempty" example:"1"`
+	PackedByUserID  *int32  `json:"packed_by_user_id,omitempty" example:"2"`
+}
+
+type CreateOrderFulfillmentItemRequest struct {
+	OrderLineID       string  `json:"order_line_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
+	OrganizationID    int32   `json:"organization_id" binding:"required" example:"1"`
+	QuantityFulfilled string  `json:"quantity_fulfilled" binding:"required" example:"1.00"`
+	BatchNumber       *string `json:"batch_number,omitempty"`
+	SerialNumbers     []string `json:"serial_numbers,omitempty"`
+}

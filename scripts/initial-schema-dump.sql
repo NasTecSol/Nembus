@@ -1,3 +1,10 @@
+
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO postgres;
+GRANT ALL ON SCHEMA public TO public;
+
+
 -- +goose Up
 -- Combined Initial Schema Migration: Base Tables + POS Views/Functions (with Type Fixes) + Indexes
 
@@ -682,23 +689,23 @@ CREATE TABLE sales_orders (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- CREATE TABLE sales_order_lines (
---     id SERIAL PRIMARY KEY,
---     sales_order_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
---     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
---     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
---     quantity DECIMAL(15,3) NOT NULL,
---     uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
---     unit_price DECIMAL(15,4) NOT NULL,
---     discount_amount DECIMAL(15,2) DEFAULT 0,
---     tax_amount DECIMAL(15,2) DEFAULT 0,
---     subtotal DECIMAL(15,2) NOT NULL,
---     line_total DECIMAL(15,2) DEFAULT 0,
---     shipped_quantity DECIMAL(15,3) DEFAULT 0,
---     line_number INTEGER,
---     metadata JSONB DEFAULT '{}',
---     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
+CREATE TABLE sales_order_lines (
+    id SERIAL PRIMARY KEY,
+    sales_order_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    quantity DECIMAL(15,3) NOT NULL,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    unit_price DECIMAL(15,4) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0,
+    tax_amount DECIMAL(15,2) DEFAULT 0,
+    subtotal DECIMAL(15,2) NOT NULL,
+    line_total DECIMAL(15,2) DEFAULT 0,
+    shipped_quantity DECIMAL(15,3) DEFAULT 0,
+    line_number INTEGER,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- =====================================================
 -- POS TRANSACTIONS
@@ -947,93 +954,6 @@ CREATE TABLE kiosk_sessions (
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
--- =====================================================
--- ANALYTICS TABLES
--- =====================================================
-
-CREATE TABLE sales_analytics (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    store_id INTEGER,
-    product_id INTEGER,
-    category_id INTEGER,
-    customer_id INTEGER,
-    date DATE NOT NULL,
-    hour INTEGER,
-    day_of_week INTEGER,
-    month INTEGER,
-    quarter INTEGER,
-    year INTEGER,
-    units_sold DECIMAL(15,3) DEFAULT 0,
-    revenue DECIMAL(15,2) DEFAULT 0,
-    discounts DECIMAL(15,2) DEFAULT 0,
-    taxes DECIMAL(15,2) DEFAULT 0,
-    net_revenue DECIMAL(15,2) DEFAULT 0,
-    transactions INTEGER DEFAULT 0,
-    average_order_value DECIMAL(15,2),
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE purchase_analytics (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    store_id INTEGER,
-    supplier_id INTEGER,
-    product_id INTEGER,
-    category_id INTEGER,
-    date DATE NOT NULL,
-    month INTEGER,
-    quarter INTEGER,
-    year INTEGER,
-    units_purchased DECIMAL(15,3) DEFAULT 0,
-    total_cost DECIMAL(15,2) DEFAULT 0,
-    discounts DECIMAL(15,2) DEFAULT 0,
-    taxes DECIMAL(15,2) DEFAULT 0,
-    net_cost DECIMAL(15,2) DEFAULT 0,
-    orders INTEGER DEFAULT 0,
-    total_orders INTEGER DEFAULT 0,
-    total_quantity DECIMAL(15,3) DEFAULT 0,
-    total_amount DECIMAL(15,2) DEFAULT 0,
-    discounts_received DECIMAL(15,2) DEFAULT 0,
-    taxes_paid DECIMAL(15,2) DEFAULT 0,
-    net_amount DECIMAL(15,2) DEFAULT 0,
-    average_order_value DECIMAL(15,2),
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE inventory_analytics (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    store_id INTEGER,
-    product_id INTEGER,
-    category_id INTEGER,
-    date DATE NOT NULL,
-    month INTEGER,
-    quarter INTEGER,
-    year INTEGER,
-    opening_stock DECIMAL(15,3) DEFAULT 0,
-    stock_in DECIMAL(15,3) DEFAULT 0,
-    stock_out DECIMAL(15,3) DEFAULT 0,
-    receipts DECIMAL(15,3) DEFAULT 0,
-    issues DECIMAL(15,3) DEFAULT 0,
-    adjustments DECIMAL(15,3) DEFAULT 0,
-    closing_stock DECIMAL(15,3) DEFAULT 0,
-    average_stock DECIMAL(15,3) DEFAULT 0,
-    stock_value DECIMAL(15,2) DEFAULT 0,
-    turnover_rate DECIMAL(5,2),
-    stock_turnover_ratio DECIMAL(5,2),
-    days_of_inventory DECIMAL(15,3) DEFAULT 0,
-    days_in_stock DECIMAL(5,2),
-    low_stock_alerts INTEGER DEFAULT 0,
-    out_of_stock_days INTEGER DEFAULT 0,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 -- =====================================================
 -- ENHANCED: CART MANAGEMENT SYSTEM
 -- =====================================================
@@ -2072,6 +1992,94 @@ COMMENT ON TABLE invoice_payments IS 'Payment records against invoices';
 COMMENT ON TABLE quotes IS 'Sales quotations with approval workflow';
 
 -- =====================================================
+-- ANALYTICS TABLES
+-- =====================================================
+
+CREATE TABLE sales_analytics (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER,
+    product_id INTEGER,
+    category_id INTEGER,
+    customer_id INTEGER,
+    date DATE NOT NULL,
+    hour INTEGER,
+    day_of_week INTEGER,
+    month INTEGER,
+    quarter INTEGER,
+    year INTEGER,
+    units_sold DECIMAL(15,3) DEFAULT 0,
+    revenue DECIMAL(15,2) DEFAULT 0,
+    discounts DECIMAL(15,2) DEFAULT 0,
+    taxes DECIMAL(15,2) DEFAULT 0,
+    net_revenue DECIMAL(15,2) DEFAULT 0,
+    transactions INTEGER DEFAULT 0,
+    average_order_value DECIMAL(15,2),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE purchase_analytics (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER,
+    supplier_id INTEGER,
+    product_id INTEGER,
+    category_id INTEGER,
+    date DATE NOT NULL,
+    month INTEGER,
+    quarter INTEGER,
+    year INTEGER,
+    units_purchased DECIMAL(15,3) DEFAULT 0,
+    total_cost DECIMAL(15,2) DEFAULT 0,
+    discounts DECIMAL(15,2) DEFAULT 0,
+    taxes DECIMAL(15,2) DEFAULT 0,
+    net_cost DECIMAL(15,2) DEFAULT 0,
+    orders INTEGER DEFAULT 0,
+    total_orders INTEGER DEFAULT 0,
+    total_quantity DECIMAL(15,3) DEFAULT 0,
+    total_amount DECIMAL(15,2) DEFAULT 0,
+    discounts_received DECIMAL(15,2) DEFAULT 0,
+    taxes_paid DECIMAL(15,2) DEFAULT 0,
+    net_amount DECIMAL(15,2) DEFAULT 0,
+    average_order_value DECIMAL(15,2),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE inventory_analytics (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER,
+    product_id INTEGER,
+    category_id INTEGER,
+    date DATE NOT NULL,
+    month INTEGER,
+    quarter INTEGER,
+    year INTEGER,
+    opening_stock DECIMAL(15,3) DEFAULT 0,
+    stock_in DECIMAL(15,3) DEFAULT 0,
+    stock_out DECIMAL(15,3) DEFAULT 0,
+    receipts DECIMAL(15,3) DEFAULT 0,
+    issues DECIMAL(15,3) DEFAULT 0,
+    adjustments DECIMAL(15,3) DEFAULT 0,
+    closing_stock DECIMAL(15,3) DEFAULT 0,
+    average_stock DECIMAL(15,3) DEFAULT 0,
+    stock_value DECIMAL(15,2) DEFAULT 0,
+    turnover_rate DECIMAL(5,2),
+    stock_turnover_ratio DECIMAL(5,2),
+    days_of_inventory DECIMAL(15,3) DEFAULT 0,
+    days_in_stock DECIMAL(5,2),
+    low_stock_alerts INTEGER DEFAULT 0,
+    out_of_stock_days INTEGER DEFAULT 0,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
 -- FOREIGN KEY CONSTRAINTS (DEFERRED)
 -- =====================================================
 
@@ -2392,8 +2400,8 @@ CREATE INDEX idx_sales_orders_status ON sales_orders(status);
 CREATE INDEX idx_sales_orders_order_date ON sales_orders(order_date);
 
 -- Sales Order Lines
--- CREATE INDEX idx_sales_order_lines_sales_order_id ON sales_order_lines(sales_order_id);
--- CREATE INDEX idx_sales_order_lines_product_id ON sales_order_lines(product_id);
+CREATE INDEX idx_sales_order_lines_sales_order_id ON sales_order_lines(sales_order_id);
+CREATE INDEX idx_sales_order_lines_product_id ON sales_order_lines(product_id);
 
 -- POS Transactions
 CREATE INDEX idx_pos_transactions_store_id ON pos_transactions(store_id);
@@ -3382,397 +3390,3 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
-
--- +goose Down
-
-DROP VIEW IF EXISTS vw_pos_categories CASCADE;
-DROP FUNCTION IF EXISTS fn_get_kds_orders CASCADE;
-DROP FUNCTION IF EXISTS fn_get_waste_report CASCADE;
-DROP FUNCTION IF EXISTS fn_calculate_recipe_cost CASCADE;
-DROP FUNCTION IF EXISTS fn_get_item_modifiers CASCADE;
-DROP FUNCTION IF EXISTS fn_get_restaurant_menu CASCADE;
-DROP VIEW IF EXISTS vw_waste_daily_summary CASCADE;
-DROP VIEW IF EXISTS vw_active_restaurant_orders CASCADE;
-DROP VIEW IF EXISTS vw_recipe_bom CASCADE;
-DROP VIEW IF EXISTS vw_restaurant_menu CASCADE;
-DROP FUNCTION IF EXISTS fn_pos_search_products CASCADE;
-DROP FUNCTION IF EXISTS fn_pos_get_products_by_category CASCADE;
-DROP FUNCTION IF EXISTS fn_pos_get_product_by_barcode CASCADE;
-DROP FUNCTION IF EXISTS fn_pos_get_products_with_stock CASCADE;
-DROP VIEW IF EXISTS vw_pos_product_catalog CASCADE;
-
-DROP INDEX IF EXISTS idx_products_active_sellable;
-DROP INDEX IF EXISTS idx_inventory_stock_store_product_qty;
-DROP INDEX IF EXISTS idx_products_sku_varchar_pattern;
-DROP INDEX IF EXISTS idx_product_barcodes_barcode_lookup;
-
-DROP TRIGGER IF EXISTS update_discount_analytics_updated_at ON discount_analytics;
-DROP TRIGGER IF EXISTS update_profit_loss_analytics_updated_at ON profit_loss_analytics;
-
-DROP TRIGGER IF EXISTS trg_restaurant_order_items_updated_at ON restaurant_order_items;
-DROP TRIGGER IF EXISTS trg_restaurant_orders_updated_at ON restaurant_orders;
-DROP TRIGGER IF EXISTS trg_recipes_updated_at ON recipes;
-DROP TRIGGER IF EXISTS trg_menu_items_updated_at ON menu_items;
-DROP TRIGGER IF EXISTS trg_menu_categories_updated_at ON menu_categories;
-DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;
-DROP TRIGGER IF EXISTS update_inventory_analytics_updated_at ON inventory_analytics;
-DROP TRIGGER IF EXISTS update_purchase_analytics_updated_at ON purchase_analytics;
-DROP TRIGGER IF EXISTS update_sales_analytics_updated_at ON sales_analytics;
-DROP TRIGGER IF EXISTS update_sales_orders_updated_at ON sales_orders;
-DROP TRIGGER IF EXISTS update_purchase_orders_updated_at ON purchase_orders;
-DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
-DROP TRIGGER IF EXISTS update_suppliers_updated_at ON suppliers;
-DROP TRIGGER IF EXISTS update_inventory_stock_updated_at ON inventory_stock;
-DROP TRIGGER IF EXISTS update_product_batches_updated_at ON product_batches;
-DROP TRIGGER IF EXISTS update_product_serial_numbers_updated_at ON product_serial_numbers;
-DROP TRIGGER IF EXISTS update_product_prices_updated_at ON product_prices;
-DROP TRIGGER IF EXISTS update_product_variants_updated_at ON product_variants;
-DROP TRIGGER IF EXISTS update_products_updated_at ON products;
-DROP TRIGGER IF EXISTS update_price_lists_updated_at ON price_lists;
-DROP TRIGGER IF EXISTS update_brands_updated_at ON brands;
-DROP TRIGGER IF EXISTS update_product_categories_updated_at ON product_categories;
-DROP TRIGGER IF EXISTS update_pos_terminals_updated_at ON pos_terminals;
-DROP TRIGGER IF EXISTS update_users_updated_at ON users;
-DROP TRIGGER IF EXISTS update_stores_updated_at ON stores;
-DROP TRIGGER IF EXISTS update_role_ui_customizations_updated_at ON role_ui_customizations;
-DROP TRIGGER IF EXISTS update_ui_settings_updated_at ON ui_settings;
-DROP TRIGGER IF EXISTS update_roles_updated_at ON roles;
-DROP TRIGGER IF EXISTS update_submenus_updated_at ON submenus;
-DROP TRIGGER IF EXISTS update_menus_updated_at ON menus;
-DROP TRIGGER IF EXISTS update_modules_updated_at ON modules;
-DROP TRIGGER IF EXISTS update_tenants_updated_at ON tenants;
-DROP TRIGGER IF EXISTS update_organizations_updated_at ON organizations;
-
-DROP FUNCTION IF EXISTS update_updated_at_column CASCADE;
-
-DROP INDEX IF EXISTS idx_discount_analytics_date;
-
-DROP INDEX IF EXISTS idx_kiosk_sessions_token;
-DROP INDEX IF EXISTS idx_kiosk_sessions_status;
-DROP INDEX IF EXISTS idx_kiosk_sessions_store_id;
-DROP INDEX IF EXISTS idx_kiosk_sessions_terminal_id;
-DROP INDEX IF EXISTS idx_waste_logs_store_source_date;
-DROP INDEX IF EXISTS idx_waste_logs_order_id;
-DROP INDEX IF EXISTS idx_waste_logs_wasted_at;
-DROP INDEX IF EXISTS idx_waste_logs_waste_source;
-DROP INDEX IF EXISTS idx_waste_logs_recipe_id;
-DROP INDEX IF EXISTS idx_waste_logs_menu_item_id;
-DROP INDEX IF EXISTS idx_waste_logs_product_id;
-DROP INDEX IF EXISTS idx_waste_logs_store_id;
-DROP INDEX IF EXISTS idx_restaurant_order_items_status;
-DROP INDEX IF EXISTS idx_restaurant_order_items_menu_item;
-DROP INDEX IF EXISTS idx_restaurant_order_items_order_id;
-DROP INDEX IF EXISTS idx_restaurant_orders_store_status_time;
-DROP INDEX IF EXISTS idx_restaurant_orders_pos_txn_id;
-DROP INDEX IF EXISTS idx_restaurant_orders_ordered_at;
-DROP INDEX IF EXISTS idx_restaurant_orders_source;
-DROP INDEX IF EXISTS idx_restaurant_orders_status;
-DROP INDEX IF EXISTS idx_restaurant_orders_customer_id;
-DROP INDEX IF EXISTS idx_restaurant_orders_session_id;
-DROP INDEX IF EXISTS idx_restaurant_orders_cashier_id;
-DROP INDEX IF EXISTS idx_restaurant_orders_table_id;
-DROP INDEX IF EXISTS idx_restaurant_orders_store_id;
-DROP INDEX IF EXISTS idx_recipe_ingredients_variant_id;
-DROP INDEX IF EXISTS idx_recipe_ingredients_product_id;
-DROP INDEX IF EXISTS idx_recipe_ingredients_recipe_id;
-DROP INDEX IF EXISTS idx_recipes_code;
-DROP INDEX IF EXISTS idx_recipes_is_active;
-DROP INDEX IF EXISTS idx_recipes_finished_product_id;
-DROP INDEX IF EXISTS idx_recipes_organization_id;
-DROP INDEX IF EXISTS idx_menu_item_modifiers_is_active;
-DROP INDEX IF EXISTS idx_menu_item_modifiers_item_id;
-DROP INDEX IF EXISTS idx_menu_items_display_order;
-DROP INDEX IF EXISTS idx_menu_items_is_available;
-DROP INDEX IF EXISTS idx_menu_items_is_active;
-DROP INDEX IF EXISTS idx_menu_items_recipe_id;
-DROP INDEX IF EXISTS idx_menu_items_product_id;
-DROP INDEX IF EXISTS idx_menu_items_category_id;
-DROP INDEX IF EXISTS idx_menu_items_store_id;
-DROP INDEX IF EXISTS idx_menu_categories_display_order;
-DROP INDEX IF EXISTS idx_menu_categories_is_active;
-DROP INDEX IF EXISTS idx_menu_categories_parent_id;
-DROP INDEX IF EXISTS idx_menu_categories_store_id;
-DROP INDEX IF EXISTS idx_restaurant_tables_section;
-DROP INDEX IF EXISTS idx_restaurant_tables_is_active;
-DROP INDEX IF EXISTS idx_restaurant_tables_store_id;
-
-DROP INDEX IF EXISTS idx_discount_analytics_cashier_id;
-DROP INDEX IF EXISTS idx_discount_analytics_store_id;
-DROP INDEX IF EXISTS idx_discount_analytics_organization_id;
-DROP INDEX IF EXISTS idx_profit_loss_analytics_period_type;
-DROP INDEX IF EXISTS idx_profit_loss_analytics_date;
-DROP INDEX IF EXISTS idx_profit_loss_analytics_store_id;
-DROP INDEX IF EXISTS idx_profit_loss_analytics_organization_id;
-DROP INDEX IF EXISTS idx_inventory_analytics_date;
-DROP INDEX IF EXISTS idx_inventory_analytics_product_id;
-DROP INDEX IF EXISTS idx_inventory_analytics_store_id;
-DROP INDEX IF EXISTS idx_inventory_analytics_organization_id;
-DROP INDEX IF EXISTS idx_purchase_analytics_date;
-DROP INDEX IF EXISTS idx_purchase_analytics_product_id;
-DROP INDEX IF EXISTS idx_purchase_analytics_supplier_id;
-DROP INDEX IF EXISTS idx_purchase_analytics_store_id;
-DROP INDEX IF EXISTS idx_purchase_analytics_organization_id;
-DROP INDEX IF EXISTS idx_sales_analytics_year_month;
-DROP INDEX IF EXISTS idx_sales_analytics_date;
-DROP INDEX IF EXISTS idx_sales_analytics_customer_id;
-DROP INDEX IF EXISTS idx_sales_analytics_category_id;
-DROP INDEX IF EXISTS idx_sales_analytics_product_id;
-DROP INDEX IF EXISTS idx_sales_analytics_store_id;
-DROP INDEX IF EXISTS idx_sales_analytics_organization_id;
-DROP INDEX IF EXISTS idx_pos_payments_payment_method;
-DROP INDEX IF EXISTS idx_pos_payments_transaction_id;
-DROP INDEX IF EXISTS idx_pos_transaction_lines_product_id;
-DROP INDEX IF EXISTS idx_pos_transaction_lines_transaction_id;
-DROP INDEX IF EXISTS idx_pos_transactions_status;
-DROP INDEX IF EXISTS idx_pos_transactions_transaction_date;
-DROP INDEX IF EXISTS idx_pos_transactions_transaction_number;
-DROP INDEX IF EXISTS idx_pos_transactions_customer_id;
-DROP INDEX IF EXISTS idx_pos_transactions_cashier_session_id;
-DROP INDEX IF EXISTS idx_pos_transactions_cashier_id;
-DROP INDEX IF EXISTS idx_pos_transactions_store_id;
--- DROP INDEX IF EXISTS idx_sales_order_lines_product_id;
--- DROP INDEX IF EXISTS idx_sales_order_lines_sales_order_id;
-DROP INDEX IF EXISTS idx_sales_orders_order_date;
-DROP INDEX IF EXISTS idx_sales_orders_status;
-DROP INDEX IF EXISTS idx_sales_orders_order_number;
-DROP INDEX IF EXISTS idx_sales_orders_store_id;
-DROP INDEX IF EXISTS idx_sales_orders_customer_id;
-DROP INDEX IF EXISTS idx_sales_orders_organization_id;
-DROP INDEX IF EXISTS idx_purchase_order_lines_product_id;
-DROP INDEX IF EXISTS idx_purchase_order_lines_purchase_order_id;
-DROP INDEX IF EXISTS idx_purchase_orders_po_date;
-DROP INDEX IF EXISTS idx_purchase_orders_status;
-DROP INDEX IF EXISTS idx_purchase_orders_po_number;
-DROP INDEX IF EXISTS idx_purchase_orders_store_id;
-DROP INDEX IF EXISTS idx_purchase_orders_supplier_id;
-DROP INDEX IF EXISTS idx_purchase_orders_organization_id;
-DROP INDEX IF EXISTS idx_customers_customer_type;
-DROP INDEX IF EXISTS idx_customers_is_active;
-DROP INDEX IF EXISTS idx_customers_customer_code;
-DROP INDEX IF EXISTS idx_customers_organization_id;
-DROP INDEX IF EXISTS idx_suppliers_is_active;
-DROP INDEX IF EXISTS idx_suppliers_code;
-DROP INDEX IF EXISTS idx_suppliers_organization_id;
-DROP INDEX IF EXISTS idx_stock_count_lines_product_id;
-DROP INDEX IF EXISTS idx_stock_count_lines_stock_count_id;
-DROP INDEX IF EXISTS idx_stock_counts_count_number;
-DROP INDEX IF EXISTS idx_stock_counts_status;
-DROP INDEX IF EXISTS idx_stock_counts_store_id;
-DROP INDEX IF EXISTS idx_stock_movements_reference_type_id;
-DROP INDEX IF EXISTS idx_stock_movements_movement_date;
-DROP INDEX IF EXISTS idx_stock_movements_movement_type;
-DROP INDEX IF EXISTS idx_stock_movements_to_store_id;
-DROP INDEX IF EXISTS idx_stock_movements_from_store_id;
-DROP INDEX IF EXISTS idx_stock_movements_product_id;
-DROP INDEX IF EXISTS idx_inventory_stock_storage_location_id;
-DROP INDEX IF EXISTS idx_inventory_stock_store_id;
-DROP INDEX IF EXISTS idx_inventory_stock_product_variant_id;
-DROP INDEX IF EXISTS idx_inventory_stock_product_id;
-DROP INDEX IF EXISTS idx_product_batches_expiry_date;
-DROP INDEX IF EXISTS idx_product_batches_status;
-DROP INDEX IF EXISTS idx_product_batches_store_id;
-DROP INDEX IF EXISTS idx_product_batches_batch_number;
-DROP INDEX IF EXISTS idx_product_batches_product_id;
-DROP INDEX IF EXISTS idx_product_serial_numbers_current_store_id;
-DROP INDEX IF EXISTS idx_product_serial_numbers_status;
-DROP INDEX IF EXISTS idx_product_serial_numbers_serial_number;
-DROP INDEX IF EXISTS idx_product_serial_numbers_product_id;
-DROP INDEX IF EXISTS idx_product_prices_is_active;
-DROP INDEX IF EXISTS idx_product_prices_price_list_id;
-DROP INDEX IF EXISTS idx_product_prices_product_variant_id;
-DROP INDEX IF EXISTS idx_product_prices_product_id;
-DROP INDEX IF EXISTS idx_product_barcodes_barcode;
-DROP INDEX IF EXISTS idx_product_barcodes_product_variant_id;
-DROP INDEX IF EXISTS idx_product_barcodes_product_id;
-DROP INDEX IF EXISTS idx_product_variants_is_active;
-DROP INDEX IF EXISTS idx_product_variants_variant_sku;
-DROP INDEX IF EXISTS idx_product_variants_product_id;
-DROP INDEX IF EXISTS idx_products_product_type;
-DROP INDEX IF EXISTS idx_products_is_purchasable;
-DROP INDEX IF EXISTS idx_products_is_sellable;
-DROP INDEX IF EXISTS idx_products_is_active;
-DROP INDEX IF EXISTS idx_products_brand_id;
-DROP INDEX IF EXISTS idx_products_category_id;
-DROP INDEX IF EXISTS idx_products_sku;
-DROP INDEX IF EXISTS idx_products_organization_id;
-DROP INDEX IF EXISTS idx_tax_categories_is_active;
-DROP INDEX IF EXISTS idx_tax_categories_code;
-DROP INDEX IF EXISTS idx_price_lists_valid_to;
-DROP INDEX IF EXISTS idx_price_lists_valid_from;
-DROP INDEX IF EXISTS idx_price_lists_is_active;
-DROP INDEX IF EXISTS idx_price_lists_code;
-DROP INDEX IF EXISTS idx_units_of_measure_uom_type;
-DROP INDEX IF EXISTS idx_units_of_measure_code;
-DROP INDEX IF EXISTS idx_brands_is_active;
-DROP INDEX IF EXISTS idx_brands_code;
-DROP INDEX IF EXISTS idx_product_categories_is_active;
-DROP INDEX IF EXISTS idx_product_categories_code;
-DROP INDEX IF EXISTS idx_product_categories_parent_category_id;
-DROP INDEX IF EXISTS idx_cashier_sessions_opening_time;
-DROP INDEX IF EXISTS idx_cashier_sessions_status;
-DROP INDEX IF EXISTS idx_cashier_sessions_pos_terminal_id;
-DROP INDEX IF EXISTS idx_cashier_sessions_cashier_id;
-DROP INDEX IF EXISTS idx_pos_terminals_is_active;
-DROP INDEX IF EXISTS idx_pos_terminals_store_id;
-DROP INDEX IF EXISTS idx_cashiers_is_active;
-DROP INDEX IF EXISTS idx_cashiers_store_id;
-DROP INDEX IF EXISTS idx_cashiers_user_id;
-DROP INDEX IF EXISTS idx_user_store_access_store_id;
-DROP INDEX IF EXISTS idx_user_store_access_user_id;
-DROP INDEX IF EXISTS idx_user_roles_role_id;
-DROP INDEX IF EXISTS idx_user_roles_user_id;
-DROP INDEX IF EXISTS idx_users_is_active;
-DROP INDEX IF EXISTS idx_users_employee_code;
-DROP INDEX IF EXISTS idx_users_email;
-DROP INDEX IF EXISTS idx_users_username;
-DROP INDEX IF EXISTS idx_users_organization_id;
-DROP INDEX IF EXISTS idx_storage_locations_code;
-DROP INDEX IF EXISTS idx_storage_locations_parent_location_id;
-DROP INDEX IF EXISTS idx_storage_locations_store_id;
-DROP INDEX IF EXISTS idx_stores_store_type;
-DROP INDEX IF EXISTS idx_stores_is_active;
-DROP INDEX IF EXISTS idx_stores_code;
-DROP INDEX IF EXISTS idx_stores_parent_store_id;
-DROP INDEX IF EXISTS idx_stores_organization_id;
-DROP INDEX IF EXISTS idx_role_permissions_permission_id;
-DROP INDEX IF EXISTS idx_role_permissions_role_id;
-DROP INDEX IF EXISTS idx_roles_is_active;
-DROP INDEX IF EXISTS idx_roles_code;
-DROP INDEX IF EXISTS idx_permissions_code;
-DROP INDEX IF EXISTS idx_submenus_display_order;
-DROP INDEX IF EXISTS idx_submenus_is_active;
-DROP INDEX IF EXISTS idx_submenus_parent_submenu_id;
-DROP INDEX IF EXISTS idx_submenus_menu_id;
-DROP INDEX IF EXISTS idx_menus_display_order;
-DROP INDEX IF EXISTS idx_menus_is_active;
-DROP INDEX IF EXISTS idx_menus_parent_menu_id;
-DROP INDEX IF EXISTS idx_menus_module_id;
-DROP INDEX IF EXISTS idx_modules_display_order;
-DROP INDEX IF EXISTS idx_modules_is_active;
-DROP INDEX IF EXISTS idx_modules_code;
-DROP INDEX IF EXISTS idx_tenants_is_active;
-DROP INDEX IF EXISTS idx_tenants_slug;
-DROP INDEX IF EXISTS idx_organizations_is_active;
-DROP INDEX IF EXISTS idx_organizations_code;
-
-DROP TABLE IF EXISTS discount_analytics CASCADE;
-DROP TABLE IF EXISTS profit_loss_analytics CASCADE;
-DROP TABLE IF EXISTS inventory_analytics CASCADE;
-DROP TABLE IF EXISTS purchase_analytics CASCADE;
-DROP TABLE IF EXISTS sales_analytics CASCADE;
-DROP TABLE IF EXISTS kiosk_sessions CASCADE;
-DROP TABLE IF EXISTS waste_logs CASCADE;
-DROP TABLE IF EXISTS restaurant_order_items CASCADE;
-DROP TABLE IF EXISTS restaurant_orders CASCADE;
-DROP TABLE IF EXISTS recipe_ingredients CASCADE;
-DROP TABLE IF EXISTS recipes CASCADE;
-DROP TABLE IF EXISTS menu_item_modifiers CASCADE;
-DROP TABLE IF EXISTS menu_items CASCADE;
-DROP TABLE IF EXISTS menu_categories CASCADE;
-DROP TABLE IF EXISTS restaurant_tables CASCADE;
-
-DROP TABLE IF EXISTS pos_payments CASCADE;
-DROP TABLE IF EXISTS pos_transaction_lines CASCADE;
-DROP TABLE IF EXISTS pos_transactions CASCADE;
--- DROP TABLE IF EXISTS sales_order_lines CASCADE;
-DROP TABLE IF EXISTS sales_orders CASCADE;
-DROP TABLE IF EXISTS purchase_order_lines CASCADE;
-DROP TABLE IF EXISTS purchase_orders CASCADE;
-DROP TABLE IF EXISTS customers CASCADE;
-DROP TABLE IF EXISTS suppliers CASCADE;
-DROP TABLE IF EXISTS stock_count_lines CASCADE;
-DROP TABLE IF EXISTS stock_counts CASCADE;
-DROP TABLE IF EXISTS stock_movements CASCADE;
-DROP TABLE IF EXISTS inventory_stock CASCADE;
-DROP TABLE IF EXISTS product_batches CASCADE;
-DROP TABLE IF EXISTS product_serial_numbers CASCADE;
-DROP TABLE IF EXISTS product_uom_conversions CASCADE;
-DROP TABLE IF EXISTS product_prices CASCADE;
-DROP TABLE IF EXISTS product_barcodes CASCADE;
-DROP TABLE IF EXISTS product_variants CASCADE;
-DROP TABLE IF EXISTS products CASCADE;
-DROP TABLE IF EXISTS tax_categories CASCADE;
-DROP TABLE IF EXISTS price_lists CASCADE;
-DROP TABLE IF EXISTS units_of_measure CASCADE;
-DROP TABLE IF EXISTS brands CASCADE;
-DROP TABLE IF EXISTS product_categories CASCADE;
-DROP TABLE IF EXISTS cashier_sessions CASCADE;
-DROP TABLE IF EXISTS pos_terminals CASCADE;
-DROP TABLE IF EXISTS cashiers CASCADE;
-DROP TABLE IF EXISTS user_store_access CASCADE;
-DROP TABLE IF EXISTS user_roles CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS storage_locations CASCADE;
-DROP TABLE IF EXISTS stores CASCADE;
-DROP TABLE IF EXISTS role_ui_customizations CASCADE;
-DROP TABLE IF EXISTS ui_settings CASCADE;
-DROP TABLE IF EXISTS role_permissions CASCADE;
-DROP TABLE IF EXISTS submenu_permissions CASCADE;
-DROP TABLE IF EXISTS menu_permissions CASCADE;
-DROP TABLE IF EXISTS module_permissions CASCADE;
-DROP TABLE IF EXISTS permissions CASCADE;
-DROP TABLE IF EXISTS roles CASCADE;
-DROP TABLE IF EXISTS submenus CASCADE;
-DROP TABLE IF EXISTS menus CASCADE;
-DROP TABLE IF EXISTS modules CASCADE;
-DROP TABLE IF EXISTS tenants CASCADE;
-DROP TABLE IF EXISTS organizations CASCADE;
-
--- Drop triggers
-DROP TRIGGER IF EXISTS update_quote_lines_updated_at ON quote_lines;
-DROP TRIGGER IF EXISTS update_quotes_updated_at ON quotes;
-DROP TRIGGER IF EXISTS update_invoice_payments_updated_at ON invoice_payments;
-DROP TRIGGER IF EXISTS update_invoice_lines_updated_at ON invoice_lines;
-DROP TRIGGER IF EXISTS update_invoices_updated_at ON invoices;
-DROP TRIGGER IF EXISTS update_order_fulfillments_updated_at ON order_fulfillments;
-DROP TRIGGER IF EXISTS update_sales_order_lines_v2_updated_at ON sales_order_lines_v2;
-DROP TRIGGER IF EXISTS update_sales_orders_v2_updated_at ON sales_orders_v2;
-DROP TRIGGER IF EXISTS update_draft_cart_template_items_updated_at ON draft_cart_template_items;
-DROP TRIGGER IF EXISTS update_draft_cart_templates_updated_at ON draft_cart_templates;
-DROP TRIGGER IF EXISTS update_cart_items_updated_at ON cart_items;
-DROP TRIGGER IF EXISTS update_carts_updated_at ON carts;
-
-DROP TRIGGER IF EXISTS update_invoice_payment_trigger ON invoice_payments;
-DROP TRIGGER IF EXISTS calculate_invoice_totals_trigger ON invoice_lines;
-DROP TRIGGER IF EXISTS calculate_order_totals_trigger ON sales_order_lines_v2;
-DROP TRIGGER IF EXISTS cart_items_activity_trigger ON cart_items;
-DROP TRIGGER IF EXISTS cart_status_change_trigger ON carts;
-
--- Drop functions
-DROP FUNCTION IF EXISTS update_invoice_payment();
-DROP FUNCTION IF EXISTS calculate_invoice_totals();
-DROP FUNCTION IF EXISTS calculate_order_totals();
-DROP FUNCTION IF EXISTS update_cart_activity();
-DROP FUNCTION IF EXISTS log_cart_status_change();
-DROP FUNCTION IF EXISTS update_updated_at_column();
-
--- Drop tables
-DROP TABLE IF EXISTS quote_lines CASCADE;
-DROP TABLE IF EXISTS quotes CASCADE;
-DROP TABLE IF EXISTS invoice_status_history CASCADE;
-DROP TABLE IF EXISTS invoice_payments CASCADE;
-DROP TABLE IF EXISTS invoice_lines CASCADE;
-DROP TABLE IF EXISTS invoices CASCADE;
-DROP TABLE IF EXISTS order_fulfillment_items CASCADE;
-DROP TABLE IF EXISTS order_fulfillments CASCADE;
-DROP TABLE IF EXISTS order_status_history CASCADE;
-DROP TABLE IF EXISTS sales_order_lines_v2 CASCADE;
-DROP TABLE IF EXISTS sales_orders_v2 CASCADE;
-DROP TABLE IF EXISTS draft_cart_template_items CASCADE;
-DROP TABLE IF EXISTS draft_cart_templates CASCADE;
-DROP TABLE IF EXISTS cart_activity_log CASCADE;
-DROP TABLE IF EXISTS cart_items CASCADE;
-DROP TABLE IF EXISTS carts CASCADE;
-
--- Drop types
-DROP TYPE IF EXISTS quote_status;
-DROP TYPE IF EXISTS invoice_status;
-DROP TYPE IF EXISTS invoice_type;
-DROP TYPE IF EXISTS fulfillment_status;
-DROP TYPE IF EXISTS payment_status;
-DROP TYPE IF EXISTS order_status_v2;
-DROP TYPE IF EXISTS order_type;
-DROP TYPE IF EXISTS cart_type;
-DROP TYPE IF EXISTS cart_status;
--- Note: Be careful with this in production
--- DROP EXTENSION IF EXISTS "uuid-ossp";
