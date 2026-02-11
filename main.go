@@ -100,6 +100,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		tenantHandler := handler.NewTenantHandler(tenantUC)
 		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug)
+		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
 	}
 
 	api := r.Group("/api")
