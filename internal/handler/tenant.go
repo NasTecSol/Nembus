@@ -141,7 +141,7 @@ func (h *TenantHandler) GetTenantBySlugAny(c *gin.Context) {
 // @Security     BearerAuth
 // @Success      200  {array}   TenantResponse
 // @Failure      500  {object}  ErrorResponse
-// @Router       /api/tenants [get]
+// @Router       /api/tenants/active [get]
 func (h *TenantHandler) ListActiveTenants(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
