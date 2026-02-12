@@ -70,34 +70,39 @@ func (uc *ProductPricingUseCase) repoOrErr() *repository.Response {
 }
 
 // CreateProductPrice creates a new product price.
+// CreateProductPrice creates a new product price.
 func (uc *ProductPricingUseCase) CreateProductPrice(
 	ctx context.Context,
 	productID int32,
 	productVariantID *int32,
 	priceListID int32,
 	uomID *int32,
-	price *string,
-	minQuantity *string,
-	maxQuantity *string,
-	validFrom *string,
-	validTo *string,
+	price float64,
+	minQuantity *float64,
+	maxQuantity *float64,
+	validFrom *time.Time,
+	validTo *time.Time,
 	isActive *bool,
 	metadata map[string]interface{},
 ) *repository.Response {
+
+	// ---- Repo check ----
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
+	// ---- Basic validation ----
 	if productID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "product_id is required", nil)
 	}
 	if priceListID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "price_list_id is required", nil)
 	}
-	if price == nil || *price == "" {
-		return utils.NewResponse(utils.CodeBadReq, "price is required", nil)
+	if price <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "price must be greater than 0", nil)
 	}
 
+	// ---- Int4 conversions ----
 	var pvID pgtype.Int4
 	if productVariantID != nil {
 		pvID = pgtype.Int4{Int32: *productVariantID, Valid: true}
@@ -108,55 +113,46 @@ func (uc *ProductPricingUseCase) CreateProductPrice(
 		uID = pgtype.Int4{Int32: *uomID, Valid: true}
 	}
 
-	// Parse price
-	priceNum, err := parseNumeric(*price)
-	if err != nil {
+	// ---- Numeric conversions ----
+	priceNum := pgtype.Numeric{Valid: true}
+	if err := priceNum.Scan(strconv.FormatFloat(price, 'f', -1, 64)); err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid price format", nil)
 	}
 
 	var minQty pgtype.Numeric
-	if minQuantity != nil && *minQuantity != "" {
-		minQtyNum, err := parseNumeric(*minQuantity)
-		if err != nil {
+	if minQuantity != nil {
+		if err := minQty.Scan(strconv.FormatFloat(*minQuantity, 'f', -1, 64)); err != nil {
 			return utils.NewResponse(utils.CodeBadReq, "invalid min_quantity format", nil)
 		}
-		minQty = minQtyNum
+		minQty.Valid = true
 	}
 
 	var maxQty pgtype.Numeric
-	if maxQuantity != nil && *maxQuantity != "" {
-		maxQtyNum, err := parseNumeric(*maxQuantity)
-		if err != nil {
+	if maxQuantity != nil {
+		if err := maxQty.Scan(strconv.FormatFloat(*maxQuantity, 'f', -1, 64)); err != nil {
 			return utils.NewResponse(utils.CodeBadReq, "invalid max_quantity format", nil)
 		}
-		maxQty = maxQtyNum
+		maxQty.Valid = true
 	}
 
+	// ---- Date conversions ----
 	var fromDate pgtype.Date
-	if validFrom != nil && *validFrom != "" {
-		parsed, err := time.Parse("2006-01-02", *validFrom)
-		if err != nil {
-			return utils.NewResponse(utils.CodeBadReq, "invalid valid_from format", nil)
-		}
-		fromDate = pgtype.Date{Time: parsed, Valid: true}
+	if validFrom != nil {
+		fromDate = pgtype.Date{Time: *validFrom, Valid: true}
 	}
 
 	var toDate pgtype.Date
-	if validTo != nil && *validTo != "" {
-		parsed, err := time.Parse("2006-01-02", *validTo)
-		if err != nil {
-			return utils.NewResponse(utils.CodeBadReq, "invalid valid_to format", nil)
-		}
-		toDate = pgtype.Date{Time: parsed, Valid: true}
+	if validTo != nil {
+		toDate = pgtype.Date{Time: *validTo, Valid: true}
 	}
 
-	var active pgtype.Bool
+	// ---- Bool conversion ----
+	active := pgtype.Bool{Bool: true, Valid: true} // default true
 	if isActive != nil {
-		active = pgtype.Bool{Bool: *isActive, Valid: true}
-	} else {
-		active = pgtype.Bool{Bool: true, Valid: true} // default to active
+		active.Bool = *isActive
 	}
 
+	// ---- Metadata ----
 	metaBytes := []byte("{}")
 	if metadata != nil {
 		if b, err := json.Marshal(metadata); err == nil {
@@ -164,6 +160,7 @@ func (uc *ProductPricingUseCase) CreateProductPrice(
 		}
 	}
 
+	// ---- DB call ----
 	row, err := uc.repo.CreateProductPrice(ctx, repository.CreateProductPriceParams{
 		ProductID:        productID,
 		ProductVariantID: pvID,

@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/repository"
@@ -37,25 +38,25 @@ type CreateProductPriceRequest struct {
 	ProductID        int32                  `json:"product_id" binding:"required"`
 	ProductVariantID *int32                 `json:"product_variant_id,omitempty"`
 	PriceListID      int32                  `json:"price_list_id" binding:"required"`
-	UomID            *int32                  `json:"uom_id,omitempty"`
-	Price            string                  `json:"price" binding:"required"`
-	MinQuantity      *string                 `json:"min_quantity,omitempty"`
-	MaxQuantity      *string                 `json:"max_quantity,omitempty"`
-	ValidFrom        *string                 `json:"valid_from,omitempty"`
-	ValidTo          *string                 `json:"valid_to,omitempty"`
-	IsActive         *bool                   `json:"is_active,omitempty"`
-	Metadata         map[string]interface{}  `json:"metadata,omitempty"`
+	UomID            *int32                 `json:"uom_id,omitempty"`
+	Price            float64                `json:"price" binding:"required"` // <-- float64
+	MinQuantity      *float64               `json:"min_quantity,omitempty"`
+	MaxQuantity      *float64               `json:"max_quantity,omitempty"`
+	ValidFrom        *time.Time             `json:"valid_from,omitempty"`
+	ValidTo          *time.Time             `json:"valid_to,omitempty"`
+	IsActive         *bool                  `json:"is_active,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // UpdateProductPriceRequest represents request body for updating a product price.
 type UpdateProductPriceRequest struct {
-	Price       *string                 `json:"price,omitempty"`
-	MinQuantity *string                 `json:"min_quantity,omitempty"`
-	MaxQuantity *string                 `json:"max_quantity,omitempty"`
-	ValidFrom   *string                 `json:"valid_from,omitempty"`
-	ValidTo     *string                 `json:"valid_to,omitempty"`
-	IsActive    *bool                   `json:"is_active,omitempty"`
-	Metadata    map[string]interface{}  `json:"metadata,omitempty"`
+	Price       *string                `json:"price,omitempty"`
+	MinQuantity *string                `json:"min_quantity,omitempty"`
+	MaxQuantity *string                `json:"max_quantity,omitempty"`
+	ValidFrom   *string                `json:"valid_from,omitempty"`
+	ValidTo     *string                `json:"valid_to,omitempty"`
+	IsActive    *bool                  `json:"is_active,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // BulkUpdatePricesRequest represents request body for bulk updating prices.
@@ -97,11 +98,11 @@ func (h *ProductPricingHandler) CreateProductPrice(c *gin.Context) {
 		req.ProductVariantID,
 		req.PriceListID,
 		req.UomID,
-		&req.Price,
-		req.MinQuantity,
-		req.MaxQuantity,
-		req.ValidFrom,
-		req.ValidTo,
+		req.Price,       // float64 (NOT &req.Price)
+		req.MinQuantity, // *float64
+		req.MaxQuantity, // *float64
+		req.ValidFrom,   // *time.Time
+		req.ValidTo,     // *time.Time
 		req.IsActive,
 		req.Metadata,
 	)
