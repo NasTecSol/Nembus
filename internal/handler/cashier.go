@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -57,15 +56,7 @@ func (h *CashierHandler) CreateCashier(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	var req struct {
-		UserID        int32           `json:"user_id" binding:"required"`
-		StoreID       int32           `json:"store_id" binding:"required"`
-		CashierCode   string          `json:"cashier_code" binding:"required"`
-		DrawerLimit   *pgtype.Numeric `json:"drawer_limit,omitempty"`
-		DiscountLimit *pgtype.Numeric `json:"discount_limit,omitempty"`
-		IsActive      bool            `json:"is_active"`
-		Metadata      json.RawMessage `json:"metadata,omitempty"`
-	}
+	var req CreateCashierRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
@@ -74,10 +65,36 @@ func (h *CashierHandler) CreateCashier(c *gin.Context) {
 
 	var metaBytes []byte
 	if req.Metadata != nil {
-		metaBytes = req.Metadata
+		var err error
+		metaBytes, err = bytesFromMap(req.Metadata)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata", nil))
+			return
+		}
 	}
 
-	resp := h.useCase.CreateCashier(c.Request.Context(), req.UserID, req.StoreID, req.CashierCode, req.DrawerLimit, req.DiscountLimit, req.IsActive, metaBytes)
+	// Convert string amounts to pgtype.Numeric
+	var drawerLimit *pgtype.Numeric
+	if req.DrawerLimit != nil {
+		dl, err := numericFromString(*req.DrawerLimit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid drawer_limit", nil))
+			return
+		}
+		drawerLimit = &dl
+	}
+
+	var discountLimit *pgtype.Numeric
+	if req.DiscountLimit != nil {
+		dl, err := numericFromString(*req.DiscountLimit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid discount_limit", nil))
+			return
+		}
+		discountLimit = &dl
+	}
+
+	resp := h.useCase.CreateCashier(c.Request.Context(), req.UserID, req.StoreID, req.CashierCode, drawerLimit, discountLimit, req.IsActive, metaBytes)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -478,15 +495,7 @@ func (h *CashierHandler) UpdateCashier(c *gin.Context) {
 
 	id := c.Param("id")
 
-	var req struct {
-		UserID        *int32          `json:"user_id,omitempty"`
-		StoreID       *int32          `json:"store_id,omitempty"`
-		CashierCode   *string         `json:"cashier_code,omitempty"`
-		DrawerLimit   *pgtype.Numeric `json:"drawer_limit,omitempty"`
-		DiscountLimit *pgtype.Numeric `json:"discount_limit,omitempty"`
-		IsActive      *bool           `json:"is_active,omitempty"`
-		Metadata      json.RawMessage `json:"metadata,omitempty"`
-	}
+	var req UpdateCashierRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
@@ -495,10 +504,36 @@ func (h *CashierHandler) UpdateCashier(c *gin.Context) {
 
 	var metaBytes []byte
 	if req.Metadata != nil {
-		metaBytes = req.Metadata
+		var err error
+		metaBytes, err = bytesFromMap(req.Metadata)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata", nil))
+			return
+		}
 	}
 
-	resp := h.useCase.UpdateCashier(c.Request.Context(), id, req.UserID, req.StoreID, req.CashierCode, req.DrawerLimit, req.DiscountLimit, req.IsActive, metaBytes)
+	// Convert string amounts to pgtype.Numeric
+	var drawerLimit *pgtype.Numeric
+	if req.DrawerLimit != nil {
+		dl, err := numericFromString(*req.DrawerLimit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid drawer_limit", nil))
+			return
+		}
+		drawerLimit = &dl
+	}
+
+	var discountLimit *pgtype.Numeric
+	if req.DiscountLimit != nil {
+		dl, err := numericFromString(*req.DiscountLimit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid discount_limit", nil))
+			return
+		}
+		discountLimit = &dl
+	}
+
+	resp := h.useCase.UpdateCashier(c.Request.Context(), id, req.UserID, req.StoreID, req.CashierCode, drawerLimit, discountLimit, req.IsActive, metaBytes)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -527,17 +562,26 @@ func (h *CashierHandler) UpdateCashierLimits(c *gin.Context) {
 
 	id := c.Param("id")
 
-	var req struct {
-		DrawerLimit   pgtype.Numeric `json:"drawer_limit" binding:"required"`
-		DiscountLimit pgtype.Numeric `json:"discount_limit" binding:"required"`
-	}
+	var req UpdateCashierLimitsRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
 		return
 	}
 
-	resp := h.useCase.UpdateCashierLimits(c.Request.Context(), id, req.DrawerLimit, req.DiscountLimit)
+	drawerLimit, err := numericFromString(req.DrawerLimit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid drawer_limit", nil))
+		return
+	}
+
+	discountLimit, err := numericFromString(req.DiscountLimit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid discount_limit", nil))
+		return
+	}
+
+	resp := h.useCase.UpdateCashierLimits(c.Request.Context(), id, drawerLimit, discountLimit)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -566,16 +610,20 @@ func (h *CashierHandler) UpdateCashierDrawerLimit(c *gin.Context) {
 
 	id := c.Param("id")
 
-	var req struct {
-		DrawerLimit pgtype.Numeric `json:"drawer_limit" binding:"required"`
-	}
+	var req UpdateCashierDrawerLimitRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
 		return
 	}
 
-	resp := h.useCase.UpdateCashierDrawerLimit(c.Request.Context(), id, req.DrawerLimit)
+	drawerLimit, err := numericFromString(req.DrawerLimit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid drawer_limit", nil))
+		return
+	}
+
+	resp := h.useCase.UpdateCashierDrawerLimit(c.Request.Context(), id, drawerLimit)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -604,16 +652,20 @@ func (h *CashierHandler) UpdateCashierDiscountLimit(c *gin.Context) {
 
 	id := c.Param("id")
 
-	var req struct {
-		DiscountLimit pgtype.Numeric `json:"discount_limit" binding:"required"`
-	}
+	var req UpdateCashierDiscountLimitRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
 		return
 	}
 
-	resp := h.useCase.UpdateCashierDiscountLimit(c.Request.Context(), id, req.DiscountLimit)
+	discountLimit, err := numericFromString(req.DiscountLimit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid discount_limit", nil))
+		return
+	}
+
+	resp := h.useCase.UpdateCashierDiscountLimit(c.Request.Context(), id, discountLimit)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -642,16 +694,20 @@ func (h *CashierHandler) UpdateCashierMetadata(c *gin.Context) {
 
 	id := c.Param("id")
 
-	var req struct {
-		Metadata json.RawMessage `json:"metadata" binding:"required"`
-	}
+	var req UpdateCashierMetadataRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
 		return
 	}
 
-	resp := h.useCase.UpdateCashierMetadata(c.Request.Context(), id, req.Metadata)
+	metaBytes, err := bytesFromMap(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata", nil))
+		return
+	}
+
+	resp := h.useCase.UpdateCashierMetadata(c.Request.Context(), id, metaBytes)
 	c.JSON(resp.StatusCode, resp)
 }
 
