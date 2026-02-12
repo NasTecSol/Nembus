@@ -44,7 +44,7 @@ func (h *BrandHandler) getRepositoryFromContext(c *gin.Context) *repository.Quer
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        brand         body      object  true  "Brand data"
+// @Param        brand         body      CreateBrandRequest  true  "Brand data"
 // @Success      201           {object}  BrandResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -82,7 +82,7 @@ func (h *BrandHandler) CreateBrand(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        brand         body      object  true  "Brand data"
+// @Param        brand         body      CreateBrandWithDefaultsRequest  true  "Brand data"
 // @Success      201           {object}  BrandResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -409,7 +409,7 @@ func (h *BrandHandler) SearchActiveBrands(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Brand ID"
-// @Param        brand         body      object  true  "Brand data"
+// @Param        brand         body      UpdateBrandRequest  true  "Brand data"
 // @Success      200           {object}  BrandResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -451,7 +451,7 @@ func (h *BrandHandler) UpdateBrand(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Brand ID"
-// @Param        name          body      object  true  "Name data"
+// @Param        name          body      UpdateBrandNameRequest  true  "Name data"
 // @Success      200           {object}  BrandResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -489,7 +489,7 @@ func (h *BrandHandler) UpdateBrandName(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Brand ID"
-// @Param        code          body      object  true  "Code data"
+// @Param        code          body      UpdateBrandCodeRequest  true  "Code data"
 // @Success      200           {object}  BrandResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -527,7 +527,7 @@ func (h *BrandHandler) UpdateBrandCode(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Brand ID"
-// @Param        metadata      body      object  true  "Metadata"
+// @Param        metadata      body      UpdateBrandMetadataRequest  true  "Metadata"
 // @Success      200           {object}  BrandResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -922,7 +922,7 @@ func (h *BrandHandler) GetInactiveBrandsWithActiveProducts(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        ids           body      object  true  "Brand IDs"
+// @Param        ids           body      BulkBrandIDsRequest  true  "Brand IDs"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -957,7 +957,7 @@ func (h *BrandHandler) BulkActivateBrands(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        ids           body      object  true  "Brand IDs"
+// @Param        ids           body      BulkBrandIDsRequest  true  "Brand IDs"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -992,7 +992,7 @@ func (h *BrandHandler) BulkDeactivateBrands(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        ids           body      object  true  "Brand IDs"
+// @Param        ids           body      BulkBrandIDsRequest  true  "Brand IDs"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse

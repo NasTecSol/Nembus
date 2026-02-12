@@ -1021,8 +1021,51 @@ type SetPrimaryBarcodeRequest struct {
 	BarcodeID int32 `json:"barcode_id" binding:"required" example:"1"`
 }
 
+// =====================================================
 // Brand Module
 // =====================================================
+
+// CreateBrandRequest represents request body for creating a brand
+type CreateBrandRequest struct {
+	Name     string                 `json:"name" binding:"required" example:"Nike"`
+	Code     string                 `json:"code" binding:"required" example:"NIKE"`
+	IsActive bool                   `json:"is_active" example:"true"`
+	Metadata map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// CreateBrandWithDefaultsRequest represents request body for creating a brand with defaults
+type CreateBrandWithDefaultsRequest struct {
+	Name string `json:"name" binding:"required" example:"Nike"`
+	Code string `json:"code" binding:"required" example:"NIKE"`
+}
+
+// UpdateBrandRequest represents request body for updating a brand
+type UpdateBrandRequest struct {
+	Name     *string                `json:"name,omitempty" example:"Nike Updated"`
+	Code     *string                `json:"code,omitempty" example:"NIKE_V2"`
+	IsActive *bool                  `json:"is_active,omitempty" example:"true"`
+	Metadata map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateBrandNameRequest represents request body for updating brand name
+type UpdateBrandNameRequest struct {
+	Name string `json:"name" binding:"required" example:"Nike Updated"`
+}
+
+// UpdateBrandCodeRequest represents request body for updating brand code
+type UpdateBrandCodeRequest struct {
+	Code string `json:"code" binding:"required" example:"NIKE_V2"`
+}
+
+// UpdateBrandMetadataRequest represents request body for updating brand metadata
+type UpdateBrandMetadataRequest struct {
+	Metadata map[string]interface{} `json:"metadata" binding:"required" swaggertype:"object"`
+}
+
+// BulkBrandIDsRequest represents request body for bulk brand operations
+type BulkBrandIDsRequest struct {
+	IDs []int32 `json:"ids" binding:"required" example:"1,2,3"`
+}
 
 // BrandResponse represents a brand in API responses
 type BrandResponse struct {
@@ -1079,6 +1122,56 @@ type MetadataResponse struct {
 // =====================================================
 // Cashier Module
 // =====================================================
+
+// CreateCashierRequest represents request body for creating a cashier
+type CreateCashierRequest struct {
+	UserID        int32                  `json:"user_id" binding:"required" example:"10"`
+	StoreID       int32                  `json:"store_id" binding:"required" example:"5"`
+	CashierCode   string                 `json:"cashier_code" binding:"required" example:"CASH001"`
+	DrawerLimit   *string                `json:"drawer_limit,omitempty" example:"1000.00"`
+	DiscountLimit *string                `json:"discount_limit,omitempty" example:"50.00"`
+	IsActive      bool                   `json:"is_active" example:"true"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// CreateCashierWithDefaultsRequest represents request body for creating a cashier with defaults
+type CreateCashierWithDefaultsRequest struct {
+	UserID      int32  `json:"user_id" binding:"required" example:"10"`
+	StoreID     int32  `json:"store_id" binding:"required" example:"5"`
+	CashierCode string `json:"cashier_code" binding:"required" example:"CASH001"`
+}
+
+// UpdateCashierRequest represents request body for updating a cashier
+type UpdateCashierRequest struct {
+	UserID        *int32                 `json:"user_id,omitempty" example:"10"`
+	StoreID       *int32                 `json:"store_id,omitempty" example:"5"`
+	CashierCode   *string                `json:"cashier_code,omitempty" example:"CASH002"`
+	DrawerLimit   *string                `json:"drawer_limit,omitempty" example:"1500.00"`
+	DiscountLimit *string                `json:"discount_limit,omitempty" example:"75.00"`
+	IsActive      *bool                  `json:"is_active,omitempty" example:"true"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateCashierLimitsRequest represents request body for updating cashier limits
+type UpdateCashierLimitsRequest struct {
+	DrawerLimit   string `json:"drawer_limit" binding:"required" example:"1000.00"`
+	DiscountLimit string `json:"discount_limit" binding:"required" example:"50.00"`
+}
+
+// UpdateCashierDrawerLimitRequest represents request body for updating drawer limit
+type UpdateCashierDrawerLimitRequest struct {
+	DrawerLimit string `json:"drawer_limit" binding:"required" example:"1000.00"`
+}
+
+// UpdateCashierDiscountLimitRequest represents request body for updating discount limit
+type UpdateCashierDiscountLimitRequest struct {
+	DiscountLimit string `json:"discount_limit" binding:"required" example:"50.00"`
+}
+
+// UpdateCashierMetadataRequest represents request body for updating cashier metadata
+type UpdateCashierMetadataRequest struct {
+	Metadata map[string]interface{} `json:"metadata" binding:"required" swaggertype:"object"`
+}
 
 // CashierResponse represents a cashier in API responses
 type CashierResponse struct {
