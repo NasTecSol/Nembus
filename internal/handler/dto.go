@@ -1,5 +1,7 @@
 package handler
 
+import "encoding/json"
+
 // UserResponse represents a user in API responses
 type UserResponse struct {
 	ID             int32  `json:"id" example:"1"`
@@ -1069,13 +1071,13 @@ type BulkBrandIDsRequest struct {
 
 // BrandResponse represents a brand in API responses
 type BrandResponse struct {
-	ID        int32  `json:"id" example:"1"`
-	Name      string `json:"name" example:"Nike"`
-	Code      string `json:"code" example:"NIKE"`
-	IsActive  bool   `json:"is_active" example:"true"`
-	Metadata  string `json:"metadata,omitempty" example:"{\"country\":\"USA\"}"`
-	CreatedAt string `json:"created_at" example:"2026-01-24T21:43:00Z"`
-	UpdatedAt string `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+	ID        int32           `json:"id" example:"1"`
+	Name      string          `json:"name" example:"Nike"`
+	Code      string          `json:"code" example:"NIKE"`
+	IsActive  bool            `json:"is_active" example:"true"`
+	Metadata  json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt string          `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt string          `json:"updated_at" example:"2026-01-24T21:43:00Z"`
 }
 
 // BrandWithProductCountResponse represents a brand with product count
@@ -1175,15 +1177,15 @@ type UpdateCashierMetadataRequest struct {
 
 // CashierResponse represents a cashier in API responses
 type CashierResponse struct {
-	ID            int32  `json:"id" example:"1"`
-	UserID        int32  `json:"user_id" example:"10"`
-	StoreID       int32  `json:"store_id" example:"5"`
-	CashierCode   string `json:"cashier_code" example:"CASH001"`
-	DrawerLimit   string `json:"drawer_limit,omitempty" example:"1000.00"`
-	DiscountLimit string `json:"discount_limit,omitempty" example:"50.00"`
-	IsActive      bool   `json:"is_active" example:"true"`
-	Metadata      string `json:"metadata,omitempty" example:"{\"shift\":\"morning\"}"`
-	CreatedAt     string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	ID            int32           `json:"id" example:"1"`
+	UserID        int32           `json:"user_id" example:"10"`
+	StoreID       int32           `json:"store_id" example:"5"`
+	CashierCode   string          `json:"cashier_code" example:"CASH001"`
+	DrawerLimit   string          `json:"drawer_limit,omitempty" example:"1000.00"`
+	DiscountLimit string          `json:"discount_limit,omitempty" example:"50.00"`
+	IsActive      bool            `json:"is_active" example:"true"`
+	Metadata      json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt     string          `json:"created_at" example:"2026-01-24T21:43:00Z"`
 }
 
 // CashierWithLimitsResponse represents a cashier with limits and user details
