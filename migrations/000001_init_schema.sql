@@ -682,23 +682,23 @@ CREATE TABLE sales_orders (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- CREATE TABLE sales_order_lines (
---     id SERIAL PRIMARY KEY,
---     sales_order_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
---     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
---     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
---     quantity DECIMAL(15,3) NOT NULL,
---     uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
---     unit_price DECIMAL(15,4) NOT NULL,
---     discount_amount DECIMAL(15,2) DEFAULT 0,
---     tax_amount DECIMAL(15,2) DEFAULT 0,
---     subtotal DECIMAL(15,2) NOT NULL,
---     line_total DECIMAL(15,2) DEFAULT 0,
---     shipped_quantity DECIMAL(15,3) DEFAULT 0,
---     line_number INTEGER,
---     metadata JSONB DEFAULT '{}',
---     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
+CREATE TABLE sales_order_lines (
+    id SERIAL PRIMARY KEY,
+    sales_order_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    quantity DECIMAL(15,3) NOT NULL,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    unit_price DECIMAL(15,4) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0,
+    tax_amount DECIMAL(15,2) DEFAULT 0,
+    subtotal DECIMAL(15,2) NOT NULL,
+    line_total DECIMAL(15,2) DEFAULT 0,
+    shipped_quantity DECIMAL(15,3) DEFAULT 0,
+    line_number INTEGER,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- =====================================================
 -- POS TRANSACTIONS
@@ -2392,8 +2392,8 @@ CREATE INDEX idx_sales_orders_status ON sales_orders(status);
 CREATE INDEX idx_sales_orders_order_date ON sales_orders(order_date);
 
 -- Sales Order Lines
--- CREATE INDEX idx_sales_order_lines_sales_order_id ON sales_order_lines(sales_order_id);
--- CREATE INDEX idx_sales_order_lines_product_id ON sales_order_lines(product_id);
+CREATE INDEX idx_sales_order_lines_sales_order_id ON sales_order_lines(sales_order_id);
+CREATE INDEX idx_sales_order_lines_product_id ON sales_order_lines(product_id);
 
 -- POS Transactions
 CREATE INDEX idx_pos_transactions_store_id ON pos_transactions(store_id);
@@ -3674,7 +3674,7 @@ DROP TABLE IF EXISTS restaurant_tables CASCADE;
 DROP TABLE IF EXISTS pos_payments CASCADE;
 DROP TABLE IF EXISTS pos_transaction_lines CASCADE;
 DROP TABLE IF EXISTS pos_transactions CASCADE;
--- DROP TABLE IF EXISTS sales_order_lines CASCADE;
+DROP TABLE IF EXISTS sales_order_lines CASCADE;
 DROP TABLE IF EXISTS sales_orders CASCADE;
 DROP TABLE IF EXISTS purchase_order_lines CASCADE;
 DROP TABLE IF EXISTS purchase_orders CASCADE;

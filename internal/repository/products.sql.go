@@ -29,46 +29,8 @@ func (q *Queries) CountProducts(ctx context.Context, arg CountProductsParams) (i
 	return count, err
 }
 
-const createBrand = `-- name: CreateBrand :one
-
-INSERT INTO brands (
-    name, code, is_active, metadata
-) VALUES (
-    $1, $2, $3, $4
-) RETURNING id, name, code, is_active, metadata, created_at, updated_at
-`
-
-type CreateBrandParams struct {
-	Name     string      `json:"name"`
-	Code     string      `json:"code"`
-	IsActive pgtype.Bool `json:"is_active"`
-	Metadata []byte      `json:"metadata"`
-}
-
-// =====================================================
-// BRANDS
-// =====================================================
-func (q *Queries) CreateBrand(ctx context.Context, arg CreateBrandParams) (Brand, error) {
-	row := q.db.QueryRow(ctx, createBrand,
-		arg.Name,
-		arg.Code,
-		arg.IsActive,
-		arg.Metadata,
-	)
-	var i Brand
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Code,
-		&i.IsActive,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createProduct = `-- name: CreateProduct :one
+
 
 
 
@@ -102,6 +64,10 @@ type CreateProductParams struct {
 	Metadata             []byte      `json:"metadata"`
 }
 
+// =====================================================
+// BRANDS
+// Note: Brand queries are in brands.sql
+// =====================================================
 // =====================================================
 // UNITS OF MEASURE
 // Note: UOM queries are in uom_query.sql
@@ -208,15 +174,6 @@ func (q *Queries) CreateProductCategory(ctx context.Context, arg CreateProductCa
 	return i, err
 }
 
-const deleteBrand = `-- name: DeleteBrand :exec
-DELETE FROM brands WHERE id = $1
-`
-
-func (q *Queries) DeleteBrand(ctx context.Context, id int32) error {
-	_, err := q.db.Exec(ctx, deleteBrand, id)
-	return err
-}
-
 const deleteProduct = `-- name: DeleteProduct :exec
 DELETE FROM products WHERE id = $1
 `
@@ -233,44 +190,6 @@ DELETE FROM product_categories WHERE id = $1
 func (q *Queries) DeleteProductCategory(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, deleteProductCategory, id)
 	return err
-}
-
-const getBrand = `-- name: GetBrand :one
-SELECT id, name, code, is_active, metadata, created_at, updated_at FROM brands WHERE id = $1 LIMIT 1
-`
-
-func (q *Queries) GetBrand(ctx context.Context, id int32) (Brand, error) {
-	row := q.db.QueryRow(ctx, getBrand, id)
-	var i Brand
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Code,
-		&i.IsActive,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getBrandByCode = `-- name: GetBrandByCode :one
-SELECT id, name, code, is_active, metadata, created_at, updated_at FROM brands WHERE code = $1 LIMIT 1
-`
-
-func (q *Queries) GetBrandByCode(ctx context.Context, code string) (Brand, error) {
-	row := q.db.QueryRow(ctx, getBrandByCode, code)
-	var i Brand
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Code,
-		&i.IsActive,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const getCategoryHierarchy = `-- name: GetCategoryHierarchy :many
@@ -551,47 +470,6 @@ func (q *Queries) GetProductWithDetails(ctx context.Context, id int32) (GetProdu
 	return i, err
 }
 
-const listBrands = `-- name: ListBrands :many
-SELECT id, name, code, is_active, metadata, created_at, updated_at FROM brands
-WHERE is_active = COALESCE($3, is_active)
-ORDER BY name
-LIMIT $1 OFFSET $2
-`
-
-type ListBrandsParams struct {
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
-	IsActive pgtype.Bool `json:"is_active"`
-}
-
-func (q *Queries) ListBrands(ctx context.Context, arg ListBrandsParams) ([]Brand, error) {
-	rows, err := q.db.Query(ctx, listBrands, arg.Limit, arg.Offset, arg.IsActive)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Brand
-	for rows.Next() {
-		var i Brand
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Code,
-			&i.IsActive,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listCategoryChildren = `-- name: ListCategoryChildren :many
 SELECT id, parent_category_id, name, code, description, category_level, is_active, metadata, created_at, updated_at FROM product_categories
 WHERE parent_category_id = $1
@@ -855,48 +733,6 @@ func (q *Queries) ListSellableProducts(ctx context.Context, arg ListSellableProd
 	return items, nil
 }
 
-const searchBrands = `-- name: SearchBrands :many
-SELECT id, name, code, is_active, metadata, created_at, updated_at FROM brands
-WHERE is_active = true
-  AND (name ILIKE '%' || $1 || '%' OR code ILIKE '%' || $1 || '%')
-ORDER BY name
-LIMIT $2 OFFSET $3
-`
-
-type SearchBrandsParams struct {
-	Column1 pgtype.Text `json:"column_1"`
-	Limit   int32       `json:"limit"`
-	Offset  int32       `json:"offset"`
-}
-
-func (q *Queries) SearchBrands(ctx context.Context, arg SearchBrandsParams) ([]Brand, error) {
-	rows, err := q.db.Query(ctx, searchBrands, arg.Column1, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Brand
-	for rows.Next() {
-		var i Brand
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Code,
-			&i.IsActive,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const searchProducts = `-- name: SearchProducts :many
 SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products
 WHERE organization_id = $1
@@ -961,43 +797,6 @@ func (q *Queries) SearchProducts(ctx context.Context, arg SearchProductsParams) 
 		return nil, err
 	}
 	return items, nil
-}
-
-const updateBrand = `-- name: UpdateBrand :one
-UPDATE brands
-SET 
-    name = COALESCE($1, name),
-    is_active = COALESCE($2, is_active),
-    metadata = COALESCE($3, metadata)
-WHERE id = $4
-RETURNING id, name, code, is_active, metadata, created_at, updated_at
-`
-
-type UpdateBrandParams struct {
-	Name     pgtype.Text `json:"name"`
-	IsActive pgtype.Bool `json:"is_active"`
-	Metadata []byte      `json:"metadata"`
-	ID       int32       `json:"id"`
-}
-
-func (q *Queries) UpdateBrand(ctx context.Context, arg UpdateBrandParams) (Brand, error) {
-	row := q.db.QueryRow(ctx, updateBrand,
-		arg.Name,
-		arg.IsActive,
-		arg.Metadata,
-		arg.ID,
-	)
-	var i Brand
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Code,
-		&i.IsActive,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const updateProduct = `-- name: UpdateProduct :one
