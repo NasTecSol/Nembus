@@ -1019,6 +1019,8 @@ type UpdateProductBarcodeRequest struct {
 
 type SetPrimaryBarcodeRequest struct {
 	BarcodeID int32 `json:"barcode_id" binding:"required" example:"1"`
+}
+
 // Brand Module
 // =====================================================
 
