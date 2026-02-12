@@ -44,7 +44,7 @@ func (h *CashierHandler) getRepositoryFromContext(c *gin.Context) *repository.Qu
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        cashier       body      object  true  "Cashier data"
+// @Param        cashier       body      CreateCashierRequest  true  "Cashier data"
 // @Success      201           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -58,13 +58,13 @@ func (h *CashierHandler) CreateCashier(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	var req struct {
-		UserID        int32            `json:"user_id" binding:"required"`
-		StoreID       int32            `json:"store_id" binding:"required"`
-		CashierCode   string           `json:"cashier_code" binding:"required"`
-		DrawerLimit   *pgtype.Numeric  `json:"drawer_limit,omitempty"`
-		DiscountLimit *pgtype.Numeric   `json:"discount_limit,omitempty"`
-		IsActive      bool             `json:"is_active"`
-		Metadata      json.RawMessage  `json:"metadata,omitempty"`
+		UserID        int32           `json:"user_id" binding:"required"`
+		StoreID       int32           `json:"store_id" binding:"required"`
+		CashierCode   string          `json:"cashier_code" binding:"required"`
+		DrawerLimit   *pgtype.Numeric `json:"drawer_limit,omitempty"`
+		DiscountLimit *pgtype.Numeric `json:"discount_limit,omitempty"`
+		IsActive      bool            `json:"is_active"`
+		Metadata      json.RawMessage `json:"metadata,omitempty"`
 	}
 
 	if err := c.BindJSON(&req); err != nil {
@@ -90,7 +90,7 @@ func (h *CashierHandler) CreateCashier(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
-// @Param        cashier       body      object  true  "Cashier data"
+// @Param        cashier       body      CreateCashierWithDefaultsRequest  true  "Cashier data"
 // @Success      201           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -462,7 +462,7 @@ func (h *CashierHandler) CountCashiersByStore(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Cashier ID"
-// @Param        cashier       body      object  true  "Cashier data"
+// @Param        cashier       body      UpdateCashierRequest  true  "Cashier data"
 // @Success      200           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -479,13 +479,13 @@ func (h *CashierHandler) UpdateCashier(c *gin.Context) {
 	id := c.Param("id")
 
 	var req struct {
-		UserID        *int32           `json:"user_id,omitempty"`
-		StoreID       *int32           `json:"store_id,omitempty"`
-		CashierCode   *string          `json:"cashier_code,omitempty"`
-		DrawerLimit   *pgtype.Numeric  `json:"drawer_limit,omitempty"`
-		DiscountLimit *pgtype.Numeric  `json:"discount_limit,omitempty"`
-		IsActive      *bool            `json:"is_active,omitempty"`
-		Metadata      json.RawMessage  `json:"metadata,omitempty"`
+		UserID        *int32          `json:"user_id,omitempty"`
+		StoreID       *int32          `json:"store_id,omitempty"`
+		CashierCode   *string         `json:"cashier_code,omitempty"`
+		DrawerLimit   *pgtype.Numeric `json:"drawer_limit,omitempty"`
+		DiscountLimit *pgtype.Numeric `json:"discount_limit,omitempty"`
+		IsActive      *bool           `json:"is_active,omitempty"`
+		Metadata      json.RawMessage `json:"metadata,omitempty"`
 	}
 
 	if err := c.BindJSON(&req); err != nil {
@@ -512,7 +512,7 @@ func (h *CashierHandler) UpdateCashier(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Cashier ID"
-// @Param        limits        body      object  true  "Limits data"
+// @Param        limits        body      UpdateCashierLimitsRequest  true  "Limits data"
 // @Success      200           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -551,7 +551,7 @@ func (h *CashierHandler) UpdateCashierLimits(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Cashier ID"
-// @Param        limit         body      object  true  "Drawer limit"
+// @Param        limit         body      UpdateCashierDrawerLimitRequest  true  "Drawer limit"
 // @Success      200           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -589,7 +589,7 @@ func (h *CashierHandler) UpdateCashierDrawerLimit(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Cashier ID"
-// @Param        limit         body      object  true  "Discount limit"
+// @Param        limit         body      UpdateCashierDiscountLimitRequest  true  "Discount limit"
 // @Success      200           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -627,7 +627,7 @@ func (h *CashierHandler) UpdateCashierDiscountLimit(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      string  true  "Cashier ID"
-// @Param        metadata      body      object  true  "Metadata"
+// @Param        metadata      body      UpdateCashierMetadataRequest  true  "Metadata"
 // @Success      200           {object}  CashierResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
