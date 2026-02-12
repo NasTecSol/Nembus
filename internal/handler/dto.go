@@ -1019,4 +1019,97 @@ type UpdateProductBarcodeRequest struct {
 
 type SetPrimaryBarcodeRequest struct {
 	BarcodeID int32 `json:"barcode_id" binding:"required" example:"1"`
+// Brand Module
+// =====================================================
+
+// BrandResponse represents a brand in API responses
+type BrandResponse struct {
+	ID        int32  `json:"id" example:"1"`
+	Name      string `json:"name" example:"Nike"`
+	Code      string `json:"code" example:"NIKE"`
+	IsActive  bool   `json:"is_active" example:"true"`
+	Metadata  string `json:"metadata,omitempty" example:"{\"country\":\"USA\"}"`
+	CreatedAt string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt string `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// BrandWithProductCountResponse represents a brand with product count
+type BrandWithProductCountResponse struct {
+	ID           int32  `json:"id" example:"1"`
+	Name         string `json:"name" example:"Nike"`
+	Code         string `json:"code" example:"NIKE"`
+	IsActive     bool   `json:"is_active" example:"true"`
+	ProductCount int64  `json:"product_count" example:"150"`
+	CreatedAt    string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt    string `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// BrandWithStatsResponse represents a brand with statistics
+type BrandWithStatsResponse struct {
+	ID            int32  `json:"id" example:"1"`
+	Name          string `json:"name" example:"Nike"`
+	Code          string `json:"code" example:"NIKE"`
+	IsActive      bool   `json:"is_active" example:"true"`
+	ProductCount  int64  `json:"product_count" example:"150"`
+	CategoryCount int64  `json:"category_count" example:"5"`
+	CreatedAt     string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt     string `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// CountResponse represents a count response
+type CountResponse struct {
+	Count int64 `json:"count" example:"100"`
+}
+
+// ExistsResponse represents an existence check response
+type ExistsResponse struct {
+	Exists bool `json:"exists" example:"true"`
+}
+
+// MetadataResponse represents a metadata response
+type MetadataResponse struct {
+	ID            int32  `json:"id" example:"1"`
+	Name          string `json:"name" example:"Nike"`
+	Code          string `json:"code" example:"NIKE"`
+	MetadataValue string `json:"metadata_value" example:"{\"country\":\"USA\"}"`
+}
+
+// =====================================================
+// Cashier Module
+// =====================================================
+
+// CashierResponse represents a cashier in API responses
+type CashierResponse struct {
+	ID            int32  `json:"id" example:"1"`
+	UserID        int32  `json:"user_id" example:"10"`
+	StoreID       int32  `json:"store_id" example:"5"`
+	CashierCode   string `json:"cashier_code" example:"CASH001"`
+	DrawerLimit   string `json:"drawer_limit,omitempty" example:"1000.00"`
+	DiscountLimit string `json:"discount_limit,omitempty" example:"50.00"`
+	IsActive      bool   `json:"is_active" example:"true"`
+	Metadata      string `json:"metadata,omitempty" example:"{\"shift\":\"morning\"}"`
+	CreatedAt     string `json:"created_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// CashierWithLimitsResponse represents a cashier with limits and user details
+type CashierWithLimitsResponse struct {
+	ID            int32  `json:"id" example:"1"`
+	CashierCode   string `json:"cashier_code" example:"CASH001"`
+	DrawerLimit   string `json:"drawer_limit,omitempty" example:"1000.00"`
+	DiscountLimit string `json:"discount_limit,omitempty" example:"50.00"`
+	IsActive      bool   `json:"is_active" example:"true"`
+	FirstName     string `json:"first_name" example:"John"`
+	LastName      string `json:"last_name" example:"Doe"`
+	Email         string `json:"email" example:"john.doe@example.com"`
+	StoreName     string `json:"store_name" example:"Main Store"`
+}
+
+// CashierWithSessionsResponse represents a cashier with session information
+type CashierWithSessionsResponse struct {
+	ID             int32  `json:"id" example:"1"`
+	CashierCode    string `json:"cashier_code" example:"CASH001"`
+	FullName       string `json:"full_name" example:"John Doe"`
+	DiscountLimit  string `json:"discount_limit,omitempty" example:"50.00"`
+	DrawerLimit    string `json:"drawer_limit,omitempty" example:"1000.00"`
+	ActiveSessions int64  `json:"active_sessions" example:"1"`
 }
