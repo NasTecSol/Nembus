@@ -561,18 +561,18 @@ type CreateMenuItemRequest struct {
 }
 
 type CreateRecipeRequest struct {
-	OrganizationID      int32  `json:"organization_id" binding:"required"`
-	RecipeCode          string `json:"recipe_code" binding:"required"`
-	RecipeName          string `json:"recipe_name" binding:"required"`
-	Description         string `json:"description"`
-	FinishedProductID   *int32 `json:"finished_product_id"`
-	YieldQuantity       string `json:"yield_quantity"`
-	YieldUomID          *int32 `json:"yield_uom_id"`
-	PreparationSteps    string `json:"preparation_steps"`
-	PreparationTimeMin  int32  `json:"preparation_time_min"`
-	CookingTimeMin      int32  `json:"cooking_time_min"`
-	IsActive            bool   `json:"is_active"`
-	Metadata            string `json:"metadata"`
+	OrganizationID     int32  `json:"organization_id" binding:"required"`
+	RecipeCode         string `json:"recipe_code" binding:"required"`
+	RecipeName         string `json:"recipe_name" binding:"required"`
+	Description        string `json:"description"`
+	FinishedProductID  *int32 `json:"finished_product_id"`
+	YieldQuantity      string `json:"yield_quantity"`
+	YieldUomID         *int32 `json:"yield_uom_id"`
+	PreparationSteps   string `json:"preparation_steps"`
+	PreparationTimeMin int32  `json:"preparation_time_min"`
+	CookingTimeMin     int32  `json:"cooking_time_min"`
+	IsActive           bool   `json:"is_active"`
+	Metadata           string `json:"metadata"`
 }
 
 type CreateRecipeIngredientRequest struct {
@@ -644,8 +644,8 @@ type CreateKioskSessionRequest struct {
 }
 
 type CreateOnlineOrderRequest struct {
-	StoreID    int32                                `json:"store_id" binding:"required"`
-	CustomerID *int32                               `json:"customer_id"`
+	StoreID    int32                              `json:"store_id" binding:"required"`
+	CustomerID *int32                             `json:"customer_id"`
 	Items      []CreateRestaurantOrderItemRequest `json:"items" binding:"required"`
 }
 
@@ -721,9 +721,9 @@ type UpdateCartRequest struct {
 }
 
 type UpdateCartStatusRequest struct {
-	CartStatus          string  `json:"cart_status" binding:"required" example:"active"`
-	ConvertedToOrderID  *string `json:"converted_to_order_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
-	ConvertedAtISO8601  *string `json:"converted_at,omitempty" example:"2026-02-10T10:00:00Z"`
+	CartStatus         string  `json:"cart_status" binding:"required" example:"active"`
+	ConvertedToOrderID *string `json:"converted_to_order_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ConvertedAtISO8601 *string `json:"converted_at,omitempty" example:"2026-02-10T10:00:00Z"`
 }
 
 type UpdateCartCustomerRequest struct {
@@ -783,8 +783,8 @@ type CreateCartActivityRequest struct {
 }
 
 type ApplyCouponRequest struct {
-	CouponCode      string `json:"coupon_code" binding:"required" example:"WELCOME10"`
-	DiscountAmount  string `json:"discount_amount" binding:"required" example:"10.00"`
+	CouponCode     string `json:"coupon_code" binding:"required" example:"WELCOME10"`
+	DiscountAmount string `json:"discount_amount" binding:"required" example:"10.00"`
 }
 
 type MergeGuestCartRequest struct {
@@ -925,12 +925,12 @@ type UpdateOrderLineStatusRequest struct {
 }
 
 type CreateOrderStatusHistoryRequest struct {
-	OrganizationID    int32   `json:"organization_id" binding:"required" example:"1"`
-	FromStatus        *string `json:"from_status,omitempty" example:"pending"`
-	ToStatus          string  `json:"to_status" binding:"required" example:"confirmed"`
-	Reason            *string `json:"reason,omitempty" example:"customer_confirmed"`
-	Notes             *string `json:"notes,omitempty"`
-	ChangedByUserID   *int32  `json:"changed_by_user_id,omitempty" example:"1"`
+	OrganizationID  int32   `json:"organization_id" binding:"required" example:"1"`
+	FromStatus      *string `json:"from_status,omitempty" example:"pending"`
+	ToStatus        string  `json:"to_status" binding:"required" example:"confirmed"`
+	Reason          *string `json:"reason,omitempty" example:"customer_confirmed"`
+	Notes           *string `json:"notes,omitempty"`
+	ChangedByUserID *int32  `json:"changed_by_user_id,omitempty" example:"1"`
 }
 
 type CreateOrderFulfillmentRequest struct {
@@ -965,16 +965,35 @@ type UpdateFulfillmentShipmentRequest struct {
 }
 
 type UpdateFulfillmentPickPackRequest struct {
-	PickedAt        *string `json:"picked_at,omitempty" example:"2026-02-10T10:00:00Z"`
-	PackedAt        *string `json:"packed_at,omitempty" example:"2026-02-10T12:00:00Z"`
-	PickedByUserID  *int32  `json:"picked_by_user_id,omitempty" example:"1"`
-	PackedByUserID  *int32  `json:"packed_by_user_id,omitempty" example:"2"`
+	PickedAt       *string `json:"picked_at,omitempty" example:"2026-02-10T10:00:00Z"`
+	PackedAt       *string `json:"packed_at,omitempty" example:"2026-02-10T12:00:00Z"`
+	PickedByUserID *int32  `json:"picked_by_user_id,omitempty" example:"1"`
+	PackedByUserID *int32  `json:"packed_by_user_id,omitempty" example:"2"`
 }
 
 type CreateOrderFulfillmentItemRequest struct {
-	OrderLineID       string  `json:"order_line_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
-	OrganizationID    int32   `json:"organization_id" binding:"required" example:"1"`
-	QuantityFulfilled string  `json:"quantity_fulfilled" binding:"required" example:"1.00"`
-	BatchNumber       *string `json:"batch_number,omitempty"`
+	OrderLineID       string   `json:"order_line_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
+	OrganizationID    int32    `json:"organization_id" binding:"required" example:"1"`
+	QuantityFulfilled string   `json:"quantity_fulfilled" binding:"required" example:"1.00"`
+	BatchNumber       *string  `json:"batch_number,omitempty"`
 	SerialNumbers     []string `json:"serial_numbers,omitempty"`
+}
+
+// =====================================================
+// Cashier Session Module
+// =====================================================
+
+type OpenCashierSessionRequest struct {
+	CashierID      int32  `json:"cashier_id" binding:"required" example:"1"`
+	PosTerminalID  int32  `json:"pos_terminal_id" binding:"required" example:"1"`
+	SessionNumber  string `json:"session_number" binding:"required" example:"SES-20261026-001"`
+	OpeningBalance string `json:"opening_balance" binding:"required" example:"100.00"`
+}
+
+type CloseCashierSessionRequest struct {
+	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"`
+	ExpectedBalance string `json:"expected_balance" binding:"required" example:"500.00"`
+	Variance        string `json:"variance" binding:"required" example:"0.00"`
+	ClosingNote     string `json:"closing_note,omitempty" example:"All good"`
+	ClosedBy        int64  `json:"closed_by" binding:"required" example:"1"`
 }
