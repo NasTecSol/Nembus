@@ -999,6 +999,26 @@ type CloseCashierSessionRequest struct {
 }
 
 // =====================================================
+// Product Barcode Module
+// =====================================================
+
+type CreateProductBarcodeRequest struct {
+	ProductID        int32                  `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID *int32                 `json:"product_variant_id,omitempty" example:"1"`
+	Barcode          string                 `json:"barcode" binding:"required" example:"1234567890123"`
+	BarcodeType      *string                `json:"barcode_type,omitempty" example:"EAN13"`
+	IsPrimary        *bool                  `json:"is_primary,omitempty" example:"true"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateProductBarcodeRequest struct {
+	BarcodeType *string                `json:"barcode_type,omitempty" example:"UPC"`
+	IsPrimary   *bool                  `json:"is_primary,omitempty" example:"false"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type SetPrimaryBarcodeRequest struct {
+	BarcodeID int32 `json:"barcode_id" binding:"required" example:"1"`
 // Brand Module
 // =====================================================
 
