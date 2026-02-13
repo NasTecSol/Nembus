@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"strings"
 
 	"NEMBUS/internal/repository"
 	"NEMBUS/utils"
@@ -96,10 +97,57 @@ func (uc *OrderUseCase) UpdateOrderStatus(ctx context.Context, arg repository.Up
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
+
+	// Normalize input (important if coming from Postman)
+	status := strings.ToLower(strings.TrimSpace(string(arg.OrderStatus)))
+
+	// Validate & map to correct enum constant
+	switch status {
+	case string(repository.OrderStatusV2Draft):
+		arg.OrderStatus = repository.OrderStatusV2Draft
+
+	case string(repository.OrderStatusV2Pending):
+		arg.OrderStatus = repository.OrderStatusV2Pending
+
+	case string(repository.OrderStatusV2Confirmed):
+		arg.OrderStatus = repository.OrderStatusV2Confirmed
+
+	case string(repository.OrderStatusV2Processing):
+		arg.OrderStatus = repository.OrderStatusV2Processing
+
+	case string(repository.OrderStatusV2PartiallyFulfilled):
+		arg.OrderStatus = repository.OrderStatusV2PartiallyFulfilled
+
+	case string(repository.OrderStatusV2Fulfilled):
+		arg.OrderStatus = repository.OrderStatusV2Fulfilled
+
+	case string(repository.OrderStatusV2PartiallyShipped):
+		arg.OrderStatus = repository.OrderStatusV2PartiallyShipped
+
+	case string(repository.OrderStatusV2Shipped):
+		arg.OrderStatus = repository.OrderStatusV2Shipped
+
+	case string(repository.OrderStatusV2Delivered):
+		arg.OrderStatus = repository.OrderStatusV2Delivered
+
+	case string(repository.OrderStatusV2Cancelled):
+		arg.OrderStatus = repository.OrderStatusV2Cancelled
+
+	case string(repository.OrderStatusV2Refunded):
+		arg.OrderStatus = repository.OrderStatusV2Refunded
+
+	case string(repository.OrderStatusV2OnHold):
+		arg.OrderStatus = repository.OrderStatusV2OnHold
+
+	default:
+		return utils.NewResponse(utils.CodeBadReq, "invalid order status", nil)
+	}
+
 	order, err := uc.repo.UpdateOrderStatus(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to update order status", err.Error())
 	}
+
 	return utils.NewResponse(utils.CodeOK, "order status updated", order)
 }
 

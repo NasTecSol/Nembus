@@ -481,12 +481,19 @@ RETURNING *;
 -- name: UpdateOrderStatus :one
 UPDATE sales_orders_v2
 SET order_status = $2,
-    confirmed_date = CASE WHEN $2 = 'confirmed' THEN NOW() ELSE confirmed_date END,
-    cancelled_date = CASE WHEN $2 = 'cancelled' THEN NOW() ELSE cancelled_date END,
+    confirmed_date = CASE 
+        WHEN order_status = 'confirmed'::order_status_v2 
+        THEN NOW() 
+        ELSE confirmed_date 
+    END,
+    cancelled_date = CASE 
+        WHEN order_status = 'cancelled'::order_status_v2 
+        THEN NOW() 
+        ELSE cancelled_date 
+    END,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
-
 -- name: UpdateOrderPaymentStatus :one
 UPDATE sales_orders_v2
 SET payment_status = $2,

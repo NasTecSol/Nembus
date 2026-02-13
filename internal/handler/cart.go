@@ -30,24 +30,23 @@ func (h *CartHandler) getRepositoryFromContext(c *gin.Context) *repository.Queri
 	}
 	return repo
 }
-
-// GetCart handles GET /api/carts/:id
-// @Summary      Get cart by ID
-// @Description  Retrieve a specific cart and its items by cart ID
-// @Tags         carts
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        x-tenant-id   header    string  true  "Tenant identifier"
-// @Param        Authorization header    string  true  "Bearer token"
-// @Param        id            path      string  true  "Cart ID (UUID)"
-// @Success      200           {object}  SuccessResponse
-// @Failure      400           {object}  ErrorResponse
-// @Failure      401           {object}  ErrorResponse
-// @Failure      404           {object}  ErrorResponse
-// @Failure      500           {object}  ErrorResponse
-// @Router       /api/carts/{id} [get]
 func (h *CartHandler) GetCart(c *gin.Context) {
+	// GetCart handles GET /api/carts/:id
+	// @Summary      Get cart by ID
+	// @Description  Retrieve a specific cart and its items by cart ID
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      404           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id} [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -145,6 +144,21 @@ func (h *CartHandler) ConvertToOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// CreateCart handles POST /api/carts
+// @Summary      Create cart (full)
+// @Description  Create a new cart with full payload (detailed fields)
+// @Tags         carts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        body          body      CreateCartRequest true  "Full create cart payload"
+// @Success      201           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/carts [post]
 func (h *CartHandler) CreateCart(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -213,8 +227,84 @@ func (h *CartHandler) CreateCart(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetCartByNumber handles GET /api/carts/by-number/:cart_number
+// CreateNewCart handles POST /api/carts/new
+// @Summary      Create lightweight cart
+// @Description  Create a new cart with minimal required fields (convenience endpoint)
+// @Tags         carts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        cart          body      CreateNewCartRequest  true  "Lightweight create cart payload"
+// @Success      201           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/carts/new [post]
+func (h *CartHandler) CreateNewCart(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	var req CreateNewCartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request", nil))
+		return
+	}
+
+	meta, err := bytesFromMap(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata", nil))
+		return
+	}
+
+	storeID := int4Ptr(req.StoreID)
+	customerID := int4Ptr(req.CustomerID)
+	createdBy := int4Ptr(req.CreatedByUserID)
+	cashierID := int4Ptr(req.CashierID)
+	posID := int4Ptr(req.PosTerminalID)
+
+	guestIdentifier := ""
+	if req.GuestIdentifier != nil {
+		guestIdentifier = *req.GuestIdentifier
+	}
+	guestEmail := ""
+	if req.GuestEmail != nil {
+		guestEmail = *req.GuestEmail
+	}
+	guestPhone := ""
+	if req.GuestPhone != nil {
+		guestPhone = *req.GuestPhone
+	}
+
+	notes := ""
+	if req.Notes != nil {
+		notes = *req.Notes
+	}
+
+	resp := h.useCase.CreateNewCart(c.Request.Context(), req.OrganizationID, storeID, customerID, guestIdentifier, guestEmail, guestPhone, createdBy, cashierID, posID, meta, notes)
+	c.JSON(resp.StatusCode, resp)
+}
+
 func (h *CartHandler) GetCartByNumber(c *gin.Context) {
+	// GetCartByNumber handles GET /api/carts/by-number/:cart_number
+	// @Summary      Get cart by cart number
+	// @Description  Retrieve a cart and its items by cart number
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        cart_number   path      string  true  "Cart number"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      404           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/by-number/{cart_number} [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -233,6 +323,23 @@ func (h *CartHandler) GetCartByNumber(c *gin.Context) {
 
 // GetActiveCartByCustomer handles GET /api/carts/by-customer?customer_id=&store_id=
 func (h *CartHandler) GetActiveCartByCustomer(c *gin.Context) {
+	// GetActiveCartByCustomer handles GET /api/carts/by-customer
+	// @Summary      Get active cart by customer
+	// @Description  Retrieve the active cart for a customer in a store
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        customer_id   query     int     true  "Customer ID"
+	// @Param        store_id      query     int     true  "Store ID"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      404           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/by-customer [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -263,6 +370,23 @@ func (h *CartHandler) GetActiveCartByCustomer(c *gin.Context) {
 
 // GetActiveCartByGuestIdentifier handles GET /api/carts/by-guest?guest_identifier=&store_id=
 func (h *CartHandler) GetActiveCartByGuestIdentifier(c *gin.Context) {
+	// GetActiveCartByGuestIdentifier handles GET /api/carts/by-guest
+	// @Summary      Get active cart by guest identifier
+	// @Description  Retrieve the active guest cart for a store
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id      header    string  true  "Tenant identifier"
+	// @Param        Authorization    header    string  true  "Bearer token"
+	// @Param        guest_identifier query     string  true  "Guest identifier"
+	// @Param        store_id         query     int     true  "Store ID"
+	// @Success      200              {object}  SuccessResponse
+	// @Failure      400              {object}  ErrorResponse
+	// @Failure      401              {object}  ErrorResponse
+	// @Failure      404              {object}  ErrorResponse
+	// @Failure      500              {object}  ErrorResponse
+	// @Router       /api/carts/by-guest [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -292,6 +416,23 @@ func (h *CartHandler) GetActiveCartByGuestIdentifier(c *gin.Context) {
 
 // ListActiveCarts handles GET /api/carts?store_id=&limit=&offset=
 func (h *CartHandler) ListActiveCarts(c *gin.Context) {
+	// ListActiveCarts handles GET /api/carts
+	// @Summary      List active carts
+	// @Description  List active carts for a store with pagination
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        store_id      query     int     true  "Store ID"
+	// @Param        limit         query     int     false "Limit"
+	// @Param        offset        query     int     false "Offset"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -320,6 +461,24 @@ func (h *CartHandler) ListActiveCarts(c *gin.Context) {
 
 // ListAbandonedCarts handles GET /api/carts/abandoned?store_id=&min_value=&limit=&offset=
 func (h *CartHandler) ListAbandonedCarts(c *gin.Context) {
+	// ListAbandonedCarts handles GET /api/carts/abandoned
+	// @Summary      List abandoned carts
+	// @Description  List abandoned carts filtered by store and minimum value
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        store_id      query     int     true  "Store ID"
+	// @Param        min_value     query     string  false "Minimum line total"
+	// @Param        limit         query     int     false "Limit"
+	// @Param        offset        query     int     false "Offset"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/abandoned [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -356,6 +515,22 @@ func (h *CartHandler) ListAbandonedCarts(c *gin.Context) {
 
 // UpdateCart handles PUT /api/carts/:id
 func (h *CartHandler) UpdateCart(c *gin.Context) {
+	// UpdateCart handles PUT /api/carts/:id
+	// @Summary      Update cart totals and metadata
+	// @Description  Update cart monetary totals, shipping, notes and metadata
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Param        body          body      UpdateCartRequest true  "Update cart payload"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id} [put]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -492,6 +667,22 @@ func (h *CartHandler) UpdateCartStatus(c *gin.Context) {
 
 // UpdateCartCustomer handles PUT /api/carts/:id/customer
 func (h *CartHandler) UpdateCartCustomer(c *gin.Context) {
+	// UpdateCartCustomer handles PUT /api/carts/:id/customer
+	// @Summary      Update cart customer
+	// @Description  Associate a cart with a different customer
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Param        body          body      UpdateCartCustomerRequest true  "Update customer payload"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/customer [put]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -521,6 +712,21 @@ func (h *CartHandler) UpdateCartCustomer(c *gin.Context) {
 
 // DeleteCart handles DELETE /api/carts/:id
 func (h *CartHandler) DeleteCart(c *gin.Context) {
+	// DeleteCart handles DELETE /api/carts/:id
+	// @Summary      Delete cart
+	// @Description  Delete a cart and its items
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id} [delete]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -539,6 +745,21 @@ func (h *CartHandler) DeleteCart(c *gin.Context) {
 
 // ExpireAbandonedCarts handles POST /api/carts/expire?store_id=
 func (h *CartHandler) ExpireAbandonedCarts(c *gin.Context) {
+	// ExpireAbandonedCarts handles POST /api/carts/expire
+	// @Summary      Expire abandoned carts
+	// @Description  Expire abandoned carts for a given store
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        store_id      query     int     true  "Store ID"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/expire [post]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -558,6 +779,21 @@ func (h *CartHandler) ExpireAbandonedCarts(c *gin.Context) {
 
 // ListCartItems handles GET /api/carts/:id/items
 func (h *CartHandler) ListCartItems(c *gin.Context) {
+	// ListCartItems handles GET /api/carts/:id/items
+	// @Summary      List cart items
+	// @Description  List items for a cart
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/items [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -576,6 +812,22 @@ func (h *CartHandler) ListCartItems(c *gin.Context) {
 
 // CreateCartItemRaw handles POST /api/carts/:id/items/raw
 func (h *CartHandler) CreateCartItemRaw(c *gin.Context) {
+	// CreateCartItemRaw handles POST /api/carts/:id/items/raw
+	// @Summary      Create cart item (raw)
+	// @Description  Create a cart item with full fields
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Param        body          body      CreateCartItemRequest true  "Create cart item payload"
+	// @Success      201           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/items/raw [post]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -669,6 +921,22 @@ func (h *CartHandler) CreateCartItemRaw(c *gin.Context) {
 
 // GetCartItem handles GET /api/cart-items/:item_id
 func (h *CartHandler) GetCartItem(c *gin.Context) {
+	// GetCartItem handles GET /api/cart-items/:item_id
+	// @Summary      Get cart item by ID
+	// @Description  Retrieve a cart item by its UUID
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        item_id       path      string  true  "Cart item ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      404           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/cart-items/{item_id} [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -687,6 +955,26 @@ func (h *CartHandler) GetCartItem(c *gin.Context) {
 
 // GetCartItemByProduct handles GET /api/carts/:id/items/by-product?product_id=&product_variant_id=&batch_number=&serial_number=
 func (h *CartHandler) GetCartItemByProduct(c *gin.Context) {
+	// GetCartItemByProduct handles GET /api/carts/:id/items/by-product
+	// @Summary      Get cart item by product
+	// @Description  Find a cart item by product, variant, batch or serial
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id       header    string  true  "Tenant identifier"
+	// @Param        Authorization     header    string  true  "Bearer token"
+	// @Param        id                path      string  true  "Cart ID (UUID)"
+	// @Param        product_id        query     int     true  "Product ID"
+	// @Param        product_variant_id query    int     false "Product variant ID"
+	// @Param        batch_number      query     string  false "Batch number"
+	// @Param        serial_number     query     string  false "Serial number"
+	// @Success      200               {object}  SuccessResponse
+	// @Failure      400               {object}  ErrorResponse
+	// @Failure      401               {object}  ErrorResponse
+	// @Failure      404               {object}  ErrorResponse
+	// @Failure      500               {object}  ErrorResponse
+	// @Router       /api/carts/{id}/items/by-product [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -735,6 +1023,22 @@ func (h *CartHandler) GetCartItemByProduct(c *gin.Context) {
 
 // UpdateCartItem handles PUT /api/cart-items/:item_id
 func (h *CartHandler) UpdateCartItem(c *gin.Context) {
+	// UpdateCartItem handles PUT /api/cart-items/:item_id
+	// @Summary      Update cart item
+	// @Description  Update quantity, pricing and metadata of a cart item
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        item_id       path      string  true  "Cart item ID (UUID)"
+	// @Param        body          body      UpdateCartItemRequest true  "Update cart item payload"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/cart-items/{item_id} [put]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -801,6 +1105,22 @@ func (h *CartHandler) UpdateCartItem(c *gin.Context) {
 
 // UpdateCartItemQuantity handles PATCH /api/cart-items/:item_id/quantity
 func (h *CartHandler) UpdateCartItemQuantity(c *gin.Context) {
+	// UpdateCartItemQuantity handles PATCH /api/cart-items/:item_id/quantity
+	// @Summary      Update cart item quantity
+	// @Description  Adjust the quantity of a cart item by delta
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        item_id       path      string  true  "Cart item ID (UUID)"
+	// @Param        body          body      UpdateCartItemQuantityRequest true  "Delta quantity payload"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/cart-items/{item_id}/quantity [patch]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -836,6 +1156,21 @@ func (h *CartHandler) UpdateCartItemQuantity(c *gin.Context) {
 
 // DeleteCartItem handles DELETE /api/cart-items/:item_id
 func (h *CartHandler) DeleteCartItem(c *gin.Context) {
+	// DeleteCartItem handles DELETE /api/cart-items/:item_id
+	// @Summary      Delete cart item
+	// @Description  Remove an item from a cart
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        item_id       path      string  true  "Cart item ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/cart-items/{item_id} [delete]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -854,6 +1189,21 @@ func (h *CartHandler) DeleteCartItem(c *gin.Context) {
 
 // ClearCartItems handles DELETE /api/carts/:id/items
 func (h *CartHandler) ClearCartItems(c *gin.Context) {
+	// ClearCartItems handles DELETE /api/carts/:id/items
+	// @Summary      Clear cart items
+	// @Description  Remove all items from a cart
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/items [delete]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -872,6 +1222,21 @@ func (h *CartHandler) ClearCartItems(c *gin.Context) {
 
 // GetCartItemCount handles GET /api/carts/:id/items/count
 func (h *CartHandler) GetCartItemCount(c *gin.Context) {
+	// GetCartItemCount handles GET /api/carts/:id/items/count
+	// @Summary      Get cart item count
+	// @Description  Return number of items in a cart
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/items/count [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -890,6 +1255,21 @@ func (h *CartHandler) GetCartItemCount(c *gin.Context) {
 
 // GetCartTotals handles GET /api/carts/:id/totals
 func (h *CartHandler) GetCartTotals(c *gin.Context) {
+	// GetCartTotals handles GET /api/carts/:id/totals
+	// @Summary      Get cart totals
+	// @Description  Return subtotal, tax, shipping and total amounts for a cart
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Success      200           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/totals [get]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -908,6 +1288,22 @@ func (h *CartHandler) GetCartTotals(c *gin.Context) {
 
 // CreateCartActivity handles POST /api/carts/:id/activities
 func (h *CartHandler) CreateCartActivity(c *gin.Context) {
+	// CreateCartActivity handles POST /api/carts/:id/activities
+	// @Summary      Create cart activity
+	// @Description  Log an activity for a cart
+	// @Tags         carts
+	// @Accept       json
+	// @Produce      json
+	// @Security     BearerAuth
+	// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+	// @Param        Authorization header    string  true  "Bearer token"
+	// @Param        id            path      string  true  "Cart ID (UUID)"
+	// @Param        body          body      CreateCartActivityRequest true  "Activity payload"
+	// @Success      201           {object}  SuccessResponse
+	// @Failure      400           {object}  ErrorResponse
+	// @Failure      401           {object}  ErrorResponse
+	// @Failure      500           {object}  ErrorResponse
+	// @Router       /api/carts/{id}/activities [post]
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
