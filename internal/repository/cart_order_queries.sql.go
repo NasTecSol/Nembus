@@ -7494,8 +7494,16 @@ func (q *Queries) UpdateOrderPaymentStatus(ctx context.Context, arg UpdateOrderP
 const updateOrderStatus = `-- name: UpdateOrderStatus :one
 UPDATE sales_orders_v2
 SET order_status = $2,
-    confirmed_date = CASE WHEN $2 = 'confirmed' THEN NOW() ELSE confirmed_date END,
-    cancelled_date = CASE WHEN $2 = 'cancelled' THEN NOW() ELSE cancelled_date END,
+    confirmed_date = CASE 
+        WHEN order_status = 'confirmed'::order_status_v2 
+        THEN NOW() 
+        ELSE confirmed_date 
+    END,
+    cancelled_date = CASE 
+        WHEN order_status = 'cancelled'::order_status_v2 
+        THEN NOW() 
+        ELSE cancelled_date 
+    END,
     updated_at = NOW()
 WHERE id = $1
 RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at

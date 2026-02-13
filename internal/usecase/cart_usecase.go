@@ -66,6 +66,45 @@ func (uc *CartUseCase) CreateCart(ctx context.Context, arg repository.CreateCart
 	return utils.NewResponse(utils.CodeCreated, "cart created successfully", cart)
 }
 
+// CreateNewCart is a convenience helper that builds CreateCartParams from
+// common inputs, generates a cart number, and calls the repository CreateCart.
+func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, storeID pgtype.Int4, customerID pgtype.Int4, guestIdentifier string, guestEmail string, guestPhone string, createdByUserID pgtype.Int4, cashierID pgtype.Int4, posTerminalID pgtype.Int4, metadata []byte, notes string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	arg := repository.CreateCartParams{
+		CartNumber:      fmt.Sprintf("CART-%s", uuid.NewString()),
+		OrganizationID:  organizationID,
+		StoreID:         storeID,
+		CustomerID:      customerID,
+		GuestIdentifier: pgtype.Text{String: guestIdentifier, Valid: guestIdentifier != ""},
+		GuestEmail:      pgtype.Text{String: guestEmail, Valid: guestEmail != ""},
+		GuestPhone:      pgtype.Text{String: guestPhone, Valid: guestPhone != ""},
+		CartStatus:      repository.CartStatusActive,
+		CartType:        repository.CartTypeStandard,
+		Channel:         pgtype.Text{Valid: false},
+		DeviceInfo:      nil,
+		CreatedByUserID: createdByUserID,
+		CashierID:       cashierID,
+		PosTerminalID:   posTerminalID,
+		ShippingAddress: nil,
+		BillingAddress:  nil,
+		ShippingMethod:  pgtype.Text{Valid: false},
+		CouponCode:      pgtype.Text{Valid: false},
+		DiscountCode:    pgtype.Text{Valid: false},
+		ExpiresAt:       pgtype.Timestamp{},
+		Notes:           pgtype.Text{String: notes, Valid: notes != ""},
+		Metadata:        metadata,
+	}
+
+	cart, err := uc.repo.CreateCart(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to create cart", err.Error())
+	}
+	return utils.NewResponse(utils.CodeCreated, "cart created successfully", cart)
+}
+
 func (uc *CartUseCase) GetCartByNumber(ctx context.Context, cartNumber string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
@@ -393,16 +432,19 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 	// Calculate line total (simplified - in production you'd use proper decimal math)
 	lineTotal := productPrice.Price
 
-	// 4. Create cart item using generated method
-	// Note: This is a simple insert. For upsert logic, you'd need to add a custom query to cart_order_queries.sql
 	cartItem, err := uc.repo.CreateCartItem(ctx, repository.CreateCartItemParams{
-		CartID:         cartID,
-		OrganizationID: orgID,
-		ProductID:      productID,
-		Quantity:       qtyNumeric,
-		UnitPrice:      productPrice.Price,
-		LineTotal:      lineTotal,
+		CartID:           cartID,
+		OrganizationID:   orgID,
+		ProductID:        productID,
+		ProductVariantID: productPrice.ProductVariantID, // already pgtype.Int4
+		Quantity:         qtyNumeric,
+		UomID:            productPrice.UomID, // already pgtype.Int4
+		UnitPrice:        productPrice.Price,
+		LineTotal:        lineTotal,
+		PriceListID:      pgtype.Int4{Int32: productPrice.PriceListID, Valid: true}, // if this is int32, wrap in pgtype.Int4
+		TaxCategoryID:    pgtype.Int4{Int32: product.TaxCategoryID.Int32, Valid: true},
 	})
+
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to add item: %v", err), nil)
 	}
@@ -411,10 +453,16 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 	_, _ = uc.repo.RecalculateCartTotals(ctx, cartID)
 
 	return utils.NewResponse(utils.CodeOK, "item added to cart", map[string]interface{}{
-		"item_id":      cartItem.ID,
-		"product_name": product.Name,
-		"quantity":     qty,
+		"item_id":            cartItem.ID,
+		"product_name":       product.Name,
+		"quantity":           qty,
+		"uom_id":             cartItem.UomID.Int32,            // UOM used
+		"price_list_id":      cartItem.PriceListID.Int32,      // price list used
+		"unit_price":         cartItem.UnitPrice,              // unit price
+		"line_total":         cartItem.LineTotal,              // line total
+		"product_variant_id": cartItem.ProductVariantID.Int32, // variant if any
 	})
+
 }
 
 // ConvertToOrder converts a cart to an order.

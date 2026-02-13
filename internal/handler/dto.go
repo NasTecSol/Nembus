@@ -722,6 +722,20 @@ type UpdateCartRequest struct {
 	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
+type CreateNewCartRequest struct {
+	OrganizationID  int32                  `json:"organization_id" binding:"required" example:"1"`
+	StoreID         *int32                 `json:"store_id,omitempty" example:"2"`
+	CustomerID      *int32                 `json:"customer_id,omitempty" example:"1"`
+	GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-abc-123"`
+	GuestEmail      *string                `json:"guest_email,omitempty" example:"guest@example.com"`
+	GuestPhone      *string                `json:"guest_phone,omitempty" example:"+15551234567"`
+	CreatedByUserID *int32                 `json:"created_by_user_id,omitempty" example:"5"`
+	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
+	PosTerminalID   *int32                 `json:"pos_terminal_id,omitempty" example:"3"`
+	Notes           *string                `json:"notes,omitempty" example:"Initial cart created via API"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" example:"{\"source\":\"mobile\",\"campaign\":\"winter-sale\"}" swaggertype:"object"`
+}
+
 type UpdateCartStatusRequest struct {
 	CartStatus         string  `json:"cart_status" binding:"required" example:"active"`
 	ConvertedToOrderID *string `json:"converted_to_order_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
