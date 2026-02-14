@@ -41,14 +41,16 @@ export class LoginComponent implements OnInit {
   fetchTenants() {
     this.loadingTenants = true;
     localStorage.setItem('x-tenant-id', 'masterdb');
-    localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzA3MTE4NTAsImlhdCI6MTc3MDYyNTQ1MCwidXNlcl9pZCI6IjgiLCJ1c2VyX2xvZ2luIjoiSGFzaGlyIn0.q4DnHsBorILup0O5XrAm9K4waRVxrc385SCrR_1JacI');
+    // localStorage.removeItem('token');
+    // localStorage.removeItem('decoded');
+    // localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzA3MTE4NTAsImlhdCI6MTc3MDYyNTQ1MCwidXNlcl9pZCI6IjgiLCJ1c2VyX2xvZ2luIjoiSGFzaGlyIn0.q4DnHsBorILup0O5XrAm9K4waRVxrc385SCrR_1JacI');
     interface TenantResponse {
       statusCode: number;
       message: string;
       data: any[];
     }
 
-    this.http.get<TenantResponse>(`${this.apiUrl}/api/tenants`).subscribe({
+    this.http.get<TenantResponse>(`${this.apiUrl}/api/tenants/active`).subscribe({
       next: (response) => {
         this.tenants = response.data;
         this.loadingTenants = false;

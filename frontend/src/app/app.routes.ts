@@ -22,7 +22,14 @@ export const routes: Routes = [
     pathMatch: "full"
   },
   {
+    path: "",
+    loadChildren: () =>
+      import("./features/dashboard-layout/dashboard-layout.routes").then(
+        (m) => m.DASHBOARD_LAYOUT_ROUTES
+      ),
+  },
+  {
     path: "**",
     redirectTo: "auth/setup"
-  }
+  },
 ];

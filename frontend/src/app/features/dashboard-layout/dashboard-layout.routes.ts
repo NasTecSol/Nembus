@@ -1,5 +1,5 @@
 import { Routes } from "@angular/router";
-import { AuthGuard } from "../auth/guards/auth.guard";
+import { AuthGuard } from "../auth/components/guards/auth.guard";
 import { DashboardStoreComponent } from "../dashboard-store/dashboard-store.component";
 import { AddOrgComponent } from "../organizations/components/add-org/add-org.component";
 
@@ -76,7 +76,7 @@ export const DASHBOARD_LAYOUT_ROUTES: Routes = [
         loadChildren: () =>
           import("../suppliers/suppliers.module").then((m) => m.SuppliersModule),
       },
-       {
+      {
         path: "Ui-Modules",
         loadChildren: () =>
           import("../ui-modules/ui-modules.module").then((m) => m.UiModulesModule),
@@ -84,7 +84,7 @@ export const DASHBOARD_LAYOUT_ROUTES: Routes = [
       {
         path: "settings",
         loadChildren: () =>
-          import("../settings/settings.module").then((m)=>m.SettingsModule)
+          import("../settings/settings.module").then((m) => m.SettingsModule)
       },
       {
         path: "dashboard-stores",
@@ -106,9 +106,9 @@ export const DASHBOARD_LAYOUT_ROUTES: Routes = [
               ),
           },
           {
-  path: 'organizations/:id/edit',
-  component: AddOrgComponent 
-},
+            path: 'organizations/:id/edit',
+            component: AddOrgComponent
+          },
           {
             path: "users",
             loadChildren: () =>
