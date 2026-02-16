@@ -733,7 +733,7 @@ type CreateNewCartRequest struct {
 	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
 	PosTerminalID   *int32                 `json:"pos_terminal_id,omitempty" example:"3"`
 	Notes           *string                `json:"notes,omitempty" example:"Initial cart created via API"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty" example:"{\"source\":\"mobile\",\"campaign\":\"winter-sale\"}" swaggertype:"object"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 type UpdateCartStatusRequest struct {
