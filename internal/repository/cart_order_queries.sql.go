@@ -5925,16 +5925,17 @@ func (q *Queries) ProcessOrderPayment(ctx context.Context, arg ProcessOrderPayme
 const recalculateCartTotals = `-- name: RecalculateCartTotals :one
 WITH totals AS (
     SELECT 
-        COALESCE(SUM(line_total - tax_amount), 0) as subtotal,
-        COALESCE(SUM(tax_amount), 0) as tax,
-        COALESCE(SUM(discount_amount), 0) as discount
+        COALESCE(SUM(line_total - COALESCE(tax_amount, 0)), 0) as subtotal,
+        COALESCE(SUM(COALESCE(tax_amount, 0)), 0) as tax,
+        COALESCE(SUM(COALESCE(discount_amount, 0)), 0) as discount
     FROM cart_items
     WHERE cart_id = $1
 )
 UPDATE carts c
 SET subtotal = t.subtotal,
     tax_amount = t.tax,
-    total_amount = t.subtotal + t.tax + COALESCE(c.shipping_amount, 0) - COALESCE(c.discount_amount, 0),
+    discount_amount = COALESCE(t.discount, 0),
+    total_amount = t.subtotal + t.tax + COALESCE(c.shipping_amount, 0) - COALESCE(t.discount, 0),
     updated_at = NOW()
 FROM totals t
 WHERE c.id = $1

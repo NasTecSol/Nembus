@@ -249,9 +249,9 @@ func (q *Queries) GetProductPrice(ctx context.Context, id int32) (ProductPrice, 
 const getProductPriceForList = `-- name: GetProductPriceForList :one
 SELECT pp.id, pp.product_id, pp.product_variant_id, pp.price_list_id, pp.uom_id, pp.price, pp.min_quantity, pp.max_quantity, pp.valid_from, pp.valid_to, pp.is_active, pp.metadata, pp.created_at, pp.updated_at FROM product_prices pp
 WHERE pp.product_id = $1
-  AND pp.product_variant_id = COALESCE($3, pp.product_variant_id)
   AND pp.price_list_id = $2
-  AND pp.uom_id = COALESCE($4, pp.uom_id)
+  AND pp.uom_id = $3
+  AND pp.product_variant_id IS NOT DISTINCT FROM $4
   AND pp.is_active = true
   AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
   AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
@@ -264,8 +264,8 @@ LIMIT 1
 type GetProductPriceForListParams struct {
 	ProductID        int32          `json:"product_id"`
 	PriceListID      int32          `json:"price_list_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
 	UomID            pgtype.Int4    `json:"uom_id"`
+	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
 	Quantity         pgtype.Numeric `json:"quantity"`
 }
 
@@ -273,8 +273,8 @@ func (q *Queries) GetProductPriceForList(ctx context.Context, arg GetProductPric
 	row := q.db.QueryRow(ctx, getProductPriceForList,
 		arg.ProductID,
 		arg.PriceListID,
-		arg.ProductVariantID,
 		arg.UomID,
+		arg.ProductVariantID,
 		arg.Quantity,
 	)
 	var i ProductPrice
