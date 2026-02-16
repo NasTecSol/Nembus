@@ -733,7 +733,7 @@ type CreateNewCartRequest struct {
 	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
 	PosTerminalID   *int32                 `json:"pos_terminal_id,omitempty" example:"3"`
 	Notes           *string                `json:"notes,omitempty" example:"Initial cart created via API"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty" example:"{\"source\":\"mobile\",\"campaign\":\"winter-sale\"}" swaggertype:"object"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 type UpdateCartStatusRequest struct {
@@ -750,6 +750,8 @@ type AddToCartRequest struct {
 	OrganizationID int32   `json:"organization_id" binding:"required" example:"1"`
 	ProductID      int32   `json:"product_id" binding:"required" example:"1001"`
 	Quantity       float64 `json:"quantity" binding:"required" example:"2"`
+	UomID          int32   `json:"uom_id" binding:"required" example:"1"`
+	PriceListID    int32   `json:"price_list_id" binding:"required" example:"1"`
 }
 
 // CartItemUpsertRequest is for directly creating cart item via SQLC CreateCartItem.
