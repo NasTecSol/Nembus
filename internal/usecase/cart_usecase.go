@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"NEMBUS/internal/repository"
@@ -406,7 +407,7 @@ func (uc *CartUseCase) MergeGuestCartToCustomer(ctx context.Context, arg reposit
 }
 
 // AddToCart adds an item to the cart.
-func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, qty float64) *repository.Response {
+func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, qty float64, uomID int32, priceListID int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -417,20 +418,98 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		return utils.NewResponse(utils.CodeNotFound, "product not found", nil)
 	}
 
-	// 2. Get price using generated method
-	productPrice, err := uc.repo.GetProductPrice(ctx, productID)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, "product price not found", nil)
-	}
-
-	// 3. Calculate line total
+	// 2. Convert quantity to pgtype.Numeric for query
 	qtyNumeric := pgtype.Numeric{}
 	if err := qtyNumeric.Scan(fmt.Sprintf("%.2f", qty)); err != nil {
 		return utils.NewResponse(utils.CodeError, "invalid quantity", nil)
 	}
 
-	// Calculate line total (simplified - in production you'd use proper decimal math)
-	lineTotal := productPrice.Price
+	// 3. Get price using GetProductPriceForList with uom_id and price_list_id
+	productPrice, err := uc.repo.GetProductPriceForList(ctx, repository.GetProductPriceForListParams{
+		ProductID:        productID,
+		PriceListID:      priceListID,
+		UomID:            pgtype.Int4{Int32: uomID, Valid: true},
+		ProductVariantID: pgtype.Int4{Valid: false}, // Optional - can be null
+		Quantity:         qtyNumeric,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("product price not found for the specified price list and UOM: %v", err), nil)
+	}
+
+	// 4. Calculate line total (quantity * unit price)
+	// Convert Numeric to string, parse as float64, multiply, convert back
+	var priceFloat, qtyFloat float64
+	
+	// Get price value
+	if val, err := productPrice.Price.Value(); err == nil {
+		if str, ok := val.(string); ok {
+			priceFloat, _ = strconv.ParseFloat(str, 64)
+		} else {
+			priceFloat, _ = strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+		}
+	} else {
+		// Fallback: try to get as string directly
+		priceStr := fmt.Sprintf("%v", productPrice.Price)
+		priceFloat, _ = strconv.ParseFloat(priceStr, 64)
+	}
+	
+	// Get quantity value
+	if val, err := qtyNumeric.Value(); err == nil {
+		if str, ok := val.(string); ok {
+			qtyFloat, _ = strconv.ParseFloat(str, 64)
+		} else {
+			qtyFloat, _ = strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+		}
+	} else {
+		// Fallback: use the original qty float64
+		qtyFloat = qty
+	}
+	
+	lineTotalFloat := priceFloat * qtyFloat
+	
+	// 5. Calculate tax amount if tax category exists
+	var taxAmountFloat float64
+	var taxAmount pgtype.Numeric
+	taxAmount = pgtype.Numeric{Valid: false} // Default to no tax
+	
+	if product.TaxCategoryID.Valid {
+		// Get tax category to get tax rate
+		taxCategory, err := uc.repo.GetTaxCategory(ctx, product.TaxCategoryID.Int32)
+		if err == nil && taxCategory.IsActive.Bool {
+			// Get tax rate as float64
+			var taxRateFloat float64
+			if val, err := taxCategory.TaxRate.Value(); err == nil {
+				if str, ok := val.(string); ok {
+					taxRateFloat, _ = strconv.ParseFloat(str, 64)
+				} else {
+					taxRateFloat, _ = strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+				}
+			}
+			
+			// Calculate tax amount based on whether tax is inclusive or exclusive
+			if taxCategory.IsInclusive.Bool {
+				// Tax is included in price: tax = line_total * (tax_rate / (100 + tax_rate))
+				taxAmountFloat = lineTotalFloat * (taxRateFloat / (100 + taxRateFloat))
+			} else {
+				// Tax is added on top: tax = line_total * (tax_rate / 100)
+				taxAmountFloat = lineTotalFloat * (taxRateFloat / 100)
+				// Update line total to include tax
+				lineTotalFloat = lineTotalFloat + taxAmountFloat
+			}
+			
+			// Convert tax amount to pgtype.Numeric
+			taxAmount = pgtype.Numeric{}
+			if err := taxAmount.Scan(fmt.Sprintf("%.2f", taxAmountFloat)); err != nil {
+				return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to convert tax amount: %v", err), nil)
+			}
+		}
+	}
+	
+	// Convert final line total to pgtype.Numeric
+	lineTotal := pgtype.Numeric{}
+	if err := lineTotal.Scan(fmt.Sprintf("%.2f", lineTotalFloat)); err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to convert line total: %v", err), nil)
+	}
 
 	cartItem, err := uc.repo.CreateCartItem(ctx, repository.CreateCartItemParams{
 		CartID:           cartID,
@@ -440,16 +519,17 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		Quantity:         qtyNumeric,
 		UomID:            productPrice.UomID, // already pgtype.Int4
 		UnitPrice:        productPrice.Price,
+		TaxAmount:        taxAmount,
 		LineTotal:        lineTotal,
-		PriceListID:      pgtype.Int4{Int32: productPrice.PriceListID, Valid: true}, // if this is int32, wrap in pgtype.Int4
-		TaxCategoryID:    pgtype.Int4{Int32: product.TaxCategoryID.Int32, Valid: true},
+		PriceListID:      pgtype.Int4{Int32: productPrice.PriceListID, Valid: true},
+		TaxCategoryID:    pgtype.Int4{Int32: product.TaxCategoryID.Int32, Valid: product.TaxCategoryID.Valid},
 	})
 
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to add item: %v", err), nil)
 	}
 
-	// 5. Recalculate cart totals
+	// 6. Recalculate cart totals
 	_, _ = uc.repo.RecalculateCartTotals(ctx, cartID)
 
 	return utils.NewResponse(utils.CodeOK, "item added to cart", map[string]interface{}{
@@ -459,7 +539,8 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		"uom_id":             cartItem.UomID.Int32,            // UOM used
 		"price_list_id":      cartItem.PriceListID.Int32,      // price list used
 		"unit_price":         cartItem.UnitPrice,              // unit price
-		"line_total":         cartItem.LineTotal,              // line total
+		"tax_amount":         cartItem.TaxAmount,              // tax amount
+		"line_total":         cartItem.LineTotal,              // line total (includes tax if exclusive)
 		"product_variant_id": cartItem.ProductVariantID.Int32, // variant if any
 	})
 

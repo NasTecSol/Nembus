@@ -95,18 +95,14 @@ func (h *CartHandler) AddToCart(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		OrganizationID int32   `json:"organization_id" binding:"required"`
-		ProductID      int32   `json:"product_id" binding:"required"`
-		Quantity       float64 `json:"quantity" binding:"required"`
-	}
+	var req AddToCartRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
 		return
 	}
 
-	resp := h.useCase.AddToCart(c.Request.Context(), id, req.OrganizationID, req.ProductID, req.Quantity)
+	resp := h.useCase.AddToCart(c.Request.Context(), id, req.OrganizationID, req.ProductID, req.Quantity, req.UomID, req.PriceListID)
 	c.JSON(resp.StatusCode, resp)
 }
 

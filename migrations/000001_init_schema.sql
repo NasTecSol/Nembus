@@ -1040,7 +1040,7 @@ CREATE TABLE inventory_analytics (
 
 -- Cart status enum for better type safety
 CREATE TYPE cart_status AS ENUM ('draft', 'active', 'abandoned', 'converted', 'expired');
-CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist');
+CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist', 'retail', 'wholesale');
 
 -- Main carts table - supports both guest and registered customers
 CREATE TABLE carts (

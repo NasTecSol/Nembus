@@ -66,6 +66,8 @@ const (
 	CartTypeQuote    CartType = "quote"
 	CartTypeSaved    CartType = "saved"
 	CartTypeWishlist CartType = "wishlist"
+	CartTypeRetail   CartType = "retail"
+	CartTypeWholesale CartType = "wholesale"
 )
 
 func (e *CartType) Scan(src interface{}) error {
