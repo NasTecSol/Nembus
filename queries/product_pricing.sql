@@ -24,7 +24,12 @@ SELECT pp.* FROM product_prices pp
 WHERE pp.product_id = $1
   AND pp.price_list_id = $2
   AND pp.uom_id = $3
-  AND pp.product_variant_id IS NOT DISTINCT FROM sqlc.narg(product_variant_id)
+AND (
+      (sqlc.narg(product_variant_id)::int IS NULL AND pp.product_variant_id IS NULL)
+      OR
+      (pp.product_variant_id = sqlc.narg(product_variant_id)::int)
+    )
+
   AND pp.is_active = true
   AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
   AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
