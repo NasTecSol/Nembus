@@ -1227,3 +1227,20 @@ type CashierWithSessionsResponse struct {
 	DrawerLimit    string `json:"drawer_limit,omitempty" example:"1000.00"`
 	ActiveSessions int64  `json:"active_sessions" example:"1"`
 }
+
+type CreateProductVariantRequest struct {
+	ProductID         int32                  `json:"product_id" binding:"required"`
+	VariantSku        string                 `json:"variant_sku" binding:"required"`
+	VariantName       string                 `json:"variant_name" binding:"required"`
+	VariantAttributes map[string]interface{} `json:"variant_attributes"` // optional JSON object
+	IsActive          *bool                  `json:"is_active"`          // optional, default true
+	Metadata          map[string]interface{} `json:"metadata"`           // optional JSON metadata
+}
+
+type ToggleProductVariantActiveRequest struct {
+	IsActive *bool `json:"is_active" binding:"required"`
+}
+type SearchProductVariantsParams struct {
+	VariantSku string `json:"variant_sku"`
+	Limit      int32  `json:"limit"`
+}
