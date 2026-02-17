@@ -407,7 +407,7 @@ func (uc *CartUseCase) MergeGuestCartToCustomer(ctx context.Context, arg reposit
 }
 
 // AddToCart adds an item to the cart.
-func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, qty float64, uomID int32, priceListID int32) *repository.Response {
+func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, productVariantID *int32, qty float64, uomID int32, priceListID int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -424,12 +424,26 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		return utils.NewResponse(utils.CodeError, "invalid quantity", nil)
 	}
 
+	// Prepare variant parameter
+	var variantParam pgtype.Int4
+
+	if productVariantID != nil {
+		variantParam = pgtype.Int4{
+			Int32: *productVariantID,
+			Valid: true,
+		}
+	} else {
+		variantParam = pgtype.Int4{
+			Valid: false,
+		}
+	}
+
 	// 3. Get price using GetProductPriceForList with uom_id and price_list_id
 	productPrice, err := uc.repo.GetProductPriceForList(ctx, repository.GetProductPriceForListParams{
 		ProductID:        productID,
 		PriceListID:      priceListID,
 		UomID:            pgtype.Int4{Int32: uomID, Valid: true},
-		ProductVariantID: pgtype.Int4{Valid: false}, // Optional - can be null
+		ProductVariantID: variantParam,
 		Quantity:         qtyNumeric,
 	})
 	if err != nil {
@@ -439,7 +453,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 	// 4. Calculate line total (quantity * unit price)
 	// Convert Numeric to string, parse as float64, multiply, convert back
 	var priceFloat, qtyFloat float64
-	
+
 	// Get price value
 	if val, err := productPrice.Price.Value(); err == nil {
 		if str, ok := val.(string); ok {
@@ -452,7 +466,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		priceStr := fmt.Sprintf("%v", productPrice.Price)
 		priceFloat, _ = strconv.ParseFloat(priceStr, 64)
 	}
-	
+
 	// Get quantity value
 	if val, err := qtyNumeric.Value(); err == nil {
 		if str, ok := val.(string); ok {
@@ -464,14 +478,14 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		// Fallback: use the original qty float64
 		qtyFloat = qty
 	}
-	
+
 	lineTotalFloat := priceFloat * qtyFloat
-	
+
 	// 5. Calculate tax amount if tax category exists
 	var taxAmountFloat float64
 	var taxAmount pgtype.Numeric
 	taxAmount = pgtype.Numeric{Valid: false} // Default to no tax
-	
+
 	if product.TaxCategoryID.Valid {
 		// Get tax category to get tax rate
 		taxCategory, err := uc.repo.GetTaxCategory(ctx, product.TaxCategoryID.Int32)
@@ -485,7 +499,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 					taxRateFloat, _ = strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
 				}
 			}
-			
+
 			// Calculate tax amount based on whether tax is inclusive or exclusive
 			if taxCategory.IsInclusive.Bool {
 				// Tax is included in price: tax = line_total * (tax_rate / (100 + tax_rate))
@@ -496,7 +510,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 				// Update line total to include tax
 				lineTotalFloat = lineTotalFloat + taxAmountFloat
 			}
-			
+
 			// Convert tax amount to pgtype.Numeric
 			taxAmount = pgtype.Numeric{}
 			if err := taxAmount.Scan(fmt.Sprintf("%.2f", taxAmountFloat)); err != nil {
@@ -504,7 +518,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 			}
 		}
 	}
-	
+
 	// Convert final line total to pgtype.Numeric
 	lineTotal := pgtype.Numeric{}
 	if err := lineTotal.Scan(fmt.Sprintf("%.2f", lineTotalFloat)); err != nil {

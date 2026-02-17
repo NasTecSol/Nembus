@@ -62,11 +62,11 @@ func (ns NullCartStatus) Value() (driver.Value, error) {
 type CartType string
 
 const (
-	CartTypeStandard CartType = "standard"
-	CartTypeQuote    CartType = "quote"
-	CartTypeSaved    CartType = "saved"
-	CartTypeWishlist CartType = "wishlist"
-	CartTypeRetail   CartType = "retail"
+	CartTypeStandard  CartType = "standard"
+	CartTypeQuote     CartType = "quote"
+	CartTypeSaved     CartType = "saved"
+	CartTypeWishlist  CartType = "wishlist"
+	CartTypeRetail    CartType = "retail"
 	CartTypeWholesale CartType = "wholesale"
 )
 

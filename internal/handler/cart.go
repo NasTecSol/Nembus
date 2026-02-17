@@ -30,6 +30,7 @@ func (h *CartHandler) getRepositoryFromContext(c *gin.Context) *repository.Queri
 	}
 	return repo
 }
+
 // GetCart handles GET /api/carts/:id
 // @Summary      Get cart by ID
 // @Description  Retrieve a specific cart and its items by cart ID
@@ -102,7 +103,7 @@ func (h *CartHandler) AddToCart(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.AddToCart(c.Request.Context(), id, req.OrganizationID, req.ProductID, req.Quantity, req.UomID, req.PriceListID)
+	resp := h.useCase.AddToCart(c.Request.Context(), id, req.OrganizationID, req.ProductID, req.ProductVariantID, req.Quantity, req.UomID, req.PriceListID)
 	c.JSON(resp.StatusCode, resp)
 }
 
