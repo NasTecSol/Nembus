@@ -251,7 +251,12 @@ SELECT pp.id, pp.product_id, pp.product_variant_id, pp.price_list_id, pp.uom_id,
 WHERE pp.product_id = $1
   AND pp.price_list_id = $2
   AND pp.uom_id = $3
-  AND pp.product_variant_id IS NOT DISTINCT FROM $4
+AND (
+      ($4::int IS NULL AND pp.product_variant_id IS NULL)
+      OR
+      (pp.product_variant_id = $4::int)
+    )
+
   AND pp.is_active = true
   AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
   AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
