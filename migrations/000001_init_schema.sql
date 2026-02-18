@@ -3961,8 +3961,10 @@ DECLARE
     v_fulfilled_qty DECIMAL(15,3);
     v_reservation RECORD;
 BEGIN
-    -- Only run if status changed to 'fulfilled'
-    IF (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
+    -- Only process when order status changes to 'fulfilled'
+    IF NOT (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
+        RETURN NEW;
+    END IF;
         
         -- Ensure store_id is present
         IF NEW.store_id IS NULL THEN
@@ -3983,8 +3985,7 @@ BEGIN
             WHERE sales_order_id = NEW.id
         LOOP
             -- Determine the fulfilled quantity
-            -- If quantity_fulfilled is explicitly set and > 0, use it
-            -- Otherwise, if order status is 'fulfilled', use quantity_ordered
+            -- Use quantity_fulfilled if set, otherwise quantity_ordered
             IF v_order_line.quantity_fulfilled IS NOT NULL AND v_order_line.quantity_fulfilled > 0 THEN
                 v_fulfilled_qty := v_order_line.quantity_fulfilled;
             ELSE
@@ -3992,11 +3993,10 @@ BEGIN
             END IF;
             
             IF v_fulfilled_qty <= 0 THEN
-                CONTINUE; -- Skip lines with no fulfilled quantity
+                CONTINUE; -- Skip lines with no quantity
             END IF;
 
-            -- Lock and update inventory_stock for this product/variant/store combination
-            -- Note: PostgreSQL uses OLD column values when referencing columns being updated
+            -- FULFILLMENT: Deduct from on-hand and reduce allocated
             UPDATE inventory_stock
             SET 
                 quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
@@ -4045,11 +4045,12 @@ BEGIN
                 jsonb_build_object(
                     'sales_order_id', NEW.id::TEXT,
                     'sales_order_number', NEW.order_number,
-                    'order_line_id', v_order_line.id::TEXT
+                    'order_line_id', v_order_line.id::TEXT,
+                    'order_status', NEW.order_status
                 )
             );
 
-            -- Update stock_reservations: mark active reservations for this order as 'fulfilled'
+            -- Mark active reservations as 'fulfilled' when order is fulfilled
             FOR v_reservation IN
                 SELECT id, quantity_reserved
                 FROM stock_reservations
@@ -4070,6 +4071,82 @@ BEGIN
 
         END LOOP;
 
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- Trigger for UPDATE: fires when order status changes to 'fulfilled'
+CREATE TRIGGER trg_deduct_inventory_on_fulfillment
+    AFTER UPDATE ON sales_orders_v2
+    FOR EACH ROW
+    WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
+    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
+-- +goose StatementEnd
+
+-- =====================================================
+-- Trigger for order line insertion: allocate stock when order is pending/confirmed
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_trigger_allocate_inventory_on_order_line()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_order RECORD;
+    v_quantity DECIMAL(15,3);
+BEGIN
+    -- Get the parent order
+    SELECT order_status, store_id INTO v_order
+    FROM sales_orders_v2
+    WHERE id = NEW.sales_order_id;
+
+    -- Only process if order status is 'pending' or 'confirmed'
+    IF v_order.order_status IN ('pending', 'confirmed') AND v_order.store_id IS NOT NULL THEN
+        v_quantity := NEW.quantity_ordered;
+        
+        IF v_quantity > 0 THEN
+            -- Allocate stock (increase allocated, decrease available)
+            UPDATE inventory_stock
+            SET 
+                quantity_allocated = quantity_allocated + v_quantity,
+                quantity_available = GREATEST(0, quantity_on_hand - (quantity_allocated + v_quantity)),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = NEW.product_id
+              AND (product_variant_id = NEW.product_variant_id 
+                   OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+              AND store_id = v_order.store_id;
+
+            -- Record the allocation movement
+            INSERT INTO stock_movements (
+                movement_type,
+                reference_type,
+                reference_id,
+                product_id,
+                product_variant_id,
+                from_store_id,
+                quantity,
+                uom_id,
+                status,
+                metadata
+            )
+            VALUES (
+                'allocation',
+                'sales_order',
+                NULL,
+                NEW.product_id,
+                NEW.product_variant_id,
+                v_order.store_id,
+                v_quantity,
+                NEW.uom_id,
+                'completed',
+                jsonb_build_object(
+                    'sales_order_id', NEW.sales_order_id::TEXT,
+                    'order_line_id', NEW.id::TEXT,
+                    'order_status', v_order.order_status
+                )
+            );
+        END IF;
     END IF;
 
     RETURN NEW;
@@ -4078,11 +4155,10 @@ $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE TRIGGER trg_deduct_inventory_on_fulfillment
-    AFTER UPDATE ON sales_orders_v2
+CREATE TRIGGER trg_allocate_inventory_on_order_line_insert
+    AFTER INSERT ON sales_order_lines_v2
     FOR EACH ROW
-    WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
-    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
+    EXECUTE FUNCTION fn_trigger_allocate_inventory_on_order_line();
 -- +goose StatementEnd
 
 -- =====================================================
