@@ -3950,6 +3950,142 @@ $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
 
 -- =====================================================
+-- FIX #27 (P0): Auto stock deduction on order fulfillment
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_trigger_deduct_inventory_on_fulfillment()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_order_line RECORD;
+    v_fulfilled_qty DECIMAL(15,3);
+    v_reservation RECORD;
+BEGIN
+    -- Only run if status changed to 'fulfilled'
+    IF (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
+        
+        -- Ensure store_id is present
+        IF NEW.store_id IS NULL THEN
+            RAISE WARNING 'Order % has no store_id, skipping inventory deduction', NEW.id;
+            RETURN NEW;
+        END IF;
+
+        -- Loop through all order lines
+        FOR v_order_line IN
+            SELECT 
+                id,
+                product_id,
+                product_variant_id,
+                quantity_ordered,
+                quantity_fulfilled,
+                uom_id
+            FROM sales_order_lines_v2
+            WHERE sales_order_id = NEW.id
+        LOOP
+            -- Determine the fulfilled quantity
+            -- If quantity_fulfilled is explicitly set and > 0, use it
+            -- Otherwise, if order status is 'fulfilled', use quantity_ordered
+            IF v_order_line.quantity_fulfilled IS NOT NULL AND v_order_line.quantity_fulfilled > 0 THEN
+                v_fulfilled_qty := v_order_line.quantity_fulfilled;
+            ELSE
+                v_fulfilled_qty := v_order_line.quantity_ordered;
+            END IF;
+            
+            IF v_fulfilled_qty <= 0 THEN
+                CONTINUE; -- Skip lines with no fulfilled quantity
+            END IF;
+
+            -- Lock and update inventory_stock for this product/variant/store combination
+            -- Note: PostgreSQL uses OLD column values when referencing columns being updated
+            UPDATE inventory_stock
+            SET 
+                quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
+                quantity_allocated = GREATEST(0, quantity_allocated - v_fulfilled_qty),
+                -- Recalculate quantity_available: (new_on_hand) - (new_allocated)
+                quantity_available = GREATEST(0, 
+                    (quantity_on_hand - v_fulfilled_qty) - 
+                    GREATEST(0, quantity_allocated - v_fulfilled_qty)
+                ),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id 
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND store_id = NEW.store_id;
+
+            -- If no row was updated, the inventory_stock record might not exist
+            -- In this case, we should still record the movement but log a warning
+            IF NOT FOUND THEN
+                RAISE WARNING 'No inventory_stock record found for product_id=%, product_variant_id=%, store_id=%. Movement recorded but stock not updated.',
+                    v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
+            END IF;
+
+            -- Record the stock movement for auditing
+            INSERT INTO stock_movements (
+                movement_type,
+                reference_type,
+                reference_id,
+                product_id,
+                product_variant_id,
+                from_store_id,
+                quantity,
+                uom_id,
+                status,
+                metadata
+            )
+            VALUES (
+                'sale',
+                'sales_order',
+                NULL, -- reference_id is INTEGER but order ID is UUID, so store in metadata
+                v_order_line.product_id,
+                v_order_line.product_variant_id,
+                NEW.store_id,
+                v_fulfilled_qty,
+                v_order_line.uom_id,
+                'completed',
+                jsonb_build_object(
+                    'sales_order_id', NEW.id::TEXT,
+                    'sales_order_number', NEW.order_number,
+                    'order_line_id', v_order_line.id::TEXT
+                )
+            );
+
+            -- Update stock_reservations: mark active reservations for this order as 'fulfilled'
+            FOR v_reservation IN
+                SELECT id, quantity_reserved
+                FROM stock_reservations
+                WHERE reference_type = 'sales_order'
+                  AND reference_id = NEW.id::TEXT
+                  AND product_id = v_order_line.product_id
+                  AND (product_variant_id = v_order_line.product_variant_id 
+                       OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+                  AND store_id = NEW.store_id
+                  AND status = 'active'
+            LOOP
+                UPDATE stock_reservations
+                SET 
+                    status = 'fulfilled',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = v_reservation.id;
+            END LOOP;
+
+        END LOOP;
+
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TRIGGER trg_deduct_inventory_on_fulfillment
+    AFTER UPDATE ON sales_orders_v2
+    FOR EACH ROW
+    WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
+    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
+-- +goose StatementEnd
+
+-- =====================================================
 -- FIX #26 (P1): Loyalty points earning calculation
 -- =====================================================
 
