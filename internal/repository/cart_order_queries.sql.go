@@ -303,7 +303,8 @@ new_order AS (
         order_date, shipping_address, billing_address,
         shipping_method, pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
-        coupon_code, metadata
+        coupon_code, discount_codes, promotional_credits,
+        special_instructions, metadata
     )
     SELECT 
         $2, organization_id, store_id, customer_id,
@@ -313,7 +314,15 @@ new_order AS (
         NOW(), shipping_address, billing_address,
         shipping_method, pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
-        coupon_code, metadata
+        coupon_code,
+        CASE 
+            WHEN discount_code IS NOT NULL AND discount_code != '' 
+            THEN ARRAY[discount_code]::TEXT[]
+            ELSE ARRAY[]::TEXT[]
+        END,
+        promotional_credits,
+        notes,
+        metadata
     FROM cart_data
     RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 )
