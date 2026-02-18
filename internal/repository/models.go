@@ -432,6 +432,22 @@ func (ns NullQuoteStatus) Value() (driver.Value, error) {
 	return string(ns.QuoteStatus), nil
 }
 
+type AuditLog struct {
+	ID             int64            `json:"id"`
+	OrganizationID pgtype.Int4      `json:"organization_id"`
+	TableName      string           `json:"table_name"`
+	RecordID       string           `json:"record_id"`
+	Action         string           `json:"action"`
+	OldValues      []byte           `json:"old_values"`
+	NewValues      []byte           `json:"new_values"`
+	ChangedFields  []string         `json:"changed_fields"`
+	PerformedBy    pgtype.Int4      `json:"performed_by"`
+	IpAddress      *netip.Addr      `json:"ip_address"`
+	UserAgent      pgtype.Text      `json:"user_agent"`
+	SessionID      pgtype.Text      `json:"session_id"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
 type Brand struct {
 	ID        int32            `json:"id"`
 	Name      string           `json:"name"`
@@ -545,6 +561,23 @@ type CashierSession struct {
 	Status          pgtype.Text      `json:"status"`
 	Metadata        []byte           `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
+type ComboBundle struct {
+	ID           int32            `json:"id"`
+	StoreID      int32            `json:"store_id"`
+	Code         string           `json:"code"`
+	Name         string           `json:"name"`
+	Description  pgtype.Text      `json:"description"`
+	BundlePrice  pgtype.Numeric   `json:"bundle_price"`
+	BundleType   pgtype.Text      `json:"bundle_type"`
+	IsActive     pgtype.Bool      `json:"is_active"`
+	ValidFrom    pgtype.Date      `json:"valid_from"`
+	ValidTo      pgtype.Date      `json:"valid_to"`
+	DisplayOrder pgtype.Int4      `json:"display_order"`
+	Metadata     []byte           `json:"metadata"`
+	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 }
 
 type Customer struct {
@@ -793,6 +826,25 @@ type KioskSession struct {
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
 }
 
+type LoyaltyRedemptionRule struct {
+	ID                   int32            `json:"id"`
+	OrganizationID       int32            `json:"organization_id"`
+	RuleName             string           `json:"rule_name"`
+	PointsEarningRate    pgtype.Numeric   `json:"points_earning_rate"`
+	PointsRedemptionRate pgtype.Numeric   `json:"points_redemption_rate"`
+	MinPointsToRedeem    pgtype.Numeric   `json:"min_points_to_redeem"`
+	MaxPointsPerTxn      pgtype.Numeric   `json:"max_points_per_txn"`
+	MaxRedemptionPercent pgtype.Numeric   `json:"max_redemption_percent"`
+	EligibleProductTypes []string         `json:"eligible_product_types"`
+	ExpiryDays           pgtype.Int4      `json:"expiry_days"`
+	IsActive             pgtype.Bool      `json:"is_active"`
+	ValidFrom            pgtype.Date      `json:"valid_from"`
+	ValidTo              pgtype.Date      `json:"valid_to"`
+	Metadata             []byte           `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+}
+
 type Menu struct {
 	ID           int32            `json:"id"`
 	ModuleID     int32            `json:"module_id"`
@@ -847,6 +899,19 @@ type MenuItem struct {
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 }
 
+type MenuItemAvailabilitySchedule struct {
+	ID         int32            `json:"id"`
+	MenuItemID int32            `json:"menu_item_id"`
+	DayOfWeek  pgtype.Int4      `json:"day_of_week"`
+	StartTime  pgtype.Time      `json:"start_time"`
+	EndTime    pgtype.Time      `json:"end_time"`
+	IsActive   pgtype.Bool      `json:"is_active"`
+	ValidFrom  pgtype.Date      `json:"valid_from"`
+	ValidTo    pgtype.Date      `json:"valid_to"`
+	Metadata   []byte           `json:"metadata"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+}
+
 type MenuItemModifier struct {
 	ID              int32            `json:"id"`
 	MenuItemID      int32            `json:"menu_item_id"`
@@ -857,6 +922,21 @@ type MenuItemModifier struct {
 	DisplayOrder    pgtype.Int4      `json:"display_order"`
 	Metadata        []byte           `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
+type MenuModifierGroup struct {
+	ID            int32            `json:"id"`
+	StoreID       int32            `json:"store_id"`
+	Name          string           `json:"name"`
+	Code          string           `json:"code"`
+	SelectionType pgtype.Text      `json:"selection_type"`
+	MinSelections pgtype.Int4      `json:"min_selections"`
+	MaxSelections pgtype.Int4      `json:"max_selections"`
+	IsActive      pgtype.Bool      `json:"is_active"`
+	DisplayOrder  pgtype.Int4      `json:"display_order"`
+	Metadata      []byte           `json:"metadata"`
+	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 }
 
 type MenuPermission struct {
@@ -1183,6 +1263,37 @@ type ProfitLossAnalytic struct {
 	Metadata              []byte           `json:"metadata"`
 	CreatedAt             pgtype.Timestamp `json:"created_at"`
 	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+}
+
+type Promotion struct {
+	ID                  int32            `json:"id"`
+	OrganizationID      int32            `json:"organization_id"`
+	Code                string           `json:"code"`
+	Name                string           `json:"name"`
+	Description         pgtype.Text      `json:"description"`
+	PromotionType       string           `json:"promotion_type"`
+	ActionMetadata      []byte           `json:"action_metadata"`
+	ValidFrom           pgtype.Timestamp `json:"valid_from"`
+	ValidTo             pgtype.Timestamp `json:"valid_to"`
+	ScheduleJson        []byte           `json:"schedule_json"`
+	AppliesTo           pgtype.Text      `json:"applies_to"`
+	TargetProductIds    []int32          `json:"target_product_ids"`
+	TargetCategoryIds   []int32          `json:"target_category_ids"`
+	TargetCustomerTypes []string         `json:"target_customer_types"`
+	MinOrderAmount      pgtype.Numeric   `json:"min_order_amount"`
+	MinQuantity         pgtype.Numeric   `json:"min_quantity"`
+	CouponCode          pgtype.Text      `json:"coupon_code"`
+	UsageLimit          pgtype.Int4      `json:"usage_limit"`
+	UsageCount          pgtype.Int4      `json:"usage_count"`
+	UsagePerCustomer    pgtype.Int4      `json:"usage_per_customer"`
+	DiscountValue       pgtype.Numeric   `json:"discount_value"`
+	IsStackable         pgtype.Bool      `json:"is_stackable"`
+	IsActive            pgtype.Bool      `json:"is_active"`
+	StoreIds            []int32          `json:"store_ids"`
+	CreatedBy           pgtype.Int4      `json:"created_by"`
+	Metadata            []byte           `json:"metadata"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
 }
 
 type PurchaseAnalytic struct {
@@ -1583,6 +1694,47 @@ type SalesOrdersV2 struct {
 	UpdatedAt            pgtype.Timestamp  `json:"updated_at"`
 }
 
+type SalesReturn struct {
+	ID                    int32            `json:"id"`
+	ReturnNumber          string           `json:"return_number"`
+	StoreID               int32            `json:"store_id"`
+	CashierID             pgtype.Int4      `json:"cashier_id"`
+	CashierSessionID      pgtype.Int4      `json:"cashier_session_id"`
+	CustomerID            pgtype.Int4      `json:"customer_id"`
+	OriginalTransactionID pgtype.Int4      `json:"original_transaction_id"`
+	ReturnDate            pgtype.Timestamp `json:"return_date"`
+	ReturnReason          pgtype.Text      `json:"return_reason"`
+	Status                pgtype.Text      `json:"status"`
+	Subtotal              pgtype.Numeric   `json:"subtotal"`
+	TaxAmount             pgtype.Numeric   `json:"tax_amount"`
+	TotalRefundAmount     pgtype.Numeric   `json:"total_refund_amount"`
+	RefundMethod          pgtype.Text      `json:"refund_method"`
+	RefundReference       pgtype.Text      `json:"refund_reference"`
+	ApprovedBy            pgtype.Int4      `json:"approved_by"`
+	Notes                 pgtype.Text      `json:"notes"`
+	Metadata              []byte           `json:"metadata"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+}
+
+type SalesReturnLine struct {
+	ID               int32            `json:"id"`
+	ReturnID         int32            `json:"return_id"`
+	ProductID        int32            `json:"product_id"`
+	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	OriginalLineID   pgtype.Int4      `json:"original_line_id"`
+	Quantity         pgtype.Numeric   `json:"quantity"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	RefundAmount     pgtype.Numeric   `json:"refund_amount"`
+	ReturnToStock    pgtype.Bool      `json:"return_to_stock"`
+	SerialNumber     pgtype.Text      `json:"serial_number"`
+	BatchNumber      pgtype.Text      `json:"batch_number"`
+	Condition        pgtype.Text      `json:"condition"`
+	LineNumber       pgtype.Int4      `json:"line_number"`
+	Metadata         []byte           `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
 type StockCount struct {
 	ID                int32            `json:"id"`
 	CountNumber       string           `json:"count_number"`
@@ -1640,6 +1792,25 @@ type StockMovement struct {
 	TotalValue       pgtype.Numeric   `json:"total_value"`
 	Metadata         []byte           `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
+type StockReservation struct {
+	ID                int32            `json:"id"`
+	ReservationNumber string           `json:"reservation_number"`
+	ProductID         int32            `json:"product_id"`
+	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
+	StoreID           int32            `json:"store_id"`
+	ReferenceType     string           `json:"reference_type"`
+	ReferenceID       string           `json:"reference_id"`
+	QuantityReserved  pgtype.Numeric   `json:"quantity_reserved"`
+	ReservedAt        pgtype.Timestamp `json:"reserved_at"`
+	ExpiresAt         pgtype.Timestamp `json:"expires_at"`
+	Status            pgtype.Text      `json:"status"`
+	ReservedBy        pgtype.Int4      `json:"reserved_by"`
+	Notes             pgtype.Text      `json:"notes"`
+	Metadata          []byte           `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 type StorageLocation struct {
@@ -1787,6 +1958,28 @@ type UserStoreAccess struct {
 	GrantedAt pgtype.Timestamp `json:"granted_at"`
 }
 
+type VwAccountsPayable struct {
+	PoID                 int32            `json:"po_id"`
+	PoNumber             string           `json:"po_number"`
+	OrganizationID       int32            `json:"organization_id"`
+	OrganizationName     string           `json:"organization_name"`
+	SupplierID           int32            `json:"supplier_id"`
+	SupplierName         string           `json:"supplier_name"`
+	ContactPerson        pgtype.Text      `json:"contact_person"`
+	Email                pgtype.Text      `json:"email"`
+	SupplierPaymentTerms pgtype.Text      `json:"supplier_payment_terms"`
+	StoreName            string           `json:"store_name"`
+	PoDate               pgtype.Date      `json:"po_date"`
+	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
+	Status               pgtype.Text      `json:"status"`
+	PoTotal              pgtype.Numeric   `json:"po_total"`
+	DiscountAmount       pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
+	ReceivedAmount       interface{}      `json:"received_amount"`
+	AmountPaidStr        interface{}      `json:"amount_paid_str"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+}
+
 type VwActiveRestaurantOrder struct {
 	OrderID             int32            `json:"order_id"`
 	OrderNumber         string           `json:"order_number"`
@@ -1810,6 +2003,74 @@ type VwActiveRestaurantOrder struct {
 	MinutesSinceOrdered int32            `json:"minutes_since_ordered"`
 }
 
+type VwCustomerAgingReport struct {
+	CustomerID          int32          `json:"customer_id"`
+	CustomerCode        string         `json:"customer_code"`
+	CustomerName        string         `json:"customer_name"`
+	Email               pgtype.Text    `json:"email"`
+	Phone               pgtype.Text    `json:"phone"`
+	CustomerType        pgtype.Text    `json:"customer_type"`
+	CreditLimit         pgtype.Numeric `json:"credit_limit"`
+	OutstandingBalance  pgtype.Numeric `json:"outstanding_balance"`
+	OrganizationID      pgtype.Int4    `json:"organization_id"`
+	CurrentAmount       interface{}    `json:"current_amount"`
+	Overdue130          interface{}    `json:"overdue_1_30"`
+	Overdue3160         interface{}    `json:"overdue_31_60"`
+	Overdue6190         interface{}    `json:"overdue_61_90"`
+	OverdueOver90       interface{}    `json:"overdue_over_90"`
+	TotalOutstanding    interface{}    `json:"total_outstanding"`
+	OverdueInvoiceCount int32          `json:"overdue_invoice_count"`
+	LatestDueDate       interface{}    `json:"latest_due_date"`
+	LoyaltyPoints       pgtype.Numeric `json:"loyalty_points"`
+}
+
+type VwLowStockAlert struct {
+	InventoryStockID  int32            `json:"inventory_stock_id"`
+	StoreID           int32            `json:"store_id"`
+	StoreName         string           `json:"store_name"`
+	StoreCode         string           `json:"store_code"`
+	ProductID         int32            `json:"product_id"`
+	Sku               string           `json:"sku"`
+	EffectiveSku      string           `json:"effective_sku"`
+	ProductName       string           `json:"product_name"`
+	VariantName       string           `json:"variant_name"`
+	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
+	CategoryName      pgtype.Text      `json:"category_name"`
+	QuantityOnHand    pgtype.Numeric   `json:"quantity_on_hand"`
+	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
+	QuantityAllocated pgtype.Numeric   `json:"quantity_allocated"`
+	ReorderLevel      pgtype.Numeric   `json:"reorder_level"`
+	ReorderQuantity   pgtype.Numeric   `json:"reorder_quantity"`
+	StockStatus       string           `json:"stock_status"`
+	IsOutOfStock      bool             `json:"is_out_of_stock"`
+	IsLowStock        pgtype.Bool      `json:"is_low_stock"`
+	LastCountedAt     pgtype.Timestamp `json:"last_counted_at"`
+}
+
+type VwPendingPurchaseOrder struct {
+	PoID                 int32            `json:"po_id"`
+	PoNumber             string           `json:"po_number"`
+	PoDate               pgtype.Date      `json:"po_date"`
+	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
+	Status               pgtype.Text      `json:"status"`
+	DaysOverdue          int32            `json:"days_overdue"`
+	IsOverdue            pgtype.Bool      `json:"is_overdue"`
+	StoreID              int32            `json:"store_id"`
+	StoreName            string           `json:"store_name"`
+	SupplierID           int32            `json:"supplier_id"`
+	SupplierName         string           `json:"supplier_name"`
+	ContactPerson        pgtype.Text      `json:"contact_person"`
+	SupplierEmail        pgtype.Text      `json:"supplier_email"`
+	Subtotal             pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount       pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount          pgtype.Numeric   `json:"total_amount"`
+	OutstandingQuantity  interface{}      `json:"outstanding_quantity"`
+	CreatedByUsername    pgtype.Text      `json:"created_by_username"`
+	ApprovedByUsername   pgtype.Text      `json:"approved_by_username"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+}
+
 type VwPosCategory struct {
 	CategoryID         int32       `json:"category_id"`
 	CategoryCode       string      `json:"category_code"`
@@ -1823,8 +2084,12 @@ type VwPosCategory struct {
 
 type VwPosProductCatalog struct {
 	ProductID            int32          `json:"product_id"`
+	ProductVariantID     pgtype.Int4    `json:"product_variant_id"`
+	BaseSku              string         `json:"base_sku"`
 	Sku                  string         `json:"sku"`
+	BaseProductName      string         `json:"base_product_name"`
 	ProductName          string         `json:"product_name"`
+	VariantAttributes    []byte         `json:"variant_attributes"`
 	Description          pgtype.Text    `json:"description"`
 	ProductType          pgtype.Text    `json:"product_type"`
 	CategoryID           pgtype.Int4    `json:"category_id"`
@@ -1838,16 +2103,16 @@ type VwPosProductCatalog struct {
 	UomCode              pgtype.Text    `json:"uom_code"`
 	UomName              pgtype.Text    `json:"uom_name"`
 	DecimalPlaces        pgtype.Int4    `json:"decimal_places"`
-	Barcode              pgtype.Text    `json:"barcode"`
+	Barcode              string         `json:"barcode"`
 	BarcodeType          pgtype.Text    `json:"barcode_type"`
 	TaxCategoryID        pgtype.Int4    `json:"tax_category_id"`
 	TaxCategoryName      pgtype.Text    `json:"tax_category_name"`
 	TaxRate              pgtype.Numeric `json:"tax_rate"`
 	TaxIsInclusive       pgtype.Bool    `json:"tax_is_inclusive"`
 	RetailPrice          pgtype.Numeric `json:"retail_price"`
-	RetailPriceID        pgtype.Int4    `json:"retail_price_id"`
+	RetailPriceID        int32          `json:"retail_price_id"`
 	PromoPrice           pgtype.Numeric `json:"promo_price"`
-	PromoPriceID         pgtype.Int4    `json:"promo_price_id"`
+	PromoPriceID         int32          `json:"promo_price_id"`
 	PromoMinQuantity     pgtype.Numeric `json:"promo_min_quantity"`
 	PromoValidFrom       pgtype.Date    `json:"promo_valid_from"`
 	PromoValidTo         pgtype.Date    `json:"promo_valid_to"`
@@ -1862,6 +2127,24 @@ type VwPosProductCatalog struct {
 	AllowDecimalQuantity pgtype.Bool    `json:"allow_decimal_quantity"`
 	TrackInventory       pgtype.Bool    `json:"track_inventory"`
 	ProductMetadata      []byte         `json:"product_metadata"`
+}
+
+type VwProfitMarginAnalysis struct {
+	ProductID        int32       `json:"product_id"`
+	ProductVariantID pgtype.Int4 `json:"product_variant_id"`
+	Sku              string      `json:"sku"`
+	ProductName      string      `json:"product_name"`
+	CategoryName     pgtype.Text `json:"category_name"`
+	StoreID          int32       `json:"store_id"`
+	StoreName        string      `json:"store_name"`
+	PeriodMonth      pgtype.Date `json:"period_month"`
+	UnitsSold        int64       `json:"units_sold"`
+	TotalRevenue     int64       `json:"total_revenue"`
+	TotalCost        int64       `json:"total_cost"`
+	GrossProfit      int32       `json:"gross_profit"`
+	GrossMarginPct   int32       `json:"gross_margin_pct"`
+	TotalDiscounts   int64       `json:"total_discounts"`
+	TotalTaxes       int64       `json:"total_taxes"`
 }
 
 type VwRecipeBom struct {
@@ -1918,6 +2201,21 @@ type VwRestaurantMenu struct {
 	ProductSku           pgtype.Text    `json:"product_sku"`
 	ActiveModifierCount  int32          `json:"active_modifier_count"`
 	MarginPercent        interface{}    `json:"margin_percent"`
+}
+
+type VwUserEffectivePermission struct {
+	UserID            int32       `json:"user_id"`
+	Username          string      `json:"username"`
+	Email             string      `json:"email"`
+	OrganizationID    int32       `json:"organization_id"`
+	RoleID            int32       `json:"role_id"`
+	RoleName          string      `json:"role_name"`
+	RoleCode          string      `json:"role_code"`
+	PermissionID      int32       `json:"permission_id"`
+	PermissionName    string      `json:"permission_name"`
+	PermissionCode    string      `json:"permission_code"`
+	Scope             pgtype.Text `json:"scope"`
+	AccessibleStoreID pgtype.Int4 `json:"accessible_store_id"`
 }
 
 type VwWasteDailySummary struct {
