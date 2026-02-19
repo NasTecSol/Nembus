@@ -163,7 +163,7 @@ type RemovePermissionFromRoleRequest struct {
 }
 
 // CreatePermissionRequest represents permission creation request
-type CreatePermissionRequest struct {
+type CreatePermissionRequest []struct {
 	Name        string                 `json:"name" binding:"required" example:"View Users"`
 	Code        string                 `json:"code" binding:"required" example:"users.view"`
 	Description *string                `json:"description,omitempty" example:"Can view user list"`
@@ -172,13 +172,13 @@ type CreatePermissionRequest struct {
 
 // UpdatePermissionRequest represents permission update request
 type UpdatePermissionRequest struct {
-	Name        *string                 `json:"name,omitempty" example:"View Users"`
-	Description *string                 `json:"description,omitempty" example:"Updated description"`
-	Metadata    map[string]interface{}  `json:"metadata,omitempty" swaggertype:"object"`
+	Name        *string                `json:"name,omitempty" example:"View Users"`
+	Description *string                `json:"description,omitempty" example:"Updated description"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // AssignPermissionToEntityRequest represents assigning a permission to menu/module/submenu
-type AssignPermissionToEntityRequest struct {
+type AssignPermissionToEntityRequest []struct {
 	PermissionID int32                  `json:"permission_id" binding:"required" example:"1"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }

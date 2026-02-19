@@ -58,7 +58,7 @@ func (h *PermissionHandler) CreatePermission(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	var req struct {
+	var req []struct {
 		Name        string      `json:"name" binding:"required"`
 		Code        string      `json:"code" binding:"required"`
 		Description *string     `json:"description,omitempty"`
@@ -68,18 +68,38 @@ func (h *PermissionHandler) CreatePermission(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
-	var metadataBytes []byte
-	if req.Metadata != nil {
-		b, err := json.Marshal(req.Metadata)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+	var results []interface{}
+
+	for _, perm := range req {
+
+		var metadataBytes []byte
+		if perm.Metadata != nil {
+			b, err := json.Marshal(perm.Metadata)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+				return
+			}
+			metadataBytes = b
+		}
+
+		resp := h.useCase.CreatePermission(
+			c.Request.Context(),
+			perm.Name,
+			perm.Code,
+			perm.Description,
+			metadataBytes,
+		)
+
+		if resp.StatusCode != utils.CodeCreated {
+			c.JSON(resp.StatusCode, resp)
 			return
 		}
-		metadataBytes = b
+
+		results = append(results, resp.Data)
 	}
 
-	resp := h.useCase.CreatePermission(c.Request.Context(), req.Name, req.Code, req.Description, metadataBytes)
-	c.JSON(resp.StatusCode, resp)
+	c.JSON(http.StatusCreated, utils.NewResponse(utils.CodeCreated, "permissions created successfully", results))
+
 }
 
 // GetPermission handles GET /api/permissions/:id
@@ -292,7 +312,7 @@ func (h *PermissionHandler) AssignPermissionToMenu(c *gin.Context) {
 		return
 	}
 
-	var req struct {
+	var req []struct {
 		PermissionID int32       `json:"permission_id" binding:"required"`
 		Metadata     interface{} `json:"metadata,omitempty"`
 	}
@@ -300,18 +320,38 @@ func (h *PermissionHandler) AssignPermissionToMenu(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
-	var metadataBytes []byte
-	if req.Metadata != nil {
-		b, err := json.Marshal(req.Metadata)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+	var results []interface{}
+
+	for _, item := range req {
+
+		var metadataBytes []byte
+		if item.Metadata != nil {
+			b, err := json.Marshal(item.Metadata)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError,
+					utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+				return
+			}
+			metadataBytes = b
+		}
+
+		resp := h.useCase.AssignPermissionToMenu(
+			c.Request.Context(),
+			int32(menuID),
+			item.PermissionID,
+			metadataBytes,
+		)
+
+		if resp.StatusCode != utils.CodeCreated {
+			c.JSON(resp.StatusCode, resp)
 			return
 		}
-		metadataBytes = b
+
+		results = append(results, resp.Data)
 	}
 
-	resp := h.useCase.AssignPermissionToMenu(c.Request.Context(), int32(menuID), req.PermissionID, metadataBytes)
-	c.JSON(resp.StatusCode, resp)
+	c.JSON(http.StatusCreated,
+		utils.NewResponse(utils.CodeCreated, "permissions assigned successfully", results))
 }
 
 // GetMenuPermissions handles GET /api/permissions/menu/:menu_id
@@ -415,7 +455,7 @@ func (h *PermissionHandler) AssignPermissionToModule(c *gin.Context) {
 		return
 	}
 
-	var req struct {
+	var req []struct {
 		PermissionID int32       `json:"permission_id" binding:"required"`
 		Metadata     interface{} `json:"metadata,omitempty"`
 	}
@@ -423,18 +463,38 @@ func (h *PermissionHandler) AssignPermissionToModule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
-	var metadataBytes []byte
-	if req.Metadata != nil {
-		b, err := json.Marshal(req.Metadata)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+	var results []interface{}
+
+	for _, item := range req {
+
+		var metadataBytes []byte
+		if item.Metadata != nil {
+			b, err := json.Marshal(item.Metadata)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError,
+					utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+				return
+			}
+			metadataBytes = b
+		}
+
+		resp := h.useCase.AssignPermissionToModule(
+			c.Request.Context(),
+			int32(moduleID),
+			item.PermissionID,
+			metadataBytes,
+		)
+
+		if resp.StatusCode != utils.CodeCreated {
+			c.JSON(resp.StatusCode, resp)
 			return
 		}
-		metadataBytes = b
+
+		results = append(results, resp.Data)
 	}
 
-	resp := h.useCase.AssignPermissionToModule(c.Request.Context(), int32(moduleID), req.PermissionID, metadataBytes)
-	c.JSON(resp.StatusCode, resp)
+	c.JSON(http.StatusCreated,
+		utils.NewResponse(utils.CodeCreated, "permissions assigned successfully", results))
 }
 
 // GetModulePermissions handles GET /api/permissions/module/:module_id
