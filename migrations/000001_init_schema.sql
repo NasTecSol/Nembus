@@ -3958,10 +3958,8 @@ CREATE OR REPLACE FUNCTION fn_trigger_deduct_inventory_on_fulfillment()
 RETURNS TRIGGER AS $$
 DECLARE
     v_order_line RECORD;
-    v_inventory RECORD;
     v_fulfilled_qty DECIMAL(15,3);
     v_reservation RECORD;
-    v_storage_location_id INTEGER;
 BEGIN
     -- Only process when order status changes to 'fulfilled'
     IF NOT (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
@@ -3987,7 +3985,6 @@ BEGIN
         WHERE sales_order_id = NEW.id
     LOOP
         -- Determine the fulfilled quantity
-        -- Use quantity_fulfilled if set, otherwise quantity_ordered
         IF v_order_line.quantity_fulfilled IS NOT NULL AND v_order_line.quantity_fulfilled > 0 THEN
             v_fulfilled_qty := v_order_line.quantity_fulfilled;
         ELSE
@@ -3995,41 +3992,30 @@ BEGIN
         END IF;
         
         IF v_fulfilled_qty <= 0 THEN
-            CONTINUE; -- Skip lines with no quantity
+            CONTINUE;
         END IF;
 
-        -- Get inventory_stock record to get storage_location_id
-        SELECT storage_location_id, quantity_on_hand, quantity_allocated INTO v_inventory
-        FROM inventory_stock
+        -- FULFILLMENT: Deduct from on-hand and reduce allocated
+        UPDATE inventory_stock
+        SET 
+            quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
+            quantity_allocated = GREATEST(0, quantity_allocated - v_fulfilled_qty),
+            quantity_available = GREATEST(0, 
+                (quantity_on_hand - v_fulfilled_qty) - 
+                GREATEST(0, quantity_allocated - v_fulfilled_qty)
+            ),
+            updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_order_line.product_id
           AND (product_variant_id = v_order_line.product_variant_id 
                OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
           AND store_id = NEW.store_id;
 
-        IF FOUND THEN
-            v_storage_location_id := v_inventory.storage_location_id;
-            
-            -- FULFILLMENT: Deduct from on-hand and reduce allocated
-            UPDATE inventory_stock
-            SET 
-                quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
-                quantity_allocated = GREATEST(0, quantity_allocated - v_fulfilled_qty),
-                -- Recalculate quantity_available: (new_on_hand) - (new_allocated)
-                quantity_available = GREATEST(0, 
-                    (quantity_on_hand - v_fulfilled_qty) - 
-                    GREATEST(0, quantity_allocated - v_fulfilled_qty)
-                ),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE product_id = v_order_line.product_id
-              AND (product_variant_id = v_order_line.product_variant_id 
-                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
-              AND store_id = NEW.store_id;
-        ELSE
+        IF NOT FOUND THEN
             RAISE WARNING 'No inventory_stock record found for product_id=%, product_variant_id=%, store_id=%. Movement recorded but stock not updated.',
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
-        -- Record the stock movement for auditing with location information
+        -- Record the stock movement for auditing
         INSERT INTO stock_movements (
             movement_type,
             reference_type,
@@ -4037,7 +4023,6 @@ BEGIN
             product_id,
             product_variant_id,
             from_store_id,
-            from_location_id,
             quantity,
             uom_id,
             status,
@@ -4046,11 +4031,10 @@ BEGIN
         VALUES (
             'sale',
             'sales_order',
-            NULL, -- reference_id is INTEGER but order ID is UUID, so store in metadata
+            NULL,
             v_order_line.product_id,
             v_order_line.product_variant_id,
             NEW.store_id,
-            v_storage_location_id,
             v_fulfilled_qty,
             v_order_line.uom_id,
             'completed',
@@ -4106,13 +4090,10 @@ CREATE OR REPLACE FUNCTION fn_trigger_allocate_inventory_on_order_line()
 RETURNS TRIGGER AS $$
 DECLARE
     v_order RECORD;
-    v_inventory RECORD;
     v_quantity DECIMAL(15,3);
-    v_reservation_number VARCHAR(50);
-    v_storage_location_id INTEGER;
 BEGIN
     -- Get the parent order
-    SELECT order_status, store_id, created_by_user_id INTO v_order
+    SELECT order_status, store_id INTO v_order
     FROM sales_orders_v2
     WHERE id = NEW.sales_order_id;
 
@@ -4121,87 +4102,18 @@ BEGIN
         v_quantity := NEW.quantity_ordered;
         
         IF v_quantity > 0 THEN
-            -- Get inventory_stock record to check if it exists and get storage_location_id
-            SELECT id, storage_location_id, quantity_on_hand, quantity_allocated INTO v_inventory
-            FROM inventory_stock
+            -- Allocate stock (increase allocated, decrease available)
+            UPDATE inventory_stock
+            SET 
+                quantity_allocated = quantity_allocated + v_quantity,
+                quantity_available = GREATEST(0, quantity_on_hand - (quantity_allocated + v_quantity)),
+                updated_at = CURRENT_TIMESTAMP
             WHERE product_id = NEW.product_id
               AND (product_variant_id = NEW.product_variant_id 
                    OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
               AND store_id = v_order.store_id;
 
-            -- If inventory_stock doesn't exist, create it
-            IF NOT FOUND THEN
-                INSERT INTO inventory_stock (
-                    product_id,
-                    product_variant_id,
-                    store_id,
-                    quantity_on_hand,
-                    quantity_allocated,
-                    quantity_available
-                )
-                VALUES (
-                    NEW.product_id,
-                    NEW.product_variant_id,
-                    v_order.store_id,
-                    0, -- Start with 0 if no stock record exists
-                    v_quantity,
-                    -v_quantity -- Negative available since we're allocating without on-hand stock
-                )
-                RETURNING storage_location_id INTO v_storage_location_id;
-            ELSE
-                v_storage_location_id := v_inventory.storage_location_id;
-                
-                -- Allocate stock (increase allocated, decrease available)
-                -- Note: PostgreSQL uses OLD column values when referencing columns being updated
-                UPDATE inventory_stock
-                SET 
-                    quantity_allocated = quantity_allocated + v_quantity,
-                    quantity_available = GREATEST(0, quantity_on_hand - (quantity_allocated + v_quantity)),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE product_id = NEW.product_id
-                  AND (product_variant_id = NEW.product_variant_id 
-                       OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
-                  AND store_id = v_order.store_id;
-                
-                -- Verify the update happened
-                IF NOT FOUND THEN
-                    RAISE WARNING 'Failed to update inventory_stock for product_id=%, product_variant_id=%, store_id=%',
-                        NEW.product_id, NEW.product_variant_id, v_order.store_id;
-                END IF;
-            END IF;
-
-            -- Create stock reservation
-            v_reservation_number := 'RES-' || to_char(CURRENT_TIMESTAMP, 'YYYYMMDDHH24MISS') || '-' || NEW.id::TEXT;
-            INSERT INTO stock_reservations (
-                reservation_number,
-                product_id,
-                product_variant_id,
-                store_id,
-                reference_type,
-                reference_id,
-                quantity_reserved,
-                status,
-                reserved_by,
-                metadata
-            )
-            VALUES (
-                v_reservation_number,
-                NEW.product_id,
-                NEW.product_variant_id,
-                v_order.store_id,
-                'sales_order',
-                NEW.sales_order_id::TEXT,
-                v_quantity,
-                'active',
-                v_order.created_by_user_id,
-                jsonb_build_object(
-                    'sales_order_id', NEW.sales_order_id::TEXT,
-                    'order_line_id', NEW.id::TEXT,
-                    'order_status', v_order.order_status
-                )
-            );
-
-            -- Record the allocation movement with location information
+            -- Record the allocation movement
             INSERT INTO stock_movements (
                 movement_type,
                 reference_type,
@@ -4209,7 +4121,6 @@ BEGIN
                 product_id,
                 product_variant_id,
                 from_store_id,
-                from_location_id,
                 quantity,
                 uom_id,
                 status,
@@ -4222,15 +4133,13 @@ BEGIN
                 NEW.product_id,
                 NEW.product_variant_id,
                 v_order.store_id,
-                v_storage_location_id,
                 v_quantity,
                 NEW.uom_id,
                 'completed',
                 jsonb_build_object(
                     'sales_order_id', NEW.sales_order_id::TEXT,
                     'order_line_id', NEW.id::TEXT,
-                    'order_status', v_order.order_status,
-                    'reservation_number', v_reservation_number
+                    'order_status', v_order.order_status
                 )
             );
         END IF;
