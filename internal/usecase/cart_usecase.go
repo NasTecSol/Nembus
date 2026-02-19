@@ -593,20 +593,91 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 
 	orderID := convertedCart.ConvertedToOrderID.Bytes // It's a pgtype.UUID
 
-	// 4. Create Order Lines
+	// 4. Create Order Lines with all fields from cart_items
 	for i, item := range items {
+		// Calculate discount percentage if discount exists
+		var discountPercentage pgtype.Numeric
+		discountPercentage = pgtype.Numeric{Valid: false}
+		if item.DiscountAmount.Valid {
+			// Get unit price and quantity as floats for calculation
+			var unitPriceFloat, qtyFloat, discountFloat float64
+			if val, err := item.UnitPrice.Value(); err == nil {
+				if str, ok := val.(string); ok {
+					unitPriceFloat, _ = strconv.ParseFloat(str, 64)
+				}
+			}
+			if val, err := item.Quantity.Value(); err == nil {
+				if str, ok := val.(string); ok {
+					qtyFloat, _ = strconv.ParseFloat(str, 64)
+				}
+			}
+			if val, err := item.DiscountAmount.Value(); err == nil {
+				if str, ok := val.(string); ok {
+					discountFloat, _ = strconv.ParseFloat(str, 64)
+				}
+			}
+			
+			if unitPriceFloat > 0 && qtyFloat > 0 {
+				subtotalBeforeDiscount := unitPriceFloat * qtyFloat
+				if subtotalBeforeDiscount > 0 {
+					percent := (discountFloat / subtotalBeforeDiscount) * 100
+					discountPercentage = pgtype.Numeric{}
+					if err := discountPercentage.Scan(fmt.Sprintf("%.2f", percent)); err != nil {
+						discountPercentage = pgtype.Numeric{Valid: false}
+					} else {
+						discountPercentage.Valid = true
+					}
+				}
+			}
+		}
+
+		// Get tax rate from tax category if available
+		var taxRate pgtype.Numeric
+		taxRate = pgtype.Numeric{Valid: false}
+		if item.TaxCategoryID.Valid {
+			taxCategory, err := uc.repo.GetTaxCategory(ctx, item.TaxCategoryID.Int32)
+			if err == nil {
+				taxRate = taxCategory.TaxRate
+			}
+		}
+
+		// Convert serial_number to serial_numbers array
+		var serialNumbers []string
+		if item.SerialNumber.Valid && item.SerialNumber.String != "" {
+			serialNumbers = []string{item.SerialNumber.String}
+		}
+
+		// Prepare batch number
+		var batchNumber pgtype.Text
+		if item.BatchNumber.Valid {
+			batchNumber = item.BatchNumber
+		} else {
+			batchNumber = pgtype.Text{Valid: false}
+		}
+
 		arg := repository.CreateSalesOrderLineV2Params{
-			SalesOrderID:     orderID,
-			OrganizationID:   cart.OrganizationID,
-			LineNumber:       int32(i + 1),
-			ProductID:        item.ProductID,
-			ProductVariantID: item.ProductVariantID,
-			ProductName:      item.ProductName, // From ListCartItems JOIN
-			ProductSku:       pgtype.Text{String: item.ProductSku, Valid: true},
-			QuantityOrdered:  item.Quantity,
-			UnitPrice:        item.UnitPrice,
-			LineTotal:        item.LineTotal,
-			LineStatus:       pgtype.Text{String: "pending", Valid: true},
+			SalesOrderID:         orderID,
+			OrganizationID:       cart.OrganizationID,
+			LineNumber:           int32(i + 1),
+			ProductID:            item.ProductID,
+			ProductVariantID:    item.ProductVariantID,
+			ProductName:          item.ProductName, // From ListCartItems JOIN
+			ProductSku:           pgtype.Text{String: item.ProductSku, Valid: true},
+			QuantityOrdered:      item.Quantity,
+			UomID:                item.UomID,
+			UnitPrice:            item.UnitPrice,
+			DiscountAmount:       item.DiscountAmount,
+			DiscountPercentage:   discountPercentage,
+			TaxAmount:            item.TaxAmount,
+			LineTotal:            item.LineTotal,
+			TaxCategoryID:        item.TaxCategoryID,
+			TaxRate:              taxRate,
+			BatchNumber:          batchNumber,
+			SerialNumbers:        serialNumbers,
+			CustomizationDetails: item.CustomizationDetails,
+			LineStatus:           pgtype.Text{String: "pending", Valid: true},
+			Notes:                item.Notes,
+			Metadata:             item.Metadata,
 		}
 
 		_, err = uc.repo.CreateSalesOrderLineV2(ctx, arg)

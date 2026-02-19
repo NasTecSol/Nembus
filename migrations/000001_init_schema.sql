@@ -1,3 +1,5 @@
+
+
 -- +goose Up
 -- Combined Initial Schema Migration: Base Tables + POS Views/Functions (with Type Fixes) + Indexes
 
@@ -60,6 +62,7 @@ CREATE TABLE profit_loss_analytics (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
 CREATE TABLE discount_analytics (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -80,6 +83,10 @@ CREATE TABLE discount_analytics (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+
+
+
 
 CREATE TABLE modules (
     id SERIAL PRIMARY KEY,
@@ -281,18 +288,17 @@ CREATE TABLE user_store_access (
 );
 
 CREATE TABLE cashiers (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-    cashier_code VARCHAR(50) NOT NULL,
-    drawer_limit DECIMAL(15,2),
-    discount_limit DECIMAL(5,2),
-    is_active BOOLEAN DEFAULT true,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id            SERIAL PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    store_id      INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    cashier_code  VARCHAR(50) NOT NULL,
+    drawer_limit  DECIMAL(15,2),
+    discount_limit DECIMAL(5,2) CHECK (discount_limit BETWEEN 0 AND 100),
+    is_active     BOOLEAN   DEFAULT true,
+    metadata      JSONB     DEFAULT '{}',
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(store_id, cashier_code)
 );
-
 CREATE TABLE pos_terminals (
     id SERIAL PRIMARY KEY,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
@@ -473,6 +479,26 @@ CREATE TABLE product_serial_numbers (
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- FIX #1 (P0): New stock_reservations table to link pending orders to allocated inventory
+CREATE TABLE stock_reservations (
+    id                   SERIAL PRIMARY KEY,
+    reservation_number   VARCHAR(50) UNIQUE NOT NULL,
+    product_id           INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id   INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    store_id             INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    reference_type       VARCHAR(50) NOT NULL CHECK (reference_type IN ('sales_order','pos_transaction','cart','transfer','manual')),
+    reference_id         VARCHAR(100) NOT NULL,
+    quantity_reserved    DECIMAL(15,3) NOT NULL CHECK (quantity_reserved > 0),
+    reserved_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at           TIMESTAMP,
+    status               VARCHAR(30) DEFAULT 'active' CHECK (status IN ('active','fulfilled','cancelled','expired')),
+    reserved_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    notes                TEXT,
+    metadata             JSONB     DEFAULT '{}',
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE product_batches (
@@ -830,6 +856,66 @@ CREATE TABLE menu_item_modifiers (
     metadata            JSONB       DEFAULT '{}',
     created_at          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
+-- FIX #10 (P1): New menu_modifier_groups table to enforce min/max modifier selections
+CREATE TABLE menu_modifier_groups (
+    id                 SERIAL PRIMARY KEY,
+    store_id           INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    name               VARCHAR(100) NOT NULL,
+    code               VARCHAR(50)  NOT NULL,
+    selection_type     VARCHAR(20) DEFAULT 'optional' CHECK (selection_type IN ('required','optional','multiple')),
+    min_selections     INTEGER DEFAULT 0,
+    max_selections     INTEGER,
+    is_active          BOOLEAN   DEFAULT true,
+    display_order      INTEGER   DEFAULT 0,
+    metadata           JSONB     DEFAULT '{}',
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, code),
+    CONSTRAINT chk_modifier_group_selections CHECK (
+        min_selections >= 0
+        AND (max_selections IS NULL OR max_selections >= min_selections)
+    )
+);
+
+-- FIX #14 (P1): Central promotion/coupon definition table
+CREATE TABLE promotions (
+    id                    SERIAL PRIMARY KEY,
+    organization_id       INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    code                  VARCHAR(50) NOT NULL,
+    name                  VARCHAR(255) NOT NULL,
+    description           TEXT,
+    promotion_type        VARCHAR(50) NOT NULL CHECK (promotion_type IN ('percentage_discount','fixed_discount','bogo','buy_x_get_y','free_item','bundle_price','points_multiplier','happy_hour')),
+    -- FIX #16: Action metadata for complex rules
+    action_metadata       JSONB DEFAULT '{}',
+    -- FIX #15: Scheduling
+    valid_from            TIMESTAMP,
+    valid_to              TIMESTAMP,
+    schedule_json         JSONB DEFAULT '{}', -- e.g. {"days":[1,2,3],"start_time":"12:00","end_time":"14:00"}
+    -- Applicability
+    applies_to            VARCHAR(50) DEFAULT 'all' CHECK (applies_to IN ('all','category','product','customer_type','price_list')),
+    target_product_ids    INTEGER[] DEFAULT '{}',
+    target_category_ids   INTEGER[] DEFAULT '{}',
+    -- FIX #17: customer segmentation
+    target_customer_types TEXT[]    DEFAULT '{}',
+    min_order_amount      DECIMAL(15,2),
+    min_quantity          DECIMAL(15,3),
+    coupon_code           VARCHAR(50),
+    usage_limit           INTEGER,
+    usage_count           INTEGER DEFAULT 0,
+    usage_per_customer    INTEGER,
+    discount_value        DECIMAL(15,4),
+    is_stackable          BOOLEAN DEFAULT false,
+    is_active             BOOLEAN DEFAULT true,
+    store_ids             INTEGER[] DEFAULT '{}',
+    created_by            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    metadata              JSONB     DEFAULT '{}',
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(organization_id, code)
+);
+
+
+
 
 CREATE TABLE recipes (
     id                    SERIAL PRIMARY KEY,
@@ -864,10 +950,43 @@ CREATE TABLE recipe_ingredients (
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(recipe_id, product_id, product_variant_id)
 );
+-- FIX #13 (P1): Combo / meal deal / bundle support
+CREATE TABLE combo_bundles (
+    id              SERIAL PRIMARY KEY,
+    store_id        INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    code            VARCHAR(50) NOT NULL,
+    name            VARCHAR(255) NOT NULL,
+    description     TEXT,
+    bundle_price    DECIMAL(15,2) NOT NULL,
+    bundle_type     VARCHAR(30) DEFAULT 'fixed' CHECK (bundle_type IN ('fixed','build_your_own','meal_deal','bogo')),
+    is_active       BOOLEAN   DEFAULT true,
+    valid_from      DATE,
+    valid_to        DATE,
+    display_order   INTEGER   DEFAULT 0,
+    metadata        JSONB     DEFAULT '{}',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, code)
+);
 
 ALTER TABLE menu_items
     ADD CONSTRAINT fk_menu_items_recipe
     FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE SET NULL;
+
+-- FIX #11 (P1): New time-based / day-of-week menu availability schedules
+CREATE TABLE menu_item_availability_schedules (
+    id              SERIAL PRIMARY KEY,
+    menu_item_id    INTEGER NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    day_of_week     INTEGER CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday, 6=Saturday; NULL = every day
+    start_time      TIME    NOT NULL,
+    end_time        TIME    NOT NULL,
+    is_active       BOOLEAN   DEFAULT true,
+    valid_from      DATE,
+    valid_to        DATE,
+    metadata        JSONB     DEFAULT '{}',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_schedule_times CHECK (end_time > start_time)
+);    
 
 CREATE TABLE restaurant_orders (
     id                    SERIAL PRIMARY KEY,
@@ -1034,6 +1153,44 @@ CREATE TABLE inventory_analytics (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- FIX #18 (P1): Loyalty points redemption rules
+CREATE TABLE loyalty_redemption_rules (
+    id                      SERIAL PRIMARY KEY,
+    organization_id         INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    rule_name               VARCHAR(255) NOT NULL,
+    points_earning_rate     DECIMAL(10,4) DEFAULT 1,  -- points per currency unit spent
+    points_redemption_rate  DECIMAL(10,4) DEFAULT 1,  -- currency value per point
+    min_points_to_redeem    DECIMAL(15,2) DEFAULT 0,
+    max_points_per_txn      DECIMAL(15,2),
+    max_redemption_percent  DECIMAL(5,2) CHECK (max_redemption_percent BETWEEN 0 AND 100),
+    eligible_product_types  TEXT[]   DEFAULT '{}',
+    expiry_days             INTEGER,
+    is_active               BOOLEAN  DEFAULT true,
+    valid_from              DATE,
+    valid_to                DATE,
+    metadata                JSONB    DEFAULT '{}',
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- FIX #28 (P2): Audit trail table
+CREATE TABLE audit_logs (
+    id            BIGSERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+    table_name    VARCHAR(100) NOT NULL,
+    record_id     VARCHAR(100) NOT NULL,
+    action        VARCHAR(20)  NOT NULL CHECK (action IN ('INSERT','UPDATE','DELETE','SELECT')),
+    old_values    JSONB,
+    new_values    JSONB,
+    changed_fields TEXT[],
+    performed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    ip_address    INET,
+    user_agent    TEXT,
+    session_id    VARCHAR(255),
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =====================================================
 -- ENHANCED: CART MANAGEMENT SYSTEM
 -- =====================================================
@@ -1547,6 +1704,29 @@ CREATE TABLE invoices (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- FIX #7 (P1): New sales_returns and sales_return_lines tables
+CREATE TABLE sales_returns (
+    id                  SERIAL PRIMARY KEY,
+    return_number       VARCHAR(50) UNIQUE NOT NULL,
+    store_id            INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    cashier_id          INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
+    cashier_session_id  INTEGER REFERENCES cashier_sessions(id) ON DELETE SET NULL,
+    customer_id         INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    original_transaction_id INTEGER REFERENCES pos_transactions(id) ON DELETE SET NULL,
+    return_date         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    return_reason       VARCHAR(255),
+    status              VARCHAR(30) DEFAULT 'pending' CHECK (status IN ('pending','approved','completed','cancelled')),
+    subtotal            DECIMAL(15,2) DEFAULT 0,
+    tax_amount          DECIMAL(15,2) DEFAULT 0,
+    total_refund_amount DECIMAL(15,2) DEFAULT 0,
+    refund_method       VARCHAR(50),
+    refund_reference    VARCHAR(100),
+    approved_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    notes               TEXT,
+    metadata            JSONB     DEFAULT '{}',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- Invoice line items
 CREATE TABLE invoice_lines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1728,6 +1908,24 @@ CREATE TABLE quote_lines (
     UNIQUE(quote_id, line_number)
 );
 
+
+CREATE TABLE sales_return_lines (
+    id                 SERIAL PRIMARY KEY,
+    return_id          INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
+    product_id         INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    original_line_id   INTEGER REFERENCES pos_transaction_lines(id) ON DELETE SET NULL,
+    quantity           DECIMAL(15,3) NOT NULL,
+    unit_price         DECIMAL(15,4) NOT NULL,
+    refund_amount      DECIMAL(15,2) NOT NULL,
+    return_to_stock    BOOLEAN   DEFAULT true,
+    serial_number      VARCHAR(100),
+    batch_number       VARCHAR(100),
+    condition          VARCHAR(50) DEFAULT 'good' CHECK (condition IN ('good','damaged','defective','opened')),
+    line_number        INTEGER,
+    metadata           JSONB     DEFAULT '{}',
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- =====================================================
 -- INDEXES FOR CART SYSTEM
 -- =====================================================
@@ -1848,6 +2046,7 @@ CREATE INDEX idx_quote_lines_product_id ON quote_lines(product_id);
 -- =====================================================
 
 -- Function to update updated_at timestamp
+-- Generic updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -1856,43 +2055,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Apply triggers to all tables with updated_at
-CREATE TRIGGER update_carts_updated_at BEFORE UPDATE ON carts
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_cart_items_updated_at BEFORE UPDATE ON cart_items
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_draft_cart_templates_updated_at BEFORE UPDATE ON draft_cart_templates
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_draft_cart_template_items_updated_at BEFORE UPDATE ON draft_cart_template_items
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_sales_orders_v2_updated_at BEFORE UPDATE ON sales_orders_v2
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_sales_order_lines_v2_updated_at BEFORE UPDATE ON sales_order_lines_v2
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_order_fulfillments_updated_at BEFORE UPDATE ON order_fulfillments
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_invoices_updated_at BEFORE UPDATE ON invoices
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_invoice_lines_updated_at BEFORE UPDATE ON invoice_lines
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_invoice_payments_updated_at BEFORE UPDATE ON invoice_payments
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_quotes_updated_at BEFORE UPDATE ON quotes
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_quote_lines_updated_at BEFORE UPDATE ON quote_lines
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
+-- Apply updated_at triggers
+DO $$
+DECLARE
+    tbl TEXT;
+    tbls TEXT[] := ARRAY[
+        'organizations','tenants','modules','menus','submenus','roles',
+        'ui_settings','role_ui_customizations','stores','users',
+        'cashiers','pos_terminals','product_categories','brands',
+        'price_lists','products','product_variants','product_prices',
+        'product_serial_numbers','product_batches','inventory_stock',
+        'stock_reservations','suppliers','customers','purchase_orders',
+        'pos_transactions','sales_returns','restaurant_tables',
+        'menu_categories','recipes','menu_modifier_groups','menu_items',
+        'combo_bundles','sales_analytics','purchase_analytics',
+        'inventory_analytics','profit_loss_analytics','discount_analytics',
+        'carts','cart_items','draft_cart_templates','draft_cart_template_items',
+        'sales_orders_v2','sales_order_lines_v2','order_fulfillments',
+        'invoices','invoice_lines','invoice_payments','quotes','quote_lines',
+        'promotions','loyalty_redemption_rules','restaurant_orders',
+        'restaurant_order_items'
+    ];
+BEGIN
+    FOREACH tbl IN ARRAY tbls LOOP
+        EXECUTE format(
+            'CREATE TRIGGER trg_%s_updated_at BEFORE UPDATE ON %I
+             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();',
+            tbl, tbl
+        );
+    END LOOP;
+END;
+$$;
 -- =====================================================
 -- TRIGGERS FOR CART ACTIVITY TRACKING
 -- =====================================================
@@ -2408,6 +2601,12 @@ CREATE INDEX idx_pos_transactions_status ON pos_transactions(status);
 CREATE INDEX idx_pos_transaction_lines_transaction_id ON pos_transaction_lines(transaction_id);
 CREATE INDEX idx_pos_transaction_lines_product_id ON pos_transaction_lines(product_id);
 
+-- FIX #7: returns indexes
+CREATE INDEX idx_sales_returns_store_id              ON sales_returns(store_id);
+CREATE INDEX idx_sales_returns_original_transaction  ON sales_returns(original_transaction_id);
+CREATE INDEX idx_sales_returns_status                ON sales_returns(status);
+CREATE INDEX idx_sales_return_lines_return_id        ON sales_return_lines(return_id);
+
 -- POS Payments
 CREATE INDEX idx_pos_payments_transaction_id ON pos_payments(transaction_id);
 CREATE INDEX idx_pos_payments_payment_method ON pos_payments(payment_method);
@@ -2433,6 +2632,14 @@ CREATE INDEX idx_inventory_analytics_organization_id ON inventory_analytics(orga
 CREATE INDEX idx_inventory_analytics_store_id ON inventory_analytics(store_id);
 CREATE INDEX idx_inventory_analytics_product_id ON inventory_analytics(product_id);
 CREATE INDEX idx_inventory_analytics_date ON inventory_analytics(date);
+
+-- FIX #1: stock reservations indexes
+CREATE INDEX idx_stock_reservations_product_id         ON stock_reservations(product_id);
+CREATE INDEX idx_stock_reservations_product_variant_id ON stock_reservations(product_variant_id);
+CREATE INDEX idx_stock_reservations_store_id           ON stock_reservations(store_id);
+CREATE INDEX idx_stock_reservations_reference          ON stock_reservations(reference_type, reference_id);
+CREATE INDEX idx_stock_reservations_status             ON stock_reservations(status);
+CREATE INDEX idx_stock_reservations_expires_at         ON stock_reservations(expires_at);
 
 -- Profit Loss Analytics
 CREATE INDEX idx_profit_loss_analytics_organization_id ON profit_loss_analytics(organization_id);
@@ -2505,6 +2712,31 @@ CREATE INDEX idx_kiosk_sessions_store_id            ON kiosk_sessions(store_id);
 CREATE INDEX idx_kiosk_sessions_status              ON kiosk_sessions(status);
 CREATE INDEX idx_kiosk_sessions_token               ON kiosk_sessions(session_token);
 
+
+-- FIX #11 index
+-- CREATE INDEX idx_menu_availability_menu_item_id ON menu_item_availability_schedules(menu_item_id);
+-- CREATE INDEX idx_menu_availability_day          ON menu_item_availability_schedules(day_of_week);
+-- CREATE INDEX idx_recipes_organization_id        ON recipes(organization_id);
+-- CREATE INDEX idx_recipes_finished_product_id    ON recipes(finished_product_id);
+-- CREATE INDEX idx_recipes_is_active              ON recipes(is_active);
+-- CREATE INDEX idx_recipes_code                   ON recipes(recipe_code);
+-- CREATE INDEX idx_recipe_ingredients_recipe_id   ON recipe_ingredients(recipe_id);
+-- CREATE INDEX idx_recipe_ingredients_product_id  ON recipe_ingredients(product_id);
+-- CREATE INDEX idx_restaurant_orders_store_id     ON restaurant_orders(store_id);
+-- CREATE INDEX idx_restaurant_orders_table_id     ON restaurant_orders(table_id);
+-- CREATE INDEX idx_restaurant_orders_cashier_id   ON restaurant_orders(cashier_id);
+-- CREATE INDEX idx_restaurant_orders_status       ON restaurant_orders(status);
+-- CREATE INDEX idx_restaurant_orders_ordered_at   ON restaurant_orders(ordered_at);
+-- CREATE INDEX idx_restaurant_order_items_order_id ON restaurant_order_items(order_id);
+-- CREATE INDEX idx_restaurant_order_items_menu_item ON restaurant_order_items(menu_item_id);
+-- CREATE INDEX idx_restaurant_order_items_status   ON restaurant_order_items(status);
+-- FIX #13 indexes
+CREATE INDEX idx_combo_bundles_store_id  ON combo_bundles(store_id);
+CREATE INDEX idx_combo_bundles_is_active ON combo_bundles(is_active);
+CREATE INDEX idx_combo_bundle_items_bundle_id ON combo_bundle_items(combo_bundle_id);
+CREATE INDEX idx_waste_logs_store_id     ON waste_logs(store_id);
+CREATE INDEX idx_waste_logs_wasted_at    ON waste_logs(wasted_at);
+CREATE INDEX idx_kiosk_sessions_token    ON kiosk_sessions(session_token);
 -- Additional POS Indexes
 CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode_lookup 
 ON product_barcodes(barcode) WHERE is_primary = true;
@@ -2523,51 +2755,66 @@ ON products(is_active, is_sellable) WHERE is_active = true AND is_sellable = tru
 -- =====================================================
 
 CREATE OR REPLACE VIEW vw_pos_product_catalog AS
-SELECT 
-    p.id AS product_id,
-    p.sku,
-    p.name AS product_name,
+SELECT
+    -- Identity
+    p.id                            AS product_id,
+    pv.id                           AS product_variant_id,
+    p.sku                           AS base_sku,
+    COALESCE(pv.variant_sku, p.sku) AS sku,
+    p.name                          AS base_product_name,
+    COALESCE(pv.variant_name, p.name) AS product_name,
+    pv.variant_attributes,
     p.description,
     p.product_type,
-    pc.id AS category_id,
-    pc.name AS category_name,
-    pc.code AS category_code,
-    pc_parent.id AS parent_category_id,
-    pc_parent.name AS parent_category_name,
-    b.id AS brand_id,
-    b.name AS brand_name,
-    uom.id AS uom_id,
-    uom.code AS uom_code,
-    uom.name AS uom_name,
+    -- Category
+    pc.id                           AS category_id,
+    pc.name                         AS category_name,
+    pc.code                         AS category_code,
+    pc_parent.id                    AS parent_category_id,
+    pc_parent.name                  AS parent_category_name,
+    -- Brand
+    b.id                            AS brand_id,
+    b.name                          AS brand_name,
+    -- UOM
+    uom.id                          AS uom_id,
+    uom.code                        AS uom_code,
+    uom.name                        AS uom_name,
     uom.decimal_places,
-    pb.barcode,
-    pb.barcode_type,
-    tc.id AS tax_category_id,
-    tc.name AS tax_category_name,
+    -- Barcode: prefer variant barcode, fall back to base product barcode
+    COALESCE(pb_variant.barcode, pb_base.barcode) AS barcode,
+    COALESCE(pb_variant.barcode_type, pb_base.barcode_type) AS barcode_type,
+    -- Tax
+    tc.id                           AS tax_category_id,
+    tc.name                         AS tax_category_name,
     tc.tax_rate,
-    tc.is_inclusive AS tax_is_inclusive,
-    pp_retail.price AS retail_price,
-    pp_retail.id AS retail_price_id,
-    pp_promo.price AS promo_price,
-    pp_promo.id AS promo_price_id,
-    pp_promo.min_quantity AS promo_min_quantity,
-    pp_promo.valid_from AS promo_valid_from,
-    pp_promo.valid_to AS promo_valid_to,
-    pp_promo.metadata->>'promotion_name' AS promotion_name,
-    pp_promo.metadata->>'discount_percent' AS discount_percent,
-    CASE 
-        WHEN pp_promo.id IS NOT NULL 
-             AND pp_promo.is_active = true
-             AND pp_promo.valid_from <= CURRENT_DATE 
-             AND (pp_promo.valid_to IS NULL OR pp_promo.valid_to >= CURRENT_DATE)
-        THEN pp_promo.price
-        ELSE pp_retail.price
+    tc.is_inclusive                 AS tax_is_inclusive,
+    -- Prices: prefer variant-level prices, fall back to product-level
+    COALESCE(pp_retail_v.price, pp_retail.price)   AS retail_price,
+    COALESCE(pp_retail_v.id,    pp_retail.id)       AS retail_price_id,
+    COALESCE(pp_promo_v.price,  pp_promo.price)     AS promo_price,
+    COALESCE(pp_promo_v.id,     pp_promo.id)        AS promo_price_id,
+    COALESCE(pp_promo_v.min_quantity, pp_promo.min_quantity) AS promo_min_quantity,
+    COALESCE(pp_promo_v.valid_from,   pp_promo.valid_from)   AS promo_valid_from,
+    COALESCE(pp_promo_v.valid_to,     pp_promo.valid_to)     AS promo_valid_to,
+    COALESCE(pp_promo_v.metadata->>'promotion_name', pp_promo.metadata->>'promotion_name') AS promotion_name,
+    COALESCE(pp_promo_v.metadata->>'discount_percent', pp_promo.metadata->>'discount_percent') AS discount_percent,
+    -- Effective price
+    CASE
+        WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
+             AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
+             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
+                  OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
+        THEN COALESCE(pp_promo_v.price, pp_promo.price)
+        ELSE COALESCE(pp_retail_v.price, pp_retail.price)
     END AS effective_price,
-    CASE 
-        WHEN pp_promo.id IS NOT NULL 
-             AND pp_promo.is_active = true
-             AND pp_promo.valid_from <= CURRENT_DATE 
-             AND (pp_promo.valid_to IS NULL OR pp_promo.valid_to >= CURRENT_DATE)
+    -- Active promotion flag
+    CASE
+        WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
+             AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
+             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
+                  OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN true
         ELSE false
     END AS has_active_promotion,
@@ -2579,76 +2826,104 @@ SELECT
     p.track_inventory,
     p.metadata AS product_metadata
 FROM products p
-LEFT JOIN product_categories pc ON p.category_id = pc.id
-LEFT JOIN product_categories pc_parent ON pc.parent_category_id = pc_parent.id
-LEFT JOIN brands b ON p.brand_id = b.id
-LEFT JOIN units_of_measure uom ON p.base_uom_id = uom.id
-LEFT JOIN product_barcodes pb ON p.id = pb.product_id AND pb.is_primary = true
-LEFT JOIN tax_categories tc ON p.tax_category_id = tc.id
-LEFT JOIN product_prices pp_retail 
-    ON p.id = pp_retail.product_id 
-    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true)
+LEFT JOIN product_variants      pv           ON pv.product_id = p.id AND pv.is_active = true
+LEFT JOIN product_categories    pc           ON p.category_id = pc.id
+LEFT JOIN product_categories    pc_parent    ON pc.parent_category_id = pc_parent.id
+LEFT JOIN brands                b            ON p.brand_id = b.id
+LEFT JOIN units_of_measure      uom          ON p.base_uom_id = uom.id
+-- Base product barcodes
+LEFT JOIN product_barcodes      pb_base      ON p.id = pb_base.product_id AND pb_base.product_variant_id IS NULL AND pb_base.is_primary = true
+-- Variant barcodes (FIX 9.1 / 9.4)
+LEFT JOIN product_barcodes      pb_variant   ON pv.id = pb_variant.product_variant_id AND pb_variant.is_primary = true
+LEFT JOIN tax_categories        tc           ON p.tax_category_id = tc.id
+-- Retail price: base product
+LEFT JOIN product_prices pp_retail
+    ON p.id = pp_retail.product_id
+    AND pp_retail.product_variant_id IS NULL
+    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
     AND pp_retail.is_active = true
-LEFT JOIN product_prices pp_promo 
-    ON p.id = pp_promo.product_id 
-    AND pp_promo.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true)
+-- Retail price: variant (FIX 9.2 / 9.3)
+LEFT JOIN product_prices pp_retail_v
+    ON p.id = pp_retail_v.product_id
+    AND pp_retail_v.product_variant_id = pv.id
+    AND pp_retail_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
+    AND pp_retail_v.is_active = true
+-- Promo price: base product
+LEFT JOIN product_prices pp_promo
+    ON p.id = pp_promo.product_id
+    AND pp_promo.product_variant_id IS NULL
+    AND pp_promo.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true LIMIT 1)
     AND pp_promo.is_active = true
-WHERE p.is_active = true AND p.is_sellable = true
-ORDER BY pc.name, p.name;
+-- Promo price: variant
+LEFT JOIN product_prices pp_promo_v
+    ON p.id = pp_promo_v.product_id
+    AND pp_promo_v.product_variant_id = pv.id
+    AND pp_promo_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true LIMIT 1)
+    AND pp_promo_v.is_active = true
+WHERE p.is_active = true
+  AND p.is_sellable = true
+ORDER BY pc.name, p.name, pv.variant_name;
+-- =====================================================
+-- FIX #9 (continued): Variant-aware POS functions
+-- =====================================================
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION fn_pos_get_products_with_stock(
-    p_store_id INTEGER,
-    p_category_id INTEGER DEFAULT NULL,
-    p_search_term VARCHAR DEFAULT NULL,
-    p_include_out_of_stock BOOLEAN DEFAULT false
+    p_store_id              INTEGER,
+    p_category_id           INTEGER  DEFAULT NULL,
+    p_search_term           VARCHAR  DEFAULT NULL,
+    p_include_out_of_stock  BOOLEAN  DEFAULT false
 )
 RETURNS TABLE (
-    product_id INTEGER,
-    sku VARCHAR,
-    product_name VARCHAR,
-    description TEXT,
-    category_id INTEGER,
-    category_name VARCHAR,
-    brand_name VARCHAR,
-    barcode VARCHAR,
-    uom_code VARCHAR,
-    decimal_places INTEGER,
-    retail_price NUMERIC,
-    promo_price NUMERIC,
-    effective_price NUMERIC,
-    has_promotion BOOLEAN,
-    promotion_name VARCHAR,
-    discount_percent VARCHAR,
-    promo_min_quantity NUMERIC,
-    tax_rate NUMERIC,
-    tax_is_inclusive BOOLEAN,
-    quantity_available NUMERIC,
-    quantity_on_hand NUMERIC,
-    quantity_allocated NUMERIC,
-    is_in_stock BOOLEAN,
-    is_low_stock BOOLEAN,
-    reorder_level NUMERIC,
+    product_id          INTEGER,
+    product_variant_id  INTEGER,
+    sku                 VARCHAR,
+    product_name        VARCHAR,
+    variant_attributes  JSONB,
+    description         TEXT,
+    category_id         INTEGER,
+    category_name       VARCHAR,
+    brand_name          VARCHAR,
+    barcode             VARCHAR,
+    uom_code            VARCHAR,
+    decimal_places      INTEGER,
+    retail_price        NUMERIC,
+    promo_price         NUMERIC,
+    effective_price     NUMERIC,
+    has_promotion       BOOLEAN,
+    promotion_name      VARCHAR,
+    discount_percent    VARCHAR,
+    promo_min_quantity  NUMERIC,
+    tax_rate            NUMERIC,
+    tax_is_inclusive    BOOLEAN,
+    quantity_available  NUMERIC,
+    quantity_on_hand    NUMERIC,
+    quantity_allocated  NUMERIC,
+    is_in_stock         BOOLEAN,
+    is_low_stock        BOOLEAN,
+    reorder_level       NUMERIC,
     allow_decimal_quantity BOOLEAN,
-    is_serialized BOOLEAN,
-    is_batch_managed BOOLEAN,
-    product_metadata JSONB,
-    package_n_price JSONB,
+    is_serialized       BOOLEAN,
+    is_batch_managed    BOOLEAN,
+    product_metadata    JSONB,
+    package_n_price     JSONB,
     product_uom_conversions JSONB
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         cat.product_id,
+        cat.product_variant_id,
         cat.sku::VARCHAR,
         cat.product_name::VARCHAR,
+        cat.variant_attributes,
         cat.description,
         cat.category_id,
         cat.category_name::VARCHAR,
         cat.brand_name::VARCHAR,
         cat.barcode::VARCHAR,
         cat.uom_code::VARCHAR,
-        (cat.decimal_places)::INTEGER,
+        cat.decimal_places::INTEGER,
         cat.retail_price,
         cat.promo_price,
         cat.effective_price,
@@ -2658,8 +2933,9 @@ BEGIN
         cat.promo_min_quantity,
         cat.tax_rate,
         cat.tax_is_inclusive,
+        -- FIX 9.3: Join on both product_id AND product_variant_id
         COALESCE(inv.quantity_available, 0)::NUMERIC,
-        COALESCE(inv.quantity_on_hand, 0)::NUMERIC,
+        COALESCE(inv.quantity_on_hand,   0)::NUMERIC,
         COALESCE(inv.quantity_allocated, 0)::NUMERIC,
         (COALESCE(inv.quantity_available, 0) > 0),
         (COALESCE(inv.quantity_available, 0) <= COALESCE(inv.reorder_level, 0) AND COALESCE(inv.quantity_available, 0) > 0),
@@ -2668,67 +2944,305 @@ BEGIN
         cat.is_serialized,
         cat.is_batch_managed,
         cat.product_metadata,
+        -- FIX 9.2: Include variant_id and variant_attributes in package_n_price JSON
         (SELECT COALESCE(jsonb_agg(s.rec ORDER BY s.pl_code, s.uom_code), '[]'::jsonb)
          FROM (
-             SELECT 
-                 pl.code AS pl_code,
-                 uom.code AS uom_code,
-                 jsonb_build_object(
-                     'product_name', p.name,
-                     'price_list_id', pl.id,
-                     'price_list_code', pl.code,
-                     'price_list_name', pl.name,
-                     'price_list', pl.name,
-                     'price_list_type', pl.price_list_type,
-                     'currency_code', pl.currency_code,
-                     'uom_id', uom.id,
-                     'uom_code', uom.code,
-                     'uom', uom.code,
-                     'uom_name', uom.name,
-                     'decimal_places', uom.decimal_places,
-                     'price', pp.price,
-                     'min_quantity', pp.min_quantity,
-                     'max_quantity', pp.max_quantity,
-                     'valid_from', pp.valid_from,
-                     'valid_to', pp.valid_to,
-                     'metadata', COALESCE(pp.metadata, '{}'::jsonb),
-                     'barcodes', (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb) FROM product_barcodes pb WHERE pb.product_id = pp.product_id)
-                 ) AS rec
+             SELECT pl.code AS pl_code, uom.code AS uom_code,
+                    jsonb_build_object(
+                        'product_id',          pp.product_id,
+                        'product_variant_id',  cat.product_variant_id,
+                        'variant_name',        cat.product_name,
+                        'variant_attributes',  cat.variant_attributes,
+                        'price_list_id',       pl.id,
+                        'price_list_code',     pl.code,
+                        'price_list_name',     pl.name,
+                        'price_list_type',     pl.price_list_type,
+                        'currency_code',       pl.currency_code,
+                        'uom_id',              uom.id,
+                        'uom_code',            uom.code,
+                        'uom_name',            uom.name,
+                        'decimal_places',      uom.decimal_places,
+                        'price',               pp.price,
+                        'min_quantity',        pp.min_quantity,
+                        'max_quantity',        pp.max_quantity,
+                        'valid_from',          pp.valid_from,
+                        'valid_to',            pp.valid_to,
+                        'barcodes',            (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb)
+                                                FROM product_barcodes pb
+                                                WHERE pb.product_id = pp.product_id
+                                                  AND (pb.product_variant_id = cat.product_variant_id
+                                                       OR (cat.product_variant_id IS NULL AND pb.product_variant_id IS NULL)))
+                    ) AS rec
              FROM product_prices pp
-             INNER JOIN products p ON pp.product_id = p.id
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
+               AND (pp.product_variant_id = cat.product_variant_id
+                    OR (cat.product_variant_id IS NULL AND pp.product_variant_id IS NULL))
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
-               AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
+               AND (pp.valid_to   IS NULL OR pp.valid_to   >= CURRENT_DATE)
          ) AS s),
         (SELECT COALESCE(jsonb_agg(conv.cv ORDER BY conv.fu_code, conv.tu_code), '[]'::jsonb)
          FROM (
              SELECT fu.code AS fu_code, tu.code AS tu_code,
                     jsonb_build_object(
                         'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
-                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                        'to_uom_id',   tu.id, 'to_uom_code',   tu.code, 'to_uom_name',   tu.name,
                         'conversion_factor', puc.conversion_factor
                     ) AS cv
              FROM product_uom_conversions puc
              JOIN units_of_measure fu ON puc.from_uom_id = fu.id
-             JOIN units_of_measure tu ON puc.to_uom_id = tu.id
+             JOIN units_of_measure tu ON puc.to_uom_id   = tu.id
              WHERE puc.product_id = cat.product_id
          ) AS conv)
     FROM vw_pos_product_catalog cat
-    LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
-    WHERE 
+    -- FIX 9.3: correct variant-aware inventory join
+    LEFT JOIN inventory_stock inv
+        ON inv.product_id = cat.product_id
+        AND inv.store_id = p_store_id
+        AND (inv.product_variant_id = cat.product_variant_id
+             OR (cat.product_variant_id IS NULL AND inv.product_variant_id IS NULL))
+    WHERE
         (p_category_id IS NULL OR cat.category_id = p_category_id)
-        AND (p_search_term IS NULL 
+        AND (p_search_term IS NULL
              OR cat.product_name ILIKE '%' || p_search_term || '%'
-             OR cat.sku ILIKE '%' || p_search_term || '%'
-             OR cat.barcode ILIKE '%' || p_search_term || '%')
+             OR cat.sku         ILIKE '%' || p_search_term || '%'
+             OR cat.barcode     ILIKE '%' || p_search_term || '%')
         AND (p_include_out_of_stock = true OR COALESCE(inv.quantity_available, 0) > 0)
     ORDER BY cat.category_name, cat.product_name;
 END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
+
+
+-- =====================================================
+-- FIX #19 (P1): Low stock alert view
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_low_stock_alerts AS
+SELECT
+    ist.id              AS inventory_stock_id,
+    s.id                AS store_id,
+    s.name              AS store_name,
+    s.code              AS store_code,
+    p.id                AS product_id,
+    p.sku,
+    COALESCE(pv.variant_sku, p.sku) AS effective_sku,
+    p.name              AS product_name,
+    COALESCE(pv.variant_name, '')   AS variant_name,
+    pv.id               AS product_variant_id,
+    pc.name             AS category_name,
+    ist.quantity_on_hand,
+    ist.quantity_available,
+    ist.quantity_allocated,
+    ist.reorder_level,
+    ist.reorder_quantity,
+    CASE
+        WHEN ist.quantity_available <= 0                                              THEN 'out_of_stock'
+        WHEN ist.quantity_available <= COALESCE(ist.reorder_level, 0)               THEN 'low_stock'
+        WHEN ist.quantity_available <= COALESCE(ist.reorder_level, 0) * 1.5         THEN 'near_reorder'
+        ELSE 'adequate'
+    END AS stock_status,
+    (ist.quantity_available <= 0)                                                    AS is_out_of_stock,
+    (ist.quantity_available > 0 AND ist.quantity_available <= COALESCE(ist.reorder_level, 0)) AS is_low_stock,
+    ist.last_counted_at
+FROM inventory_stock ist
+JOIN stores s   ON s.id = ist.store_id AND s.is_active = true
+JOIN products p ON p.id = ist.product_id AND p.is_active = true AND p.track_inventory = true
+LEFT JOIN product_variants pv ON pv.id = ist.product_variant_id
+LEFT JOIN product_categories pc ON pc.id = p.category_id
+WHERE ist.quantity_available <= COALESCE(ist.reorder_level, 0)
+   OR ist.quantity_available <= 0
+ORDER BY s.name, CASE WHEN ist.quantity_available <= 0 THEN 0 ELSE 1 END, p.name;
+
+-- =====================================================
+-- FIX #20 (P1): Pending / overdue purchase orders view
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_pending_purchase_orders AS
+SELECT
+    po.id                   AS po_id,
+    po.po_number,
+    po.po_date,
+    po.expected_delivery_date,
+    po.status,
+    CURRENT_DATE - po.expected_delivery_date AS days_overdue,
+    (po.expected_delivery_date < CURRENT_DATE AND po.status NOT IN ('received','cancelled','closed')) AS is_overdue,
+    s.id    AS store_id,
+    s.name  AS store_name,
+    sup.id  AS supplier_id,
+    sup.name AS supplier_name,
+    sup.contact_person,
+    sup.email AS supplier_email,
+    po.subtotal,
+    po.discount_amount,
+    po.tax_amount,
+    po.total_amount,
+    (SELECT COALESCE(SUM(pol.quantity - pol.received_quantity), 0)
+     FROM purchase_order_lines pol WHERE pol.purchase_order_id = po.id) AS outstanding_quantity,
+    u_created.username AS created_by_username,
+    u_approved.username AS approved_by_username,
+    po.created_at
+FROM purchase_orders po
+JOIN stores s    ON s.id = po.store_id
+JOIN suppliers sup ON sup.id = po.supplier_id
+LEFT JOIN users u_created  ON u_created.id  = po.created_by
+LEFT JOIN users u_approved ON u_approved.id = po.approved_by
+WHERE po.status NOT IN ('received','cancelled','closed')
+ORDER BY is_overdue DESC, days_overdue DESC NULLS LAST, po.expected_delivery_date;
+
+-- =====================================================
+-- FIX #21 (P1): Customer aging report
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_customer_aging_report AS
+SELECT
+    c.id                    AS customer_id,
+    c.customer_code,
+    c.name                  AS customer_name,
+    c.email,
+    c.phone,
+    c.customer_type,
+    c.credit_limit,
+    c.outstanding_balance,
+    i.organization_id,
+    COALESCE(SUM(CASE WHEN i.due_date >= CURRENT_DATE THEN i.balance_due ELSE 0 END), 0) AS current_amount,
+    COALESCE(SUM(CASE WHEN i.due_date < CURRENT_DATE AND CURRENT_DATE - i.due_date <= 30 THEN i.balance_due ELSE 0 END), 0) AS overdue_1_30,
+    COALESCE(SUM(CASE WHEN CURRENT_DATE - i.due_date BETWEEN 31 AND 60 THEN i.balance_due ELSE 0 END), 0) AS overdue_31_60,
+    COALESCE(SUM(CASE WHEN CURRENT_DATE - i.due_date BETWEEN 61 AND 90 THEN i.balance_due ELSE 0 END), 0) AS overdue_61_90,
+    COALESCE(SUM(CASE WHEN CURRENT_DATE - i.due_date > 90 THEN i.balance_due ELSE 0 END), 0) AS overdue_over_90,
+    COALESCE(SUM(CASE WHEN i.balance_due > 0 THEN i.balance_due ELSE 0 END), 0) AS total_outstanding,
+    COUNT(CASE WHEN i.invoice_status = 'overdue' THEN 1 END)::INTEGER AS overdue_invoice_count,
+    MAX(i.due_date)         AS latest_due_date,
+    c.loyalty_points
+FROM customers c
+LEFT JOIN invoices i
+    ON i.customer_id = c.id
+    AND i.invoice_status NOT IN ('cancelled','draft')
+    AND i.balance_due > 0
+LEFT JOIN organizations o 
+    ON o.id = i.organization_id
+WHERE c.is_active = true
+GROUP BY 
+    c.id, c.customer_code, c.name, c.email, c.phone, 
+    c.customer_type, c.credit_limit, c.outstanding_balance, 
+    c.loyalty_points, i.organization_id
+ORDER BY total_outstanding DESC;
+
+-- =====================================================
+-- FIX #22 (P1): Accounts payable overview
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_accounts_payable AS
+SELECT
+    po.id                       AS po_id,
+    po.po_number,
+    po.organization_id,
+    org.name                    AS organization_name,
+    sup.id                      AS supplier_id,
+    sup.name                    AS supplier_name,
+    sup.contact_person,
+    sup.email,
+    sup.payment_terms           AS supplier_payment_terms,
+    s.name                      AS store_name,
+    po.po_date,
+    po.expected_delivery_date,
+    po.status,
+    po.total_amount             AS po_total,
+    po.discount_amount,
+    po.tax_amount,
+    -- Amount outstanding: items received but not yet paid
+    (SELECT COALESCE(SUM(pol.received_quantity * pol.unit_price), 0)
+     FROM purchase_order_lines pol WHERE pol.purchase_order_id = po.id) AS received_amount,
+    po.metadata->>'amount_paid' AS amount_paid_str,
+    po.created_at
+FROM purchase_orders po
+JOIN organizations org ON org.id = po.organization_id
+JOIN suppliers     sup ON sup.id = po.supplier_id
+JOIN stores        s   ON s.id   = po.store_id
+WHERE po.status IN ('partially_received','received','approved')
+ORDER BY po.po_date;
+
+-- =====================================================
+-- FIX #24 (P2): Profit margin analysis view
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_profit_margin_analysis AS
+SELECT
+    ptl.product_id,
+    ptl.product_variant_id,
+    p.sku,
+    p.name AS product_name,
+    pc.name AS category_name,
+    pt.store_id,
+    s.name AS store_name,
+    DATE_TRUNC('month', pt.transaction_date)::DATE AS period_month,
+    SUM(ptl.quantity) AS units_sold,
+    SUM(ptl.line_total) AS total_revenue,
+    SUM(ptl.cost_price * ptl.quantity) AS total_cost,
+    SUM(ptl.line_total) - SUM(ptl.cost_price * ptl.quantity) AS gross_profit,
+    CASE
+        WHEN SUM(ptl.line_total) > 0
+        THEN ROUND(
+            (SUM(ptl.line_total) - SUM(ptl.cost_price * ptl.quantity))
+            / SUM(ptl.line_total) * 100, 2
+        )
+        ELSE 0
+    END AS gross_margin_pct,
+    SUM(ptl.discount_amount) AS total_discounts,
+    SUM(ptl.tax_amount) AS total_taxes
+FROM pos_transaction_lines ptl
+JOIN pos_transactions pt 
+    ON pt.id = ptl.transaction_id 
+    AND pt.status = 'completed'
+JOIN products p 
+    ON p.id = ptl.product_id
+LEFT JOIN product_variants pv_id 
+    ON pv_id.id = ptl.product_variant_id
+LEFT JOIN product_categories pc 
+    ON pc.id = p.category_id
+JOIN stores s 
+    ON s.id = pt.store_id
+GROUP BY 
+    ptl.product_id, 
+    ptl.product_variant_id,
+    p.sku, 
+    p.name, 
+    pc.name,
+    pt.store_id, 
+    s.name, 
+    DATE_TRUNC('month', pt.transaction_date)
+ORDER BY 
+    period_month DESC, 
+    gross_profit DESC;
+
+-- =====================================================
+-- FIX #25 (P1): Flattened user effective permissions view
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_user_effective_permissions AS
+SELECT DISTINCT
+    u.id            AS user_id,
+    u.username,
+    u.email,
+    u.organization_id,
+    r.id            AS role_id,
+    r.name          AS role_name,
+    r.code          AS role_code,
+    per.id          AS permission_id,
+    per.name        AS permission_name,
+    per.code        AS permission_code,
+    rp.scope,
+    usa.store_id    AS accessible_store_id
+FROM users u
+JOIN user_roles    ur  ON ur.user_id = u.id
+JOIN roles         r   ON r.id = ur.role_id AND r.is_active = true
+JOIN role_permissions rp ON rp.role_id = r.id
+JOIN permissions   per ON per.id = rp.permission_id
+LEFT JOIN user_store_access usa ON usa.user_id = u.id
+WHERE u.is_active = true
+ORDER BY u.username, r.name, per.code;
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION fn_pos_get_product_by_barcode(p_barcode VARCHAR, p_store_id INTEGER)
@@ -3040,23 +3554,34 @@ $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
 
 CREATE OR REPLACE VIEW vw_pos_categories AS
-SELECT 
-    pc.id AS category_id,
-    pc.code AS category_code,
-    pc.name AS category_name,
+SELECT
+    pc.id               AS category_id,
+    pc.code             AS category_code,
+    pc.name             AS category_name,
     pc.parent_category_id,
-    pc_parent.name AS parent_category_name,
+    pc_parent.name      AS parent_category_name,
     COUNT(DISTINCT p.id)::INTEGER AS product_count,
-    COUNT(DISTINCT CASE WHEN inv.quantity_available > 0 THEN p.id END)::INTEGER AS in_stock_count,
-    pc.metadata AS category_metadata
+    COUNT(DISTINCT CASE 
+        WHEN inv.quantity_available > 0 THEN p.id 
+    END)::INTEGER AS in_stock_count,
+    pc.metadata         AS category_metadata
 FROM product_categories pc
-LEFT JOIN product_categories pc_parent ON pc.parent_category_id = pc_parent.id
-LEFT JOIN products p ON pc.id = p.category_id AND p.is_active = true AND p.is_sellable = true
-LEFT JOIN inventory_stock inv ON p.id = inv.product_id
-WHERE pc.is_active = true
-GROUP BY pc.id, pc.code, pc.name, pc.parent_category_id, pc_parent.name, pc.metadata
-HAVING COUNT(DISTINCT p.id) > 0
-ORDER BY pc_parent.name NULLS FIRST, pc.name;
+LEFT JOIN product_categories pc_parent 
+    ON pc.parent_category_id = pc_parent.id
+LEFT JOIN products p 
+    ON pc.id = p.category_id
+LEFT JOIN inventory_stock inv 
+    ON p.id = inv.product_id
+GROUP BY 
+    pc.id, 
+    pc.code, 
+    pc.name, 
+    pc.parent_category_id, 
+    pc_parent.name, 
+    pc.metadata
+ORDER BY 
+    pc_parent.name NULLS FIRST, 
+    pc.name;
 
 -- =====================================================
 -- RESTAURANT MODULE VIEWS
@@ -3261,6 +3786,493 @@ BEGIN
     WHERE m.menu_item_id = p_menu_item_id
       AND m.is_active    = true
     ORDER BY m.display_order;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- =====================================================
+-- FIX #2 (P0): Atomic inter-store / warehouse stock transfer function
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_process_stock_transfer(
+    p_from_store_id     INTEGER,
+    p_to_store_id       INTEGER,
+    p_product_id        INTEGER,
+    p_product_variant_id INTEGER,
+    p_quantity          DECIMAL(15,3),
+    p_from_location_id  INTEGER DEFAULT NULL,
+    p_to_location_id    INTEGER DEFAULT NULL,
+    p_batch_number      VARCHAR DEFAULT NULL,
+    p_performed_by      INTEGER DEFAULT NULL,
+    p_notes             TEXT    DEFAULT NULL
+)
+RETURNS TABLE (
+    success          BOOLEAN,
+    message          TEXT,
+    movement_id      INTEGER
+) AS $$
+DECLARE
+    v_available  DECIMAL(15,3);
+    v_movement_id INTEGER;
+    v_ref_num    VARCHAR(50);
+BEGIN
+    -- Validate same store check
+    IF p_from_store_id = p_to_store_id THEN
+        RETURN QUERY SELECT false, 'Source and destination stores must differ.', NULL::INTEGER;
+        RETURN;
+    END IF;
+
+    -- Lock and read available stock at source
+    SELECT quantity_available INTO v_available
+    FROM inventory_stock
+    WHERE product_id = p_product_id
+      AND (product_variant_id = p_product_variant_id OR (product_variant_id IS NULL AND p_product_variant_id IS NULL))
+      AND store_id = p_from_store_id
+    FOR UPDATE;
+
+    IF v_available IS NULL OR v_available < p_quantity THEN
+        RETURN QUERY SELECT false,
+            format('Insufficient stock. Available: %s, Requested: %s', COALESCE(v_available, 0), p_quantity),
+            NULL::INTEGER;
+        RETURN;
+    END IF;
+
+    v_ref_num := 'TRF-' || to_char(CURRENT_TIMESTAMP, 'YYYYMMDDHH24MISS') || '-' || p_from_store_id || '-' || p_to_store_id;
+
+    -- Deduct from source
+    UPDATE inventory_stock
+    SET quantity_on_hand   = quantity_on_hand   - p_quantity,
+        quantity_available = quantity_available - p_quantity,
+        quantity_in_transit = quantity_in_transit + p_quantity,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = p_product_id
+      AND (product_variant_id = p_product_variant_id OR (product_variant_id IS NULL AND p_product_variant_id IS NULL))
+      AND store_id = p_from_store_id;
+
+    -- Add to destination
+    INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
+        quantity_on_hand, quantity_available, quantity_in_transit)
+    VALUES (p_product_id, p_product_variant_id, p_to_store_id, p_to_location_id,
+            p_quantity, p_quantity, 0)
+    ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
+    DO UPDATE SET
+        quantity_on_hand   = inventory_stock.quantity_on_hand   + EXCLUDED.quantity_on_hand,
+        quantity_available = inventory_stock.quantity_available + EXCLUDED.quantity_available,
+        updated_at = CURRENT_TIMESTAMP;
+
+    -- Clear in-transit at source
+    UPDATE inventory_stock
+    SET quantity_in_transit = GREATEST(0, quantity_in_transit - p_quantity),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = p_product_id
+      AND (product_variant_id = p_product_variant_id OR (product_variant_id IS NULL AND p_product_variant_id IS NULL))
+      AND store_id = p_from_store_id;
+
+    -- Record movement
+    INSERT INTO stock_movements (movement_type, reference_type, product_id, product_variant_id,
+        from_store_id, to_store_id, from_location_id, to_location_id,
+        quantity, batch_number, posted_by, status,
+        metadata)
+    VALUES ('transfer', 'manual', p_product_id, p_product_variant_id,
+            p_from_store_id, p_to_store_id, p_from_location_id, p_to_location_id,
+            p_quantity, p_batch_number, p_performed_by, 'completed',
+            jsonb_build_object('reference_number', v_ref_num, 'notes', p_notes))
+    RETURNING id INTO v_movement_id;
+
+    RETURN QUERY SELECT true, 'Transfer completed successfully. Ref: ' || v_ref_num, v_movement_id;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- =====================================================
+-- FIX #3 (P0): Auto stock adjustment after physical count
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_reconcile_stock_count(p_count_id INTEGER)
+RETURNS TABLE (
+    success       BOOLEAN,
+    message       TEXT,
+    lines_updated INTEGER
+) AS $$
+DECLARE
+    v_count        RECORD;
+    v_line         RECORD;
+    v_lines_updated INTEGER := 0;
+BEGIN
+    SELECT * INTO v_count FROM stock_counts WHERE id = p_count_id;
+
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT false, 'Stock count not found.', 0;
+        RETURN;
+    END IF;
+    IF v_count.status <> 'approved' THEN
+        RETURN QUERY SELECT false, 'Stock count must be in ''approved'' status to reconcile.', 0;
+        RETURN;
+    END IF;
+
+    FOR v_line IN
+        SELECT * FROM stock_count_lines WHERE stock_count_id = p_count_id
+    LOOP
+        -- Update inventory_stock to match counted quantity
+        UPDATE inventory_stock
+        SET quantity_on_hand   = v_line.counted_quantity,
+            quantity_available = GREATEST(0, v_line.counted_quantity - COALESCE(quantity_allocated, 0)),
+            last_counted_at    = CURRENT_TIMESTAMP,
+            updated_at         = CURRENT_TIMESTAMP
+        WHERE product_id = v_line.product_id
+          AND (product_variant_id = v_line.product_variant_id
+               OR (product_variant_id IS NULL AND v_line.product_variant_id IS NULL))
+          AND store_id = v_count.store_id;
+
+        -- Record the adjustment movement
+        INSERT INTO stock_movements (movement_type, reference_type, reference_id, product_id,
+            product_variant_id, to_store_id, quantity, batch_number, serial_number,
+            posted_by, status, metadata)
+        VALUES ('count_adjustment', 'stock_count', p_count_id, v_line.product_id,
+                v_line.product_variant_id, v_count.store_id,
+                v_line.counted_quantity - v_line.system_quantity,
+                v_line.batch_number, v_line.serial_number,
+                v_count.approved_by, 'completed',
+                jsonb_build_object('count_id', p_count_id, 'variance', v_line.variance));
+
+        v_lines_updated := v_lines_updated + 1;
+    END LOOP;
+
+    -- Mark count as reconciled
+    UPDATE stock_counts SET status = 'approved', updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_count_id;
+
+    RETURN QUERY SELECT true, format('Reconciliation complete. %s lines adjusted.', v_lines_updated), v_lines_updated;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- =====================================================
+-- FIX #27 (P0): Auto stock deduction on order fulfillment
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_trigger_deduct_inventory_on_fulfillment()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_order_line RECORD;
+    v_fulfilled_qty DECIMAL(15,3);
+    v_reservation RECORD;
+BEGIN
+    -- Only process when order status changes to 'fulfilled'
+    IF NOT (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
+        RETURN NEW;
+    END IF;
+        
+    -- Ensure store_id is present
+    IF NEW.store_id IS NULL THEN
+        RAISE WARNING 'Order % has no store_id, skipping inventory deduction', NEW.id;
+        RETURN NEW;
+    END IF;
+
+    -- Loop through all order lines
+    FOR v_order_line IN
+        SELECT 
+            id,
+            product_id,
+            product_variant_id,
+            quantity_ordered,
+            quantity_fulfilled,
+            uom_id
+        FROM sales_order_lines_v2
+        WHERE sales_order_id = NEW.id
+    LOOP
+        -- Determine the fulfilled quantity
+        IF v_order_line.quantity_fulfilled IS NOT NULL AND v_order_line.quantity_fulfilled > 0 THEN
+            v_fulfilled_qty := v_order_line.quantity_fulfilled;
+        ELSE
+            v_fulfilled_qty := v_order_line.quantity_ordered;
+        END IF;
+        
+        IF v_fulfilled_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        -- FULFILLMENT: Deduct from on-hand and reduce allocated
+        UPDATE inventory_stock
+        SET 
+            quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
+            quantity_allocated = GREATEST(0, quantity_allocated - v_fulfilled_qty),
+            quantity_available = GREATEST(0, 
+                (quantity_on_hand - v_fulfilled_qty) - 
+                GREATEST(0, quantity_allocated - v_fulfilled_qty)
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_order_line.product_id
+          AND (product_variant_id = v_order_line.product_variant_id 
+               OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+          AND store_id = NEW.store_id;
+
+        IF NOT FOUND THEN
+            RAISE WARNING 'No inventory_stock record found for product_id=%, product_variant_id=%, store_id=%. Movement recorded but stock not updated.',
+                v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
+        END IF;
+
+        -- Record the stock movement for auditing
+        INSERT INTO stock_movements (
+            movement_type,
+            reference_type,
+            reference_id,
+            product_id,
+            product_variant_id,
+            from_store_id,
+            quantity,
+            uom_id,
+            status,
+            metadata
+        )
+        VALUES (
+            'sale',
+            'sales_order',
+            NULL,
+            v_order_line.product_id,
+            v_order_line.product_variant_id,
+            NEW.store_id,
+            v_fulfilled_qty,
+            v_order_line.uom_id,
+            'completed',
+            jsonb_build_object(
+                'sales_order_id', NEW.id::TEXT,
+                'sales_order_number', NEW.order_number,
+                'order_line_id', v_order_line.id::TEXT,
+                'order_status', NEW.order_status
+            )
+        );
+
+        -- Mark active reservations as 'fulfilled' when order is fulfilled
+        FOR v_reservation IN
+            SELECT id, quantity_reserved
+            FROM stock_reservations
+            WHERE reference_type = 'sales_order'
+              AND reference_id = NEW.id::TEXT
+              AND product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id 
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND store_id = NEW.store_id
+              AND status = 'active'
+        LOOP
+            UPDATE stock_reservations
+            SET 
+                status = 'fulfilled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = v_reservation.id;
+        END LOOP;
+
+    END LOOP;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- Trigger for UPDATE: fires when order status changes to 'fulfilled'
+CREATE TRIGGER trg_deduct_inventory_on_fulfillment
+    AFTER UPDATE ON sales_orders_v2
+    FOR EACH ROW
+    WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
+    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
+-- +goose StatementEnd
+
+-- =====================================================
+-- Trigger for order line insertion: allocate stock when order is pending/confirmed
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_trigger_allocate_inventory_on_order_line()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_order RECORD;
+    v_quantity DECIMAL(15,3);
+BEGIN
+    -- Get the parent order
+    SELECT order_status, store_id INTO v_order
+    FROM sales_orders_v2
+    WHERE id = NEW.sales_order_id;
+
+    -- Only process if order status is 'pending' or 'confirmed'
+    IF v_order.order_status IN ('pending', 'confirmed') AND v_order.store_id IS NOT NULL THEN
+        v_quantity := NEW.quantity_ordered;
+        
+        IF v_quantity > 0 THEN
+            -- Allocate stock (increase allocated, decrease available)
+            UPDATE inventory_stock
+            SET 
+                quantity_allocated = quantity_allocated + v_quantity,
+                quantity_available = GREATEST(0, quantity_on_hand - (quantity_allocated + v_quantity)),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = NEW.product_id
+              AND (product_variant_id = NEW.product_variant_id 
+                   OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+              AND store_id = v_order.store_id;
+
+            -- Record the allocation movement
+            INSERT INTO stock_movements (
+                movement_type,
+                reference_type,
+                reference_id,
+                product_id,
+                product_variant_id,
+                from_store_id,
+                quantity,
+                uom_id,
+                status,
+                metadata
+            )
+            VALUES (
+                'allocation',
+                'sales_order',
+                NULL,
+                NEW.product_id,
+                NEW.product_variant_id,
+                v_order.store_id,
+                v_quantity,
+                NEW.uom_id,
+                'completed',
+                jsonb_build_object(
+                    'sales_order_id', NEW.sales_order_id::TEXT,
+                    'order_line_id', NEW.id::TEXT,
+                    'order_status', v_order.order_status
+                )
+            );
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TRIGGER trg_allocate_inventory_on_order_line_insert
+    AFTER INSERT ON sales_order_lines_v2
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_trigger_allocate_inventory_on_order_line();
+-- +goose StatementEnd
+
+-- =====================================================
+-- FIX #26 (P1): Loyalty points earning calculation
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_calculate_loyalty_earned(p_transaction_id INTEGER)
+RETURNS TABLE (
+    points_earned  DECIMAL(15,2),
+    rule_applied   VARCHAR(255),
+    customer_id    INTEGER
+) AS $$
+DECLARE
+    v_txn        RECORD;
+    v_rule       RECORD;
+    v_points     DECIMAL(15,2) := 0;
+BEGIN
+    SELECT pt.*, pt.total_amount, pt.customer_id AS cust_id
+    INTO v_txn
+    FROM pos_transactions pt
+    WHERE pt.id = p_transaction_id;
+
+    IF NOT FOUND OR v_txn.cust_id IS NULL THEN
+        RETURN QUERY SELECT 0::DECIMAL(15,2), 'No customer on transaction'::VARCHAR(255), NULL::INTEGER;
+        RETURN;
+    END IF;
+
+    SELECT * INTO v_rule
+    FROM loyalty_redemption_rules
+    WHERE is_active = true
+      AND (valid_from IS NULL OR valid_from <= CURRENT_DATE)
+      AND (valid_to   IS NULL OR valid_to   >= CURRENT_DATE)
+    ORDER BY id DESC LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT 0::DECIMAL(15,2), 'No active loyalty rule found'::VARCHAR(255), v_txn.cust_id;
+        RETURN;
+    END IF;
+
+    v_points := FLOOR(v_txn.total_amount * v_rule.points_earning_rate);
+
+    -- Update customer loyalty_points balance
+    UPDATE customers
+    SET loyalty_points = loyalty_points + v_points,
+        updated_at     = CURRENT_TIMESTAMP
+    WHERE id = v_txn.cust_id;
+
+    RETURN QUERY SELECT v_points, v_rule.rule_name::VARCHAR(255), v_txn.cust_id;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- =====================================================
+-- FIX #23 (P1): Daily analytics refresh function
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_refresh_daily_analytics(p_date DATE DEFAULT CURRENT_DATE)
+RETURNS VOID AS $$
+BEGIN
+    -- Refresh sales_analytics from pos_transactions
+    INSERT INTO sales_analytics (
+        organization_id, store_id, product_id, category_id,
+        date, hour, day_of_week, month, quarter, year,
+        units_sold, revenue, discounts, taxes, net_revenue, transactions
+    )
+    SELECT
+        s.organization_id,
+        pt.store_id,
+        ptl.product_id,
+        p.category_id,
+        p_date,
+        EXTRACT(HOUR FROM pt.transaction_date)::INTEGER,
+        EXTRACT(DOW  FROM pt.transaction_date)::INTEGER,
+        EXTRACT(MONTH FROM p_date)::INTEGER,
+        EXTRACT(QUARTER FROM p_date)::INTEGER,
+        EXTRACT(YEAR FROM p_date)::INTEGER,
+        SUM(ptl.quantity),
+        SUM(ptl.line_total),
+        SUM(ptl.discount_amount),
+        SUM(ptl.tax_amount),
+        SUM(ptl.line_total - ptl.tax_amount),
+        COUNT(DISTINCT pt.id)
+    FROM pos_transactions pt
+    JOIN pos_transaction_lines ptl ON ptl.transaction_id = pt.id
+    JOIN products p ON p.id = ptl.product_id
+    JOIN stores s ON s.id = pt.store_id
+    WHERE DATE(pt.transaction_date) = p_date
+      AND pt.status = 'completed'
+    GROUP BY s.organization_id, pt.store_id, ptl.product_id, p.category_id,
+             EXTRACT(HOUR FROM pt.transaction_date),
+             EXTRACT(DOW  FROM pt.transaction_date)
+    ON CONFLICT DO NOTHING;
+
+    -- Refresh profit_loss_analytics
+    INSERT INTO profit_loss_analytics (
+        organization_id, store_id, date, period_type, month, quarter, year,
+        gross_revenue, sales_discounts, net_revenue, cogs
+    )
+    SELECT
+        s.organization_id,
+        pt.store_id,
+        p_date,
+        'daily',
+        EXTRACT(MONTH FROM p_date)::INTEGER,
+        EXTRACT(QUARTER FROM p_date)::INTEGER,
+        EXTRACT(YEAR FROM p_date)::INTEGER,
+        SUM(pt.total_amount),
+        SUM(pt.discount_amount),
+        SUM(pt.total_amount - pt.discount_amount),
+        SUM(pt.total_cost)
+    FROM pos_transactions pt
+    JOIN stores s ON s.id = pt.store_id
+    WHERE DATE(pt.transaction_date) = p_date
+      AND pt.status = 'completed'
+    GROUP BY s.organization_id, pt.store_id
+    ON CONFLICT DO NOTHING;
 END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
@@ -3763,6 +4775,7 @@ DROP TABLE IF EXISTS draft_cart_templates CASCADE;
 DROP TABLE IF EXISTS cart_activity_log CASCADE;
 DROP TABLE IF EXISTS cart_items CASCADE;
 DROP TABLE IF EXISTS carts CASCADE;
+DROP TABLE IF EXISTS stock_reservations CASCADE;
 
 -- Drop types
 DROP TYPE IF EXISTS quote_status;
