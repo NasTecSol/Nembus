@@ -18,4 +18,5 @@ func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 		products.GET("/search", h.SearchProduct)
 		products.GET("/category/:category_id", h.GetProductsByCategory)
 	}
+	pos.POST("/payments", h.ProcessPayment)
 }

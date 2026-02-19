@@ -2,14 +2,16 @@
 INSERT INTO pos_payments (
     transaction_id,
     payment_method,
+    payment_gateway,
     amount,
     reference_number,
     metadata
-) VALUES ($1, $2, $3, $4, $5);
+) VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetPaymentsForTransaction :many
 SELECT 
     payment_method,
+    payment_gateway,
     amount,
     reference_number,
     created_at

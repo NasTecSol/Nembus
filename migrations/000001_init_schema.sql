@@ -749,6 +749,8 @@ CREATE TABLE pos_transactions (
     change_given DECIMAL(15,2) DEFAULT 0,
     status VARCHAR(50) DEFAULT 'completed',
     price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    sales_order_id UUID REFERENCES sales_orders_v2(id) ON DELETE SET NULL,
+    source_cart_id UUID REFERENCES carts(id) ON DELETE SET NULL,
     voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     voided_at TIMESTAMP,
     metadata JSONB DEFAULT '{}',
@@ -779,6 +781,7 @@ CREATE TABLE pos_payments (
     id SERIAL PRIMARY KEY,
     transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
     payment_method VARCHAR(50) NOT NULL,
+    payment_gateway VARCHAR(50),
     amount DECIMAL(15,2) NOT NULL,
     payment_reference VARCHAR(100),
     reference_number VARCHAR(100),
@@ -1089,6 +1092,8 @@ CREATE TABLE sales_analytics (
     taxes DECIMAL(15,2) DEFAULT 0,
     net_revenue DECIMAL(15,2) DEFAULT 0,
     transactions INTEGER DEFAULT 0,
+    payment_method VARCHAR(50),
+    payment_gateway VARCHAR(50),
     average_order_value DECIMAL(15,2),
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1218,6 +1223,8 @@ CREATE TABLE carts (
     
     -- Sales channel tracking
     channel VARCHAR(50) DEFAULT 'online', -- online, pos, mobile_app, kiosk
+    payment_method VARCHAR(100),
+    payment_gateway VARCHAR(100),
     device_info JSONB DEFAULT '{}', -- Browser, device type, etc.
     
     -- User/Session tracking
@@ -1467,6 +1474,7 @@ CREATE TABLE sales_orders_v2 (
     
     -- Payment method
     payment_method VARCHAR(100),
+    payment_gateway VARCHAR(100),
     payment_terms VARCHAR(100),
     payment_due_date DATE,
     
@@ -1782,6 +1790,7 @@ CREATE TABLE invoice_payments (
     payment_amount DECIMAL(15,2) NOT NULL CHECK (payment_amount > 0),
     
     payment_method VARCHAR(100) NOT NULL, -- cash, card, bank_transfer, check, etc.
+    payment_gateway VARCHAR(100),
     payment_reference VARCHAR(255), -- Transaction ID, check number, etc.
     
     -- Currency handling
@@ -4216,39 +4225,88 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION fn_refresh_daily_analytics(p_date DATE DEFAULT CURRENT_DATE)
 RETURNS VOID AS $$
 BEGIN
-    -- Refresh sales_analytics from pos_transactions
+    -- Refresh sales_analytics from pos_transactions and sales_orders_v2
     INSERT INTO sales_analytics (
         organization_id, store_id, product_id, category_id,
         date, hour, day_of_week, month, quarter, year,
-        units_sold, revenue, discounts, taxes, net_revenue, transactions
+        units_sold, revenue, discounts, taxes, net_revenue, transactions,
+        payment_method, payment_gateway
     )
     SELECT
-        s.organization_id,
-        pt.store_id,
-        ptl.product_id,
-        p.category_id,
-        p_date,
-        EXTRACT(HOUR FROM pt.transaction_date)::INTEGER,
-        EXTRACT(DOW  FROM pt.transaction_date)::INTEGER,
-        EXTRACT(MONTH FROM p_date)::INTEGER,
-        EXTRACT(QUARTER FROM p_date)::INTEGER,
-        EXTRACT(YEAR FROM p_date)::INTEGER,
-        SUM(ptl.quantity),
-        SUM(ptl.line_total),
-        SUM(ptl.discount_amount),
-        SUM(ptl.tax_amount),
-        SUM(ptl.line_total - ptl.tax_amount),
-        COUNT(DISTINCT pt.id)
-    FROM pos_transactions pt
-    JOIN pos_transaction_lines ptl ON ptl.transaction_id = pt.id
-    JOIN products p ON p.id = ptl.product_id
-    JOIN stores s ON s.id = pt.store_id
-    WHERE DATE(pt.transaction_date) = p_date
-      AND pt.status = 'completed'
-    GROUP BY s.organization_id, pt.store_id, ptl.product_id, p.category_id,
-             EXTRACT(HOUR FROM pt.transaction_date),
-             EXTRACT(DOW  FROM pt.transaction_date)
-    ON CONFLICT DO NOTHING;
+        organization_id, store_id, product_id, category_id,
+        date, hour, day_of_week, month, quarter, year,
+        SUM(units_sold), SUM(revenue), SUM(discounts), SUM(taxes), SUM(net_revenue), SUM(transactions),
+        payment_method, payment_gateway
+    FROM (
+        -- Data from POS transactions
+        SELECT
+            s.organization_id,
+            pt.store_id,
+            ptl.product_id,
+            p.category_id,
+            p_date AS date,
+            EXTRACT(HOUR FROM pt.transaction_date)::INTEGER AS hour,
+            EXTRACT(DOW  FROM pt.transaction_date)::INTEGER AS day_of_week,
+            EXTRACT(MONTH FROM p_date)::INTEGER AS month,
+            EXTRACT(QUARTER FROM p_date)::INTEGER AS quarter,
+            EXTRACT(YEAR FROM p_date)::INTEGER AS year,
+            ptl.quantity AS units_sold,
+            ptl.line_total AS revenue,
+            ptl.discount_amount AS discounts,
+            ptl.tax_amount AS taxes,
+            (ptl.line_total - ptl.tax_amount) AS net_revenue,
+            1 AS transactions,
+            pp.payment_method,
+            pp.payment_gateway
+        FROM pos_transactions pt
+        JOIN pos_transaction_lines ptl ON ptl.transaction_id = pt.id
+        LEFT JOIN pos_payments pp ON pp.transaction_id = pt.id
+        JOIN products p ON p.id = ptl.product_id
+        JOIN stores s ON s.id = pt.store_id
+        WHERE DATE(pt.transaction_date) = p_date
+          AND pt.status = 'completed'
+
+        UNION ALL
+
+        -- Data from sales_orders_v2 (excluding those that were synced to POS to avoid double counting)
+        SELECT
+            o.organization_id,
+            o.store_id,
+            ol.product_id,
+            p.category_id,
+            p_date AS date,
+            EXTRACT(HOUR FROM o.order_date)::INTEGER AS hour,
+            EXTRACT(DOW  FROM o.order_date)::INTEGER AS day_of_week,
+            EXTRACT(MONTH FROM p_date)::INTEGER AS month,
+            EXTRACT(QUARTER FROM p_date)::INTEGER AS quarter,
+            EXTRACT(YEAR FROM p_date)::INTEGER AS year,
+            ol.quantity_ordered::DECIMAL(15,3) AS units_sold,
+            ol.line_total AS revenue,
+            COALESCE(ol.discount_amount, 0) AS discounts,
+            COALESCE(ol.tax_amount, 0) AS taxes,
+            (ol.line_total - COALESCE(ol.tax_amount, 0)) AS net_revenue,
+            1 AS transactions,
+            o.payment_method,
+            o.payment_gateway
+        FROM sales_orders_v2 o
+        JOIN sales_order_lines_v2 ol ON ol.sales_order_id = o.id
+        JOIN products p ON p.id = ol.product_id
+        WHERE DATE(o.order_date) = p_date
+          AND o.order_status IN ('confirmed', 'processing', 'partially_fulfilled', 'fulfilled', 'shipped', 'delivered')
+          AND NOT EXISTS (SELECT 1 FROM pos_transactions WHERE sales_order_id = o.id)
+    ) aggregated_sales
+    GROUP BY organization_id, store_id, product_id, category_id,
+             date, hour, day_of_week, month, quarter, year,
+             payment_method, payment_gateway
+    ON CONFLICT (organization_id, store_id, product_id, date, hour, payment_method, payment_gateway) 
+    DO UPDATE SET
+        units_sold = EXCLUDED.units_sold,
+        revenue = EXCLUDED.revenue,
+        discounts = EXCLUDED.discounts,
+        taxes = EXCLUDED.taxes,
+        net_revenue = EXCLUDED.net_revenue,
+        transactions = EXCLUDED.transactions,
+        updated_at = CURRENT_TIMESTAMP;
 
     -- Refresh profit_loss_analytics
     INSERT INTO profit_loss_analytics (

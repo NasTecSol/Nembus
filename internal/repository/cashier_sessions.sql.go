@@ -227,3 +227,19 @@ func (q *Queries) OpenCashierSession(ctx context.Context, arg OpenCashierSession
 	)
 	return i, err
 }
+
+const updateSessionExpectedBalance = `-- name: UpdateSessionExpectedBalance :exec
+UPDATE cashier_sessions
+SET expected_balance = COALESCE(expected_balance, opening_balance) + $2
+WHERE id = $1
+`
+
+type UpdateSessionExpectedBalanceParams struct {
+	ID              int32          `json:"id"`
+	ExpectedBalance pgtype.Numeric `json:"expected_balance"`
+}
+
+func (q *Queries) UpdateSessionExpectedBalance(ctx context.Context, arg UpdateSessionExpectedBalanceParams) error {
+	_, err := q.db.Exec(ctx, updateSessionExpectedBalance, arg.ID, arg.ExpectedBalance)
+	return err
+}

@@ -10,6 +10,7 @@ import (
 	"NEMBUS/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // PosHandler holds the POS use case.
@@ -245,5 +246,60 @@ func (h *PosHandler) AddProduct(c *gin.Context) {
 	}
 
 	resp := h.useCase.AddProduct(c.Request.Context(), input)
+	c.JSON(resp.StatusCode, resp)
+}
+
+type AddPaymentToTransactionRequest struct {
+	TransactionID   int32       `json:"transaction_id"`
+	PaymentMethod   string      `json:"payment_method"`
+	PaymentGateway  string      `json:"payment_gateway"`
+	Amount          string      `json:"amount"`
+	ReferenceNumber string      `json:"reference_number"`
+	Metadata        interface{} `json:"metadata"`
+}
+
+// ProcessPayment handles POST /api/pos/payments
+// @Summary      Process a POS payment
+// @Description  Records a payment for a transaction and updates drawer balance
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        Authorization header    string  true   "Bearer token"
+// @Param        body          body      AddPaymentToTransactionRequest true "Payment payload"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/payments [post]
+func (h *PosHandler) ProcessPayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req AddPaymentToTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	amount, err := repo.ParseNumeric(c.Request.Context(), req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid amount format", nil))
+		return
+	}
+
+	arg := repository.AddPaymentToTransactionParams{
+		TransactionID:   req.TransactionID,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentGateway:  pgtype.Text{String: req.PaymentGateway, Valid: req.PaymentGateway != ""},
+		Amount:          amount,
+		ReferenceNumber: pgtype.Text{String: req.ReferenceNumber, Valid: req.ReferenceNumber != ""},
+	}
+
+	resp := h.useCase.ProcessPOSPayment(c.Request.Context(), arg)
 	c.JSON(resp.StatusCode, resp)
 }

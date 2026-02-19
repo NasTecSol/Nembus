@@ -62,3 +62,8 @@ LEFT JOIN pos_transactions t
    AND t.status = 'completed'
 WHERE cs.id = $1
 GROUP BY cs.id;
+
+-- name: UpdateSessionExpectedBalance :exec
+UPDATE cashier_sessions
+SET expected_balance = COALESCE(expected_balance, opening_balance) + $2
+WHERE id = $1;

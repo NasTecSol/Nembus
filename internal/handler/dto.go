@@ -199,7 +199,7 @@ type RoleNavigationResponse struct {
 	} `json:"data"`
 }
 
-/// MenuResponse represents a menu in API responses
+// / MenuResponse represents a menu in API responses
 type MenuResponse struct {
 	ID           int32   `json:"id" example:"1"`
 	ModuleID     int32   `json:"module_id" example:"1"`
@@ -716,6 +716,8 @@ type CreateCartRequest struct {
 	CartStatus      string                 `json:"cart_status" binding:"required" example:"active"`
 	CartType        string                 `json:"cart_type" binding:"required" example:"standard"`
 	Channel         *string                `json:"channel,omitempty" example:"web"`
+	PaymentMethod   *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway  *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	DeviceInfo      map[string]interface{} `json:"device_info,omitempty" swaggertype:"object"`
 	CreatedByUserID *int32                 `json:"created_by_user_id,omitempty" example:"1"`
 	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
@@ -744,6 +746,8 @@ type UpdateCartRequest struct {
 	ShippingAddress  map[string]interface{} `json:"shipping_address,omitempty" swaggertype:"object"`
 	BillingAddress   map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
 	ShippingMethod   *string                `json:"shipping_method,omitempty" example:"standard"`
+	PaymentMethod    *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway   *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	Notes            *string                `json:"notes,omitempty" example:"Updated by cashier"`
 	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
@@ -755,6 +759,8 @@ type CreateNewCartRequest struct {
 	GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-abc-123"`
 	GuestEmail      *string                `json:"guest_email,omitempty" example:"guest@example.com"`
 	GuestPhone      *string                `json:"guest_phone,omitempty" example:"+15551234567"`
+	PaymentMethod   *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway  *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	CreatedByUserID *int32                 `json:"created_by_user_id,omitempty" example:"5"`
 	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
 	PosTerminalID   *int32                 `json:"pos_terminal_id,omitempty" example:"3"`
@@ -861,6 +867,7 @@ type CreateSalesOrderV2Request struct {
 	BillingAddress       map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
 	ShippingMethod       *string                `json:"shipping_method,omitempty" example:"standard"`
 	PaymentMethod        *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway       *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	PaymentTerms         *string                `json:"payment_terms,omitempty" example:"net_30"`
 	PaymentDueDate       *string                `json:"payment_due_date,omitempty" example:"2026-03-11"`
 	PosTerminalID        *int32                 `json:"pos_terminal_id,omitempty" example:"1"`
@@ -884,6 +891,7 @@ type UpdateSalesOrderV2Request struct {
 	BillingAddress       map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
 	ShippingMethod       *string                `json:"shipping_method,omitempty" example:"standard"`
 	PaymentMethod        *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway       *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	SpecialInstructions  *string                `json:"special_instructions,omitempty"`
 	InternalNotes        *string                `json:"internal_notes,omitempty"`
 	Tags                 []string               `json:"tags,omitempty"`
@@ -896,8 +904,10 @@ type UpdateOrderStatusRequest struct {
 }
 
 type UpdateOrderPaymentStatusRequest struct {
-	PaymentStatus string `json:"payment_status" binding:"required" example:"paid"`
-	PaidAmount    string `json:"paid_amount" binding:"required" example:"95.00"`
+	PaymentStatus  string  `json:"payment_status" binding:"required" example:"paid"`
+	PaidAmount     string  `json:"paid_amount" binding:"required" example:"95.00"`
+	PaymentMethod  *string `json:"payment_method,omitempty" example:"card"`
+	PaymentGateway *string `json:"payment_gateway,omitempty" example:"stripe"`
 }
 
 type UpdateOrderFulfillmentStatusRequest struct {

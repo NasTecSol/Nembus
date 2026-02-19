@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -304,6 +305,37 @@ func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *r
 		}
 	}
 	return utils.NewResponse(utils.CodeCreated, "product created", prod)
+}
+
+// ProcessPOSPayment records a payment and updates the cashier session expected balance.
+func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddPaymentToTransactionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	// 1. Record the payment
+	err := uc.repo.AddPaymentToTransaction(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to record payment: "+err.Error(), nil)
+	}
+
+	// 2. Fetch the transaction to get the session ID
+	txn, err := uc.repo.GetPosTransaction(ctx, arg.TransactionID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch transaction: "+err.Error(), nil)
+	}
+
+	// 3. Update the expected balance in the cashier session
+	err = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+		ID:              txn.CashierSessionID,
+		ExpectedBalance: arg.Amount,
+	})
+	if err != nil {
+		// Note: We log the error but don't fail the payment recording if just the balance update fails
+		fmt.Printf("Error: failed to update session expected balance for session %d: %s\n", txn.CashierSessionID, err.Error())
+	}
+
+	return utils.NewResponse(utils.CodeOK, "payment processed successfully", nil)
 }
 
 func parseNumericFromString(s string) (pgtype.Numeric, error) {

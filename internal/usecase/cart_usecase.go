@@ -69,7 +69,7 @@ func (uc *CartUseCase) CreateCart(ctx context.Context, arg repository.CreateCart
 
 // CreateNewCart is a convenience helper that builds CreateCartParams from
 // common inputs, generates a cart number, and calls the repository CreateCart.
-func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, storeID pgtype.Int4, customerID pgtype.Int4, guestIdentifier string, guestEmail string, guestPhone string, createdByUserID pgtype.Int4, cashierID pgtype.Int4, posTerminalID pgtype.Int4, metadata []byte, notes string) *repository.Response {
+func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, storeID pgtype.Int4, customerID pgtype.Int4, guestIdentifier string, guestEmail string, guestPhone string, paymentMethod string, paymentGateway string, createdByUserID pgtype.Int4, cashierID pgtype.Int4, posTerminalID pgtype.Int4, metadata []byte, notes string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -85,6 +85,8 @@ func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, 
 		CartStatus:      repository.CartStatusActive,
 		CartType:        repository.CartTypeStandard,
 		Channel:         pgtype.Text{Valid: false},
+		PaymentMethod:   pgtype.Text{String: paymentMethod, Valid: paymentMethod != ""},
+		PaymentGateway:  pgtype.Text{String: paymentGateway, Valid: paymentGateway != ""},
 		DeviceInfo:      nil,
 		CreatedByUserID: createdByUserID,
 		CashierID:       cashierID,
@@ -591,7 +593,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		return utils.NewResponse(utils.CodeError, "conversion failed: "+err.Error(), nil)
 	}
 
-	orderID := convertedCart.ConvertedToOrderID.Bytes // It's a pgtype.UUID
+	orderID := convertedCart.ConvertedToOrderID
 
 	// 4. Create Order Lines with all fields from cart_items
 	for i, item := range items {
@@ -616,7 +618,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 					discountFloat, _ = strconv.ParseFloat(str, 64)
 				}
 			}
-			
+
 			if unitPriceFloat > 0 && qtyFloat > 0 {
 				subtotalBeforeDiscount := unitPriceFloat * qtyFloat
 				if subtotalBeforeDiscount > 0 {
@@ -660,7 +662,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 			OrganizationID:       cart.OrganizationID,
 			LineNumber:           int32(i + 1),
 			ProductID:            item.ProductID,
-			ProductVariantID:    item.ProductVariantID,
+			ProductVariantID:     item.ProductVariantID,
 			ProductName:          item.ProductName, // From ListCartItems JOIN
 			ProductSku:           pgtype.Text{String: item.ProductSku, Valid: true},
 			QuantityOrdered:      item.Quantity,
@@ -684,6 +686,22 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		if err != nil {
 			// In a real app, we might use a transaction and roll back
 			fmt.Printf("Warning: failed to create order line: %s\n", err.Error())
+		}
+	}
+
+	// 5. If channel is 'pos', sync to POS transaction
+	if cart.Channel.Valid && cart.Channel.String == "pos" {
+		posTxn, err := uc.repo.CreateTransactionFromOrder(ctx, orderID)
+		if err != nil {
+			fmt.Printf("Warning: failed to create POS transaction: %s\n", err.Error())
+		} else {
+			err = uc.repo.SyncTransactionLinesFromOrder(ctx, repository.SyncTransactionLinesFromOrderParams{
+				TransactionID: posTxn.ID,
+				SalesOrderID:  orderID,
+			})
+			if err != nil {
+				fmt.Printf("Warning: failed to sync POS transaction lines: %s\n", err.Error())
+			}
 		}
 	}
 

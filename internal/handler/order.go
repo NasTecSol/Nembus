@@ -225,6 +225,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		BillingAddress:       json.RawMessage(billAddrBytes),
 		ShippingMethod:       textPtr(req.ShippingMethod),
 		PaymentMethod:        textPtr(req.PaymentMethod),
+		PaymentGateway:       textPtr(req.PaymentGateway),
 		PaymentTerms:         textPtr(req.PaymentTerms),
 		PaymentDueDate:       paymentDueDate,
 		PosTerminalID:        int4Ptr(req.PosTerminalID),
@@ -311,6 +312,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		BillingAddress:       json.RawMessage(billAddrBytes),
 		ShippingMethod:       textPtr(req.ShippingMethod),
 		PaymentMethod:        textPtr(req.PaymentMethod),
+		PaymentGateway:       textPtr(req.PaymentGateway),
 		SpecialInstructions:  textPtr(req.SpecialInstructions),
 		InternalNotes:        textPtr(req.InternalNotes),
 		Tags:                 req.Tags,
@@ -410,9 +412,11 @@ func (h *OrderHandler) UpdateOrderPaymentStatus(c *gin.Context) {
 	}
 
 	arg := repository.UpdateOrderPaymentStatusParams{
-		ID:            orderID,
-		PaymentStatus: repository.PaymentStatus(req.PaymentStatus),
-		PaidAmount:    paidAmount,
+		ID:             orderID,
+		PaymentStatus:  repository.PaymentStatus(req.PaymentStatus),
+		PaidAmount:     paidAmount,
+		PaymentMethod:  textPtr(req.PaymentMethod),
+		PaymentGateway: textPtr(req.PaymentGateway),
 	}
 
 	resp := h.useCase.UpdateOrderPaymentStatus(c.Request.Context(), arg)

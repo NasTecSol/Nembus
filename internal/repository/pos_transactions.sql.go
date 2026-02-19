@@ -135,6 +135,43 @@ func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTra
 	return err
 }
 
+const getPosTransaction = `-- name: GetPosTransaction :one
+SELECT id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at FROM pos_transactions
+WHERE id = $1
+`
+
+func (q *Queries) GetPosTransaction(ctx context.Context, id int32) (PosTransaction, error) {
+	row := q.db.QueryRow(ctx, getPosTransaction, id)
+	var i PosTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.StoreID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.TransactionNumber,
+		&i.TransactionDate,
+		&i.TransactionType,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.TotalCost,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.Status,
+		&i.PriceListID,
+		&i.SalesOrderID,
+		&i.SourceCartID,
+		&i.VoidedBy,
+		&i.VoidedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getPosTransactionFull = `-- name: GetPosTransactionFull :many
 SELECT 
     t.id, t.transaction_number, t.transaction_date, t.status,

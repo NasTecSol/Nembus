@@ -15,15 +15,17 @@ const addPaymentToTransaction = `-- name: AddPaymentToTransaction :exec
 INSERT INTO pos_payments (
     transaction_id,
     payment_method,
+    payment_gateway,
     amount,
     reference_number,
     metadata
-) VALUES ($1, $2, $3, $4, $5)
+) VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type AddPaymentToTransactionParams struct {
 	TransactionID   int32          `json:"transaction_id"`
 	PaymentMethod   string         `json:"payment_method"`
+	PaymentGateway  pgtype.Text    `json:"payment_gateway"`
 	Amount          pgtype.Numeric `json:"amount"`
 	ReferenceNumber pgtype.Text    `json:"reference_number"`
 	Metadata        []byte         `json:"metadata"`
@@ -33,6 +35,7 @@ func (q *Queries) AddPaymentToTransaction(ctx context.Context, arg AddPaymentToT
 	_, err := q.db.Exec(ctx, addPaymentToTransaction,
 		arg.TransactionID,
 		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.Amount,
 		arg.ReferenceNumber,
 		arg.Metadata,
@@ -43,6 +46,7 @@ func (q *Queries) AddPaymentToTransaction(ctx context.Context, arg AddPaymentToT
 const getPaymentsForTransaction = `-- name: GetPaymentsForTransaction :many
 SELECT 
     payment_method,
+    payment_gateway,
     amount,
     reference_number,
     created_at
@@ -53,6 +57,7 @@ ORDER BY created_at
 
 type GetPaymentsForTransactionRow struct {
 	PaymentMethod   string           `json:"payment_method"`
+	PaymentGateway  pgtype.Text      `json:"payment_gateway"`
 	Amount          pgtype.Numeric   `json:"amount"`
 	ReferenceNumber pgtype.Text      `json:"reference_number"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
@@ -69,6 +74,7 @@ func (q *Queries) GetPaymentsForTransaction(ctx context.Context, transactionID i
 		var i GetPaymentsForTransactionRow
 		if err := rows.Scan(
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.Amount,
 			&i.ReferenceNumber,
 			&i.CreatedAt,

@@ -206,6 +206,8 @@ func (h *CartHandler) CreateCart(c *gin.Context) {
 		CartStatus:      repository.CartStatus(req.CartStatus),
 		CartType:        repository.CartType(req.CartType),
 		Channel:         textPtr(req.Channel),
+		PaymentMethod:   textPtr(req.PaymentMethod),
+		PaymentGateway:  textPtr(req.PaymentGateway),
 		DeviceInfo:      deviceInfo,
 		CreatedByUserID: int4Ptr(req.CreatedByUserID),
 		CashierID:       int4Ptr(req.CashierID),
@@ -276,12 +278,20 @@ func (h *CartHandler) CreateNewCart(c *gin.Context) {
 		guestPhone = *req.GuestPhone
 	}
 
+	paymentMethod := ""
+	if req.PaymentMethod != nil {
+		paymentMethod = *req.PaymentMethod
+	}
+	paymentGateway := ""
+	if req.PaymentGateway != nil {
+		paymentGateway = *req.PaymentGateway
+	}
 	notes := ""
 	if req.Notes != nil {
 		notes = *req.Notes
 	}
 
-	resp := h.useCase.CreateNewCart(c.Request.Context(), req.OrganizationID, storeID, customerID, guestIdentifier, guestEmail, guestPhone, createdBy, cashierID, posID, meta, notes)
+	resp := h.useCase.CreateNewCart(c.Request.Context(), req.OrganizationID, storeID, customerID, guestIdentifier, guestEmail, guestPhone, paymentMethod, paymentGateway, createdBy, cashierID, posID, meta, notes)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -607,6 +617,8 @@ func (h *CartHandler) UpdateCart(c *gin.Context) {
 		ShippingAddress:    shipAddr,
 		BillingAddress:     billAddr,
 		ShippingMethod:     textPtr(req.ShippingMethod),
+		PaymentMethod:      textPtr(req.PaymentMethod),
+		PaymentGateway:     textPtr(req.PaymentGateway),
 		Notes:              textPtr(req.Notes),
 		Metadata:           meta,
 	}
