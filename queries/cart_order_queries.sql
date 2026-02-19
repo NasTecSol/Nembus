@@ -1336,7 +1336,8 @@ new_order AS (
         order_date, shipping_address, billing_address,
         shipping_method, pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
-        coupon_code, metadata
+        coupon_code, discount_codes, promotional_credits,
+        special_instructions, metadata
     )
     SELECT 
         $2, organization_id, store_id, customer_id,
@@ -1346,7 +1347,15 @@ new_order AS (
         NOW(), shipping_address, billing_address,
         shipping_method, pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
-        coupon_code, metadata
+        coupon_code,
+        CASE 
+            WHEN discount_code IS NOT NULL AND discount_code != '' 
+            THEN ARRAY[discount_code]::TEXT[]
+            ELSE ARRAY[]::TEXT[]
+        END,
+        promotional_credits,
+        notes,
+        metadata
     FROM cart_data
     RETURNING *
 )
