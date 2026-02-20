@@ -19,6 +19,8 @@ INSERT INTO carts (
     cart_status,
     cart_type,
     channel,
+    payment_method,
+    payment_gateway,
     device_info,
     created_by_user_id,
     cashier_id,
@@ -33,7 +35,7 @@ INSERT INTO carts (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 ) RETURNING *;
 
 -- name: GetCartByID :one
@@ -95,9 +97,11 @@ SET subtotal = $2,
     shipping_address = $10,
     billing_address = $11,
     shipping_method = $12,
+    payment_method = $13,
+    payment_gateway = $14,
     last_activity_at = NOW(),
-    notes = $13,
-    metadata = $14,
+    notes = $15,
+    metadata = $16,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
@@ -399,6 +403,7 @@ INSERT INTO sales_orders_v2 (
     billing_address,
     shipping_method,
     payment_method,
+    payment_gateway,
     payment_terms,
     payment_due_date,
     pos_terminal_id,
@@ -413,7 +418,7 @@ INSERT INTO sales_orders_v2 (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
 ) RETURNING *;
 
 -- name: GetSalesOrderV2 :one
@@ -469,11 +474,12 @@ SET customer_id = $2,
     billing_address = $8,
     shipping_method = $9,
     payment_method = $10,
-    special_instructions = $11,
-    internal_notes = $12,
-    tags = $13,
-    priority = $14,
-    metadata = $15,
+    payment_gateway = $11,
+    special_instructions = $12,
+    internal_notes = $13,
+    tags = $14,
+    priority = $15,
+    metadata = $16,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
@@ -498,6 +504,8 @@ RETURNING *;
 UPDATE sales_orders_v2
 SET payment_status = $2,
     paid_amount = $3,
+    payment_method = COALESCE($4, payment_method),
+    payment_gateway = COALESCE($5, payment_gateway),
     balance_due = total_amount - $3,
     updated_at = NOW()
 WHERE id = $1
@@ -1052,6 +1060,7 @@ INSERT INTO invoice_payments (
     payment_date,
     payment_amount,
     payment_method,
+    payment_gateway,
     payment_reference,
     currency_code,
     exchange_rate,
@@ -1063,7 +1072,7 @@ INSERT INTO invoice_payments (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15
+    $11, $12, $13, $14, $15, $16
 ) RETURNING *;
 
 -- name: GetInvoicePayment :one
@@ -1334,7 +1343,8 @@ new_order AS (
         order_type, order_status, payment_status, fulfillment_status,
         sales_channel, source_cart_id, created_by_user_id,
         order_date, shipping_address, billing_address,
-        shipping_method, pos_terminal_id, cashier_id,
+        shipping_method, payment_method, payment_gateway,
+        pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
         coupon_code, discount_codes, promotional_credits,
         special_instructions, metadata
@@ -1345,7 +1355,8 @@ new_order AS (
         'standard', 'pending', 'unpaid', 'unfulfilled',
         channel, id, created_by_user_id,
         NOW(), shipping_address, billing_address,
-        shipping_method, pos_terminal_id, cashier_id,
+        shipping_method, payment_method, payment_gateway,
+        pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
         coupon_code,
         CASE 
@@ -1362,9 +1373,10 @@ new_order AS (
 UPDATE carts 
 SET cart_status = 'converted',
     converted_to_order_id = (SELECT id FROM new_order),
-    converted_at = NOW()
+    converted_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
 WHERE carts.id = $1
-RETURNING *;
+RETURNING id, (SELECT id FROM new_order) as converted_to_order_id;
 
 -- name: MergeGuestCartToCustomer :exec
 -- Merge guest cart into customer cart when user logs in

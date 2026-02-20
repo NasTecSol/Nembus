@@ -1,3 +1,7 @@
+-- name: GetPosTransaction :one
+SELECT * FROM pos_transactions
+WHERE id = $1;
+
 -- name: CreatePosTransaction :one
 INSERT INTO pos_transactions (
     transaction_number,

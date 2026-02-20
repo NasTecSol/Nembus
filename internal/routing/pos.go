@@ -6,16 +6,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterPosRoutes registers POS product routes under /api/pos.
+// RegisterPosRoutes registers POS product, transaction, and payment routes under /api/pos.
 func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 	pos := r.Group("/pos")
 	pos.GET("/categories", h.GetCategories)
 	pos.POST("/products", h.AddProduct)
+	pos.POST("/payments", h.ProcessPayment)
+
 	stores := pos.Group("/stores/:store_id")
-	products := stores.Group("/products")
 	{
-		products.GET("", h.ListProducts)
-		products.GET("/search", h.SearchProduct)
-		products.GET("/category/:category_id", h.GetProductsByCategory)
+		products := stores.Group("/products")
+		{
+			products.GET("", h.ListProducts)
+			products.GET("/search", h.SearchProduct)
+			products.GET("/category/:category_id", h.GetProductsByCategory)
+		}
+		stores.GET("/transactions", h.ListTodayTransactions)
+	}
+
+	transactions := pos.Group("/transactions")
+	{
+		transactions.GET("/:id", h.GetTransaction)
+		transactions.GET("/:id/full", h.GetTransactionFull)
+		transactions.GET("/:id/payments", h.GetTransactionPayments)
+		transactions.GET("/:id/payment-summary", h.GetTransactionPaymentSummary)
+		transactions.POST("/:id/void", h.VoidTransaction)
 	}
 }

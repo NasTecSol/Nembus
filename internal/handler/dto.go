@@ -199,7 +199,7 @@ type RoleNavigationResponse struct {
 	} `json:"data"`
 }
 
-/// MenuResponse represents a menu in API responses
+// / MenuResponse represents a menu in API responses
 type MenuResponse struct {
 	ID           int32   `json:"id" example:"1"`
 	ModuleID     int32   `json:"module_id" example:"1"`
@@ -716,6 +716,8 @@ type CreateCartRequest struct {
 	CartStatus      string                 `json:"cart_status" binding:"required" example:"active"`
 	CartType        string                 `json:"cart_type" binding:"required" example:"standard"`
 	Channel         *string                `json:"channel,omitempty" example:"web"`
+	PaymentMethod   *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway  *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	DeviceInfo      map[string]interface{} `json:"device_info,omitempty" swaggertype:"object"`
 	CreatedByUserID *int32                 `json:"created_by_user_id,omitempty" example:"1"`
 	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
@@ -744,6 +746,8 @@ type UpdateCartRequest struct {
 	ShippingAddress  map[string]interface{} `json:"shipping_address,omitempty" swaggertype:"object"`
 	BillingAddress   map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
 	ShippingMethod   *string                `json:"shipping_method,omitempty" example:"standard"`
+	PaymentMethod    *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway   *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	Notes            *string                `json:"notes,omitempty" example:"Updated by cashier"`
 	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
@@ -755,6 +759,8 @@ type CreateNewCartRequest struct {
 	GuestIdentifier *string                `json:"guest_identifier,omitempty" example:"guest-abc-123"`
 	GuestEmail      *string                `json:"guest_email,omitempty" example:"guest@example.com"`
 	GuestPhone      *string                `json:"guest_phone,omitempty" example:"+15551234567"`
+	PaymentMethod   *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway  *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	CreatedByUserID *int32                 `json:"created_by_user_id,omitempty" example:"5"`
 	CashierID       *int32                 `json:"cashier_id,omitempty" example:"1"`
 	PosTerminalID   *int32                 `json:"pos_terminal_id,omitempty" example:"3"`
@@ -861,6 +867,7 @@ type CreateSalesOrderV2Request struct {
 	BillingAddress       map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
 	ShippingMethod       *string                `json:"shipping_method,omitempty" example:"standard"`
 	PaymentMethod        *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway       *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	PaymentTerms         *string                `json:"payment_terms,omitempty" example:"net_30"`
 	PaymentDueDate       *string                `json:"payment_due_date,omitempty" example:"2026-03-11"`
 	PosTerminalID        *int32                 `json:"pos_terminal_id,omitempty" example:"1"`
@@ -884,6 +891,7 @@ type UpdateSalesOrderV2Request struct {
 	BillingAddress       map[string]interface{} `json:"billing_address,omitempty" swaggertype:"object"`
 	ShippingMethod       *string                `json:"shipping_method,omitempty" example:"standard"`
 	PaymentMethod        *string                `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway       *string                `json:"payment_gateway,omitempty" example:"stripe"`
 	SpecialInstructions  *string                `json:"special_instructions,omitempty"`
 	InternalNotes        *string                `json:"internal_notes,omitempty"`
 	Tags                 []string               `json:"tags,omitempty"`
@@ -896,8 +904,10 @@ type UpdateOrderStatusRequest struct {
 }
 
 type UpdateOrderPaymentStatusRequest struct {
-	PaymentStatus string `json:"payment_status" binding:"required" example:"paid"`
-	PaidAmount    string `json:"paid_amount" binding:"required" example:"95.00"`
+	PaymentStatus  string  `json:"payment_status" binding:"required" example:"paid"`
+	PaidAmount     string  `json:"paid_amount" binding:"required" example:"95.00"`
+	PaymentMethod  *string `json:"payment_method,omitempty" example:"card"`
+	PaymentGateway *string `json:"payment_gateway,omitempty" example:"stripe"`
 }
 
 type UpdateOrderFulfillmentStatusRequest struct {
@@ -1036,11 +1046,43 @@ type OpenCashierSessionRequest struct {
 }
 
 type CloseCashierSessionRequest struct {
-	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"`
-	ExpectedBalance string `json:"expected_balance" binding:"required" example:"500.00"`
-	Variance        string `json:"variance" binding:"required" example:"0.00"`
+	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"` // Physical count; server computes variance = closing_balance - expected_balance
+	ExpectedBalance string `json:"expected_balance,omitempty" example:"500.00"`         // Optional; server uses DB value for reconciliation
+	Variance        string `json:"variance,omitempty" example:"0.00"`                  // Optional; server computes at close
 	ClosingNote     string `json:"closing_note,omitempty" example:"All good"`
 	ClosedBy        int64  `json:"closed_by" binding:"required" example:"1"`
+}
+
+// =====================================================
+// Sales Return Module
+// =====================================================
+
+type ProcessReturnRequest struct {
+	StoreID               int32                    `json:"store_id" binding:"required" example:"1"`
+	CashierID             *int32                   `json:"cashier_id,omitempty" example:"1"`
+	SessionID             *int32                  `json:"session_id,omitempty" example:"1"`
+	OriginalTransactionID *int32                   `json:"original_transaction_id,omitempty" example:"100"`
+	CustomerID            *int32                   `json:"customer_id,omitempty" example:"5"`
+	ReturnReason          string                   `json:"return_reason" example:"Defective"`
+	Subtotal              string                   `json:"subtotal" binding:"required" example:"50.00"`
+	TaxAmount             string                   `json:"tax_amount" binding:"required" example:"5.00"`
+	TotalRefundAmount     string                   `json:"total_refund_amount" binding:"required" example:"55.00"`
+	RefundMethod          string                   `json:"refund_method" example:"cash"`
+	RefundReference       string                   `json:"refund_reference,omitempty" example:"REF-001"`
+	Lines                 []ProcessReturnLineRequest `json:"lines" binding:"required"`
+}
+
+type ProcessReturnLineRequest struct {
+	ProductID        int32   `json:"product_id" binding:"required" example:"10"`
+	ProductVariantID *int32  `json:"product_variant_id,omitempty" example:"2"`
+	OriginalLineID   *int32  `json:"original_line_id,omitempty" example:"1"`
+	Quantity         string  `json:"quantity" binding:"required" example:"1"`
+	UnitPrice        string  `json:"unit_price" binding:"required" example:"50.00"`
+	RefundAmount     string  `json:"refund_amount" binding:"required" example:"50.00"`
+	ReturnToStock    bool    `json:"return_to_stock" example:"true"`
+	SerialNumber     *string `json:"serial_number,omitempty"`
+	BatchNumber      *string `json:"batch_number,omitempty"`
+	Condition        string  `json:"condition,omitempty" example:"resalable"`
 }
 
 // =====================================================

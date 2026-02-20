@@ -471,6 +471,8 @@ type Cart struct {
 	CartStatus         CartStatus       `json:"cart_status"`
 	CartType           CartType         `json:"cart_type"`
 	Channel            pgtype.Text      `json:"channel"`
+	PaymentMethod      pgtype.Text      `json:"payment_method"`
+	PaymentGateway     pgtype.Text      `json:"payment_gateway"`
 	DeviceInfo         []byte           `json:"device_info"`
 	CreatedByUserID    pgtype.Int4      `json:"created_by_user_id"`
 	CashierID          pgtype.Int4      `json:"cashier_id"`
@@ -789,6 +791,7 @@ type InvoicePayment struct {
 	PaymentDate      pgtype.Date      `json:"payment_date"`
 	PaymentAmount    pgtype.Numeric   `json:"payment_amount"`
 	PaymentMethod    string           `json:"payment_method"`
+	PaymentGateway   pgtype.Text      `json:"payment_gateway"`
 	PaymentReference pgtype.Text      `json:"payment_reference"`
 	CurrencyCode     pgtype.Text      `json:"currency_code"`
 	ExchangeRate     pgtype.Numeric   `json:"exchange_rate"`
@@ -1042,6 +1045,7 @@ type PosPayment struct {
 	ID               int32            `json:"id"`
 	TransactionID    int32            `json:"transaction_id"`
 	PaymentMethod    string           `json:"payment_method"`
+	PaymentGateway   pgtype.Text      `json:"payment_gateway"`
 	Amount           pgtype.Numeric   `json:"amount"`
 	PaymentReference pgtype.Text      `json:"payment_reference"`
 	ReferenceNumber  pgtype.Text      `json:"reference_number"`
@@ -1081,6 +1085,8 @@ type PosTransaction struct {
 	ChangeGiven       pgtype.Numeric   `json:"change_given"`
 	Status            pgtype.Text      `json:"status"`
 	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
 	VoidedBy          pgtype.Int4      `json:"voided_by"`
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
 	Metadata          []byte           `json:"metadata"`
@@ -1557,6 +1563,8 @@ type SalesAnalytic struct {
 	Taxes             pgtype.Numeric   `json:"taxes"`
 	NetRevenue        pgtype.Numeric   `json:"net_revenue"`
 	Transactions      pgtype.Int4      `json:"transactions"`
+	PaymentMethod     pgtype.Text      `json:"payment_method"`
+	PaymentGateway    pgtype.Text      `json:"payment_gateway"`
 	AverageOrderValue pgtype.Numeric   `json:"average_order_value"`
 	Metadata          []byte           `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
@@ -1679,6 +1687,7 @@ type SalesOrdersV2 struct {
 	TrackingNumber       pgtype.Text       `json:"tracking_number"`
 	TrackingUrl          pgtype.Text       `json:"tracking_url"`
 	PaymentMethod        pgtype.Text       `json:"payment_method"`
+	PaymentGateway       pgtype.Text       `json:"payment_gateway"`
 	PaymentTerms         pgtype.Text       `json:"payment_terms"`
 	PaymentDueDate       pgtype.Date       `json:"payment_due_date"`
 	PosTerminalID        pgtype.Int4       `json:"pos_terminal_id"`

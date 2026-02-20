@@ -62,3 +62,25 @@ LEFT JOIN pos_transactions t
    AND t.status = 'completed'
 WHERE cs.id = $1
 GROUP BY cs.id;
+
+-- name: UpdateSessionExpectedBalance :exec
+UPDATE cashier_sessions
+SET expected_balance = COALESCE(expected_balance, opening_balance) + $2
+WHERE id = $1;
+
+-- name: CloseCashierSessionReconcile :one
+-- Close session and set variance = physical closing_balance - expected_balance (reconciliation at shift end)
+UPDATE cashier_sessions
+SET 
+    closing_time     = CURRENT_TIMESTAMP,
+    closing_balance  = $2,
+    variance         = $2 - COALESCE(expected_balance, opening_balance),
+    expected_balance = COALESCE(expected_balance, opening_balance),
+    status           = 'closed',
+    metadata         = jsonb_set(
+        jsonb_set(COALESCE(metadata, '{}'), '{closing_note}', to_jsonb($3::text)),
+        '{closed_by}', to_jsonb($4::bigint)
+    )
+WHERE id = $1
+  AND status = 'open'
+RETURNING id, session_number, opening_time, closing_time, expected_balance, variance, status;

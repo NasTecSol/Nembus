@@ -75,6 +75,40 @@ func (h *CashierSessionHandler) OpenCashierSession(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// GetSessionByID handles GET /api/cashier-sessions/:id
+// @Summary      Get cashier session by ID
+// @Description  Returns a cashier session by ID (open or closed)
+// @Tags         cashier-sessions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Session ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/cashier-sessions/{id} [get]
+func (h *CashierSessionHandler) GetSessionByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid session id", nil))
+		return
+	}
+
+	resp := h.useCase.GetSessionByID(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
 // GetActiveCashierSession handles GET /api/cashier-sessions/active/:cashier_id
 // @Summary      Get active cashier session
 // @Description  Get the active session for a specific cashier
@@ -151,16 +185,9 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid closing_balance", nil))
 		return
 	}
-	expectedBalance, err := numericFromString(req.ExpectedBalance)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid expected_balance", nil))
-		return
-	}
-	variance, err := numericFromString(req.Variance)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid variance", nil))
-		return
-	}
+	// expected_balance and variance are optional; usecase reconciles using DB expected_balance and computes variance
+	expectedBalance, _ := numericFromString(req.ExpectedBalance)
+	variance, _ := numericFromString(req.Variance)
 
 	arg := repository.CloseCashierSessionParams{
 		ID:              int32(id),
