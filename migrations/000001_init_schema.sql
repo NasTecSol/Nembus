@@ -2906,6 +2906,7 @@ RETURNS TABLE (
     is_serialized       BOOLEAN,
     is_batch_managed    BOOLEAN,
     product_metadata    JSONB,
+    product_variants    JSONB,
     package_n_price     JSONB,
     product_uom_conversions JSONB
 ) AS $$
@@ -2944,22 +2945,49 @@ BEGIN
         cat.is_serialized,
         cat.is_batch_managed,
         cat.product_metadata,
+        (SELECT COALESCE(jsonb_agg(
+            jsonb_build_object(
+                'id', pv.id,
+                'product_id', pv.product_id,
+                'variant_sku', pv.variant_sku,
+                'variant_name', pv.variant_name,
+                'variant_attributes', pv.variant_attributes,
+                'price', (
+                    SELECT ppv.price
+                    FROM product_prices ppv
+                    INNER JOIN price_lists plv ON ppv.price_list_id = plv.id AND plv.is_active = true
+                    WHERE ppv.product_id = pv.product_id
+                      AND ppv.product_variant_id = pv.id
+                      AND ppv.is_active = true
+                      AND (ppv.valid_from IS NULL OR ppv.valid_from <= CURRENT_DATE)
+                      AND (ppv.valid_to   IS NULL OR ppv.valid_to   >= CURRENT_DATE)
+                    ORDER BY ppv.valid_from DESC NULLS LAST, ppv.id DESC
+                    LIMIT 1
+                ),
+                'is_active', pv.is_active,
+                'metadata', COALESCE(pv.metadata, '{}'::jsonb),
+                'created_at', pv.created_at,
+                'updated_at', pv.updated_at
+            )
+            ORDER BY pv.id
+        ), '[]'::jsonb)
+         FROM product_variants pv
+         WHERE pv.product_id = cat.product_id),
         -- FIX 9.2: Include variant_id and variant_attributes in package_n_price JSON
         (SELECT COALESCE(jsonb_agg(s.rec ORDER BY s.pl_code, s.uom_code), '[]'::jsonb)
          FROM (
              SELECT pl.code AS pl_code, uom.code AS uom_code,
                     jsonb_build_object(
-                        'product_id',          pp.product_id,
-                        'product_variant_id',  cat.product_variant_id,
-                        'variant_name',        cat.product_name,
-                        'variant_attributes',  cat.variant_attributes,
+                        'product_name',        cat.product_name,
                         'price_list_id',       pl.id,
                         'price_list_code',     pl.code,
                         'price_list_name',     pl.name,
+                        'price_list',          pl.name,
                         'price_list_type',     pl.price_list_type,
                         'currency_code',       pl.currency_code,
                         'uom_id',              uom.id,
                         'uom_code',            uom.code,
+                        'uom',                 uom.code,
                         'uom_name',            uom.name,
                         'decimal_places',      uom.decimal_places,
                         'price',               pp.price,
@@ -2967,6 +2995,7 @@ BEGIN
                         'max_quantity',        pp.max_quantity,
                         'valid_from',          pp.valid_from,
                         'valid_to',            pp.valid_to,
+                        'metadata',            COALESCE(pp.metadata, '{}'::jsonb),
                         'barcodes',            (SELECT COALESCE(jsonb_agg(pb.barcode), '[]'::jsonb)
                                                 FROM product_barcodes pb
                                                 WHERE pb.product_id = pp.product_id
