@@ -45,6 +45,7 @@ type PosProductWithStockRow struct {
 	IsSerialized          pgtype.Bool    `json:"is_serialized"`
 	IsBatchManaged        pgtype.Bool    `json:"is_batch_managed"`
 	ProductMetadata       []byte         `json:"product_metadata"`
+	ProductVariants       []byte         `json:"product_variants"`
 	PackageNPrice         []byte         `json:"package_n_price"`
 	ProductUomConversions []byte         `json:"product_uom_conversions"`
 }
@@ -66,7 +67,7 @@ func (q *Queries) PosGetProductsWithStock(ctx context.Context, arg PosGetProduct
 			&i.EffectivePrice, &i.HasPromotion, &i.PromotionName, &i.DiscountPercent, &i.PromoMinQuantity,
 			&i.TaxRate, &i.TaxIsInclusive, &i.QuantityAvailable, &i.QuantityOnHand, &i.QuantityAllocated,
 			&i.IsInStock, &i.IsLowStock, &i.ReorderLevel, &i.AllowDecimalQty, &i.IsSerialized, &i.IsBatchManaged,
-			&i.ProductMetadata, &i.PackageNPrice, &i.ProductUomConversions,
+			&i.ProductMetadata, &i.ProductVariants, &i.PackageNPrice, &i.ProductUomConversions,
 		)
 		if err != nil {
 			return nil, err
@@ -80,7 +81,7 @@ const posGetProductsWithStockSQL = `SELECT product_id, sku, product_name, descri
     barcode, uom_code, decimal_places, retail_price, promo_price, effective_price,
     has_promotion, promotion_name, discount_percent, promo_min_quantity, tax_rate, tax_is_inclusive,
     quantity_available, quantity_on_hand, quantity_allocated, is_in_stock, is_low_stock,
-    reorder_level, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, package_n_price, product_uom_conversions
+    reorder_level, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, product_variants, package_n_price, product_uom_conversions
 FROM fn_pos_get_products_with_stock($1, $2, $3, $4)`
 
 // PosGetProductByBarcode calls fn_pos_get_product_by_barcode.
