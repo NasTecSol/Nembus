@@ -1046,11 +1046,43 @@ type OpenCashierSessionRequest struct {
 }
 
 type CloseCashierSessionRequest struct {
-	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"`
-	ExpectedBalance string `json:"expected_balance" binding:"required" example:"500.00"`
-	Variance        string `json:"variance" binding:"required" example:"0.00"`
+	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"` // Physical count; server computes variance = closing_balance - expected_balance
+	ExpectedBalance string `json:"expected_balance,omitempty" example:"500.00"`         // Optional; server uses DB value for reconciliation
+	Variance        string `json:"variance,omitempty" example:"0.00"`                  // Optional; server computes at close
 	ClosingNote     string `json:"closing_note,omitempty" example:"All good"`
 	ClosedBy        int64  `json:"closed_by" binding:"required" example:"1"`
+}
+
+// =====================================================
+// Sales Return Module
+// =====================================================
+
+type ProcessReturnRequest struct {
+	StoreID               int32                    `json:"store_id" binding:"required" example:"1"`
+	CashierID             *int32                   `json:"cashier_id,omitempty" example:"1"`
+	SessionID             *int32                  `json:"session_id,omitempty" example:"1"`
+	OriginalTransactionID *int32                   `json:"original_transaction_id,omitempty" example:"100"`
+	CustomerID            *int32                   `json:"customer_id,omitempty" example:"5"`
+	ReturnReason          string                   `json:"return_reason" example:"Defective"`
+	Subtotal              string                   `json:"subtotal" binding:"required" example:"50.00"`
+	TaxAmount             string                   `json:"tax_amount" binding:"required" example:"5.00"`
+	TotalRefundAmount     string                   `json:"total_refund_amount" binding:"required" example:"55.00"`
+	RefundMethod          string                   `json:"refund_method" example:"cash"`
+	RefundReference       string                   `json:"refund_reference,omitempty" example:"REF-001"`
+	Lines                 []ProcessReturnLineRequest `json:"lines" binding:"required"`
+}
+
+type ProcessReturnLineRequest struct {
+	ProductID        int32   `json:"product_id" binding:"required" example:"10"`
+	ProductVariantID *int32  `json:"product_variant_id,omitempty" example:"2"`
+	OriginalLineID   *int32  `json:"original_line_id,omitempty" example:"1"`
+	Quantity         string  `json:"quantity" binding:"required" example:"1"`
+	UnitPrice        string  `json:"unit_price" binding:"required" example:"50.00"`
+	RefundAmount     string  `json:"refund_amount" binding:"required" example:"50.00"`
+	ReturnToStock    bool    `json:"return_to_stock" example:"true"`
+	SerialNumber     *string `json:"serial_number,omitempty"`
+	BatchNumber      *string `json:"batch_number,omitempty"`
+	Condition        string  `json:"condition,omitempty" example:"resalable"`
 }
 
 // =====================================================

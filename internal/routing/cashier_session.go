@@ -11,6 +11,7 @@ func RegisterCashierSessionRoutes(r *gin.RouterGroup, h *handler.CashierSessionH
 	{
 		cashierSessions.POST("", h.OpenCashierSession)
 		cashierSessions.GET("/active/:cashier_id", h.GetActiveCashierSession)
+		cashierSessions.GET("/:id", h.GetSessionByID)
 		cashierSessions.PUT("/:id/close", h.CloseCashierSession)
 		cashierSessions.GET("/:id/summary", h.GetSessionSummary)
 	}

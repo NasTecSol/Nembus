@@ -139,12 +139,11 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		}
 	}
 
-	// 3. Update Cashier Session Balance (Negative delta for refund)
-	if in.SessionID != nil {
-		// Use negative value for refund
+	// 3. Decrement drawer expected_balance by refund amount (return)
+	if in.SessionID != nil && totalRefund.Valid {
 		negRefund := totalRefund
 		if negRefund.Int != nil {
-			negRefund.Int = new(big.Int).Neg(negRefund.Int)
+			negRefund = pgtype.Numeric{Int: new(big.Int).Neg(negRefund.Int), Exp: negRefund.Exp, Valid: true}
 		}
 
 		err = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{

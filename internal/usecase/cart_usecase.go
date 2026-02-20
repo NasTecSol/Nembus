@@ -689,7 +689,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		}
 	}
 
-	// 5. If channel is 'pos', sync to POS transaction
+	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled
 	if cart.Channel.Valid && cart.Channel.String == "pos" {
 		posTxn, err := uc.repo.CreateTransactionFromOrder(ctx, orderID)
 		if err != nil {
@@ -701,6 +701,31 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 			})
 			if err != nil {
 				fmt.Printf("Warning: failed to sync POS transaction lines: %s\n", err.Error())
+			}
+			// If the cart had payment method/gateway set (settled), insert pos_payment for reconciliation
+			order, err := uc.repo.GetSalesOrderV2(ctx, orderID)
+			if err == nil && order.TotalAmount.Valid {
+				paymentMethod := "cash"
+				if order.PaymentMethod.Valid && order.PaymentMethod.String != "" {
+					paymentMethod = order.PaymentMethod.String
+				}
+				var gateway pgtype.Text
+				if order.PaymentGateway.Valid {
+					gateway = order.PaymentGateway
+				}
+				_ = uc.repo.AddPaymentToTransaction(ctx, repository.AddPaymentToTransactionParams{
+					TransactionID:   posTxn.ID,
+					PaymentMethod:   paymentMethod,
+					PaymentGateway:  gateway,
+					Amount:          order.TotalAmount,
+					ReferenceNumber: pgtype.Text{},
+					Metadata:        order.Metadata,
+				})
+				// Update drawer expected_balance for this sale
+				_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+					ID:              posTxn.CashierSessionID,
+					ExpectedBalance: order.TotalAmount,
+				})
 			}
 		}
 	}

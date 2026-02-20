@@ -31,6 +31,9 @@ type AddPaymentToTransactionParams struct {
 	Metadata        []byte         `json:"metadata"`
 }
 
+// AddPaymentToTransaction stores a payment for a POS transaction.
+// payment_gateway: provider identifier (e.g. stripe, square). metadata: JSONB for transient provider data
+// (gateway_txn_id, masked_card, auth_code, etc.) for auditing and reconciliation.
 func (q *Queries) AddPaymentToTransaction(ctx context.Context, arg AddPaymentToTransactionParams) error {
 	_, err := q.db.Exec(ctx, addPaymentToTransaction,
 		arg.TransactionID,
