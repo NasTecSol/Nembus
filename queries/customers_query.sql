@@ -3,6 +3,9 @@ INSERT INTO customers (
     organization_id,
     customer_code,
     name,
+    email,
+    phone,
+    address,
     customer_type,
     price_list_id,
     credit_limit,
@@ -10,7 +13,7 @@ INSERT INTO customers (
     is_active,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 ) RETURNING *;
 
 -- name: GetCustomer :one
@@ -47,11 +50,14 @@ LIMIT $3;
 UPDATE customers
 SET 
     name = $2,
-    customer_type = $3,
-    price_list_id = $4,
-    credit_limit = $5,
-    is_active = $6,
-    metadata = $7
+    email = $3,
+    phone = $4,
+    address = $5,
+    customer_type = $6,
+    price_list_id = $7,
+    credit_limit = $8,
+    is_active = $9,
+    metadata = $10
 WHERE id = $1
 RETURNING *;
 

@@ -582,6 +582,22 @@ type ComboBundle struct {
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 }
 
+type ComboBundleItem struct {
+	ID               int32            `json:"id"`
+	ComboBundleID    int32            `json:"combo_bundle_id"`
+	MenuItemID       pgtype.Int4      `json:"menu_item_id"`
+	ProductID        pgtype.Int4      `json:"product_id"`
+	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	ItemType         pgtype.Text      `json:"item_type"`
+	Quantity         pgtype.Numeric   `json:"quantity"`
+	IsRequired       pgtype.Bool      `json:"is_required"`
+	GroupTag         pgtype.Text      `json:"group_tag"`
+	PriceOverride    pgtype.Numeric   `json:"price_override"`
+	DisplayOrder     pgtype.Int4      `json:"display_order"`
+	Metadata         []byte           `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
 type Customer struct {
 	ID                 int32            `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
