@@ -16,6 +16,9 @@ INSERT INTO customers (
     organization_id,
     customer_code,
     name,
+    email,
+    phone,
+    address,
     customer_type,
     price_list_id,
     credit_limit,
@@ -23,7 +26,7 @@ INSERT INTO customers (
     is_active,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 ) RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
 `
 
@@ -31,6 +34,9 @@ type CreateCustomerParams struct {
 	OrganizationID     int32          `json:"organization_id"`
 	CustomerCode       string         `json:"customer_code"`
 	Name               string         `json:"name"`
+	Email              pgtype.Text    `json:"email"`
+	Phone              pgtype.Text    `json:"phone"`
+	Address            pgtype.Text    `json:"address"`
 	CustomerType       pgtype.Text    `json:"customer_type"`
 	PriceListID        pgtype.Int4    `json:"price_list_id"`
 	CreditLimit        pgtype.Numeric `json:"credit_limit"`
@@ -44,6 +50,9 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		arg.OrganizationID,
 		arg.CustomerCode,
 		arg.Name,
+		arg.Email,
+		arg.Phone,
+		arg.Address,
 		arg.CustomerType,
 		arg.PriceListID,
 		arg.CreditLimit,
@@ -448,11 +457,14 @@ const updateCustomer = `-- name: UpdateCustomer :one
 UPDATE customers
 SET 
     name = $2,
-    customer_type = $3,
-    price_list_id = $4,
-    credit_limit = $5,
-    is_active = $6,
-    metadata = $7
+    email = $3,
+    phone = $4,
+    address = $5,
+    customer_type = $6,
+    price_list_id = $7,
+    credit_limit = $8,
+    is_active = $9,
+    metadata = $10
 WHERE id = $1
 RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
 `
@@ -460,6 +472,9 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 type UpdateCustomerParams struct {
 	ID           int32          `json:"id"`
 	Name         string         `json:"name"`
+	Email        pgtype.Text    `json:"email"`
+	Phone        pgtype.Text    `json:"phone"`
+	Address      pgtype.Text    `json:"address"`
 	CustomerType pgtype.Text    `json:"customer_type"`
 	PriceListID  pgtype.Int4    `json:"price_list_id"`
 	CreditLimit  pgtype.Numeric `json:"credit_limit"`
@@ -471,6 +486,9 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 	row := q.db.QueryRow(ctx, updateCustomer,
 		arg.ID,
 		arg.Name,
+		arg.Email,
+		arg.Phone,
+		arg.Address,
 		arg.CustomerType,
 		arg.PriceListID,
 		arg.CreditLimit,
