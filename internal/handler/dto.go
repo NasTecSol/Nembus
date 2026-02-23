@@ -701,6 +701,72 @@ type CreateRestaurantOrderItemRequest struct {
 }
 
 // =====================================================
+// Customer Module
+// =====================================================
+
+type CreateCustomerRequest struct {
+	OrganizationID     int32                  `json:"organization_id" binding:"required" example:"1"`
+	CustomerCode       string                 `json:"customer_code" binding:"required" example:"CUST001"`
+	Name               string                 `json:"name" binding:"required" example:"Jane Doe"`
+	Email              *string                `json:"email,omitempty" example:"jane@example.com"`
+	Phone              *string                `json:"phone,omitempty" example:"+15551234567"`
+	Address            *string                `json:"address,omitempty" example:"123 Main St"`
+	CustomerType       *string                `json:"customer_type,omitempty" example:"regular"`
+	PriceListID        *int32                 `json:"price_list_id,omitempty" example:"1"`
+	CreditLimit        *string                `json:"credit_limit,omitempty" example:"1000.00"`
+	OutstandingBalance *string                `json:"outstanding_balance,omitempty" example:"0.00"`
+	IsActive           *bool                  `json:"is_active,omitempty" example:"true"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateCustomerRequest struct {
+	Name         *string                `json:"name,omitempty" example:"Jane Doe"`
+	Email        *string                `json:"email,omitempty" example:"jane@example.com"`
+	Phone        *string                `json:"phone,omitempty" example:"+15551234567"`
+	Address      *string                `json:"address,omitempty" example:"123 Main St"`
+	CustomerType *string                `json:"customer_type,omitempty" example:"vip"`
+	PriceListID  *int32                 `json:"price_list_id,omitempty" example:"2"`
+	CreditLimit  *string                `json:"credit_limit,omitempty" example:"1500.00"`
+	IsActive     *bool                  `json:"is_active,omitempty" example:"true"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type ToggleCustomerActiveRequest struct {
+	IsActive bool `json:"is_active" binding:"required" example:"true"`
+}
+
+type UpdateCustomerBalanceRequest struct {
+	Amount string `json:"amount" binding:"required" example:"125.50"`
+}
+
+type CustomerResponse struct {
+	ID                 int32           `json:"id" example:"1"`
+	OrganizationID     int32           `json:"organization_id" example:"1"`
+	CustomerCode       string          `json:"customer_code" example:"CUST001"`
+	Name               string          `json:"name" example:"Jane Doe"`
+	Email              string          `json:"email,omitempty" example:"jane@example.com"`
+	Phone              string          `json:"phone,omitempty" example:"+15551234567"`
+	Address            string          `json:"address,omitempty" example:"123 Main St"`
+	CustomerType       string          `json:"customer_type,omitempty" example:"regular"`
+	PriceListID        int32           `json:"price_list_id,omitempty" example:"1"`
+	CreditLimit        string          `json:"credit_limit,omitempty" example:"1000.00"`
+	OutstandingBalance string          `json:"outstanding_balance,omitempty" example:"125.50"`
+	LoyaltyPoints      string          `json:"loyalty_points,omitempty" example:"10.00"`
+	IsActive           bool            `json:"is_active" example:"true"`
+	Metadata           json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt          string          `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt          string          `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+type CustomerCreditStatusResponse struct {
+	ID                 int32  `json:"id" example:"1"`
+	Name               string `json:"name" example:"Jane Doe"`
+	CreditLimit        string `json:"credit_limit" example:"1000.00"`
+	OutstandingBalance string `json:"outstanding_balance" example:"125.50"`
+	AvailableCredit    string `json:"available_credit" example:"874.50"`
+}
+
+// =====================================================
 // Cart + Order (Enhanced schema) DTOs
 // =====================================================
 
@@ -1048,7 +1114,7 @@ type OpenCashierSessionRequest struct {
 type CloseCashierSessionRequest struct {
 	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"` // Physical count; server computes variance = closing_balance - expected_balance
 	ExpectedBalance string `json:"expected_balance,omitempty" example:"500.00"`         // Optional; server uses DB value for reconciliation
-	Variance        string `json:"variance,omitempty" example:"0.00"`                  // Optional; server computes at close
+	Variance        string `json:"variance,omitempty" example:"0.00"`                   // Optional; server computes at close
 	ClosingNote     string `json:"closing_note,omitempty" example:"All good"`
 	ClosedBy        int64  `json:"closed_by" binding:"required" example:"1"`
 }
@@ -1058,17 +1124,17 @@ type CloseCashierSessionRequest struct {
 // =====================================================
 
 type ProcessReturnRequest struct {
-	StoreID               int32                    `json:"store_id" binding:"required" example:"1"`
-	CashierID             *int32                   `json:"cashier_id,omitempty" example:"1"`
-	SessionID             *int32                  `json:"session_id,omitempty" example:"1"`
-	OriginalTransactionID *int32                   `json:"original_transaction_id,omitempty" example:"100"`
-	CustomerID            *int32                   `json:"customer_id,omitempty" example:"5"`
-	ReturnReason          string                   `json:"return_reason" example:"Defective"`
-	Subtotal              string                   `json:"subtotal" binding:"required" example:"50.00"`
-	TaxAmount             string                   `json:"tax_amount" binding:"required" example:"5.00"`
-	TotalRefundAmount     string                   `json:"total_refund_amount" binding:"required" example:"55.00"`
-	RefundMethod          string                   `json:"refund_method" example:"cash"`
-	RefundReference       string                   `json:"refund_reference,omitempty" example:"REF-001"`
+	StoreID               int32                      `json:"store_id" binding:"required" example:"1"`
+	CashierID             *int32                     `json:"cashier_id,omitempty" example:"1"`
+	SessionID             *int32                     `json:"session_id,omitempty" example:"1"`
+	OriginalTransactionID *int32                     `json:"original_transaction_id,omitempty" example:"100"`
+	CustomerID            *int32                     `json:"customer_id,omitempty" example:"5"`
+	ReturnReason          string                     `json:"return_reason" example:"Defective"`
+	Subtotal              string                     `json:"subtotal" binding:"required" example:"50.00"`
+	TaxAmount             string                     `json:"tax_amount" binding:"required" example:"5.00"`
+	TotalRefundAmount     string                     `json:"total_refund_amount" binding:"required" example:"55.00"`
+	RefundMethod          string                     `json:"refund_method" example:"cash"`
+	RefundReference       string                     `json:"refund_reference,omitempty" example:"REF-001"`
 	Lines                 []ProcessReturnLineRequest `json:"lines" binding:"required"`
 }
 
