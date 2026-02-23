@@ -67,6 +67,61 @@ func (q *Queries) CloseCashierSession(ctx context.Context, arg CloseCashierSessi
 	return i, err
 }
 
+const closeCashierSessionReconcile = `-- name: CloseCashierSessionReconcile :one
+UPDATE cashier_sessions
+SET 
+    closing_time     = CURRENT_TIMESTAMP,
+    closing_balance  = $2,
+    variance         = $2 - COALESCE(expected_balance, opening_balance),
+    expected_balance = COALESCE(expected_balance, opening_balance),
+    status           = 'closed',
+    metadata         = jsonb_set(
+        jsonb_set(COALESCE(metadata, '{}'), '{closing_note}', to_jsonb($3::text)),
+        '{closed_by}', to_jsonb($4::bigint)
+    )
+WHERE id = $1
+  AND status = 'open'
+RETURNING id, session_number, opening_time, closing_time, expected_balance, variance, status
+`
+
+type CloseCashierSessionReconcileParams struct {
+	ID             int32          `json:"id"`
+	ClosingBalance pgtype.Numeric `json:"closing_balance"`
+	Column3        string         `json:"column_3"`
+	Column4        int64          `json:"column_4"`
+}
+
+type CloseCashierSessionReconcileRow struct {
+	ID              int32            `json:"id"`
+	SessionNumber   string           `json:"session_number"`
+	OpeningTime     pgtype.Timestamp `json:"opening_time"`
+	ClosingTime     pgtype.Timestamp `json:"closing_time"`
+	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
+	Variance        pgtype.Numeric   `json:"variance"`
+	Status          pgtype.Text      `json:"status"`
+}
+
+// Close session and set variance = physical closing_balance - expected_balance (reconciliation at shift end)
+func (q *Queries) CloseCashierSessionReconcile(ctx context.Context, arg CloseCashierSessionReconcileParams) (CloseCashierSessionReconcileRow, error) {
+	row := q.db.QueryRow(ctx, closeCashierSessionReconcile,
+		arg.ID,
+		arg.ClosingBalance,
+		arg.Column3,
+		arg.Column4,
+	)
+	var i CloseCashierSessionReconcileRow
+	err := row.Scan(
+		&i.ID,
+		&i.SessionNumber,
+		&i.OpeningTime,
+		&i.ClosingTime,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.Status,
+	)
+	return i, err
+}
+
 const getActiveCashierSession = `-- name: GetActiveCashierSession :one
 SELECT 
     cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at,
@@ -226,4 +281,20 @@ func (q *Queries) OpenCashierSession(ctx context.Context, arg OpenCashierSession
 		&i.Status,
 	)
 	return i, err
+}
+
+const updateSessionExpectedBalance = `-- name: UpdateSessionExpectedBalance :exec
+UPDATE cashier_sessions
+SET expected_balance = COALESCE(expected_balance, opening_balance) + $2
+WHERE id = $1
+`
+
+type UpdateSessionExpectedBalanceParams struct {
+	ID              int32          `json:"id"`
+	ExpectedBalance pgtype.Numeric `json:"expected_balance"`
+}
+
+func (q *Queries) UpdateSessionExpectedBalance(ctx context.Context, arg UpdateSessionExpectedBalanceParams) error {
+	_, err := q.db.Exec(ctx, updateSessionExpectedBalance, arg.ID, arg.ExpectedBalance)
+	return err
 }

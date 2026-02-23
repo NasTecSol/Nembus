@@ -48,15 +48,40 @@ func (uc *CashierSessionUseCase) GetActiveCashierSession(ctx context.Context, ca
 	return utils.NewResponse(utils.CodeOK, "active cashier session fetched successfully", session)
 }
 
+func (uc *CashierSessionUseCase) GetSessionByID(ctx context.Context, id int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	session, err := uc.repo.GetSessionByID(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "cashier session not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "session fetched successfully", session)
+}
+
 func (uc *CashierSessionUseCase) CloseCashierSession(ctx context.Context, arg repository.CloseCashierSessionParams) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
-	session, err := uc.repo.CloseCashierSession(ctx, arg)
+	// Ensure session exists and is open before closing
+	session, err := uc.repo.GetSessionByID(ctx, arg.ID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "cashier session not found", nil)
+	}
+	if session.Status.Valid && session.Status.String != "open" {
+		return utils.NewResponse(utils.CodeBadReq, "session is not open", nil)
+	}
+	// Reconcile: use physical closing_balance and compute variance = closing_balance - expected_balance
+	row, err := uc.repo.CloseCashierSessionReconcile(ctx, repository.CloseCashierSessionReconcileParams{
+		ID:             arg.ID,
+		ClosingBalance: arg.ClosingBalance,
+		Column3:        arg.Column5,
+		Column4:        arg.Column6,
+	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to close cashier session", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cashier session closed successfully", session)
+	return utils.NewResponse(utils.CodeOK, "cashier session closed successfully", row)
 }
 
 func (uc *CashierSessionUseCase) GetSessionSummary(ctx context.Context, id int32) *repository.Response {

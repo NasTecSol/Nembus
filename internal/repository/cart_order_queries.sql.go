@@ -21,7 +21,7 @@ SET coupon_code = $2,
     total_amount = subtotal + tax_amount + shipping_amount - $3,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
 `
 
 type ApplyCouponToCartParams struct {
@@ -45,6 +45,8 @@ func (q *Queries) ApplyCouponToCart(ctx context.Context, arg ApplyCouponToCartPa
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -77,7 +79,7 @@ UPDATE sales_orders_v2
 SET assigned_to_user_id = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type AssignOrderParams struct {
@@ -131,6 +133,7 @@ func (q *Queries) AssignOrder(ctx context.Context, arg AssignOrderParams) (Sales
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -154,7 +157,7 @@ SET order_status = 'cancelled',
     cancelled_date = NOW(),
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 func (q *Queries) CancelOrder(ctx context.Context, id uuid.UUID) (SalesOrdersV2, error) {
@@ -203,6 +206,7 @@ func (q *Queries) CancelOrder(ctx context.Context, id uuid.UUID) (SalesOrdersV2,
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -289,7 +293,7 @@ func (q *Queries) ClearCartItems(ctx context.Context, cartID uuid.UUID) error {
 const convertCartToOrder = `-- name: ConvertCartToOrder :one
 
 WITH cart_data AS (
-    SELECT c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes, cu.name as customer_name, cu.email as customer_email, cu.phone as customer_phone
+    SELECT c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.payment_method, c.payment_gateway, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes, cu.name as customer_name, cu.email as customer_email, cu.phone as customer_phone
     FROM carts c
     LEFT JOIN customers cu ON c.customer_id = cu.id
     WHERE c.id = $1
@@ -301,7 +305,8 @@ new_order AS (
         order_type, order_status, payment_status, fulfillment_status,
         sales_channel, source_cart_id, created_by_user_id,
         order_date, shipping_address, billing_address,
-        shipping_method, pos_terminal_id, cashier_id,
+        shipping_method, payment_method, payment_gateway,
+        pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
         coupon_code, discount_codes, promotional_credits,
         special_instructions, metadata
@@ -312,7 +317,8 @@ new_order AS (
         'standard', 'pending', 'unpaid', 'unfulfilled',
         channel, id, created_by_user_id,
         NOW(), shipping_address, billing_address,
-        shipping_method, pos_terminal_id, cashier_id,
+        shipping_method, payment_method, payment_gateway,
+        pos_terminal_id, cashier_id,
         subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
         coupon_code,
         CASE 
@@ -324,14 +330,15 @@ new_order AS (
         notes,
         metadata
     FROM cart_data
-    RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+    RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 )
 UPDATE carts 
 SET cart_status = 'converted',
     converted_to_order_id = (SELECT id FROM new_order),
-    converted_at = NOW()
+    converted_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
 WHERE carts.id = $1
-RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+RETURNING id, (SELECT id FROM new_order) as converted_to_order_id
 `
 
 type ConvertCartToOrderParams struct {
@@ -339,49 +346,19 @@ type ConvertCartToOrderParams struct {
 	OrderNumber string    `json:"order_number"`
 }
 
+type ConvertCartToOrderRow struct {
+	ID                 uuid.UUID `json:"id"`
+	ConvertedToOrderID uuid.UUID `json:"converted_to_order_id"`
+}
+
 // =====================================================
 // BUSINESS USE CASES - CART OPERATIONS
 // =====================================================
 // Convert cart to sales order (business logic)
-func (q *Queries) ConvertCartToOrder(ctx context.Context, arg ConvertCartToOrderParams) (Cart, error) {
+func (q *Queries) ConvertCartToOrder(ctx context.Context, arg ConvertCartToOrderParams) (ConvertCartToOrderRow, error) {
 	row := q.db.QueryRow(ctx, convertCartToOrder, arg.ID, arg.OrderNumber)
-	var i Cart
-	err := row.Scan(
-		&i.ID,
-		&i.CartNumber,
-		&i.OrganizationID,
-		&i.StoreID,
-		&i.CustomerID,
-		&i.GuestIdentifier,
-		&i.GuestEmail,
-		&i.GuestPhone,
-		&i.CartStatus,
-		&i.CartType,
-		&i.Channel,
-		&i.DeviceInfo,
-		&i.CreatedByUserID,
-		&i.CashierID,
-		&i.PosTerminalID,
-		&i.Subtotal,
-		&i.DiscountAmount,
-		&i.TaxAmount,
-		&i.ShippingAmount,
-		&i.TotalAmount,
-		&i.CouponCode,
-		&i.DiscountCode,
-		&i.PromotionalCredits,
-		&i.ShippingAddress,
-		&i.BillingAddress,
-		&i.ShippingMethod,
-		&i.ConvertedToOrderID,
-		&i.ConvertedAt,
-		&i.LastActivityAt,
-		&i.ExpiresAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Metadata,
-		&i.Notes,
-	)
+	var i ConvertCartToOrderRow
+	err := row.Scan(&i.ID, &i.ConvertedToOrderID)
 	return i, err
 }
 
@@ -450,6 +427,8 @@ INSERT INTO carts (
     cart_status,
     cart_type,
     channel,
+    payment_method,
+    payment_gateway,
     device_info,
     created_by_user_id,
     cashier_id,
@@ -464,8 +443,8 @@ INSERT INTO carts (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
-) RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+) RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
 `
 
 type CreateCartParams struct {
@@ -479,6 +458,8 @@ type CreateCartParams struct {
 	CartStatus      CartStatus       `json:"cart_status"`
 	CartType        CartType         `json:"cart_type"`
 	Channel         pgtype.Text      `json:"channel"`
+	PaymentMethod   pgtype.Text      `json:"payment_method"`
+	PaymentGateway  pgtype.Text      `json:"payment_gateway"`
 	DeviceInfo      []byte           `json:"device_info"`
 	CreatedByUserID pgtype.Int4      `json:"created_by_user_id"`
 	CashierID       pgtype.Int4      `json:"cashier_id"`
@@ -512,6 +493,8 @@ func (q *Queries) CreateCart(ctx context.Context, arg CreateCartParams) (Cart, e
 		arg.CartStatus,
 		arg.CartType,
 		arg.Channel,
+		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.DeviceInfo,
 		arg.CreatedByUserID,
 		arg.CashierID,
@@ -538,6 +521,8 @@ func (q *Queries) CreateCart(ctx context.Context, arg CreateCartParams) (Cart, e
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -1210,6 +1195,7 @@ INSERT INTO invoice_payments (
     payment_date,
     payment_amount,
     payment_method,
+    payment_gateway,
     payment_reference,
     currency_code,
     exchange_rate,
@@ -1221,8 +1207,8 @@ INSERT INTO invoice_payments (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15
-) RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at
+    $11, $12, $13, $14, $15, $16
+) RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_gateway, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at
 `
 
 type CreateInvoicePaymentParams struct {
@@ -1232,6 +1218,7 @@ type CreateInvoicePaymentParams struct {
 	PaymentDate      pgtype.Date    `json:"payment_date"`
 	PaymentAmount    pgtype.Numeric `json:"payment_amount"`
 	PaymentMethod    string         `json:"payment_method"`
+	PaymentGateway   pgtype.Text    `json:"payment_gateway"`
 	PaymentReference pgtype.Text    `json:"payment_reference"`
 	CurrencyCode     pgtype.Text    `json:"currency_code"`
 	ExchangeRate     pgtype.Numeric `json:"exchange_rate"`
@@ -1254,6 +1241,7 @@ func (q *Queries) CreateInvoicePayment(ctx context.Context, arg CreateInvoicePay
 		arg.PaymentDate,
 		arg.PaymentAmount,
 		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.PaymentReference,
 		arg.CurrencyCode,
 		arg.ExchangeRate,
@@ -1273,6 +1261,7 @@ func (q *Queries) CreateInvoicePayment(ctx context.Context, arg CreateInvoicePay
 		&i.PaymentDate,
 		&i.PaymentAmount,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentReference,
 		&i.CurrencyCode,
 		&i.ExchangeRate,
@@ -1365,7 +1354,7 @@ new_order AS (
         subtotal, discount_amount, tax_amount, total_amount,
         notes, internal_notes, created_by_user_id, metadata
     FROM quote_data
-    RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+    RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 )
 UPDATE quotes
 SET quote_status = 'converted',
@@ -1945,6 +1934,7 @@ INSERT INTO sales_orders_v2 (
     billing_address,
     shipping_method,
     payment_method,
+    payment_gateway,
     payment_terms,
     payment_due_date,
     pos_terminal_id,
@@ -1959,8 +1949,8 @@ INSERT INTO sales_orders_v2 (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34
-) RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
+) RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type CreateSalesOrderV2Params struct {
@@ -1987,6 +1977,7 @@ type CreateSalesOrderV2Params struct {
 	BillingAddress       json.RawMessage   `json:"billing_address"`
 	ShippingMethod       pgtype.Text       `json:"shipping_method"`
 	PaymentMethod        pgtype.Text       `json:"payment_method"`
+	PaymentGateway       pgtype.Text       `json:"payment_gateway"`
 	PaymentTerms         pgtype.Text       `json:"payment_terms"`
 	PaymentDueDate       pgtype.Date       `json:"payment_due_date"`
 	PosTerminalID        pgtype.Int4       `json:"pos_terminal_id"`
@@ -2028,6 +2019,7 @@ func (q *Queries) CreateSalesOrderV2(ctx context.Context, arg CreateSalesOrderV2
 		arg.BillingAddress,
 		arg.ShippingMethod,
 		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.PaymentTerms,
 		arg.PaymentDueDate,
 		arg.PosTerminalID,
@@ -2084,6 +2076,7 @@ func (q *Queries) CreateSalesOrderV2(ctx context.Context, arg CreateSalesOrderV2
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -2246,7 +2239,7 @@ func (q *Queries) ExpireAbandonedCarts(ctx context.Context, storeID pgtype.Int4)
 }
 
 const getCartByCustomer = `-- name: GetCartByCustomer :one
-SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
+SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
 WHERE customer_id = $1
   AND cart_status = 'active'
   AND store_id = $2
@@ -2274,6 +2267,8 @@ func (q *Queries) GetCartByCustomer(ctx context.Context, arg GetCartByCustomerPa
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -2302,7 +2297,7 @@ func (q *Queries) GetCartByCustomer(ctx context.Context, arg GetCartByCustomerPa
 }
 
 const getCartByGuestIdentifier = `-- name: GetCartByGuestIdentifier :one
-SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
+SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
 WHERE guest_identifier = $1
   AND cart_status = 'active'
   AND store_id = $2
@@ -2330,6 +2325,8 @@ func (q *Queries) GetCartByGuestIdentifier(ctx context.Context, arg GetCartByGue
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -2358,7 +2355,7 @@ func (q *Queries) GetCartByGuestIdentifier(ctx context.Context, arg GetCartByGue
 }
 
 const getCartByID = `-- name: GetCartByID :one
-SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
+SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
 WHERE id = $1
 `
 
@@ -2377,6 +2374,8 @@ func (q *Queries) GetCartByID(ctx context.Context, id uuid.UUID) (Cart, error) {
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -2405,7 +2404,7 @@ func (q *Queries) GetCartByID(ctx context.Context, id uuid.UUID) (Cart, error) {
 }
 
 const getCartByNumber = `-- name: GetCartByNumber :one
-SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
+SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
 WHERE cart_number = $1
 `
 
@@ -2424,6 +2423,8 @@ func (q *Queries) GetCartByNumber(ctx context.Context, cartNumber string) (Cart,
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -2856,7 +2857,7 @@ func (q *Queries) GetInvoiceLineTotals(ctx context.Context, invoiceID uuid.UUID)
 }
 
 const getInvoicePayment = `-- name: GetInvoicePayment :one
-SELECT id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at FROM invoice_payments
+SELECT id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_gateway, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at FROM invoice_payments
 WHERE id = $1
 `
 
@@ -2871,6 +2872,7 @@ func (q *Queries) GetInvoicePayment(ctx context.Context, id uuid.UUID) (InvoiceP
 		&i.PaymentDate,
 		&i.PaymentAmount,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentReference,
 		&i.CurrencyCode,
 		&i.ExchangeRate,
@@ -2887,7 +2889,7 @@ func (q *Queries) GetInvoicePayment(ctx context.Context, id uuid.UUID) (InvoiceP
 }
 
 const getInvoicePaymentByNumber = `-- name: GetInvoicePaymentByNumber :one
-SELECT id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at FROM invoice_payments
+SELECT id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_gateway, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at FROM invoice_payments
 WHERE payment_number = $1
 `
 
@@ -2902,6 +2904,7 @@ func (q *Queries) GetInvoicePaymentByNumber(ctx context.Context, paymentNumber s
 		&i.PaymentDate,
 		&i.PaymentAmount,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentReference,
 		&i.CurrencyCode,
 		&i.ExchangeRate,
@@ -3379,7 +3382,7 @@ func (q *Queries) GetSalesOrderLineV2(ctx context.Context, id uuid.UUID) (SalesO
 }
 
 const getSalesOrderV2 = `-- name: GetSalesOrderV2 :one
-SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
+SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
 WHERE id = $1
 `
 
@@ -3429,6 +3432,7 @@ func (q *Queries) GetSalesOrderV2(ctx context.Context, id uuid.UUID) (SalesOrder
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -3447,7 +3451,7 @@ func (q *Queries) GetSalesOrderV2(ctx context.Context, id uuid.UUID) (SalesOrder
 }
 
 const getSalesOrderV2ByNumber = `-- name: GetSalesOrderV2ByNumber :one
-SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
+SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
 WHERE order_number = $1
 `
 
@@ -3497,6 +3501,7 @@ func (q *Queries) GetSalesOrderV2ByNumber(ctx context.Context, orderNumber strin
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -3596,7 +3601,7 @@ func (q *Queries) GetTotalPaymentsForInvoice(ctx context.Context, invoiceID uuid
 }
 
 const listAbandonedCarts = `-- name: ListAbandonedCarts :many
-SELECT c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes, COUNT(ci.id) as item_count, SUM(ci.line_total) as cart_value
+SELECT c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.payment_method, c.payment_gateway, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes, COUNT(ci.id) as item_count, SUM(ci.line_total) as cart_value
 FROM carts c
 LEFT JOIN cart_items ci ON c.id = ci.cart_id
 LEFT JOIN customers cu ON c.customer_id = cu.id
@@ -3629,6 +3634,8 @@ type ListAbandonedCartsRow struct {
 	CartStatus         CartStatus       `json:"cart_status"`
 	CartType           CartType         `json:"cart_type"`
 	Channel            pgtype.Text      `json:"channel"`
+	PaymentMethod      pgtype.Text      `json:"payment_method"`
+	PaymentGateway     pgtype.Text      `json:"payment_gateway"`
 	DeviceInfo         []byte           `json:"device_info"`
 	CreatedByUserID    pgtype.Int4      `json:"created_by_user_id"`
 	CashierID          pgtype.Int4      `json:"cashier_id"`
@@ -3682,6 +3689,8 @@ func (q *Queries) ListAbandonedCarts(ctx context.Context, arg ListAbandonedCarts
 			&i.CartStatus,
 			&i.CartType,
 			&i.Channel,
+			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.DeviceInfo,
 			&i.CreatedByUserID,
 			&i.CashierID,
@@ -3719,7 +3728,7 @@ func (q *Queries) ListAbandonedCarts(ctx context.Context, arg ListAbandonedCarts
 }
 
 const listActiveCarts = `-- name: ListActiveCarts :many
-SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
+SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
 WHERE store_id = $1
   AND cart_status IN ('active', 'draft')
   AND last_activity_at > NOW() - INTERVAL '24 hours'
@@ -3754,6 +3763,8 @@ func (q *Queries) ListActiveCarts(ctx context.Context, arg ListActiveCartsParams
 			&i.CartStatus,
 			&i.CartType,
 			&i.Channel,
+			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.DeviceInfo,
 			&i.CreatedByUserID,
 			&i.CashierID,
@@ -4047,7 +4058,7 @@ func (q *Queries) ListCustomerInvoices(ctx context.Context, arg ListCustomerInvo
 }
 
 const listCustomerOrders = `-- name: ListCustomerOrders :many
-SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
+SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
 WHERE customer_id = $1
   AND organization_id = $2
 ORDER BY order_date DESC
@@ -4118,6 +4129,7 @@ func (q *Queries) ListCustomerOrders(ctx context.Context, arg ListCustomerOrders
 			&i.TrackingNumber,
 			&i.TrackingUrl,
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.PaymentTerms,
 			&i.PaymentDueDate,
 			&i.PosTerminalID,
@@ -4542,7 +4554,7 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, invoiceID uuid.UUID) ([]
 }
 
 const listInvoicePayments = `-- name: ListInvoicePayments :many
-SELECT ip.id, ip.invoice_id, ip.organization_id, ip.payment_number, ip.payment_date, ip.payment_amount, ip.payment_method, ip.payment_reference, ip.currency_code, ip.exchange_rate, ip.bank_account_id, ip.reconciled, ip.reconciled_date, ip.notes, ip.received_by_user_id, ip.metadata, ip.created_at, ip.updated_at, (u.first_name || ' ' || u.last_name) as received_by_name
+SELECT ip.id, ip.invoice_id, ip.organization_id, ip.payment_number, ip.payment_date, ip.payment_amount, ip.payment_method, ip.payment_gateway, ip.payment_reference, ip.currency_code, ip.exchange_rate, ip.bank_account_id, ip.reconciled, ip.reconciled_date, ip.notes, ip.received_by_user_id, ip.metadata, ip.created_at, ip.updated_at, (u.first_name || ' ' || u.last_name) as received_by_name
 FROM invoice_payments ip
 LEFT JOIN users u ON ip.received_by_user_id = u.id
 WHERE ip.invoice_id = $1
@@ -4557,6 +4569,7 @@ type ListInvoicePaymentsRow struct {
 	PaymentDate      pgtype.Date      `json:"payment_date"`
 	PaymentAmount    pgtype.Numeric   `json:"payment_amount"`
 	PaymentMethod    string           `json:"payment_method"`
+	PaymentGateway   pgtype.Text      `json:"payment_gateway"`
 	PaymentReference pgtype.Text      `json:"payment_reference"`
 	CurrencyCode     pgtype.Text      `json:"currency_code"`
 	ExchangeRate     pgtype.Numeric   `json:"exchange_rate"`
@@ -4588,6 +4601,7 @@ func (q *Queries) ListInvoicePayments(ctx context.Context, invoiceID uuid.UUID) 
 			&i.PaymentDate,
 			&i.PaymentAmount,
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.PaymentReference,
 			&i.CurrencyCode,
 			&i.ExchangeRate,
@@ -4913,7 +4927,7 @@ func (q *Queries) ListOrderStatusHistory(ctx context.Context, salesOrderID uuid.
 }
 
 const listOrdersByStatus = `-- name: ListOrdersByStatus :many
-SELECT so.id, so.order_number, so.organization_id, so.store_id, so.customer_id, so.customer_name, so.customer_email, so.customer_phone, so.order_type, so.order_status, so.payment_status, so.fulfillment_status, so.sales_channel, so.order_source, so.referral_source, so.source_cart_id, so.created_by_user_id, so.assigned_to_user_id, so.order_date, so.confirmed_date, so.expected_delivery_date, so.actual_delivery_date, so.cancelled_date, so.subtotal, so.discount_amount, so.tax_amount, so.shipping_amount, so.adjustment_amount, so.total_amount, so.paid_amount, so.refunded_amount, so.balance_due, so.coupon_code, so.discount_codes, so.promotional_credits, so.shipping_address, so.billing_address, so.shipping_method, so.shipping_carrier, so.tracking_number, so.tracking_url, so.payment_method, so.payment_terms, so.payment_due_date, so.pos_terminal_id, so.cashier_id, so.is_gift, so.gift_message, so.special_instructions, so.internal_notes, so.tags, so.priority, so.metadata, so.created_at, so.updated_at, c.name as customer_name_full, c.email as customer_email_full
+SELECT so.id, so.order_number, so.organization_id, so.store_id, so.customer_id, so.customer_name, so.customer_email, so.customer_phone, so.order_type, so.order_status, so.payment_status, so.fulfillment_status, so.sales_channel, so.order_source, so.referral_source, so.source_cart_id, so.created_by_user_id, so.assigned_to_user_id, so.order_date, so.confirmed_date, so.expected_delivery_date, so.actual_delivery_date, so.cancelled_date, so.subtotal, so.discount_amount, so.tax_amount, so.shipping_amount, so.adjustment_amount, so.total_amount, so.paid_amount, so.refunded_amount, so.balance_due, so.coupon_code, so.discount_codes, so.promotional_credits, so.shipping_address, so.billing_address, so.shipping_method, so.shipping_carrier, so.tracking_number, so.tracking_url, so.payment_method, so.payment_gateway, so.payment_terms, so.payment_due_date, so.pos_terminal_id, so.cashier_id, so.is_gift, so.gift_message, so.special_instructions, so.internal_notes, so.tags, so.priority, so.metadata, so.created_at, so.updated_at, c.name as customer_name_full, c.email as customer_email_full
 FROM sales_orders_v2 so
 LEFT JOIN customers c ON so.customer_id = c.id
 WHERE so.store_id = $1
@@ -4972,6 +4986,7 @@ type ListOrdersByStatusRow struct {
 	TrackingNumber       pgtype.Text       `json:"tracking_number"`
 	TrackingUrl          pgtype.Text       `json:"tracking_url"`
 	PaymentMethod        pgtype.Text       `json:"payment_method"`
+	PaymentGateway       pgtype.Text       `json:"payment_gateway"`
 	PaymentTerms         pgtype.Text       `json:"payment_terms"`
 	PaymentDueDate       pgtype.Date       `json:"payment_due_date"`
 	PosTerminalID        pgtype.Int4       `json:"pos_terminal_id"`
@@ -5046,6 +5061,7 @@ func (q *Queries) ListOrdersByStatus(ctx context.Context, arg ListOrdersByStatus
 			&i.TrackingNumber,
 			&i.TrackingUrl,
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.PaymentTerms,
 			&i.PaymentDueDate,
 			&i.PosTerminalID,
@@ -5211,7 +5227,7 @@ func (q *Queries) ListOverdueInvoices(ctx context.Context, arg ListOverdueInvoic
 }
 
 const listPendingOrders = `-- name: ListPendingOrders :many
-SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
+SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
 WHERE store_id = $1
   AND order_status IN ('pending', 'confirmed', 'processing')
   AND payment_status != 'paid'
@@ -5277,6 +5293,7 @@ func (q *Queries) ListPendingOrders(ctx context.Context, arg ListPendingOrdersPa
 			&i.TrackingNumber,
 			&i.TrackingUrl,
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.PaymentTerms,
 			&i.PaymentDueDate,
 			&i.PosTerminalID,
@@ -5626,7 +5643,7 @@ func (q *Queries) ListSalesOrderLinesV2(ctx context.Context, salesOrderID uuid.U
 }
 
 const listSalesOrdersV2 = `-- name: ListSalesOrdersV2 :many
-SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
+SELECT id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at FROM sales_orders_v2
 WHERE organization_id = $1
   AND ($2::int IS NULL OR store_id = $2)
   AND ($3::order_status_v2 IS NULL OR order_status = $3)
@@ -5706,6 +5723,7 @@ func (q *Queries) ListSalesOrdersV2(ctx context.Context, arg ListSalesOrdersV2Pa
 			&i.TrackingNumber,
 			&i.TrackingUrl,
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.PaymentTerms,
 			&i.PaymentDueDate,
 			&i.PosTerminalID,
@@ -5731,7 +5749,7 @@ func (q *Queries) ListSalesOrdersV2(ctx context.Context, arg ListSalesOrdersV2Pa
 }
 
 const listUnreconciledPayments = `-- name: ListUnreconciledPayments :many
-SELECT ip.id, ip.invoice_id, ip.organization_id, ip.payment_number, ip.payment_date, ip.payment_amount, ip.payment_method, ip.payment_reference, ip.currency_code, ip.exchange_rate, ip.bank_account_id, ip.reconciled, ip.reconciled_date, ip.notes, ip.received_by_user_id, ip.metadata, ip.created_at, ip.updated_at, i.invoice_number, c.name as customer_name
+SELECT ip.id, ip.invoice_id, ip.organization_id, ip.payment_number, ip.payment_date, ip.payment_amount, ip.payment_method, ip.payment_gateway, ip.payment_reference, ip.currency_code, ip.exchange_rate, ip.bank_account_id, ip.reconciled, ip.reconciled_date, ip.notes, ip.received_by_user_id, ip.metadata, ip.created_at, ip.updated_at, i.invoice_number, c.name as customer_name
 FROM invoice_payments ip
 JOIN invoices i ON ip.invoice_id = i.id
 LEFT JOIN customers c ON i.customer_id = c.id
@@ -5755,6 +5773,7 @@ type ListUnreconciledPaymentsRow struct {
 	PaymentDate      pgtype.Date      `json:"payment_date"`
 	PaymentAmount    pgtype.Numeric   `json:"payment_amount"`
 	PaymentMethod    string           `json:"payment_method"`
+	PaymentGateway   pgtype.Text      `json:"payment_gateway"`
 	PaymentReference pgtype.Text      `json:"payment_reference"`
 	CurrencyCode     pgtype.Text      `json:"currency_code"`
 	ExchangeRate     pgtype.Numeric   `json:"exchange_rate"`
@@ -5787,6 +5806,7 @@ func (q *Queries) ListUnreconciledPayments(ctx context.Context, arg ListUnreconc
 			&i.PaymentDate,
 			&i.PaymentAmount,
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.PaymentReference,
 			&i.CurrencyCode,
 			&i.ExchangeRate,
@@ -5860,7 +5880,7 @@ SET paid_amount = paid_amount + $2,
     END,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type ProcessOrderPaymentParams struct {
@@ -5914,6 +5934,7 @@ func (q *Queries) ProcessOrderPayment(ctx context.Context, arg ProcessOrderPayme
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -5948,7 +5969,7 @@ SET subtotal = t.subtotal,
     updated_at = NOW()
 FROM totals t
 WHERE c.id = $1
-RETURNING c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes
+RETURNING c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.payment_method, c.payment_gateway, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes
 `
 
 func (q *Queries) RecalculateCartTotals(ctx context.Context, id uuid.UUID) (Cart, error) {
@@ -5966,6 +5987,8 @@ func (q *Queries) RecalculateCartTotals(ctx context.Context, id uuid.UUID) (Cart
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -5999,7 +6022,7 @@ SET reconciled = true,
     reconciled_date = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at
+RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_gateway, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at
 `
 
 type ReconcilePaymentParams struct {
@@ -6018,6 +6041,7 @@ func (q *Queries) ReconcilePayment(ctx context.Context, arg ReconcilePaymentPara
 		&i.PaymentDate,
 		&i.PaymentAmount,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentReference,
 		&i.CurrencyCode,
 		&i.ExchangeRate,
@@ -6046,12 +6070,14 @@ SET subtotal = $2,
     shipping_address = $10,
     billing_address = $11,
     shipping_method = $12,
+    payment_method = $13,
+    payment_gateway = $14,
     last_activity_at = NOW(),
-    notes = $13,
-    metadata = $14,
+    notes = $15,
+    metadata = $16,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
 `
 
 type UpdateCartParams struct {
@@ -6067,6 +6093,8 @@ type UpdateCartParams struct {
 	ShippingAddress    []byte         `json:"shipping_address"`
 	BillingAddress     []byte         `json:"billing_address"`
 	ShippingMethod     pgtype.Text    `json:"shipping_method"`
+	PaymentMethod      pgtype.Text    `json:"payment_method"`
+	PaymentGateway     pgtype.Text    `json:"payment_gateway"`
 	Notes              pgtype.Text    `json:"notes"`
 	Metadata           []byte         `json:"metadata"`
 }
@@ -6085,6 +6113,8 @@ func (q *Queries) UpdateCart(ctx context.Context, arg UpdateCartParams) (Cart, e
 		arg.ShippingAddress,
 		arg.BillingAddress,
 		arg.ShippingMethod,
+		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.Notes,
 		arg.Metadata,
 	)
@@ -6101,6 +6131,8 @@ func (q *Queries) UpdateCart(ctx context.Context, arg UpdateCartParams) (Cart, e
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -6134,7 +6166,7 @@ SET customer_id = $2,
     guest_identifier = NULL,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
 `
 
 type UpdateCartCustomerParams struct {
@@ -6157,6 +6189,8 @@ func (q *Queries) UpdateCartCustomer(ctx context.Context, arg UpdateCartCustomer
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -6295,7 +6329,7 @@ SET cart_status = $2,
     converted_at = $4,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
 `
 
 type UpdateCartStatusParams struct {
@@ -6325,6 +6359,8 @@ func (q *Queries) UpdateCartStatus(ctx context.Context, arg UpdateCartStatusPara
 		&i.CartStatus,
 		&i.CartType,
 		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.DeviceInfo,
 		&i.CreatedByUserID,
 		&i.CashierID,
@@ -6740,7 +6776,7 @@ SET payment_amount = $2,
     metadata = $6,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at
+RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment_amount, payment_method, payment_gateway, payment_reference, currency_code, exchange_rate, bank_account_id, reconciled, reconciled_date, notes, received_by_user_id, metadata, created_at, updated_at
 `
 
 type UpdateInvoicePaymentParams struct {
@@ -6770,6 +6806,7 @@ func (q *Queries) UpdateInvoicePayment(ctx context.Context, arg UpdateInvoicePay
 		&i.PaymentDate,
 		&i.PaymentAmount,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentReference,
 		&i.CurrencyCode,
 		&i.ExchangeRate,
@@ -7088,7 +7125,7 @@ SET shipping_carrier = $2,
     actual_delivery_date = $5,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type UpdateOrderDeliveryParams struct {
@@ -7151,6 +7188,7 @@ func (q *Queries) UpdateOrderDelivery(ctx context.Context, arg UpdateOrderDelive
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -7243,7 +7281,7 @@ UPDATE sales_orders_v2
 SET fulfillment_status = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type UpdateOrderFulfillmentStatusParams struct {
@@ -7297,6 +7335,7 @@ func (q *Queries) UpdateOrderFulfillmentStatus(ctx context.Context, arg UpdateOr
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -7426,20 +7465,30 @@ const updateOrderPaymentStatus = `-- name: UpdateOrderPaymentStatus :one
 UPDATE sales_orders_v2
 SET payment_status = $2,
     paid_amount = $3,
+    payment_method = COALESCE($4, payment_method),
+    payment_gateway = COALESCE($5, payment_gateway),
     balance_due = total_amount - $3,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type UpdateOrderPaymentStatusParams struct {
-	ID            uuid.UUID      `json:"id"`
-	PaymentStatus PaymentStatus  `json:"payment_status"`
-	PaidAmount    pgtype.Numeric `json:"paid_amount"`
+	ID             uuid.UUID      `json:"id"`
+	PaymentStatus  PaymentStatus  `json:"payment_status"`
+	PaidAmount     pgtype.Numeric `json:"paid_amount"`
+	PaymentMethod  pgtype.Text    `json:"payment_method"`
+	PaymentGateway pgtype.Text    `json:"payment_gateway"`
 }
 
 func (q *Queries) UpdateOrderPaymentStatus(ctx context.Context, arg UpdateOrderPaymentStatusParams) (SalesOrdersV2, error) {
-	row := q.db.QueryRow(ctx, updateOrderPaymentStatus, arg.ID, arg.PaymentStatus, arg.PaidAmount)
+	row := q.db.QueryRow(ctx, updateOrderPaymentStatus,
+		arg.ID,
+		arg.PaymentStatus,
+		arg.PaidAmount,
+		arg.PaymentMethod,
+		arg.PaymentGateway,
+	)
 	var i SalesOrdersV2
 	err := row.Scan(
 		&i.ID,
@@ -7484,6 +7533,7 @@ func (q *Queries) UpdateOrderPaymentStatus(ctx context.Context, arg UpdateOrderP
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -7516,7 +7566,7 @@ SET order_status = $2,
     END,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type UpdateOrderStatusParams struct {
@@ -7570,6 +7620,7 @@ func (q *Queries) UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusPa
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -7598,7 +7649,7 @@ SET subtotal = $2,
     balance_due = $7 - COALESCE(paid_amount, 0),
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type UpdateOrderTotalsParams struct {
@@ -7665,6 +7716,7 @@ func (q *Queries) UpdateOrderTotals(ctx context.Context, arg UpdateOrderTotalsPa
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,
@@ -8089,14 +8141,15 @@ SET customer_id = $2,
     billing_address = $8,
     shipping_method = $9,
     payment_method = $10,
-    special_instructions = $11,
-    internal_notes = $12,
-    tags = $13,
-    priority = $14,
-    metadata = $15,
+    payment_gateway = $11,
+    special_instructions = $12,
+    internal_notes = $13,
+    tags = $14,
+    priority = $15,
+    metadata = $16,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
+RETURNING id, order_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, order_type, order_status, payment_status, fulfillment_status, sales_channel, order_source, referral_source, source_cart_id, created_by_user_id, assigned_to_user_id, order_date, confirmed_date, expected_delivery_date, actual_delivery_date, cancelled_date, subtotal, discount_amount, tax_amount, shipping_amount, adjustment_amount, total_amount, paid_amount, refunded_amount, balance_due, coupon_code, discount_codes, promotional_credits, shipping_address, billing_address, shipping_method, shipping_carrier, tracking_number, tracking_url, payment_method, payment_gateway, payment_terms, payment_due_date, pos_terminal_id, cashier_id, is_gift, gift_message, special_instructions, internal_notes, tags, priority, metadata, created_at, updated_at
 `
 
 type UpdateSalesOrderV2Params struct {
@@ -8110,6 +8163,7 @@ type UpdateSalesOrderV2Params struct {
 	BillingAddress       json.RawMessage `json:"billing_address"`
 	ShippingMethod       pgtype.Text     `json:"shipping_method"`
 	PaymentMethod        pgtype.Text     `json:"payment_method"`
+	PaymentGateway       pgtype.Text     `json:"payment_gateway"`
 	SpecialInstructions  pgtype.Text     `json:"special_instructions"`
 	InternalNotes        pgtype.Text     `json:"internal_notes"`
 	Tags                 []string        `json:"tags"`
@@ -8129,6 +8183,7 @@ func (q *Queries) UpdateSalesOrderV2(ctx context.Context, arg UpdateSalesOrderV2
 		arg.BillingAddress,
 		arg.ShippingMethod,
 		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.SpecialInstructions,
 		arg.InternalNotes,
 		arg.Tags,
@@ -8179,6 +8234,7 @@ func (q *Queries) UpdateSalesOrderV2(ctx context.Context, arg UpdateSalesOrderV2
 		&i.TrackingNumber,
 		&i.TrackingUrl,
 		&i.PaymentMethod,
+		&i.PaymentGateway,
 		&i.PaymentTerms,
 		&i.PaymentDueDate,
 		&i.PosTerminalID,

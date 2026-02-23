@@ -725,6 +725,425 @@ CREATE TABLE sales_order_lines (
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TYPE order_type AS ENUM ('standard', 'quote', 'subscription', 'return', 'exchange');
+CREATE TYPE order_status_v2 AS ENUM (
+    'draft', 'pending', 'confirmed', 'processing', 
+    'partially_fulfilled', 'fulfilled', 'partially_shipped', 'shipped', 
+    'delivered', 'cancelled', 'refunded', 'on_hold'
+);
+CREATE TYPE payment_status AS ENUM ('unpaid', 'partially_paid', 'paid', 'refunded', 'partially_refunded', 'overdue');
+CREATE TYPE fulfillment_status AS ENUM ('unfulfilled', 'partially_fulfilled', 'fulfilled', 'restocked');
+
+CREATE TYPE cart_status AS ENUM ('draft', 'active', 'abandoned', 'converted', 'expired');
+CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist', 'retail', 'wholesale');
+
+-- Main carts table - supports both guest and registered customers
+CREATE TABLE carts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    cart_number VARCHAR(50) UNIQUE NOT NULL, -- Human-readable cart reference
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Customer information
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, -- NULL for guest carts
+    guest_identifier VARCHAR(255), -- Session ID or device ID for guest users
+    guest_email VARCHAR(255),
+    guest_phone VARCHAR(50),
+    
+    -- Cart classification
+    cart_status cart_status DEFAULT 'draft' NOT NULL,
+    cart_type cart_type DEFAULT 'standard' NOT NULL,
+    
+    -- Sales channel tracking
+    channel VARCHAR(50) DEFAULT 'online', -- online, pos, mobile_app, kiosk
+    payment_method VARCHAR(100),
+    payment_gateway VARCHAR(100),
+    device_info JSONB DEFAULT '{}', -- Browser, device type, etc.
+    
+    -- User/Session tracking
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    cashier_id INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
+    
+    -- Pricing and totals
+    subtotal DECIMAL(15,2) DEFAULT 0.00,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
+    total_amount DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Applied discounts and promotions
+    coupon_code VARCHAR(100),
+    discount_code VARCHAR(100),
+    promotional_credits DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Shipping information
+    shipping_address JSONB,
+    billing_address JSONB,
+    shipping_method VARCHAR(100),
+    
+    -- Conversion tracking
+    converted_to_order_id UUID, -- Reference to sales_orders_v2.id
+    converted_at TIMESTAMP,
+    
+    -- Lifecycle timestamps
+    last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP, -- For abandoned cart cleanup
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Metadata for extensibility
+    metadata JSONB DEFAULT '{}', -- Custom fields, analytics tags, etc.
+    notes TEXT,
+    
+    -- Constraints
+    CONSTRAINT chk_cart_customer CHECK (
+        customer_id IS NOT NULL OR guest_identifier IS NOT NULL
+    )
+);
+
+-- Cart line items
+CREATE TABLE cart_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    -- Product information
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    
+    -- Quantity and UOM
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    -- Pricing
+    unit_price DECIMAL(15,2) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL,
+    
+    -- Pricing details
+    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
+    
+    -- Inventory tracking
+    batch_number VARCHAR(100),
+    serial_number VARCHAR(100),
+    
+    -- Customization and options
+    customization_details JSONB DEFAULT '{}', -- Product customizations, engravings, etc.
+    notes TEXT,
+    
+    -- Line item metadata
+    metadata JSONB DEFAULT '{}',
+    
+    -- Timestamps
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Prevent duplicate products (unless variants differ)
+    UNIQUE(cart_id, product_id, product_variant_id, batch_number, serial_number)
+);
+
+-- Cart activity log for tracking changes
+CREATE TABLE cart_activity_log (
+    id BIGSERIAL PRIMARY KEY,
+    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    activity_type VARCHAR(50) NOT NULL, -- created, item_added, item_removed, item_updated, status_changed, converted, abandoned
+    description TEXT,
+    
+    -- User tracking
+    performed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    ip_address INET,
+    user_agent TEXT,
+    
+    -- Change details
+    old_value JSONB,
+    new_value JSONB,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- ENHANCED: DRAFT CARTS (Saved for Later)
+-- =====================================================
+
+-- Draft cart templates for quick reordering
+CREATE TABLE draft_cart_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    
+    template_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    
+    -- Classification
+    template_type VARCHAR(50) DEFAULT 'saved_cart', -- saved_cart, wishlist, reorder_list
+    is_favorite BOOLEAN DEFAULT false,
+    
+    -- Auto-reorder settings
+    auto_reorder_enabled BOOLEAN DEFAULT false,
+    reorder_frequency_days INTEGER,
+    next_reorder_date DATE,
+    
+    -- Template metadata
+    total_items INTEGER DEFAULT 0,
+    estimated_total DECIMAL(15,2) DEFAULT 0.00,
+    
+    metadata JSONB DEFAULT '{}',
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(organization_id, customer_id, template_name)
+);
+
+-- Items in draft cart templates
+CREATE TABLE draft_cart_template_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id UUID NOT NULL REFERENCES draft_cart_templates(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    -- Price reference (for comparison)
+    last_known_price DECIMAL(15,2),
+    
+    -- Priority for auto-reorder
+    priority INTEGER DEFAULT 0,
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Enhanced sales orders table
+CREATE TABLE sales_orders_v2 (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_number VARCHAR(50) UNIQUE NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Customer information
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255),
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(50),
+    
+    -- Order classification
+    order_type order_type DEFAULT 'standard' NOT NULL,
+    order_status order_status_v2 DEFAULT 'draft' NOT NULL,
+    payment_status payment_status DEFAULT 'unpaid' NOT NULL,
+    fulfillment_status fulfillment_status DEFAULT 'unfulfilled' NOT NULL,
+    
+    -- Channel and source
+    sales_channel VARCHAR(50) DEFAULT 'online', -- online, pos, phone, mobile_app
+    order_source VARCHAR(100), -- website, mobile_app, marketplace, etc.
+    referral_source VARCHAR(255),
+    
+    -- Created from cart
+    source_cart_id UUID REFERENCES carts(id) ON DELETE SET NULL,
+    
+    -- User tracking
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    assigned_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    -- Dates
+    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    confirmed_date TIMESTAMP,
+    expected_delivery_date DATE,
+    actual_delivery_date DATE,
+    cancelled_date TIMESTAMP,
+    
+    -- Financial totals
+    subtotal DECIMAL(15,2) DEFAULT 0.00,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
+    adjustment_amount DECIMAL(15,2) DEFAULT 0.00,
+    total_amount DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Payment tracking
+    paid_amount DECIMAL(15,2) DEFAULT 0.00,
+    refunded_amount DECIMAL(15,2) DEFAULT 0.00,
+    balance_due DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Discounts and promotions
+    coupon_code VARCHAR(100),
+    discount_codes TEXT[], -- Array for multiple discount codes
+    promotional_credits DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Addresses
+    shipping_address JSONB NOT NULL,
+    billing_address JSONB NOT NULL,
+    
+    -- Shipping details
+    shipping_method VARCHAR(100),
+    shipping_carrier VARCHAR(100),
+    tracking_number VARCHAR(255),
+    tracking_url TEXT,
+    
+    -- Payment method
+    payment_method VARCHAR(100),
+    payment_gateway VARCHAR(100),
+    payment_terms VARCHAR(100),
+    payment_due_date DATE,
+    
+    -- POS specific
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
+    cashier_id INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
+    
+    -- Special handling
+    is_gift BOOLEAN DEFAULT false,
+    gift_message TEXT,
+    special_instructions TEXT,
+    internal_notes TEXT,
+    
+    -- Tags and categorization
+    tags TEXT[],
+    priority VARCHAR(20) DEFAULT 'normal', -- low, normal, high, urgent
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Enhanced order line items
+CREATE TABLE sales_order_lines_v2 (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    line_number INTEGER NOT NULL,
+    
+    -- Product information
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    product_name VARCHAR(255) NOT NULL, -- Snapshot for historical accuracy
+    product_sku VARCHAR(100),
+    
+    -- Quantity and UOM
+    quantity_ordered DECIMAL(15,3) NOT NULL CHECK (quantity_ordered > 0),
+    quantity_fulfilled DECIMAL(15,3) DEFAULT 0.00,
+    quantity_cancelled DECIMAL(15,3) DEFAULT 0.00,
+    quantity_returned DECIMAL(15,3) DEFAULT 0.00,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    -- Pricing
+    unit_price DECIMAL(15,2) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL,
+    
+    -- Tax details
+    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
+    tax_rate DECIMAL(5,2),
+    
+    -- Inventory tracking
+    batch_number VARCHAR(100),
+    serial_numbers TEXT[], -- Array of serial numbers for this line
+    expiry_date DATE,
+    
+    -- Fulfillment status
+    line_status VARCHAR(50) DEFAULT 'pending', -- pending, fulfilled, cancelled, returned
+    
+    -- Product configuration
+    customization_details JSONB DEFAULT '{}',
+    
+    -- Cost tracking (for profitability)
+    unit_cost DECIMAL(15,2),
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(sales_order_id, line_number)
+);
+
+-- Order status history
+CREATE TABLE order_status_history (
+    id BIGSERIAL PRIMARY KEY,
+    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    from_status order_status_v2,
+    to_status order_status_v2 NOT NULL,
+    
+    reason VARCHAR(255),
+    notes TEXT,
+    
+    changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Order fulfillment tracking
+CREATE TABLE order_fulfillments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    fulfillment_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Fulfillment details
+    fulfillment_status VARCHAR(50) DEFAULT 'pending',
+    shipment_status VARCHAR(50) DEFAULT 'pending', -- pending, picked, packed, shipped, delivered
+    
+    -- Warehouse/Store
+    fulfillment_store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Shipping
+    shipping_carrier VARCHAR(100),
+    shipping_method VARCHAR(100),
+    tracking_number VARCHAR(255),
+    tracking_url TEXT,
+    
+    -- Dates
+    picked_at TIMESTAMP,
+    packed_at TIMESTAMP,
+    shipped_at TIMESTAMP,
+    estimated_delivery_date DATE,
+    actual_delivery_date DATE,
+    
+    -- Personnel
+    picked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    packed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Items in each fulfillment
+CREATE TABLE order_fulfillment_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    fulfillment_id UUID NOT NULL REFERENCES order_fulfillments(id) ON DELETE CASCADE,
+    order_line_id UUID NOT NULL REFERENCES sales_order_lines_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    quantity_fulfilled DECIMAL(15,3) NOT NULL CHECK (quantity_fulfilled > 0),
+    
+    batch_number VARCHAR(100),
+    serial_numbers TEXT[],
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- =====================================================
 -- POS TRANSACTIONS
@@ -749,6 +1168,8 @@ CREATE TABLE pos_transactions (
     change_given DECIMAL(15,2) DEFAULT 0,
     status VARCHAR(50) DEFAULT 'completed',
     price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    sales_order_id UUID REFERENCES sales_orders_v2(id) ON DELETE SET NULL,
+    source_cart_id UUID REFERENCES carts(id) ON DELETE SET NULL,
     voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     voided_at TIMESTAMP,
     metadata JSONB DEFAULT '{}',
@@ -779,6 +1200,7 @@ CREATE TABLE pos_payments (
     id SERIAL PRIMARY KEY,
     transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
     payment_method VARCHAR(50) NOT NULL,
+    payment_gateway VARCHAR(50),
     amount DECIMAL(15,2) NOT NULL,
     payment_reference VARCHAR(100),
     reference_number VARCHAR(100),
@@ -1089,6 +1511,8 @@ CREATE TABLE sales_analytics (
     taxes DECIMAL(15,2) DEFAULT 0,
     net_revenue DECIMAL(15,2) DEFAULT 0,
     transactions INTEGER DEFAULT 0,
+    payment_method VARCHAR(50),
+    payment_gateway VARCHAR(50),
     average_order_value DECIMAL(15,2),
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1196,426 +1620,12 @@ CREATE TABLE audit_logs (
 -- =====================================================
 
 -- Cart status enum for better type safety
-CREATE TYPE cart_status AS ENUM ('draft', 'active', 'abandoned', 'converted', 'expired');
-CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist', 'retail', 'wholesale');
 
--- Main carts table - supports both guest and registered customers
-CREATE TABLE carts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    cart_number VARCHAR(50) UNIQUE NOT NULL, -- Human-readable cart reference
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
-    
-    -- Customer information
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, -- NULL for guest carts
-    guest_identifier VARCHAR(255), -- Session ID or device ID for guest users
-    guest_email VARCHAR(255),
-    guest_phone VARCHAR(50),
-    
-    -- Cart classification
-    cart_status cart_status DEFAULT 'draft' NOT NULL,
-    cart_type cart_type DEFAULT 'standard' NOT NULL,
-    
-    -- Sales channel tracking
-    channel VARCHAR(50) DEFAULT 'online', -- online, pos, mobile_app, kiosk
-    device_info JSONB DEFAULT '{}', -- Browser, device type, etc.
-    
-    -- User/Session tracking
-    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    cashier_id INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
-    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
-    
-    -- Pricing and totals
-    subtotal DECIMAL(15,2) DEFAULT 0.00,
-    discount_amount DECIMAL(15,2) DEFAULT 0.00,
-    tax_amount DECIMAL(15,2) DEFAULT 0.00,
-    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
-    total_amount DECIMAL(15,2) DEFAULT 0.00,
-    
-    -- Applied discounts and promotions
-    coupon_code VARCHAR(100),
-    discount_code VARCHAR(100),
-    promotional_credits DECIMAL(15,2) DEFAULT 0.00,
-    
-    -- Shipping information
-    shipping_address JSONB,
-    billing_address JSONB,
-    shipping_method VARCHAR(100),
-    
-    -- Conversion tracking
-    converted_to_order_id UUID, -- Reference to sales_orders_v2.id
-    converted_at TIMESTAMP,
-    
-    -- Lifecycle timestamps
-    last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP, -- For abandoned cart cleanup
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Metadata for extensibility
-    metadata JSONB DEFAULT '{}', -- Custom fields, analytics tags, etc.
-    notes TEXT,
-    
-    -- Constraints
-    CONSTRAINT chk_cart_customer CHECK (
-        customer_id IS NOT NULL OR guest_identifier IS NOT NULL
-    )
-);
-
--- Cart line items
-CREATE TABLE cart_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    -- Product information
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
-    
-    -- Quantity and UOM
-    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
-    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
-    
-    -- Pricing
-    unit_price DECIMAL(15,2) NOT NULL,
-    discount_amount DECIMAL(15,2) DEFAULT 0.00,
-    tax_amount DECIMAL(15,2) DEFAULT 0.00,
-    line_total DECIMAL(15,2) NOT NULL,
-    
-    -- Pricing details
-    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
-    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
-    
-    -- Inventory tracking
-    batch_number VARCHAR(100),
-    serial_number VARCHAR(100),
-    
-    -- Customization and options
-    customization_details JSONB DEFAULT '{}', -- Product customizations, engravings, etc.
-    notes TEXT,
-    
-    -- Line item metadata
-    metadata JSONB DEFAULT '{}',
-    
-    -- Timestamps
-    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Prevent duplicate products (unless variants differ)
-    UNIQUE(cart_id, product_id, product_variant_id, batch_number, serial_number)
-);
-
--- Cart activity log for tracking changes
-CREATE TABLE cart_activity_log (
-    id BIGSERIAL PRIMARY KEY,
-    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    activity_type VARCHAR(50) NOT NULL, -- created, item_added, item_removed, item_updated, status_changed, converted, abandoned
-    description TEXT,
-    
-    -- User tracking
-    performed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    ip_address INET,
-    user_agent TEXT,
-    
-    -- Change details
-    old_value JSONB,
-    new_value JSONB,
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- =====================================================
--- ENHANCED: DRAFT CARTS (Saved for Later)
--- =====================================================
-
--- Draft cart templates for quick reordering
-CREATE TABLE draft_cart_templates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    
-    template_name VARCHAR(255) NOT NULL,
-    description TEXT,
-    
-    -- Classification
-    template_type VARCHAR(50) DEFAULT 'saved_cart', -- saved_cart, wishlist, reorder_list
-    is_favorite BOOLEAN DEFAULT false,
-    
-    -- Auto-reorder settings
-    auto_reorder_enabled BOOLEAN DEFAULT false,
-    reorder_frequency_days INTEGER,
-    next_reorder_date DATE,
-    
-    -- Template metadata
-    total_items INTEGER DEFAULT 0,
-    estimated_total DECIMAL(15,2) DEFAULT 0.00,
-    
-    metadata JSONB DEFAULT '{}',
-    notes TEXT,
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    UNIQUE(organization_id, customer_id, template_name)
-);
-
--- Items in draft cart templates
-CREATE TABLE draft_cart_template_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    template_id UUID NOT NULL REFERENCES draft_cart_templates(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
-    
-    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
-    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
-    
-    -- Price reference (for comparison)
-    last_known_price DECIMAL(15,2),
-    
-    -- Priority for auto-reorder
-    priority INTEGER DEFAULT 0,
-    
-    notes TEXT,
-    metadata JSONB DEFAULT '{}',
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- =====================================================
 -- ENHANCED: UNIFIED ORDER MANAGEMENT (V2)
 -- =====================================================
 
-CREATE TYPE order_type AS ENUM ('standard', 'quote', 'subscription', 'return', 'exchange');
-CREATE TYPE order_status_v2 AS ENUM (
-    'draft', 'pending', 'confirmed', 'processing', 
-    'partially_fulfilled', 'fulfilled', 'partially_shipped', 'shipped', 
-    'delivered', 'cancelled', 'refunded', 'on_hold'
-);
-CREATE TYPE payment_status AS ENUM ('unpaid', 'partially_paid', 'paid', 'refunded', 'partially_refunded', 'overdue');
-CREATE TYPE fulfillment_status AS ENUM ('unfulfilled', 'partially_fulfilled', 'fulfilled', 'restocked');
-
--- Enhanced sales orders table
-CREATE TABLE sales_orders_v2 (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    order_number VARCHAR(50) UNIQUE NOT NULL,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
-    
-    -- Customer information
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-    customer_name VARCHAR(255),
-    customer_email VARCHAR(255),
-    customer_phone VARCHAR(50),
-    
-    -- Order classification
-    order_type order_type DEFAULT 'standard' NOT NULL,
-    order_status order_status_v2 DEFAULT 'draft' NOT NULL,
-    payment_status payment_status DEFAULT 'unpaid' NOT NULL,
-    fulfillment_status fulfillment_status DEFAULT 'unfulfilled' NOT NULL,
-    
-    -- Channel and source
-    sales_channel VARCHAR(50) DEFAULT 'online', -- online, pos, phone, mobile_app
-    order_source VARCHAR(100), -- website, mobile_app, marketplace, etc.
-    referral_source VARCHAR(255),
-    
-    -- Created from cart
-    source_cart_id UUID REFERENCES carts(id) ON DELETE SET NULL,
-    
-    -- User tracking
-    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    assigned_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    
-    -- Dates
-    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    confirmed_date TIMESTAMP,
-    expected_delivery_date DATE,
-    actual_delivery_date DATE,
-    cancelled_date TIMESTAMP,
-    
-    -- Financial totals
-    subtotal DECIMAL(15,2) DEFAULT 0.00,
-    discount_amount DECIMAL(15,2) DEFAULT 0.00,
-    tax_amount DECIMAL(15,2) DEFAULT 0.00,
-    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
-    adjustment_amount DECIMAL(15,2) DEFAULT 0.00,
-    total_amount DECIMAL(15,2) DEFAULT 0.00,
-    
-    -- Payment tracking
-    paid_amount DECIMAL(15,2) DEFAULT 0.00,
-    refunded_amount DECIMAL(15,2) DEFAULT 0.00,
-    balance_due DECIMAL(15,2) DEFAULT 0.00,
-    
-    -- Discounts and promotions
-    coupon_code VARCHAR(100),
-    discount_codes TEXT[], -- Array for multiple discount codes
-    promotional_credits DECIMAL(15,2) DEFAULT 0.00,
-    
-    -- Addresses
-    shipping_address JSONB NOT NULL,
-    billing_address JSONB NOT NULL,
-    
-    -- Shipping details
-    shipping_method VARCHAR(100),
-    shipping_carrier VARCHAR(100),
-    tracking_number VARCHAR(255),
-    tracking_url TEXT,
-    
-    -- Payment method
-    payment_method VARCHAR(100),
-    payment_terms VARCHAR(100),
-    payment_due_date DATE,
-    
-    -- POS specific
-    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
-    cashier_id INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
-    
-    -- Special handling
-    is_gift BOOLEAN DEFAULT false,
-    gift_message TEXT,
-    special_instructions TEXT,
-    internal_notes TEXT,
-    
-    -- Tags and categorization
-    tags TEXT[],
-    priority VARCHAR(20) DEFAULT 'normal', -- low, normal, high, urgent
-    
-    -- Metadata
-    metadata JSONB DEFAULT '{}',
-    
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Enhanced order line items
-CREATE TABLE sales_order_lines_v2 (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    line_number INTEGER NOT NULL,
-    
-    -- Product information
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
-    product_name VARCHAR(255) NOT NULL, -- Snapshot for historical accuracy
-    product_sku VARCHAR(100),
-    
-    -- Quantity and UOM
-    quantity_ordered DECIMAL(15,3) NOT NULL CHECK (quantity_ordered > 0),
-    quantity_fulfilled DECIMAL(15,3) DEFAULT 0.00,
-    quantity_cancelled DECIMAL(15,3) DEFAULT 0.00,
-    quantity_returned DECIMAL(15,3) DEFAULT 0.00,
-    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
-    
-    -- Pricing
-    unit_price DECIMAL(15,2) NOT NULL,
-    discount_amount DECIMAL(15,2) DEFAULT 0.00,
-    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
-    tax_amount DECIMAL(15,2) DEFAULT 0.00,
-    line_total DECIMAL(15,2) NOT NULL,
-    
-    -- Tax details
-    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
-    tax_rate DECIMAL(5,2),
-    
-    -- Inventory tracking
-    batch_number VARCHAR(100),
-    serial_numbers TEXT[], -- Array of serial numbers for this line
-    expiry_date DATE,
-    
-    -- Fulfillment status
-    line_status VARCHAR(50) DEFAULT 'pending', -- pending, fulfilled, cancelled, returned
-    
-    -- Product configuration
-    customization_details JSONB DEFAULT '{}',
-    
-    -- Cost tracking (for profitability)
-    unit_cost DECIMAL(15,2),
-    
-    notes TEXT,
-    metadata JSONB DEFAULT '{}',
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    UNIQUE(sales_order_id, line_number)
-);
-
--- Order status history
-CREATE TABLE order_status_history (
-    id BIGSERIAL PRIMARY KEY,
-    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    from_status order_status_v2,
-    to_status order_status_v2 NOT NULL,
-    
-    reason VARCHAR(255),
-    notes TEXT,
-    
-    changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Order fulfillment tracking
-CREATE TABLE order_fulfillments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    fulfillment_number VARCHAR(50) UNIQUE NOT NULL,
-    
-    -- Fulfillment details
-    fulfillment_status VARCHAR(50) DEFAULT 'pending',
-    shipment_status VARCHAR(50) DEFAULT 'pending', -- pending, picked, packed, shipped, delivered
-    
-    -- Warehouse/Store
-    fulfillment_store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
-    
-    -- Shipping
-    shipping_carrier VARCHAR(100),
-    shipping_method VARCHAR(100),
-    tracking_number VARCHAR(255),
-    tracking_url TEXT,
-    
-    -- Dates
-    picked_at TIMESTAMP,
-    packed_at TIMESTAMP,
-    shipped_at TIMESTAMP,
-    estimated_delivery_date DATE,
-    actual_delivery_date DATE,
-    
-    -- Personnel
-    picked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    packed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    
-    notes TEXT,
-    metadata JSONB DEFAULT '{}',
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Items in each fulfillment
-CREATE TABLE order_fulfillment_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    fulfillment_id UUID NOT NULL REFERENCES order_fulfillments(id) ON DELETE CASCADE,
-    order_line_id UUID NOT NULL REFERENCES sales_order_lines_v2(id) ON DELETE CASCADE,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    
-    quantity_fulfilled DECIMAL(15,3) NOT NULL CHECK (quantity_fulfilled > 0),
-    
-    batch_number VARCHAR(100),
-    serial_numbers TEXT[],
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- =====================================================
 -- ENHANCED: INVOICE MANAGEMENT
@@ -1782,6 +1792,7 @@ CREATE TABLE invoice_payments (
     payment_amount DECIMAL(15,2) NOT NULL CHECK (payment_amount > 0),
     
     payment_method VARCHAR(100) NOT NULL, -- cash, card, bank_transfer, check, etc.
+    payment_gateway VARCHAR(100),
     payment_reference VARCHAR(255), -- Transaction ID, check number, etc.
     
     -- Currency handling
@@ -1874,6 +1885,22 @@ CREATE TABLE quotes (
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE combo_bundle_items (
+    id               SERIAL PRIMARY KEY,
+    combo_bundle_id  INTEGER NOT NULL REFERENCES combo_bundles(id) ON DELETE CASCADE,
+    menu_item_id     INTEGER REFERENCES menu_items(id) ON DELETE CASCADE,
+    product_id       INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    item_type        VARCHAR(20) DEFAULT 'menu_item' CHECK (item_type IN ('menu_item','product')),
+    quantity         DECIMAL(15,3) DEFAULT 1,
+    is_required      BOOLEAN   DEFAULT true,
+    group_tag        VARCHAR(50),
+    price_override   DECIMAL(15,2),
+    display_order    INTEGER   DEFAULT 0,
+    metadata         JSONB     DEFAULT '{}',
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Quote line items
@@ -2734,9 +2761,9 @@ CREATE INDEX idx_kiosk_sessions_token               ON kiosk_sessions(session_to
 CREATE INDEX idx_combo_bundles_store_id  ON combo_bundles(store_id);
 CREATE INDEX idx_combo_bundles_is_active ON combo_bundles(is_active);
 CREATE INDEX idx_combo_bundle_items_bundle_id ON combo_bundle_items(combo_bundle_id);
-CREATE INDEX idx_waste_logs_store_id     ON waste_logs(store_id);
-CREATE INDEX idx_waste_logs_wasted_at    ON waste_logs(wasted_at);
-CREATE INDEX idx_kiosk_sessions_token    ON kiosk_sessions(session_token);
+-- CREATE INDEX idx_waste_logs_store_id     ON waste_logs(store_id);
+-- CREATE INDEX idx_waste_logs_wasted_at    ON waste_logs(wasted_at);
+-- CREATE INDEX idx_kiosk_sessions_token    ON kiosk_sessions(session_token);
 -- Additional POS Indexes
 CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode_lookup 
 ON product_barcodes(barcode) WHERE is_primary = true;
@@ -4245,39 +4272,88 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION fn_refresh_daily_analytics(p_date DATE DEFAULT CURRENT_DATE)
 RETURNS VOID AS $$
 BEGIN
-    -- Refresh sales_analytics from pos_transactions
+    -- Refresh sales_analytics from pos_transactions and sales_orders_v2
     INSERT INTO sales_analytics (
         organization_id, store_id, product_id, category_id,
         date, hour, day_of_week, month, quarter, year,
-        units_sold, revenue, discounts, taxes, net_revenue, transactions
+        units_sold, revenue, discounts, taxes, net_revenue, transactions,
+        payment_method, payment_gateway
     )
     SELECT
-        s.organization_id,
-        pt.store_id,
-        ptl.product_id,
-        p.category_id,
-        p_date,
-        EXTRACT(HOUR FROM pt.transaction_date)::INTEGER,
-        EXTRACT(DOW  FROM pt.transaction_date)::INTEGER,
-        EXTRACT(MONTH FROM p_date)::INTEGER,
-        EXTRACT(QUARTER FROM p_date)::INTEGER,
-        EXTRACT(YEAR FROM p_date)::INTEGER,
-        SUM(ptl.quantity),
-        SUM(ptl.line_total),
-        SUM(ptl.discount_amount),
-        SUM(ptl.tax_amount),
-        SUM(ptl.line_total - ptl.tax_amount),
-        COUNT(DISTINCT pt.id)
-    FROM pos_transactions pt
-    JOIN pos_transaction_lines ptl ON ptl.transaction_id = pt.id
-    JOIN products p ON p.id = ptl.product_id
-    JOIN stores s ON s.id = pt.store_id
-    WHERE DATE(pt.transaction_date) = p_date
-      AND pt.status = 'completed'
-    GROUP BY s.organization_id, pt.store_id, ptl.product_id, p.category_id,
-             EXTRACT(HOUR FROM pt.transaction_date),
-             EXTRACT(DOW  FROM pt.transaction_date)
-    ON CONFLICT DO NOTHING;
+        organization_id, store_id, product_id, category_id,
+        date, hour, day_of_week, month, quarter, year,
+        SUM(units_sold), SUM(revenue), SUM(discounts), SUM(taxes), SUM(net_revenue), SUM(transactions),
+        payment_method, payment_gateway
+    FROM (
+        -- Data from POS transactions
+        SELECT
+            s.organization_id,
+            pt.store_id,
+            ptl.product_id,
+            p.category_id,
+            p_date AS date,
+            EXTRACT(HOUR FROM pt.transaction_date)::INTEGER AS hour,
+            EXTRACT(DOW  FROM pt.transaction_date)::INTEGER AS day_of_week,
+            EXTRACT(MONTH FROM p_date)::INTEGER AS month,
+            EXTRACT(QUARTER FROM p_date)::INTEGER AS quarter,
+            EXTRACT(YEAR FROM p_date)::INTEGER AS year,
+            ptl.quantity AS units_sold,
+            ptl.line_total AS revenue,
+            ptl.discount_amount AS discounts,
+            ptl.tax_amount AS taxes,
+            (ptl.line_total - ptl.tax_amount) AS net_revenue,
+            1 AS transactions,
+            pp.payment_method,
+            pp.payment_gateway
+        FROM pos_transactions pt
+        JOIN pos_transaction_lines ptl ON ptl.transaction_id = pt.id
+        LEFT JOIN pos_payments pp ON pp.transaction_id = pt.id
+        JOIN products p ON p.id = ptl.product_id
+        JOIN stores s ON s.id = pt.store_id
+        WHERE DATE(pt.transaction_date) = p_date
+          AND pt.status = 'completed'
+
+        UNION ALL
+
+        -- Data from sales_orders_v2 (excluding those that were synced to POS to avoid double counting)
+        SELECT
+            o.organization_id,
+            o.store_id,
+            ol.product_id,
+            p.category_id,
+            p_date AS date,
+            EXTRACT(HOUR FROM o.order_date)::INTEGER AS hour,
+            EXTRACT(DOW  FROM o.order_date)::INTEGER AS day_of_week,
+            EXTRACT(MONTH FROM p_date)::INTEGER AS month,
+            EXTRACT(QUARTER FROM p_date)::INTEGER AS quarter,
+            EXTRACT(YEAR FROM p_date)::INTEGER AS year,
+            ol.quantity_ordered::DECIMAL(15,3) AS units_sold,
+            ol.line_total AS revenue,
+            COALESCE(ol.discount_amount, 0) AS discounts,
+            COALESCE(ol.tax_amount, 0) AS taxes,
+            (ol.line_total - COALESCE(ol.tax_amount, 0)) AS net_revenue,
+            1 AS transactions,
+            o.payment_method,
+            o.payment_gateway
+        FROM sales_orders_v2 o
+        JOIN sales_order_lines_v2 ol ON ol.sales_order_id = o.id
+        JOIN products p ON p.id = ol.product_id
+        WHERE DATE(o.order_date) = p_date
+          AND o.order_status IN ('confirmed', 'processing', 'partially_fulfilled', 'fulfilled', 'shipped', 'delivered')
+          AND NOT EXISTS (SELECT 1 FROM pos_transactions WHERE sales_order_id = o.id)
+    ) aggregated_sales
+    GROUP BY organization_id, store_id, product_id, category_id,
+             date, hour, day_of_week, month, quarter, year,
+             payment_method, payment_gateway
+    ON CONFLICT (organization_id, store_id, product_id, date, hour, payment_method, payment_gateway) 
+    DO UPDATE SET
+        units_sold = EXCLUDED.units_sold,
+        revenue = EXCLUDED.revenue,
+        discounts = EXCLUDED.discounts,
+        taxes = EXCLUDED.taxes,
+        net_revenue = EXCLUDED.net_revenue,
+        transactions = EXCLUDED.transactions,
+        updated_at = CURRENT_TIMESTAMP;
 
     -- Refresh profit_loss_analytics
     INSERT INTO profit_loss_analytics (
