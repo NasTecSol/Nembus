@@ -11,6 +11,22 @@ INSERT INTO pos_payments (
     metadata
 ) VALUES ($1, $2, $3, $4, $5, $6);
 
+-- name: CreatePosPayment :one
+INSERT INTO pos_payments (
+    transaction_id,
+    payment_method,
+    payment_gateway,
+    amount,
+    payment_reference,
+    reference_number,
+    metadata
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING *;
+
+-- name: GetPosPayment :one
+SELECT * FROM pos_payments
+WHERE id = $1;
+
 -- name: GetPaymentsForTransaction :many
 SELECT 
     payment_method,
@@ -21,6 +37,27 @@ SELECT
 FROM pos_payments
 WHERE transaction_id = $1
 ORDER BY created_at;
+
+-- name: GetPaymentsForTransactionFull :many
+SELECT * FROM pos_payments
+WHERE transaction_id = $1
+ORDER BY created_at;
+
+-- name: UpdatePosPayment :one
+UPDATE pos_payments
+SET
+    payment_method    = $2,
+    payment_gateway   = $3,
+    amount            = $4,
+    payment_reference = $5,
+    reference_number  = $6,
+    metadata          = $7
+WHERE id = $1
+RETURNING *;
+
+-- name: DeletePosPayment :exec
+DELETE FROM pos_payments
+WHERE id = $1;
 
 -- name: GetTransactionPaymentSummary :one
 SELECT 
