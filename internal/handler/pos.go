@@ -11,17 +11,17 @@ import (
 	"NEMBUS/utils"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// PosHandler holds the POS use case.
+// PosHandler holds the POS and POS payment use cases.
 type PosHandler struct {
-	useCase *usecase.PosUseCase
+	useCase       *usecase.PosUseCase
+	paymentUseCase *usecase.PosPaymentUseCase
 }
 
 // NewPosHandler creates a new POS handler.
-func NewPosHandler(uc *usecase.PosUseCase) *PosHandler {
-	return &PosHandler{useCase: uc}
+func NewPosHandler(uc *usecase.PosUseCase, paymentUC *usecase.PosPaymentUseCase) *PosHandler {
+	return &PosHandler{useCase: uc, paymentUseCase: paymentUC}
 }
 
 func (h *PosHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
@@ -281,7 +281,7 @@ func (h *PosHandler) ProcessPayment(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
+	h.paymentUseCase.SetRepository(repo)
 
 	var req AddPaymentToTransactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -299,16 +299,23 @@ func (h *PosHandler) ProcessPayment(c *gin.Context) {
 	if metadataJSON == nil {
 		metadataJSON = []byte("{}")
 	}
-	arg := repository.AddPaymentToTransactionParams{
+	var refNum *string
+	if req.ReferenceNumber != "" {
+		refNum = &req.ReferenceNumber
+	}
+	var gateway *string
+	if req.PaymentGateway != "" {
+		gateway = &req.PaymentGateway
+	}
+	input := &usecase.CreatePosPaymentInput{
 		TransactionID:   req.TransactionID,
 		PaymentMethod:   req.PaymentMethod,
-		PaymentGateway:  pgtype.Text{String: req.PaymentGateway, Valid: req.PaymentGateway != ""},
+		PaymentGateway:  gateway,
 		Amount:          amount,
-		ReferenceNumber: pgtype.Text{String: req.ReferenceNumber, Valid: req.ReferenceNumber != ""},
+		ReferenceNumber: refNum,
 		Metadata:         metadataJSON,
 	}
-
-	resp := h.useCase.ProcessPOSPayment(c.Request.Context(), arg)
+	resp := h.paymentUseCase.CreatePayment(c.Request.Context(), input)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -465,13 +472,13 @@ func (h *PosHandler) GetTransactionPayments(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
+	h.paymentUseCase.SetRepository(repo)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
 		return
 	}
-	resp := h.useCase.GetTransactionPayments(c.Request.Context(), int32(id))
+	resp := h.paymentUseCase.ListPaymentsForTransaction(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -495,12 +502,146 @@ func (h *PosHandler) GetTransactionPaymentSummary(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
+	h.paymentUseCase.SetRepository(repo)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
 		return
 	}
-	resp := h.useCase.GetTransactionPaymentSummary(c.Request.Context(), int32(id))
+	resp := h.paymentUseCase.GetPaymentSummary(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPayment handles GET /api/pos/payments/:id
+// @Summary      Get a POS payment by ID
+// @Description  Returns a single POS payment record
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Payment ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/pos/payments/{id} [get]
+func (h *PosHandler) GetPayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+		return
+	}
+	resp := h.paymentUseCase.GetPayment(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePaymentRequest is the body for updating a payment.
+type UpdatePaymentRequest struct {
+	PaymentMethod    string      `json:"payment_method"`
+	PaymentGateway   string      `json:"payment_gateway"`
+	Amount           string      `json:"amount"`
+	PaymentReference string      `json:"payment_reference"`
+	ReferenceNumber  string      `json:"reference_number"`
+	Metadata         interface{} `json:"metadata"`
+}
+
+// UpdatePayment handles PUT /api/pos/payments/:id
+// @Summary      Update a POS payment
+// @Description  Updates an existing POS payment by ID
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Payment ID"
+// @Param        body          body     UpdatePaymentRequest true "Payment payload"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/pos/payments/{id} [put]
+func (h *PosHandler) UpdatePayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+		return
+	}
+	var req UpdatePaymentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	amount, err := repo.ParseNumeric(c.Request.Context(), req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid amount format", nil))
+		return
+	}
+	metadataJSON, _ := json.Marshal(req.Metadata)
+	if metadataJSON == nil {
+		metadataJSON = []byte("{}")
+	}
+	var gateway, refNum, payRef *string
+	if req.PaymentGateway != "" {
+		gateway = &req.PaymentGateway
+	}
+	if req.ReferenceNumber != "" {
+		refNum = &req.ReferenceNumber
+	}
+	if req.PaymentReference != "" {
+		payRef = &req.PaymentReference
+	}
+	input := &usecase.UpdatePosPaymentInput{
+		ID:               int32(id),
+		PaymentMethod:    req.PaymentMethod,
+		PaymentGateway:   gateway,
+		Amount:           amount,
+		PaymentReference: payRef,
+		ReferenceNumber:  refNum,
+		Metadata:         metadataJSON,
+	}
+	resp := h.paymentUseCase.UpdatePayment(c.Request.Context(), input)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePayment handles DELETE /api/pos/payments/:id
+// @Summary      Delete a POS payment
+// @Description  Deletes a POS payment by ID
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Payment ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/pos/payments/{id} [delete]
+func (h *PosHandler) DeletePayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+		return
+	}
+	resp := h.paymentUseCase.DeletePayment(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }

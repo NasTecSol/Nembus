@@ -13,6 +13,13 @@ func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 	pos.POST("/products", h.AddProduct)
 	pos.POST("/payments", h.ProcessPayment)
 
+	payments := pos.Group("/payments")
+	{
+		payments.GET("/:id", h.GetPayment)
+		payments.PUT("/:id", h.UpdatePayment)
+		payments.DELETE("/:id", h.DeletePayment)
+	}
+
 	stores := pos.Group("/stores/:store_id")
 	{
 		products := stores.Group("/products")
