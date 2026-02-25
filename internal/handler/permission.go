@@ -598,26 +598,48 @@ func (h *PermissionHandler) AssignPermissionToSubmenu(c *gin.Context) {
 		return
 	}
 
-	var req struct {
+	var req []struct {
 		PermissionID int32       `json:"permission_id" binding:"required"`
 		Metadata     interface{} `json:"metadata,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		c.JSON(http.StatusBadRequest,
+			utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
 		return
 	}
-	var metadataBytes []byte
-	if req.Metadata != nil {
-		b, err := json.Marshal(req.Metadata)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+
+	var results []interface{}
+
+	for _, item := range req {
+
+		var metadataBytes []byte
+		if item.Metadata != nil {
+			b, err := json.Marshal(item.Metadata)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError,
+					utils.NewResponse(utils.CodeError, "failed to process metadata", nil))
+				return
+			}
+			metadataBytes = b
+		}
+
+		resp := h.useCase.AssignPermissionToSubmenu(
+			c.Request.Context(),
+			int32(submenuID),
+			item.PermissionID,
+			metadataBytes,
+		)
+
+		if resp.StatusCode != utils.CodeCreated {
+			c.JSON(resp.StatusCode, resp)
 			return
 		}
-		metadataBytes = b
+
+		results = append(results, resp.Data)
 	}
 
-	resp := h.useCase.AssignPermissionToSubmenu(c.Request.Context(), int32(submenuID), req.PermissionID, metadataBytes)
-	c.JSON(resp.StatusCode, resp)
+	c.JSON(http.StatusCreated,
+		utils.NewResponse(utils.CodeCreated, "permissions assigned successfully", results))
 }
 
 // GetSubmenuPermissions handles GET /api/permissions/submenu/:submenu_id
