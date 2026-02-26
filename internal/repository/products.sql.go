@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -610,6 +611,111 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]P
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProductsWithVariants = `-- name: ListProductsWithVariants :many
+
+
+
+
+SELECT 
+    p.id, 
+    p.sku, 
+    p.name, 
+    p.description, 
+    p.is_active,
+    pc.name AS category_name,
+    b.name AS brand_name,
+    COALESCE(
+        json_agg(
+            json_build_object(
+                'id', pv.id,
+                'variant_sku', pv.variant_sku,
+                'variant_name', pv.variant_name,
+                'variant_attributes', pv.variant_attributes,
+                'is_active', pv.is_active
+            ) ORDER BY pv.variant_sku
+        ) FILTER (WHERE pv.id IS NOT NULL), 
+        '[]'
+    )::jsonb AS variants
+FROM products p
+LEFT JOIN product_categories pc ON p.category_id = pc.id
+LEFT JOIN brands b ON p.brand_id = b.id
+LEFT JOIN product_variants pv ON p.id = pv.product_id
+WHERE p.organization_id = $1
+  AND ($2::int IS NULL OR p.category_id = $2)
+GROUP BY p.id, pc.name, b.name
+ORDER BY p.name
+LIMIT $3 OFFSET $4
+`
+
+type ListProductsWithVariantsParams struct {
+	OrganizationID int32 `json:"organization_id"`
+	Column2        int32 `json:"column_2"`
+	Limit          int32 `json:"limit"`
+	Offset         int32 `json:"offset"`
+}
+
+type ListProductsWithVariantsRow struct {
+	ID           int32           `json:"id"`
+	Sku          string          `json:"sku"`
+	Name         string          `json:"name"`
+	Description  pgtype.Text     `json:"description"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	CategoryName pgtype.Text     `json:"category_name"`
+	BrandName    pgtype.Text     `json:"brand_name"`
+	Variants     json.RawMessage `json:"variants"`
+	Inventory    json.RawMessage `json:"inventory"`
+}
+
+// =====================================================
+// PRODUCT VARIANTS
+// Note: Product variant queries are in product_variants_query.sql
+// =====================================================
+// =====================================================
+// PRODUCT BARCODES
+// Note: Product barcode queries are in product_barcodes_query.sql
+// =====================================================
+// =====================================================
+// PRODUCT UOM CONVERSIONS
+// Note: Product UOM conversion queries are in uom_query.sql
+// =====================================================
+// =====================================================
+// PRODUCT CATALOG (Admin: products + embedded variants)
+// =====================================================
+func (q *Queries) ListProductsWithVariants(ctx context.Context, arg ListProductsWithVariantsParams) ([]ListProductsWithVariantsRow, error) {
+	rows, err := q.db.Query(ctx, listProductsWithVariants,
+		arg.OrganizationID,
+		arg.Column2,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProductsWithVariantsRow
+	for rows.Next() {
+		var i ListProductsWithVariantsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sku,
+			&i.Name,
+			&i.Description,
+			&i.IsActive,
+			&i.CategoryName,
+			&i.BrandName,
+			&i.Variants,
+			&i.Inventory,
 		); err != nil {
 			return nil, err
 		}

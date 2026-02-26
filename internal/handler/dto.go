@@ -1378,3 +1378,204 @@ type SearchProductVariantsParams struct {
 	VariantSku string `json:"variant_sku"`
 	Limit      int32  `json:"limit"`
 }
+
+// =====================================================
+// Promotions / Coupons Module
+// =====================================================
+
+// CreatePromotionRequest represents request body for creating a promotion.
+type CreatePromotionRequest struct {
+	OrganizationID    int32                  `json:"organization_id" binding:"required" example:"1"`
+	Code              string                 `json:"code" binding:"required" example:"PROMO-SUMMER20"`
+	Name              string                 `json:"name" binding:"required" example:"Summer Sale 20%"`
+	Description       *string                `json:"description,omitempty" example:"20% off all summer items"`
+	PromotionType     string                 `json:"promotion_type" binding:"required" example:"percentage_discount"`
+	ActionMetadata    map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object" example:"{\"multiplier\": 2}"`
+	ValidFrom         *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo           *string                `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
+	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object" example:"{\"days\":[\"Monday\"],\"start_time\":\"20:00\",\"end_time\":\"22:00\"}"`
+	AppliesTo         *string                `json:"applies_to,omitempty" example:"all"`
+	TargetProductIds  []int32                `json:"target_product_ids,omitempty" example:"[101,205]"`
+	TargetCategoryIds []int32                `json:"target_category_ids,omitempty" example:"[15]"`
+	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
+	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
+	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
+	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"100"`
+	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
+	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
+	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
+	CreatedBy         *int32                 `json:"created_by,omitempty" example:"1"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdatePromotionRequest represents request body for updating a promotion.
+type UpdatePromotionRequest struct {
+	Name              *string                `json:"name,omitempty" example:"Summer Sale 25%"`
+	Description       *string                `json:"description,omitempty" example:"Updated description"`
+	ActionMetadata    map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
+	ValidFrom         *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo           *string                `json:"valid_to,omitempty" example:"2026-09-30T23:59:59Z"`
+	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
+	AppliesTo         *string                `json:"applies_to,omitempty" example:"product"`
+	TargetProductIds  []int32                `json:"target_product_ids,omitempty" example:"[101,205]"`
+	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
+	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
+	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
+	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER25"`
+	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"200"`
+	DiscountValue     *string                `json:"discount_value,omitempty" example:"25.00"`
+	IsStackable       *bool                  `json:"is_stackable,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdatePromotionStatusRequest represents the request to toggle a promotion active state.
+type UpdatePromotionStatusRequest struct {
+	IsActive bool `json:"is_active" binding:"required" example:"true"`
+}
+
+// PromotionCouponRequest represents the request to apply or validate a coupon code
+// against a cart via the promotions module.
+type PromotionCouponRequest struct {
+	CartID         string `json:"cart_id" binding:"required" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CouponCode     string `json:"coupon_code" binding:"required" example:"SUMMER20"`
+	OrganizationID int32  `json:"organization_id" binding:"required" example:"1"`
+}
+
+// PromotionResponse represents a promotion in API responses.
+type PromotionResponse struct {
+	ID                int32                  `json:"id" example:"1"`
+	OrganizationID    int32                  `json:"organization_id" example:"1"`
+	Code              string                 `json:"code" example:"PROMO-SUMMER20"`
+	Name              string                 `json:"name" example:"Summer Sale 20%"`
+	Description       string                 `json:"description,omitempty" example:"20% off all summer items"`
+	PromotionType     string                 `json:"promotion_type" example:"percentage_discount"`
+	ActionMetadata    map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
+	ValidFrom         string                 `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo           string                 `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
+	AppliesTo         string                 `json:"applies_to,omitempty" example:"all"`
+	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
+	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
+	MinOrderAmount    string                 `json:"min_order_amount,omitempty" example:"500.00"`
+	MinQuantity       string                 `json:"min_quantity,omitempty" example:"2"`
+	CouponCode        string                 `json:"coupon_code,omitempty" example:"SUMMER20"`
+	UsageLimit        int32                  `json:"usage_limit,omitempty" example:"100"`
+	UsageCount        int32                  `json:"usage_count" example:"5"`
+	DiscountValue     string                 `json:"discount_value,omitempty" example:"20.00"`
+	IsStackable       bool                   `json:"is_stackable" example:"false"`
+	IsActive          bool                   `json:"is_active" example:"true"`
+	CreatedAt         string                 `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt         string                 `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// ── Loyalty Rules DTOs ────────────────────────────────────────────────────────
+
+// CreateLoyaltyRuleRequest represents the request body for creating a loyalty rule
+type CreateLoyaltyRuleRequest struct {
+	OrganizationID       int32                  `json:"organization_id" binding:"required" example:"1"`
+	RuleName             string                 `json:"rule_name" binding:"required" example:"Standard Loyalty"`
+	PointsEarningRate    *string                `json:"points_earning_rate,omitempty" example:"1.0000"`
+	PointsRedemptionRate *string                `json:"points_redemption_rate,omitempty" example:"0.01"`
+	MinPointsToRedeem    *string                `json:"min_points_to_redeem,omitempty" example:"100.00"`
+	MaxPointsPerTxn      *string                `json:"max_points_per_txn,omitempty" example:"500.00"`
+	MaxRedemptionPercent *string                `json:"max_redemption_percent,omitempty" example:"20.00"`
+	EligibleProductTypes []string               `json:"eligible_product_types,omitempty" example:"[\"all\"]"`
+	ExpiryDays           *int32                 `json:"expiry_days,omitempty" example:"365"`
+	IsActive             *bool                  `json:"is_active,omitempty" example:"true"`
+	ValidFrom            *string                `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo              *string                `json:"valid_to,omitempty" example:"2026-12-31"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// UpdateLoyaltyRuleRequest represents the request body for updating a loyalty rule
+type UpdateLoyaltyRuleRequest struct {
+	RuleName             string                 `json:"rule_name,omitempty" example:"Premium Loyalty"`
+	PointsEarningRate    *string                `json:"points_earning_rate,omitempty" example:"1.5000"`
+	PointsRedemptionRate *string                `json:"points_redemption_rate,omitempty" example:"0.02"`
+	MinPointsToRedeem    *string                `json:"min_points_to_redeem,omitempty" example:"50.00"`
+	MaxPointsPerTxn      *string                `json:"max_points_per_txn,omitempty" example:"1000.00"`
+	MaxRedemptionPercent *string                `json:"max_redemption_percent,omitempty" example:"30.00"`
+	IsActive             *bool                  `json:"is_active,omitempty" example:"true"`
+	ValidFrom            *string                `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo              *string                `json:"valid_to,omitempty" example:"2026-12-31"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// ToggleLoyaltyRuleActiveRequest represents the request to toggle a loyalty rule active state
+type ToggleLoyaltyRuleActiveRequest struct {
+	IsActive bool `json:"is_active" binding:"required" example:"true"`
+}
+
+// LoyaltyRuleResponse represents a loyalty redemption rule in API responses
+type LoyaltyRuleResponse struct {
+	ID                   int32    `json:"id" example:"1"`
+	OrganizationID       int32    `json:"organization_id" example:"1"`
+	RuleName             string   `json:"rule_name" example:"Standard Loyalty"`
+	PointsEarningRate    string   `json:"points_earning_rate" example:"1.0000"`
+	PointsRedemptionRate string   `json:"points_redemption_rate" example:"0.01"`
+	MinPointsToRedeem    string   `json:"min_points_to_redeem" example:"100.00"`
+	MaxPointsPerTxn      string   `json:"max_points_per_txn,omitempty" example:"500.00"`
+	MaxRedemptionPercent string   `json:"max_redemption_percent,omitempty" example:"20.00"`
+	EligibleProductTypes []string `json:"eligible_product_types" example:"[\"all\"]"`
+	ExpiryDays           int32    `json:"expiry_days,omitempty" example:"365"`
+	IsActive             bool     `json:"is_active" example:"true"`
+	ValidFrom            string   `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo              string   `json:"valid_to,omitempty" example:"2026-12-31"`
+	CreatedAt            string   `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt            string   `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// AdjustLoyaltyPointsRequest represents the request to add or deduct loyalty points
+type AdjustLoyaltyPointsRequest struct {
+	// Points to adjust. Use a negative value to redeem/deduct points from the customer.
+	Points string `json:"points" binding:"required" example:"-50.00"`
+}
+
+// CustomerLoyaltyBalanceResponse is a lightweight loyalty balance response for POS
+type CustomerLoyaltyBalanceResponse struct {
+	ID            int32  `json:"id" example:"1"`
+	Name          string `json:"name" example:"John Doe"`
+	LoyaltyPoints string `json:"loyalty_points" example:"250.00"`
+}
+
+// =====================================================
+// Product Catalog Module
+// =====================================================
+
+// ProductVariantSummary is the variant shape embedded inside a catalog product row.
+type ProductVariantSummary struct {
+	ID                int32       `json:"id" example:"10"`
+	VariantSku        string      `json:"variant_sku" example:"PROD-001-RED-S"`
+	VariantName       string      `json:"variant_name" example:"Red Small"`
+	VariantAttributes interface{} `json:"variant_attributes" swaggertype:"object"`
+	IsActive          bool        `json:"is_active" example:"true"`
+}
+
+// StockByLocationSummary represents inventory stock for a product at a specific storage location.
+type StockByLocationSummary struct {
+	StockID             int32  `json:"stock_id" example:"1"`
+	StoreID             int32  `json:"store_id" example:"1"`
+	StorageLocationID   *int32 `json:"storage_location_id,omitempty" example:"3"`
+	StorageLocationName string `json:"storage_location_name,omitempty" example:"Shelf A"`
+	StorageLocationCode string `json:"storage_location_code,omitempty" example:"SHELF-A"`
+	ProductVariantID    *int32 `json:"product_variant_id,omitempty" example:"10"`
+	QuantityOnHand      string `json:"quantity_on_hand" example:"100.00"`
+	QuantityAvailable   string `json:"quantity_available" example:"80.00"`
+	QuantityAllocated   string `json:"quantity_allocated" example:"20.00"`
+	QuantityOnOrder     string `json:"quantity_on_order" example:"0.00"`
+	ReorderLevel        string `json:"reorder_level" example:"10.00"`
+	ReorderQuantity     string `json:"reorder_quantity" example:"50.00"`
+	MaxStockLevel       string `json:"max_stock_level" example:"200.00"`
+}
+
+// ListProductsWithVariantsResponse represents one row in the admin product catalog response.
+type ListProductsWithVariantsResponse struct {
+	ID           int32                    `json:"id" example:"1"`
+	Sku          string                   `json:"sku" example:"PROD-001"`
+	Name         string                   `json:"name" example:"T-Shirt"`
+	Description  string                   `json:"description,omitempty" example:"A comfortable t-shirt"`
+	IsActive     bool                     `json:"is_active" example:"true"`
+	CategoryName string                   `json:"category_name,omitempty" example:"Clothing"`
+	BrandName    string                   `json:"brand_name,omitempty" example:"Acme"`
+	Variants     []ProductVariantSummary  `json:"variants"`
+	Inventory    []StockByLocationSummary `json:"inventory"`
+}

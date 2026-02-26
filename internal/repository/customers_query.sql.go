@@ -11,6 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adjustCustomerLoyaltyPoints = `-- name: AdjustCustomerLoyaltyPoints :one
+UPDATE customers
+SET loyalty_points = loyalty_points + $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+`
+
+type AdjustCustomerLoyaltyPointsParams struct {
+	ID            int32          `json:"id"`
+	LoyaltyPoints pgtype.Numeric `json:"loyalty_points"`
+}
+
+// Pass a negative value for $2 to redeem/deduct points; positive to add
+func (q *Queries) AdjustCustomerLoyaltyPoints(ctx context.Context, arg AdjustCustomerLoyaltyPointsParams) (Customer, error) {
+	row := q.db.QueryRow(ctx, adjustCustomerLoyaltyPoints, arg.ID, arg.LoyaltyPoints)
+	var i Customer
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.CustomerCode,
+		&i.Name,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CustomerType,
+		&i.PriceListID,
+		&i.CreditLimit,
+		&i.OutstandingBalance,
+		&i.LoyaltyPoints,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createCustomer = `-- name: CreateCustomer :one
 INSERT INTO customers (
     organization_id,
@@ -184,6 +222,26 @@ func (q *Queries) GetCustomerCreditStatus(ctx context.Context, id int32) (GetCus
 		&i.OutstandingBalance,
 		&i.AvailableCredit,
 	)
+	return i, err
+}
+
+const getCustomerLoyaltyBalance = `-- name: GetCustomerLoyaltyBalance :one
+SELECT id, name, loyalty_points
+FROM customers
+WHERE id = $1
+`
+
+type GetCustomerLoyaltyBalanceRow struct {
+	ID            int32          `json:"id"`
+	Name          string         `json:"name"`
+	LoyaltyPoints pgtype.Numeric `json:"loyalty_points"`
+}
+
+// Lightweight fetch for POS validation before redemption
+func (q *Queries) GetCustomerLoyaltyBalance(ctx context.Context, id int32) (GetCustomerLoyaltyBalanceRow, error) {
+	row := q.db.QueryRow(ctx, getCustomerLoyaltyBalance, id)
+	var i GetCustomerLoyaltyBalanceRow
+	err := row.Scan(&i.ID, &i.Name, &i.LoyaltyPoints)
 	return i, err
 }
 
