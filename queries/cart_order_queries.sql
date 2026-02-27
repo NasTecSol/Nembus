@@ -1575,3 +1575,19 @@ FROM sales_orders_v2
 WHERE store_id = $1
   AND order_date >= $2
   AND order_date <= $3;
+
+-- =====================================================
+-- PROMOTIONS: LINE-ITEM DISCOUNT APPLICATION
+-- =====================================================
+
+-- name: ApplyDiscountToCartItem :one
+-- Applies a line-item discount for product-targeted promotions
+-- (e.g. buy_x_get_y, specific product percentage).
+-- Updates the line_total to reflect the discount.
+UPDATE cart_items
+SET discount_amount = $2,
+    line_total = (unit_price * quantity) - $2 + tax_amount,
+    metadata = jsonb_set(COALESCE(metadata, '{}'), '{applied_promotion}', to_jsonb($3::text)),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING *;

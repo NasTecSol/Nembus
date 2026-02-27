@@ -74,6 +74,57 @@ func (q *Queries) ApplyCouponToCart(ctx context.Context, arg ApplyCouponToCartPa
 	return i, err
 }
 
+const applyDiscountToCartItem = `-- name: ApplyDiscountToCartItem :one
+
+UPDATE cart_items
+SET discount_amount = $2,
+    line_total = (unit_price * quantity) - $2 + tax_amount,
+    metadata = jsonb_set(COALESCE(metadata, '{}'), '{applied_promotion}', to_jsonb($3::text)),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, cart_id, organization_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, line_total, price_list_id, tax_category_id, batch_number, serial_number, customization_details, notes, metadata, added_at, updated_at
+`
+
+type ApplyDiscountToCartItemParams struct {
+	ID             uuid.UUID      `json:"id"`
+	DiscountAmount pgtype.Numeric `json:"discount_amount"`
+	Column3        string         `json:"column_3"`
+}
+
+// =====================================================
+// PROMOTIONS: LINE-ITEM DISCOUNT APPLICATION
+// =====================================================
+// Applies a line-item discount for product-targeted promotions
+// (e.g. buy_x_get_y, specific product percentage).
+// Updates the line_total to reflect the discount.
+func (q *Queries) ApplyDiscountToCartItem(ctx context.Context, arg ApplyDiscountToCartItemParams) (CartItem, error) {
+	row := q.db.QueryRow(ctx, applyDiscountToCartItem, arg.ID, arg.DiscountAmount, arg.Column3)
+	var i CartItem
+	err := row.Scan(
+		&i.ID,
+		&i.CartID,
+		&i.OrganizationID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.LineTotal,
+		&i.PriceListID,
+		&i.TaxCategoryID,
+		&i.BatchNumber,
+		&i.SerialNumber,
+		&i.CustomizationDetails,
+		&i.Notes,
+		&i.Metadata,
+		&i.AddedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const assignOrder = `-- name: AssignOrder :one
 UPDATE sales_orders_v2
 SET assigned_to_user_id = $2,
