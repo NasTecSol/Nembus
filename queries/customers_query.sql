@@ -93,3 +93,17 @@ SELECT
     (credit_limit - outstanding_balance) AS available_credit
 FROM customers
 WHERE id = $1;
+
+-- name: AdjustCustomerLoyaltyPoints :one
+-- Pass a negative value for $2 to redeem/deduct points; positive to add
+UPDATE customers
+SET loyalty_points = loyalty_points + $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING *;
+
+-- name: GetCustomerLoyaltyBalance :one
+-- Lightweight fetch for POS validation before redemption
+SELECT id, name, loyalty_points
+FROM customers
+WHERE id = $1;

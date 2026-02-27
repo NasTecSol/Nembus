@@ -528,6 +528,154 @@ const collection = {
       req('Get Order', 'GET', '/api/restaurant/orders/1'),
       req('Update Order', 'PUT', '/api/restaurant/orders/1', { body: {} }),
       req('Delete Order', 'DELETE', '/api/restaurant/orders/1')
+    ]),
+    // --- Promotions & Coupons ---
+    folder('Promotions', [
+      req('Create Promotion', 'POST', '/api/promotions', {
+        body: {
+          organization_id: 1,
+          code: 'PROMO-SUMMER20',
+          name: 'Summer Sale 20%',
+          description: '20% off all summer items',
+          promotion_type: 'percentage_discount',
+          discount_value: '20.00',
+          coupon_code: 'SUMMER20',
+          valid_from: '2026-06-01T00:00:00Z',
+          valid_to: '2026-08-31T23:59:59Z',
+          applies_to: 'all',
+          min_order_amount: '100.00',
+          usage_limit: 100,
+          is_active: true,
+          is_stackable: false
+        }
+      }),
+      req('List All Promotions', 'GET', '/api/promotions?organization_id=1&limit=50&offset=0'),
+      req('List Active Promotions', 'GET', '/api/promotions/active?organization_id=1'),
+      req('Get Promotion by ID', 'GET', '/api/promotions/1'),
+      req('Get Promotion by Code', 'GET', '/api/promotions/code/PROMO-SUMMER20?organization_id=1'),
+      req('Update Promotion', 'PUT', '/api/promotions/1', {
+        body: {
+          name: 'Summer Sale 25%',
+          discount_value: '25.00',
+          coupon_code: 'SUMMER25',
+          valid_to: '2026-09-30T23:59:59Z'
+        }
+      }),
+      req('Update Promotion Status', 'PATCH', '/api/promotions/1/status', {
+        body: { is_active: true }
+      }),
+      req('Delete Promotion', 'DELETE', '/api/promotions/1'),
+      req('Apply Coupon to Cart', 'POST', '/api/promotions/apply-coupon', {
+        body: {
+          cart_id: '{{cart_id}}',
+          coupon_code: 'SUMMER20',
+          organization_id: 1
+        },
+        description: 'Apply a coupon to a cart. Supports: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item.'
+      }),
+      req('Validate Coupon (dry-run)', 'POST', '/api/promotions/validate-coupon', {
+        body: {
+          cart_id: '{{cart_id}}',
+          coupon_code: 'SUMMER20',
+          organization_id: 1
+        },
+        description: 'Check if a coupon is valid without applying it. Returns errors and estimated discount.'
+      }),
+      // ── Example payloads for each promotion type ──
+      req('[Example] Create buy_x_get_y', 'POST', '/api/promotions', {
+        body: {
+          organization_id: 1,
+          code: 'PROMO-BUY2GET1',
+          name: 'Buy 2 Get 1 Free',
+          promotion_type: 'buy_x_get_y',
+          action_metadata: { buy_id: 101, buy_qty: 2, get_id: 205, get_qty: 1, discount_percent: 100 },
+          applies_to: 'product',
+          target_product_ids: [101, 205],
+          coupon_code: 'BUY2GET1',
+          is_active: true
+        }
+      }),
+      req('[Example] Create happy_hour', 'POST', '/api/promotions', {
+        body: {
+          organization_id: 1,
+          code: 'PROMO-HAPPY-HOUR',
+          name: 'Happy Hour 20% Off',
+          promotion_type: 'happy_hour',
+          discount_value: '20.00',
+          schedule_json: { days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday'], start_time: '20:00', end_time: '22:00' },
+          applies_to: 'all',
+          coupon_code: 'HAPPY20',
+          is_active: true
+        }
+      }),
+      req('[Example] Create points_multiplier', 'POST', '/api/promotions', {
+        body: {
+          organization_id: 1,
+          code: 'PROMO-2X-POINTS',
+          name: '2x Loyalty Points',
+          promotion_type: 'points_multiplier',
+          action_metadata: { multiplier: 2 },
+          applies_to: 'all',
+          coupon_code: 'DOUBLE',
+          is_active: true
+        }
+      }),
+      req('[Example] Create fixed_discount + min_spend', 'POST', '/api/promotions', {
+        body: {
+          organization_id: 1,
+          code: 'PROMO-50OFF500',
+          name: 'Spend 500, Save 50',
+          promotion_type: 'fixed_discount',
+          discount_value: '50.00',
+          min_order_amount: '500.00',
+          applies_to: 'all',
+          coupon_code: 'SAVE50',
+          is_active: true
+        }
+      })
+    ]),
+    // --- Loyalty Redemption Rules ---
+    folder('Loyalty Rules', [
+      req('Create Loyalty Rule', 'POST', '/api/loyalty-rules', {
+        body: {
+          organization_id: 1,
+          rule_name: 'Standard Loyalty',
+          points_earning_rate: '1.0000',
+          points_redemption_rate: '0.0100',
+          min_points_to_redeem: '100.00',
+          max_points_per_txn: '500.00',
+          max_redemption_percent: '20.00',
+          eligible_product_types: [],
+          expiry_days: 365,
+          is_active: true,
+          valid_from: '2026-01-01',
+          valid_to: '2026-12-31'
+        }
+      }),
+      req('List Loyalty Rules', 'GET', '/api/loyalty-rules?organization_id=1'),
+      req('Get Active Loyalty Rule', 'GET', '/api/loyalty-rules/active?organization_id=1',
+        { description: 'Returns the current active rule used at POS checkout to compute point value.' }),
+      req('Get Loyalty Rule by ID', 'GET', '/api/loyalty-rules/1'),
+      req('Update Loyalty Rule', 'PUT', '/api/loyalty-rules/1', {
+        body: {
+          rule_name: 'Premium Loyalty',
+          points_earning_rate: '1.5000',
+          min_points_to_redeem: '50.00',
+          max_redemption_percent: '30.00',
+          is_active: true
+        }
+      }),
+      req('Toggle Loyalty Rule Active', 'PATCH', '/api/loyalty-rules/1/active', {
+        body: { is_active: false }
+      }),
+      req('Delete Loyalty Rule', 'DELETE', '/api/loyalty-rules/1'),
+      // ── Customer loyalty point endpoints ──────────────────────────────────
+      req('Get Customer Loyalty Balance', 'GET', '/api/customers/1/loyalty-balance',
+        { description: 'Lightweight POS check before redemption. Returns id, name, and loyalty_points.' }),
+      req('Adjust Customer Loyalty Points', 'PATCH', '/api/customers/1/loyalty-points', {
+        body: { points: '-50.00' },
+        description: 'Pass a negative value to redeem/deduct. Pass a positive value to grant bonus points.'
+      })
     ])
   ]
 };

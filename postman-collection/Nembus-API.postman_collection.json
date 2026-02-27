@@ -6030,6 +6030,494 @@
           }
         }
       ]
+    },
+    {
+      "name": "Promotions",
+      "item": [
+        {
+          "name": "Create Promotion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"PROMO-SUMMER20\",\"name\":\"Summer Sale 20%\",\"description\":\"20% off all summer items\",\"promotion_type\":\"percentage_discount\",\"discount_value\":\"20.00\",\"coupon_code\":\"SUMMER20\",\"valid_from\":\"2026-06-01T00:00:00Z\",\"valid_to\":\"2026-08-31T23:59:59Z\",\"applies_to\":\"all\",\"min_order_amount\":\"100.00\",\"usage_limit\":100,\"is_active\":true,\"is_stackable\":false}"
+            }
+          }
+        },
+        {
+          "name": "List All Promotions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions?organization_id=1&limit=50&offset=0"
+          }
+        },
+        {
+          "name": "List Active Promotions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/active?organization_id=1"
+          }
+        },
+        {
+          "name": "Get Promotion by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/1"
+          }
+        },
+        {
+          "name": "Get Promotion by Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/code/PROMO-SUMMER20?organization_id=1"
+          }
+        },
+        {
+          "name": "Update Promotion",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Summer Sale 25%\",\"discount_value\":\"25.00\",\"coupon_code\":\"SUMMER25\",\"valid_to\":\"2026-09-30T23:59:59Z\"}"
+            }
+          }
+        },
+        {
+          "name": "Update Promotion Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/1/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "Delete Promotion",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/1"
+          }
+        },
+        {
+          "name": "Apply Coupon to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/apply-coupon",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cart_id\":\"{{cart_id}}\",\"coupon_code\":\"SUMMER20\",\"organization_id\":1}"
+            },
+            "description": "Apply a coupon to a cart. Supports: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item."
+          }
+        },
+        {
+          "name": "Validate Coupon (dry-run)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions/validate-coupon",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cart_id\":\"{{cart_id}}\",\"coupon_code\":\"SUMMER20\",\"organization_id\":1}"
+            },
+            "description": "Check if a coupon is valid without applying it. Returns errors and estimated discount."
+          }
+        },
+        {
+          "name": "[Example] Create buy_x_get_y",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"PROMO-BUY2GET1\",\"name\":\"Buy 2 Get 1 Free\",\"promotion_type\":\"buy_x_get_y\",\"action_metadata\":{\"buy_id\":101,\"buy_qty\":2,\"get_id\":205,\"get_qty\":1,\"discount_percent\":100},\"applies_to\":\"product\",\"target_product_ids\":[101,205],\"coupon_code\":\"BUY2GET1\",\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "[Example] Create happy_hour",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"PROMO-HAPPY-HOUR\",\"name\":\"Happy Hour 20% Off\",\"promotion_type\":\"happy_hour\",\"discount_value\":\"20.00\",\"schedule_json\":{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\"],\"start_time\":\"20:00\",\"end_time\":\"22:00\"},\"applies_to\":\"all\",\"coupon_code\":\"HAPPY20\",\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "[Example] Create points_multiplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"PROMO-2X-POINTS\",\"name\":\"2x Loyalty Points\",\"promotion_type\":\"points_multiplier\",\"action_metadata\":{\"multiplier\":2},\"applies_to\":\"all\",\"coupon_code\":\"DOUBLE\",\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "[Example] Create fixed_discount + min_spend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"PROMO-50OFF500\",\"name\":\"Spend 500, Save 50\",\"promotion_type\":\"fixed_discount\",\"discount_value\":\"50.00\",\"min_order_amount\":\"500.00\",\"applies_to\":\"all\",\"coupon_code\":\"SAVE50\",\"is_active\":true}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Loyalty Rules",
+      "item": [
+        {
+          "name": "Create Loyalty Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"rule_name\":\"Standard Loyalty\",\"points_earning_rate\":\"1.0000\",\"points_redemption_rate\":\"0.0100\",\"min_points_to_redeem\":\"100.00\",\"max_points_per_txn\":\"500.00\",\"max_redemption_percent\":\"20.00\",\"eligible_product_types\":[],\"expiry_days\":365,\"is_active\":true,\"valid_from\":\"2026-01-01\",\"valid_to\":\"2026-12-31\"}"
+            }
+          }
+        },
+        {
+          "name": "List Loyalty Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules?organization_id=1"
+          }
+        },
+        {
+          "name": "Get Active Loyalty Rule",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules/active?organization_id=1",
+            "description": "Returns the current active rule used at POS checkout to compute point value."
+          }
+        },
+        {
+          "name": "Get Loyalty Rule by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules/1"
+          }
+        },
+        {
+          "name": "Update Loyalty Rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"rule_name\":\"Premium Loyalty\",\"points_earning_rate\":\"1.5000\",\"min_points_to_redeem\":\"50.00\",\"max_redemption_percent\":\"30.00\",\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "Toggle Loyalty Rule Active",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules/1/active",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"is_active\":false}"
+            }
+          }
+        },
+        {
+          "name": "Delete Loyalty Rule",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/loyalty-rules/1"
+          }
+        },
+        {
+          "name": "Get Customer Loyalty Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/customers/1/loyalty-balance",
+            "description": "Lightweight POS check before redemption. Returns id, name, and loyalty_points."
+          }
+        },
+        {
+          "name": "Adjust Customer Loyalty Points",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/customers/1/loyalty-points",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"points\":\"-50.00\"}"
+            },
+            "description": "Pass a negative value to redeem/deduct. Pass a positive value to grant bonus points."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Product Catalog",
+      "description": "Admin product catalog — master products with embedded variants and inventory stock per storage location.",
+      "item": [
+        {
+          "name": "List Products with Variants & Inventory",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/products/catalog?organization_id=1&limit=20&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "catalog"
+              ],
+              "query": [
+                {
+                  "key": "organization_id",
+                  "value": "1",
+                  "description": "Required. Scopes results to this organization."
+                },
+                {
+                  "key": "category_id",
+                  "value": "",
+                  "description": "Optional. Filter by category ID. Leave blank or 0 for all.",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Page size (default 20)."
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Page offset (default 0)."
+                }
+              ]
+            },
+            "description": "Returns master products with two embedded arrays:\n- `variants`: product variants (id, variant_sku, variant_name, variant_attributes, is_active)\n- `inventory`: stock levels per storage location (stock_id, store_id, storage_location_id, storage_location_name, storage_location_code, product_variant_id, quantity_on_hand, quantity_available, quantity_allocated, quantity_on_order, reorder_level, reorder_quantity, max_stock_level)\n\nProducts with no variants/stock return empty arrays []."
+          }
+        },
+        {
+          "name": "List Products with Variants & Inventory (by Category)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/products/catalog?organization_id=1&category_id=1&limit=10&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "catalog"
+              ],
+              "query": [
+                {
+                  "key": "organization_id",
+                  "value": "1",
+                  "description": "Required."
+                },
+                {
+                  "key": "category_id",
+                  "value": "1",
+                  "description": "Filter by this specific category ID."
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Same as the base catalog request but filtered to a single category_id."
+          }
+        }
+      ]
     }
   ]
 }
