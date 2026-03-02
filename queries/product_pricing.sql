@@ -22,9 +22,14 @@ SELECT * FROM product_prices WHERE id = $1 LIMIT 1;
 -- name: GetProductPriceForList :one
 SELECT pp.* FROM product_prices pp
 WHERE pp.product_id = $1
-  AND pp.product_variant_id = COALESCE(sqlc.narg(product_variant_id), pp.product_variant_id)
   AND pp.price_list_id = $2
-  AND pp.uom_id = COALESCE(sqlc.narg(uom_id), pp.uom_id)
+  AND pp.uom_id = $3
+AND (
+      (sqlc.narg(product_variant_id)::int IS NULL AND pp.product_variant_id IS NULL)
+      OR
+      (pp.product_variant_id = sqlc.narg(product_variant_id)::int)
+    )
+
   AND pp.is_active = true
   AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
   AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)

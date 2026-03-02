@@ -15,24 +15,30 @@ const addPaymentToTransaction = `-- name: AddPaymentToTransaction :exec
 INSERT INTO pos_payments (
     transaction_id,
     payment_method,
+    payment_gateway,
     amount,
     reference_number,
     metadata
-) VALUES ($1, $2, $3, $4, $5)
+) VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type AddPaymentToTransactionParams struct {
 	TransactionID   int32          `json:"transaction_id"`
 	PaymentMethod   string         `json:"payment_method"`
+	PaymentGateway  pgtype.Text    `json:"payment_gateway"`
 	Amount          pgtype.Numeric `json:"amount"`
 	ReferenceNumber pgtype.Text    `json:"reference_number"`
 	Metadata        []byte         `json:"metadata"`
 }
 
+// AddPaymentToTransaction stores a payment for a POS transaction.
+// payment_gateway: provider identifier (e.g. stripe, square). metadata: JSONB for transient provider data
+// (gateway_txn_id, masked_card, auth_code, etc.) for auditing and reconciliation.
 func (q *Queries) AddPaymentToTransaction(ctx context.Context, arg AddPaymentToTransactionParams) error {
 	_, err := q.db.Exec(ctx, addPaymentToTransaction,
 		arg.TransactionID,
 		arg.PaymentMethod,
+		arg.PaymentGateway,
 		arg.Amount,
 		arg.ReferenceNumber,
 		arg.Metadata,
@@ -40,9 +46,69 @@ func (q *Queries) AddPaymentToTransaction(ctx context.Context, arg AddPaymentToT
 	return err
 }
 
+const createPosPayment = `-- name: CreatePosPayment :one
+INSERT INTO pos_payments (
+    transaction_id,
+    payment_method,
+    payment_gateway,
+    amount,
+    payment_reference,
+    reference_number,
+    metadata
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_reference, reference_number, payment_date, metadata, created_at
+`
+
+type CreatePosPaymentParams struct {
+	TransactionID    int32          `json:"transaction_id"`
+	PaymentMethod    string         `json:"payment_method"`
+	PaymentGateway   pgtype.Text    `json:"payment_gateway"`
+	Amount           pgtype.Numeric `json:"amount"`
+	PaymentReference pgtype.Text    `json:"payment_reference"`
+	ReferenceNumber  pgtype.Text    `json:"reference_number"`
+	Metadata         []byte         `json:"metadata"`
+}
+
+func (q *Queries) CreatePosPayment(ctx context.Context, arg CreatePosPaymentParams) (PosPayment, error) {
+	row := q.db.QueryRow(ctx, createPosPayment,
+		arg.TransactionID,
+		arg.PaymentMethod,
+		arg.PaymentGateway,
+		arg.Amount,
+		arg.PaymentReference,
+		arg.ReferenceNumber,
+		arg.Metadata,
+	)
+	var i PosPayment
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
+		&i.Amount,
+		&i.PaymentReference,
+		&i.ReferenceNumber,
+		&i.PaymentDate,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deletePosPayment = `-- name: DeletePosPayment :exec
+DELETE FROM pos_payments
+WHERE id = $1
+`
+
+func (q *Queries) DeletePosPayment(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, deletePosPayment, id)
+	return err
+}
+
 const getPaymentsForTransaction = `-- name: GetPaymentsForTransaction :many
 SELECT 
     payment_method,
+    payment_gateway,
     amount,
     reference_number,
     created_at
@@ -53,6 +119,7 @@ ORDER BY created_at
 
 type GetPaymentsForTransactionRow struct {
 	PaymentMethod   string           `json:"payment_method"`
+	PaymentGateway  pgtype.Text      `json:"payment_gateway"`
 	Amount          pgtype.Numeric   `json:"amount"`
 	ReferenceNumber pgtype.Text      `json:"reference_number"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
@@ -69,6 +136,7 @@ func (q *Queries) GetPaymentsForTransaction(ctx context.Context, transactionID i
 		var i GetPaymentsForTransactionRow
 		if err := rows.Scan(
 			&i.PaymentMethod,
+			&i.PaymentGateway,
 			&i.Amount,
 			&i.ReferenceNumber,
 			&i.CreatedAt,
@@ -81,6 +149,66 @@ func (q *Queries) GetPaymentsForTransaction(ctx context.Context, transactionID i
 		return nil, err
 	}
 	return items, nil
+}
+
+const getPaymentsForTransactionFull = `-- name: GetPaymentsForTransactionFull :many
+SELECT id, transaction_id, payment_method, payment_gateway, amount, payment_reference, reference_number, payment_date, metadata, created_at FROM pos_payments
+WHERE transaction_id = $1
+ORDER BY created_at
+`
+
+func (q *Queries) GetPaymentsForTransactionFull(ctx context.Context, transactionID int32) ([]PosPayment, error) {
+	rows, err := q.db.Query(ctx, getPaymentsForTransactionFull, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PosPayment
+	for rows.Next() {
+		var i PosPayment
+		if err := rows.Scan(
+			&i.ID,
+			&i.TransactionID,
+			&i.PaymentMethod,
+			&i.PaymentGateway,
+			&i.Amount,
+			&i.PaymentReference,
+			&i.ReferenceNumber,
+			&i.PaymentDate,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPosPayment = `-- name: GetPosPayment :one
+SELECT id, transaction_id, payment_method, payment_gateway, amount, payment_reference, reference_number, payment_date, metadata, created_at FROM pos_payments
+WHERE id = $1
+`
+
+func (q *Queries) GetPosPayment(ctx context.Context, id int32) (PosPayment, error) {
+	row := q.db.QueryRow(ctx, getPosPayment, id)
+	var i PosPayment
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
+		&i.Amount,
+		&i.PaymentReference,
+		&i.ReferenceNumber,
+		&i.PaymentDate,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getTransactionPaymentSummary = `-- name: GetTransactionPaymentSummary :one
@@ -106,5 +234,54 @@ func (q *Queries) GetTransactionPaymentSummary(ctx context.Context, transactionI
 	row := q.db.QueryRow(ctx, getTransactionPaymentSummary, transactionID)
 	var i GetTransactionPaymentSummaryRow
 	err := row.Scan(&i.TotalPaid, &i.PaymentDetails)
+	return i, err
+}
+
+const updatePosPayment = `-- name: UpdatePosPayment :one
+UPDATE pos_payments
+SET
+    payment_method    = $2,
+    payment_gateway   = $3,
+    amount            = $4,
+    payment_reference = $5,
+    reference_number  = $6,
+    metadata          = $7
+WHERE id = $1
+RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_reference, reference_number, payment_date, metadata, created_at
+`
+
+type UpdatePosPaymentParams struct {
+	ID               int32          `json:"id"`
+	PaymentMethod    string         `json:"payment_method"`
+	PaymentGateway   pgtype.Text    `json:"payment_gateway"`
+	Amount           pgtype.Numeric `json:"amount"`
+	PaymentReference pgtype.Text    `json:"payment_reference"`
+	ReferenceNumber  pgtype.Text    `json:"reference_number"`
+	Metadata         []byte         `json:"metadata"`
+}
+
+func (q *Queries) UpdatePosPayment(ctx context.Context, arg UpdatePosPaymentParams) (PosPayment, error) {
+	row := q.db.QueryRow(ctx, updatePosPayment,
+		arg.ID,
+		arg.PaymentMethod,
+		arg.PaymentGateway,
+		arg.Amount,
+		arg.PaymentReference,
+		arg.ReferenceNumber,
+		arg.Metadata,
+	)
+	var i PosPayment
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
+		&i.Amount,
+		&i.PaymentReference,
+		&i.ReferenceNumber,
+		&i.PaymentDate,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
 	return i, err
 }

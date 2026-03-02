@@ -125,7 +125,7 @@ func (h *NavigationHandler) GetNavigationByRoleCodeWithUserCounts(c *gin.Context
 		return
 	}
 	// Type assert to your Role struct
-	roleStruct, ok := roleResp.Data.(repository.Role)
+	roleStruct, ok := roleResp.Data.(usecase.RoleOutput)
 	if !ok {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(
 			utils.CodeBadReq,

@@ -955,6 +955,1043 @@ CREATE TABLE kiosk_sessions (
 );
 
 -- =====================================================
+-- ENHANCED: CART MANAGEMENT SYSTEM
+-- =====================================================
+
+-- Cart status enum for better type safety
+CREATE TYPE cart_status AS ENUM ('draft', 'active', 'abandoned', 'converted', 'expired');
+CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist');
+
+-- Main carts table - supports both guest and registered customers
+CREATE TABLE carts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    cart_number VARCHAR(50) UNIQUE NOT NULL, -- Human-readable cart reference
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Customer information
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, -- NULL for guest carts
+    guest_identifier VARCHAR(255), -- Session ID or device ID for guest users
+    guest_email VARCHAR(255),
+    guest_phone VARCHAR(50),
+    
+    -- Cart classification
+    cart_status cart_status DEFAULT 'draft' NOT NULL,
+    cart_type cart_type DEFAULT 'standard' NOT NULL,
+    
+    -- Sales channel tracking
+    channel VARCHAR(50) DEFAULT 'online', -- online, pos, mobile_app, kiosk
+    device_info JSONB DEFAULT '{}', -- Browser, device type, etc.
+    
+    -- User/Session tracking
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    cashier_id INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
+    
+    -- Pricing and totals
+    subtotal DECIMAL(15,2) DEFAULT 0.00,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
+    total_amount DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Applied discounts and promotions
+    coupon_code VARCHAR(100),
+    discount_code VARCHAR(100),
+    promotional_credits DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Shipping information
+    shipping_address JSONB,
+    billing_address JSONB,
+    shipping_method VARCHAR(100),
+    
+    -- Conversion tracking
+    converted_to_order_id UUID, -- Reference to sales_orders_v2.id
+    converted_at TIMESTAMP,
+    
+    -- Lifecycle timestamps
+    last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP, -- For abandoned cart cleanup
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Metadata for extensibility
+    metadata JSONB DEFAULT '{}', -- Custom fields, analytics tags, etc.
+    notes TEXT,
+    
+    -- Constraints
+    CONSTRAINT chk_cart_customer CHECK (
+        customer_id IS NOT NULL OR guest_identifier IS NOT NULL
+    )
+);
+
+-- Cart line items
+CREATE TABLE cart_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    -- Product information
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    
+    -- Quantity and UOM
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    -- Pricing
+    unit_price DECIMAL(15,2) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL,
+    
+    -- Pricing details
+    price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
+    
+    -- Inventory tracking
+    batch_number VARCHAR(100),
+    serial_number VARCHAR(100),
+    
+    -- Customization and options
+    customization_details JSONB DEFAULT '{}', -- Product customizations, engravings, etc.
+    notes TEXT,
+    
+    -- Line item metadata
+    metadata JSONB DEFAULT '{}',
+    
+    -- Timestamps
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Prevent duplicate products (unless variants differ)
+    UNIQUE(cart_id, product_id, product_variant_id, batch_number, serial_number)
+);
+
+-- Cart activity log for tracking changes
+CREATE TABLE cart_activity_log (
+    id BIGSERIAL PRIMARY KEY,
+    cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    activity_type VARCHAR(50) NOT NULL, -- created, item_added, item_removed, item_updated, status_changed, converted, abandoned
+    description TEXT,
+    
+    -- User tracking
+    performed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    ip_address INET,
+    user_agent TEXT,
+    
+    -- Change details
+    old_value JSONB,
+    new_value JSONB,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- ENHANCED: DRAFT CARTS (Saved for Later)
+-- =====================================================
+
+-- Draft cart templates for quick reordering
+CREATE TABLE draft_cart_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    
+    template_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    
+    -- Classification
+    template_type VARCHAR(50) DEFAULT 'saved_cart', -- saved_cart, wishlist, reorder_list
+    is_favorite BOOLEAN DEFAULT false,
+    
+    -- Auto-reorder settings
+    auto_reorder_enabled BOOLEAN DEFAULT false,
+    reorder_frequency_days INTEGER,
+    next_reorder_date DATE,
+    
+    -- Template metadata
+    total_items INTEGER DEFAULT 0,
+    estimated_total DECIMAL(15,2) DEFAULT 0.00,
+    
+    metadata JSONB DEFAULT '{}',
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(organization_id, customer_id, template_name)
+);
+
+-- Items in draft cart templates
+CREATE TABLE draft_cart_template_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id UUID NOT NULL REFERENCES draft_cart_templates(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    -- Price reference (for comparison)
+    last_known_price DECIMAL(15,2),
+    
+    -- Priority for auto-reorder
+    priority INTEGER DEFAULT 0,
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- ENHANCED: UNIFIED ORDER MANAGEMENT (V2)
+-- =====================================================
+
+CREATE TYPE order_type AS ENUM ('standard', 'quote', 'subscription', 'return', 'exchange');
+CREATE TYPE order_status_v2 AS ENUM (
+    'draft', 'pending', 'confirmed', 'processing', 
+    'partially_fulfilled', 'fulfilled', 'partially_shipped', 'shipped', 
+    'delivered', 'cancelled', 'refunded', 'on_hold'
+);
+CREATE TYPE payment_status AS ENUM ('unpaid', 'partially_paid', 'paid', 'refunded', 'partially_refunded', 'overdue');
+CREATE TYPE fulfillment_status AS ENUM ('unfulfilled', 'partially_fulfilled', 'fulfilled', 'restocked');
+
+-- Enhanced sales orders table
+CREATE TABLE sales_orders_v2 (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_number VARCHAR(50) UNIQUE NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Customer information
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255),
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(50),
+    
+    -- Order classification
+    order_type order_type DEFAULT 'standard' NOT NULL,
+    order_status order_status_v2 DEFAULT 'draft' NOT NULL,
+    payment_status payment_status DEFAULT 'unpaid' NOT NULL,
+    fulfillment_status fulfillment_status DEFAULT 'unfulfilled' NOT NULL,
+    
+    -- Channel and source
+    sales_channel VARCHAR(50) DEFAULT 'online', -- online, pos, phone, mobile_app
+    order_source VARCHAR(100), -- website, mobile_app, marketplace, etc.
+    referral_source VARCHAR(255),
+    
+    -- Created from cart
+    source_cart_id UUID REFERENCES carts(id) ON DELETE SET NULL,
+    
+    -- User tracking
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    assigned_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    -- Dates
+    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    confirmed_date TIMESTAMP,
+    expected_delivery_date DATE,
+    actual_delivery_date DATE,
+    cancelled_date TIMESTAMP,
+    
+    -- Financial totals
+    subtotal DECIMAL(15,2) DEFAULT 0.00,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
+    adjustment_amount DECIMAL(15,2) DEFAULT 0.00,
+    total_amount DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Payment tracking
+    paid_amount DECIMAL(15,2) DEFAULT 0.00,
+    refunded_amount DECIMAL(15,2) DEFAULT 0.00,
+    balance_due DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Discounts and promotions
+    coupon_code VARCHAR(100),
+    discount_codes TEXT[], -- Array for multiple discount codes
+    promotional_credits DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Addresses
+    shipping_address JSONB NOT NULL,
+    billing_address JSONB NOT NULL,
+    
+    -- Shipping details
+    shipping_method VARCHAR(100),
+    shipping_carrier VARCHAR(100),
+    tracking_number VARCHAR(255),
+    tracking_url TEXT,
+    
+    -- Payment method
+    payment_method VARCHAR(100),
+    payment_terms VARCHAR(100),
+    payment_due_date DATE,
+    
+    -- POS specific
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
+    cashier_id INTEGER REFERENCES cashiers(id) ON DELETE SET NULL,
+    
+    -- Special handling
+    is_gift BOOLEAN DEFAULT false,
+    gift_message TEXT,
+    special_instructions TEXT,
+    internal_notes TEXT,
+    
+    -- Tags and categorization
+    tags TEXT[],
+    priority VARCHAR(20) DEFAULT 'normal', -- low, normal, high, urgent
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Enhanced order line items
+CREATE TABLE sales_order_lines_v2 (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    line_number INTEGER NOT NULL,
+    
+    -- Product information
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    product_name VARCHAR(255) NOT NULL, -- Snapshot for historical accuracy
+    product_sku VARCHAR(100),
+    
+    -- Quantity and UOM
+    quantity_ordered DECIMAL(15,3) NOT NULL CHECK (quantity_ordered > 0),
+    quantity_fulfilled DECIMAL(15,3) DEFAULT 0.00,
+    quantity_cancelled DECIMAL(15,3) DEFAULT 0.00,
+    quantity_returned DECIMAL(15,3) DEFAULT 0.00,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    -- Pricing
+    unit_price DECIMAL(15,2) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL,
+    
+    -- Tax details
+    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
+    tax_rate DECIMAL(5,2),
+    
+    -- Inventory tracking
+    batch_number VARCHAR(100),
+    serial_numbers TEXT[], -- Array of serial numbers for this line
+    expiry_date DATE,
+    
+    -- Fulfillment status
+    line_status VARCHAR(50) DEFAULT 'pending', -- pending, fulfilled, cancelled, returned
+    
+    -- Product configuration
+    customization_details JSONB DEFAULT '{}',
+    
+    -- Cost tracking (for profitability)
+    unit_cost DECIMAL(15,2),
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(sales_order_id, line_number)
+);
+
+-- Order status history
+CREATE TABLE order_status_history (
+    id BIGSERIAL PRIMARY KEY,
+    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    from_status order_status_v2,
+    to_status order_status_v2 NOT NULL,
+    
+    reason VARCHAR(255),
+    notes TEXT,
+    
+    changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Order fulfillment tracking
+CREATE TABLE order_fulfillments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    fulfillment_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Fulfillment details
+    fulfillment_status VARCHAR(50) DEFAULT 'pending',
+    shipment_status VARCHAR(50) DEFAULT 'pending', -- pending, picked, packed, shipped, delivered
+    
+    -- Warehouse/Store
+    fulfillment_store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Shipping
+    shipping_carrier VARCHAR(100),
+    shipping_method VARCHAR(100),
+    tracking_number VARCHAR(255),
+    tracking_url TEXT,
+    
+    -- Dates
+    picked_at TIMESTAMP,
+    packed_at TIMESTAMP,
+    shipped_at TIMESTAMP,
+    estimated_delivery_date DATE,
+    actual_delivery_date DATE,
+    
+    -- Personnel
+    picked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    packed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Items in each fulfillment
+CREATE TABLE order_fulfillment_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    fulfillment_id UUID NOT NULL REFERENCES order_fulfillments(id) ON DELETE CASCADE,
+    order_line_id UUID NOT NULL REFERENCES sales_order_lines_v2(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    quantity_fulfilled DECIMAL(15,3) NOT NULL CHECK (quantity_fulfilled > 0),
+    
+    batch_number VARCHAR(100),
+    serial_numbers TEXT[],
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- ENHANCED: INVOICE MANAGEMENT
+-- =====================================================
+
+CREATE TYPE invoice_type AS ENUM ('standard', 'proforma', 'credit_note', 'debit_note', 'recurring');
+CREATE TYPE invoice_status AS ENUM ('draft', 'sent', 'viewed', 'partially_paid', 'paid', 'overdue', 'cancelled', 'refunded');
+
+-- Invoices table
+CREATE TABLE invoices (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    invoice_number VARCHAR(50) UNIQUE NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Customer information
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    customer_name VARCHAR(255) NOT NULL,
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(50),
+    customer_tax_id VARCHAR(50),
+    
+    -- Invoice classification
+    invoice_type invoice_type DEFAULT 'standard' NOT NULL,
+    invoice_status invoice_status DEFAULT 'draft' NOT NULL,
+    
+    -- Source references
+    sales_order_id UUID REFERENCES sales_orders_v2(id) ON DELETE SET NULL,
+    related_invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL, -- For credit notes, etc.
+    
+    -- Dates
+    invoice_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    due_date DATE NOT NULL,
+    sent_date DATE,
+    paid_date DATE,
+    
+    -- Financial details
+    subtotal DECIMAL(15,2) DEFAULT 0.00,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    shipping_amount DECIMAL(15,2) DEFAULT 0.00,
+    adjustment_amount DECIMAL(15,2) DEFAULT 0.00,
+    total_amount DECIMAL(15,2) NOT NULL,
+    
+    -- Payment tracking
+    paid_amount DECIMAL(15,2) DEFAULT 0.00,
+    credit_applied DECIMAL(15,2) DEFAULT 0.00,
+    balance_due DECIMAL(15,2) NOT NULL,
+    
+    -- Payment terms
+    payment_terms VARCHAR(100), -- Net 30, Due on Receipt, etc.
+    currency_code VARCHAR(3) DEFAULT 'USD',
+    exchange_rate DECIMAL(15,6) DEFAULT 1.000000,
+    
+    -- Addresses
+    billing_address JSONB NOT NULL,
+    shipping_address JSONB,
+    
+    -- Recurring invoice settings
+    is_recurring BOOLEAN DEFAULT false,
+    recurrence_pattern VARCHAR(50), -- monthly, quarterly, annually
+    next_invoice_date DATE,
+    
+    -- Document management
+    pdf_url TEXT,
+    document_hash VARCHAR(255), -- For integrity verification
+    
+    -- Communication tracking
+    reminder_sent_count INTEGER DEFAULT 0,
+    last_reminder_sent_at TIMESTAMP,
+    
+    -- Notes and references
+    notes TEXT,
+    internal_notes TEXT,
+    reference_number VARCHAR(100), -- PO number, etc.
+    
+    -- User tracking
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    tags TEXT[],
+    
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Invoice line items
+CREATE TABLE invoice_lines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    line_number INTEGER NOT NULL,
+    
+    -- Item description
+    description TEXT NOT NULL,
+    item_type VARCHAR(50) DEFAULT 'product', -- product, service, discount, shipping, fee
+    
+    -- Product reference (optional)
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    product_sku VARCHAR(100),
+    
+    -- Order line reference
+    order_line_id UUID REFERENCES sales_order_lines_v2(id) ON DELETE SET NULL,
+    
+    -- Quantity and pricing
+    quantity DECIMAL(15,3) DEFAULT 1.000,
+    unit_price DECIMAL(15,2) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL,
+    
+    -- Tax details
+    tax_category_id INTEGER REFERENCES tax_categories(id) ON DELETE SET NULL,
+    tax_rate DECIMAL(5,2),
+    
+    -- UOM
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(invoice_id, line_number)
+);
+
+-- Invoice payments
+CREATE TABLE invoice_payments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    payment_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Payment details
+    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    payment_amount DECIMAL(15,2) NOT NULL CHECK (payment_amount > 0),
+    
+    payment_method VARCHAR(100) NOT NULL, -- cash, card, bank_transfer, check, etc.
+    payment_reference VARCHAR(255), -- Transaction ID, check number, etc.
+    
+    -- Currency handling
+    currency_code VARCHAR(3) DEFAULT 'USD',
+    exchange_rate DECIMAL(15,6) DEFAULT 1.000000,
+    
+    -- Bank reconciliation
+    bank_account_id INTEGER, -- Reference to bank accounts if you have that table
+    reconciled BOOLEAN DEFAULT false,
+    reconciled_date DATE,
+    
+    notes TEXT,
+    
+    -- User tracking
+    received_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Invoice status history
+CREATE TABLE invoice_status_history (
+    id BIGSERIAL PRIMARY KEY,
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    from_status invoice_status,
+    to_status invoice_status NOT NULL,
+    
+    reason VARCHAR(255),
+    notes TEXT,
+    
+    changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- ENHANCED: QUOTE MANAGEMENT
+-- =====================================================
+
+CREATE TYPE quote_status AS ENUM ('draft', 'sent', 'viewed', 'accepted', 'declined', 'expired', 'converted');
+
+CREATE TABLE quotes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quote_number VARCHAR(50) UNIQUE NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    
+    -- Customer information
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255) NOT NULL,
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(50),
+    
+    -- Quote status and validity
+    quote_status quote_status DEFAULT 'draft' NOT NULL,
+    
+    -- Dates
+    quote_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_until DATE NOT NULL,
+    sent_date DATE,
+    accepted_date DATE,
+    converted_date DATE,
+    
+    -- Financial totals
+    subtotal DECIMAL(15,2) DEFAULT 0.00,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    total_amount DECIMAL(15,2) NOT NULL,
+    
+    -- Conversion
+    converted_to_order_id UUID REFERENCES sales_orders_v2(id) ON DELETE SET NULL,
+    
+    -- Terms and conditions
+    payment_terms VARCHAR(100),
+    delivery_terms TEXT,
+    terms_and_conditions TEXT,
+    
+    -- Notes
+    notes TEXT,
+    internal_notes TEXT,
+    
+    -- User tracking
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Quote line items
+CREATE TABLE quote_lines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    line_number INTEGER NOT NULL,
+    
+    -- Product information
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    description TEXT NOT NULL,
+    
+    -- Quantity and pricing
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    unit_price DECIMAL(15,2) NOT NULL,
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL,
+    
+    -- UOM
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(quote_id, line_number)
+);
+
+-- =====================================================
+-- INDEXES FOR CART SYSTEM
+-- =====================================================
+
+CREATE INDEX idx_carts_organization_id ON carts(organization_id);
+CREATE INDEX idx_carts_store_id ON carts(store_id);
+CREATE INDEX idx_carts_customer_id ON carts(customer_id);
+CREATE INDEX idx_carts_cart_status ON carts(cart_status);
+CREATE INDEX idx_carts_cart_type ON carts(cart_type);
+CREATE INDEX idx_carts_cart_number ON carts(cart_number);
+CREATE INDEX idx_carts_guest_identifier ON carts(guest_identifier);
+CREATE INDEX idx_carts_created_at ON carts(created_at);
+CREATE INDEX idx_carts_last_activity_at ON carts(last_activity_at);
+CREATE INDEX idx_carts_expires_at ON carts(expires_at);
+CREATE INDEX idx_carts_channel ON carts(channel);
+
+CREATE INDEX idx_cart_items_cart_id ON cart_items(cart_id);
+CREATE INDEX idx_cart_items_product_id ON cart_items(product_id);
+CREATE INDEX idx_cart_items_product_variant_id ON cart_items(product_variant_id);
+CREATE INDEX idx_cart_items_added_at ON cart_items(added_at);
+
+CREATE INDEX idx_cart_activity_log_cart_id ON cart_activity_log(cart_id);
+CREATE INDEX idx_cart_activity_log_activity_type ON cart_activity_log(activity_type);
+CREATE INDEX idx_cart_activity_log_created_at ON cart_activity_log(created_at);
+
+-- =====================================================
+-- INDEXES FOR DRAFT CART TEMPLATES
+-- =====================================================
+
+CREATE INDEX idx_draft_cart_templates_organization_id ON draft_cart_templates(organization_id);
+CREATE INDEX idx_draft_cart_templates_customer_id ON draft_cart_templates(customer_id);
+CREATE INDEX idx_draft_cart_templates_template_type ON draft_cart_templates(template_type);
+CREATE INDEX idx_draft_cart_templates_is_favorite ON draft_cart_templates(is_favorite);
+CREATE INDEX idx_draft_cart_templates_auto_reorder ON draft_cart_templates(auto_reorder_enabled);
+CREATE INDEX idx_draft_cart_templates_next_reorder_date ON draft_cart_templates(next_reorder_date);
+
+CREATE INDEX idx_draft_cart_template_items_template_id ON draft_cart_template_items(template_id);
+CREATE INDEX idx_draft_cart_template_items_product_id ON draft_cart_template_items(product_id);
+
+-- =====================================================
+-- INDEXES FOR ENHANCED ORDERS
+-- =====================================================
+
+CREATE INDEX idx_sales_orders_v2_organization_id ON sales_orders_v2(organization_id);
+CREATE INDEX idx_sales_orders_v2_store_id ON sales_orders_v2(store_id);
+CREATE INDEX idx_sales_orders_v2_customer_id ON sales_orders_v2(customer_id);
+CREATE INDEX idx_sales_orders_v2_order_number ON sales_orders_v2(order_number);
+CREATE INDEX idx_sales_orders_v2_order_status ON sales_orders_v2(order_status);
+CREATE INDEX idx_sales_orders_v2_payment_status ON sales_orders_v2(payment_status);
+CREATE INDEX idx_sales_orders_v2_fulfillment_status ON sales_orders_v2(fulfillment_status);
+CREATE INDEX idx_sales_orders_v2_order_date ON sales_orders_v2(order_date);
+CREATE INDEX idx_sales_orders_v2_order_type ON sales_orders_v2(order_type);
+CREATE INDEX idx_sales_orders_v2_sales_channel ON sales_orders_v2(sales_channel);
+CREATE INDEX idx_sales_orders_v2_source_cart_id ON sales_orders_v2(source_cart_id);
+CREATE INDEX idx_sales_orders_v2_created_at ON sales_orders_v2(created_at);
+
+CREATE INDEX idx_sales_order_lines_v2_sales_order_id ON sales_order_lines_v2(sales_order_id);
+CREATE INDEX idx_sales_order_lines_v2_product_id ON sales_order_lines_v2(product_id);
+CREATE INDEX idx_sales_order_lines_v2_product_variant_id ON sales_order_lines_v2(product_variant_id);
+CREATE INDEX idx_sales_order_lines_v2_line_status ON sales_order_lines_v2(line_status);
+
+CREATE INDEX idx_order_status_history_sales_order_id ON order_status_history(sales_order_id);
+CREATE INDEX idx_order_status_history_changed_at ON order_status_history(changed_at);
+
+CREATE INDEX idx_order_fulfillments_sales_order_id ON order_fulfillments(sales_order_id);
+CREATE INDEX idx_order_fulfillments_fulfillment_number ON order_fulfillments(fulfillment_number);
+CREATE INDEX idx_order_fulfillments_fulfillment_status ON order_fulfillments(fulfillment_status);
+CREATE INDEX idx_order_fulfillments_shipment_status ON order_fulfillments(shipment_status);
+
+CREATE INDEX idx_order_fulfillment_items_fulfillment_id ON order_fulfillment_items(fulfillment_id);
+CREATE INDEX idx_order_fulfillment_items_order_line_id ON order_fulfillment_items(order_line_id);
+
+-- =====================================================
+-- INDEXES FOR INVOICES
+-- =====================================================
+
+CREATE INDEX idx_invoices_organization_id ON invoices(organization_id);
+CREATE INDEX idx_invoices_store_id ON invoices(store_id);
+CREATE INDEX idx_invoices_customer_id ON invoices(customer_id);
+CREATE INDEX idx_invoices_invoice_number ON invoices(invoice_number);
+CREATE INDEX idx_invoices_invoice_status ON invoices(invoice_status);
+CREATE INDEX idx_invoices_invoice_type ON invoices(invoice_type);
+CREATE INDEX idx_invoices_invoice_date ON invoices(invoice_date);
+CREATE INDEX idx_invoices_due_date ON invoices(due_date);
+CREATE INDEX idx_invoices_sales_order_id ON invoices(sales_order_id);
+CREATE INDEX idx_invoices_is_recurring ON invoices(is_recurring);
+CREATE INDEX idx_invoices_next_invoice_date ON invoices(next_invoice_date);
+
+CREATE INDEX idx_invoice_lines_invoice_id ON invoice_lines(invoice_id);
+CREATE INDEX idx_invoice_lines_product_id ON invoice_lines(product_id);
+CREATE INDEX idx_invoice_lines_order_line_id ON invoice_lines(order_line_id);
+
+CREATE INDEX idx_invoice_payments_invoice_id ON invoice_payments(invoice_id);
+CREATE INDEX idx_invoice_payments_payment_date ON invoice_payments(payment_date);
+CREATE INDEX idx_invoice_payments_payment_number ON invoice_payments(payment_number);
+CREATE INDEX idx_invoice_payments_reconciled ON invoice_payments(reconciled);
+
+CREATE INDEX idx_invoice_status_history_invoice_id ON invoice_status_history(invoice_id);
+CREATE INDEX idx_invoice_status_history_changed_at ON invoice_status_history(changed_at);
+
+-- =====================================================
+-- INDEXES FOR QUOTES
+-- =====================================================
+
+CREATE INDEX idx_quotes_organization_id ON quotes(organization_id);
+CREATE INDEX idx_quotes_customer_id ON quotes(customer_id);
+CREATE INDEX idx_quotes_quote_number ON quotes(quote_number);
+CREATE INDEX idx_quotes_quote_status ON quotes(quote_status);
+CREATE INDEX idx_quotes_quote_date ON quotes(quote_date);
+CREATE INDEX idx_quotes_valid_until ON quotes(valid_until);
+CREATE INDEX idx_quotes_converted_to_order_id ON quotes(converted_to_order_id);
+
+CREATE INDEX idx_quote_lines_quote_id ON quote_lines(quote_id);
+CREATE INDEX idx_quote_lines_product_id ON quote_lines(product_id);
+
+-- =====================================================
+-- TRIGGERS FOR AUTOMATIC TIMESTAMP UPDATES
+-- =====================================================
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply triggers to all tables with updated_at
+CREATE TRIGGER update_carts_updated_at BEFORE UPDATE ON carts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_cart_items_updated_at BEFORE UPDATE ON cart_items
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_draft_cart_templates_updated_at BEFORE UPDATE ON draft_cart_templates
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_draft_cart_template_items_updated_at BEFORE UPDATE ON draft_cart_template_items
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_sales_orders_v2_updated_at BEFORE UPDATE ON sales_orders_v2
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_sales_order_lines_v2_updated_at BEFORE UPDATE ON sales_order_lines_v2
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_order_fulfillments_updated_at BEFORE UPDATE ON order_fulfillments
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_invoices_updated_at BEFORE UPDATE ON invoices
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_invoice_lines_updated_at BEFORE UPDATE ON invoice_lines
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_invoice_payments_updated_at BEFORE UPDATE ON invoice_payments
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_quotes_updated_at BEFORE UPDATE ON quotes
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_quote_lines_updated_at BEFORE UPDATE ON quote_lines
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================
+-- TRIGGERS FOR CART ACTIVITY TRACKING
+-- =====================================================
+
+-- Log cart status changes
+CREATE OR REPLACE FUNCTION log_cart_status_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.cart_status IS DISTINCT FROM NEW.cart_status THEN
+        INSERT INTO cart_activity_log (
+            cart_id, 
+            organization_id, 
+            activity_type, 
+            description, 
+            old_value, 
+            new_value
+        )
+        VALUES (
+            NEW.id,
+            NEW.organization_id,
+            'status_changed',
+            'Cart status changed from ' || OLD.cart_status || ' to ' || NEW.cart_status,
+            jsonb_build_object('status', OLD.cart_status),
+            jsonb_build_object('status', NEW.cart_status)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER cart_status_change_trigger
+    AFTER UPDATE ON carts
+    FOR EACH ROW
+    WHEN (OLD.cart_status IS DISTINCT FROM NEW.cart_status)
+    EXECUTE FUNCTION log_cart_status_change();
+
+-- Update cart last_activity_at when items change
+CREATE OR REPLACE FUNCTION update_cart_activity()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE carts 
+    SET last_activity_at = CURRENT_TIMESTAMP
+    WHERE id = COALESCE(NEW.cart_id, OLD.cart_id);
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER cart_items_activity_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON cart_items
+    FOR EACH ROW
+    EXECUTE FUNCTION update_cart_activity();
+
+-- =====================================================
+-- TRIGGERS FOR ORDER FINANCIAL CALCULATIONS
+-- =====================================================
+
+-- Calculate order totals
+CREATE OR REPLACE FUNCTION calculate_order_totals()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_subtotal DECIMAL(15,2);
+    v_tax_amount DECIMAL(15,2);
+BEGIN
+    -- Calculate subtotal and tax from order lines
+    SELECT 
+        COALESCE(SUM(line_total - tax_amount), 0),
+        COALESCE(SUM(tax_amount), 0)
+    INTO v_subtotal, v_tax_amount
+    FROM sales_order_lines_v2
+    WHERE sales_order_id = COALESCE(NEW.sales_order_id, OLD.sales_order_id);
+    
+    -- Update the order
+    UPDATE sales_orders_v2
+    SET 
+        subtotal = v_subtotal,
+        tax_amount = v_tax_amount,
+        total_amount = v_subtotal + v_tax_amount + COALESCE(shipping_amount, 0) + COALESCE(adjustment_amount, 0) - COALESCE(discount_amount, 0),
+        balance_due = (v_subtotal + v_tax_amount + COALESCE(shipping_amount, 0) + COALESCE(adjustment_amount, 0) - COALESCE(discount_amount, 0)) - COALESCE(paid_amount, 0)
+    WHERE id = COALESCE(NEW.sales_order_id, OLD.sales_order_id);
+    
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER calculate_order_totals_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON sales_order_lines_v2
+    FOR EACH ROW
+    EXECUTE FUNCTION calculate_order_totals();
+
+-- =====================================================
+-- TRIGGERS FOR INVOICE CALCULATIONS
+-- =====================================================
+
+-- Calculate invoice totals
+CREATE OR REPLACE FUNCTION calculate_invoice_totals()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_subtotal DECIMAL(15,2);
+    v_tax_amount DECIMAL(15,2);
+BEGIN
+    -- Calculate from invoice lines
+    SELECT 
+        COALESCE(SUM(line_total - tax_amount), 0),
+        COALESCE(SUM(tax_amount), 0)
+    INTO v_subtotal, v_tax_amount
+    FROM invoice_lines
+    WHERE invoice_id = COALESCE(NEW.invoice_id, OLD.invoice_id);
+    
+    -- Update the invoice
+    UPDATE invoices
+    SET 
+        subtotal = v_subtotal,
+        tax_amount = v_tax_amount,
+        total_amount = v_subtotal + v_tax_amount + COALESCE(shipping_amount, 0) + COALESCE(adjustment_amount, 0) - COALESCE(discount_amount, 0),
+        balance_due = (v_subtotal + v_tax_amount + COALESCE(shipping_amount, 0) + COALESCE(adjustment_amount, 0) - COALESCE(discount_amount, 0)) - COALESCE(paid_amount, 0) - COALESCE(credit_applied, 0)
+    WHERE id = COALESCE(NEW.invoice_id, OLD.invoice_id);
+    
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER calculate_invoice_totals_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON invoice_lines
+    FOR EACH ROW
+    EXECUTE FUNCTION calculate_invoice_totals();
+
+-- Update invoice paid amount when payment received
+CREATE OR REPLACE FUNCTION update_invoice_payment()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_total_paid DECIMAL(15,2);
+BEGIN
+    -- Calculate total paid
+    SELECT COALESCE(SUM(payment_amount), 0)
+    INTO v_total_paid
+    FROM invoice_payments
+    WHERE invoice_id = COALESCE(NEW.invoice_id, OLD.invoice_id);
+    
+    -- Update invoice
+    UPDATE invoices
+    SET 
+        paid_amount = v_total_paid,
+        balance_due = total_amount - v_total_paid - COALESCE(credit_applied, 0),
+        invoice_status = CASE
+            WHEN v_total_paid = 0 THEN 'sent'::invoice_status
+            WHEN v_total_paid >= total_amount - COALESCE(credit_applied, 0) THEN 'paid'::invoice_status
+            ELSE 'partially_paid'::invoice_status
+        END,
+        paid_date = CASE 
+            WHEN v_total_paid >= total_amount - COALESCE(credit_applied, 0) THEN CURRENT_DATE
+            ELSE NULL
+        END
+    WHERE id = COALESCE(NEW.invoice_id, OLD.invoice_id);
+    
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_invoice_payment_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON invoice_payments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_invoice_payment();
+
+-- =====================================================
+-- COMMENTS FOR DOCUMENTATION
+-- =====================================================
+
+COMMENT ON TABLE carts IS 'Shopping carts for online and POS channels, supporting both registered customers and guests';
+COMMENT ON TABLE cart_items IS 'Line items in shopping carts with pricing and customization details';
+COMMENT ON TABLE cart_activity_log IS 'Audit trail of all cart activities and changes';
+COMMENT ON TABLE draft_cart_templates IS 'Saved carts and wishlists for quick reordering';
+COMMENT ON TABLE sales_orders_v2 IS 'Enhanced order management with comprehensive tracking across all sales channels';
+COMMENT ON TABLE sales_order_lines_v2 IS 'Order line items with fulfillment tracking';
+COMMENT ON TABLE order_fulfillments IS 'Shipment and fulfillment tracking for orders';
+COMMENT ON TABLE invoices IS 'Customer invoices with payment tracking and recurring billing support';
+COMMENT ON TABLE invoice_payments IS 'Payment records against invoices';
+COMMENT ON TABLE quotes IS 'Sales quotations with approval workflow';
+
+-- =====================================================
 -- ANALYTICS TABLES
 -- =====================================================
 

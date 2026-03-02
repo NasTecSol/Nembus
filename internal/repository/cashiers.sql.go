@@ -8,8 +8,841 @@ package repository
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const activateCashier = `-- name: ActivateCashier :one
+UPDATE cashiers
+SET is_active = true
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+// Activate a cashier
+func (q *Queries) ActivateCashier(ctx context.Context, id int32) (Cashier, error) {
+	row := q.db.QueryRow(ctx, activateCashier, id)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+type BulkCreatePosTransactionLinesParams struct {
+	TransactionID    int32          `json:"transaction_id"`
+	ProductID        int32          `json:"product_id"`
+	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
+	Quantity         pgtype.Numeric `json:"quantity"`
+	UomID            pgtype.Int4    `json:"uom_id"`
+	UnitPrice        pgtype.Numeric `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric `json:"tax_amount"`
+	Subtotal         pgtype.Numeric `json:"subtotal"`
+	LineTotal        pgtype.Numeric `json:"line_total"`
+	CostPrice        pgtype.Numeric `json:"cost_price"`
+	LineNumber       pgtype.Int4    `json:"line_number"`
+	SerialNumber     pgtype.Text    `json:"serial_number"`
+	BatchNumber      pgtype.Text    `json:"batch_number"`
+	Metadata         []byte         `json:"metadata"`
+}
+
+const calculateSessionExpectedBalance = `-- name: CalculateSessionExpectedBalance :one
+
+SELECT 
+    cs.id,
+    cs.opening_balance,
+    COALESCE(SUM(CASE WHEN pp.payment_method = 'cash' THEN pp.amount ELSE 0 END), 0) as total_cash_payments,
+    COALESCE(SUM(pt.change_given), 0) as total_change_given,
+    (cs.opening_balance + 
+     COALESCE(SUM(CASE WHEN pp.payment_method = 'cash' THEN pp.amount ELSE 0 END), 0) - 
+     COALESCE(SUM(pt.change_given), 0)) as expected_balance
+FROM cashier_sessions cs
+LEFT JOIN pos_transactions pt ON pt.cashier_session_id = cs.id AND pt.status != 'voided'
+LEFT JOIN pos_payments pp ON pp.transaction_id = pt.id
+WHERE cs.id = $1
+GROUP BY cs.id, cs.opening_balance
+`
+
+type CalculateSessionExpectedBalanceRow struct {
+	ID                int32          `json:"id"`
+	OpeningBalance    pgtype.Numeric `json:"opening_balance"`
+	TotalCashPayments interface{}    `json:"total_cash_payments"`
+	TotalChangeGiven  interface{}    `json:"total_change_given"`
+	ExpectedBalance   int32          `json:"expected_balance"`
+}
+
+// =====================================================
+// CALCULATE SESSION EXPECTED BALANCE
+// =====================================================
+// Calculate expected balance for a cashier session
+// Formula: opening_balance + cash_payments - change_given + drawer_actions
+func (q *Queries) CalculateSessionExpectedBalance(ctx context.Context, id int32) (CalculateSessionExpectedBalanceRow, error) {
+	row := q.db.QueryRow(ctx, calculateSessionExpectedBalance, id)
+	var i CalculateSessionExpectedBalanceRow
+	err := row.Scan(
+		&i.ID,
+		&i.OpeningBalance,
+		&i.TotalCashPayments,
+		&i.TotalChangeGiven,
+		&i.ExpectedBalance,
+	)
+	return i, err
+}
+
+const cashierCodeExists = `-- name: CashierCodeExists :one
+SELECT EXISTS(
+    SELECT 1 FROM cashiers 
+    WHERE cashier_code = $1 AND store_id = $2
+)
+`
+
+type CashierCodeExistsParams struct {
+	CashierCode string `json:"cashier_code"`
+	StoreID     int32  `json:"store_id"`
+}
+
+// Check if cashier code exists for a store
+func (q *Queries) CashierCodeExists(ctx context.Context, arg CashierCodeExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, cashierCodeExists, arg.CashierCode, arg.StoreID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const cashierCodeExistsExcludingID = `-- name: CashierCodeExistsExcludingID :one
+SELECT EXISTS(
+    SELECT 1 FROM cashiers 
+    WHERE cashier_code = $1 AND store_id = $2 AND id != $3
+)
+`
+
+type CashierCodeExistsExcludingIDParams struct {
+	CashierCode string `json:"cashier_code"`
+	StoreID     int32  `json:"store_id"`
+	ID          int32  `json:"id"`
+}
+
+// Check if cashier code exists excluding specific cashier ID (for updates)
+func (q *Queries) CashierCodeExistsExcludingID(ctx context.Context, arg CashierCodeExistsExcludingIDParams) (bool, error) {
+	row := q.db.QueryRow(ctx, cashierCodeExistsExcludingID, arg.CashierCode, arg.StoreID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const cashierExists = `-- name: CashierExists :one
+
+SELECT EXISTS(
+    SELECT 1 FROM cashiers WHERE id = $1
+)
+`
+
+// =====================================================
+// VALIDATION & EXISTENCE CHECKS
+// =====================================================
+// Check if a cashier exists by ID
+func (q *Queries) CashierExists(ctx context.Context, id int32) (bool, error) {
+	row := q.db.QueryRow(ctx, cashierExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const countActiveCashiers = `-- name: CountActiveCashiers :one
+SELECT COUNT(*) FROM cashiers
+WHERE is_active = true
+`
+
+// Count active cashiers
+func (q *Queries) CountActiveCashiers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveCashiers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCashiers = `-- name: CountCashiers :one
+SELECT COUNT(*) FROM cashiers
+`
+
+// Count total number of cashiers
+func (q *Queries) CountCashiers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countCashiers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCashiersByStore = `-- name: CountCashiersByStore :one
+SELECT COUNT(*) FROM cashiers
+WHERE store_id = $1
+`
+
+// Count cashiers in a specific store
+func (q *Queries) CountCashiersByStore(ctx context.Context, storeID int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countCashiersByStore, storeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createCashier = `-- name: CreateCashier :one
+
+
+INSERT INTO cashiers (
+    user_id,
+    store_id,
+    cashier_code,
+    drawer_limit,
+    discount_limit,
+    is_active,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+)
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type CreateCashierParams struct {
+	UserID        int32          `json:"user_id"`
+	StoreID       int32          `json:"store_id"`
+	CashierCode   string         `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric `json:"discount_limit"`
+	IsActive      pgtype.Bool    `json:"is_active"`
+	Metadata      []byte         `json:"metadata"`
+}
+
+// =====================================================
+// CASHIERS QUERIES (SQLC)
+// =====================================================
+// File: queries/cashiers.sql
+// Purpose: CRUD operations and essential POS backend queries for cashiers
+// =====================================================
+// CREATE OPERATIONS
+// =====================================================
+// Create a new cashier
+func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, createCashier,
+		arg.UserID,
+		arg.StoreID,
+		arg.CashierCode,
+		arg.DrawerLimit,
+		arg.DiscountLimit,
+		arg.IsActive,
+		arg.Metadata,
+	)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCashierSession = `-- name: CreateCashierSession :one
+INSERT INTO cashier_sessions (
+    cashier_id,
+    pos_terminal_id,
+    session_number,
+    opening_time,
+    opening_balance,
+    status,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, 'open', $6
+)
+RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at
+`
+
+type CreateCashierSessionParams struct {
+	CashierID      int32            `json:"cashier_id"`
+	PosTerminalID  int32            `json:"pos_terminal_id"`
+	SessionNumber  string           `json:"session_number"`
+	OpeningTime    pgtype.Timestamp `json:"opening_time"`
+	OpeningBalance pgtype.Numeric   `json:"opening_balance"`
+	Metadata       []byte           `json:"metadata"`
+}
+
+// Create a new cashier session
+func (q *Queries) CreateCashierSession(ctx context.Context, arg CreateCashierSessionParams) (CashierSession, error) {
+	row := q.db.QueryRow(ctx, createCashierSession,
+		arg.CashierID,
+		arg.PosTerminalID,
+		arg.SessionNumber,
+		arg.OpeningTime,
+		arg.OpeningBalance,
+		arg.Metadata,
+	)
+	var i CashierSession
+	err := row.Scan(
+		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.SessionNumber,
+		&i.OpeningTime,
+		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createCashierWithDefaults = `-- name: CreateCashierWithDefaults :one
+INSERT INTO cashiers (
+    user_id,
+    store_id,
+    cashier_code,
+    is_active
+) VALUES (
+    $1, $2, $3, true
+)
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type CreateCashierWithDefaultsParams struct {
+	UserID      int32  `json:"user_id"`
+	StoreID     int32  `json:"store_id"`
+	CashierCode string `json:"cashier_code"`
+}
+
+// Create a new cashier with default values
+func (q *Queries) CreateCashierWithDefaults(ctx context.Context, arg CreateCashierWithDefaultsParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, createCashierWithDefaults, arg.UserID, arg.StoreID, arg.CashierCode)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createPosTransactionFromCart = `-- name: CreatePosTransactionFromCart :one
+
+INSERT INTO pos_transactions (
+    store_id,
+    cashier_id,
+    cashier_session_id,
+    customer_id,
+    pos_terminal_id,
+    transaction_number,
+    transaction_date,
+    transaction_type,
+    subtotal,
+    discount_amount,
+    tax_amount,
+    total_amount,
+    total_cost,
+    amount_paid,
+    change_given,
+    status,
+    price_list_id,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+    jsonb_build_object('source_cart_id', $18)
+)
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at
+`
+
+type CreatePosTransactionFromCartParams struct {
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	JsonbBuildObject  interface{}      `json:"jsonb_build_object"`
+}
+
+// =====================================================
+// CONVERT CART TO POS TRANSACTION
+// =====================================================
+// Create a POS transaction record linking to source cart
+func (q *Queries) CreatePosTransactionFromCart(ctx context.Context, arg CreatePosTransactionFromCartParams) (PosTransaction, error) {
+	row := q.db.QueryRow(ctx, createPosTransactionFromCart,
+		arg.StoreID,
+		arg.CashierID,
+		arg.CashierSessionID,
+		arg.CustomerID,
+		arg.PosTerminalID,
+		arg.TransactionNumber,
+		arg.TransactionDate,
+		arg.TransactionType,
+		arg.Subtotal,
+		arg.DiscountAmount,
+		arg.TaxAmount,
+		arg.TotalAmount,
+		arg.TotalCost,
+		arg.AmountPaid,
+		arg.ChangeGiven,
+		arg.Status,
+		arg.PriceListID,
+		arg.JsonbBuildObject,
+	)
+	var i PosTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.StoreID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.TransactionNumber,
+		&i.TransactionDate,
+		&i.TransactionType,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.TotalCost,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.Status,
+		&i.PriceListID,
+		&i.SalesOrderID,
+		&i.SourceCartID,
+		&i.VoidedBy,
+		&i.VoidedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deactivateCashier = `-- name: DeactivateCashier :one
+UPDATE cashiers
+SET is_active = false
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+// Deactivate a cashier
+func (q *Queries) DeactivateCashier(ctx context.Context, id int32) (Cashier, error) {
+	row := q.db.QueryRow(ctx, deactivateCashier, id)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteCashier = `-- name: DeleteCashier :exec
+
+DELETE FROM cashiers
+WHERE id = $1
+`
+
+// =====================================================
+// DELETE OPERATIONS
+// =====================================================
+// Hard delete a cashier (use with caution)
+func (q *Queries) DeleteCashier(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, deleteCashier, id)
+	return err
+}
+
+const getActiveSessionByCashier = `-- name: GetActiveSessionByCashier :one
+
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at FROM cashier_sessions
+WHERE cashier_id = $1 
+  AND status = 'open'
+ORDER BY opening_time DESC
+LIMIT 1
+`
+
+// =====================================================
+// SESSION LIFECYCLE QUERIES
+// =====================================================
+// Get the currently open session for a specific cashier
+// Prevents double-opening sessions on different terminals
+func (q *Queries) GetActiveSessionByCashier(ctx context.Context, cashierID int32) (CashierSession, error) {
+	row := q.db.QueryRow(ctx, getActiveSessionByCashier, cashierID)
+	var i CashierSession
+	err := row.Scan(
+		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.SessionNumber,
+		&i.OpeningTime,
+		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getActiveSessionByCashierAndTerminal = `-- name: GetActiveSessionByCashierAndTerminal :one
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at FROM cashier_sessions
+WHERE cashier_id = $1 
+  AND pos_terminal_id = $2
+  AND status = 'open'
+ORDER BY opening_time DESC
+LIMIT 1
+`
+
+type GetActiveSessionByCashierAndTerminalParams struct {
+	CashierID     int32 `json:"cashier_id"`
+	PosTerminalID int32 `json:"pos_terminal_id"`
+}
+
+// Get active session for specific cashier and terminal
+func (q *Queries) GetActiveSessionByCashierAndTerminal(ctx context.Context, arg GetActiveSessionByCashierAndTerminalParams) (CashierSession, error) {
+	row := q.db.QueryRow(ctx, getActiveSessionByCashierAndTerminal, arg.CashierID, arg.PosTerminalID)
+	var i CashierSession
+	err := row.Scan(
+		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.SessionNumber,
+		&i.OpeningTime,
+		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCashierByCode = `-- name: GetCashierByCode :one
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+WHERE cashier_code = $1 AND store_id = $2
+`
+
+type GetCashierByCodeParams struct {
+	CashierCode string `json:"cashier_code"`
+	StoreID     int32  `json:"store_id"`
+}
+
+// Get a cashier by cashier_code and store_id
+func (q *Queries) GetCashierByCode(ctx context.Context, arg GetCashierByCodeParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, getCashierByCode, arg.CashierCode, arg.StoreID)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCashierByID = `-- name: GetCashierByID :one
+
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+WHERE id = $1
+`
+
+// =====================================================
+// READ OPERATIONS
+// =====================================================
+// Get a single cashier by ID
+func (q *Queries) GetCashierByID(ctx context.Context, id int32) (Cashier, error) {
+	row := q.db.QueryRow(ctx, getCashierByID, id)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCashierByUserID = `-- name: GetCashierByUserID :one
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+WHERE user_id = $1 AND store_id = $2
+`
+
+type GetCashierByUserIDParams struct {
+	UserID  int32 `json:"user_id"`
+	StoreID int32 `json:"store_id"`
+}
+
+// Get a cashier by user_id (one user can be one cashier per store)
+func (q *Queries) GetCashierByUserID(ctx context.Context, arg GetCashierByUserIDParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, getCashierByUserID, arg.UserID, arg.StoreID)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCashierDailyPerformance = `-- name: GetCashierDailyPerformance :one
+SELECT 
+    c.id as cashier_id,
+    c.cashier_code,
+    u.username,
+    u.first_name || ' ' || u.last_name as full_name,
+    COUNT(DISTINCT cs.id) as sessions_worked,
+    COUNT(DISTINCT pt.id) as total_transactions,
+    COALESCE(SUM(pt.subtotal), 0) as gross_sales,
+    COALESCE(SUM(pt.discount_amount), 0) as total_discounts,
+    COALESCE(SUM(pt.tax_amount), 0) as total_tax,
+    COALESCE(SUM(pt.total_amount), 0) as net_sales,
+    COALESCE(AVG(pt.total_amount), 0) as avg_transaction_value,
+    COUNT(CASE WHEN pt.status = 'voided' THEN 1 END) as voids_count,
+    COALESCE(SUM(CASE WHEN pt.status = 'voided' THEN pt.total_amount ELSE 0 END), 0) as voids_amount
+FROM cashiers c
+INNER JOIN users u ON u.id = c.user_id
+LEFT JOIN cashier_sessions cs ON cs.cashier_id = c.id 
+    AND cs.opening_time::date = $2
+LEFT JOIN pos_transactions pt ON pt.cashier_session_id = cs.id
+WHERE c.id = $1
+GROUP BY c.id, c.cashier_code, u.username, u.first_name, u.last_name
+`
+
+type GetCashierDailyPerformanceParams struct {
+	ID          int32            `json:"id"`
+	OpeningTime pgtype.Timestamp `json:"opening_time"`
+}
+
+type GetCashierDailyPerformanceRow struct {
+	CashierID           int32       `json:"cashier_id"`
+	CashierCode         string      `json:"cashier_code"`
+	Username            string      `json:"username"`
+	FullName            interface{} `json:"full_name"`
+	SessionsWorked      int64       `json:"sessions_worked"`
+	TotalTransactions   int64       `json:"total_transactions"`
+	GrossSales          interface{} `json:"gross_sales"`
+	TotalDiscounts      interface{} `json:"total_discounts"`
+	TotalTax            interface{} `json:"total_tax"`
+	NetSales            interface{} `json:"net_sales"`
+	AvgTransactionValue interface{} `json:"avg_transaction_value"`
+	VoidsCount          int64       `json:"voids_count"`
+	VoidsAmount         interface{} `json:"voids_amount"`
+}
+
+// Get daily performance metrics for a cashier
+func (q *Queries) GetCashierDailyPerformance(ctx context.Context, arg GetCashierDailyPerformanceParams) (GetCashierDailyPerformanceRow, error) {
+	row := q.db.QueryRow(ctx, getCashierDailyPerformance, arg.ID, arg.OpeningTime)
+	var i GetCashierDailyPerformanceRow
+	err := row.Scan(
+		&i.CashierID,
+		&i.CashierCode,
+		&i.Username,
+		&i.FullName,
+		&i.SessionsWorked,
+		&i.TotalTransactions,
+		&i.GrossSales,
+		&i.TotalDiscounts,
+		&i.TotalTax,
+		&i.NetSales,
+		&i.AvgTransactionValue,
+		&i.VoidsCount,
+		&i.VoidsAmount,
+	)
+	return i, err
+}
+
+const getCashierPerformanceByDateRange = `-- name: GetCashierPerformanceByDateRange :one
+SELECT 
+    c.id as cashier_id,
+    c.cashier_code,
+    u.username,
+    u.first_name || ' ' || u.last_name as full_name,
+    COUNT(DISTINCT cs.id) as total_sessions,
+    COUNT(DISTINCT pt.id) as total_transactions,
+    COALESCE(SUM(pt.subtotal), 0) as gross_sales,
+    COALESCE(SUM(pt.discount_amount), 0) as total_discounts,
+    COALESCE(SUM(pt.tax_amount), 0) as total_tax,
+    COALESCE(SUM(pt.total_amount), 0) as net_sales,
+    COALESCE(AVG(pt.total_amount), 0) as avg_transaction_value
+FROM cashiers c
+INNER JOIN users u ON u.id = c.user_id
+LEFT JOIN cashier_sessions cs ON cs.cashier_id = c.id 
+    AND cs.opening_time::date BETWEEN $2 AND $3
+LEFT JOIN pos_transactions pt ON pt.cashier_session_id = cs.id
+    AND pt.status != 'voided'
+WHERE c.id = $1
+GROUP BY c.id, c.cashier_code, u.username, u.first_name, u.last_name
+`
+
+type GetCashierPerformanceByDateRangeParams struct {
+	ID            int32            `json:"id"`
+	OpeningTime   pgtype.Timestamp `json:"opening_time"`
+	OpeningTime_2 pgtype.Timestamp `json:"opening_time_2"`
+}
+
+type GetCashierPerformanceByDateRangeRow struct {
+	CashierID           int32       `json:"cashier_id"`
+	CashierCode         string      `json:"cashier_code"`
+	Username            string      `json:"username"`
+	FullName            interface{} `json:"full_name"`
+	TotalSessions       int64       `json:"total_sessions"`
+	TotalTransactions   int64       `json:"total_transactions"`
+	GrossSales          interface{} `json:"gross_sales"`
+	TotalDiscounts      interface{} `json:"total_discounts"`
+	TotalTax            interface{} `json:"total_tax"`
+	NetSales            interface{} `json:"net_sales"`
+	AvgTransactionValue interface{} `json:"avg_transaction_value"`
+}
+
+// Get cashier performance for a date range
+func (q *Queries) GetCashierPerformanceByDateRange(ctx context.Context, arg GetCashierPerformanceByDateRangeParams) (GetCashierPerformanceByDateRangeRow, error) {
+	row := q.db.QueryRow(ctx, getCashierPerformanceByDateRange, arg.ID, arg.OpeningTime, arg.OpeningTime_2)
+	var i GetCashierPerformanceByDateRangeRow
+	err := row.Scan(
+		&i.CashierID,
+		&i.CashierCode,
+		&i.Username,
+		&i.FullName,
+		&i.TotalSessions,
+		&i.TotalTransactions,
+		&i.GrossSales,
+		&i.TotalDiscounts,
+		&i.TotalTax,
+		&i.NetSales,
+		&i.AvgTransactionValue,
+	)
+	return i, err
+}
+
+const getCashierVarianceReport = `-- name: GetCashierVarianceReport :many
+
+SELECT 
+    c.id,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name as full_name,
+    COUNT(cs.id) as session_count,
+    COALESCE(SUM(cs.variance), 0) as total_variance,
+    COALESCE(AVG(cs.variance), 0) as avg_variance,
+    COUNT(CASE WHEN cs.variance > 0 THEN 1 END) as over_count,
+    COUNT(CASE WHEN cs.variance < 0 THEN 1 END) as short_count
+FROM cashiers c
+INNER JOIN users u ON u.id = c.user_id
+LEFT JOIN cashier_sessions cs ON cs.cashier_id = c.id
+    AND cs.opening_time::date BETWEEN $2 AND $3
+    AND cs.status = 'closed'
+WHERE c.store_id = $1
+GROUP BY c.id, c.cashier_code, u.first_name, u.last_name
+ORDER BY total_variance DESC
+`
+
+type GetCashierVarianceReportParams struct {
+	StoreID       int32            `json:"store_id"`
+	OpeningTime   pgtype.Timestamp `json:"opening_time"`
+	OpeningTime_2 pgtype.Timestamp `json:"opening_time_2"`
+}
+
+type GetCashierVarianceReportRow struct {
+	ID            int32       `json:"id"`
+	CashierCode   string      `json:"cashier_code"`
+	FullName      interface{} `json:"full_name"`
+	SessionCount  int64       `json:"session_count"`
+	TotalVariance interface{} `json:"total_variance"`
+	AvgVariance   interface{} `json:"avg_variance"`
+	OverCount     int64       `json:"over_count"`
+	ShortCount    int64       `json:"short_count"`
+}
+
+// =====================================================
+// ANALYTICS & REPORTING
+// =====================================================
+// Get variance report for all cashiers in a store
+func (q *Queries) GetCashierVarianceReport(ctx context.Context, arg GetCashierVarianceReportParams) ([]GetCashierVarianceReportRow, error) {
+	rows, err := q.db.Query(ctx, getCashierVarianceReport, arg.StoreID, arg.OpeningTime, arg.OpeningTime_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCashierVarianceReportRow
+	for rows.Next() {
+		var i GetCashierVarianceReportRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierCode,
+			&i.FullName,
+			&i.SessionCount,
+			&i.TotalVariance,
+			&i.AvgVariance,
+			&i.OverCount,
+			&i.ShortCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const getCashierWithLimits = `-- name: GetCashierWithLimits :one
 SELECT 
@@ -40,6 +873,7 @@ type GetCashierWithLimitsRow struct {
 	StoreName     string         `json:"store_name"`
 }
 
+// Get cashier with limits and user details
 func (q *Queries) GetCashierWithLimits(ctx context.Context, id int32) (GetCashierWithLimitsRow, error) {
 	row := q.db.QueryRow(ctx, getCashierWithLimits, id)
 	var i GetCashierWithLimitsRow
@@ -55,6 +889,748 @@ func (q *Queries) GetCashierWithLimits(ctx context.Context, id int32) (GetCashie
 		&i.StoreName,
 	)
 	return i, err
+}
+
+const getCashierWithUserDetails = `-- name: GetCashierWithUserDetails :one
+SELECT 
+    c.id, c.user_id, c.store_id, c.cashier_code, c.drawer_limit, c.discount_limit, c.is_active, c.metadata, c.created_at,
+    u.username,
+    u.first_name || ' ' || u.last_name as full_name,
+    u.email,
+    u.employee_code,
+    u.is_active as user_active
+FROM cashiers c
+INNER JOIN users u ON u.id = c.user_id
+WHERE c.id = $1
+`
+
+type GetCashierWithUserDetailsRow struct {
+	ID            int32            `json:"id"`
+	UserID        int32            `json:"user_id"`
+	StoreID       int32            `json:"store_id"`
+	CashierCode   string           `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric   `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric   `json:"discount_limit"`
+	IsActive      pgtype.Bool      `json:"is_active"`
+	Metadata      []byte           `json:"metadata"`
+	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	Username      string           `json:"username"`
+	FullName      interface{}      `json:"full_name"`
+	Email         string           `json:"email"`
+	EmployeeCode  pgtype.Text      `json:"employee_code"`
+	UserActive    pgtype.Bool      `json:"user_active"`
+}
+
+// Get cashier with full user details
+func (q *Queries) GetCashierWithUserDetails(ctx context.Context, id int32) (GetCashierWithUserDetailsRow, error) {
+	row := q.db.QueryRow(ctx, getCashierWithUserDetails, id)
+	var i GetCashierWithUserDetailsRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.Username,
+		&i.FullName,
+		&i.Email,
+		&i.EmployeeCode,
+		&i.UserActive,
+	)
+	return i, err
+}
+
+const getOpenSessionsForStore = `-- name: GetOpenSessionsForStore :many
+SELECT 
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name as cashier_name,
+    pt.terminal_code,
+    pt.terminal_name
+FROM cashier_sessions cs
+INNER JOIN cashiers c ON c.id = cs.cashier_id
+INNER JOIN users u ON u.id = c.user_id
+INNER JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id
+WHERE c.store_id = $1
+  AND cs.status = 'open'
+ORDER BY cs.opening_time DESC
+`
+
+type GetOpenSessionsForStoreRow struct {
+	ID              int32            `json:"id"`
+	CashierID       int32            `json:"cashier_id"`
+	PosTerminalID   int32            `json:"pos_terminal_id"`
+	SessionNumber   string           `json:"session_number"`
+	OpeningTime     pgtype.Timestamp `json:"opening_time"`
+	ClosingTime     pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
+	Variance        pgtype.Numeric   `json:"variance"`
+	Status          pgtype.Text      `json:"status"`
+	Metadata        []byte           `json:"metadata"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	CashierCode     string           `json:"cashier_code"`
+	CashierName     interface{}      `json:"cashier_name"`
+	TerminalCode    string           `json:"terminal_code"`
+	TerminalName    pgtype.Text      `json:"terminal_name"`
+}
+
+// Get all currently open sessions for a store
+func (q *Queries) GetOpenSessionsForStore(ctx context.Context, storeID int32) ([]GetOpenSessionsForStoreRow, error) {
+	rows, err := q.db.Query(ctx, getOpenSessionsForStore, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOpenSessionsForStoreRow
+	for rows.Next() {
+		var i GetOpenSessionsForStoreRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierID,
+			&i.PosTerminalID,
+			&i.SessionNumber,
+			&i.OpeningTime,
+			&i.ClosingTime,
+			&i.OpeningBalance,
+			&i.ClosingBalance,
+			&i.ExpectedBalance,
+			&i.Variance,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.CashierCode,
+			&i.CashierName,
+			&i.TerminalCode,
+			&i.TerminalName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSessionByID = `-- name: GetSessionByID :one
+
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at FROM cashier_sessions
+WHERE id = $1
+`
+
+// Note: CloseCashierSession query is in cashier_sessions.sql to avoid duplication
+// Get a specific cashier session by ID
+func (q *Queries) GetSessionByID(ctx context.Context, id int32) (CashierSession, error) {
+	row := q.db.QueryRow(ctx, getSessionByID, id)
+	var i CashierSession
+	err := row.Scan(
+		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.SessionNumber,
+		&i.OpeningTime,
+		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getSessionByNumber = `-- name: GetSessionByNumber :one
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at FROM cashier_sessions
+WHERE session_number = $1
+`
+
+// Get a session by session number
+func (q *Queries) GetSessionByNumber(ctx context.Context, sessionNumber string) (CashierSession, error) {
+	row := q.db.QueryRow(ctx, getSessionByNumber, sessionNumber)
+	var i CashierSession
+	err := row.Scan(
+		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.SessionNumber,
+		&i.OpeningTime,
+		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getSessionFinancialSummary = `-- name: GetSessionFinancialSummary :one
+SELECT 
+    cs.id,
+    cs.session_number,
+    cs.opening_balance,
+    cs.closing_balance,
+    cs.expected_balance,
+    cs.variance,
+    COUNT(DISTINCT pt.id) as transaction_count,
+    COALESCE(SUM(pt.subtotal), 0) as total_subtotal,
+    COALESCE(SUM(pt.discount_amount), 0) as total_discounts,
+    COALESCE(SUM(pt.tax_amount), 0) as total_tax,
+    COALESCE(SUM(pt.total_amount), 0) as total_sales,
+    COALESCE(SUM(CASE WHEN pp.payment_method = 'cash' THEN pp.amount ELSE 0 END), 0) as cash_payments,
+    COALESCE(SUM(CASE WHEN pp.payment_method = 'card' THEN pp.amount ELSE 0 END), 0) as card_payments,
+    COALESCE(SUM(CASE WHEN pp.payment_method = 'mobile' THEN pp.amount ELSE 0 END), 0) as mobile_payments,
+    COALESCE(SUM(pt.change_given), 0) as total_change_given
+FROM cashier_sessions cs
+LEFT JOIN pos_transactions pt ON pt.cashier_session_id = cs.id AND pt.status != 'voided'
+LEFT JOIN pos_payments pp ON pp.transaction_id = pt.id
+WHERE cs.id = $1
+GROUP BY cs.id, cs.session_number, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance
+`
+
+type GetSessionFinancialSummaryRow struct {
+	ID               int32          `json:"id"`
+	SessionNumber    string         `json:"session_number"`
+	OpeningBalance   pgtype.Numeric `json:"opening_balance"`
+	ClosingBalance   pgtype.Numeric `json:"closing_balance"`
+	ExpectedBalance  pgtype.Numeric `json:"expected_balance"`
+	Variance         pgtype.Numeric `json:"variance"`
+	TransactionCount int64          `json:"transaction_count"`
+	TotalSubtotal    interface{}    `json:"total_subtotal"`
+	TotalDiscounts   interface{}    `json:"total_discounts"`
+	TotalTax         interface{}    `json:"total_tax"`
+	TotalSales       interface{}    `json:"total_sales"`
+	CashPayments     interface{}    `json:"cash_payments"`
+	CardPayments     interface{}    `json:"card_payments"`
+	MobilePayments   interface{}    `json:"mobile_payments"`
+	TotalChangeGiven interface{}    `json:"total_change_given"`
+}
+
+// Get comprehensive financial summary for a session
+func (q *Queries) GetSessionFinancialSummary(ctx context.Context, id int32) (GetSessionFinancialSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getSessionFinancialSummary, id)
+	var i GetSessionFinancialSummaryRow
+	err := row.Scan(
+		&i.ID,
+		&i.SessionNumber,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
+		&i.Variance,
+		&i.TransactionCount,
+		&i.TotalSubtotal,
+		&i.TotalDiscounts,
+		&i.TotalTax,
+		&i.TotalSales,
+		&i.CashPayments,
+		&i.CardPayments,
+		&i.MobilePayments,
+		&i.TotalChangeGiven,
+	)
+	return i, err
+}
+
+const getSessionPaymentMethodBreakdown = `-- name: GetSessionPaymentMethodBreakdown :many
+SELECT 
+    pp.payment_method,
+    COUNT(DISTINCT pp.transaction_id) as transaction_count,
+    COALESCE(SUM(pp.amount), 0) as total_amount
+FROM pos_payments pp
+INNER JOIN pos_transactions pt ON pt.id = pp.transaction_id
+WHERE pt.cashier_session_id = $1
+  AND pt.status != 'voided'
+GROUP BY pp.payment_method
+ORDER BY total_amount DESC
+`
+
+type GetSessionPaymentMethodBreakdownRow struct {
+	PaymentMethod    string      `json:"payment_method"`
+	TransactionCount int64       `json:"transaction_count"`
+	TotalAmount      interface{} `json:"total_amount"`
+}
+
+// Get payment method breakdown for a session
+func (q *Queries) GetSessionPaymentMethodBreakdown(ctx context.Context, cashierSessionID int32) ([]GetSessionPaymentMethodBreakdownRow, error) {
+	rows, err := q.db.Query(ctx, getSessionPaymentMethodBreakdown, cashierSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSessionPaymentMethodBreakdownRow
+	for rows.Next() {
+		var i GetSessionPaymentMethodBreakdownRow
+		if err := rows.Scan(&i.PaymentMethod, &i.TransactionCount, &i.TotalAmount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSessionTransactionSummary = `-- name: GetSessionTransactionSummary :one
+
+SELECT 
+    COUNT(pt.id) as total_transactions,
+    COALESCE(SUM(pt.subtotal), 0) as gross_sales,
+    COALESCE(SUM(pt.discount_amount), 0) as total_discounts,
+    COALESCE(SUM(pt.tax_amount), 0) as total_tax,
+    COALESCE(SUM(pt.total_amount), 0) as net_sales,
+    COALESCE(AVG(pt.total_amount), 0) as average_transaction_value,
+    COUNT(CASE WHEN pt.status = 'voided' THEN 1 END) as voided_count,
+    COALESCE(SUM(CASE WHEN pt.status = 'voided' THEN pt.total_amount ELSE 0 END), 0) as voided_amount
+FROM pos_transactions pt
+WHERE pt.cashier_session_id = $1
+`
+
+type GetSessionTransactionSummaryRow struct {
+	TotalTransactions       int64       `json:"total_transactions"`
+	GrossSales              interface{} `json:"gross_sales"`
+	TotalDiscounts          interface{} `json:"total_discounts"`
+	TotalTax                interface{} `json:"total_tax"`
+	NetSales                interface{} `json:"net_sales"`
+	AverageTransactionValue interface{} `json:"average_transaction_value"`
+	VoidedCount             int64       `json:"voided_count"`
+	VoidedAmount            interface{} `json:"voided_amount"`
+}
+
+// =====================================================
+// TRANSACTION & PERFORMANCE QUERIES
+// =====================================================
+// Get transaction summary for X-Report (mid-shift summary)
+func (q *Queries) GetSessionTransactionSummary(ctx context.Context, cashierSessionID int32) (GetSessionTransactionSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getSessionTransactionSummary, cashierSessionID)
+	var i GetSessionTransactionSummaryRow
+	err := row.Scan(
+		&i.TotalTransactions,
+		&i.GrossSales,
+		&i.TotalDiscounts,
+		&i.TotalTax,
+		&i.NetSales,
+		&i.AverageTransactionValue,
+		&i.VoidedCount,
+		&i.VoidedAmount,
+	)
+	return i, err
+}
+
+const getSessionsByStatus = `-- name: GetSessionsByStatus :many
+SELECT 
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name as cashier_name,
+    pt.terminal_code
+FROM cashier_sessions cs
+INNER JOIN cashiers c ON c.id = cs.cashier_id
+INNER JOIN users u ON u.id = c.user_id
+INNER JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id
+WHERE c.store_id = $1
+  AND cs.status = $2
+ORDER BY cs.opening_time DESC
+`
+
+type GetSessionsByStatusParams struct {
+	StoreID int32       `json:"store_id"`
+	Status  pgtype.Text `json:"status"`
+}
+
+type GetSessionsByStatusRow struct {
+	ID              int32            `json:"id"`
+	CashierID       int32            `json:"cashier_id"`
+	PosTerminalID   int32            `json:"pos_terminal_id"`
+	SessionNumber   string           `json:"session_number"`
+	OpeningTime     pgtype.Timestamp `json:"opening_time"`
+	ClosingTime     pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
+	Variance        pgtype.Numeric   `json:"variance"`
+	Status          pgtype.Text      `json:"status"`
+	Metadata        []byte           `json:"metadata"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	CashierCode     string           `json:"cashier_code"`
+	CashierName     interface{}      `json:"cashier_name"`
+	TerminalCode    string           `json:"terminal_code"`
+}
+
+// Get sessions by status for a store
+func (q *Queries) GetSessionsByStatus(ctx context.Context, arg GetSessionsByStatusParams) ([]GetSessionsByStatusRow, error) {
+	rows, err := q.db.Query(ctx, getSessionsByStatus, arg.StoreID, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSessionsByStatusRow
+	for rows.Next() {
+		var i GetSessionsByStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierID,
+			&i.PosTerminalID,
+			&i.SessionNumber,
+			&i.OpeningTime,
+			&i.ClosingTime,
+			&i.OpeningBalance,
+			&i.ClosingBalance,
+			&i.ExpectedBalance,
+			&i.Variance,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.CashierCode,
+			&i.CashierName,
+			&i.TerminalCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTopPerformingCashiers = `-- name: GetTopPerformingCashiers :many
+SELECT 
+    c.id,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name as full_name,
+    COUNT(DISTINCT pt.id) as transaction_count,
+    COALESCE(SUM(pt.total_amount), 0) as total_sales,
+    COALESCE(AVG(pt.total_amount), 0) as avg_transaction_value
+FROM cashiers c
+INNER JOIN users u ON u.id = c.user_id
+INNER JOIN cashier_sessions cs ON cs.cashier_id = c.id
+INNER JOIN pos_transactions pt ON pt.cashier_session_id = cs.id
+WHERE c.store_id = $1
+  AND cs.opening_time::date BETWEEN $2 AND $3
+  AND pt.status != 'voided'
+GROUP BY c.id, c.cashier_code, u.first_name, u.last_name
+ORDER BY total_sales DESC
+LIMIT $4
+`
+
+type GetTopPerformingCashiersParams struct {
+	StoreID       int32            `json:"store_id"`
+	OpeningTime   pgtype.Timestamp `json:"opening_time"`
+	OpeningTime_2 pgtype.Timestamp `json:"opening_time_2"`
+	Limit         int32            `json:"limit"`
+}
+
+type GetTopPerformingCashiersRow struct {
+	ID                  int32       `json:"id"`
+	CashierCode         string      `json:"cashier_code"`
+	FullName            interface{} `json:"full_name"`
+	TransactionCount    int64       `json:"transaction_count"`
+	TotalSales          interface{} `json:"total_sales"`
+	AvgTransactionValue interface{} `json:"avg_transaction_value"`
+}
+
+// Get top N performing cashiers by sales for a date range
+func (q *Queries) GetTopPerformingCashiers(ctx context.Context, arg GetTopPerformingCashiersParams) ([]GetTopPerformingCashiersRow, error) {
+	rows, err := q.db.Query(ctx, getTopPerformingCashiers,
+		arg.StoreID,
+		arg.OpeningTime,
+		arg.OpeningTime_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTopPerformingCashiersRow
+	for rows.Next() {
+		var i GetTopPerformingCashiersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierCode,
+			&i.FullName,
+			&i.TransactionCount,
+			&i.TotalSales,
+			&i.AvgTransactionValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getVoidedTransactionsByDate = `-- name: GetVoidedTransactionsByDate :many
+SELECT 
+    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at,
+    c.cashier_code,
+    u.username as voided_by_username
+FROM pos_transactions pt
+INNER JOIN cashiers c ON c.id = pt.cashier_id
+LEFT JOIN users u ON u.id = pt.voided_by
+WHERE pt.store_id = $1
+  AND pt.transaction_date::date BETWEEN $2 AND $3
+  AND pt.status = 'voided'
+ORDER BY pt.voided_at DESC
+`
+
+type GetVoidedTransactionsByDateParams struct {
+	StoreID           int32            `json:"store_id"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionDate_2 pgtype.Timestamp `json:"transaction_date_2"`
+}
+
+type GetVoidedTransactionsByDateRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          []byte           `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	CashierCode       string           `json:"cashier_code"`
+	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
+}
+
+// Get voided transactions for a date range
+func (q *Queries) GetVoidedTransactionsByDate(ctx context.Context, arg GetVoidedTransactionsByDateParams) ([]GetVoidedTransactionsByDateRow, error) {
+	rows, err := q.db.Query(ctx, getVoidedTransactionsByDate, arg.StoreID, arg.TransactionDate, arg.TransactionDate_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetVoidedTransactionsByDateRow
+	for rows.Next() {
+		var i GetVoidedTransactionsByDateRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.PosTerminalID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.TransactionType,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.TotalCost,
+			&i.AmountPaid,
+			&i.ChangeGiven,
+			&i.Status,
+			&i.PriceListID,
+			&i.SalesOrderID,
+			&i.SourceCartID,
+			&i.VoidedBy,
+			&i.VoidedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.CashierCode,
+			&i.VoidedByUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getVoidedTransactionsBySession = `-- name: GetVoidedTransactionsBySession :many
+SELECT 
+    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at,
+    u.username as voided_by_username,
+    u.first_name || ' ' || u.last_name as voided_by_name
+FROM pos_transactions pt
+LEFT JOIN users u ON u.id = pt.voided_by
+WHERE pt.cashier_session_id = $1
+  AND pt.status = 'voided'
+ORDER BY pt.voided_at DESC
+`
+
+type GetVoidedTransactionsBySessionRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          []byte           `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
+	VoidedByName      interface{}      `json:"voided_by_name"`
+}
+
+// Get all voided transactions for a session
+func (q *Queries) GetVoidedTransactionsBySession(ctx context.Context, cashierSessionID int32) ([]GetVoidedTransactionsBySessionRow, error) {
+	rows, err := q.db.Query(ctx, getVoidedTransactionsBySession, cashierSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetVoidedTransactionsBySessionRow
+	for rows.Next() {
+		var i GetVoidedTransactionsBySessionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.PosTerminalID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.TransactionType,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.TotalCost,
+			&i.AmountPaid,
+			&i.ChangeGiven,
+			&i.Status,
+			&i.PriceListID,
+			&i.SalesOrderID,
+			&i.SourceCartID,
+			&i.VoidedBy,
+			&i.VoidedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.VoidedByUsername,
+			&i.VoidedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveCashiers = `-- name: ListActiveCashiers :many
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+WHERE is_active = true
+ORDER BY cashier_code
+`
+
+// List only active cashiers
+func (q *Queries) ListActiveCashiers(ctx context.Context) ([]Cashier, error) {
+	rows, err := q.db.Query(ctx, listActiveCashiers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Cashier
+	for rows.Next() {
+		var i Cashier
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StoreID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.DiscountLimit,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveCashiersByStore = `-- name: ListActiveCashiersByStore :many
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+WHERE store_id = $1 AND is_active = true
+ORDER BY cashier_code
+`
+
+// List active cashiers for a specific store
+func (q *Queries) ListActiveCashiersByStore(ctx context.Context, storeID int32) ([]Cashier, error) {
+	rows, err := q.db.Query(ctx, listActiveCashiersByStore, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Cashier
+	for rows.Next() {
+		var i Cashier
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StoreID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.DiscountLimit,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveCashiersInStore = `-- name: ListActiveCashiersInStore :many
@@ -83,6 +1659,7 @@ type ListActiveCashiersInStoreRow struct {
 	ActiveSessions int64          `json:"active_sessions"`
 }
 
+// List active cashiers in a store with session information
 func (q *Queries) ListActiveCashiersInStore(ctx context.Context, storeID int32) ([]ListActiveCashiersInStoreRow, error) {
 	rows, err := q.db.Query(ctx, listActiveCashiersInStore, storeID)
 	if err != nil {
@@ -108,4 +1685,551 @@ func (q *Queries) ListActiveCashiersInStore(ctx context.Context, storeID int32) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listAllCashiers = `-- name: ListAllCashiers :many
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+ORDER BY cashier_code
+`
+
+// List all cashiers
+func (q *Queries) ListAllCashiers(ctx context.Context) ([]Cashier, error) {
+	rows, err := q.db.Query(ctx, listAllCashiers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Cashier
+	for rows.Next() {
+		var i Cashier
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StoreID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.DiscountLimit,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCashierSessions = `-- name: ListCashierSessions :many
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at FROM cashier_sessions
+WHERE cashier_id = $1
+ORDER BY opening_time DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListCashierSessionsParams struct {
+	CashierID int32 `json:"cashier_id"`
+	Limit     int32 `json:"limit"`
+	Offset    int32 `json:"offset"`
+}
+
+// List all sessions for a cashier with pagination
+func (q *Queries) ListCashierSessions(ctx context.Context, arg ListCashierSessionsParams) ([]CashierSession, error) {
+	rows, err := q.db.Query(ctx, listCashierSessions, arg.CashierID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CashierSession
+	for rows.Next() {
+		var i CashierSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierID,
+			&i.PosTerminalID,
+			&i.SessionNumber,
+			&i.OpeningTime,
+			&i.ClosingTime,
+			&i.OpeningBalance,
+			&i.ClosingBalance,
+			&i.ExpectedBalance,
+			&i.Variance,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCashiersByStore = `-- name: ListCashiersByStore :many
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+WHERE store_id = $1
+ORDER BY cashier_code
+`
+
+// List all cashiers for a specific store
+func (q *Queries) ListCashiersByStore(ctx context.Context, storeID int32) ([]Cashier, error) {
+	rows, err := q.db.Query(ctx, listCashiersByStore, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Cashier
+	for rows.Next() {
+		var i Cashier
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StoreID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.DiscountLimit,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCashiersWithPagination = `-- name: ListCashiersWithPagination :many
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+ORDER BY cashier_code
+LIMIT $1 OFFSET $2
+`
+
+type ListCashiersWithPaginationParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+// List cashiers with pagination
+func (q *Queries) ListCashiersWithPagination(ctx context.Context, arg ListCashiersWithPaginationParams) ([]Cashier, error) {
+	rows, err := q.db.Query(ctx, listCashiersWithPagination, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Cashier
+	for rows.Next() {
+		var i Cashier
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StoreID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.DiscountLimit,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCashiersWithUserDetails = `-- name: ListCashiersWithUserDetails :many
+SELECT 
+    c.id, c.user_id, c.store_id, c.cashier_code, c.drawer_limit, c.discount_limit, c.is_active, c.metadata, c.created_at,
+    u.username,
+    u.first_name || ' ' || u.last_name as full_name,
+    u.email,
+    u.employee_code
+FROM cashiers c
+INNER JOIN users u ON u.id = c.user_id
+WHERE c.store_id = $1
+  AND c.is_active = true
+ORDER BY c.cashier_code
+`
+
+type ListCashiersWithUserDetailsRow struct {
+	ID            int32            `json:"id"`
+	UserID        int32            `json:"user_id"`
+	StoreID       int32            `json:"store_id"`
+	CashierCode   string           `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric   `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric   `json:"discount_limit"`
+	IsActive      pgtype.Bool      `json:"is_active"`
+	Metadata      []byte           `json:"metadata"`
+	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	Username      string           `json:"username"`
+	FullName      interface{}      `json:"full_name"`
+	Email         string           `json:"email"`
+	EmployeeCode  pgtype.Text      `json:"employee_code"`
+}
+
+// List all cashiers with user details
+func (q *Queries) ListCashiersWithUserDetails(ctx context.Context, storeID int32) ([]ListCashiersWithUserDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listCashiersWithUserDetails, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCashiersWithUserDetailsRow
+	for rows.Next() {
+		var i ListCashiersWithUserDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.StoreID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.DiscountLimit,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.Username,
+			&i.FullName,
+			&i.Email,
+			&i.EmployeeCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionsByDateRange = `-- name: ListSessionsByDateRange :many
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at FROM cashier_sessions
+WHERE cashier_id = $1
+  AND opening_time::date BETWEEN $2 AND $3
+ORDER BY opening_time DESC
+`
+
+type ListSessionsByDateRangeParams struct {
+	CashierID     int32            `json:"cashier_id"`
+	OpeningTime   pgtype.Timestamp `json:"opening_time"`
+	OpeningTime_2 pgtype.Timestamp `json:"opening_time_2"`
+}
+
+// Get sessions within a date range
+func (q *Queries) ListSessionsByDateRange(ctx context.Context, arg ListSessionsByDateRangeParams) ([]CashierSession, error) {
+	rows, err := q.db.Query(ctx, listSessionsByDateRange, arg.CashierID, arg.OpeningTime, arg.OpeningTime_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CashierSession
+	for rows.Next() {
+		var i CashierSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierID,
+			&i.PosTerminalID,
+			&i.SessionNumber,
+			&i.OpeningTime,
+			&i.ClosingTime,
+			&i.OpeningBalance,
+			&i.ClosingBalance,
+			&i.ExpectedBalance,
+			&i.Variance,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteCashier = `-- name: SoftDeleteCashier :one
+UPDATE cashiers
+SET is_active = false
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+// Soft delete by deactivating
+func (q *Queries) SoftDeleteCashier(ctx context.Context, id int32) (Cashier, error) {
+	row := q.db.QueryRow(ctx, softDeleteCashier, id)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateCartToConverted = `-- name: UpdateCartToConverted :exec
+UPDATE carts
+SET
+    cart_status = 'converted',
+    converted_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+// Mark cart as converted after creating POS transaction
+func (q *Queries) UpdateCartToConverted(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, updateCartToConverted, id)
+	return err
+}
+
+const updateCashier = `-- name: UpdateCashier :one
+
+UPDATE cashiers
+SET
+    user_id = $2,
+    store_id = $3,
+    cashier_code = $4,
+    drawer_limit = $5,
+    discount_limit = $6,
+    is_active = $7,
+    metadata = $8
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type UpdateCashierParams struct {
+	ID            int32          `json:"id"`
+	UserID        int32          `json:"user_id"`
+	StoreID       int32          `json:"store_id"`
+	CashierCode   string         `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric `json:"discount_limit"`
+	IsActive      pgtype.Bool    `json:"is_active"`
+	Metadata      []byte         `json:"metadata"`
+}
+
+// =====================================================
+// UPDATE OPERATIONS
+// =====================================================
+// Update cashier information
+func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, updateCashier,
+		arg.ID,
+		arg.UserID,
+		arg.StoreID,
+		arg.CashierCode,
+		arg.DrawerLimit,
+		arg.DiscountLimit,
+		arg.IsActive,
+		arg.Metadata,
+	)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateCashierDiscountLimit = `-- name: UpdateCashierDiscountLimit :one
+UPDATE cashiers
+SET discount_limit = $2
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type UpdateCashierDiscountLimitParams struct {
+	ID            int32          `json:"id"`
+	DiscountLimit pgtype.Numeric `json:"discount_limit"`
+}
+
+// Update only the discount limit
+func (q *Queries) UpdateCashierDiscountLimit(ctx context.Context, arg UpdateCashierDiscountLimitParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, updateCashierDiscountLimit, arg.ID, arg.DiscountLimit)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateCashierDrawerLimit = `-- name: UpdateCashierDrawerLimit :one
+UPDATE cashiers
+SET drawer_limit = $2
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type UpdateCashierDrawerLimitParams struct {
+	ID          int32          `json:"id"`
+	DrawerLimit pgtype.Numeric `json:"drawer_limit"`
+}
+
+// Update only the drawer limit
+func (q *Queries) UpdateCashierDrawerLimit(ctx context.Context, arg UpdateCashierDrawerLimitParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, updateCashierDrawerLimit, arg.ID, arg.DrawerLimit)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateCashierLimits = `-- name: UpdateCashierLimits :one
+UPDATE cashiers
+SET
+    drawer_limit = $2,
+    discount_limit = $3
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type UpdateCashierLimitsParams struct {
+	ID            int32          `json:"id"`
+	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric `json:"discount_limit"`
+}
+
+// Update cashier drawer and discount limits
+func (q *Queries) UpdateCashierLimits(ctx context.Context, arg UpdateCashierLimitsParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, updateCashierLimits, arg.ID, arg.DrawerLimit, arg.DiscountLimit)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateCashierMetadata = `-- name: UpdateCashierMetadata :one
+UPDATE cashiers
+SET metadata = $2
+WHERE id = $1
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+`
+
+type UpdateCashierMetadataParams struct {
+	ID       int32  `json:"id"`
+	Metadata []byte `json:"metadata"`
+}
+
+// Update cashier metadata
+func (q *Queries) UpdateCashierMetadata(ctx context.Context, arg UpdateCashierMetadataParams) (Cashier, error) {
+	row := q.db.QueryRow(ctx, updateCashierMetadata, arg.ID, arg.Metadata)
+	var i Cashier
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.StoreID,
+		&i.CashierCode,
+		&i.DrawerLimit,
+		&i.DiscountLimit,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const voidTransaction = `-- name: VoidTransaction :one
+
+UPDATE pos_transactions
+SET
+    status = 'voided',
+    voided_by = $2,
+    voided_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at
+`
+
+type VoidTransactionParams struct {
+	ID       int32       `json:"id"`
+	VoidedBy pgtype.Int4 `json:"voided_by"`
+}
+
+// =====================================================
+// VOID TRANSACTION WITH AUDIT
+// =====================================================
+// Void a transaction and record who voided it
+func (q *Queries) VoidTransaction(ctx context.Context, arg VoidTransactionParams) (PosTransaction, error) {
+	row := q.db.QueryRow(ctx, voidTransaction, arg.ID, arg.VoidedBy)
+	var i PosTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.StoreID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.TransactionNumber,
+		&i.TransactionDate,
+		&i.TransactionType,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.TotalCost,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.Status,
+		&i.PriceListID,
+		&i.SalesOrderID,
+		&i.SourceCartID,
+		&i.VoidedBy,
+		&i.VoidedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
 }

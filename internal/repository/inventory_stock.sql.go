@@ -11,6 +11,320 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adjustInventoryStock = `-- name: AdjustInventoryStock :one
+
+UPDATE inventory_stock
+SET 
+    quantity_on_hand = quantity_on_hand + COALESCE($2, 0),
+    quantity_available = quantity_available + COALESCE($3, 0),
+    quantity_allocated = quantity_allocated + COALESCE($4, 0),
+    quantity_on_order = quantity_on_order + COALESCE($5, 0),
+    quantity_in_transit = quantity_in_transit + COALESCE($6, 0)
+WHERE id = $1
+RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
+`
+
+type AdjustInventoryStockParams struct {
+	ID                int32          `json:"id"`
+	QuantityOnHand    pgtype.Numeric `json:"quantity_on_hand"`
+	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
+	QuantityAllocated pgtype.Numeric `json:"quantity_allocated"`
+	QuantityOnOrder   pgtype.Numeric `json:"quantity_on_order"`
+	QuantityInTransit pgtype.Numeric `json:"quantity_in_transit"`
+}
+
+// Note: UpsertInventoryStock should be handled in usecase layer by checking GetInventoryStockByProductAndStore first
+func (q *Queries) AdjustInventoryStock(ctx context.Context, arg AdjustInventoryStockParams) (InventoryStock, error) {
+	row := q.db.QueryRow(ctx, adjustInventoryStock,
+		arg.ID,
+		arg.QuantityOnHand,
+		arg.QuantityAvailable,
+		arg.QuantityAllocated,
+		arg.QuantityOnOrder,
+		arg.QuantityInTransit,
+	)
+	var i InventoryStock
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.QuantityOnHand,
+		&i.QuantityAllocated,
+		&i.QuantityAvailable,
+		&i.QuantityOnOrder,
+		&i.QuantityInTransit,
+		&i.ReorderLevel,
+		&i.ReorderQuantity,
+		&i.MaxStockLevel,
+		&i.LastCountedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adjustInventoryStockByProductAndStore = `-- name: AdjustInventoryStockByProductAndStore :one
+UPDATE inventory_stock
+SET 
+    quantity_on_hand = quantity_on_hand + COALESCE($4, 0),
+    quantity_available = quantity_available + COALESCE($5, 0),
+    quantity_allocated = quantity_allocated + COALESCE($6, 0),
+    quantity_on_order = quantity_on_order + COALESCE($7, 0),
+    quantity_in_transit = quantity_in_transit + COALESCE($8, 0)
+WHERE product_id = $1
+  AND product_variant_id IS NOT DISTINCT FROM $2
+  AND store_id = $3
+RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
+`
+
+type AdjustInventoryStockByProductAndStoreParams struct {
+	ProductID         int32          `json:"product_id"`
+	ProductVariantID  pgtype.Int4    `json:"product_variant_id"`
+	StoreID           int32          `json:"store_id"`
+	QuantityOnHand    pgtype.Numeric `json:"quantity_on_hand"`
+	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
+	QuantityAllocated pgtype.Numeric `json:"quantity_allocated"`
+	QuantityOnOrder   pgtype.Numeric `json:"quantity_on_order"`
+	QuantityInTransit pgtype.Numeric `json:"quantity_in_transit"`
+}
+
+func (q *Queries) AdjustInventoryStockByProductAndStore(ctx context.Context, arg AdjustInventoryStockByProductAndStoreParams) (InventoryStock, error) {
+	row := q.db.QueryRow(ctx, adjustInventoryStockByProductAndStore,
+		arg.ProductID,
+		arg.ProductVariantID,
+		arg.StoreID,
+		arg.QuantityOnHand,
+		arg.QuantityAvailable,
+		arg.QuantityAllocated,
+		arg.QuantityOnOrder,
+		arg.QuantityInTransit,
+	)
+	var i InventoryStock
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.QuantityOnHand,
+		&i.QuantityAllocated,
+		&i.QuantityAvailable,
+		&i.QuantityOnOrder,
+		&i.QuantityInTransit,
+		&i.ReorderLevel,
+		&i.ReorderQuantity,
+		&i.MaxStockLevel,
+		&i.LastCountedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createInventoryStock = `-- name: CreateInventoryStock :one
+
+INSERT INTO inventory_stock (
+    product_id,
+    product_variant_id,
+    store_id,
+    storage_location_id,
+    quantity_on_hand,
+    quantity_allocated,
+    quantity_available,
+    quantity_on_order,
+    quantity_in_transit,
+    reorder_level,
+    reorder_quantity,
+    max_stock_level,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+) RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
+`
+
+type CreateInventoryStockParams struct {
+	ProductID         int32          `json:"product_id"`
+	ProductVariantID  pgtype.Int4    `json:"product_variant_id"`
+	StoreID           int32          `json:"store_id"`
+	StorageLocationID pgtype.Int4    `json:"storage_location_id"`
+	QuantityOnHand    pgtype.Numeric `json:"quantity_on_hand"`
+	QuantityAllocated pgtype.Numeric `json:"quantity_allocated"`
+	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
+	QuantityOnOrder   pgtype.Numeric `json:"quantity_on_order"`
+	QuantityInTransit pgtype.Numeric `json:"quantity_in_transit"`
+	ReorderLevel      pgtype.Numeric `json:"reorder_level"`
+	ReorderQuantity   pgtype.Numeric `json:"reorder_quantity"`
+	MaxStockLevel     pgtype.Numeric `json:"max_stock_level"`
+	Metadata          []byte         `json:"metadata"`
+}
+
+// =====================================================
+// INVENTORY STOCK CRUD OPERATIONS
+// =====================================================
+func (q *Queries) CreateInventoryStock(ctx context.Context, arg CreateInventoryStockParams) (InventoryStock, error) {
+	row := q.db.QueryRow(ctx, createInventoryStock,
+		arg.ProductID,
+		arg.ProductVariantID,
+		arg.StoreID,
+		arg.StorageLocationID,
+		arg.QuantityOnHand,
+		arg.QuantityAllocated,
+		arg.QuantityAvailable,
+		arg.QuantityOnOrder,
+		arg.QuantityInTransit,
+		arg.ReorderLevel,
+		arg.ReorderQuantity,
+		arg.MaxStockLevel,
+		arg.Metadata,
+	)
+	var i InventoryStock
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.QuantityOnHand,
+		&i.QuantityAllocated,
+		&i.QuantityAvailable,
+		&i.QuantityOnOrder,
+		&i.QuantityInTransit,
+		&i.ReorderLevel,
+		&i.ReorderQuantity,
+		&i.MaxStockLevel,
+		&i.LastCountedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteInventoryStock = `-- name: DeleteInventoryStock :exec
+DELETE FROM inventory_stock
+WHERE id = $1
+`
+
+func (q *Queries) DeleteInventoryStock(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, deleteInventoryStock, id)
+	return err
+}
+
+const getInventoryStock = `-- name: GetInventoryStock :one
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+WHERE id = $1
+`
+
+func (q *Queries) GetInventoryStock(ctx context.Context, id int32) (InventoryStock, error) {
+	row := q.db.QueryRow(ctx, getInventoryStock, id)
+	var i InventoryStock
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.QuantityOnHand,
+		&i.QuantityAllocated,
+		&i.QuantityAvailable,
+		&i.QuantityOnOrder,
+		&i.QuantityInTransit,
+		&i.ReorderLevel,
+		&i.ReorderQuantity,
+		&i.MaxStockLevel,
+		&i.LastCountedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInventoryStockByProductAndStore = `-- name: GetInventoryStockByProductAndStore :one
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+WHERE product_id = $1
+  AND product_variant_id IS NOT DISTINCT FROM $2
+  AND store_id = $3
+  AND storage_location_id IS NOT DISTINCT FROM $4
+LIMIT 1
+`
+
+type GetInventoryStockByProductAndStoreParams struct {
+	ProductID         int32       `json:"product_id"`
+	ProductVariantID  pgtype.Int4 `json:"product_variant_id"`
+	StoreID           int32       `json:"store_id"`
+	StorageLocationID pgtype.Int4 `json:"storage_location_id"`
+}
+
+func (q *Queries) GetInventoryStockByProductAndStore(ctx context.Context, arg GetInventoryStockByProductAndStoreParams) (InventoryStock, error) {
+	row := q.db.QueryRow(ctx, getInventoryStockByProductAndStore,
+		arg.ProductID,
+		arg.ProductVariantID,
+		arg.StoreID,
+		arg.StorageLocationID,
+	)
+	var i InventoryStock
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.QuantityOnHand,
+		&i.QuantityAllocated,
+		&i.QuantityAvailable,
+		&i.QuantityOnOrder,
+		&i.QuantityInTransit,
+		&i.ReorderLevel,
+		&i.ReorderQuantity,
+		&i.MaxStockLevel,
+		&i.LastCountedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInventoryStockSummary = `-- name: GetInventoryStockSummary :one
+SELECT 
+    COUNT(*) AS total_records,
+    COUNT(DISTINCT product_id) AS unique_products,
+    COUNT(DISTINCT store_id) AS unique_stores,
+    SUM(quantity_on_hand) AS total_on_hand,
+    SUM(quantity_available) AS total_available,
+    SUM(quantity_allocated) AS total_allocated
+FROM inventory_stock
+WHERE store_id = $1
+`
+
+type GetInventoryStockSummaryRow struct {
+	TotalRecords   int64 `json:"total_records"`
+	UniqueProducts int64 `json:"unique_products"`
+	UniqueStores   int64 `json:"unique_stores"`
+	TotalOnHand    int64 `json:"total_on_hand"`
+	TotalAvailable int64 `json:"total_available"`
+	TotalAllocated int64 `json:"total_allocated"`
+}
+
+func (q *Queries) GetInventoryStockSummary(ctx context.Context, storeID int32) (GetInventoryStockSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getInventoryStockSummary, storeID)
+	var i GetInventoryStockSummaryRow
+	err := row.Scan(
+		&i.TotalRecords,
+		&i.UniqueProducts,
+		&i.UniqueStores,
+		&i.TotalOnHand,
+		&i.TotalAvailable,
+		&i.TotalAllocated,
+	)
+	return i, err
+}
+
 const getLowStockProducts = `-- name: GetLowStockProducts :many
 SELECT 
     s.product_id,
@@ -123,4 +437,297 @@ func (q *Queries) GetStockValuationByStore(ctx context.Context, orgID int32) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const listInventoryStock = `-- name: ListInventoryStock :many
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListInventoryStock(ctx context.Context) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, listInventoryStock)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInventoryStockByProduct = `-- name: ListInventoryStockByProduct :many
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+WHERE product_id = $1
+ORDER BY store_id
+`
+
+func (q *Queries) ListInventoryStockByProduct(ctx context.Context, productID int32) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, listInventoryStockByProduct, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInventoryStockByStorageLocation = `-- name: ListInventoryStockByStorageLocation :many
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+WHERE storage_location_id = $1
+ORDER BY product_id
+`
+
+func (q *Queries) ListInventoryStockByStorageLocation(ctx context.Context, storageLocationID pgtype.Int4) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, listInventoryStockByStorageLocation, storageLocationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInventoryStockByStore = `-- name: ListInventoryStockByStore :many
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+WHERE store_id = $1
+ORDER BY product_id
+`
+
+func (q *Queries) ListInventoryStockByStore(ctx context.Context, storeID int32) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, listInventoryStockByStore, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInventoryStockByStoreAndLocation = `-- name: ListInventoryStockByStoreAndLocation :many
+SELECT id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at FROM inventory_stock
+WHERE store_id = $1
+  AND storage_location_id IS NOT DISTINCT FROM $2
+ORDER BY product_id
+`
+
+type ListInventoryStockByStoreAndLocationParams struct {
+	StoreID           int32       `json:"store_id"`
+	StorageLocationID pgtype.Int4 `json:"storage_location_id"`
+}
+
+func (q *Queries) ListInventoryStockByStoreAndLocation(ctx context.Context, arg ListInventoryStockByStoreAndLocationParams) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, listInventoryStockByStoreAndLocation, arg.StoreID, arg.StorageLocationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateInventoryStock = `-- name: UpdateInventoryStock :one
+UPDATE inventory_stock
+SET 
+    quantity_on_hand = COALESCE($2, quantity_on_hand),
+    quantity_allocated = COALESCE($3, quantity_allocated),
+    quantity_available = COALESCE($4, quantity_available),
+    quantity_on_order = COALESCE($5, quantity_on_order),
+    quantity_in_transit = COALESCE($6, quantity_in_transit),
+    reorder_level = COALESCE($7, reorder_level),
+    reorder_quantity = COALESCE($8, reorder_quantity),
+    max_stock_level = COALESCE($9, max_stock_level),
+    last_counted_at = COALESCE($10, last_counted_at),
+    metadata = COALESCE($11, metadata)
+WHERE id = $1
+RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
+`
+
+type UpdateInventoryStockParams struct {
+	ID                int32            `json:"id"`
+	QuantityOnHand    pgtype.Numeric   `json:"quantity_on_hand"`
+	QuantityAllocated pgtype.Numeric   `json:"quantity_allocated"`
+	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
+	QuantityOnOrder   pgtype.Numeric   `json:"quantity_on_order"`
+	QuantityInTransit pgtype.Numeric   `json:"quantity_in_transit"`
+	ReorderLevel      pgtype.Numeric   `json:"reorder_level"`
+	ReorderQuantity   pgtype.Numeric   `json:"reorder_quantity"`
+	MaxStockLevel     pgtype.Numeric   `json:"max_stock_level"`
+	LastCountedAt     pgtype.Timestamp `json:"last_counted_at"`
+	Metadata          []byte           `json:"metadata"`
+}
+
+func (q *Queries) UpdateInventoryStock(ctx context.Context, arg UpdateInventoryStockParams) (InventoryStock, error) {
+	row := q.db.QueryRow(ctx, updateInventoryStock,
+		arg.ID,
+		arg.QuantityOnHand,
+		arg.QuantityAllocated,
+		arg.QuantityAvailable,
+		arg.QuantityOnOrder,
+		arg.QuantityInTransit,
+		arg.ReorderLevel,
+		arg.ReorderQuantity,
+		arg.MaxStockLevel,
+		arg.LastCountedAt,
+		arg.Metadata,
+	)
+	var i InventoryStock
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.QuantityOnHand,
+		&i.QuantityAllocated,
+		&i.QuantityAvailable,
+		&i.QuantityOnOrder,
+		&i.QuantityInTransit,
+		&i.ReorderLevel,
+		&i.ReorderQuantity,
+		&i.MaxStockLevel,
+		&i.LastCountedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

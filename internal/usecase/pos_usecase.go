@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -105,6 +106,7 @@ func (uc *PosUseCase) ListProductsForStore(
 
 			// 🔑 FIXED jsonb fields: package_n_price (packages/UOMs with prices), product_uom_conversions (e.g. 1 box = 10 packs, 1 pack = 150 ml)
 			"product_metadata":        utils.BytesToJSONRawMessage(row.ProductMetadata),
+			"product_variants":        utils.BytesToJSONRawMessage(row.ProductVariants),
 			"package_n_price":         utils.BytesToJSONRawMessage(row.PackageNPrice),
 			"product_uom_conversions": utils.BytesToJSONRawMessage(row.ProductUomConversions),
 		})
@@ -304,6 +306,114 @@ func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *r
 		}
 	}
 	return utils.NewResponse(utils.CodeCreated, "product created", prod)
+}
+
+// ProcessPOSPayment records a payment and updates the cashier session expected balance.
+func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddPaymentToTransactionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	// 1. Record the payment
+	err := uc.repo.AddPaymentToTransaction(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to record payment: "+err.Error(), nil)
+	}
+
+	// 2. Fetch the transaction to get the session ID
+	txn, err := uc.repo.GetPosTransaction(ctx, arg.TransactionID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch transaction: "+err.Error(), nil)
+	}
+
+	// 3. Update the expected balance in the cashier session
+	err = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+		ID:              txn.CashierSessionID,
+		ExpectedBalance: arg.Amount,
+	})
+	if err != nil {
+		// Note: We log the error but don't fail the payment recording if just the balance update fails
+		fmt.Printf("Error: failed to update session expected balance for session %d: %s\n", txn.CashierSessionID, err.Error())
+	}
+
+	return utils.NewResponse(utils.CodeOK, "payment processed successfully", nil)
+}
+
+// ListTodaysTransactions returns today's POS transactions for a store.
+func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	rows, err := uc.repo.ListTodaysPosTransactions(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", rows)
+}
+
+// GetTransaction returns a single POS transaction by ID.
+func (uc *PosUseCase) GetTransaction(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	txn, err := uc.repo.GetPosTransaction(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "transaction not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "transaction fetched", txn)
+}
+
+// GetTransactionFull returns a POS transaction with full line details.
+func (uc *PosUseCase) GetTransactionFull(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	rows, err := uc.repo.GetPosTransactionFull(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "transaction details fetched", rows)
+}
+
+// VoidTransaction voids a completed POS transaction.
+func (uc *PosUseCase) VoidTransaction(ctx context.Context, id int32, voidedBy int32, reason string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	rowsAffected, err := uc.repo.VoidPosTransaction(ctx, repository.VoidPosTransactionParams{
+		ID: id, VoidedBy: pgtype.Int4{Int32: voidedBy, Valid: true}, Column3: reason,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	if rowsAffected == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "transaction not found or already voided", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "transaction voided", map[string]interface{}{"voided": true})
+}
+
+// GetTransactionPayments returns all payments for a POS transaction.
+func (uc *PosUseCase) GetTransactionPayments(ctx context.Context, transactionID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	rows, err := uc.repo.GetPaymentsForTransaction(ctx, transactionID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "payments fetched", rows)
+}
+
+// GetTransactionPaymentSummary returns payment summary for a POS transaction.
+func (uc *PosUseCase) GetTransactionPaymentSummary(ctx context.Context, transactionID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	row, err := uc.repo.GetTransactionPaymentSummary(ctx, transactionID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "payment summary fetched", row)
 }
 
 func parseNumericFromString(s string) (pgtype.Numeric, error) {

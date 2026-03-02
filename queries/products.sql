@@ -74,45 +74,8 @@ DELETE FROM product_categories WHERE id = $1;
 
 -- =====================================================
 -- BRANDS
+-- Note: Brand queries are in brands.sql
 -- =====================================================
-
--- name: CreateBrand :one
-INSERT INTO brands (
-    name, code, is_active, metadata
-) VALUES (
-    $1, $2, $3, $4
-) RETURNING *;
-
--- name: GetBrand :one
-SELECT * FROM brands WHERE id = $1 LIMIT 1;
-
--- name: GetBrandByCode :one
-SELECT * FROM brands WHERE code = $1 LIMIT 1;
-
--- name: ListBrands :many
-SELECT * FROM brands
-WHERE is_active = COALESCE(sqlc.narg(is_active), is_active)
-ORDER BY name
-LIMIT $1 OFFSET $2;
-
--- name: SearchBrands :many
-SELECT * FROM brands
-WHERE is_active = true
-  AND (name ILIKE '%' || $1 || '%' OR code ILIKE '%' || $1 || '%')
-ORDER BY name
-LIMIT $2 OFFSET $3;
-
--- name: UpdateBrand :one
-UPDATE brands
-SET 
-    name = COALESCE(sqlc.narg(name), name),
-    is_active = COALESCE(sqlc.narg(is_active), is_active),
-    metadata = COALESCE(sqlc.narg(metadata), metadata)
-WHERE id = sqlc.arg(id)
-RETURNING *;
-
--- name: DeleteBrand :exec
-DELETE FROM brands WHERE id = $1;
 
 -- =====================================================
 -- UNITS OF MEASURE
@@ -246,3 +209,60 @@ WHERE organization_id = $1
 -- PRODUCT UOM CONVERSIONS
 -- Note: Product UOM conversion queries are in uom_query.sql
 -- =====================================================
+
+-- =====================================================
+-- PRODUCT CATALOG (Admin: products + embedded variants)
+-- =====================================================
+
+-- name: ListProductsWithVariants :many
+SELECT 
+    p.id, 
+    p.sku, 
+    p.name, 
+    p.description, 
+    p.is_active,
+    pc.name AS category_name,
+    b.name AS brand_name,
+    COALESCE(
+        json_agg(
+            DISTINCT jsonb_build_object(
+                'id', pv.id,
+                'variant_sku', pv.variant_sku,
+                'variant_name', pv.variant_name,
+                'variant_attributes', pv.variant_attributes,
+                'is_active', pv.is_active
+            )
+        ) FILTER (WHERE pv.id IS NOT NULL), 
+        '[]'
+    )::jsonb AS variants,
+    COALESCE(
+        json_agg(
+            DISTINCT jsonb_build_object(
+                'stock_id', ist.id,
+                'store_id', ist.store_id,
+                'storage_location_id', ist.storage_location_id,
+                'storage_location_name', sl.name,
+                'storage_location_code', sl.code,
+                'product_variant_id', ist.product_variant_id,
+                'quantity_on_hand', ist.quantity_on_hand,
+                'quantity_available', ist.quantity_available,
+                'quantity_allocated', ist.quantity_allocated,
+                'quantity_on_order', ist.quantity_on_order,
+                'reorder_level', ist.reorder_level,
+                'reorder_quantity', ist.reorder_quantity,
+                'max_stock_level', ist.max_stock_level
+            )
+        ) FILTER (WHERE ist.id IS NOT NULL),
+        '[]'
+    )::jsonb AS inventory
+FROM products p
+LEFT JOIN product_categories pc ON p.category_id = pc.id
+LEFT JOIN brands b ON p.brand_id = b.id
+LEFT JOIN product_variants pv ON p.id = pv.product_id
+LEFT JOIN inventory_stock ist ON p.id = ist.product_id
+LEFT JOIN storage_locations sl ON ist.storage_location_id = sl.id
+WHERE p.organization_id = $1
+  AND ($2 = 0 OR p.category_id = $2)
+GROUP BY p.id, pc.name, b.name
+ORDER BY p.name
+LIMIT $3 OFFSET $4;

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -12,14 +13,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PosHandler holds the POS use case.
+// PosHandler holds the POS and POS payment use cases.
 type PosHandler struct {
-	useCase *usecase.PosUseCase
+	useCase       *usecase.PosUseCase
+	paymentUseCase *usecase.PosPaymentUseCase
 }
 
 // NewPosHandler creates a new POS handler.
-func NewPosHandler(uc *usecase.PosUseCase) *PosHandler {
-	return &PosHandler{useCase: uc}
+func NewPosHandler(uc *usecase.PosUseCase, paymentUC *usecase.PosPaymentUseCase) *PosHandler {
+	return &PosHandler{useCase: uc, paymentUseCase: paymentUC}
 }
 
 func (h *PosHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
@@ -245,5 +247,401 @@ func (h *PosHandler) AddProduct(c *gin.Context) {
 	}
 
 	resp := h.useCase.AddProduct(c.Request.Context(), input)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// AddPaymentToTransactionRequest captures payment from terminal/mobile clients.
+// Metadata can hold gateway response: gateway_txn_id, masked_card, auth_code for auditing.
+type AddPaymentToTransactionRequest struct {
+	TransactionID   int32       `json:"transaction_id"`
+	PaymentMethod   string      `json:"payment_method"`
+	PaymentGateway  string      `json:"payment_gateway"`
+	Amount          string      `json:"amount"`
+	ReferenceNumber string      `json:"reference_number"`
+	Metadata        interface{} `json:"metadata"` // Gateway payload: e.g. {"gateway_txn_id":"...","masked_card":"****1234","auth_code":"ABC123"}
+}
+
+// ProcessPayment handles POST /api/pos/payments
+// @Summary      Process a POS payment
+// @Description  Records a payment for a transaction and updates drawer balance
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        Authorization header    string  true   "Bearer token"
+// @Param        body          body      AddPaymentToTransactionRequest true "Payment payload"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/payments [post]
+func (h *PosHandler) ProcessPayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+
+	var req AddPaymentToTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	amount, err := repo.ParseNumeric(c.Request.Context(), req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid amount format", nil))
+		return
+	}
+
+	metadataJSON, _ := json.Marshal(req.Metadata)
+	if metadataJSON == nil {
+		metadataJSON = []byte("{}")
+	}
+	var refNum *string
+	if req.ReferenceNumber != "" {
+		refNum = &req.ReferenceNumber
+	}
+	var gateway *string
+	if req.PaymentGateway != "" {
+		gateway = &req.PaymentGateway
+	}
+	input := &usecase.CreatePosPaymentInput{
+		TransactionID:   req.TransactionID,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentGateway:  gateway,
+		Amount:          amount,
+		ReferenceNumber: refNum,
+		Metadata:         metadataJSON,
+	}
+	resp := h.paymentUseCase.CreatePayment(c.Request.Context(), input)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListTodayTransactions handles GET /api/pos/stores/:store_id/transactions
+// @Summary      List today's POS transactions
+// @Description  Returns today's completed POS transactions for a store
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        store_id      path      int     true  "Store ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/stores/{store_id}/transactions [get]
+func (h *PosHandler) ListTodayTransactions(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+	resp := h.useCase.ListTodaysTransactions(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetTransaction handles GET /api/pos/transactions/:id
+// @Summary      Get POS transaction
+// @Description  Returns a single POS transaction by ID
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Transaction ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/{id} [get]
+func (h *PosHandler) GetTransaction(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+		return
+	}
+	resp := h.useCase.GetTransaction(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetTransactionFull handles GET /api/pos/transactions/:id/full
+// @Summary      Get POS transaction with lines
+// @Description  Returns a POS transaction with full line details (products, quantities, prices)
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Transaction ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/{id}/full [get]
+func (h *PosHandler) GetTransactionFull(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+		return
+	}
+	resp := h.useCase.GetTransactionFull(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// VoidTransactionRequest is the body for voiding a transaction.
+type VoidTransactionRequest struct {
+	VoidedBy int32  `json:"voided_by" binding:"required"` // User ID performing the void
+	Reason   string `json:"reason"`                        // Optional reason
+}
+
+// VoidTransaction handles POST /api/pos/transactions/:id/void
+// @Summary      Void a POS transaction
+// @Description  Voids a completed POS transaction
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Transaction ID"
+// @Param        body          body      VoidTransactionRequest true "Void payload"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/{id}/void [post]
+func (h *PosHandler) VoidTransaction(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+		return
+	}
+	var req VoidTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	resp := h.useCase.VoidTransaction(c.Request.Context(), int32(id), req.VoidedBy, req.Reason)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetTransactionPayments handles GET /api/pos/transactions/:id/payments
+// @Summary      Get payments for a POS transaction
+// @Description  Returns all payment records for a POS transaction (method, gateway, amount, reference)
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Transaction ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/{id}/payments [get]
+func (h *PosHandler) GetTransactionPayments(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+		return
+	}
+	resp := h.paymentUseCase.ListPaymentsForTransaction(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetTransactionPaymentSummary handles GET /api/pos/transactions/:id/payment-summary
+// @Summary      Get payment summary for a POS transaction
+// @Description  Returns total paid and payment breakdown for a POS transaction
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Transaction ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/{id}/payment-summary [get]
+func (h *PosHandler) GetTransactionPaymentSummary(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+		return
+	}
+	resp := h.paymentUseCase.GetPaymentSummary(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPayment handles GET /api/pos/payments/:id
+// @Summary      Get a POS payment by ID
+// @Description  Returns a single POS payment record
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Payment ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/pos/payments/{id} [get]
+func (h *PosHandler) GetPayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+		return
+	}
+	resp := h.paymentUseCase.GetPayment(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePaymentRequest is the body for updating a payment.
+type UpdatePaymentRequest struct {
+	PaymentMethod    string      `json:"payment_method"`
+	PaymentGateway   string      `json:"payment_gateway"`
+	Amount           string      `json:"amount"`
+	PaymentReference string      `json:"payment_reference"`
+	ReferenceNumber  string      `json:"reference_number"`
+	Metadata         interface{} `json:"metadata"`
+}
+
+// UpdatePayment handles PUT /api/pos/payments/:id
+// @Summary      Update a POS payment
+// @Description  Updates an existing POS payment by ID
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Payment ID"
+// @Param        body          body     UpdatePaymentRequest true "Payment payload"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/pos/payments/{id} [put]
+func (h *PosHandler) UpdatePayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+		return
+	}
+	var req UpdatePaymentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	amount, err := repo.ParseNumeric(c.Request.Context(), req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid amount format", nil))
+		return
+	}
+	metadataJSON, _ := json.Marshal(req.Metadata)
+	if metadataJSON == nil {
+		metadataJSON = []byte("{}")
+	}
+	var gateway, refNum, payRef *string
+	if req.PaymentGateway != "" {
+		gateway = &req.PaymentGateway
+	}
+	if req.ReferenceNumber != "" {
+		refNum = &req.ReferenceNumber
+	}
+	if req.PaymentReference != "" {
+		payRef = &req.PaymentReference
+	}
+	input := &usecase.UpdatePosPaymentInput{
+		ID:               int32(id),
+		PaymentMethod:    req.PaymentMethod,
+		PaymentGateway:   gateway,
+		Amount:           amount,
+		PaymentReference: payRef,
+		ReferenceNumber:  refNum,
+		Metadata:         metadataJSON,
+	}
+	resp := h.paymentUseCase.UpdatePayment(c.Request.Context(), input)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePayment handles DELETE /api/pos/payments/:id
+// @Summary      Delete a POS payment
+// @Description  Deletes a POS payment by ID
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Payment ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Router       /api/pos/payments/{id} [delete]
+func (h *PosHandler) DeletePayment(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.paymentUseCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid payment id", nil))
+		return
+	}
+	resp := h.paymentUseCase.DeletePayment(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }

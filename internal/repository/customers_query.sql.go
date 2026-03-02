@@ -11,11 +11,52 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adjustCustomerLoyaltyPoints = `-- name: AdjustCustomerLoyaltyPoints :one
+UPDATE customers
+SET loyalty_points = loyalty_points + $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+`
+
+type AdjustCustomerLoyaltyPointsParams struct {
+	ID            int32          `json:"id"`
+	LoyaltyPoints pgtype.Numeric `json:"loyalty_points"`
+}
+
+// Pass a negative value for $2 to redeem/deduct points; positive to add
+func (q *Queries) AdjustCustomerLoyaltyPoints(ctx context.Context, arg AdjustCustomerLoyaltyPointsParams) (Customer, error) {
+	row := q.db.QueryRow(ctx, adjustCustomerLoyaltyPoints, arg.ID, arg.LoyaltyPoints)
+	var i Customer
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.CustomerCode,
+		&i.Name,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CustomerType,
+		&i.PriceListID,
+		&i.CreditLimit,
+		&i.OutstandingBalance,
+		&i.LoyaltyPoints,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createCustomer = `-- name: CreateCustomer :one
 INSERT INTO customers (
     organization_id,
     customer_code,
     name,
+    email,
+    phone,
+    address,
     customer_type,
     price_list_id,
     credit_limit,
@@ -23,7 +64,7 @@ INSERT INTO customers (
     is_active,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 ) RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
 `
 
@@ -31,6 +72,9 @@ type CreateCustomerParams struct {
 	OrganizationID     int32          `json:"organization_id"`
 	CustomerCode       string         `json:"customer_code"`
 	Name               string         `json:"name"`
+	Email              pgtype.Text    `json:"email"`
+	Phone              pgtype.Text    `json:"phone"`
+	Address            pgtype.Text    `json:"address"`
 	CustomerType       pgtype.Text    `json:"customer_type"`
 	PriceListID        pgtype.Int4    `json:"price_list_id"`
 	CreditLimit        pgtype.Numeric `json:"credit_limit"`
@@ -44,6 +88,9 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		arg.OrganizationID,
 		arg.CustomerCode,
 		arg.Name,
+		arg.Email,
+		arg.Phone,
+		arg.Address,
 		arg.CustomerType,
 		arg.PriceListID,
 		arg.CreditLimit,
@@ -175,6 +222,26 @@ func (q *Queries) GetCustomerCreditStatus(ctx context.Context, id int32) (GetCus
 		&i.OutstandingBalance,
 		&i.AvailableCredit,
 	)
+	return i, err
+}
+
+const getCustomerLoyaltyBalance = `-- name: GetCustomerLoyaltyBalance :one
+SELECT id, name, loyalty_points
+FROM customers
+WHERE id = $1
+`
+
+type GetCustomerLoyaltyBalanceRow struct {
+	ID            int32          `json:"id"`
+	Name          string         `json:"name"`
+	LoyaltyPoints pgtype.Numeric `json:"loyalty_points"`
+}
+
+// Lightweight fetch for POS validation before redemption
+func (q *Queries) GetCustomerLoyaltyBalance(ctx context.Context, id int32) (GetCustomerLoyaltyBalanceRow, error) {
+	row := q.db.QueryRow(ctx, getCustomerLoyaltyBalance, id)
+	var i GetCustomerLoyaltyBalanceRow
+	err := row.Scan(&i.ID, &i.Name, &i.LoyaltyPoints)
 	return i, err
 }
 
@@ -448,11 +515,14 @@ const updateCustomer = `-- name: UpdateCustomer :one
 UPDATE customers
 SET 
     name = $2,
-    customer_type = $3,
-    price_list_id = $4,
-    credit_limit = $5,
-    is_active = $6,
-    metadata = $7
+    email = $3,
+    phone = $4,
+    address = $5,
+    customer_type = $6,
+    price_list_id = $7,
+    credit_limit = $8,
+    is_active = $9,
+    metadata = $10
 WHERE id = $1
 RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
 `
@@ -460,6 +530,9 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 type UpdateCustomerParams struct {
 	ID           int32          `json:"id"`
 	Name         string         `json:"name"`
+	Email        pgtype.Text    `json:"email"`
+	Phone        pgtype.Text    `json:"phone"`
+	Address      pgtype.Text    `json:"address"`
 	CustomerType pgtype.Text    `json:"customer_type"`
 	PriceListID  pgtype.Int4    `json:"price_list_id"`
 	CreditLimit  pgtype.Numeric `json:"credit_limit"`
@@ -471,6 +544,9 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 	row := q.db.QueryRow(ctx, updateCustomer,
 		arg.ID,
 		arg.Name,
+		arg.Email,
+		arg.Phone,
+		arg.Address,
 		arg.CustomerType,
 		arg.PriceListID,
 		arg.CreditLimit,
