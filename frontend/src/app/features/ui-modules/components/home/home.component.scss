@@ -1,0 +1,133 @@
+// Overlay backdrop with light blur
+.overlay-backdrop {
+  @apply fixed top-0 right-0 bottom-0 left-0 flex items-center justify-center z-50;
+  // background-color: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(1px);
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+// Overlay content box
+.overlay-content {
+  @apply bg-white rounded-lg shadow-2xl p-6;
+  width: 90%;
+  max-width: 640px;
+  animation: slideUp 0.3s ease-out;
+}
+
+// Input field styling
+.input-field {
+  @apply w-full px-3 py-2 border border-gray-light2 rounded text-sm;
+  
+  &:focus {
+    @apply outline-none;
+    border-color: var(--color-primary);
+  }
+  
+  &::placeholder {
+    color: var(--color-gray-light);
+  }
+}
+
+// Icon upload button
+.icon-upload-btn {
+  @apply p-2 border border-gray-light2 rounded;
+  color: var(--color-gray);
+  transition: all 0.2s;
+  
+  &:hover {
+    background-color: var(--color-gray-light3);
+  }
+}
+
+// Toggle switch
+.toggle-switch {
+  @apply relative inline-flex items-center cursor-pointer;
+  
+  input[type="checkbox"] {
+    @apply sr-only;
+  }
+  
+  .toggle-slider {
+    @apply block w-11 h-6 rounded-full;
+    background-color: var(--color-gray-light2);
+    position: relative;
+    transition: background-color 0.2s;
+    
+    &::after {
+      content: '';
+      @apply absolute top-0.5 left-0.5 bg-white rounded-full h-5 w-5;
+      transition: transform 0.2s;
+    }
+  }
+  
+  input[type="checkbox"]:checked + .toggle-slider {
+    background-color: var(--color-primary);
+    
+    &::after {
+      transform: translateX(20px);
+    }
+  }
+}
+
+// Button styles
+.btn-primary {
+  @apply px-6 py-2 rounded;
+  background-color: var(--color-primary);
+  color: white;
+  transition: opacity 0.2s;
+  
+  &:hover {
+    opacity: 0.9;
+  }
+}
+
+.btn-cancel {
+  @apply px-6 py-2 rounded border;
+  color: var(--color-red);
+  border-color: var(--color-red);
+  transition: all 0.2s;
+  
+  &:hover {
+    background-color: var(--color-red);
+    color: white;
+  }
+}
+
+// Animations
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+// Custom scrollbar
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: var(--color-gray-light3);
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: var(--color-gray-light);
+  border-radius: 3px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gray);
+}

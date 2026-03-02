@@ -1,0 +1,46 @@
+<section class="min-h-screen">
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div class="mb-3 flex items-center gap-3">
+      <h2 translate>Settings</h2>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex-responsive w-full">
+      <div class="tabs-container" role="tablist">
+        <button
+          *ngFor="let tab of tabs; let i = index"
+          (click)="setActiveTab(tab)"
+          class="btn-tab"
+          [ngClass]="[
+            activeTab === tab ? 'btn-tab-active' : 'btn-tab-not-active',
+          ]"
+        >
+          {{ tab }}
+        </button>
+      </div>
+      <button class="btn-submit">Save</button>
+    </div>
+    <ng-container *ngIf="activeTab === 'General'">
+      <div>
+        <h2>General settings</h2>
+      </div>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'Store Settings'">
+      <store-settings></store-settings>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'Employee Settings'">
+      <employee-settings></employee-settings>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'Cart Settings'">
+      <cart-settings></cart-settings>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'Print Settings'">
+      <print-settings></print-settings>
+    </ng-container>
+  </div>
+</section>

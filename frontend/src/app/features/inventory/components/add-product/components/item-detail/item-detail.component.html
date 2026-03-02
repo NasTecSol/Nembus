@@ -1,0 +1,126 @@
+<form class="flex-grow">
+  <div class="form-row">
+    <div class="form-group">
+      <label translate>INVENTORY.ITEM_NAME</label>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required
+      />
+    </div>
+    <div class="form-group">
+      <label class="block" translate>INVENTORY.ITEM_TYPE</label>
+      <select class="input border-white-light">
+        <option value="">{{ "INVENTORY.SELECT_ITEM_TYPE" | translate }}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label translate>INVENTORY.ITEM_CODE</label>
+      <input
+        class="input border-white-light"
+        type="number"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required
+      />
+    </div>
+  </div>
+
+  <div
+    class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4"
+  >
+    <div class="form-group">
+      <label class="block" translate>INVENTORY.CATEGORY_GROUP</label>
+      <select class="input border-white-light">
+        <option value="">{{ "INVENTORY.SELECT_ITEM_TYPE" | translate }}</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label translate>INVENTORY.DESCRIPTION</label>
+      <input
+        class="input border-white-light"
+        type="text"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+      />
+    </div>
+  </div>
+
+  <div
+    class="grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4"
+  >
+    <div class="form-group">
+      <label class="mb-2 block" translate>INVENTORY.UPLOAD_INDIVIDUAL</label>
+      <div class="relative">
+        <input
+          type="file"
+          accept="image/*"
+          id="individualUpload"
+          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0"
+        />
+        <div
+          class="border-white-light text-slate-gray flex w-full items-center justify-between rounded border bg-white px-4 py-2"
+        >
+          <span translate>INVENTORY.UPLOAD</span>
+          <i class="fas fa-file text-slate-gray text-lg"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="mb-2 block" translate>INVENTORY.UPLOAD_BULK</label>
+      <div class="relative">
+        <input
+          type="file"
+          accept="image/*"
+          id="bulkUpload"
+          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0"
+        />
+        <div
+          class="border-white-light text-slate-gray flex w-full items-center justify-between rounded border bg-white px-4 py-2"
+        >
+          <span translate>INVENTORY.UPLOAD</span>
+          <i class="fas fa-file text-slate-gray text-lg"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div
+    class="grid w-full grid-cols-2 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4"
+  >
+    <div class="form-group col-span-2">
+      <label translate>INVENTORY.CODE_BAR</label>
+      <div class="flex justify-between gap-3 md:justify-start">
+        <input
+          class="input border-white-light md:w-1/2"
+          [ngClass]="{ 'bg-white-snow': isTyping }"
+          type="text"
+          [placeholder]="'INVENTORY.ENTER' | translate"
+        />
+        <div class="mt-1 flex gap-2">
+          <button (click)="onClickPlusIcon()" *ngIf="!isTyping">
+            <i class="fa fa-plus-circle plus-icon text-primary"></i>
+          </button>
+          <button *ngIf="isTyping" (click)="onConfirm()">
+            <i class="fa fa-check-circle plus-icon text-primary"></i>
+          </button>
+          <button *ngIf="isTyping" (click)="onCancel()">
+            <i class="fa fa-times-circle plus-icon text-red-difference"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
+    <button type="submit" class="btn-primary h-12 md:w-30" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+
+  <div class="mt-5 flex justify-center md:hidden">
+    <button type="submit" class="btn-primary h-12 md:w-30" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+</form>

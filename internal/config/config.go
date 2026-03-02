@@ -16,6 +16,8 @@ type Config struct {
 	DevUserID    string
 	DevUserLogin string
 	LogLevel     string
+	IsDesktop    bool
+	CloudURL     string
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -54,6 +56,8 @@ func LoadConfig(env string) *Config {
 		DevUserID:    getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
 		DevUserLogin: getEnv("DEV_USER_LOGIN", "dev_user"),
 		LogLevel:     getEnv("LOG_LEVEL", "info"),
+		IsDesktop:    true, // Default to true for this Wails build
+		CloudURL:     getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
 	}
 }
 

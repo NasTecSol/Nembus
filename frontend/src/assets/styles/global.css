@@ -1,0 +1,51 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  background-color: #ffffff;
+}
+
+@layer base {
+  h2 {
+    @apply text-2xl md:text-[1.7rem] font-bold animate-fade-in;
+  }
+
+  a,
+  button {
+    cursor: pointer;
+  }
+
+  button:hover {
+    @apply opacity-90;
+  }
+
+  label {
+    color: #0e1726;
+    font-weight: 600;
+
+  }
+
+  hr {
+    border-top: 1px solid #f4f4f4;
+  }
+
+  input::placeholder {
+    @apply text-gray-border font-bold;
+  }
+
+  input {
+    @apply text-gray-border font-semibold;
+  }
+
+  textarea,
+  select {
+    @apply text-gray-border font-bold;
+  }
+}

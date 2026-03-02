@@ -1,0 +1,188 @@
+<section class="mb-5">
+  <div class="container px-3 py-1">
+    <div class="mb-3 flex items-center gap-3">
+      <div>
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div>
+      <h2 translate>SUPPLIERS.ADD_NEW_SUPPLIER</h2>
+    </div>
+
+    <div
+      class="dashboard-card custom-shadow border-white-light mb-3 flex min-h-screen flex-col justify-between px-5 py-3"
+    >
+      <form>
+        <!-- Row 1 -->
+        <div class="form-row">
+          <div class="form-group">
+            <label translate>SUPPLIERS.FIRST_NAME</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.ENTER' | translate }}"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.SURNAME</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.ENTER' | translate }}"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.EMAIL</label>
+            <input
+              class="input border-white-light"
+              type="email"
+              placeholder="{{ 'SUPPLIERS.EMAIL_PLACEHOLDER' | translate }}"
+              required
+            />
+          </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="form-row">
+          <div class="form-group">
+            <label translate>SUPPLIERS.PHONE_NUMBER</label>
+            <div
+              class="border-white-light mt-2 flex items-center rounded border"
+            >
+              <select
+                class="border-white-light block bg-white px-2 py-2 outline-none"
+              >
+                <option
+                  *ngFor="let country of countries"
+                  [value]="country.dial_code"
+                >
+                  {{ country.flag }} &nbsp; {{ country.code }}
+                </option>
+              </select>
+              <span class="text-slate-gray ml-3 flex items-center font-medium">
+                {{ selectedDialCode }}
+              </span>
+              <input
+                class="ml-2 block rounded px-2 py-2 outline-none"
+                type="tel"
+                placeholder="{{ 'SUPPLIERS.ENTER' | translate }}"
+              />
+            </div>
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.LOGIN_ID</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.LOGIN_ID_PLACEHOLDER' | translate }}"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.PASSWORD</label>
+            <input
+              class="input border-white-light"
+              type="password"
+              placeholder="{{ 'SUPPLIERS.PASSWORD_PLACEHOLDER' | translate }}"
+              required
+            />
+          </div>
+        </div>
+
+        <!-- Row 3 -->
+        <div class="form-row">
+          <div class="form-group md:col-span-2">
+            <label translate>SUPPLIERS.ADDRESS</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.ADDRESS_PLACEHOLDER' | translate }}"
+            />
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.CITY</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.CITY_PLACEHOLDER' | translate }}"
+            />
+          </div>
+        </div>
+
+        <!-- Row 4 -->
+        <div class="form-row">
+          <div class="form-group md:col-span-2">
+            <label translate>SUPPLIERS.ADDRESS2</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.ADDRESS2_PLACEHOLDER' | translate }}"
+            />
+          </div>
+          <div class="form-group flex w-full gap-5">
+            <div class="w-1/2">
+              <label translate>SUPPLIERS.STATE</label>
+              <select class="input border-white-light">
+                <option value="" translate>SUPPLIERS.SELECT</option>
+              </select>
+            </div>
+            <div class="w-1/2">
+              <label translate>SUPPLIERS.ZIP</label>
+              <input
+                class="input border-white-light"
+                type="number"
+                placeholder="{{ 'SUPPLIERS.ZIP_PLACEHOLDER' | translate }}"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 5 -->
+        <div class="form-row">
+          <div class="form-group">
+            <label translate>SUPPLIERS.ITEM_CODE</label>
+            <input
+              class="input border-white-light"
+              type="text"
+              placeholder="{{ 'SUPPLIERS.ENTER' | translate }}"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.ITEMS_FOR_DISCOUNT</label>
+            <input
+              class="input border-white-light"
+              type="number"
+              placeholder="{{ 'SUPPLIERS.ENTER' | translate }}"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label translate>SUPPLIERS.DISCOUNT_ON_ITEMS</label>
+            <input
+              class="input border-white-light"
+              type="number"
+              min="0"
+              max="100"
+              placeholder="{{ 'SUPPLIERS.ENTER_PERCENT' | translate }}"
+              required
+            />
+          </div>
+          <div class="form-group md:mt-11">
+            <button class="btn-add min-h-11">
+              <i class="fa fa-circle-plus plus-icon"></i>
+              <span translate>SUPPLIERS.ADD</span>
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div class="form-group my-5 flex justify-center">
+        <button class="btn-submit h-12 md:w-30" translate>
+          SUPPLIERS.SAVE_SUPPLIER
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,195 @@
+<section>
+  <div class="container px-3 py-1">
+    <div class="flex-responsive mb-3">
+      <h2 class="mb-3" translate>SUPPLIERS.TITLE</h2>
+      <div class="text-lg text-white md:px-3">
+        <button (click)="addNewSupplier()" class="btn-add" role="tab">
+          <i class="fa fa-plus-circle plus-icon"></i>
+          <span translate>SUPPLIERS.ADD_NEW_SUPPLIER</span>
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="custom-shadow border-gray/10 mb-7 grid min-h-screen grid-cols-1 gap-10 rounded-xl border-1 px-6 py-4 md:grid-cols-5"
+    >
+      <!-- Left Table -->
+      <div class="dashboard-card border-0 bg-white shadow-none md:col-span-2">
+        <div class="overflow-x-auto">
+          <table class="data-table">
+            <thead>
+              <tr class="text-dark-bold">
+                <th translate>SUPPLIERS.ID_NUMBER</th>
+                <th translate>SUPPLIERS.NAME</th>
+                <th translate>SUPPLIERS.SURNAME</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                *ngFor="let supplier of suppliers"
+                (click)="selectPurchasing(supplier)"
+                [class.selected-row]="selectedPurchasing === supplier"
+                [class.hoverable-row]="selectedPurchasing !== supplier"
+              >
+                <td class="rounded-l-lg">{{ supplier.id }}</td>
+                <td>{{ supplier.name }}</td>
+                <td class="rounded-r-lg">{{ supplier.surName }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Right Section with Tabs -->
+      <div
+        class="dashboard-card custom-shadow bg-white-snow relative mx-auto h-auto w-full rounded-xl md:col-span-3"
+      >
+        <div class="tabs-container mt-2" role="tablist">
+          <button
+            *ngFor="let tab of tabs"
+            (click)="setActiveTab(tab)"
+            class="btn-tab"
+            [ngClass]="{
+              'btn-tab-active': tab === activeTab,
+              'btn-tab-not-active': tab !== activeTab,
+            }"
+          >
+            {{ "SUPPLIERS." + tab.toUpperCase() + "_TAB" | translate }}
+          </button>
+        </div>
+
+        <div class="mt-3">
+          <!-- Tab 1: Information -->
+          <div
+            *ngIf="activeTab === 'Information'"
+            class="flex min-h-screen flex-col justify-between"
+          >
+            <form
+              class="supplier-form-wrapper grid grid-cols-1 gap-2 md:grid-cols-4 md:grid-rows-2"
+            >
+              <div class="form-group">
+                <label translate>SUPPLIERS.ID_NUMBER</label>
+                <input
+                  class="input input-plain"
+                  type="number"
+                  value="101"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>SUPPLIERS.NAME</label>
+                <input
+                  class="input input-plain"
+                  type="text"
+                  value="TechMart Superstore"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>SUPPLIERS.SURNAME</label>
+                <input
+                  class="input input-plain"
+                  type="text"
+                  value="Shaiq"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>SUPPLIERS.TELEPHONE</label>
+                <input
+                  class="input input-plain"
+                  type="tel"
+                  value="+92 300 1234567"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label translate>SUPPLIERS.EMAIL</label>
+                <input
+                  class="input input-plain"
+                  type="email"
+                  value="techmart@example.com"
+                  required
+                />
+              </div>
+              <div class="form-group md:col-span-2">
+                <label translate>SUPPLIERS.ADDRESS</label>
+                <input
+                  class="input input-plain"
+                  type="text"
+                  value="123 Market Road, Lahore"
+                  required
+                />
+              </div>
+            </form>
+
+            <div class="btn-action-wrapper mr-5 mb-10">
+              <button class="btn-base btn-red">
+                <i class="fa fa-trash text-3xl"></i>
+                <span translate>SUPPLIERS.DELETE_USER</span>
+              </button>
+              <button class="btn-base bg-primary">
+                <i class="fa fa-edit text-3xl"></i>
+                <span translate>SUPPLIERS.EDIT_USER_DETAIL</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab 2: Contacts -->
+          <div
+            *ngIf="activeTab === 'Contacts'"
+            class="gird grid-cols-1 overflow-x-auto"
+          >
+            <table class="data-table invoices-table">
+              <thead>
+                <tr>
+                  <th translate>SUPPLIERS.CONTRACT_ID</th>
+                  <th translate>SUPPLIERS.PRODUCT</th>
+                  <th translate>SUPPLIERS.ON_PRODUCT_BOUGHT</th>
+                  <th translate>SUPPLIERS.DISCOUNTED</th>
+                  <th translate>SUPPLIERS.EXPIRY</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let contact of contacts">
+                  <td>{{ contact.contractId }}</td>
+                  <td>{{ contact.product }}</td>
+                  <td>{{ contact.onProductBought }}</td>
+                  <td>{{ contact.discounted }}</td>
+                  <td>{{ contact.expiry }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Tab 3: History -->
+          <div
+            *ngIf="activeTab === 'History'"
+            class="gird grid-cols-1 overflow-x-auto"
+          >
+            <table class="data-table invoices-table">
+              <thead>
+                <tr>
+                  <th translate>SUPPLIERS.CONTRACT_ID</th>
+                  <th translate>SUPPLIERS.DATE_OF_CONTRACT</th>
+                  <th translate>SUPPLIERS.PRODUCT</th>
+                  <th translate>SUPPLIERS.SALE_PRICE</th>
+                  <th translate>SUPPLIERS.DISCOUNTS</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of history">
+                  <td>{{ item.contractId }}</td>
+                  <td>{{ item.dateOfContract }}</td>
+                  <td>{{ item.product }}</td>
+                  <td>{{ item.salePrice }}</td>
+                  <td>{{ item.discounts }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,228 @@
+
+<!-- setup-wizard.html -->
+<div class="grad-vertical-tb min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="max-w-2xl w-full bg-white/95 backdrop-blur-xl border border-gray-200 rounded-2xl shadow-2xl overflow-hidden">
+        
+        <!-- Header -->
+        <div class="p-8 border-b border-gray-200 flex items-center gap-4 bg-gradient-to-r from-primary/5 to-transparent">
+            <div class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
+                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-selectedobj tracking-tight">NEMBUS Setup Wizard</h1>
+                <p class="text-gray-600 text-sm">Configure your embedded PostgreSQL environment</p>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="p-8">
+            <!-- Step 1: Welcome -->
+            <div *ngIf="step === 1" class="space-y-6 animate-fadeIn">
+                <h2 class="text-2xl font-semibold text-selectedobj">Welcome</h2>
+                <p class="text-gray-700 leading-relaxed">
+                    NEMBUS now uses an embedded PostgreSQL database. This allows for a fully portable experience on
+                    Windows without requiring a system-wide database installation.
+                </p>
+                <div class="bg-primary/10 border border-primary/20 rounded-xl p-4 flex gap-3">
+                    <svg class="w-5 h-5 text-primary shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-sm text-gray-700">
+                        The database binaries and data will be stored in your local application directory.
+                    </p>
+                </div>
+                <button (click)="nextStep()" class="btn-primary w-full">
+                    Get Started
+                </button>
+            </div>
+
+            <!-- Step 2: Database Settings -->
+            <div *ngIf="step === 2" class="space-y-6 animate-fadeIn">
+                <h2 class="text-2xl font-semibold text-selectedobj">Database Settings</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2 col-span-2">
+                        <label class="text-sm font-medium text-gray-700">Database Name</label>
+                        <input [(ngModel)]="dbConfig.database"
+                            class="login-input-field w-full">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-gray-700">Username</label>
+                        <input [(ngModel)]="dbConfig.username"
+                            class="login-input-field w-full">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" [(ngModel)]="dbConfig.password"
+                            class="login-input-field w-full">
+                    </div>
+                    <div class="space-y-2 col-span-2">
+                        <label class="text-sm font-medium text-gray-700">Port</label>
+                        <input type="number" [(ngModel)]="dbConfig.port"
+                            class="login-input-field w-full">
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <button (click)="prevStep()"
+                        class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 rounded-xl transition-all duration-200 active:scale-[0.98]">
+                        Back
+                    </button>
+                    <button (click)="navigateToLogin()"
+                        class="flex-1 bg-selectedobj hover:bg-selectedobj/90 text-white font-semibold py-3 rounded-xl transition-all duration-200 active:scale-[0.98]">
+                        Login
+                    </button>
+                    <button (click)="startSetup()"
+                        class="flex-[2] btn-primary">
+                        Initialize Database
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Initializing -->
+            <div *ngIf="step === 3"
+                class="space-y-8 py-8 flex flex-col items-center animate-fadeIn">
+                <div class="relative">
+                    <div class="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full animate-spin">
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <svg class="w-8 h-8 text-primary animate-pulse" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 7v10l8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-center space-y-2">
+                    <h2 class="text-2xl font-semibold text-selectedobj">Initializing...</h2>
+                    <p class="text-gray-600">Starting embedded PostgreSQL and preparing schema</p>
+                    <p class="text-xs text-gray-500 font-mono mt-4 bg-gray-50 px-4 py-2 rounded-lg">{{statusMessage}}</p>
+                </div>
+            </div>
+
+            <!-- Step 4: Search Cloud Tenant -->
+            <div *ngIf="step === 4" class="space-y-6 animate-fadeIn">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-semibold text-selectedobj">Search Cloud Tenant</h2>
+                </div>
+
+                <div class="space-y-4 mb-6">
+                    <div class="relative">
+                        <input [(ngModel)]="searchSlug" (keyup.enter)="fetchTenants()"
+                            placeholder="Enter tenant slug (e.g., acme)"
+                            class="login-input-field w-full pl-11 pr-24">
+                        <div class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <button (click)="fetchTenants()"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 bg-primary hover:bg-primary/90 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
+                            Search
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500">Enter the slug provided by your cloud administrator to find your
+                        tenant.</p>
+                </div>
+
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-sm font-semibold text-gray-600 uppercase tracking-wider">Search Results</h2>
+                </div>
+
+                <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div *ngIf="tenants.length === 0"
+                        class="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                        </svg>
+                        No tenants found on cloud.
+                    </div>
+                    <div *ngFor="let t of tenants" (click)="selectTenant(t)"
+                        [class]="'group cursor-pointer p-4 rounded-xl border transition-all duration-200 ' + (selectedTenant?.slug === t.slug ? 'bg-primary/10 border-primary shadow-lg shadow-primary/10' : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="font-bold text-selectedobj group-hover:text-primary transition-colors">
+                                    {{t.tenant_name}}</h3>
+                                <p class="text-xs text-gray-500 font-mono mt-0.5">{{t.slug}}</p>
+                            </div>
+                            <div *ngIf="selectedTenant?.slug === t.slug"
+                                class="w-6 h-6 bg-primary rounded-full flex items-center justify-center animate-fadeIn">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 pt-4">
+                    <button (click)="prevStep()"
+                        class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3.5 rounded-xl transition-all duration-200 active:scale-[0.98]">
+                        Back
+                    </button>
+                    <button (click)="navigateToLogin()"
+                        class="flex-1 bg-selectedobj hover:bg-selectedobj/90 text-white font-semibold py-3.5 rounded-xl transition-all duration-200 active:scale-[0.98]">
+                        Login
+                    </button>
+                    <button (click)="confirmClone()" [disabled]="!selectedTenant"
+                        [class]="'flex-[2] font-semibold py-3.5 rounded-xl transition-all duration-200 shadow-lg active:scale-[0.98] ' + (selectedTenant ? 'btn-primary' : 'bg-gray-300 text-gray-500 cursor-not-allowed')">
+                        Select & Clone Tenant
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 5: Cloning Data -->
+            <div *ngIf="step === 5"
+                class="space-y-8 py-8 flex flex-col items-center animate-fadeIn">
+                <div class="relative">
+                    <div class="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full animate-spin">
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <svg class="w-10 h-10 text-primary animate-pulse" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-center space-y-2">
+                    <h2 class="text-2xl font-semibold text-selectedobj">Cloning Data...</h2>
+                    <p class="text-gray-600">Pulling master records from Cloud ERP</p>
+                    <p class="text-xs text-gray-500 font-mono mt-4 bg-gray-50 px-4 py-2 rounded-lg">{{statusMessage}}</p>
+                </div>
+            </div>
+
+            <!-- Step 7: Setup Complete -->
+            <div *ngIf="step === 7"
+                class="space-y-6 flex flex-col items-center py-4 animate-fadeIn">
+                <div class="w-24 h-24 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 mb-2">
+                    <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <div class="text-center space-y-2">
+                    <h2 class="text-3xl font-bold text-selectedobj tracking-tight">Setup Complete!</h2>
+                    <p class="text-gray-600 text-lg">Your tenant has been cloned and is ready for use.</p>
+                </div>
+                <button (click)="launchApp()" class="btn-primary mt-4 px-8">
+                    Enter Application
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-8 py-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+            <div class="flex gap-1.5">
+                <div *ngFor="let s of [1,2,3,4,5,6,7]"
+                    [class]="'h-2 rounded-full transition-all duration-500 ' + (step >= s ? 'bg-primary w-4' : 'bg-gray-300 w-2')">
+                </div>
+            </div>
+            <span class="text-[10px] font-medium uppercase tracking-widest text-gray-500">Step {{step}} of 7</span>
+        </div>
+    </div>
+</div>

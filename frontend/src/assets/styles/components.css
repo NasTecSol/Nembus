@@ -1,0 +1,591 @@
+/*-----------------------------------------------------------------------------------------------------------------*/
+/*                                                Component Layer                                                  */
+/*-----------------------------------------------------------------------------------------------------------------*/
+
+@layer components {
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                                Typography                                                       */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .text-primary-lg {
+        @apply text-primary text-xl font-bold;
+    }
+
+    .text-primary-sm {
+        @apply text-primary text-[15px] font-bold;
+    }
+
+    .text-secondary-bold {
+        @apply text-secondary font-semibold;
+    }
+
+    .text-secondary-normal {
+        @apply text-[#6c737f] font-[400];
+    }
+
+    .text-dark-bold {
+        @apply text-[#0e1726] font-semibold;
+    }
+
+    .text-dark-bold-lg {
+        @apply text-[#0e1726] text-base font-bold;
+    }
+
+    .text-gray-label {
+        @apply text-gray-border font-bold;
+    }
+
+    .text-slate-gray {
+        @apply text-gray-border font-semibold;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                      Custom Flexbox Utility Classes                                            */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .flex-box-col {
+        @apply flex flex-col justify-center items-center;
+    }
+
+    .flex-box-row {
+        @apply flex justify-center items-center;
+    }
+
+    .flex-box-row-between {
+        @apply flex justify-between items-center;
+    }
+
+    .flex-responsive {
+        @apply flex flex-col md:flex-row md:justify-between items-center gap-2;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                         Custom Gradient Classes                                                */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .grad-vertical-tb {
+        @apply bg-gradient-to-b from-primary to-secondary;
+    }
+
+    .grad-horizontal-lr {
+        @apply bg-gradient-to-r from-primary to-secondary;
+    }
+
+    .grad-yellow {
+        @apply bg-gradient-to-r from-yellow-light to-yellow-dark;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                               Custom Shadows                                                    */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .custom-shadow {
+        box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.03),
+            0 5px 22px 0 rgba(0, 0, 0, 0.04);
+    }
+
+    .primary-shadow {
+        box-shadow: 0px 5px 5.2px 0px #335c67;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                                Custom Buttons                                                   */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .btn-primary {
+        @apply w-full h-14 bg-selectedobj rounded-lg text-white hover:bg-primary/90 transition;
+    }
+
+    .btn-add {
+        @apply flex w-full min-h-12 items-center justify-center gap-2 rounded-lg bg-selectedobj px-4 text-white md:w-auto text-lg;
+    }
+
+    .btn-submit {
+        @apply flex w-full min-h-10 items-center justify-center rounded-lg bg-selectedobj px-5 py-2 text-white md:w-auto md:min-w-32 text-lg whitespace-nowrap border border-primary;
+    }
+
+    .btn-base {
+        @apply w-full md:w-auto min-w-30 p-4 rounded-lg text-white flex flex-col items-center text-center gap-2;
+    }
+
+    .btn-back {
+        @apply text-xl md:text-3xl text-primary transition-transform duration-300;
+    }
+
+    html[dir="rtl"] .btn-back {
+        transform: rotate(180deg);
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              App Accordion                                                      */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .accordion-header {
+        @apply flex justify-between items-center px-4 py-4 cursor-pointer select-none;
+    }
+
+    .accordion-header>span {
+        @apply font-semibold text-primary;
+    }
+
+    .accordion-header>i {
+        @apply text-primary text-lg transition-transform duration-300;
+    }
+
+    .accordion-content {
+        @apply overflow-hidden transition-all duration-300 ease-in-out px-4;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              App Switch                                                         */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .switch {
+        @apply relative inline-flex items-center cursor-pointer;
+    }
+
+    .switch-background {
+        @apply w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-primary transition-colors duration-300 ease-in-out;
+    }
+
+    .switch-dot {
+        @apply absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out peer-checked:translate-x-5;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              App Form                                                           */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .form-group {
+        @apply mt-3 md:mt-6;
+    }
+
+    .checkbox-wrapper {
+        @apply flex gap-2 items-center;
+    }
+
+    .checkbox-input {
+        @apply w-4 h-4 rounded-sm border border-gray-300 accent-primary;
+    }
+
+    .custom-checkbox-wrapper {
+        @apply flex items-center space-x-2;
+    }
+
+    .custom-checkbox-wrapper>label {
+        @apply flex items-center cursor-pointer relative;
+    }
+
+    .custom-checkbox-wrapper>label>input {
+        @apply h-5 w-5 cursor-pointer transition-all appearance-none rounded shadow hover:shadow-md;
+    }
+
+    .checkbox-teal {
+        @apply border border-teal checked:bg-teal;
+    }
+
+    .checkbox-red {
+        @apply border border-red checked:bg-red;
+    }
+
+    .checkbox-red-crimson {
+        @apply border border-red-crimson checked:bg-red-crimson;
+    }
+
+    .checkbox-orange {
+        @apply border border-orange checked:bg-orange;
+    }
+
+    .checkbox-emerald {
+        @apply border border-emerald checked:bg-emerald;
+    }
+
+    .checkbox-purple {
+        @apply border border-purple checked:bg-purple;
+    }
+
+    .checkbox-label-text {
+        @apply text-gray-border font-semibold text-sm;
+    }
+
+    .checkbox-svg {
+        @apply absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              App Table                                                          */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .data-table {
+        @apply min-w-full table-auto border-separate border-spacing-y-2;
+    }
+
+    .data-table>thead>tr>th {
+        @apply px-4 py-3 text-center text-nowrap;
+    }
+
+    .data-table>tbody>tr>td {
+        @apply px-4 py-3 text-center text-nowrap;
+    }
+
+    .data-table>tbody>tr {
+        @apply cursor-pointer transition-all;
+    }
+
+    .selected-row {
+        @apply bg-primary text-white;
+    }
+
+    .hoverable-row {
+        @apply hover:bg-gray-100;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              App Tabs                                                        */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .tabs-container {
+        @apply flex flex-col w-full md:flex-row gap-2;
+    }
+
+    .btn-tab {
+        @apply flex-shrink-0 px-6 py-5 h-10 whitespace-nowrap transition duration-500 rounded-lg font-bold text-lg flex items-center justify-center border border-primary;
+    }
+
+    .btn-tab-active {
+        @apply bg-primary text-white;
+    }
+
+    .btn-tab-not-active {
+        @apply bg-secondary text-primary;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              App Divider                                                        */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .divider {
+        @apply border-b-1 border-gray-border;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              Custom Input Classes                                               */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .login-input-field {
+        @apply outline-none border-b-1 border-gray-light py-2 placeholder:text-xl placeholder:text-gray-light caret-gray-light;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              Icons                                                              */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .plus-icon {
+        @apply mr-2 text-2xl;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              Modals                                                             */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .modal-overlay {
+        @apply fixed top-0 right-0 bottom-0 left-0 bg-black/20 flex items-center justify-center z-50;
+    }
+
+    .modal-content {
+        @apply bg-white w-full h-full md:max-w-[400px] px-5 py-3 rounded-lg shadow-lg relative overflow-y-auto;
+    }
+
+    .btn-modal {
+        @apply flex w-full min-h-10 items-center justify-center rounded-lg bg-primary px-5 text-white md:w-auto md:min-w-32 text-lg whitespace-nowrap border border-primary;
+    }
+
+    .modal-label {
+        @apply text-base text-black;
+    }
+
+    .modal-input {
+        @apply mt-1 w-full block border-1 border-gray-border/30 text-gray-border p-2 rounded-lg outline-none;
+    }
+
+    .modal-form-row {
+        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                              Dashboard Starter                                                  */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .dashboard-card {
+        @apply rounded-lg border-1 border-gray-50 px-3 py-2;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                         User Roles & Permissions                                                */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .input-style {
+        @apply w-full py-2 outline-none bg-transparent border-none;
+    }
+
+    .btn-red {
+        @apply bg-red-bright;
+    }
+
+    .input {
+        @apply mt-2 w-full block border-1 p-2 rounded outline-none;
+    }
+
+    .table-input {
+        @apply w-full py-1 min-w-20 text-center block border-1 border-gray/50 rounded outline-none;
+    }
+
+    .table-divider {
+        @apply border-b-1 border-gray-border/20;
+    }
+
+    .permission-table>thead>tr>th {
+        @apply py-3;
+    }
+
+    .permission-table>tbody>tr>td {
+        @apply py-3;
+    }
+
+    .permission-table>tbody>tr>td>a {
+        @apply bg-[#F2F4F7] shadow rounded p-2 flex justify-between items-center cursor-pointer;
+    }
+
+    .permission-table>tbody>tr>td>a>i {
+        @apply text-lg text-primary transition-transform duration-300;
+    }
+
+    .dropdown-wrapper {
+        @apply absolute text-left right-0 mt-2 bg-[#F2F4F7] shadow-lg rounded p-2 z-10;
+    }
+
+    .dropdown-wrapper>p {
+        @apply hover:bg-gray-100 p-2 cursor-pointer flex justify-between items-center;
+    }
+
+    .dropdown-wrapper>p>i {
+        @apply text-primary ml-2;
+    }
+
+    .shift-table>thead>tr>th,
+    .shift-table>tbody>tr>td {
+        @apply border-b-1 border-gray/10;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                         Add Items and Inventory                                                 */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .cat-card {
+        @apply aspect-square flex flex-col cursor-pointer overflow-hidden rounded-lg bg-white transition-shadow;
+    }
+
+    .cat-img {
+        @apply absolute left-1/2 top-1/2 h-full w-full -translate-x-1/2 -translate-y-1/2 transform object-cover z-100;
+    }
+
+    .prod-card {
+        @apply overflow-hidden rounded-lg bg-white shadow-lg transition-shadow hover:shadow-lg;
+    }
+
+    .form-row {
+        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 col-span-4 w-full;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                             Wholesale Products                                                  */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .product-table {
+        @apply min-w-full table-auto text-center;
+    }
+
+    .table-heading-row>th {
+        @apply px-4 py-2 border border-secondary border-t-0 text-nowrap;
+    }
+
+    .table-body-row>td {
+        @apply px-4 py-3 border border-secondary border-b-0 text-nowrap;
+    }
+
+    .btn-wholesale {
+        @apply shadow-lg w-[100px] h-[100px] font-bold rounded-lg text-center px-2;
+    }
+
+    .btn-active {
+        @apply bg-primary text-white;
+    }
+
+    .btn-inactive {
+        @apply bg-secondary text-primary hover:bg-secondary/50;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                             Stores & Locations                                                  */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .general-row {
+        @apply grid grid-cols-1 md:grid-cols-2 md:gap-3;
+    }
+
+    .add-store-row {
+        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4;
+    }
+
+    .general-input {
+        @apply border-white-light;
+    }
+
+    .store-table>thead>tr>th {
+        @apply border-0;
+    }
+
+    .store-table>tbody>tr>td {
+        @apply border-0 border-b-1 text-primary;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                             Cash Collection                                                     */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .tooltip {
+        @apply flex items-center justify-center;
+    }
+
+    .tooltip img {
+        @apply w-6 h-6 rounded-full object-cover border-2 border-white cursor-pointer;
+    }
+
+    .tooltip .tooltip-text {
+        @apply absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 hidden group-hover:flex px-2 py-1 bg-black text-white text-[10px] rounded shadow-md whitespace-nowrap z-10;
+    }
+
+    .tooltip .badge {
+        @apply text-[10px] flex items-center justify-center w-6 h-6 bg-[#5cabe7] rounded-full text-white font-medium border-2 border-white cursor-pointer;
+    }
+
+    .status>span {
+        @apply rounded-full px-2 py-1 text-white text-nowrap;
+    }
+
+    .pending {
+        @apply bg-yellow-light;
+    }
+
+    .pending-approval {
+        @apply bg-yellow-light;
+    }
+
+    .submitted {
+        @apply bg-emerald;
+    }
+
+    .recount {
+        @apply bg-red-difference;
+    }
+
+    .invoices-table>tbody>tr>td {
+        @apply border-[#6c737f]/20 border-b-[.5px] text-primary;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                             Promotions & Discount                                               */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .promotion-form-row {
+        @apply grid grid-cols-1 lg:grid-cols-3 gap-4;
+    }
+
+    .left-col-wrapper {
+        @apply min-h-screen md:col-span-1 flex-grow rounded-2xl shadow-none border-0 bg-[#F2F4F7] p-4 overflow-x-auto;
+    }
+
+    .right-col-wrapper {
+        @apply min-h-screen md:col-span-2 flex-grow border border-black/10 rounded-2xl bg-white-snow p-4 overflow-x-auto;
+    }
+
+    .btn-action-wrapper {
+        @apply flex flex-wrap justify-end gap-4 md:gap-8 mt-8;
+    }
+
+    .add-promotion-row {
+        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4;
+    }
+
+    .add-coupon-row {
+        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4;
+    }
+
+    .promotion-table>thead>tr>th {
+        @apply text-start text-primary;
+    }
+
+    .promotion-table>tbody>tr {
+        @apply cursor-auto bg-secondary;
+    }
+
+    .promotion-table>tbody>tr>td {
+        @apply text-start text-primary font-bold;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                                   Reports                                                       */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .reports-label-wrapper {
+        @apply flex items-center justify-between md:justify-start gap-5;
+    }
+
+    .reports-label-wrapper>label {
+        @apply text-gray-border font-bold;
+    }
+
+    .reports-label-wrapper>input {
+        @apply mt-0 w-70 md:w-50 text-gray-border;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                                   Suppliers                                                     */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .supplier-form-wrapper>div>label {
+        @apply ml-[6px];
+    }
+
+    .input-plain {
+        @apply border-0 text-gray;
+    }
+
+    /*-----------------------------------------------------------------------------------------------------------------*/
+    /*                                                   Purchasing                                                    */
+    /*-----------------------------------------------------------------------------------------------------------------*/
+
+    .invoice-text {
+        @apply text-gray-border font-bold;
+    }
+
+    .invoice-span {
+        @apply inline-block border-1 border-gray/50 rounded px-2 text-black font-semibold min-w-20 text-center ml-2;
+    }
+
+    .text-invoice1 {
+        @apply text-[#60737D] text-[10px] font-[400];
+    }
+
+    .text-invoice2 {
+        @apply text-[#121722] text-[10px] font-[400];
+    }
+
+    .invoice-table>thead>tr>th {
+        @apply text-start py-6 px-3;
+    }
+
+    .invoice-table>tbody>tr>td {
+        @apply text-start px-3 py-2;
+    }
+}

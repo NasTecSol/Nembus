@@ -1,0 +1,224 @@
+<!-- Modal Overlay -->
+<div
+  class="fixed top-0 right-0 bottom-0 left-0 z-50 overflow-y-auto bg-black/10 lg:flex lg:items-center lg:justify-center"
+>
+  <!-- Modal Container -->
+  <div class="bg-white-snow relative w-full max-w-7xl rounded-3xl px-10 py-5">
+    <form class="flex flex-col gap-6" #employeeForm="ngForm">
+      <!-- Row 1: Basic Info -->
+      <div class="modal-form-row">
+        <div class="form-group">
+          <label translate>USER_ROLES.FIRST_NAME</label>
+          <input
+            class="modal-input"
+            type="text"
+            name="firstName"
+            [(ngModel)]="employee.firstName"
+            [placeholder]="'USER_ROLES.ENTER' | translate"
+            autocomplete="given-name"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.SURNAME</label>
+          <input
+            class="modal-input"
+            type="text"
+            name="surname"
+            [(ngModel)]="employee.surname"
+            [placeholder]="'USER_ROLES.ENTER' | translate"
+            autocomplete="family-name"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.TITLE</label>
+          <select
+            class="modal-input"
+            name="role"
+            [(ngModel)]="employee.role"
+            required
+          >
+            <option value="">{{ "USER_ROLES.SELECT" | translate }}</option>
+            <option value="admin">{{ "USER_ROLES.ADMIN" | translate }}</option>
+            <option value="cashier">
+              {{ "USER_ROLES.CASHIERS" | translate }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 2: Contact & Login Info -->
+      <div class="modal-form-row">
+        <div class="form-group">
+          <label translate>USER_ROLES.PHONE_NUMBER</label>
+          <div
+            class="border-gray-border/30 text-gray-border mt-1 flex items-center rounded-lg border"
+          >
+            <select
+              class="border-white-light block bg-white px-2 py-2 outline-none"
+              [(ngModel)]="employee.dialCode"
+              name="dialCode"
+              required
+            >
+              <option
+                *ngFor="let country of countries"
+                [value]="country.dial_code"
+              >
+                {{ country.flag }} {{ country.code }}
+              </option>
+            </select>
+            <span class="ml-3 flex items-center">{{ employee.dialCode }}</span>
+            <input
+              class="text-gray-border ml-2 block rounded px-2 py-2 outline-none"
+              type="tel"
+              name="phoneNumber"
+              [(ngModel)]="employee.phoneNumber"
+              [placeholder]="'USER_ROLES.PHONE_NUMBER' | translate"
+              pattern="[0-9]{7,15}"
+              autocomplete="tel"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.LOGIN_ID</label>
+          <input
+            class="modal-input"
+            type="text"
+            name="loginId"
+            [(ngModel)]="employee.loginId"
+            [placeholder]="'USER_ROLES.ID_NUMBER' | translate"
+            autocomplete="username"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.PASSWORD</label>
+          <input
+            class="modal-input"
+            type="password"
+            name="password"
+            [(ngModel)]="employee.password"
+            [placeholder]="'USER_ROLES.ENTER_PASSWORD' | translate"
+            autocomplete="new-password"
+            required
+          />
+        </div>
+      </div>
+
+      <!-- Row 3: Address and Email -->
+      <div class="modal-form-row">
+        <div class="form-group md:col-span-2">
+          <label translate>USER_ROLES.ADDRESS</label>
+          <input
+            class="modal-input"
+            type="text"
+            name="address"
+            [(ngModel)]="employee.address"
+            [placeholder]="'USER_ROLES.ENTER_ADDRESS' | translate"
+            autocomplete="street-address"
+          />
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.EMAIL</label>
+          <input
+            class="modal-input"
+            type="email"
+            name="email"
+            [(ngModel)]="employee.email"
+            [placeholder]="'USER_ROLES.ENTER_EMAIL' | translate"
+            autocomplete="email"
+            required
+          />
+        </div>
+      </div>
+
+      <!-- Row 4: Security Details -->
+      <div class="modal-form-row">
+        <div class="form-group">
+          <label translate>USER_ROLES.AUTH_CARD_NO</label>
+          <input
+            class="modal-input"
+            type="password"
+            name="authCard"
+            [(ngModel)]="employee.authCard"
+            [placeholder]="'USER_ROLES.ENTER_CARD' | translate"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.PIN_POS</label>
+          <input
+            class="modal-input"
+            type="password"
+            name="pin"
+            [(ngModel)]="employee.pin"
+            [placeholder]="'USER_ROLES.ENTER_PIN' | translate"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label translate>USER_ROLES.CITY</label>
+          <input
+            class="modal-input"
+            type="text"
+            name="city"
+            [(ngModel)]="employee.city"
+            [placeholder]="'USER_ROLES.ENTER_CITY' | translate"
+            autocomplete="address-level2"
+          />
+        </div>
+      </div>
+
+      <!-- Row 5: Biometrics -->
+      <div class="modal-form-row">
+        <div class="form-group">
+          <label class="mb-2 block" translate>USER_ROLES.BIOMETRICS</label>
+          <div class="relative">
+            <input
+              class="modal-input"
+              type="text"
+              name="biometrics"
+              [(ngModel)]="employee.biometrics"
+              [placeholder]="'USER_ROLES.ADD_FINGERPRINTS' | translate"
+              required
+            />
+            <span class="absolute inset-y-0 right-2 flex items-center pl-3">
+              <i class="fas fa-fingerprint text-gray-border text-2xl"></i>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-col justify-center gap-4 pb-5 md:flex-row">
+        <button
+          type="submit"
+          (click)="confirm()"
+          class="btn-modal"
+          [disabled]="!employeeForm.form.valid"
+        >
+          <i class="fa fa-circle-plus plus-icon"></i>
+          {{ buttonText | translate }}
+        </button>
+
+        <button
+          type="button"
+          (click)="cancel()"
+          class="btn-modal text-primary bg-white"
+          translate
+        >
+          USER_ROLES.CANCEL
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -1,0 +1,375 @@
+<section>
+  <div class="container px-3 py-1">
+    <!-- Page Title and Back Button -->
+    <div class="flex flex-col md:flex-row md:justify-between">
+      <div class="mb-3 flex items-center gap-3">
+        <div>
+          <button (click)="goBack()">
+            <i class="fa fa-circle-chevron-left btn-back"></i>
+          </button>
+        </div>
+        <h2 translate>INVENTORY.ITEM_DETAILS</h2>
+      </div>
+      <button class="btn-submit" translate>INVENTORY.SUBMIT</button>
+    </div>
+
+    <!-- Image Upload -->
+    <div class="my-8 grid grid-cols-1 gap-5 md:grid-cols-6">
+      <div
+        class="custom-shadow bg-secondary col-span-1 flex h-40 w-40 flex-col items-center justify-center gap-1 rounded-full p-2 shadow-2xl"
+      >
+        <img
+          [src]="product.image"
+          [alt]="product.name"
+          class="block h-25 w-25 rounded-full object-cover"
+        />
+        <span class="text-primary block">
+          <i class="fa fa-camera mr-1 text-lg"></i>
+          {{ "INVENTORY.CHANGE" | translate }}
+        </span>
+      </div>
+
+      <!-- Form -->
+      <div class="col-span-4 grid grid-cols-1 grid-rows-2 gap-3 md:grid-cols-3">
+        <div>
+          <label translate>INVENTORY.ITEM_NAME</label>
+          <input
+            class="input general-input"
+            type="text"
+            [value]="product.name"
+          />
+        </div>
+        <div>
+          <label translate>INVENTORY.CATEGORY</label>
+          <select class="input general-input">
+            <option [value]="product.category" selected>
+              {{ product.category }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label translate>INVENTORY.CODE_BAR</label>
+          <input class="input general-input" type="text" value="232323" />
+        </div>
+        <div>
+          <label translate>INVENTORY.ITEM_NAME</label>
+          <input
+            class="input general-input"
+            type="text"
+            [value]="product.name"
+          />
+        </div>
+        <div class="custom-checkbox-wrapper md:mt-5">
+          <label>
+            <input type="checkbox" checked class="peer checkbox-teal" />
+            <span class="checkbox-svg">
+              <check-icon />
+            </span>
+          </label>
+          <span class="checkbox-label-text" translate>
+            INVENTORY.IS_INVENTORY_ITEM
+          </span>
+        </div>
+        <div>
+          <label translate>INVENTORY.VAT_GROUP</label>
+          <select class="input general-input">
+            <option value="" selected>15%</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="mb-6 p-4">
+      <div role="tablist" class="tabs-container flex-wrap">
+        <button
+          *ngFor="let tab of tabs"
+          (click)="setActiveTab(tab)"
+          class="btn-tab"
+          [ngClass]="{
+            'btn-tab-active': activeTab === tab,
+            'btn-tab-not-active': activeTab !== tab,
+          }"
+        >
+          {{ tab | translate }}
+        </button>
+      </div>
+
+      <!-- Item Details Tab -->
+      <div *ngIf="activeTab === 'INVENTORY.ITEM_DETAILS'">
+        <form class="mb-2 flex-grow">
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_NAME</label>
+              <input
+                class="input general-input"
+                type="number"
+                value="101"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_TYPE</label>
+              <select class="input general-input">
+                <option selected translate>INVENTORY.CHOOSE</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.CODE_BAR</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.DESCRIPTION</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_CODE</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.CATEGORY_GROUP</label>
+              <select class="input general-input">
+                <option selected translate>INVENTORY.SELECT_GROUP</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Dimensions Tab -->
+      <div *ngIf="activeTab === 'INVENTORY.DIMENSIONS'">
+        <form class="mb-2 flex-grow">
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_LENGTH</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_HEIGHT</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_WEIGHT</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_VOLUME</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.ITEM_WIDTH</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.VOLUME_UNITS</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Inventory Details Tab -->
+      <div *ngIf="activeTab === 'INVENTORY.INVENTORY_DETAILS'">
+        <form class="mb-2 flex-grow">
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.IS_COMMITTED</label>
+              <input class="input general-input" type="number" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.ON_HAND</label>
+              <input class="input general-input" type="number" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.VAT_GROUP</label>
+              <select class="input general-input">
+                <option selected>Inventory</option>
+              </select>
+            </div>
+            <div class="form-group flex gap-3">
+              <div>
+                <label translate>INVENTORY.MIN_ORDER_QTY</label>
+                <input class="input general-input" type="text" />
+              </div>
+              <div>
+                <label translate>INVENTORY.MAX_ORDER_QTY</label>
+                <input class="input general-input" type="text" />
+              </div>
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.NUMBER_IN_BUY</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="custom-checkbox-wrapper form-group md:mt-11">
+              <label>
+                <input type="checkbox" checked class="peer checkbox-teal" />
+                <span class="checkbox-svg">
+                  <check-icon />
+                </span>
+              </label>
+              <span class="checkbox-label-text" translate>
+                INVENTORY.IS_INVENTORY_ITEM
+              </span>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Tax Info Tab -->
+      <div *ngIf="activeTab === 'INVENTORY.TAX_INFO'">
+        <form class="mb-2 flex-grow">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div class="form-group">
+              <label translate>INVENTORY.TAX_CODE_AR</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.TAX_CODE_AP</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.INDIRECT_TAX</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- WholeSale & UoM Tab -->
+      <div *ngIf="activeTab === 'INVENTORY.WHOLESALE_UOM'">
+        <form class="mb-2 flex-grow">
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.CURRENT_COUNT_DATE</label>
+              <input class="input general-input" type="date" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.WHOLESALE_NUMBER</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.BULK_VOLUME</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.BULK_VOLUME_UNITS</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.WHOLESALE_UNITS_MEASURE</label>
+              <input class="input general-input" type="text" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.INVENTORY_UOM</label>
+              <input class="input general-input" type="text" />
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Pricing Tab -->
+      <div *ngIf="activeTab === 'INVENTORY.PRICING'">
+        <form class="mb-2 flex-grow">
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.LAST_PURCHASE_DATE</label>
+              <input class="input general-input" type="date" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.LAST_PURCHASE_PRICE</label>
+              <input class="input general-input" type="number" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.LAST_PURCHASE_CURRENCY</label>
+              <input class="input general-input" type="date" />
+            </div>
+            <div class="form-group">
+              <label translate>INVENTORY.LATEST_SALE_PRICE</label>
+              <input class="input general-input" type="number" />
+            </div>
+          </div>
+          <div class="general-row">
+            <div class="form-group">
+              <label translate>INVENTORY.LAST_PURCHASE_CURRENCY</label>
+              <select class="input general-input">
+                <option selected>SAR</option>
+              </select>
+            </div>
+            <div class="flex justify-between">
+              <div class="custom-checkbox-wrapper form-group md:mt-11">
+                <label>
+                  <input type="checkbox" checked class="peer checkbox-teal" />
+                  <span class="checkbox-svg">
+                    <check-icon />
+                  </span>
+                </label>
+                <span class="checkbox-label-text" translate>
+                  INVENTORY.IS_SALE_ITEM
+                </span>
+              </div>
+              <div class="custom-checkbox-wrapper form-group md:mt-11">
+                <label>
+                  <input type="checkbox" checked class="peer checkbox-teal" />
+                  <span class="checkbox-svg">
+                    <check-icon />
+                  </span>
+                </label>
+                <span class="checkbox-label-text" translate>
+                  INVENTORY.IS_PURCHASE_ITEM
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="form-group grid grid-cols-1 md:grid-cols-4 md:gap-3">
+            <div>
+              <label translate>INVENTORY.SALE_PRICE_TYPE</label>
+              <select class="input general-input">
+                <option selected translate>INVENTORY.CHOOSE</option>
+              </select>
+            </div>
+            <div>
+              <label translate>INVENTORY.PRICING_UNIT</label>
+              <input
+                class="input general-input"
+                type="text"
+                [placeholder]="'INVENTORY.ENTER' | translate"
+              />
+            </div>
+            <div>
+              <label translate>INVENTORY.SALE_PRICE_TYPE</label>
+              <select class="input general-input">
+                <option selected translate>INVENTORY.CHOOSE</option>
+              </select>
+            </div>
+            <div>
+              <label translate>INVENTORY.SALE_PRICE_TYPE</label>
+              <select class="input general-input">
+                <option selected translate>INVENTORY.CHOOSE</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>

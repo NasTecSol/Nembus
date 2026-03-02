@@ -1,0 +1,49 @@
+<div class="mt-4 grid grid-cols-1">
+  <div class="min-h-screen overflow-x-auto">
+    <table class="product-table permission-table">
+      <thead>
+        <tr class="table-divider text-left">
+          <th>{{ "USER_ROLES.NAME" | translate }}</th>
+          <th>{{ "USER_ROLES.MODULE" | translate }}</th>
+          <th>{{ "USER_ROLES.PERMISSIONS" | translate }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          class="text-left text-wrap text-[#444658]"
+          *ngFor="let item of tableData; let i = index"
+        >
+          <td>{{ item.name }}</td>
+          <td>{{ item.module }}</td>
+          <td class="relative">
+            <a
+              (click)="toggleDropdown(i)"
+              class="inline-flex cursor-pointer items-center gap-2"
+            >
+              <p>{{ item.selectedAuthority }}</p>
+              <i
+                class="fa fa-sort-down"
+                [ngClass]="{ 'rotate-180': dropdownOpenIndex === i }"
+              ></i>
+            </a>
+
+            <!-- Dropdown -->
+            <div *ngIf="dropdownOpenIndex === i" class="dropdown-wrapper">
+              <p
+                *ngFor="let authority of item.authorities"
+                (click)="selectAuthority(i, authority)"
+                class="cursor-pointer rounded px-2 py-1 hover:bg-gray-100"
+              >
+                <span>{{ authority }}</span>
+                <i
+                  *ngIf="authority === item.selectedAuthority"
+                  class="fa fa-check ml-2 text-green-500"
+                ></i>
+              </p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -4500,6 +4500,331 @@ END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
 
+-- =====================================================
+-- RESTAURANT MODULE VIEWS
+-- =====================================================
+
+CREATE OR REPLACE VIEW vw_restaurant_menu AS
+SELECT
+    mi.id                       AS menu_item_id,
+    mi.store_id,
+    mi.name                     AS item_name,
+    mi.short_name,
+    mi.description,
+    mi.image_url,
+    mi.base_price,
+    mi.cost_price,
+    mi.preparation_time_min,
+    mi.is_available,
+    mi.is_active,
+    mi.display_order,
+    mi.metadata                 AS item_metadata,
+    mc.id                       AS category_id,
+    mc.name                     AS category_name,
+    mc.code                     AS category_code,
+    mc.parent_category_id,
+    mc.display_order            AS category_display_order,
+    mc.image_url                AS category_image_url,
+    mc_parent.name              AS parent_category_name,
+    tc.id                       AS tax_category_id,
+    tc.tax_rate,
+    tc.is_inclusive             AS tax_is_inclusive,
+    mi.recipe_id,
+    r.recipe_name,
+    r.yield_quantity            AS recipe_yield,
+    mi.product_id,
+    p.sku                       AS product_sku,
+    (SELECT COUNT(*) FROM menu_item_modifiers m WHERE m.menu_item_id = mi.id AND m.is_active = true)::INTEGER
+                                AS active_modifier_count,
+    CASE
+        WHEN mi.base_price > 0 AND mi.cost_price > 0
+        THEN ROUND(((mi.base_price - mi.cost_price) / mi.base_price) * 100, 2)
+        ELSE NULL
+    END                         AS margin_percent
+FROM menu_items mi
+JOIN menu_categories mc         ON mi.menu_category_id = mc.id
+LEFT JOIN menu_categories mc_parent ON mc.parent_category_id = mc_parent.id
+LEFT JOIN tax_categories tc     ON mi.tax_category_id = tc.id
+LEFT JOIN recipes r             ON mi.recipe_id = r.id
+LEFT JOIN products p            ON mi.product_id = p.id
+WHERE mi.is_active = true;
+
+CREATE OR REPLACE VIEW vw_recipe_bom AS
+SELECT
+    r.id                        AS recipe_id,
+    r.recipe_code,
+    r.recipe_name,
+    r.yield_quantity,
+    r.organization_id,
+    ri.id                       AS ingredient_line_id,
+    ri.line_number,
+    ri.quantity                 AS ingredient_qty,
+    ri.is_optional,
+    ri.is_byproduct,
+    p.id                        AS product_id,
+    p.sku,
+    p.name                      AS product_name,
+    pv.id                       AS variant_id,
+    pv.variant_name,
+    uom.id                      AS uom_id,
+    uom.code                    AS uom_code,
+    uom.name                    AS uom_name,
+    pp.price                    AS unit_cost_estimate,
+    ROUND(ri.quantity * COALESCE(pp.price, 0), 4) AS line_cost_estimate
+FROM recipes r
+JOIN recipe_ingredients ri      ON r.id = ri.recipe_id
+JOIN products p                 ON ri.product_id = p.id
+LEFT JOIN product_variants pv   ON ri.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom  ON ri.uom_id = uom.id
+LEFT JOIN product_prices pp     ON p.id = pp.product_id
+    AND pp.price_list_id        = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
+    AND pp.is_active            = true
+WHERE r.is_active = true;
+
+CREATE OR REPLACE VIEW vw_active_restaurant_orders AS
+SELECT
+    ro.id                       AS order_id,
+    ro.order_number,
+    ro.store_id,
+    ro.order_source,
+    ro.status                   AS order_status,
+    ro.subtotal,
+    ro.tax_amount,
+    ro.total_amount,
+    ro.notes,
+    ro.ordered_at,
+    ro.confirmed_at,
+    rt.id                       AS table_id,
+    rt.table_number,
+    rt.table_name,
+    rt.section                  AS table_section,
+    c.id                        AS cashier_id,
+    u.first_name || ' ' || u.last_name AS waiter_name,
+    ro.customer_id,
+    cust.name                   AS customer_name,
+    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0 AS minutes_since_ordered
+FROM restaurant_orders ro
+LEFT JOIN restaurant_tables rt  ON ro.table_id = rt.id
+LEFT JOIN cashiers c            ON ro.cashier_id = c.id
+LEFT JOIN users u               ON c.user_id = u.id
+LEFT JOIN customers cust        ON ro.customer_id = cust.id
+WHERE ro.status NOT IN ('paid', 'voided');
+
+CREATE OR REPLACE VIEW vw_waste_daily_summary AS
+SELECT
+    wl.store_id,
+    DATE(wl.wasted_at)          AS waste_date,
+    wl.waste_source,
+    COUNT(*)                    AS waste_entries,
+    SUM(wl.quantity)            AS total_quantity_wasted,
+    SUM(wl.total_cost)          AS total_cost_wasted,
+    AVG(wl.total_cost)          AS avg_cost_per_entry
+FROM waste_logs wl
+GROUP BY wl.store_id, DATE(wl.wasted_at), wl.waste_source;
+
+-- =====================================================
+-- RESTAURANT MODULE FUNCTIONS
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_restaurant_menu(
+    p_store_id          INTEGER,
+    p_category_id       INTEGER  DEFAULT NULL,
+    p_include_unavail   BOOLEAN  DEFAULT false
+)
+RETURNS TABLE (
+    menu_item_id            INTEGER,
+    item_name               VARCHAR,
+    short_name              VARCHAR,
+    description             TEXT,
+    image_url               TEXT,
+    base_price              NUMERIC,
+    preparation_time_min    INTEGER,
+    is_available            BOOLEAN,
+    category_id             INTEGER,
+    category_name           VARCHAR,
+    parent_category_name    VARCHAR,
+    tax_rate                NUMERIC,
+    tax_is_inclusive        BOOLEAN,
+    recipe_id               INTEGER,
+    product_id              INTEGER,
+    active_modifier_count   INTEGER,
+    margin_percent          NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        vm.menu_item_id,
+        vm.item_name::VARCHAR,
+        vm.short_name::VARCHAR,
+        vm.description,
+        vm.image_url,
+        vm.base_price,
+        vm.preparation_time_min,
+        vm.is_available,
+        vm.category_id,
+        vm.category_name::VARCHAR,
+        vm.parent_category_name::VARCHAR,
+        vm.tax_rate,
+        vm.tax_is_inclusive,
+        vm.recipe_id,
+        vm.product_id,
+        vm.active_modifier_count,
+        vm.margin_percent
+    FROM vw_restaurant_menu vm
+    WHERE vm.store_id = p_store_id
+      AND (p_category_id IS NULL OR vm.category_id = p_category_id)
+      AND (p_include_unavail = true OR vm.is_available = true)
+    ORDER BY vm.category_display_order, vm.display_order;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_item_modifiers(
+    p_menu_item_id INTEGER
+)
+RETURNS TABLE (
+    modifier_id         INTEGER,
+    modifier_name       VARCHAR,
+    modifier_type       VARCHAR,
+    price_adjustment    NUMERIC,
+    display_order       INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        m.id,
+        m.modifier_name::VARCHAR,
+        m.modifier_type::VARCHAR,
+        m.price_adjustment,
+        m.display_order
+    FROM menu_item_modifiers m
+    WHERE m.menu_item_id = p_menu_item_id
+      AND m.is_active    = true
+    ORDER BY m.display_order;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_calculate_recipe_cost(
+    p_recipe_id INTEGER
+)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_total_cost NUMERIC := 0;
+BEGIN
+    SELECT COALESCE(SUM(vb.line_cost_estimate), 0)
+      INTO v_total_cost
+    FROM vw_recipe_bom vb
+    WHERE vb.recipe_id    = p_recipe_id
+      AND vb.is_byproduct = false
+      AND vb.is_optional  = false;
+
+    RETURN v_total_cost;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_waste_report(
+    p_store_id      INTEGER,
+    p_from_date     DATE,
+    p_to_date       DATE,
+    p_waste_source  VARCHAR DEFAULT NULL
+)
+RETURNS TABLE (
+    waste_date          DATE,
+    waste_source        VARCHAR,
+    product_id          INTEGER,
+    product_name        VARCHAR,
+    menu_item_id        INTEGER,
+    menu_item_name      VARCHAR,
+    quantity            NUMERIC,
+    uom_code            VARCHAR,
+    total_cost          NUMERIC,
+    reason              TEXT,
+    logged_by_name      VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        DATE(wl.wasted_at),
+        wl.waste_source::VARCHAR,
+        wl.product_id,
+        p.name::VARCHAR,
+        wl.menu_item_id,
+        mi.name::VARCHAR,
+        wl.quantity,
+        uom.code::VARCHAR,
+        wl.total_cost,
+        wl.reason,
+        (u.first_name || ' ' || u.last_name)::VARCHAR
+    FROM waste_logs wl
+    LEFT JOIN products p            ON wl.product_id   = p.id
+    LEFT JOIN menu_items mi         ON wl.menu_item_id = mi.id
+    LEFT JOIN units_of_measure uom  ON wl.uom_id       = uom.id
+    LEFT JOIN users u               ON wl.logged_by    = u.id
+    WHERE wl.store_id           = p_store_id
+      AND DATE(wl.wasted_at)    BETWEEN p_from_date AND p_to_date
+      AND (p_waste_source IS NULL OR wl.waste_source = p_waste_source)
+    ORDER BY wl.wasted_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_get_kds_orders(
+    p_store_id      INTEGER,
+    p_statuses      VARCHAR[] DEFAULT ARRAY['pending','confirmed','preparing']
+)
+RETURNS TABLE (
+    order_id            INTEGER,
+    order_number        VARCHAR,
+    table_number        VARCHAR,
+    waiter_name         VARCHAR,
+    order_status        VARCHAR,
+    ordered_at          TIMESTAMP,
+    minutes_elapsed     NUMERIC,
+    item_id             INTEGER,
+    item_name           VARCHAR,
+    item_short_name     VARCHAR,
+    item_qty            NUMERIC,
+    item_notes          TEXT,
+    item_modifiers      JSONB,
+    item_status         VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        ro.id,
+        ro.order_number::VARCHAR,
+        rt.table_number::VARCHAR,
+        (u.first_name || ' ' || u.last_name)::VARCHAR,
+        ro.status::VARCHAR,
+        ro.ordered_at,
+        ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0, 1),
+        roi.id,
+        mi.name::VARCHAR,
+        mi.short_name::VARCHAR,
+        roi.quantity,
+        roi.notes,
+        roi.modifiers_snapshot,
+        roi.status::VARCHAR
+    FROM restaurant_orders ro
+    LEFT JOIN restaurant_tables rt      ON ro.table_id = rt.id
+    LEFT JOIN cashiers c                ON ro.cashier_id = c.id
+    LEFT JOIN users u                   ON c.user_id = u.id
+    JOIN  restaurant_order_items roi    ON ro.id = roi.order_id
+    JOIN  menu_items mi                 ON roi.menu_item_id = mi.id
+    WHERE ro.store_id = p_store_id
+      AND ro.status = ANY(p_statuses)
+    ORDER BY ro.ordered_at, roi.line_number;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
 -- +goose Down
 
 DROP VIEW IF EXISTS vw_pos_categories CASCADE;

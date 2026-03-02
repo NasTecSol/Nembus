@@ -1,0 +1,347 @@
+<section>
+  <div class="container px-3 py-1">
+    <div class="mb-3 flex items-center gap-3">
+      <div>
+        <button (click)="goBack()">
+          <i class="fa fa-circle-chevron-left btn-back"></i>
+        </button>
+      </div>
+      <h2 translate>PURCHASING.ADD_NEW_ORDER</h2>
+    </div>
+    <div
+      class="dashboard-card border-secondary mb-10 flex flex-grow flex-col justify-between rounded-2xl pb-10 shadow-lg md:px-5"
+    >
+      <div class="mx-2">
+        <div class="flex-grow">
+          <!-- First Grid Section -->
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+            <div class="form-group">
+              <label class="block" translate>PURCHASING.SELECT_SUPPLIER</label>
+              <select name="" class="input border-white-light" value="">
+                <option value="" translate>PURCHASING.SEARCH_BY_ID</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label translate>PURCHASING.REFERENCE_NO</label>
+              <input
+                class="input border-white-light"
+                name=""
+                value=""
+                type="text"
+                placeholder="{{ 'PURCHASING.ENTER' | translate }}"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PURCHASING.INVOICE_NO</label>
+              <input
+                class="input border-white-light"
+                name=""
+                type="number"
+                value=""
+                placeholder="{{ 'PURCHASING.ENTER' | translate }}"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PURCHASING.POSTING_DATE</label>
+              <input
+                class="input border-white-light"
+                name=""
+                type="date"
+                value=""
+                placeholder="{{ 'PURCHASING.ENTER' | translate }}"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PURCHASING.DELIVERY_DATE</label>
+              <input
+                class="input border-white-light"
+                name=""
+                type="date"
+                value=""
+                placeholder="{{ 'PURCHASING.ENTER' | translate }}"
+                required
+              />
+            </div>
+          </div>
+
+          <!-- Second Grid Section -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="block" translate>PURCHASING.ADD_PRODUCTS</label>
+              <input
+                class="input border-white-light hover:cursor-pointer"
+                type="text"
+                placeholder="{{ 'PURCHASING.SEARCH_BY_ID' | translate }}"
+                (click)="openProductModal()"
+                readonly
+              />
+            </div>
+
+            <div class="form-group">
+              <label translate>PURCHASING.DUE_DATE</label>
+              <input
+                name=""
+                class="input border-white-light"
+                type="date"
+                value=""
+                placeholder="{{ 'PURCHASING.WRITE_SOMETHING' | translate }}"
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="my-4 md:mt-8">
+          <p class="flex items-center gap-10">
+            <span class="text-xl font-semibold" translate>
+              PURCHASING.ADDED_PRODUCTS
+            </span>
+            <span class="text-slate-gray" translate>
+              {{ "PURCHASING.TOTAL_PRODUCTS" | translate }}
+              <span class="font-semibold text-black">&nbsp;1</span>
+            </span>
+          </p>
+        </div>
+
+        <div class="table-divider"></div>
+        <div class="my-4 grid grid-cols-1 overflow-auto pb-4">
+          <table class="product-table">
+            <thead>
+              <tr class="table-heading-row">
+                <th translate>PURCHASING.PRODUCT_ID</th>
+                <th translate>PURCHASING.PRODUCT_NAME</th>
+                <th translate>PURCHASING.QUANTITY</th>
+                <th translate>PURCHASING.UOM</th>
+                <th translate>PURCHASING.PRICE</th>
+                <th translate>PURCHASING.STOCK_IN_HAND</th>
+                <th translate>PURCHASING.DISCOUNT_PERCENT</th>
+                <th translate>PURCHASING.DISCOUNT_AMOUNT</th>
+                <th translate>PURCHASING.SELECT_WAREHOUSE</th>
+                <th translate>PURCHASING.VAT_CODE</th>
+                <th translate>PURCHASING.TOTAL</th>
+                <th translate>PURCHASING.TOTAL_WITH_TAX</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                *ngFor="let product of products"
+                class="table-body-row text-center text-[#666666]"
+              >
+                <td>{{ product.id }}</td>
+                <td>{{ product.name }}</td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="quantity"
+                    type="text"
+                    [value]="product.quantity"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="uom"
+                    type="text"
+                    [value]="product.uom"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="price"
+                    type="text"
+                    [value]="product.price"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="stockInHand"
+                    type="text"
+                    [value]="product.stockInHand"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="discountPercent"
+                    type="text"
+                    [value]="product.discountPercent"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="discountAmount"
+                    type="text"
+                    [value]="product.discountAmount"
+                  />
+                </td>
+                <td>
+                  <select class="table-input" name="warehouse">
+                    <option translate>PURCHASING.SELECT</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="vatCode"
+                    type="text"
+                    [value]="product.vatCode"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="total"
+                    type="text"
+                    [value]="product.total"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="table-input"
+                    name="totalWithTax"
+                    type="text"
+                    [value]="product.totalWithTax"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-divider mt-5"></div>
+        <div class="my-4 flex flex-col gap-4">
+          <p class="text-xl font-semibold">
+            <span translate>PURCHASING.INVOICE_DATA</span>
+          </p>
+
+          <p class="invoice-text">
+            <span translate>PURCHASING.TOTAL_WITHOUT_TAX</span>
+            :
+            <span class="invoice-span">200000</span>
+          </p>
+
+          <div class="flex flex-col gap-4 md:flex-row">
+            <p class="invoice-text">
+              <span translate>PURCHASING.DISCOUNT_PERCENTAGE</span>
+              :
+              <span class="invoice-span">5&#37;</span>
+            </p>
+            <p class="invoice-text">
+              <span translate>PURCHASING.DISCOUNT_AMOUNT</span>
+              :
+              <span class="invoice-span">300</span>
+            </p>
+          </div>
+
+          <p class="invoice-text">
+            <span translate>PURCHASING.FREIGHT</span>
+            :
+            <span class="invoice-span">500</span>
+          </p>
+
+          <p class="invoice-text">
+            <span translate>PURCHASING.TOTAL_TAX</span>
+            :
+            <span class="invoice-span">2000</span>
+          </p>
+
+          <p class="invoice-text">
+            <span translate>PURCHASING.TOTAL_WITH_TAX</span>
+            :
+            <span class="invoice-span">22,250.02</span>
+          </p>
+
+          <p class="invoice-text">
+            <span translate>PURCHASING.TOTAL_WITH_TAX</span>
+            :
+            <span class="invoice-span">2000</span>
+          </p>
+
+          <p class="invoice-text">
+            <span translate>PURCHASING.GROSS_TOTAL</span>
+            :
+            <span class="invoice-span">2000</span>
+          </p>
+        </div>
+
+        <p class="mt-2 mb-3 text-xl font-semibold" translate>
+          PURCHASING.FINAL_DATA
+        </p>
+
+        <div class="justify-between lg:flex">
+          <div class="gap-2 md:flex">
+            <div class="mt-1">
+              <label translate>PURCHASING.SELECT_BUYER</label>
+              <select class="input">
+                <option translate>PURCHASING.BUYER</option>
+              </select>
+            </div>
+            <div class="mt-1">
+              <label translate>PURCHASING.REMARKS</label>
+              <input
+                class="input"
+                type="text"
+                placeholder="{{ 'PURCHASING.WRITE_SOMETHING' | translate }}"
+              />
+            </div>
+          </div>
+
+          <div class="col-span-3 my-4 flex flex-col justify-end gap-4">
+            <p class="invoice-text">
+              <span translate>PURCHASING.TOTAL_AMOUNT</span>
+              :
+              <span class="font-bold text-black">2000</span>
+            </p>
+            <p class="invoice-text">
+              <span translate>PURCHASING.SUPPLIER_DISCOUNT</span>
+              :
+              <span class="font-bold text-black">2000</span>
+            </p>
+            <p class="invoice-text">
+              <span translate>PURCHASING.PAYABLE_AMOUNT</span>
+              :
+              <span class="font-bold text-black">2000</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-3 md:mt-10">
+        <button class="btn-submit" translate>PURCHASING.COPY_FROM</button>
+
+        <button class="btn-submit" translate>PURCHASING.COPY_TO</button>
+
+        <button (click)="openInvoiceModal()" class="btn-submit" translate>
+          PURCHASING.GENERATE_INVOICE
+        </button>
+
+        <button class="btn-submit" translate>PURCHASING.SAVE_ORDER</button>
+
+        <button class="btn-submit">
+          <i class="fa fa-file-pen mr-2"></i>
+          <span translate>PURCHASING.DRAFT_ORDER</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+<app-add-product-modal
+  [isOpen]="isAddProductModalOpen"
+  (close)="closeProductModal()"
+  (submit)="handleProductSubmit($event)"
+></app-add-product-modal>
+<app-invoice-modal
+  [isOpen]="isInvoiceModalOpen"
+  (close)="closeInvoiceModal()"
+  (submit)="handleProductSubmit($event)"
+></app-invoice-modal>

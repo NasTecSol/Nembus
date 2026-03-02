@@ -1,0 +1,256 @@
+<section class="mb-5 min-h-screen">
+  <div class="container px-3 py-1">
+    <h2><span translate>CASH_COLLECTION.TITLE</span></h2>
+
+    <div
+      class="animate-fade-in my-3 flex flex-col items-center justify-between gap-2 md:flex-row"
+    >
+      <div class="tabs-container" role="tablist">
+        <button
+          *ngFor="let tab of tabs; let i = index"
+          (click)="setActiveTab(tab)"
+          class="btn-tab"
+          [ngClass]="[
+            activeTab === tab
+              ? 'btn-tab-active rounded-lg'
+              : 'btn-tab-not-active',
+          ]"
+        >
+          {{ cashCollectionTabTranslationMap[tab] | translate }}
+        </button>
+      </div>
+      <button
+        class="text-primary relative mr-2 w-full text-end text-lg md:w-1/4"
+      >
+        <span translate>CASH_COLLECTION.SORT_BY</span>
+        <i class="fa fa-calendar-days ml-2 text-3xl"></i>
+        <input
+          #dateInput
+          type="datetime-local"
+          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </button>
+    </div>
+
+    <div
+      class="dashboard-card border-secondary animate-slide-diagonal-down my-4 grid grid-cols-1 overflow-x-auto rounded-2xl shadow-lg"
+    >
+      <div class="md:min-h-screen">
+        <table *ngIf="activeTab === 'Daily Cash'" class="product-table">
+          <thead>
+            <tr class="table-heading-row text-dark-bold-lg">
+              <th class="border-l-0">
+                <span translate>CASH_COLLECTION.EMP_ID</span>
+              </th>
+              <th><span translate>CASH_COLLECTION.EMP_NAME</span></th>
+              <th><span translate>CASH_COLLECTION.DAILY_COLLECTION</span></th>
+              <th><span translate>CASH_COLLECTION.CASH</span></th>
+              <th><span translate>CASH_COLLECTION.CARD</span></th>
+              <th><span translate>CASH_COLLECTION.COUPONS</span></th>
+              <th><span translate>CASH_COLLECTION.RECEIPT</span></th>
+              <th><span translate>CASH_COLLECTION.LEFTOVER_AMOUNT</span></th>
+              <th><span translate>CASH_COLLECTION.DIFFERENCE</span></th>
+              <th><span translate>CASH_COLLECTION.NET_TOTAL</span></th>
+              <th class="border-r-0">
+                <span translate>CASH_COLLECTION.STATUS</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let cash of dailyCash"
+              (click)="goToDetails(cash)"
+              class="table-body-row cursor-pointer text-[#666666]"
+            >
+              <td class="border-l-0">{{ cash.empId }}</td>
+              <td>{{ cash.empName }}</td>
+              <td>{{ cash.dailyCollection }}</td>
+              <td>{{ cash.cash }}</td>
+              <td>{{ cash.card }}</td>
+              <td>{{ cash.coupens }}</td>
+              <td>{{ cash.receipt }}</td>
+              <td>{{ cash.leftoverAmount }}</td>
+              <td class="text-red-difference">{{ cash.difference }}</td>
+              <td>{{ cash.netTotal }}</td>
+              <td class="status border-r-0">
+                <span *ngIf="cash.status === 'Pending'" class="pending">
+                  <span translate>CASH_COLLECTION.PENDING</span>
+                </span>
+                <span *ngIf="cash.status === 'Submitted'" class="submitted">
+                  <span translate>CASH_COLLECTION.SUBMITTED</span>
+                </span>
+                <span
+                  *ngIf="cash.status === 'Approval Pending'"
+                  class="pending-approval"
+                >
+                  <span translate>CASH_COLLECTION.APPROVAL_PENDING</span>
+                </span>
+                <span *ngIf="cash.status === 'Re-Count'" class="recount">
+                  <span translate>CASH_COLLECTION.RE_COUNT</span>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table *ngIf="activeTab === 'Bank Deposits'" class="product-table">
+          <thead>
+            <tr class="table-heading-row text-dark-bold-lg">
+              <th class="border-l-0">
+                <span translate>CASH_COLLECTION.EMP_ID</span>
+              </th>
+              <th><span translate>CASH_COLLECTION.EMP_NAME</span></th>
+              <th><span translate>CASH_COLLECTION.SUBMITTED</span></th>
+              <th class="border-r-0">
+                <span translate>CASH_COLLECTION.BALANCE</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let item of bankDeposit"
+              class="table-body-row text-[#666666]"
+            >
+              <td class="border-l-0">{{ item.empId }}</td>
+              <td>{{ item.empName }}</td>
+              <td>{{ item.submitted }}</td>
+              <td class="border-r-0">{{ item.balance }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table *ngIf="activeTab === 'Employee Reports'" class="product-table">
+          <thead>
+            <tr class="table-heading-row text-dark-bold-lg">
+              <th class="border-l-0">
+                <span translate>CASH_COLLECTION.EMP_ID</span>
+              </th>
+              <th><span translate>CASH_COLLECTION.EMP_NAME</span></th>
+              <th><span translate>CASH_COLLECTION.BALANCE</span></th>
+              <th><span translate>CASH_COLLECTION.CASH</span></th>
+              <th><span translate>CASH_COLLECTION.CARD</span></th>
+              <th><span translate>CASH_COLLECTION.COUPONS</span></th>
+              <th><span translate>CASH_COLLECTION.RECEIPT</span></th>
+              <th><span translate>CASH_COLLECTION.LEFTOVER_AMOUNT</span></th>
+              <th><span translate>CASH_COLLECTION.DIFFERENCE</span></th>
+              <th><span translate>CASH_COLLECTION.NET_TOTAL</span></th>
+              <th class="border-r-0">
+                <span translate>CASH_COLLECTION.STATUS</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let item of empReports"
+              class="table-body-row text-[#666666]"
+            >
+              <td class="border-l-0">{{ item.empId }}</td>
+              <td>{{ item.empName }}</td>
+              <td>{{ item.balance }}</td>
+              <td>{{ item.cash }}</td>
+              <td>{{ item.card }}</td>
+              <td>{{ item.coupens }}</td>
+              <td>{{ item.receipt }}</td>
+              <td>{{ item.leftoverAmount }}</td>
+              <td class="text-red-difference">{{ item.difference }}</td>
+              <td>{{ item.netTotal }}</td>
+              <td class="status border-r-0">
+                <span *ngIf="item.status === 'Pending'" class="pending">
+                  <span translate>CASH_COLLECTION.PENDING</span>
+                </span>
+                <span *ngIf="item.status === 'Submitted'" class="submitted">
+                  <span translate>CASH_COLLECTION.SUBMITTED_STATUS</span>
+                </span>
+                <span
+                  *ngIf="item.status === 'Approval Pending'"
+                  class="pending-approval"
+                >
+                  <span translate>CASH_COLLECTION.APPROVAL_PENDING</span>
+                </span>
+                <span *ngIf="item.status === 'Re-Count'" class="recount">
+                  <span translate>CASH_COLLECTION.RE_COUNT</span>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table *ngIf="activeTab === 'Cash Counters'" class="product-table">
+          <thead>
+            <tr class="table-heading-row text-dark-bold-lg">
+              <th class="border-l-0">
+                <span translate>CASH_COLLECTION.COUNTER_ID</span>
+              </th>
+              <th><span translate>CASH_COLLECTION.ASSIGNED_CASHIERS</span></th>
+              <th><span translate>CASH_COLLECTION.BALANCE</span></th>
+              <th><span translate>CASH_COLLECTION.CASH</span></th>
+              <th><span translate>CASH_COLLECTION.CARD</span></th>
+              <th><span translate>CASH_COLLECTION.COUPONS</span></th>
+              <th><span translate>CASH_COLLECTION.RECEIPT</span></th>
+              <th><span translate>CASH_COLLECTION.LEFTOVER_AMOUNT</span></th>
+              <th><span translate>CASH_COLLECTION.DIFFERENCE</span></th>
+              <th><span translate>CASH_COLLECTION.NET_TOTAL</span></th>
+              <th class="border-r-0">
+                <span translate>CASH_COLLECTION.STATUS</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let item of cashCounters"
+              class="table-body-row text-[#666666]"
+            >
+              <td class="border-l-0">{{ item.counterId }}</td>
+              <td>
+                <div class="tooltip">
+                  <ng-container *ngFor="let cashier of item.assignedCashiers">
+                    <div class="group relative -ml-2 first:ml-0">
+                      <img [src]="cashier.avatar" alt="Cashier avatar" />
+                      <div class="tooltip-text">{{ cashier.name }}</div>
+                    </div>
+                  </ng-container>
+                  <div class="group relative -ml-2">
+                    <div class="badge">+{{ item.assignedCashiers.length }}</div>
+                    <div class="tooltip-text">
+                      <span translate>
+                        CASH_COLLECTION.TOOLTIP_MORE_CASHIERS
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td>{{ item.balance }}</td>
+              <td>{{ item.cash }}</td>
+              <td>{{ item.card }}</td>
+              <td>{{ item.coupens }}</td>
+              <td>{{ item.receipt }}</td>
+              <td>{{ item.leftoverAmount }}</td>
+              <td class="text-red-difference">{{ item.difference }}</td>
+              <td>{{ item.netTotal }}</td>
+              <td class="status border-r-0">
+                <span *ngIf="item.status === 'Pending'" class="pending">
+                  <span translate>CASH_COLLECTION.PENDING</span>
+                </span>
+                <span
+                  *ngIf="item.status === 'Submitted'"
+                  class="pending-approval"
+                >
+                  <span translate>CASH_COLLECTION.SUBMITTED_STATUS</span>
+                </span>
+                <span
+                  *ngIf="item.status === 'Approval Pending'"
+                  class="submitted"
+                >
+                  <span translate>CASH_COLLECTION.APPROVAL_PENDING</span>
+                </span>
+                <span *ngIf="item.status === 'Re-Count'" class="recount">
+                  <span translate>CASH_COLLECTION.RE_COUNT</span>
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>

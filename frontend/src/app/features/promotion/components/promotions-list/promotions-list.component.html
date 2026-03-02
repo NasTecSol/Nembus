@@ -1,0 +1,164 @@
+<section class="min-h-screen">
+  <div class="container px-3 py-1">
+    <!-- Page Title -->
+    <div class="mb-3 flex items-center gap-3">
+      <h2 translate>PROMOTIONS.TITLE</h2>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex-responsive w-full">
+      <div class="tabs-container" role="tablist">
+        <button
+          *ngFor="let tab of tabs; let i = index"
+          (click)="setActiveTab(tab)"
+          class="btn-tab"
+          [ngClass]="[
+            activeTab === tab
+              ? 'btn-tab-active rounded-lg'
+              : 'btn-tab-not-active',
+          ]"
+        >
+          <span>{{ promotionsTab[tab] | translate }}</span>
+        </button>
+      </div>
+
+      <!-- Action Buttons -->
+      <div>
+        <button
+          *ngIf="activeTab === 'Promotions'"
+          (click)="addPromotion()"
+          class="btn-submit mt-5 md:mt-0"
+        >
+          <i class="fa fa-circle-plus mr-2 text-xl"></i>
+          <span translate>PROMOTIONS.ADD_PROMOTION</span>
+        </button>
+
+        <button
+          *ngIf="activeTab === 'Discount Offers'"
+          (click)="addDiscountOffer()"
+          class="btn-submit mt-5 md:mt-0"
+        >
+          <i class="fa fa-circle-plus mr-2 text-xl"></i>
+          <span translate>PROMOTIONS.ADD_DISCOUNT_OFFER</span>
+        </button>
+
+        <div
+          *ngIf="activeTab === 'Coupons'"
+          class="flex flex-wrap md:gap-2 lg:flex-nowrap"
+        >
+          <!-- Sub-tabs -->
+          <div
+            role="tablist"
+            class="flex w-full overflow-hidden rounded-lg border md:w-auto"
+          >
+            <button
+              role="tab"
+              class="min-h-10 w-1/2 px-4 text-nowrap md:min-h-6 md:w-auto"
+              [ngClass]="{
+                'btn-tab-active': couponActiveTab === 'Coupons',
+                'btn-tab-not-active': couponActiveTab !== 'Coupons',
+              }"
+              (click)="setCouponActiveTab('Coupons')"
+            >
+              <span translate>PROMOTIONS.COUPONS</span>
+            </button>
+
+            <button
+              role="tab"
+              class="min-h-10 w-1/2 px-4 text-nowrap md:min-h-6 md:w-auto"
+              [ngClass]="{
+                'btn-tab-active': couponActiveTab === 'Coupon Types',
+                'btn-tab-not-active': couponActiveTab !== 'Coupon Types',
+              }"
+              (click)="setCouponActiveTab('Coupon Types')"
+            >
+              <span translate>PROMOTIONS.COUPON_TYPES</span>
+            </button>
+          </div>
+
+          <button
+            *ngIf="couponActiveTab === 'Coupons'"
+            (click)="addCoupon()"
+            class="btn-submit mt-5 md:mt-0"
+          >
+            <i class="fa fa-circle-plus mr-2 text-xl"></i>
+            <span translate>PROMOTIONS.CREATE_COUPONS</span>
+          </button>
+
+          <button
+            *ngIf="couponActiveTab === 'Coupon Types'"
+            (click)="addCouponType()"
+            class="btn-submit mt-5 md:mt-0"
+          >
+            <i class="fa fa-circle-plus mr-2 text-xl"></i>
+            <span translate>PROMOTIONS.CREATE_COUPON_TYPES</span>
+          </button>
+        </div>
+
+        <button
+          *ngIf="activeTab === 'Membership Points'"
+          (click)="addDiscountOffer()"
+          class="btn-submit mt-5 md:mt-0"
+        >
+          <i class="fa fa-circle-plus mr-2 text-xl"></i>
+          <span translate>PROMOTIONS.ADD_POINTS_OFFER</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Promotions Table -->
+    <div *ngIf="activeTab === 'Promotions'" class="my-4 grid grid-cols-1">
+      <div
+        class="dashboard-card border-secondary animate-slide-diagonal-down min-h-screen flex-grow overflow-x-auto rounded-2xl shadow-lg"
+      >
+        <table class="product-table">
+          <thead>
+            <tr class="table-heading-row text-dark-bold-lg">
+              <th class="border-l-0" translate>PROMOTIONS.NO</th>
+              <th translate>PROMOTIONS.CODE</th>
+              <th translate>PROMOTIONS.SYMBOL</th>
+              <th translate>PROMOTIONS.NAME</th>
+              <th translate>PROMOTIONS.BLOCK</th>
+              <th translate>PROMOTIONS.ACTIVE</th>
+              <th translate>PROMOTIONS.FROM_DATE</th>
+              <th class="border-r-0" translate>PROMOTIONS.TO_DATE</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let item of promotions"
+              class="table-body-row text-[#666666]"
+            >
+              <td class="border-l-0">{{ item.no }}</td>
+              <td>{{ item.code }}</td>
+              <td>{{ item.symbol }}</td>
+              <td>{{ item.name }}</td>
+              <td>{{ item.block ? "Yes" : "No" }}</td>
+              <td>{{ item.active ? "Yes" : "No" }}</td>
+              <td>{{ item.fromDate }}</td>
+              <td class="border-r-0">{{ item.toDate }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tabs content components -->
+    <ng-container *ngIf="activeTab === 'Discount Offers'">
+      <app-discount-offers></app-discount-offers>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'Coupons'">
+      <div *ngIf="couponActiveTab === 'Coupons'">
+        <app-coupons></app-coupons>
+      </div>
+      <div *ngIf="couponActiveTab === 'Coupon Types'">
+        <app-coupon-types></app-coupon-types>
+      </div>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'Membership Points'">
+      <app-membership></app-membership>
+    </ng-container>
+  </div>
+</section>
