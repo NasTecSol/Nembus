@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -32,6 +34,329 @@ func (uc *CartUseCase) repoOrErr() *repository.Response {
 	return nil
 }
 
+// CartOutput is the response shape for cart APIs with JSONB fields marshaled as JSON.
+type CartOutput struct {
+	ID                 uuid.UUID             `json:"id"`
+	CartNumber         string                `json:"cart_number"`
+	OrganizationID     int32                 `json:"organization_id"`
+	StoreID            pgtype.Int4           `json:"store_id"`
+	CustomerID         pgtype.Int4           `json:"customer_id"`
+	GuestIdentifier    pgtype.Text           `json:"guest_identifier"`
+	GuestEmail         pgtype.Text           `json:"guest_email"`
+	GuestPhone         pgtype.Text           `json:"guest_phone"`
+	CartStatus         repository.CartStatus `json:"cart_status"`
+	CartType           repository.CartType   `json:"cart_type"`
+	Channel            pgtype.Text           `json:"channel"`
+	PaymentMethod      pgtype.Text           `json:"payment_method"`
+	PaymentGateway     pgtype.Text           `json:"payment_gateway"`
+	DeviceInfo         json.RawMessage       `json:"device_info"`
+	CreatedByUserID    pgtype.Int4           `json:"created_by_user_id"`
+	CashierID          pgtype.Int4           `json:"cashier_id"`
+	PosTerminalID      pgtype.Int4           `json:"pos_terminal_id"`
+	Subtotal           pgtype.Numeric        `json:"subtotal"`
+	DiscountAmount     pgtype.Numeric        `json:"discount_amount"`
+	TaxAmount          pgtype.Numeric        `json:"tax_amount"`
+	ShippingAmount     pgtype.Numeric        `json:"shipping_amount"`
+	TotalAmount        pgtype.Numeric        `json:"total_amount"`
+	CouponCode         pgtype.Text           `json:"coupon_code"`
+	DiscountCode       pgtype.Text           `json:"discount_code"`
+	PromotionalCredits pgtype.Numeric        `json:"promotional_credits"`
+	ShippingAddress    json.RawMessage       `json:"shipping_address"`
+	BillingAddress     json.RawMessage       `json:"billing_address"`
+	ShippingMethod     pgtype.Text           `json:"shipping_method"`
+	ConvertedToOrderID pgtype.UUID           `json:"converted_to_order_id"`
+	ConvertedAt        pgtype.Timestamp      `json:"converted_at"`
+	LastActivityAt     pgtype.Timestamp      `json:"last_activity_at"`
+	ExpiresAt          pgtype.Timestamp      `json:"expires_at"`
+	CreatedAt          pgtype.Timestamp      `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp      `json:"updated_at"`
+	Metadata           json.RawMessage       `json:"metadata"`
+	Notes              pgtype.Text           `json:"notes"`
+}
+
+type CartItemOutput struct {
+	ID                   uuid.UUID        `json:"id"`
+	CartID               uuid.UUID        `json:"cart_id"`
+	OrganizationID       int32            `json:"organization_id"`
+	ProductID            int32            `json:"product_id"`
+	ProductVariantID     pgtype.Int4      `json:"product_variant_id"`
+	Quantity             pgtype.Numeric   `json:"quantity"`
+	UomID                pgtype.Int4      `json:"uom_id"`
+	UnitPrice            pgtype.Numeric   `json:"unit_price"`
+	DiscountAmount       pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
+	LineTotal            pgtype.Numeric   `json:"line_total"`
+	PriceListID          pgtype.Int4      `json:"price_list_id"`
+	TaxCategoryID        pgtype.Int4      `json:"tax_category_id"`
+	BatchNumber          pgtype.Text      `json:"batch_number"`
+	SerialNumber         pgtype.Text      `json:"serial_number"`
+	CustomizationDetails json.RawMessage  `json:"customization_details"`
+	Notes                pgtype.Text      `json:"notes"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	AddedAt              pgtype.Timestamp `json:"added_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+}
+
+type ListCartItemsOutput struct {
+	ID                   uuid.UUID        `json:"id"`
+	CartID               uuid.UUID        `json:"cart_id"`
+	OrganizationID       int32            `json:"organization_id"`
+	ProductID            int32            `json:"product_id"`
+	ProductVariantID     pgtype.Int4      `json:"product_variant_id"`
+	Quantity             pgtype.Numeric   `json:"quantity"`
+	UomID                pgtype.Int4      `json:"uom_id"`
+	UnitPrice            pgtype.Numeric   `json:"unit_price"`
+	DiscountAmount       pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
+	LineTotal            pgtype.Numeric   `json:"line_total"`
+	PriceListID          pgtype.Int4      `json:"price_list_id"`
+	TaxCategoryID        pgtype.Int4      `json:"tax_category_id"`
+	BatchNumber          pgtype.Text      `json:"batch_number"`
+	SerialNumber         pgtype.Text      `json:"serial_number"`
+	CustomizationDetails json.RawMessage  `json:"customization_details"`
+	Notes                pgtype.Text      `json:"notes"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	AddedAt              pgtype.Timestamp `json:"added_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	ProductName          string           `json:"product_name"`
+	ProductSku           string           `json:"product_sku"`
+}
+
+type CartActivityLogOutput struct {
+	ID                int64            `json:"id"`
+	CartID            uuid.UUID        `json:"cart_id"`
+	OrganizationID    int32            `json:"organization_id"`
+	ActivityType      string           `json:"activity_type"`
+	Description       pgtype.Text      `json:"description"`
+	PerformedByUserID pgtype.Int4      `json:"performed_by_user_id"`
+	IpAddress         *netip.Addr      `json:"ip_address"`
+	UserAgent         pgtype.Text      `json:"user_agent"`
+	OldValue          json.RawMessage  `json:"old_value"`
+	NewValue          json.RawMessage  `json:"new_value"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+}
+
+type ListAbandonedCartOutput struct {
+	ID                 uuid.UUID             `json:"id"`
+	CartNumber         string                `json:"cart_number"`
+	OrganizationID     int32                 `json:"organization_id"`
+	StoreID            pgtype.Int4           `json:"store_id"`
+	CustomerID         pgtype.Int4           `json:"customer_id"`
+	GuestIdentifier    pgtype.Text           `json:"guest_identifier"`
+	GuestEmail         pgtype.Text           `json:"guest_email"`
+	GuestPhone         pgtype.Text           `json:"guest_phone"`
+	CartStatus         repository.CartStatus `json:"cart_status"`
+	CartType           repository.CartType   `json:"cart_type"`
+	Channel            pgtype.Text           `json:"channel"`
+	PaymentMethod      pgtype.Text           `json:"payment_method"`
+	PaymentGateway     pgtype.Text           `json:"payment_gateway"`
+	DeviceInfo         json.RawMessage       `json:"device_info"`
+	CreatedByUserID    pgtype.Int4           `json:"created_by_user_id"`
+	CashierID          pgtype.Int4           `json:"cashier_id"`
+	PosTerminalID      pgtype.Int4           `json:"pos_terminal_id"`
+	Subtotal           pgtype.Numeric        `json:"subtotal"`
+	DiscountAmount     pgtype.Numeric        `json:"discount_amount"`
+	TaxAmount          pgtype.Numeric        `json:"tax_amount"`
+	ShippingAmount     pgtype.Numeric        `json:"shipping_amount"`
+	TotalAmount        pgtype.Numeric        `json:"total_amount"`
+	CouponCode         pgtype.Text           `json:"coupon_code"`
+	DiscountCode       pgtype.Text           `json:"discount_code"`
+	PromotionalCredits pgtype.Numeric        `json:"promotional_credits"`
+	ShippingAddress    json.RawMessage       `json:"shipping_address"`
+	BillingAddress     json.RawMessage       `json:"billing_address"`
+	ShippingMethod     pgtype.Text           `json:"shipping_method"`
+	ConvertedToOrderID pgtype.UUID           `json:"converted_to_order_id"`
+	ConvertedAt        pgtype.Timestamp      `json:"converted_at"`
+	LastActivityAt     pgtype.Timestamp      `json:"last_activity_at"`
+	ExpiresAt          pgtype.Timestamp      `json:"expires_at"`
+	CreatedAt          pgtype.Timestamp      `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp      `json:"updated_at"`
+	Metadata           json.RawMessage       `json:"metadata"`
+	Notes              pgtype.Text           `json:"notes"`
+	ItemCount          int64                 `json:"item_count"`
+	CartValue          int64                 `json:"cart_value"`
+}
+
+func cartToOutput(c repository.Cart) CartOutput {
+	return CartOutput{
+		ID:                 c.ID,
+		CartNumber:         c.CartNumber,
+		OrganizationID:     c.OrganizationID,
+		StoreID:            c.StoreID,
+		CustomerID:         c.CustomerID,
+		GuestIdentifier:    c.GuestIdentifier,
+		GuestEmail:         c.GuestEmail,
+		GuestPhone:         c.GuestPhone,
+		CartStatus:         c.CartStatus,
+		CartType:           c.CartType,
+		Channel:            c.Channel,
+		PaymentMethod:      c.PaymentMethod,
+		PaymentGateway:     c.PaymentGateway,
+		DeviceInfo:         utils.BytesToJSONRawMessage(c.DeviceInfo),
+		CreatedByUserID:    c.CreatedByUserID,
+		CashierID:          c.CashierID,
+		PosTerminalID:      c.PosTerminalID,
+		Subtotal:           c.Subtotal,
+		DiscountAmount:     c.DiscountAmount,
+		TaxAmount:          c.TaxAmount,
+		ShippingAmount:     c.ShippingAmount,
+		TotalAmount:        c.TotalAmount,
+		CouponCode:         c.CouponCode,
+		DiscountCode:       c.DiscountCode,
+		PromotionalCredits: c.PromotionalCredits,
+		ShippingAddress:    utils.BytesToJSONRawMessage(c.ShippingAddress),
+		BillingAddress:     utils.BytesToJSONRawMessage(c.BillingAddress),
+		ShippingMethod:     c.ShippingMethod,
+		ConvertedToOrderID: c.ConvertedToOrderID,
+		ConvertedAt:        c.ConvertedAt,
+		LastActivityAt:     c.LastActivityAt,
+		ExpiresAt:          c.ExpiresAt,
+		CreatedAt:          c.CreatedAt,
+		UpdatedAt:          c.UpdatedAt,
+		Metadata:           utils.BytesToJSONRawMessage(c.Metadata),
+		Notes:              c.Notes,
+	}
+}
+
+func cartItemToOutput(i repository.CartItem) CartItemOutput {
+	return CartItemOutput{
+		ID:                   i.ID,
+		CartID:               i.CartID,
+		OrganizationID:       i.OrganizationID,
+		ProductID:            i.ProductID,
+		ProductVariantID:     i.ProductVariantID,
+		Quantity:             i.Quantity,
+		UomID:                i.UomID,
+		UnitPrice:            i.UnitPrice,
+		DiscountAmount:       i.DiscountAmount,
+		TaxAmount:            i.TaxAmount,
+		LineTotal:            i.LineTotal,
+		PriceListID:          i.PriceListID,
+		TaxCategoryID:        i.TaxCategoryID,
+		BatchNumber:          i.BatchNumber,
+		SerialNumber:         i.SerialNumber,
+		CustomizationDetails: utils.BytesToJSONRawMessage(i.CustomizationDetails),
+		Notes:                i.Notes,
+		Metadata:             utils.BytesToJSONRawMessage(i.Metadata),
+		AddedAt:              i.AddedAt,
+		UpdatedAt:            i.UpdatedAt,
+	}
+}
+
+func listCartItemsToOutput(rows []repository.ListCartItemsRow) []ListCartItemsOutput {
+	out := make([]ListCartItemsOutput, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ListCartItemsOutput{
+			ID:                   r.ID,
+			CartID:               r.CartID,
+			OrganizationID:       r.OrganizationID,
+			ProductID:            r.ProductID,
+			ProductVariantID:     r.ProductVariantID,
+			Quantity:             r.Quantity,
+			UomID:                r.UomID,
+			UnitPrice:            r.UnitPrice,
+			DiscountAmount:       r.DiscountAmount,
+			TaxAmount:            r.TaxAmount,
+			LineTotal:            r.LineTotal,
+			PriceListID:          r.PriceListID,
+			TaxCategoryID:        r.TaxCategoryID,
+			BatchNumber:          r.BatchNumber,
+			SerialNumber:         r.SerialNumber,
+			CustomizationDetails: utils.BytesToJSONRawMessage(r.CustomizationDetails),
+			Notes:                r.Notes,
+			Metadata:             utils.BytesToJSONRawMessage(r.Metadata),
+			AddedAt:              r.AddedAt,
+			UpdatedAt:            r.UpdatedAt,
+			ProductName:          r.ProductName,
+			ProductSku:           r.ProductSku,
+		})
+	}
+	return out
+}
+
+func cartActivityToOutput(a repository.CartActivityLog) CartActivityLogOutput {
+	return CartActivityLogOutput{
+		ID:                a.ID,
+		CartID:            a.CartID,
+		OrganizationID:    a.OrganizationID,
+		ActivityType:      a.ActivityType,
+		Description:       a.Description,
+		PerformedByUserID: a.PerformedByUserID,
+		IpAddress:         a.IpAddress,
+		UserAgent:         a.UserAgent,
+		OldValue:          utils.BytesToJSONRawMessage(a.OldValue),
+		NewValue:          utils.BytesToJSONRawMessage(a.NewValue),
+		CreatedAt:         a.CreatedAt,
+	}
+}
+
+func abandonedCartToOutput(c repository.ListAbandonedCartsRow) ListAbandonedCartOutput {
+	return ListAbandonedCartOutput{
+		ID:                 c.ID,
+		CartNumber:         c.CartNumber,
+		OrganizationID:     c.OrganizationID,
+		StoreID:            c.StoreID,
+		CustomerID:         c.CustomerID,
+		GuestIdentifier:    c.GuestIdentifier,
+		GuestEmail:         c.GuestEmail,
+		GuestPhone:         c.GuestPhone,
+		CartStatus:         c.CartStatus,
+		CartType:           c.CartType,
+		Channel:            c.Channel,
+		PaymentMethod:      c.PaymentMethod,
+		PaymentGateway:     c.PaymentGateway,
+		DeviceInfo:         utils.BytesToJSONRawMessage(c.DeviceInfo),
+		CreatedByUserID:    c.CreatedByUserID,
+		CashierID:          c.CashierID,
+		PosTerminalID:      c.PosTerminalID,
+		Subtotal:           c.Subtotal,
+		DiscountAmount:     c.DiscountAmount,
+		TaxAmount:          c.TaxAmount,
+		ShippingAmount:     c.ShippingAmount,
+		TotalAmount:        c.TotalAmount,
+		CouponCode:         c.CouponCode,
+		DiscountCode:       c.DiscountCode,
+		PromotionalCredits: c.PromotionalCredits,
+		ShippingAddress:    utils.BytesToJSONRawMessage(c.ShippingAddress),
+		BillingAddress:     utils.BytesToJSONRawMessage(c.BillingAddress),
+		ShippingMethod:     c.ShippingMethod,
+		ConvertedToOrderID: c.ConvertedToOrderID,
+		ConvertedAt:        c.ConvertedAt,
+		LastActivityAt:     c.LastActivityAt,
+		ExpiresAt:          c.ExpiresAt,
+		CreatedAt:          c.CreatedAt,
+		UpdatedAt:          c.UpdatedAt,
+		Metadata:           utils.BytesToJSONRawMessage(c.Metadata),
+		Notes:              c.Notes,
+		ItemCount:          c.ItemCount,
+		CartValue:          c.CartValue,
+	}
+}
+
+func cartsToOutput(carts []repository.Cart) []CartOutput {
+	out := make([]CartOutput, 0, len(carts))
+	for _, c := range carts {
+		out = append(out, cartToOutput(c))
+	}
+	return out
+}
+
+func abandonedCartsToOutput(carts []repository.ListAbandonedCartsRow) []ListAbandonedCartOutput {
+	out := make([]ListAbandonedCartOutput, 0, len(carts))
+	for _, c := range carts {
+		out = append(out, abandonedCartToOutput(c))
+	}
+	return out
+}
+
+func cartActivitiesToOutput(rows []repository.CartActivityLog) []CartActivityLogOutput {
+	out := make([]CartActivityLogOutput, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, cartActivityToOutput(r))
+	}
+	return out
+}
+
 // GetCart retrieves a cart by its ID.
 func (uc *CartUseCase) GetCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
@@ -49,8 +374,8 @@ func (uc *CartUseCase) GetCart(ctx context.Context, cartID uuid.UUID) *repositor
 	}
 
 	result := map[string]interface{}{
-		"cart":  cart,
-		"items": items,
+		"cart":  cartToOutput(cart),
+		"items": listCartItemsToOutput(items),
 	}
 
 	return utils.NewResponse(utils.CodeOK, "cart fetched successfully", result)
@@ -64,7 +389,7 @@ func (uc *CartUseCase) CreateCart(ctx context.Context, arg repository.CreateCart
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create cart", err.Error())
 	}
-	return utils.NewResponse(utils.CodeCreated, "cart created successfully", cart)
+	return utils.NewResponse(utils.CodeCreated, "cart created successfully", cartToOutput(cart))
 }
 
 // CreateNewCart is a convenience helper that builds CreateCartParams from
@@ -105,7 +430,7 @@ func (uc *CartUseCase) CreateNewCart(ctx context.Context, organizationID int32, 
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create cart", err.Error())
 	}
-	return utils.NewResponse(utils.CodeCreated, "cart created successfully", cart)
+	return utils.NewResponse(utils.CodeCreated, "cart created successfully", cartToOutput(cart))
 }
 
 func (uc *CartUseCase) GetCartByNumber(ctx context.Context, cartNumber string) *repository.Response {
@@ -121,8 +446,8 @@ func (uc *CartUseCase) GetCartByNumber(ctx context.Context, cartNumber string) *
 		return utils.NewResponse(utils.CodeError, "failed to fetch cart items", nil)
 	}
 	return utils.NewResponse(utils.CodeOK, "cart fetched successfully", map[string]interface{}{
-		"cart":  cart,
-		"items": items,
+		"cart":  cartToOutput(cart),
+		"items": listCartItemsToOutput(items),
 	})
 }
 
@@ -139,8 +464,8 @@ func (uc *CartUseCase) GetActiveCartByCustomer(ctx context.Context, arg reposito
 		return utils.NewResponse(utils.CodeError, "failed to fetch cart items", nil)
 	}
 	return utils.NewResponse(utils.CodeOK, "cart fetched successfully", map[string]interface{}{
-		"cart":  cart,
-		"items": items,
+		"cart":  cartToOutput(cart),
+		"items": listCartItemsToOutput(items),
 	})
 }
 
@@ -157,8 +482,8 @@ func (uc *CartUseCase) GetActiveCartByGuestIdentifier(ctx context.Context, arg r
 		return utils.NewResponse(utils.CodeError, "failed to fetch cart items", nil)
 	}
 	return utils.NewResponse(utils.CodeOK, "cart fetched successfully", map[string]interface{}{
-		"cart":  cart,
-		"items": items,
+		"cart":  cartToOutput(cart),
+		"items": listCartItemsToOutput(items),
 	})
 }
 
@@ -170,7 +495,7 @@ func (uc *CartUseCase) ListActiveCarts(ctx context.Context, arg repository.ListA
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to list active carts", nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "active carts listed", carts)
+	return utils.NewResponse(utils.CodeOK, "active carts listed", cartsToOutput(carts))
 }
 
 func (uc *CartUseCase) ListAbandonedCarts(ctx context.Context, arg repository.ListAbandonedCartsParams) *repository.Response {
@@ -181,7 +506,7 @@ func (uc *CartUseCase) ListAbandonedCarts(ctx context.Context, arg repository.Li
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to list abandoned carts", nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "abandoned carts listed", carts)
+	return utils.NewResponse(utils.CodeOK, "abandoned carts listed", abandonedCartsToOutput(carts))
 }
 
 func (uc *CartUseCase) UpdateCart(ctx context.Context, arg repository.UpdateCartParams) *repository.Response {
@@ -192,7 +517,7 @@ func (uc *CartUseCase) UpdateCart(ctx context.Context, arg repository.UpdateCart
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to update cart", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cart updated successfully", cart)
+	return utils.NewResponse(utils.CodeOK, "cart updated successfully", cartToOutput(cart))
 }
 
 func (uc *CartUseCase) UpdateCartStatus(ctx context.Context, arg repository.UpdateCartStatusParams) *repository.Response {
@@ -203,7 +528,7 @@ func (uc *CartUseCase) UpdateCartStatus(ctx context.Context, arg repository.Upda
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to update cart status", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cart status updated", cart)
+	return utils.NewResponse(utils.CodeOK, "cart status updated", cartToOutput(cart))
 }
 
 func (uc *CartUseCase) UpdateCartCustomer(ctx context.Context, arg repository.UpdateCartCustomerParams) *repository.Response {
@@ -214,7 +539,7 @@ func (uc *CartUseCase) UpdateCartCustomer(ctx context.Context, arg repository.Up
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to update cart customer", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cart customer updated", cart)
+	return utils.NewResponse(utils.CodeOK, "cart customer updated", cartToOutput(cart))
 }
 
 func (uc *CartUseCase) DeleteCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
@@ -245,7 +570,7 @@ func (uc *CartUseCase) ListCartItems(ctx context.Context, cartID uuid.UUID) *rep
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to list cart items", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cart items listed", items)
+	return utils.NewResponse(utils.CodeOK, "cart items listed", listCartItemsToOutput(items))
 }
 
 func (uc *CartUseCase) CreateCartItem(ctx context.Context, arg repository.CreateCartItemParams) *repository.Response {
@@ -257,7 +582,7 @@ func (uc *CartUseCase) CreateCartItem(ctx context.Context, arg repository.Create
 		return utils.NewResponse(utils.CodeError, "failed to create cart item", err.Error())
 	}
 	_, _ = uc.repo.RecalculateCartTotals(ctx, arg.CartID)
-	return utils.NewResponse(utils.CodeCreated, "cart item created", item)
+	return utils.NewResponse(utils.CodeCreated, "cart item created", cartItemToOutput(item))
 }
 
 func (uc *CartUseCase) GetCartItem(ctx context.Context, itemID uuid.UUID) *repository.Response {
@@ -268,7 +593,7 @@ func (uc *CartUseCase) GetCartItem(ctx context.Context, itemID uuid.UUID) *repos
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "cart item not found", nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "cart item fetched", item)
+	return utils.NewResponse(utils.CodeOK, "cart item fetched", cartItemToOutput(item))
 }
 
 func (uc *CartUseCase) GetCartItemByProduct(ctx context.Context, arg repository.GetCartItemByProductParams) *repository.Response {
@@ -279,7 +604,7 @@ func (uc *CartUseCase) GetCartItemByProduct(ctx context.Context, arg repository.
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "cart item not found", nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "cart item fetched", item)
+	return utils.NewResponse(utils.CodeOK, "cart item fetched", cartItemToOutput(item))
 }
 
 func (uc *CartUseCase) UpdateCartItem(ctx context.Context, arg repository.UpdateCartItemParams) *repository.Response {
@@ -291,7 +616,7 @@ func (uc *CartUseCase) UpdateCartItem(ctx context.Context, arg repository.Update
 		return utils.NewResponse(utils.CodeError, "failed to update cart item", err.Error())
 	}
 	_, _ = uc.repo.RecalculateCartTotals(ctx, item.CartID)
-	return utils.NewResponse(utils.CodeOK, "cart item updated", item)
+	return utils.NewResponse(utils.CodeOK, "cart item updated", cartItemToOutput(item))
 }
 
 func (uc *CartUseCase) UpdateCartItemQuantity(ctx context.Context, arg repository.UpdateCartItemQuantityParams) *repository.Response {
@@ -303,7 +628,7 @@ func (uc *CartUseCase) UpdateCartItemQuantity(ctx context.Context, arg repositor
 		return utils.NewResponse(utils.CodeError, "failed to update cart item quantity", err.Error())
 	}
 	_, _ = uc.repo.RecalculateCartTotals(ctx, item.CartID)
-	return utils.NewResponse(utils.CodeOK, "cart item quantity updated", item)
+	return utils.NewResponse(utils.CodeOK, "cart item quantity updated", cartItemToOutput(item))
 }
 
 func (uc *CartUseCase) DeleteCartItem(ctx context.Context, itemID uuid.UUID) *repository.Response {
@@ -362,7 +687,7 @@ func (uc *CartUseCase) CreateCartActivity(ctx context.Context, arg repository.Cr
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create cart activity", err.Error())
 	}
-	return utils.NewResponse(utils.CodeCreated, "cart activity created", logRow)
+	return utils.NewResponse(utils.CodeCreated, "cart activity created", cartActivityToOutput(logRow))
 }
 
 func (uc *CartUseCase) ListCartActivities(ctx context.Context, arg repository.ListCartActivitiesParams) *repository.Response {
@@ -373,7 +698,7 @@ func (uc *CartUseCase) ListCartActivities(ctx context.Context, arg repository.Li
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to list cart activities", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cart activities listed", rows)
+	return utils.NewResponse(utils.CodeOK, "cart activities listed", cartActivitiesToOutput(rows))
 }
 
 func (uc *CartUseCase) ApplyCouponToCart(ctx context.Context, arg repository.ApplyCouponToCartParams) *repository.Response {
@@ -384,7 +709,7 @@ func (uc *CartUseCase) ApplyCouponToCart(ctx context.Context, arg repository.App
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to apply coupon", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "coupon applied", cart)
+	return utils.NewResponse(utils.CodeOK, "coupon applied", cartToOutput(cart))
 }
 
 func (uc *CartUseCase) RecalculateCartTotals(ctx context.Context, cartID uuid.UUID) *repository.Response {
@@ -395,7 +720,7 @@ func (uc *CartUseCase) RecalculateCartTotals(ctx context.Context, cartID uuid.UU
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to recalculate totals", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "cart totals recalculated", cart)
+	return utils.NewResponse(utils.CodeOK, "cart totals recalculated", cartToOutput(cart))
 }
 
 func (uc *CartUseCase) MergeGuestCartToCustomer(ctx context.Context, arg repository.MergeGuestCartToCustomerParams) *repository.Response {
