@@ -19,7 +19,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+
+	"embed"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
+
+//go:embed all:frontend/dist
+var assets embed.FS
 
 // @title           NEMBUS API
 // @version         1.0
@@ -263,8 +272,31 @@ func main() {
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
-	// Start Server
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatal("failed to run server:", err)
+	// Start Server in goroutine
+	go func() {
+		if err := r.Run(":" + cfg.Port); err != nil {
+			log.Fatal("failed to run server:", err)
+		}
+	}()
+
+	// Wails Setup
+	app := NewApp()
+
+	err = wails.Run(&options.App{
+		Title:  "NEMBUS",
+		Width:  1024,
+		Height: 768,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+		},
+		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		OnStartup:        app.startup,
+		Bind: []interface{}{
+			app,
+		},
+	})
+
+	if err != nil {
+		log.Fatal("Error starting Wails:", err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"NEMBUS/internal/usecase"
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,6 +22,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
+
+//go:embed migrations/*.sql
+var migrations embed.FS
 
 // App struct
 type App struct {
@@ -91,7 +95,7 @@ func (a *App) StartDatabase(username, password, database string, port uint32) st
 		return fmt.Sprintf("Error running migrations: %v", err)
 	}
 
-	pool, repo, err := setupDatabase(ctx, a.cfg.MasterDBURL)
+	pool, repo, err := setupDatabase(ctx, a.cfg)
 	if err != nil {
 		return fmt.Sprintf("Error connecting to DB: %v", err)
 	}
@@ -279,13 +283,31 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	menuUC := usecase.NewMenuUseCase()
 	submenuUC := usecase.NewSubmenuUseCase()
 	posUC := usecase.NewPosUseCase()
+	posPaymentUC := usecase.NewPosPaymentUseCase()
+	salesReturnUC := usecase.NewSalesReturnUseCase()
 	posTerminalsUC := usecase.NewPosTerminalsUseCase()
 	storageLocationsUC := usecase.NewStorageLocationsUseCase()
 	tenantUC := usecase.NewTenantUseCase()
 	storesUC := usecase.NewStoreUseCase()
+	cartUC := usecase.NewCartUseCase()
+	orderUC := usecase.NewOrderUseCase()
 	restaurantUC := usecase.NewRestaurantUseCase()
+	customerUC := usecase.NewCustomerUseCase()
+	uomUC := usecase.NewUOMUseCase()
+	priceListsUC := usecase.NewPriceListsUseCase()
+	taxCategoriesUC := usecase.NewTaxCategoriesUseCase()
+	cashierSessionUC := usecase.NewCashierSessionUseCase()
+	brandUC := usecase.NewBrandUseCase()
+	cashierUC := usecase.NewCashierUseCase()
+	productBarcodeUC := usecase.NewProductBarcodeUseCase()
+	productPricingUC := usecase.NewProductPricingUseCase()
+	inventoryStockUC := usecase.NewInventoryStockUseCase()
+	productVariantUC := usecase.NewProductVariantUseCase()
+	promotionUC := usecase.NewPromotionUseCase()
+	loyaltyUC := usecase.NewLoyaltyUseCase()
+	productCatalogUC := usecase.NewProductCatalogUseCase()
 
-	r := setupRouter(tenantManager, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, restaurantUC, a.cfg)
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, a.cfg)
 	r.Static("/images", "./images")
 
 	if err := r.Run(":" + a.cfg.Port); err != nil {
