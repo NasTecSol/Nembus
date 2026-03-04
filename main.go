@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"os"
 
 	"NEMBUS/internal/config"
+	grpcbackup "NEMBUS/internal/grpc"
+	"NEMBUS/internal/grpc/backuppb"
 	"NEMBUS/internal/handler"
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/middleware/manager"
@@ -19,6 +22,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 // @title           NEMBUS API
@@ -58,7 +63,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, backupUC *usecase.BackupUseCase, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -182,6 +187,10 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		// [NEW] Product Catalog module (admin: products + embedded variants)
 		productCatalogHandler := handler.NewProductCatalogHandler(productCatalogUC)
 		router.RegisterProductCatalogRoutes(api, productCatalogHandler)
+
+		// [NEW] Backup management (status, grpc-info, server-side trigger)
+		backupHandler := handler.NewBackupHandler(backupUC)
+		router.RegisterBackupRoutes(api, backupHandler)
 	}
 
 	return r
@@ -258,12 +267,33 @@ func main() {
 	loyaltyUC := usecase.NewLoyaltyUseCase()
 	productCatalogUC := usecase.NewProductCatalogUseCase()
 
+	// BackupUseCase talks to the local gRPC backup server (same process)
+	backupUC := usecase.NewBackupUseCase(tenantManager, "localhost:"+cfg.GRPCPort)
+
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, cfg)
+	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, backupUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
-	// Start Server
+	// ── gRPC Backup Service ────────────────────────────────────────────────
+	go func() {
+		grpcAddr := ":" + cfg.GRPCPort
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			log.Fatalf("gRPC: failed to listen on %s: %v", grpcAddr, err)
+		}
+		grpcServer := grpc.NewServer()
+		backupSrv := grpcbackup.NewBackupServer(tenantManager, cfg.JWTSecret, cfg.PGDumpPath)
+		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
+		// Enable reflection so grpcurl/Postman can discover services at runtime
+		reflection.Register(grpcServer)
+		log.Printf("✅ gRPC Backup Service listening on %s (reflection enabled)", grpcAddr)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("gRPC: serve error: %v", err)
+		}
+	}()
+
+	// Start HTTP Server
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal("failed to run server:", err)
 	}

@@ -1,4 +1,4 @@
-.PHONY: help dev stg build run clean swagger test migrate-master migrate-tenants migrate-all
+.PHONY: help dev stg build run clean swagger test migrate-master migrate-tenants migrate-all proto install-grpcurl
 
 # Default target
 help:
@@ -18,6 +18,10 @@ help:
 	@echo "    make migrate-master   - Run migrations on master database"
 	@echo "    make migrate-tenants  - Run migrations on all tenant databases"
 	@echo "    make migrate-all      - Run migrations on master and all tenants"
+	@echo ""
+	@echo "  gRPC Commands:"
+	@echo "    make proto            - Regenerate gRPC bindings from proto/backup.proto"
+	@echo "    make install-grpcurl  - Install grpcurl for gRPC testing"
 	@echo ""
 	@echo "  Utility Commands:"
 	@echo "    make clean            - Clean build artifacts"
@@ -75,6 +79,26 @@ sqlc:
 	@echo "Generating SQLC code..."
 	@sqlc generate
 	@echo "SQLC code generated"
+
+# Generate gRPC bindings from proto/backup.proto
+proto:
+	@echo "Generating gRPC bindings from proto/backup.proto..."
+	@which protoc > /dev/null 2>&1 || (echo "Error: protoc not found. Download from https://github.com/protocolbuffers/protobuf/releases" && exit 1)
+	@which protoc-gen-go > /dev/null 2>&1 || go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	@which protoc-gen-go-grpc > /dev/null 2>&1 || go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@protoc --go_out=. --go-grpc_out=. \
+		--go_opt=paths=source_relative \
+		--go-grpc_opt=paths=source_relative \
+		proto/backup.proto
+	@mv proto/backup.pb.go internal/grpc/backuppb/backup.pb.go 2>/dev/null || true
+	@mv proto/backup_grpc.pb.go internal/grpc/backuppb/backup_grpc.pb.go 2>/dev/null || true
+	@echo "Done. Files in internal/grpc/backuppb/"
+
+# Install grpcurl for gRPC testing
+install-grpcurl:
+	@echo "Installing grpcurl..."
+	@go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+	@echo "grpcurl installed. Make sure $(shell go env GOPATH)/bin is in your PATH"
 
 # Database migration commands
 migrate-master:
