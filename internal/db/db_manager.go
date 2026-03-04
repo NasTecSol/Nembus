@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 )
@@ -38,16 +39,29 @@ func (m *DBManager) Start() error {
 	binPath := filepath.Join(m.config.DataPath, "bin")
 	runtimePath := filepath.Join(m.config.DataPath, "runtime")
 
-	m.postgres = embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
+	cfg := embeddedpostgres.
+		DefaultConfig().
 		Username(m.config.Username).
 		Password(m.config.Password).
 		Database(m.config.Database).
 		Port(m.config.Port).
 		Logger(io.Discard).
 		RuntimePath(runtimePath).
-		BinariesPath(binPath))
+		BinariesPath(binPath)
+
+	m.postgres = embeddedpostgres.NewDatabase(cfg)
 
 	if err := m.postgres.Start(); err != nil {
+		// Workaround for occasional "failed to clean up run time directory" errors:
+		// remove the runtime directory and retry once.
+		if strings.Contains(err.Error(), "failed to clean up run time directory") {
+			_ = os.RemoveAll(runtimePath)
+			m.postgres = embeddedpostgres.NewDatabase(cfg)
+			if retryErr := m.postgres.Start(); retryErr == nil {
+				log.Printf("Embedded PostgreSQL started on port %d (after cleaning runtime dir)", m.config.Port)
+				return nil
+			}
+		}
 		return fmt.Errorf("failed to start embedded postgres: %w", err)
 	}
 

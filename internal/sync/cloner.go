@@ -12,15 +12,17 @@ type TenantCloner struct {
 	ctx        context.Context
 	masterRepo *repository.Queries
 	cloudURL   string
+	authToken  string // JWT bearer token for cloud API auth
 	orgIDMap   map[int32]int32
 	storeIDMap map[int32]int32
 }
 
-func NewTenantCloner(ctx context.Context, repo *repository.Queries, cloudURL string) *TenantCloner {
+func NewTenantCloner(ctx context.Context, repo *repository.Queries, cloudURL string, authToken string) *TenantCloner {
 	return &TenantCloner{
 		ctx:        ctx,
 		masterRepo: repo,
 		cloudURL:   cloudURL,
+		authToken:  authToken,
 		orgIDMap:   make(map[int32]int32),
 		storeIDMap: make(map[int32]int32),
 	}
@@ -91,6 +93,9 @@ func (c *TenantCloner) fetchCloudData(endpoint string, slug string, target inter
 
 	if slug != "" {
 		req.Header.Set("x-tenant-id", slug)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

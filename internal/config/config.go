@@ -18,6 +18,7 @@ type Config struct {
 	LogLevel     string
 	IsDesktop    bool
 	CloudURL     string
+	GRPCAddr     string // bare host:port for the cloud gRPC backup server
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -58,6 +59,7 @@ func LoadConfig(env string) *Config {
 		LogLevel:     getEnv("LOG_LEVEL", "info"),
 		IsDesktop:    true, // Default to true for this Wails build
 		CloudURL:     getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
+		GRPCAddr:     getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
 	}
 }
 

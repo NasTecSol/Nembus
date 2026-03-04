@@ -1,6 +1,7 @@
 package main
 
 import (
+	clientbackup "NEMBUS/client"
 	"NEMBUS/internal/config"
 	"NEMBUS/internal/db"
 	"NEMBUS/internal/middleware/manager"
@@ -90,9 +91,35 @@ func (a *App) StartDatabase(username, password, database string, port uint32) st
 	// Initialize master repo
 	ctx := context.Background()
 
-	// Run migrations before connecting with pgxpool
+	// Run migrations before connecting with pgxpool.
+	// If migration fails (e.g. due to a stale/partial previous install), wipe the
+	// data directory and retry once from a clean DB.
 	if err := a.migrate(a.cfg.MasterDBURL); err != nil {
-		return fmt.Sprintf("Error running migrations: %v", err)
+		log.Printf("Migration failed: %v — wiping data dir and retrying from scratch", err)
+
+		// Stop the embedded DB so we can delete the data dir.
+		_ = a.dbManager.Stop()
+
+		// Wipe the data directory.
+		home, _ := os.UserHomeDir()
+		dataPath := filepath.Join(home, ".nembus", "data")
+		if removeErr := os.RemoveAll(dataPath); removeErr != nil {
+			return fmt.Sprintf("Error cleaning data dir: %v", removeErr)
+		}
+
+		// Also remove the setup marker so the wizard starts fresh.
+		_ = os.Remove(filepath.Join(home, ".nembus", ".setup_done"))
+
+		// Start a fresh embedded DB.
+		a.dbManager = db.NewDBManager(dbCfg)
+		if startErr := a.dbManager.Start(); startErr != nil {
+			return fmt.Sprintf("Error restarting DB after wipe: %v", startErr)
+		}
+
+		// Retry migration on the clean DB.
+		if retryErr := a.migrate(a.cfg.MasterDBURL); retryErr != nil {
+			return fmt.Sprintf("Error running migrations (after reset): %v", retryErr)
+		}
 	}
 
 	pool, repo, err := setupDatabase(ctx, a.cfg)
@@ -112,11 +139,11 @@ func (a *App) StartDatabase(username, password, database string, port uint32) st
 }
 
 func (a *App) migrate(dbURL string) error {
-	db, err := sql.Open("pgx", dbURL)
+	sqlDB, err := sql.Open("pgx", dbURL)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer sqlDB.Close()
 
 	goose.SetBaseFS(migrations)
 
@@ -124,7 +151,7 @@ func (a *App) migrate(dbURL string) error {
 		return fmt.Errorf("failed to set dialect: %v", err)
 	}
 
-	if err := goose.Up(db, "migrations"); err != nil {
+	if err := goose.Up(sqlDB, "migrations"); err != nil {
 		return fmt.Errorf("failed to run migrations: %v", err)
 	}
 
@@ -163,6 +190,21 @@ func (a *App) FetchCloudTenants(slug string) interface{} {
 	return result.Data
 }
 
+// clearLocalDatabase wipes the local public schema to ensure a clean slate for restoration
+func (a *App) clearLocalDatabase() error {
+	if a.masterPool == nil {
+		return fmt.Errorf("master database pool not initialized")
+	}
+
+	log.Printf("Clearing local database (public schema)...")
+	_, err := a.masterPool.Exec(a.ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres; GRANT ALL ON SCHEMA public TO public;")
+	if err != nil {
+		return fmt.Errorf("failed to clear database: %w", err)
+	}
+
+	return nil
+}
+
 // CloneTenant clones a specific tenant and its master data from the cloud
 func (a *App) CloneTenant(slug string) string {
 	if a.masterRepo == nil {
@@ -193,18 +235,41 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error decoding tenant data: %v", err)
 	}
 
-	// Data is a single repository.Tenant
+	// cloudTenant is a plain struct for parsing the cloud API's JSON response.
+	// repository.Tenant uses pgtype.* types which require special JSON nesting
+	// and cannot be decoded directly from plain REST JSON.
+	type cloudTenant struct {
+		ID         string          `json:"id"`
+		TenantName string          `json:"tenant_name"`
+		Slug       string          `json:"slug"`
+		DbConnStr  string          `json:"db_conn_str"`
+		IsActive   bool            `json:"is_active"`
+		Settings   json.RawMessage `json:"settings"`
+	}
+
 	tenantData, err := json.Marshal(result.Data)
 	if err != nil {
-		return "Error processing tenant data"
+		return fmt.Sprintf("Error processing tenant data: %v", err)
 	}
 
-	var tenant repository.Tenant
+	var tenant cloudTenant
 	if err := json.Unmarshal(tenantData, &tenant); err != nil {
-		return "Error parsing tenant data"
+		log.Printf("CloneTenant: JSON unmarshal error: %v — raw data: %s", err, string(tenantData))
+		return fmt.Sprintf("Error parsing tenant data: %v", err)
 	}
 
-	// 2. Create tenant locally in master DB
+	// 2. Clear local database to avoid duplicate key/constraint issues
+	if err := a.clearLocalDatabase(); err != nil {
+		return fmt.Sprintf("Error clearing local database: %v", err)
+	}
+
+	// Re-run migrations to recreate the base schema structure (including 'tenants' table)
+	if err := a.migrate(a.cfg.MasterDBURL); err != nil {
+		log.Printf("CloneTenant: migration failed after clear: %v", err)
+		return fmt.Sprintf("Error re-initializing database schema: %v", err)
+	}
+
+	// 3. Create tenant locally in master DB (needs to be re-created after clear)
 	params := repository.CreateTenantParams{
 		TenantName: tenant.TenantName,
 		Slug:       tenant.Slug,
@@ -220,17 +285,29 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error creating local tenant: %s", createResp.Message)
 	}
 
-	// 3. Clone Master Data (Organizations, Users, etc.)
-	cloner := sync.NewTenantCloner(a.ctx, a.masterRepo, a.cfg.CloudURL)
-	if err := cloner.CloneMasterData(tenant.Slug); err != nil {
-		return fmt.Sprintf("Error cloning master data: %v", err)
-	}
-
-	// 4. Start Sync Service
-	a.StartSyncService(tenant.Slug)
-
-	// 5. Finalize setup
+	// 4. Download tenant backup via gRPC and restore it directly into the local DB.
 	home, _ := os.UserHomeDir()
+	backupDir := filepath.Join(home, ".nembus", "backups", tenant.Slug)
+	backupToken := os.Getenv("BACKUP_AUTH_TOKEN")
+
+	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
+	backupPath, err := clientbackup.DownloadBackup(
+		a.cfg.GRPCAddr,
+		tenant.Slug,
+		backupToken,
+		backupDir,
+		a.cfg.MasterDBURL, // restore directly into local embedded Postgres
+	)
+	if err != nil {
+		log.Printf("CloneTenant Backup Error: %v", err)
+		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", err)
+	}
+	log.Printf("Tenant backup restored from: %s", backupPath)
+
+	// 5. Initialize sync (will use the newly created tenant)
+	a.InitializeSync()
+
+	// 6. Finalize setup
 	markerPath := filepath.Join(home, ".nembus", ".setup_done")
 	_ = os.MkdirAll(filepath.Dir(markerPath), 0755)
 	_ = os.WriteFile(markerPath, []byte("done"), 0644)

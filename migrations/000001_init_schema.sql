@@ -1,6 +1,8 @@
-
+-- 000001_init_schema.sql
+-- Initial combined schema migration for embedded desktop DB.
 
 -- +goose Up
+
 -- Combined Initial Schema Migration: Base Tables + POS Views/Functions (with Type Fixes) + Indexes
 
 -- Enable UUID extension
@@ -2074,6 +2076,7 @@ CREATE INDEX idx_quote_lines_product_id ON quote_lines(product_id);
 
 -- Function to update updated_at timestamp
 -- Generic updated_at trigger function
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -2081,8 +2084,10 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 -- Apply updated_at triggers
+-- +goose StatementBegin
 DO $$
 DECLARE
     tbl TEXT;
@@ -2113,11 +2118,13 @@ BEGIN
     END LOOP;
 END;
 $$;
+-- +goose StatementEnd
 -- =====================================================
 -- TRIGGERS FOR CART ACTIVITY TRACKING
 -- =====================================================
 
 -- Log cart status changes
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION log_cart_status_change()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -2142,6 +2149,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER cart_status_change_trigger
     AFTER UPDATE ON carts
@@ -2150,6 +2158,7 @@ CREATE TRIGGER cart_status_change_trigger
     EXECUTE FUNCTION log_cart_status_change();
 
 -- Update cart last_activity_at when items change
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION update_cart_activity()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -2159,6 +2168,7 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER cart_items_activity_trigger
     AFTER INSERT OR UPDATE OR DELETE ON cart_items
@@ -2170,6 +2180,7 @@ CREATE TRIGGER cart_items_activity_trigger
 -- =====================================================
 
 -- Calculate order totals
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION calculate_order_totals()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -2196,6 +2207,7 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER calculate_order_totals_trigger
     AFTER INSERT OR UPDATE OR DELETE ON sales_order_lines_v2
@@ -2207,6 +2219,7 @@ CREATE TRIGGER calculate_order_totals_trigger
 -- =====================================================
 
 -- Calculate invoice totals
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION calculate_invoice_totals()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -2233,6 +2246,7 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER calculate_invoice_totals_trigger
     AFTER INSERT OR UPDATE OR DELETE ON invoice_lines
@@ -2240,6 +2254,7 @@ CREATE TRIGGER calculate_invoice_totals_trigger
     EXECUTE FUNCTION calculate_invoice_totals();
 
 -- Update invoice paid amount when payment received
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION update_invoice_payment()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -2270,6 +2285,7 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER update_invoice_payment_trigger
     AFTER INSERT OR UPDATE OR DELETE ON invoice_payments
@@ -2363,55 +2379,7 @@ ALTER TABLE discount_analytics
 -- =====================================================
 -- TRIGGERS FOR UPDATED_AT
 -- =====================================================
-
--- +goose StatementBegin
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $func$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
--- +goose StatementEnd
-
--- Apply triggers to all tables with updated_at
-CREATE TRIGGER update_organizations_updated_at BEFORE UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_tenants_updated_at BEFORE UPDATE ON tenants FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_modules_updated_at BEFORE UPDATE ON modules FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_menus_updated_at BEFORE UPDATE ON menus FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_submenus_updated_at BEFORE UPDATE ON submenus FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_roles_updated_at BEFORE UPDATE ON roles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_ui_settings_updated_at BEFORE UPDATE ON ui_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_role_ui_customizations_updated_at BEFORE UPDATE ON role_ui_customizations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_stores_updated_at BEFORE UPDATE ON stores FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_pos_terminals_updated_at BEFORE UPDATE ON pos_terminals FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_product_categories_updated_at BEFORE UPDATE ON product_categories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_brands_updated_at BEFORE UPDATE ON brands FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_price_lists_updated_at BEFORE UPDATE ON price_lists FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_product_variants_updated_at BEFORE UPDATE ON product_variants FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_product_prices_updated_at BEFORE UPDATE ON product_prices FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_product_serial_numbers_updated_at BEFORE UPDATE ON product_serial_numbers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_product_batches_updated_at BEFORE UPDATE ON product_batches FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_inventory_stock_updated_at BEFORE UPDATE ON inventory_stock FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_suppliers_updated_at BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_sales_orders_updated_at BEFORE UPDATE ON sales_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_sales_analytics_updated_at BEFORE UPDATE ON sales_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_purchase_analytics_updated_at BEFORE UPDATE ON purchase_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_inventory_analytics_updated_at BEFORE UPDATE ON inventory_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_profit_loss_analytics_updated_at BEFORE UPDATE ON profit_loss_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_discount_analytics_updated_at BEFORE UPDATE ON discount_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Restaurant triggers
-CREATE TRIGGER trg_restaurant_tables_updated_at BEFORE UPDATE ON restaurant_tables FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_menu_categories_updated_at BEFORE UPDATE ON menu_categories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_recipes_updated_at BEFORE UPDATE ON recipes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_restaurant_orders_updated_at BEFORE UPDATE ON restaurant_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_restaurant_order_items_updated_at BEFORE UPDATE ON restaurant_order_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- All updated_at triggers are already created by the DO $$ loop above.
 
 -- =====================================================
 -- INDEXES FOR PERFORMANCE
