@@ -49,3 +49,17 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 	m.pools.Store(slug, pool)
 	return pool, nil
 }
+
+// GetTenantDSN returns the raw connection string (DSN) for a tenant without
+// creating a connection pool. This is used by the gRPC backup service to pass
+// the DSN directly to pg_dump.
+func (m *Manager) GetTenantDSN(ctx context.Context, slug string) (string, error) {
+	tenant, err := m.masterRepo.GetTenantBySlug(ctx, slug)
+	if err != nil {
+		return "", fmt.Errorf("tenant '%s' not found or inactive: %w", slug, err)
+	}
+	if !tenant.IsActive.Bool || !tenant.IsActive.Valid {
+		return "", fmt.Errorf("tenant '%s' is not active", slug)
+	}
+	return tenant.DbConnStr, nil
+}
