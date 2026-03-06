@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { OnInit } from '@angular/core';
 
 @Component({
     selector: 'app-setup',
@@ -10,7 +11,7 @@ import { Router } from '@angular/router';
     templateUrl: './setup.component.html',
     // styleUrl: './setup.component.scss'
 })
-export class SetupComponent {
+export class SetupComponent implements OnInit {
     step = 1;
     statusMessage = '';
     tenants: any[] = [];
@@ -25,6 +26,17 @@ export class SetupComponent {
     };
 
     constructor(private router: Router) { }
+
+    async ngOnInit() {
+        // @ts-ignore
+        if (window.go && window.go.main && window.go.main.App) {
+            // @ts-ignore
+            const isSetup = await window.go.main.App.IsAppSetup();
+            if (isSetup) {
+                this.navigateToLogin();
+            }
+        }
+    }
 
     nextStep() {
         this.step++;
@@ -110,6 +122,8 @@ export class SetupComponent {
             const result = await window.go.main.App.CloneTenant(this.selectedTenant.slug);
             if (result === 'Success') {
                 this.statusMessage = 'Cloning complete!';
+                // Save slug for automated selection in Login
+                localStorage.setItem('last_cloned_tenant', this.selectedTenant.slug);
                 setTimeout(() => {
                     this.step = 7; // Final Success Screen
                     this.statusMessage = '';
@@ -129,8 +143,8 @@ export class SetupComponent {
     }
 
     launchApp() {
-        console.log('App launched');
-        this.router.navigate(['/home']);
+        console.log('App launched - navigating to login');
+        this.router.navigate(['/auth/login']);
     }
 
     // setup.component.ts

@@ -75,11 +75,15 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -219,70 +223,10 @@ func main() {
 	cfg := config.LoadConfig(env)
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
 
-	ctx := context.Background()
-	masterPool, masterRepo, err := setupDatabase(ctx, cfg)
-	if err != nil {
-		log.Fatalf("Unable to connect to Master DB: %v", err)
-	}
-	defer masterPool.Close()
-
-	tenantManager := manager.NewManager(masterRepo)
-
-	// Initialize Use Cases
-	userUC := usecase.NewUserUseCase()
-	orgUC := usecase.NewOrganizationUseCase()
-	authUC := usecase.NewAuthUseCase()
-	moduleUC := usecase.NewModuleUseCase()
-	imageUC := usecase.NewImageUseCase()
-	navigationUC := usecase.NewNavigationUseCase()
-	permissionUC := usecase.NewPermissionUseCase()
-	roleUC := usecase.NewRoleUseCase()
-	menuUC := usecase.NewMenuUseCase()
-	submenuUC := usecase.NewSubmenuUseCase()
-	posUC := usecase.NewPosUseCase()
-	posPaymentUC := usecase.NewPosPaymentUseCase()
-	posTerminalsUC := usecase.NewPosTerminalsUseCase()
-	storageLocationsUC := usecase.NewStorageLocationsUseCase()
-	tenantUC := usecase.NewTenantUseCase()
-	storesUC := usecase.NewStoreUseCase()
-	restaurantUC := usecase.NewRestaurantUseCase()
-	customerUC := usecase.NewCustomerUseCase()
-	uomUC := usecase.NewUOMUseCase()
-	priceListsUC := usecase.NewPriceListsUseCase()
-	taxCategoriesUC := usecase.NewTaxCategoriesUseCase()
-
-	// [NEW]
-	cartUC := usecase.NewCartUseCase()
-	orderUC := usecase.NewOrderUseCase()
-	salesReturnUC := usecase.NewSalesReturnUseCase()
-	cashierSessionUC := usecase.NewCashierSessionUseCase()
-	productBarcodeUC := usecase.NewProductBarcodeUseCase()
-	brandUC := usecase.NewBrandUseCase()
-	cashierUC := usecase.NewCashierUseCase()
-	productPricingUC := usecase.NewProductPricingUseCase()
-	inventoryStockUC := usecase.NewInventoryStockUseCase()
-	productVariantUC := usecase.NewProductVariantUseCase()
-
-	promotionUC := usecase.NewPromotionUseCase()
-	loyaltyUC := usecase.NewLoyaltyUseCase()
-	productCatalogUC := usecase.NewProductCatalogUseCase()
-
-	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, cfg)
-	// Serve the images folder under /images URL path
-	r.Static("/images", "./images") // <-- this makes /images/* accessible
-
-	// Start Server in goroutine
-	go func() {
-		if err := r.Run(":" + cfg.Port); err != nil {
-			log.Fatal("failed to run server:", err)
-		}
-	}()
-
 	// Wails Setup
 	app := NewApp()
 
-	err = wails.Run(&options.App{
+	err := wails.Run(&options.App{
 		Title:  "NEMBUS",
 		Width:  1024,
 		Height: 768,

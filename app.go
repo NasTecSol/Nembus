@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -190,21 +191,6 @@ func (a *App) FetchCloudTenants(slug string) interface{} {
 	return result.Data
 }
 
-// clearLocalDatabase wipes the local public schema to ensure a clean slate for restoration
-func (a *App) clearLocalDatabase() error {
-	if a.masterPool == nil {
-		return fmt.Errorf("master database pool not initialized")
-	}
-
-	log.Printf("Clearing local database (public schema)...")
-	_, err := a.masterPool.Exec(a.ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres; GRANT ALL ON SCHEMA public TO public;")
-	if err != nil {
-		return fmt.Errorf("failed to clear database: %w", err)
-	}
-
-	return nil
-}
-
 // CloneTenant clones a specific tenant and its master data from the cloud
 func (a *App) CloneTenant(slug string) string {
 	if a.masterRepo == nil {
@@ -258,37 +244,36 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error parsing tenant data: %v", err)
 	}
 
-	// 2. Clear local database to avoid duplicate key/constraint issues
-	if err := a.clearLocalDatabase(); err != nil {
-		return fmt.Sprintf("Error clearing local database: %v", err)
+	// 2. Create the tenant database locally
+	tenantDBName := slug
+	// Check if database exists, create if not
+	// We use standard db/sql for this as creating databases cannot run in a transaction block which pgx pool might implicitly use or log.
+	// Actually masterPool.Exec without a transaction is fine, but CREATE DATABASE cannot be executed inside a transaction block.
+	// Let's drop it if it exists (for a clean clone), but we must disconnect first. Since it's a new setup, it probably doesn't exist,
+	// but to be safe we try to create it and ignore "already exists" errors.
+	_, err = a.masterPool.Exec(a.ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, tenantDBName))
+	if err != nil {
+		// Ignore error if database already exists
+		if !strings.Contains(err.Error(), "already exists") {
+			return fmt.Sprintf("Error creating tenant database: %v", err)
+		}
+		log.Printf("Database %s already exists, proceeding...", tenantDBName)
 	}
 
-	// Re-run migrations to recreate the base schema structure (including 'tenants' table)
-	if err := a.migrate(a.cfg.MasterDBURL); err != nil {
-		log.Printf("CloneTenant: migration failed after clear: %v", err)
-		return fmt.Sprintf("Error re-initializing database schema: %v", err)
-	}
-
-	// 3. Create tenant locally in master DB (needs to be re-created after clear)
-	params := repository.CreateTenantParams{
-		TenantName: tenant.TenantName,
-		Slug:       tenant.Slug,
-		DbConnStr:  a.cfg.MasterDBURL, // Desktop always uses local master DB
-		IsActive:   pgtype.Bool{Bool: true, Valid: true},
-		Settings:   tenant.Settings,
-	}
-
-	uc := usecase.NewTenantUseCase()
-	uc.SetRepository(a.masterRepo)
-	createResp := uc.CreateTenant(a.ctx, params)
-	if createResp.StatusCode != 201 {
-		return fmt.Sprintf("Error creating local tenant: %s", createResp.Message)
-	}
-
-	// 4. Download tenant backup via gRPC and restore it directly into the local DB.
+	// 3. Download tenant backup via gRPC and restore it directly into the NEW tenant DB.
 	home, _ := os.UserHomeDir()
 	backupDir := filepath.Join(home, ".nembus", "backups", tenant.Slug)
-	backupToken := os.Getenv("BACKUP_AUTH_TOKEN")
+	backupToken := a.cfg.BackupAuthToken
+
+	// Construct the tenant-specific DB URL
+	// We extract username, password, port from a.cfg.MasterDBURL
+	// Since we know StartDatabase uses postgres / password / nembus / port
+	tenantDBURL := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable",
+		a.dbManager.GetConfig().Username,
+		a.dbManager.GetConfig().Password,
+		a.dbManager.GetConfig().Port,
+		tenantDBName,
+	)
 
 	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
 	backupPath, err := clientbackup.DownloadBackup(
@@ -296,11 +281,31 @@ func (a *App) CloneTenant(slug string) string {
 		tenant.Slug,
 		backupToken,
 		backupDir,
-		a.cfg.MasterDBURL, // restore directly into local embedded Postgres
+		tenantDBURL, // restore directly into the tenant's database
 	)
 	if err != nil {
 		log.Printf("CloneTenant Backup Error: %v", err)
 		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", err)
+	}
+	log.Printf("Tenant backup restored from: %s", backupPath)
+
+	// 4. Ensure the local tenant record is correct in the master DB.
+	// We upsert it to make sure the slug exists and points to our local tenant DB URL.
+	upsertSQL := `
+		INSERT INTO tenants (id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		ON CONFLICT (slug) DO UPDATE SET
+			tenant_name = EXCLUDED.tenant_name,
+			db_conn_str = EXCLUDED.db_conn_str,
+			is_active = EXCLUDED.is_active,
+			settings = EXCLUDED.settings,
+			updated_at = NOW();
+	`
+	_, err = a.masterPool.Exec(a.ctx, upsertSQL,
+		tenant.ID, tenant.TenantName, tenant.Slug, tenantDBURL, true, tenant.Settings)
+	if err != nil {
+		log.Printf("Error upserting tenant record: %v", err)
+		return fmt.Sprintf("Error finalizing local tenant record: %v", err)
 	}
 	log.Printf("Tenant backup restored from: %s", backupPath)
 

@@ -21,12 +21,6 @@ export class LoginComponent implements OnInit {
   public password = "";
   public errorMsg = "";
   apiUrl = environment.baseUrl;
-  showDropdown: boolean = false;
-  showLoginForm: boolean = false;
-  selectedLoginType: string = '';
-  tenants: any[] = [];
-  selectedTenant: any = null;
-  loadingTenants: boolean = false;
   private loginUrl = `${this.apiUrl}/api/auth/login`;
   constructor(
     private authService: AuthService,
@@ -35,56 +29,10 @@ export class LoginComponent implements OnInit {
     private http: HttpClient
   ) { }
   ngOnInit(): void {
-    this.fetchTenants();
+
   }
 
-  fetchTenants() {
-    this.loadingTenants = true;
-    localStorage.setItem('x-tenant-id', 'masterdb');
-    localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzA3MTE4NTAsImlhdCI6MTc3MDYyNTQ1MCwidXNlcl9pZCI6IjgiLCJ1c2VyX2xvZ2luIjoiSGFzaGlyIn0.q4DnHsBorILup0O5XrAm9K4waRVxrc385SCrR_1JacI');
-    interface TenantResponse {
-      statusCode: number;
-      message: string;
-      data: any[];
-    }
 
-    this.http.get<TenantResponse>(`${this.apiUrl}/api/tenants`).subscribe({
-      next: (response) => {
-        this.tenants = response.data;
-        this.loadingTenants = false;
-        console.log('Tenants loaded:', this.tenants);
-      },
-      error: (error) => {
-        console.error('Error fetching tenants:', error);
-        this.errorMsg = 'Failed to load tenants. Please try again.';
-        this.loadingTenants = false;
-      }
-    });
-  }
-
-  toggleDropdown() {
-    this.showDropdown = !this.showDropdown;
-  }
-  selectTenant(tenant: any) {
-    this.selectedTenant = tenant;
-    localStorage.setItem('x-tenant-id', tenant.slug);
-    this.showDropdown = false;
-    this.showLoginForm = true;
-  }
-
-  selectLoginOption(option: string) {
-    this.selectedLoginType = option;
-    this.showDropdown = false;
-    this.showLoginForm = true;
-  }
-  goBack() {
-    this.showLoginForm = false;
-    this.showDropdown = false;
-    this.selectedLoginType = '';
-    this.email = '';
-    this.password = '';
-    this.errorMsg = '';
-  }
 
   onLogin() {
     if (!this.email || !this.password) {

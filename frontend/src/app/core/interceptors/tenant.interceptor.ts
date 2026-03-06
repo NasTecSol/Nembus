@@ -10,7 +10,7 @@ import { Observable } from 'rxjs';
 export class TenantInterceptor implements HttpInterceptor {
 
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
-    const tenantId = localStorage.getItem('x-tenant-id') || '';
+    const tenantId = localStorage.getItem('last_cloned_tenant') || '';
 
     if (req.url.includes('/api/auth/login')) {
       const loginRequest = req.clone({

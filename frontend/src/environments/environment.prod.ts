@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  baseUrl: 'https://nembus.nashrms.com'
+  baseUrl: 'http://localhost:8080'
 };

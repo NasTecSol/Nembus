@@ -4,9 +4,9 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +19,7 @@ import (
 
 	"NEMBUS/internal/grpc/backuppb"
 
+	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -113,97 +114,121 @@ func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string)
 	return backupPath, nil
 }
 
-// restoreSQL executes a plain-SQL backup file against the given Postgres DSN.
-// It pre-processes the file to remove psql meta-commands and comment lines.
-func restoreSQL(sqlFilePath, dbURL string) error {
-	content, err := os.ReadFile(sqlFilePath)
-	if err != nil {
-		return fmt.Errorf("could not read SQL file: %w", err)
-	}
-
-	db, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		return fmt.Errorf("open DB: %w", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("ping DB: %w", err)
-	}
-
-	// Clean the SQL: remove meta-commands (\), OWNER TO lines, and SET blocks
-	// that might fail on a local embedded instance.
-	cleanedSQL := cleanSQLDump(string(content))
-
-	// Execute by statements
-	statements := splitSQL(cleanedSQL)
-	for _, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
+func executeStatements(ctx context.Context, conn *pgx.Conn, sql string) error {
+	statements := splitSQL(sql)
+	for _, rawStmt := range statements {
+		stmt := strings.TrimSpace(rawStmt)
 		if stmt == "" {
 			continue
 		}
 
-		// Skip specific patterns that frequently fail in local restore
-		if strings.HasPrefix(stmt, "ALTER TABLE") && strings.Contains(stmt, "OWNER TO") {
-			continue
-		}
-		if strings.HasPrefix(stmt, "ALTER SEQUENCE") && strings.Contains(stmt, "OWNER TO") {
-			continue
-		}
-		if strings.HasPrefix(stmt, "ALTER FUNCTION") && strings.Contains(stmt, "OWNER TO") {
-			continue
-		}
-		if strings.HasPrefix(stmt, "ALTER SCHEMA") && strings.Contains(stmt, "OWNER TO") {
+		if (strings.HasPrefix(stmt, "ALTER TABLE") ||
+			strings.HasPrefix(stmt, "ALTER SEQUENCE") ||
+			strings.HasPrefix(stmt, "ALTER FUNCTION") ||
+			strings.HasPrefix(stmt, "ALTER VIEW") ||
+			strings.HasPrefix(stmt, "ALTER SCHEMA")) && strings.Contains(stmt, "OWNER TO") {
 			continue
 		}
 
-		if _, err := db.Exec(stmt); err != nil {
-			// Some errors are expected (e.g. creating extensions that exist)
+		if _, err := conn.Exec(ctx, stmt); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
 				log.Printf("Warning: statement error (continuing): %v\nStatement: %.100s...", err, stmt)
 			}
 		}
 	}
-
 	return nil
 }
 
-// cleanSQLDump removes lines that cause issues for direct driver execution.
-func cleanSQLDump(sql string) string {
-	var out strings.Builder
-	lines := strings.Split(sql, "\n")
-	inCopy := false
+// restoreSQL executes a plain-SQL backup file against the given Postgres DSN.
+// It parses the file to handle COPY blocks natively and extract traditional DDL statements.
+func restoreSQL(sqlFilePath, dbURL string) error {
+	ctx := context.Background()
 
-	for _, line := range lines {
+	conn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect to DB: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	if err := conn.Ping(ctx); err != nil {
+		return fmt.Errorf("ping DB: %w", err)
+	}
+
+	file, err := os.Open(sqlFilePath)
+	if err != nil {
+		return fmt.Errorf("could not open SQL file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 1024*1024)    // 1MB initial buffer
+	scanner.Buffer(buf, 20*1024*1024) // 20MB max per block
+
+	var currentSQL strings.Builder
+	var inCopy bool
+	var copyCmd string
+	var copyData strings.Builder
+
+	for scanner.Scan() {
+		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Handle COPY blocks: standard drivers don't support "COPY ... FROM stdin"
-		// We skip the data lines following a COPY command until "\." is reached.
 		if inCopy {
 			if trimmed == "\\." {
+				// Execute the COPY block immediately
+				res, err := conn.PgConn().CopyFrom(ctx, strings.NewReader(copyData.String()), copyCmd)
+				if err != nil {
+					log.Printf("Warning: COPY error (continuing): %v\nCommand: %s", err, copyCmd)
+				} else {
+					log.Printf("Restored %d rows via COPY", res.RowsAffected())
+				}
 				inCopy = false
+				copyCmd = ""
+				copyData.Reset()
+			} else {
+				// Must not trim lines in COPY data (tabs are delimiters)
+				copyData.WriteString(line)
+				copyData.WriteRune('\n')
 			}
 			continue
 		}
+
 		if strings.HasPrefix(strings.ToUpper(trimmed), "COPY ") && strings.HasSuffix(strings.ToUpper(trimmed), "FROM STDIN;") {
+			// Flush pending DDL/DML first
+			if currentSQL.Len() > 0 {
+				executeStatements(ctx, conn, currentSQL.String())
+				currentSQL.Reset()
+			}
 			inCopy = true
+			copyCmd = trimmed
+			copyData.Reset()
 			continue
 		}
 
-		// Skip psql meta-commands (lines starting with \)
-		if strings.HasPrefix(trimmed, "\\") {
-			continue
-		}
-
-		// Skip comments to avoid splitting bugs
+		// Skip comments and entirely empty lines
 		if strings.HasPrefix(trimmed, "--") {
 			continue
 		}
 
-		out.WriteString(line)
-		out.WriteRune('\n')
+		// Skip psql meta-commands EXCEPT \. which handled above
+		if strings.HasPrefix(trimmed, "\\") {
+			continue
+		}
+
+		currentSQL.WriteString(line)
+		currentSQL.WriteRune('\n')
 	}
-	return out.String()
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading dump file: %w", err)
+	}
+
+	// Flush remaining SQL
+	if currentSQL.Len() > 0 {
+		executeStatements(ctx, conn, currentSQL.String())
+	}
+
+	return nil
 }
 
 // splitSQL splits a SQL file on top-level semicolons.

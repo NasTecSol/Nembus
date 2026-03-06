@@ -82,3 +82,7 @@ func (m *DBManager) GetConnectionString() string {
 	return fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable",
 		m.config.Username, m.config.Password, m.config.Port, m.config.Database)
 }
+
+func (m *DBManager) GetConfig() Config {
+	return m.config
+}
