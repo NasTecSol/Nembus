@@ -14,6 +14,7 @@ func RegisterCartRoutes(r *gin.RouterGroup, h *handler.CartHandler) {
 		carts.POST("", h.CreateCart)
 		carts.POST("/new", h.CreateNewCart)
 		carts.GET("", h.ListActiveCarts)
+		carts.GET("/abandoned", h.ListAbandonedCarts)
 		carts.GET("/by-number/:cart_number", h.GetCartByNumber)
 		carts.GET("/by-customer", h.GetActiveCartByCustomer)
 		carts.GET("/by-guest", h.GetActiveCartByGuestIdentifier)
