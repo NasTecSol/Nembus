@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"NEMBUS/internal/middleware"
 	"NEMBUS/internal/repository"
@@ -15,7 +16,7 @@ import (
 
 // PosHandler holds the POS and POS payment use cases.
 type PosHandler struct {
-	useCase       *usecase.PosUseCase
+	useCase        *usecase.PosUseCase
 	paymentUseCase *usecase.PosPaymentUseCase
 }
 
@@ -261,6 +262,199 @@ type AddPaymentToTransactionRequest struct {
 	Metadata        interface{} `json:"metadata"` // Gateway payload: e.g. {"gateway_txn_id":"...","masked_card":"****1234","auth_code":"ABC123"}
 }
 
+// CreatePosTransactionLineRequest represents a POS transaction line payload.
+type CreatePosTransactionLineRequest struct {
+	LineNumber       *int32      `json:"line_number"`
+	ProductID        int32       `json:"product_id" binding:"required"`
+	ProductVariantID *int32      `json:"product_variant_id"`
+	SerialNumber     *string     `json:"serial_number"`
+	BatchNumber      *string     `json:"batch_number"`
+	Quantity         string      `json:"quantity" binding:"required"`
+	UomID            *int32      `json:"uom_id"`
+	UnitPrice        string      `json:"unit_price" binding:"required"`
+	DiscountAmount   string      `json:"discount_amount"`
+	TaxAmount        string      `json:"tax_amount"`
+	Subtotal         string      `json:"subtotal"`
+	LineTotal        string      `json:"line_total" binding:"required"`
+	CostPrice        string      `json:"cost_price"`
+	Metadata         interface{} `json:"metadata"`
+}
+
+// CreatePosTransactionRequest represents a POS transaction payload.
+type CreatePosTransactionRequest struct {
+	TransactionNumber string                            `json:"transaction_number"`
+	StoreID           int32                             `json:"store_id" binding:"required"`
+	PosTerminalID     int32                             `json:"pos_terminal_id" binding:"required"`
+	CashierSessionID  int32                             `json:"cashier_session_id" binding:"required"`
+	CashierID         int32                             `json:"cashier_id" binding:"required"`
+	CustomerID        *int32                            `json:"customer_id"`
+	PriceListID       *int32                            `json:"price_list_id"`
+	TransactionType   *string                           `json:"transaction_type"`
+	TransactionDate   *string                           `json:"transaction_date"` // RFC3339 (optional)
+	Subtotal          string                            `json:"subtotal" binding:"required"`
+	TaxAmount         string                            `json:"tax_amount"`
+	DiscountAmount    string                            `json:"discount_amount"`
+	TotalAmount       string                            `json:"total_amount" binding:"required"`
+	TotalCost         string                            `json:"total_cost"`
+	Status            *string                           `json:"status"`
+	Metadata          interface{}                       `json:"metadata"`
+	Lines             []CreatePosTransactionLineRequest `json:"lines" binding:"required,min=1"`
+}
+
+// CreateTransaction handles POST /api/pos/transactions
+// @Summary      Create POS transaction
+// @Description  Creates a POS transaction header and its lines
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        body          body      CreatePosTransactionRequest true "Transaction payload"
+// @Success      201           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions [post]
+func (h *PosHandler) CreateTransaction(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req CreatePosTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	subtotal, err := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid subtotal format", nil))
+		return
+	}
+	taxAmount, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(req.TaxAmount, "0"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid tax_amount format", nil))
+		return
+	}
+	discountAmount, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(req.DiscountAmount, "0"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid discount_amount format", nil))
+		return
+	}
+	totalAmount, err := repo.ParseNumeric(c.Request.Context(), req.TotalAmount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid total_amount format", nil))
+		return
+	}
+	totalCost, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(req.TotalCost, "0"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid total_cost format", nil))
+		return
+	}
+
+	metadataJSON, _ := json.Marshal(req.Metadata)
+	if metadataJSON == nil {
+		metadataJSON = []byte("{}")
+	}
+
+	var transactionDate *time.Time
+	if req.TransactionDate != nil && *req.TransactionDate != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, *req.TransactionDate)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "transaction_date must be RFC3339", nil))
+			return
+		}
+		transactionDate = &parsed
+	}
+
+	lines := make([]usecase.PosCreateTransactionLineInput, 0, len(req.Lines))
+	for idx, line := range req.Lines {
+		qty, err := repo.ParseNumeric(c.Request.Context(), line.Quantity)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid quantity format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+		unitPrice, err := repo.ParseNumeric(c.Request.Context(), line.UnitPrice)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid unit_price format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+		lineDiscount, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(line.DiscountAmount, "0"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid discount_amount format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+		lineTax, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(line.TaxAmount, "0"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid tax_amount format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+		lineSubtotal, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(line.Subtotal, line.LineTotal))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid subtotal format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+		lineTotal, err := repo.ParseNumeric(c.Request.Context(), line.LineTotal)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid line_total format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+		costPrice, err := repo.ParseNumeric(c.Request.Context(), coalesceEmpty(line.CostPrice, "0"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cost_price format at line "+strconv.Itoa(idx+1), nil))
+			return
+		}
+
+		lineMeta, _ := json.Marshal(line.Metadata)
+		if lineMeta == nil {
+			lineMeta = []byte("{}")
+		}
+
+		lines = append(lines, usecase.PosCreateTransactionLineInput{
+			LineNumber:       line.LineNumber,
+			ProductID:        line.ProductID,
+			ProductVariantID: line.ProductVariantID,
+			SerialNumber:     line.SerialNumber,
+			BatchNumber:      line.BatchNumber,
+			Quantity:         qty,
+			UomID:            line.UomID,
+			UnitPrice:        unitPrice,
+			DiscountAmount:   lineDiscount,
+			TaxAmount:        lineTax,
+			Subtotal:         lineSubtotal,
+			LineTotal:        lineTotal,
+			CostPrice:        costPrice,
+			Metadata:         lineMeta,
+		})
+	}
+
+	input := &usecase.PosCreateTransactionInput{
+		TransactionNumber: req.TransactionNumber,
+		StoreID:           req.StoreID,
+		PosTerminalID:     req.PosTerminalID,
+		CashierSessionID:  req.CashierSessionID,
+		CashierID:         req.CashierID,
+		CustomerID:        req.CustomerID,
+		PriceListID:       req.PriceListID,
+		TransactionType:   req.TransactionType,
+		TransactionDate:   transactionDate,
+		Subtotal:          subtotal,
+		TaxAmount:         taxAmount,
+		DiscountAmount:    discountAmount,
+		TotalAmount:       totalAmount,
+		TotalCost:         totalCost,
+		Status:            req.Status,
+		Metadata:          metadataJSON,
+		Lines:             lines,
+	}
+
+	resp := h.useCase.CreateTransaction(c.Request.Context(), input)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // ProcessPayment handles POST /api/pos/payments
 // @Summary      Process a POS payment
 // @Description  Records a payment for a transaction and updates drawer balance
@@ -313,7 +507,7 @@ func (h *PosHandler) ProcessPayment(c *gin.Context) {
 		PaymentGateway:  gateway,
 		Amount:          amount,
 		ReferenceNumber: refNum,
-		Metadata:         metadataJSON,
+		Metadata:        metadataJSON,
 	}
 	resp := h.paymentUseCase.CreatePayment(c.Request.Context(), input)
 	c.JSON(resp.StatusCode, resp)
@@ -347,6 +541,13 @@ func (h *PosHandler) ListTodayTransactions(c *gin.Context) {
 	}
 	resp := h.useCase.ListTodaysTransactions(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
+}
+
+func coalesceEmpty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // GetTransaction handles GET /api/pos/transactions/:id
@@ -413,7 +614,7 @@ func (h *PosHandler) GetTransactionFull(c *gin.Context) {
 // VoidTransactionRequest is the body for voiding a transaction.
 type VoidTransactionRequest struct {
 	VoidedBy int32  `json:"voided_by" binding:"required"` // User ID performing the void
-	Reason   string `json:"reason"`                        // Optional reason
+	Reason   string `json:"reason"`                       // Optional reason
 }
 
 // VoidTransaction handles POST /api/pos/transactions/:id/void

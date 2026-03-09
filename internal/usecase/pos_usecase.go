@@ -2,10 +2,12 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
+	"time"
 
 	"NEMBUS/internal/repository"
 	"NEMBUS/utils"
@@ -339,6 +341,221 @@ func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddP
 	return utils.NewResponse(utils.CodeOK, "payment processed successfully", nil)
 }
 
+// PosCreateTransactionInput is the input payload for creating a POS transaction.
+type PosCreateTransactionInput struct {
+	TransactionNumber string
+	StoreID           int32
+	PosTerminalID     int32
+	CashierSessionID  int32
+	CashierID         int32
+	CustomerID        *int32
+	PriceListID       *int32
+	TransactionType   *string
+	TransactionDate   *time.Time
+	Subtotal          pgtype.Numeric
+	TaxAmount         pgtype.Numeric
+	DiscountAmount    pgtype.Numeric
+	TotalAmount       pgtype.Numeric
+	TotalCost         pgtype.Numeric
+	Status            *string
+	Metadata          []byte
+	Lines             []PosCreateTransactionLineInput
+}
+
+// PosCreateTransactionLineInput is the input for a transaction line.
+type PosCreateTransactionLineInput struct {
+	LineNumber       *int32
+	ProductID        int32
+	ProductVariantID *int32
+	SerialNumber     *string
+	BatchNumber      *string
+	Quantity         pgtype.Numeric
+	UomID            *int32
+	UnitPrice        pgtype.Numeric
+	DiscountAmount   pgtype.Numeric
+	TaxAmount        pgtype.Numeric
+	Subtotal         pgtype.Numeric
+	LineTotal        pgtype.Numeric
+	CostPrice        pgtype.Numeric
+	Metadata         []byte
+}
+
+// PosTransactionOutput is the API response shape for a POS transaction.
+type PosTransactionOutput struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+}
+
+func toPosTransactionOutput(txn repository.PosTransaction) PosTransactionOutput {
+	return PosTransactionOutput{
+		ID:                txn.ID,
+		StoreID:           txn.StoreID,
+		CashierID:         txn.CashierID,
+		CashierSessionID:  txn.CashierSessionID,
+		CustomerID:        txn.CustomerID,
+		PosTerminalID:     txn.PosTerminalID,
+		TransactionNumber: txn.TransactionNumber,
+		TransactionDate:   txn.TransactionDate,
+		TransactionType:   txn.TransactionType,
+		Subtotal:          txn.Subtotal,
+		DiscountAmount:    txn.DiscountAmount,
+		TaxAmount:         txn.TaxAmount,
+		TotalAmount:       txn.TotalAmount,
+		TotalCost:         txn.TotalCost,
+		AmountPaid:        txn.AmountPaid,
+		ChangeGiven:       txn.ChangeGiven,
+		Status:            txn.Status,
+		PriceListID:       txn.PriceListID,
+		SalesOrderID:      txn.SalesOrderID,
+		SourceCartID:      txn.SourceCartID,
+		VoidedBy:          txn.VoidedBy,
+		VoidedAt:          txn.VoidedAt,
+		Metadata:          utils.BytesToJSONRawMessage(txn.Metadata),
+		CreatedAt:         txn.CreatedAt,
+	}
+}
+
+// CreateTransaction creates a POS transaction header with lines.
+func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransactionInput) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if in.StoreID <= 0 || in.CashierID <= 0 || in.CashierSessionID <= 0 || in.PosTerminalID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "store_id, cashier_id, cashier_session_id and pos_terminal_id are required", nil)
+	}
+	if len(in.Lines) == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "at least one line is required", nil)
+	}
+
+	_, err := uc.repo.GetStore(ctx, in.StoreID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "store not found", nil)
+	}
+
+	transactionNumber := strings.TrimSpace(in.TransactionNumber)
+	if transactionNumber == "" {
+		transactionNumber = fmt.Sprintf("POS-%d", time.Now().Unix())
+	}
+
+	transactionDate := pgtype.Timestamp{Time: time.Now(), Valid: true}
+	if in.TransactionDate != nil {
+		transactionDate = pgtype.Timestamp{Time: *in.TransactionDate, Valid: true}
+	}
+
+	transactionType := pgtype.Text{String: "sale", Valid: true}
+	if in.TransactionType != nil && strings.TrimSpace(*in.TransactionType) != "" {
+		transactionType = pgtype.Text{String: strings.TrimSpace(*in.TransactionType), Valid: true}
+	}
+
+	status := pgtype.Text{String: "completed", Valid: true}
+	if in.Status != nil && strings.TrimSpace(*in.Status) != "" {
+		status = pgtype.Text{String: strings.TrimSpace(*in.Status), Valid: true}
+	}
+
+	params := repository.CreatePosTransactionParams{
+		TransactionNumber: transactionNumber,
+		StoreID:           in.StoreID,
+		PosTerminalID:     pgtype.Int4{Int32: in.PosTerminalID, Valid: true},
+		CashierSessionID:  in.CashierSessionID,
+		CashierID:         in.CashierID,
+		CustomerID:        pgtype.Int4{},
+		PriceListID:       pgtype.Int4{},
+		TransactionType:   transactionType,
+		TransactionDate:   transactionDate,
+		Subtotal:          in.Subtotal,
+		TaxAmount:         in.TaxAmount,
+		DiscountAmount:    in.DiscountAmount,
+		TotalAmount:       in.TotalAmount,
+		TotalCost:         in.TotalCost,
+		Status:            status,
+		Metadata:          in.Metadata,
+	}
+
+	if params.Metadata == nil {
+		params.Metadata = []byte("{}")
+	}
+	if in.CustomerID != nil {
+		params.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
+	}
+	if in.PriceListID != nil {
+		params.PriceListID = pgtype.Int4{Int32: *in.PriceListID, Valid: true}
+	}
+
+	header, err := uc.repo.CreatePosTransaction(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to create transaction: "+err.Error(), nil)
+	}
+
+	for idx, line := range in.Lines {
+		lineNo := int32(idx + 1)
+		if line.LineNumber != nil && *line.LineNumber > 0 {
+			lineNo = *line.LineNumber
+		}
+
+		lineParams := repository.CreatePosTransactionLineParams{
+			TransactionID:    header.ID,
+			LineNumber:       pgtype.Int4{Int32: lineNo, Valid: true},
+			ProductID:        line.ProductID,
+			ProductVariantID: pgtype.Int4{},
+			SerialNumber:     pgtype.Text{},
+			BatchNumber:      pgtype.Text{},
+			Quantity:         line.Quantity,
+			UomID:            pgtype.Int4{},
+			UnitPrice:        line.UnitPrice,
+			DiscountAmount:   line.DiscountAmount,
+			TaxAmount:        line.TaxAmount,
+			Subtotal:         line.Subtotal,
+			LineTotal:        line.LineTotal,
+			CostPrice:        line.CostPrice,
+			Metadata:         line.Metadata,
+		}
+
+		if line.Metadata == nil {
+			lineParams.Metadata = []byte("{}")
+		}
+		if line.ProductVariantID != nil {
+			lineParams.ProductVariantID = pgtype.Int4{Int32: *line.ProductVariantID, Valid: true}
+		}
+		if line.SerialNumber != nil && strings.TrimSpace(*line.SerialNumber) != "" {
+			lineParams.SerialNumber = pgtype.Text{String: strings.TrimSpace(*line.SerialNumber), Valid: true}
+		}
+		if line.BatchNumber != nil && strings.TrimSpace(*line.BatchNumber) != "" {
+			lineParams.BatchNumber = pgtype.Text{String: strings.TrimSpace(*line.BatchNumber), Valid: true}
+		}
+		if line.UomID != nil {
+			lineParams.UomID = pgtype.Int4{Int32: *line.UomID, Valid: true}
+		}
+
+		if err := uc.repo.CreatePosTransactionLine(ctx, lineParams); err != nil {
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create line %d: %s", lineNo, err.Error()), nil)
+		}
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "transaction created", header)
+}
+
 // ListTodaysTransactions returns today's POS transactions for a store.
 func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32) *repository.Response {
 	if uc.repo == nil {
@@ -360,7 +577,7 @@ func (uc *PosUseCase) GetTransaction(ctx context.Context, id int32) *repository.
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "transaction not found", nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "transaction fetched", txn)
+	return utils.NewResponse(utils.CodeOK, "transaction fetched", toPosTransactionOutput(txn))
 }
 
 // GetTransactionFull returns a POS transaction with full line details.
