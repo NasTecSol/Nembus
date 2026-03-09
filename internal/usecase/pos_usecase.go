@@ -218,7 +218,26 @@ func (uc *PosUseCase) GetProductsByCategory(ctx context.Context, storeID int32, 
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "products by category fetched successfully", rows)
+
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, map[string]interface{}{
+			"product_id":              row.ProductID,
+			"sku":                     row.Sku,
+			"product_name":            row.ProductName,
+			"category_name":           row.CategoryName,
+			"brand_name":              row.BrandName,
+			"barcode":                 row.Barcode,
+			"effective_price":         row.EffectivePrice,
+			"has_promotion":           row.HasPromotion,
+			"promotion_name":          row.PromotionName,
+			"quantity_available":      row.QuantityAvailable,
+			"is_in_stock":             row.IsInStock,
+			"package_n_price":         utils.BytesToJSONRawMessage(row.PackageNPrice),
+			"product_uom_conversions": utils.BytesToJSONRawMessage(row.ProductUomConversions),
+		})
+	}
+	return utils.NewResponse(utils.CodeOK, "products by category fetched successfully", result)
 }
 
 // GetCategories returns POS categories with product counts.
