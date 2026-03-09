@@ -33,6 +33,7 @@ func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 
 	transactions := pos.Group("/transactions")
 	{
+		transactions.POST("", h.CreateTransaction)
 		transactions.GET("/:id", h.GetTransaction)
 		transactions.GET("/:id/full", h.GetTransactionFull)
 		transactions.GET("/:id/payments", h.GetTransactionPayments)

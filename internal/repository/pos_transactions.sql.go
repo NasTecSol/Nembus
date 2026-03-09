@@ -94,8 +94,8 @@ const createPosTransactionLine = `-- name: CreatePosTransactionLine :exec
 INSERT INTO pos_transaction_lines (
     transaction_id, line_number, product_id, product_variant_id,
     serial_number, batch_number, quantity, uom_id,
-    unit_price, discount_amount, tax_amount, line_total, cost_price, metadata
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 `
 
 type CreatePosTransactionLineParams struct {
@@ -110,6 +110,7 @@ type CreatePosTransactionLineParams struct {
 	UnitPrice        pgtype.Numeric `json:"unit_price"`
 	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
 	TaxAmount        pgtype.Numeric `json:"tax_amount"`
+	Subtotal         pgtype.Numeric `json:"subtotal"`
 	LineTotal        pgtype.Numeric `json:"line_total"`
 	CostPrice        pgtype.Numeric `json:"cost_price"`
 	Metadata         []byte         `json:"metadata"`
@@ -128,6 +129,7 @@ func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTra
 		arg.UnitPrice,
 		arg.DiscountAmount,
 		arg.TaxAmount,
+		arg.Subtotal,
 		arg.LineTotal,
 		arg.CostPrice,
 		arg.Metadata,

@@ -29,8 +29,8 @@ INSERT INTO pos_transactions (
 INSERT INTO pos_transaction_lines (
     transaction_id, line_number, product_id, product_variant_id,
     serial_number, batch_number, quantity, uom_id,
-    unit_price, discount_amount, tax_amount, line_total, cost_price, metadata
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14);
+    unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15);
 
 -- name: GetPosTransactionFull :many
 SELECT 
