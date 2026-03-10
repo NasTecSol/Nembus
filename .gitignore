@@ -47,3 +47,6 @@ docs/swagger/
 # Config files with secrets (keep examples)
 configs/.env.dev
 configs/.env.stg
+
+# Frontend directory
+frontend/
