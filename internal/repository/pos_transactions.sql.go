@@ -276,6 +276,205 @@ func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPos
 	return items, nil
 }
 
+const listPosTransactionsByCashierSession = `-- name: ListPosTransactionsByCashierSession :many
+SELECT 
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name AS customer_name,
+    COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', tl.id,
+                'transaction_id', tl.transaction_id,
+                'line_number', tl.line_number,
+                'product_id', tl.product_id,
+                'product_variant_id', tl.product_variant_id,
+                'serial_number', tl.serial_number,
+                'batch_number', tl.batch_number,
+                'quantity', tl.quantity,
+                'uom_id', tl.uom_id,
+                'unit_price', tl.unit_price,
+                'discount_amount', tl.discount_amount,
+                'tax_amount', tl.tax_amount,
+                'subtotal', tl.subtotal,
+                'line_total', tl.line_total,
+                'cost_price', tl.cost_price,
+                'metadata', tl.metadata,
+                'product_sku', p.sku,
+                'product_name', p.name,
+                'scanned_barcode', COALESCE(pb.barcode, '')
+            ) ORDER BY tl.line_number
+        ) FILTER (WHERE tl.id IS NOT NULL),
+        '[]'::jsonb
+    ) AS lines
+FROM pos_transactions t
+JOIN cashiers          cshr   ON t.cashier_id         = cshr.id
+JOIN users             cashier ON cshr.user_id        = cashier.id
+JOIN pos_terminals     term   ON t.pos_terminal_id    = term.id
+JOIN cashier_sessions  sess   ON t.cashier_session_id = sess.id
+LEFT JOIN customers    cust   ON t.customer_id        = cust.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id    = t.id
+LEFT JOIN products          p      ON tl.product_id        = p.id
+LEFT JOIN product_barcodes pb 
+    ON pb.product_id = p.id 
+   AND pb.is_primary = true
+   AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+WHERE ($1 = 0 OR t.cashier_id = $1)
+  AND ($2 = 0 OR t.cashier_session_id = $2)
+  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
+  AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
+GROUP BY
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name,
+    cashier.last_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name
+ORDER BY t.transaction_date DESC, t.id
+`
+
+type ListPosTransactionsByCashierSessionParams struct {
+	Column1 interface{}      `json:"column_1"`
+	Column2 interface{}      `json:"column_2"`
+	Column3 pgtype.Timestamp `json:"column_3"`
+	Column4 pgtype.Timestamp `json:"column_4"`
+}
+
+type ListPosTransactionsByCashierSessionRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          []byte           `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	CashierName       interface{}      `json:"cashier_name"`
+	TerminalName      pgtype.Text      `json:"terminal_name"`
+	SessionNumber     string           `json:"session_number"`
+	CustomerName      pgtype.Text      `json:"customer_name"`
+	Lines             interface{}      `json:"lines"`
+}
+
+func (q *Queries) ListPosTransactionsByCashierSession(ctx context.Context, arg ListPosTransactionsByCashierSessionParams) ([]ListPosTransactionsByCashierSessionRow, error) {
+	rows, err := q.db.Query(ctx, listPosTransactionsByCashierSession,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPosTransactionsByCashierSessionRow
+	for rows.Next() {
+		var i ListPosTransactionsByCashierSessionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.PosTerminalID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.TransactionType,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.TotalCost,
+			&i.AmountPaid,
+			&i.ChangeGiven,
+			&i.Status,
+			&i.PriceListID,
+			&i.SalesOrderID,
+			&i.SourceCartID,
+			&i.VoidedBy,
+			&i.VoidedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.CashierName,
+			&i.TerminalName,
+			&i.SessionNumber,
+			&i.CustomerName,
+			&i.Lines,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTodaysPosTransactions = `-- name: ListTodaysPosTransactions :many
 SELECT 
     t.id,

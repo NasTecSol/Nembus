@@ -65,6 +65,110 @@ LEFT JOIN product_barcodes pb
 WHERE t.id = $1
 ORDER BY tl.line_number;
 
+-- name: ListPosTransactionsByCashierSession :many
+SELECT 
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name AS customer_name,
+    COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', tl.id,
+                'transaction_id', tl.transaction_id,
+                'line_number', tl.line_number,
+                'product_id', tl.product_id,
+                'product_variant_id', tl.product_variant_id,
+                'serial_number', tl.serial_number,
+                'batch_number', tl.batch_number,
+                'quantity', tl.quantity,
+                'uom_id', tl.uom_id,
+                'unit_price', tl.unit_price,
+                'discount_amount', tl.discount_amount,
+                'tax_amount', tl.tax_amount,
+                'subtotal', tl.subtotal,
+                'line_total', tl.line_total,
+                'cost_price', tl.cost_price,
+                'metadata', tl.metadata,
+                'product_sku', p.sku,
+                'product_name', p.name,
+                'scanned_barcode', COALESCE(pb.barcode, '')
+            ) ORDER BY tl.line_number
+        ) FILTER (WHERE tl.id IS NOT NULL),
+        '[]'::jsonb
+    ) AS lines
+FROM pos_transactions t
+JOIN cashiers          cshr   ON t.cashier_id         = cshr.id
+JOIN users             cashier ON cshr.user_id        = cashier.id
+JOIN pos_terminals     term   ON t.pos_terminal_id    = term.id
+JOIN cashier_sessions  sess   ON t.cashier_session_id = sess.id
+LEFT JOIN customers    cust   ON t.customer_id        = cust.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id    = t.id
+LEFT JOIN products          p      ON tl.product_id        = p.id
+LEFT JOIN product_barcodes pb 
+    ON pb.product_id = p.id 
+   AND pb.is_primary = true
+   AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+WHERE ($1 = 0 OR t.cashier_id = $1)
+  AND ($2 = 0 OR t.cashier_session_id = $2)
+  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
+  AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
+GROUP BY
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name,
+    cashier.last_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name
+ORDER BY t.transaction_date DESC, t.id;
+
 -- name: ListTodaysPosTransactions :many
 SELECT 
     t.id,

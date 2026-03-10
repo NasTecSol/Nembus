@@ -456,6 +456,59 @@ func toPosTransactionOutput(txn repository.PosTransaction) PosTransactionOutput 
 	}
 }
 
+// PosTransactionWithLinesOutput is the API response shape for a POS transaction with lines.
+type PosTransactionWithLinesOutput struct {
+	ID               int32            `json:"id"`
+	StoreID          int32            `json:"store_id"`
+	CashierID        int32            `json:"cashier_id"`
+	CashierSessionID int32            `json:"cashier_session_id"`
+	CustomerID       pgtype.Int4      `json:"customer_id"`
+	PosTerminalID    pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string          `json:"transaction_number"`
+	TransactionDate  pgtype.Timestamp `json:"transaction_date"`
+	TransactionType  pgtype.Text      `json:"transaction_type"`
+	Subtotal         pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount      pgtype.Numeric   `json:"total_amount"`
+	TotalCost        pgtype.Numeric   `json:"total_cost"`
+	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven      pgtype.Numeric   `json:"change_given"`
+	Status           pgtype.Text      `json:"status"`
+	PriceListID      pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID     pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID     pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy         pgtype.Int4      `json:"voided_by"`
+	VoidedAt         pgtype.Timestamp `json:"voided_at"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	Lines            json.RawMessage  `json:"lines"`
+}
+
+func linesToJSONRawMessage(v interface{}) json.RawMessage {
+	if v == nil {
+		return json.RawMessage([]byte("[]"))
+	}
+	switch t := v.(type) {
+	case []byte:
+		if len(t) == 0 {
+			return json.RawMessage([]byte("[]"))
+		}
+		return json.RawMessage(t)
+	case string:
+		if t == "" {
+			return json.RawMessage([]byte("[]"))
+		}
+		return json.RawMessage([]byte(t))
+	default:
+		b, err := json.Marshal(t)
+		if err != nil || len(b) == 0 {
+			return json.RawMessage([]byte("[]"))
+		}
+		return json.RawMessage(b)
+	}
+}
+
 // CreateTransaction creates a POS transaction header with lines.
 func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransactionInput) *repository.Response {
 	if uc.repo == nil {
@@ -585,6 +638,79 @@ func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32)
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	return utils.NewResponse(utils.CodeOK, "transactions fetched", rows)
+}
+
+// ListTransactionsByCashierSession returns POS transactions for a cashier and session (optional date range).
+func (uc *PosUseCase) ListTransactionsByCashierSession(
+	ctx context.Context,
+	cashierID *int32,
+	cashierSessionID *int32,
+	startDate *time.Time,
+	endDate *time.Time,
+) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if cashierID == nil && cashierSessionID == nil && startDate == nil && endDate == nil {
+		return utils.NewResponse(utils.CodeBadReq, "at least one filter is required", nil)
+	}
+
+	arg := repository.ListPosTransactionsByCashierSessionParams{
+		Column1:          0,
+		Column2:          0,
+		Column3:          pgtype.Timestamp{},
+		Column4:          pgtype.Timestamp{},
+	}
+	if cashierID != nil && *cashierID > 0 {
+		arg.Column1 = *cashierID
+	}
+	if cashierSessionID != nil && *cashierSessionID > 0 {
+		arg.Column2 = *cashierSessionID
+	}
+	if startDate != nil {
+		arg.Column3 = pgtype.Timestamp{Time: *startDate, Valid: true}
+	}
+	if endDate != nil {
+		arg.Column4 = pgtype.Timestamp{Time: *endDate, Valid: true}
+	}
+
+	rows, err := uc.repo.ListPosTransactionsByCashierSession(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	out := make([]PosTransactionWithLinesOutput, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PosTransactionWithLinesOutput{
+			ID:                row.ID,
+			StoreID:           row.StoreID,
+			CashierID:         row.CashierID,
+			CashierSessionID:  row.CashierSessionID,
+			CustomerID:        row.CustomerID,
+			PosTerminalID:     row.PosTerminalID,
+			TransactionNumber: row.TransactionNumber,
+			TransactionDate:   row.TransactionDate,
+			TransactionType:   row.TransactionType,
+			Subtotal:          row.Subtotal,
+			DiscountAmount:    row.DiscountAmount,
+			TaxAmount:         row.TaxAmount,
+			TotalAmount:       row.TotalAmount,
+			TotalCost:         row.TotalCost,
+			AmountPaid:        row.AmountPaid,
+			ChangeGiven:       row.ChangeGiven,
+			Status:            row.Status,
+			PriceListID:       row.PriceListID,
+			SalesOrderID:      row.SalesOrderID,
+			SourceCartID:      row.SourceCartID,
+			VoidedBy:          row.VoidedBy,
+			VoidedAt:          row.VoidedAt,
+			Metadata:          utils.BytesToJSONRawMessage(row.Metadata),
+			CreatedAt:         row.CreatedAt,
+			Lines:             linesToJSONRawMessage(row.Lines),
+		})
+	}
+
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", out)
 }
 
 // GetTransaction returns a single POS transaction by ID.
