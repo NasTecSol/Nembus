@@ -550,6 +550,85 @@ func coalesceEmpty(s, fallback string) string {
 	return s
 }
 
+// ListTransactionsByCashierSession handles GET /api/pos/transactions/by-cashier-session
+// @Summary      List POS transactions by cashier session
+// @Description  Returns POS transactions for a cashier and session with optional date range
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id         header    string  true   "Tenant identifier"
+// @Param        Authorization       header    string  true   "Bearer token"
+// @Param        cashier_id          query     int     false  "Cashier ID"
+// @Param        cashier_session_id  query     int     false  "Cashier Session ID"
+// @Param        start_date          query     string  false  "Start date (RFC3339)"
+// @Param        end_date            query     string  false  "End date (RFC3339, exclusive)"
+// @Success      200                 {object}  SuccessResponse
+// @Failure      400                 {object}  ErrorResponse
+// @Failure      401                 {object}  ErrorResponse
+// @Failure      500                 {object}  ErrorResponse
+// @Router       /api/pos/transactions/by-cashier-session [get]
+func (h *PosHandler) ListTransactionsByCashierSession(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var cashierID *int32
+	if s := c.Query("cashier_id"); s != "" {
+		id, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier_id", nil))
+			return
+		}
+		val := int32(id)
+		cashierID = &val
+	}
+
+	var cashierSessionID *int32
+	if s := c.Query("cashier_session_id"); s != "" {
+		id, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier_session_id", nil))
+			return
+		}
+		val := int32(id)
+		cashierSessionID = &val
+	}
+
+	var startDate *time.Time
+	if s := c.Query("start_date"); s != "" {
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "start_date must be RFC3339", nil))
+			return
+		}
+		startDate = &parsed
+	}
+	var endDate *time.Time
+	if s := c.Query("end_date"); s != "" {
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "end_date must be RFC3339", nil))
+			return
+		}
+		if parsed.Hour() == 0 && parsed.Minute() == 0 && parsed.Second() == 0 && parsed.Nanosecond() == 0 {
+			parsed = parsed.Add(24*time.Hour - time.Nanosecond)
+		}
+		endDate = &parsed
+	}
+
+	resp := h.useCase.ListTransactionsByCashierSession(
+		c.Request.Context(),
+		cashierID,
+		cashierSessionID,
+		startDate,
+		endDate,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // GetTransaction handles GET /api/pos/transactions/:id
 // @Summary      Get POS transaction
 // @Description  Returns a single POS transaction by ID
