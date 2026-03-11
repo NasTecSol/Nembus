@@ -46,6 +46,21 @@ WHERE stock_movements.product_id = $1
 ORDER BY stock_movements.movement_date DESC
 LIMIT $2 OFFSET $3;
 
+-- name: ListStockMovementsByProductWithDateRange :many
+SELECT
+    sm.*,
+    fs.name AS from_store_name,
+    ts.name AS to_store_name,
+    uom.name AS uom_name
+FROM stock_movements sm
+LEFT JOIN stores fs ON sm.from_store_id = fs.id
+LEFT JOIN stores ts ON sm.to_store_id = ts.id
+LEFT JOIN units_of_measure uom ON sm.uom_id = uom.id
+WHERE sm.product_id = $1
+  AND ($2::timestamp IS NULL OR sm.movement_date >= $2)
+  AND ($3::timestamp IS NULL OR sm.movement_date <= $3)
+ORDER BY sm.movement_date DESC;
+
 -- name: ListStockMovementsByStore :many
 SELECT stock_movements.*
 FROM stock_movements
