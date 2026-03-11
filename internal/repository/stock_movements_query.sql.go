@@ -813,6 +813,100 @@ func (q *Queries) ListStockMovementsByProduct(ctx context.Context, arg ListStock
 	return items, nil
 }
 
+const listStockMovementsByProductWithDateRange = `-- name: ListStockMovementsByProductWithDateRange :many
+SELECT
+    sm.id, sm.movement_type, sm.reference_type, sm.reference_id, sm.product_id, sm.product_variant_id, sm.from_store_id, sm.to_store_id, sm.from_location_id, sm.to_location_id, sm.quantity, sm.uom_id, sm.batch_number, sm.serial_number, sm.movement_date, sm.posted_by, sm.status, sm.cost_per_unit, sm.total_value, sm.metadata, sm.created_at,
+    fs.name AS from_store_name,
+    ts.name AS to_store_name,
+    uom.name AS uom_name
+FROM stock_movements sm
+LEFT JOIN stores fs ON sm.from_store_id = fs.id
+LEFT JOIN stores ts ON sm.to_store_id = ts.id
+LEFT JOIN units_of_measure uom ON sm.uom_id = uom.id
+WHERE sm.product_id = $1
+  AND ($2::timestamp IS NULL OR sm.movement_date >= $2)
+  AND ($3::timestamp IS NULL OR sm.movement_date <= $3)
+ORDER BY sm.movement_date DESC
+`
+
+type ListStockMovementsByProductWithDateRangeParams struct {
+	ProductID int32            `json:"product_id"`
+	Column2   pgtype.Timestamp `json:"column_2"`
+	Column3   pgtype.Timestamp `json:"column_3"`
+}
+
+type ListStockMovementsByProductWithDateRangeRow struct {
+	ID               int32            `json:"id"`
+	MovementType     string           `json:"movement_type"`
+	ReferenceType    pgtype.Text      `json:"reference_type"`
+	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ProductID        int32            `json:"product_id"`
+	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	FromStoreID      pgtype.Int4      `json:"from_store_id"`
+	ToStoreID        pgtype.Int4      `json:"to_store_id"`
+	FromLocationID   pgtype.Int4      `json:"from_location_id"`
+	ToLocationID     pgtype.Int4      `json:"to_location_id"`
+	Quantity         pgtype.Numeric   `json:"quantity"`
+	UomID            pgtype.Int4      `json:"uom_id"`
+	BatchNumber      pgtype.Text      `json:"batch_number"`
+	SerialNumber     pgtype.Text      `json:"serial_number"`
+	MovementDate     pgtype.Timestamp `json:"movement_date"`
+	PostedBy         pgtype.Int4      `json:"posted_by"`
+	Status           pgtype.Text      `json:"status"`
+	CostPerUnit      pgtype.Numeric   `json:"cost_per_unit"`
+	TotalValue       pgtype.Numeric   `json:"total_value"`
+	Metadata         []byte           `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	FromStoreName    pgtype.Text      `json:"from_store_name"`
+	ToStoreName      pgtype.Text      `json:"to_store_name"`
+	UomName          pgtype.Text      `json:"uom_name"`
+}
+
+func (q *Queries) ListStockMovementsByProductWithDateRange(ctx context.Context, arg ListStockMovementsByProductWithDateRangeParams) ([]ListStockMovementsByProductWithDateRangeRow, error) {
+	rows, err := q.db.Query(ctx, listStockMovementsByProductWithDateRange, arg.ProductID, arg.Column2, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStockMovementsByProductWithDateRangeRow
+	for rows.Next() {
+		var i ListStockMovementsByProductWithDateRangeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MovementType,
+			&i.ReferenceType,
+			&i.ReferenceID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.FromStoreID,
+			&i.ToStoreID,
+			&i.FromLocationID,
+			&i.ToLocationID,
+			&i.Quantity,
+			&i.UomID,
+			&i.BatchNumber,
+			&i.SerialNumber,
+			&i.MovementDate,
+			&i.PostedBy,
+			&i.Status,
+			&i.CostPerUnit,
+			&i.TotalValue,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.FromStoreName,
+			&i.ToStoreName,
+			&i.UomName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStockMovementsByReference = `-- name: ListStockMovementsByReference :many
 SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
 FROM stock_movements
