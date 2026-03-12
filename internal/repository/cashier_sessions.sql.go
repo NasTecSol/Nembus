@@ -124,7 +124,7 @@ func (q *Queries) CloseCashierSessionReconcile(ctx context.Context, arg CloseCas
 
 const getActiveCashierSession = `-- name: GetActiveCashierSession :one
 SELECT 
-    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at,
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
     c.cashier_code,
     u.first_name || ' ' || u.last_name AS cashier_name,
     t.terminal_name,
@@ -154,6 +154,7 @@ type GetActiveCashierSessionRow struct {
 	Status          pgtype.Text      `json:"status"`
 	Metadata        []byte           `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     string           `json:"cashier_code"`
 	CashierName     interface{}      `json:"cashier_name"`
 	TerminalName    pgtype.Text      `json:"terminal_name"`
@@ -177,6 +178,7 @@ func (q *Queries) GetActiveCashierSession(ctx context.Context, cashierID int32) 
 		&i.Status,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.CashierCode,
 		&i.CashierName,
 		&i.TerminalName,

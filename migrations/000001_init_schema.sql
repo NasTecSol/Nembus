@@ -325,7 +325,8 @@ CREATE TABLE cashier_sessions (
     variance DECIMAL(15,2),
     status VARCHAR(20) DEFAULT 'open',
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- ✅ new column for triggers
 );
 
 -- =====================================================
@@ -2101,7 +2102,7 @@ DECLARE
         'sales_orders_v2','sales_order_lines_v2','order_fulfillments',
         'invoices','invoice_lines','invoice_payments','quotes','quote_lines',
         'promotions','loyalty_redemption_rules','restaurant_orders',
-        'restaurant_order_items'
+        'restaurant_order_items', 'cashier_sessions'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tbls LOOP
@@ -2116,6 +2117,29 @@ $$;
 -- =====================================================
 -- TRIGGERS FOR CART ACTIVITY TRACKING
 -- =====================================================
+
+-- =====================================================
+-- TRIGGERS FOR CASHIER SESSION BALANCE TRACKING
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION update_cashier_session_balance()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.cashier_session_id IS NOT NULL THEN
+        UPDATE cashier_sessions
+        SET expected_balance = COALESCE(expected_balance, opening_balance, 0) + NEW.total_amount
+        WHERE id = NEW.cashier_session_id;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_cashier_session_balance
+    AFTER INSERT ON pos_transactions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_cashier_session_balance();
+
 
 -- Log cart status changes
 CREATE OR REPLACE FUNCTION log_cart_status_change()

@@ -563,6 +563,7 @@ type CashierSession struct {
 	Status          pgtype.Text      `json:"status"`
 	Metadata        []byte           `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 }
 
 type ComboBundle struct {
