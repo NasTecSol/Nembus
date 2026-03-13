@@ -3652,7 +3652,7 @@ func (q *Queries) GetTotalPaymentsForInvoice(ctx context.Context, invoiceID uuid
 }
 
 const listAbandonedCarts = `-- name: ListAbandonedCarts :many
-SELECT c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.payment_method, c.payment_gateway, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes, COUNT(ci.id) as item_count, SUM(ci.line_total) as cart_value
+SELECT c.id, c.cart_number, c.organization_id, c.store_id, c.customer_id, c.guest_identifier, c.guest_email, c.guest_phone, c.cart_status, c.cart_type, c.channel, c.payment_method, c.payment_gateway, c.device_info, c.created_by_user_id, c.cashier_id, c.pos_terminal_id, c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount, c.coupon_code, c.discount_code, c.promotional_credits, c.shipping_address, c.billing_address, c.shipping_method, c.converted_to_order_id, c.converted_at, c.last_activity_at, c.expires_at, c.created_at, c.updated_at, c.metadata, c.notes, COUNT(ci.id) as item_count, COALESCE(SUM(ci.line_total), 0)::numeric as cart_value
 FROM carts c
 LEFT JOIN cart_items ci ON c.id = ci.cart_id
 LEFT JOIN customers cu ON c.customer_id = cu.id
@@ -3661,7 +3661,7 @@ WHERE c.store_id = $1
   AND c.last_activity_at < NOW() - INTERVAL '24 hours'
   AND (cu.email IS NOT NULL OR c.guest_email IS NOT NULL)
 GROUP BY c.id
-HAVING SUM(ci.line_total) > $2
+HAVING COALESCE(SUM(ci.line_total), 0) > $2
 ORDER BY c.last_activity_at DESC
 LIMIT $3 OFFSET $4
 `
@@ -3711,7 +3711,7 @@ type ListAbandonedCartsRow struct {
 	Metadata           []byte           `json:"metadata"`
 	Notes              pgtype.Text      `json:"notes"`
 	ItemCount          int64            `json:"item_count"`
-	CartValue          int64            `json:"cart_value"`
+	CartValue          pgtype.Numeric   `json:"cart_value"`
 }
 
 func (q *Queries) ListAbandonedCarts(ctx context.Context, arg ListAbandonedCartsParams) ([]ListAbandonedCartsRow, error) {

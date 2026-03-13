@@ -174,7 +174,7 @@ type ListAbandonedCartOutput struct {
 	Metadata           json.RawMessage       `json:"metadata"`
 	Notes              pgtype.Text           `json:"notes"`
 	ItemCount          int64                 `json:"item_count"`
-	CartValue          int64                 `json:"cart_value"`
+	CartValue          pgtype.Numeric        `json:"cart_value"`
 }
 
 func cartToOutput(c repository.Cart) CartOutput {
