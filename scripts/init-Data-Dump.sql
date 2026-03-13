@@ -1798,15 +1798,15 @@ INSERT INTO submenu_permissions (submenu_id, permission_id) VALUES
 -- 9. ROLES
 -- =====================================================
 
-INSERT INTO roles (name, code, description, is_system_role, is_active) VALUES
-('Super Administrator', 'super_admin', 'Full system access with all permissions including tenant management', true, true),
-('Owner', 'owner', 'Organization owner with full access except tenant and UI module management', true, true),
-('Store Manager', 'store_manager', 'Manages store operations, inventory, sales, and staff', false, true),
-('Cashier', 'cashier', 'Processes sales transactions at POS', false, true),
-('Inventory Manager', 'inventory_manager', 'Manages inventory, stock counts, and transfers', false, true),
-('Sales Executive', 'sales_executive', 'Manages customers and sales orders', false, true),
-('Purchase Manager', 'purchase_manager', 'Manages suppliers and purchase orders', false, true),
-('Accountant', 'accountant', 'Access to financial reports and analytics', false, true);
+INSERT INTO roles (name, code, description, is_system_role, is_active,metadata) VALUES
+('Super Administrator', 'super_admin', 'Full system access with all permissions including tenant management', true, true,'{"scope":"all"}'),
+('Owner', 'owner', 'Organization owner with full access except tenant and UI module management', true, true,'{"scope":"all"}'),
+('Store Manager', 'store_manager', 'Manages store operations, inventory, sales, and staff', false, true,'{"scope":"all"}'),
+('Cashier', 'cashier', 'Processes sales transactions at POS', false, true,'{"scope":"own"}'),
+('Inventory Manager', 'inventory_manager', 'Manages inventory, stock counts, and transfers', false, true,'{"scope":"own"}'),
+('Sales Executive', 'sales_executive', 'Manages customers and sales orders', false, true,'{"scope":"own"}'),
+('Purchase Manager', 'purchase_manager', 'Manages suppliers and purchase orders', false, true,'{"scope":"own"}'),
+('Accountant', 'accountant', 'Access to financial reports and analytics', false, true,'{"scope":"own"}');
 
 -- =====================================================
 -- 10. ROLE PERMISSIONS
