@@ -71,7 +71,7 @@ ORDER BY last_activity_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: ListAbandonedCarts :many
-SELECT c.*, COUNT(ci.id) as item_count, SUM(ci.line_total) as cart_value
+SELECT c.*, COUNT(ci.id) as item_count, COALESCE(SUM(ci.line_total), 0)::numeric as cart_value
 FROM carts c
 LEFT JOIN cart_items ci ON c.id = ci.cart_id
 LEFT JOIN customers cu ON c.customer_id = cu.id
@@ -80,7 +80,7 @@ WHERE c.store_id = $1
   AND c.last_activity_at < NOW() - INTERVAL '24 hours'
   AND (cu.email IS NOT NULL OR c.guest_email IS NOT NULL)
 GROUP BY c.id
-HAVING SUM(ci.line_total) > $2
+HAVING COALESCE(SUM(ci.line_total), 0) > $2
 ORDER BY c.last_activity_at DESC
 LIMIT $3 OFFSET $4;
 
