@@ -6334,7 +6334,7 @@ func (q *Queries) UpdateCartItem(ctx context.Context, arg UpdateCartItemParams) 
 const updateCartItemQuantity = `-- name: UpdateCartItemQuantity :one
 UPDATE cart_items
 SET quantity = quantity + $2,
-    line_total = unit_price * (quantity + $2) - discount_amount + tax_amount,
+    line_total = COALESCE(unit_price, 0) * (quantity + $2) - COALESCE(discount_amount, 0) + COALESCE(tax_amount, 0),
     updated_at = NOW()
 WHERE id = $1
 RETURNING id, cart_id, organization_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, line_total, price_list_id, tax_category_id, batch_number, serial_number, customization_details, notes, metadata, added_at, updated_at
