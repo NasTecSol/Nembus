@@ -1579,3 +1579,56 @@ type ListProductsWithVariantsResponse struct {
 	Variants     []ProductVariantSummary  `json:"variants"`
 	Inventory    []StockByLocationSummary `json:"inventory"`
 }
+// =====================================================
+// Product Category Module
+// =====================================================
+
+// CreateProductCategoryRequest represents request body for creating a product category.
+type CreateProductCategoryRequest struct {
+	ParentCategoryID *int32                 `json:"parent_category_id" example:"1"`
+	Name             string                 `json:"name" binding:"required" example:"Electronics"`
+	Code             string                 `json:"code" binding:"required" example:"ELEC"`
+	Description      string                 `json:"description" example:"Electronic devices and gadgets"`
+	CategoryLevel    int32                  `json:"category_level" example:"1"`
+	IsActive         bool                   `json:"is_active" example:"true"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateProductCategoryRequest represents request body for updating a product category.
+type UpdateProductCategoryRequest struct {
+	ParentCategoryID *int32                 `json:"parent_category_id" example:"1"`
+	Name             *string                `json:"name,omitempty" example:"Electronics Updated"`
+	Description      *string                `json:"description,omitempty" example:"Updated description"`
+	CategoryLevel    *int32                 `json:"category_level,omitempty" example:"2"`
+	IsActive         *bool                  `json:"is_active,omitempty" example:"true"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// ProductCategoryResponse represents a product category in API responses.
+type ProductCategoryResponse struct {
+	ID               int32           `json:"id" example:"1"`
+	ParentCategoryID *int32          `json:"parent_category_id,omitempty" example:"1"`
+	Name             string          `json:"name" example:"Electronics"`
+	Code             string          `json:"code" example:"ELEC"`
+	Description      string          `json:"description,omitempty" example:"Electronic devices and gadgets"`
+	CategoryLevel    int32           `json:"category_level" example:"1"`
+	IsActive         bool            `json:"is_active" example:"true"`
+	Metadata         json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt        string          `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt        string          `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+}
+
+// CategoryHierarchyResponse represents a product category in a hierarchy tree.
+type CategoryHierarchyResponse struct {
+	ID               int32           `json:"id" example:"1"`
+	ParentCategoryID *int32          `json:"parent_category_id,omitempty" example:"1"`
+	Name             string          `json:"name" example:"Electronics"`
+	Code             string          `json:"code" example:"ELEC"`
+	Description      string          `json:"description,omitempty" example:"Electronic devices and gadgets"`
+	CategoryLevel    int32           `json:"category_level" example:"1"`
+	IsActive         bool            `json:"is_active" example:"true"`
+	Metadata         json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	Level            int32           `json:"level" example:"1"`
+	Path             interface{}     `json:"path"`
+	FullPath         string          `json:"full_path" example:"Electronics > Smartphones"`
+}
