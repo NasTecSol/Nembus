@@ -198,7 +198,7 @@ RETURNING *;
 -- name: UpdateCartItemQuantity :one
 UPDATE cart_items
 SET quantity = quantity + $2,
-    line_total = unit_price * (quantity + $2) - discount_amount + tax_amount,
+    line_total = COALESCE(unit_price, 0) * (quantity + $2) - COALESCE(discount_amount, 0) + COALESCE(tax_amount, 0),
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
