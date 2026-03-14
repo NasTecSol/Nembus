@@ -1871,6 +1871,43 @@ WHERE code IN (
     'customers:view', 'customers:manage'
 );
 
+
+INSERT INTO uom_packaging_templates (organization_id, name, code, is_active)
+VALUES
+(1, 'Beverage Standard Pattern', '1-24-12', true),
+(1, 'Snack Box Pattern', '1-12-6', true),
+(1, 'Warehouse Bulk Pattern', '1-50-10', true),
+(1, 'Retail Small Pattern', '1-6-4', true),
+(1, 'Pharma Packaging Pattern', '1-100-10', true);
+
+
+INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)
+VALUES
+-- Beverage Standard Pattern
+(1, 1, 1, 1),
+(1, 2, 2, 24),
+(1, 3, 3, 12),
+
+-- Snack Box Pattern
+(2, 1, 1, 1),
+(2, 2, 2, 12),
+(2, 3, 3, 6),
+
+-- Warehouse Bulk Pattern
+(3, 1, 1, 1),
+(3, 2, 4, 50),
+(3, 3, 5, 10),
+
+-- Retail Small Pattern
+(4, 1, 1, 1),
+(4, 2, 6, 6),
+(4, 3, 7, 4),
+
+-- Pharma Packaging Pattern
+(5, 1, 1, 1),
+(5, 2, 8, 100),
+(5, 3, 9, 10);
+
 -- Inventory Manager Permissions
 INSERT INTO role_permissions (role_id, permission_id, scope)
 SELECT 
