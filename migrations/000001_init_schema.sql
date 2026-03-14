@@ -366,6 +366,26 @@ CREATE TABLE units_of_measure (
     metadata JSONB DEFAULT '{}'
 );
 
+CREATE TABLE uom_packaging_templates (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL, -- e.g., 'Beverage Standard Pattern'
+    code VARCHAR(50) UNIQUE NOT NULL, -- e.g., '1-24-12'
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Pattern Levels Table
+CREATE TABLE uom_packaging_template_levels (
+    id SERIAL PRIMARY KEY,
+    template_id INTEGER NOT NULL REFERENCES uom_packaging_templates(id) ON DELETE CASCADE,
+    level_order INTEGER NOT NULL, -- 1=Base, 2=Middle, 3=Top
+    uom_id INTEGER NOT NULL REFERENCES units_of_measure(id),
+    multiplier DECIMAL(15,6) NOT NULL DEFAULT 1, -- Multiplier relative to the level below it
+    UNIQUE(template_id, level_order)
+);
+
 CREATE TABLE price_lists (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
@@ -2531,6 +2551,12 @@ CREATE INDEX idx_brands_is_active ON brands(is_active);
 -- Units of Measure
 CREATE INDEX idx_units_of_measure_code ON units_of_measure(code);
 CREATE INDEX idx_units_of_measure_uom_type ON units_of_measure(uom_type);
+
+-- UOM Packaging Templates
+CREATE INDEX idx_uom_packaging_templates_organization_id ON uom_packaging_templates(organization_id);
+CREATE INDEX idx_uom_packaging_templates_code ON uom_packaging_templates(code);
+CREATE INDEX idx_uom_pkg_template_levels_template_id ON uom_packaging_template_levels(template_id);
+CREATE INDEX idx_uom_pkg_template_levels_uom_id ON uom_packaging_template_levels(uom_id);
 
 -- Price Lists
 CREATE INDEX idx_price_lists_code ON price_lists(code);
@@ -4742,6 +4768,10 @@ DROP INDEX IF EXISTS idx_price_lists_valid_to;
 DROP INDEX IF EXISTS idx_price_lists_valid_from;
 DROP INDEX IF EXISTS idx_price_lists_is_active;
 DROP INDEX IF EXISTS idx_price_lists_code;
+DROP INDEX IF EXISTS idx_uom_pkg_template_levels_uom_id;
+DROP INDEX IF EXISTS idx_uom_pkg_template_levels_template_id;
+DROP INDEX IF EXISTS idx_uom_packaging_templates_code;
+DROP INDEX IF EXISTS idx_uom_packaging_templates_organization_id;
 DROP INDEX IF EXISTS idx_units_of_measure_uom_type;
 DROP INDEX IF EXISTS idx_units_of_measure_code;
 DROP INDEX IF EXISTS idx_brands_is_active;
@@ -4834,6 +4864,8 @@ DROP TABLE IF EXISTS product_variants CASCADE;
 DROP TABLE IF EXISTS products CASCADE;
 DROP TABLE IF EXISTS tax_categories CASCADE;
 DROP TABLE IF EXISTS price_lists CASCADE;
+DROP TABLE IF EXISTS uom_packaging_template_levels CASCADE;
+DROP TABLE IF EXISTS uom_packaging_templates CASCADE;
 DROP TABLE IF EXISTS units_of_measure CASCADE;
 DROP TABLE IF EXISTS brands CASCADE;
 DROP TABLE IF EXISTS product_categories CASCADE;

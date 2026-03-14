@@ -1952,6 +1952,24 @@ type UnitsOfMeasure struct {
 	Metadata      []byte      `json:"metadata"`
 }
 
+type UomPackagingTemplate struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	Name           string           `json:"name"`
+	Code           string           `json:"code"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+type UomPackagingTemplateLevel struct {
+	ID         int32          `json:"id"`
+	TemplateID int32          `json:"template_id"`
+	LevelOrder int32          `json:"level_order"`
+	UomID      int32          `json:"uom_id"`
+	Multiplier pgtype.Numeric `json:"multiplier"`
+}
+
 type User struct {
 	ID             int32            `json:"id"`
 	OrganizationID int32            `json:"organization_id"`
