@@ -1,5 +1,11 @@
 package utils
 
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
 // DerefInt32 returns the value of an int32 pointer or 0 if it's nil.
 func DerefInt32(i *int32) int32 {
 	if i == nil {
@@ -22,4 +28,30 @@ func DerefBool(b *bool) bool {
 		return false
 	}
 	return *b
+}
+
+// FormatTimestamp formats a pgtype.Timestamp to RFC3339 string.
+func FormatTimestamp(t interface{}) string {
+	switch v := t.(type) {
+	case pgtype.Timestamp:
+		if !v.Valid {
+			return ""
+		}
+		return v.Time.Format(time.RFC3339)
+	case pgtype.Timestamptz:
+		if !v.Valid {
+			return ""
+		}
+		return v.Time.Format(time.RFC3339)
+	default:
+		return ""
+	}
+}
+
+// FormatDate formats a pgtype.Date to YYYY-MM-DD string.
+func FormatDate(d pgtype.Date) string {
+	if !d.Valid {
+		return ""
+	}
+	return d.Time.Format("2006-01-02")
 }
