@@ -138,7 +138,34 @@ func (uc *PosUseCase) SearchProduct(ctx context.Context, storeID int32, q string
 	// 1. Exact barcode
 	byBarcode, err := uc.repo.PosGetProductByBarcode(ctx, q, storeID)
 	if err == nil {
-		return utils.NewResponse(utils.CodeOK, "product found by barcode", byBarcode)
+		out := map[string]interface{}{
+			"product_id":              byBarcode.ProductID,
+			"sku":                     byBarcode.Sku,
+			"product_name":            byBarcode.ProductName,
+			"description":             byBarcode.Description,
+			"category_name":           byBarcode.CategoryName,
+			"brand_name":              byBarcode.BrandName,
+			"barcode":                 byBarcode.Barcode,
+			"uom_code":                byBarcode.UomCode,
+			"decimal_places":          byBarcode.DecimalPlaces,
+			"retail_price":            byBarcode.RetailPrice,
+			"promo_price":             byBarcode.PromoPrice,
+			"effective_price":         byBarcode.EffectivePrice,
+			"has_promotion":           byBarcode.HasPromotion,
+			"promotion_name":          byBarcode.PromotionName,
+			"promo_min_quantity":      byBarcode.PromoMinQuantity,
+			"tax_rate":                byBarcode.TaxRate,
+			"tax_is_inclusive":        byBarcode.TaxIsInclusive,
+			"quantity_available":      byBarcode.QuantityAvailable,
+			"is_in_stock":             byBarcode.IsInStock,
+			"allow_decimal_quantity":  byBarcode.AllowDecimalQty,
+			"is_serialized":           byBarcode.IsSerialized,
+			"is_batch_managed":        byBarcode.IsBatchManaged,
+			"product_metadata":        utils.BytesToJSONRawMessage(byBarcode.ProductMetadata),
+			"package_n_price":         utils.BytesToJSONRawMessage(byBarcode.PackageNPrice),
+			"product_uom_conversions": utils.BytesToJSONRawMessage(byBarcode.ProductUomConversions),
+		}
+		return utils.NewResponse(utils.CodeOK, "product found by barcode", out)
 	}
 
 	// 2. Numeric-only: try as product id
@@ -181,7 +208,26 @@ func (uc *PosUseCase) SearchProduct(ctx context.Context, storeID int32, q string
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "search completed", rows)
+
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, map[string]interface{}{
+			"product_id":              row.ProductID,
+			"sku":                     row.Sku,
+			"product_name":            row.ProductName,
+			"category_name":           row.CategoryName,
+			"brand_name":              row.BrandName,
+			"barcode":                 row.Barcode,
+			"effective_price":         row.EffectivePrice,
+			"has_promotion":           row.HasPromotion,
+			"quantity_available":      row.QuantityAvailable,
+			"is_in_stock":             row.IsInStock,
+			"relevance_score":         row.RelevanceScore,
+			"package_n_price":         utils.BytesToJSONRawMessage(row.PackageNPrice),
+			"product_uom_conversions": utils.BytesToJSONRawMessage(row.ProductUomConversions),
+		})
+	}
+	return utils.NewResponse(utils.CodeOK, "search completed", result)
 }
 
 func isNumericID(s string) bool {
@@ -240,6 +286,17 @@ func (uc *PosUseCase) GetProductsByCategory(ctx context.Context, storeID int32, 
 	return utils.NewResponse(utils.CodeOK, "products by category fetched successfully", result)
 }
 
+type PosCategoryOutput struct {
+	CategoryID         int32           `json:"category_id"`
+	CategoryCode       string          `json:"category_code"`
+	CategoryName       string          `json:"category_name"`
+	ParentCategoryID   *int32          `json:"parent_category_id,omitempty"`
+	ParentCategoryName string          `json:"parent_category_name,omitempty"`
+	ProductCount       int32           `json:"product_count"`
+	InStockCount       int32           `json:"in_stock_count"`
+	CategoryMetadata   json.RawMessage `json:"category_metadata,omitempty"`
+}
+
 // GetCategories returns POS categories with product counts.
 func (uc *PosUseCase) GetCategories(ctx context.Context) *repository.Response {
 	if uc.repo == nil {
@@ -249,7 +306,27 @@ func (uc *PosUseCase) GetCategories(ctx context.Context) *repository.Response {
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "categories fetched successfully", rows)
+
+	output := make([]PosCategoryOutput, 0, len(rows))
+	for _, row := range rows {
+		item := PosCategoryOutput{
+			CategoryID:       row.CategoryID,
+			CategoryCode:     row.CategoryCode.String,
+			CategoryName:     row.CategoryName.String,
+			ProductCount:     row.ProductCount,
+			InStockCount:     row.InStockCount,
+			CategoryMetadata: utils.BytesToJSONRawMessage(row.CategoryMetadata),
+		}
+		if row.ParentCategoryID.Valid {
+			item.ParentCategoryID = &row.ParentCategoryID.Int32
+		}
+		if row.ParentCategoryName.Valid {
+			item.ParentCategoryName = row.ParentCategoryName.String
+		}
+		output = append(output, item)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "categories fetched successfully", output)
 }
 
 // PosAddProductInput is the input for AddProduct.
