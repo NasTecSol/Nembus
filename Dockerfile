@@ -12,7 +12,7 @@ COPY . .
 # Generate Swagger docs before building.
 # main.go imports NEMBUS/docs/swagger, so this package must exist.
 RUN go install github.com/swaggo/swag/cmd/swag@latest
-RUN /root/go/bin/swag init -g main.go -o docs/swagger --parseDependency --parseInternal
+RUN $(go env GOPATH)/bin/swag init -g main.go -o docs/swagger --parseDependency --parseInternal
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o server .
 
