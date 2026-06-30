@@ -15,10 +15,13 @@ FROM alpine:3.20
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata wget
+RUN apk add --no-cache ca-certificates tzdata wget postgresql-client
 
 COPY --from=build /app/server /app/server
 
+RUN mkdir -p /app/images
+
 EXPOSE 3000
+EXPOSE 50051
 
 CMD ["/app/server"]
