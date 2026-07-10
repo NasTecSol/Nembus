@@ -27,7 +27,7 @@ func NewDevHandler() *DevHandler {
 // @Success      200  {object}  map[string]string  "token"
 // @Failure      403  {object}  map[string]string  "error"
 // @Failure      500  {object}  map[string]string  "error"
-// @Router       /dev/token [get]
+// @Router       /api/dev/token [get]
 func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// Check if we're in development mode
 	//env := os.Getenv("ENV")

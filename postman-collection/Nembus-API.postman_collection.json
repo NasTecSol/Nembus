@@ -127,7 +127,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{base_url}}{{base_url}}/dev/token",
+            "url": "{{base_url}}/api/dev/token",
             "auth": {
               "type": "noauth"
             }
