@@ -53,8 +53,8 @@ func (h *DevHandler) GetDevToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token":      token,
 		"type":       "Bearer",
-		"user_id":    "Admin",
-		"user_login": "Admin",
+		"user_id":    devUserID,
+		"user_login": devUserLogin,
 		"note":       "This is a development token. Set ENV=development to use this endpoint.",
 	})
 }
