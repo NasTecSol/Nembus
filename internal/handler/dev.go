@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"os"
 
 	"NEMBUS/internal/middleware"
 
@@ -36,13 +37,14 @@ func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// }
 
 	// Get dev user ID and login from environment or use defaults
+	
+	
+		
+	
 
-	devUserID := "Admin"
-
-	devUserLogin := "Admin"
 
 	// Generate token
-	token, err := middleware.GenerateJWTToken(devUserID, devUserLogin)
+	token, err := middleware.GenerateJWTToken("Admin", "Admin")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate dev token", "details": err.Error()})
 		return
@@ -51,8 +53,8 @@ func (h *DevHandler) GetDevToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token":      token,
 		"type":       "Bearer",
-		"user_id":    devUserID,
-		"user_login": devUserLogin,
+		"user_id":    "Admin",
+		"user_login": "Admin",
 		"note":       "This is a development token. Set ENV=development to use this endpoint.",
 	})
 }
