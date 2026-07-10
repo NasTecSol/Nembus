@@ -88,10 +88,10 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/health", healthCheck)
 
-	if cfg.Env == "development" || cfg.Env == "dev" {
+	
 		devHandler := handler.NewDevHandler()
 		r.GET("/dev/token", devHandler.GetDevToken)
-	}
+	
 
 	auth := r.Group("/api/auth")
 	auth.Use(middleware.TenantMiddleware(tenantManager))
