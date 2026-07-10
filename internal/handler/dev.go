@@ -39,12 +39,14 @@ func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// Get dev user ID and login from environment or use defaults
 	
 	
-		
+		devUserID := "Admin"
+
+	devUserLogin := "Admin"
 	
 
 
 	// Generate token
-	token, err := middleware.GenerateJWTToken("Admin", "Admin")
+	token, err := middleware.GenerateJWTToken(devUserID, devUserLogin)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate dev token", "details": err.Error()})
 		return
