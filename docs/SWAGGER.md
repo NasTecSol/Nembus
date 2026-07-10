@@ -71,7 +71,7 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 ## Testing with Swagger UI
 
 1. Get a dev token (development mode only):
-   - Navigate to `/dev/token` endpoint in Swagger UI
+   - Navigate to `/api/dev/token` endpoint in Swagger UI
    - Copy the token from the response
 
 2. Click "Authorize" button in Swagger UI
@@ -81,7 +81,7 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 ## Available Endpoints
 
 - **Health Check**: `GET /health`
-- **Dev Token** (dev only): `GET /dev/token`
+- **Dev Token** (dev only): `GET /api/dev/token`
 - **Login**: `POST /api/auth/login`
 - **Employees**:
   - `GET /api/employees` - List all employees

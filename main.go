@@ -90,7 +90,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 	
 		devHandler := handler.NewDevHandler()
-		r.GET("/dev/token", devHandler.GetDevToken)
+		r.GET("/api/dev/token", devHandler.GetDevToken)
 	
 
 	auth := r.Group("/api/auth")

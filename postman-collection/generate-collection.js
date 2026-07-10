@@ -61,7 +61,7 @@ const collection = {
     ]),
     // --- Dev (dev only) ---
     folder('Dev', [
-      req('Get Dev Token', 'GET', '{{base_url}}/dev/token', { auth: authNoAuth })
+      req('Get Dev Token', 'GET', '{{base_url}}/api/dev/token', { auth: authNoAuth })
     ]),
     // --- Public Tenants (no JWT in main, but same base) ---
     folder('Tenants (public)', [

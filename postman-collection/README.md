@@ -58,7 +58,7 @@ Use these scripts to seed data so the collection requests return meaningful resu
 Every module registered under `api := r.Group("/api")` with JWT + Tenant middleware is included:
 
 - **Auth** – Login (no Bearer).
-- **Dev** – Get Dev Token (`GET /dev/token`, dev only).
+- **Dev** – Get Dev Token (`GET /api/dev/token`, dev only).
 - **Tenants (public)** – Get by slug, List active.
 - **Carts** – Full CRUD, items, totals, checkout, activities.
 - **Cart Items** – Get, update, quantity, delete.
