@@ -30,25 +30,18 @@ func NewDevHandler() *DevHandler {
 // @Router       /dev/token [get]
 func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// Check if we're in development mode
-	env := os.Getenv("ENV")
+	//env := os.Getenv("ENV")
 	// if env != "development" && env != "dev" {
 	// 	c.JSON(http.StatusForbidden, gin.H{"error": "dev token endpoint only available in development mode"})
 	// 	return
 	// }
 
 	// Get dev user ID and login from environment or use defaults
-	devUserID := os.Getenv("DEV_USER_ID")
-	if devUserID == "" {
-		devUserID = "00000000-0000-0000-0000-000000000000" // Default dev user ID
-	}
 
-	devUserLogin := os.Getenv("DEV_USER_LOGIN")
-	if devUserLogin == "" {
-		devUserLogin = "dev_user"
-	}
+
 
 	// Generate token
-	token, err := middleware.GenerateJWTToken(devUserID, devUserLogin)
+	token, err := middleware.GenerateJWTToken("Admin", "Admin")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate dev token", "details": err.Error()})
 		return
