@@ -1,10 +1,181 @@
-<section>
-  <div class="container px-3 py-1">
-    <div class="mb-3">
-      <h2 translate>PURCHASE_ORDERS.CREATE_PO</h2>
+<section class="po-page">
+  <div class="container po-container">
+    <header class="po-header">
+      <div>
+        <h2 class="po-title">{{ "PURCHASING.CREATE_NEW_ORDER" | translate }}</h2>
+        <p class="po-breadcrumb">
+          {{ "SIDEBAR.PURCHASE_ORDERS" | translate }} <span>/</span>
+          {{ "PURCHASING.NEW_ORDER" | translate }}
+        </p>
+      </div>
+
+      <div class="po-actions">
+        <button type="button" class="po-btn po-btn-ghost">{{ "USER_ROLES.CANCEL" | translate }}</button>
+        <button type="button" class="po-btn po-btn-primary">
+          <i class="fa fa-check"></i>
+          {{ "PURCHASING.SAVE_ORDER" | translate }}
+        </button>
+      </div>
+    </header>
+
+    <div class="po-top-grid">
+      <div class="po-card po-order-card">
+        <h3 class="po-card-title">
+          <i class="fa fa-circle-info"></i>
+          {{ "PURCHASING.ORDER_INFORMATION" | translate }}
+        </h3>
+
+        <div class="po-form-grid">
+          <div>
+            <label class="po-label">{{ "PURCHASING.SUPPLIER_NAME" | translate }}</label>
+            <select class="po-input" [(ngModel)]="po.supplierId" name="supplierId">
+              <option value="">{{ "PURCHASING.SELECT_SUPPLIER" | translate }}</option>
+              <option *ngFor="let supplier of supplierOptions" [value]="supplier.id">
+                {{ supplier.name }}
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label class="po-label">{{ "PURCHASING.DESTINATION_WAREHOUSE" | translate }}</label>
+            <select class="po-input" [(ngModel)]="po.warehouseId" name="warehouseId">
+              <option value="">{{ "PURCHASING.SELECT_WAREHOUSE" | translate }}</option>
+              <option *ngFor="let warehouse of warehouseOptions" [value]="warehouse.id">
+                {{ warehouse.name }}
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label class="po-label">{{ "PURCHASING.DELIVERY_DATE" | translate }}</label>
+            <input class="po-input" type="date" [(ngModel)]="po.expectedDate" name="expectedDate" />
+          </div>
+
+          <div>
+            <label class="po-label">{{ "PURCHASING.REFERENCE_NO" | translate }}</label>
+            <input class="po-input" type="text" [placeholder]="'PURCHASING.REFERENCE_EXAMPLE' | translate"
+              [(ngModel)]="po.referenceNumber" name="referenceNumber" />
+          </div>
+        </div>
+      </div>
+
+      <div class="po-side-column">
+        <div class="po-card">
+          <h3 class="po-card-title po-card-title-muted">{{ "PURCHASING.ORDER_STATUS" | translate }}</h3>
+          <div class="po-status-chip">
+            <span></span>
+            {{ "PURCHASING.DRAFT" | translate }}
+          </div>
+          <p class="po-note">{{ "PURCHASING.DRAFT_MODE_NOTE" | translate }}</p>
+        </div>
+
+        <div class="po-card">
+          <h3 class="po-card-title po-card-title-muted">{{ "PURCHASING.INTERNAL_NOTES" | translate }}</h3>
+          <textarea class="po-input po-textarea" [placeholder]="'PURCHASING.ADD_PRIVATE_NOTES' | translate"
+            [(ngModel)]="po.internalNotes" name="internalNotes"></textarea>
+        </div>
+      </div>
     </div>
-    <div class="dashboard-card custom-shadow border-white-light relative my-6 flex min-h-screen flex-col px-5 py-3">
-      <p>Create Purchase Order Component - Submenu ID: {{ submenuId }}, Code: {{ submenuCode }}</p>
+
+    <div class="po-card po-lines">
+      <div class="po-lines-header">
+        <h3 class="po-card-title">
+          <i class="fa fa-table-list"></i>
+          {{ "PURCHASING.PRODUCT_LINES" | translate }}
+        </h3>
+        <button type="button" class="po-link-btn" (click)="addLine()">
+          <i class="fa fa-plus"></i>
+          {{ "PURCHASING.ADD_ROW" | translate }}
+        </button>
+      </div>
+
+      <div class="po-table-wrap">
+        <table class="po-table">
+          <thead>
+            <tr>
+              <th>{{ "PURCHASING.SKU_CODE" | translate }}</th>
+              <th>{{ "PURCHASING.PRODUCT_NAME" | translate }}</th>
+              <th>{{ "PURCHASING.QTY" | translate }}</th>
+              <th>{{ "PURCHASING.UOM" | translate }}</th>
+              <th>{{ "PURCHASING.PRICE_PER_UNIT" | translate }}</th>
+              <th>{{ "PURCHASING.TAX_PERCENT" | translate }}</th>
+              <th>{{ "PURCHASING.SUBTOTAL" | translate }}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let line of lines; let i = index">
+              <td><input class="po-table-input" type="text" [(ngModel)]="line.sku" [name]="'sku' + i" /></td>
+              <td><input class="po-table-input" type="text" [(ngModel)]="line.productName" [name]="'productName' + i" />
+              </td>
+              <td><input class="po-table-input" type="number" min="0" [(ngModel)]="line.qty" [name]="'qty' + i" /></td>
+              <td>
+                <select class="po-table-input" [(ngModel)]="line.uom" [name]="'uom' + i">
+                  <option *ngFor="let uom of uomOptions" [value]="uom">{{ uom }}</option>
+                </select>
+              </td>
+              <td><input class="po-table-input" type="number" min="0" step="0.01" [(ngModel)]="line.unitPrice"
+                  [name]="'unitPrice' + i" /></td>
+              <td><input class="po-table-input" type="number" min="0" step="0.01" [(ngModel)]="line.taxPercent"
+                  [name]="'taxPercent' + i" /></td>
+              <td class="po-subtotal">{{ lineSubtotal(line) | number: "1.2-2" }}</td>
+              <td class="po-action-cell">
+                <button type="button" class="po-delete-btn" (click)="removeLine(i)">
+                  <i class="fa fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <button type="button" class="po-search-btn">
+        <i class="fa fa-circle-plus"></i>
+        {{ "PURCHASING.SEARCH_OR_ADD_ITEM" | translate }}
+      </button>
+    </div>
+
+    <div class="po-bottom-grid">
+      <div class="po-card">
+        <h3 class="po-card-title po-card-title-muted">{{ "PURCHASING.SHIPPING_INFORMATION" | translate }}</h3>
+        <div class="po-form-grid">
+          <div>
+            <label class="po-label">{{ "PURCHASING.CARRIER" | translate }}</label>
+            <input class="po-input" type="text" [placeholder]="'PURCHASING.CARRIER_PLACEHOLDER' | translate" />
+          </div>
+          <div>
+            <label class="po-label">{{ "PURCHASING.SHIPPING_METHOD" | translate }}</label>
+            <input class="po-input" type="text" [placeholder]="'PURCHASING.SHIPPING_METHOD_PLACEHOLDER' | translate" />
+          </div>
+          <div class="po-full-span">
+            <label class="po-label">{{ "PURCHASING.TERMS_AND_CONDITIONS" | translate }}</label>
+            <textarea class="po-input po-textarea-sm" [placeholder]="'PURCHASING.TERMS_PLACEHOLDER' | translate"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="po-summary">
+        <h3><i class="fa fa-file-invoice"></i> {{ "PURCHASING.ORDER_SUMMARY" | translate }}</h3>
+        <div class="po-summary-row">
+          <span>{{ "PURCHASING.SUBTOTAL_ITEMS" | translate:{ count: lines.length } }}</span>
+          <strong>{{ subtotal | number: "1.2-2" }}</strong>
+        </div>
+        <div class="po-summary-row">
+          <span>{{ "PURCHASING.TOTAL_TAX_RATE" | translate:{ rate: 8 } }}</span>
+          <strong>{{ taxTotal | number: "1.2-2" }}</strong>
+        </div>
+        <div class="po-summary-row">
+          <span>{{ "PURCHASING.SHIPPING_COST" | translate }}</span>
+          <div class="po-summary-input-wrap">
+            <span>$</span>
+            <input type="number" min="0" step="0.01" [(ngModel)]="po.shippingCost" name="shippingCost" />
+          </div>
+        </div>
+        <div class="po-total">
+          <span>{{ "PURCHASING.TOTAL_AMOUNT" | translate }}</span>
+          <p>{{ grandTotal | number: "1.2-2" }}</p>
+        </div>
+      </div>
     </div>
   </div>
 </section>

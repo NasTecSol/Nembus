@@ -1,10 +1,470 @@
 <section>
   <div class="container px-3 py-1">
-    <div class="mb-3">
-      <h2 translate>MODULE LIST</h2>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         LIST VIEW  (System Hierarchy)
+    ════════════════════════════════════════════════════════════════════════ -->
+    @if (!showCreateForm) {
+
+    <!-- Header -->
+    <div class="mb-6 flex flex-col justify-between sm:flex-row sm:items-center">
+      <div>
+        <h2 class="text-2xl font-bold tracking-tight text-[var(--color-primary)]">{{ "MODULE_LIST.TITLE" | translate }}</h2>
+        <p class="text-[var(--color-gray)]">{{ "MODULE_LIST.SUBTITLE" | translate }}</p>
+      </div>
+      <div class="mt-4 flex gap-3 sm:mt-0">
+        <button
+          class="flex items-center gap-2 rounded-md bg-[var(--color-secondary)] px-4 py-2 text-[var(--color-primary)] hover:bg-gray-200">
+          <span class="material-icons text-sm">download</span>
+          {{ "MODULE_LIST.EXPORT_SCHEMA" | translate }}
+        </button>
+        <button (click)="openCreateForm()"
+          class="flex items-center gap-2 rounded-md bg-[var(--color-selectedobj)] px-4 py-2 text-white hover:opacity-90 transition-opacity">
+          <span class="material-icons text-sm">add</span>
+          {{ "MODULE_LIST.NEW_MODULE" | translate }}
+        </button>
+      </div>
     </div>
-    <div class="dashboard-card custom-shadow border-white-light relative my-6 flex min-h-screen flex-col px-5 py-3">
-      <p>Module List Component - Submenu ID: </p>
+
+    <!-- Main Content Card -->
+    <div
+      class="dashboard-card custom-shadow border-white-light relative my-6 flex flex-col bg-[var(--color-white-snow)] rounded-lg overflow-hidden">
+
+      <!-- Filters & Sort -->
+      <div class="flex items-center justify-between border-b border-[var(--color-gray-light2)] px-5 py-3">
+        <div class="flex gap-3">
+          <button
+            class="flex items-center gap-2 rounded-md border border-[var(--color-gray-light2)] px-3 py-1.5 text-[var(--color-gray)] hover:bg-[var(--color-gray-light3)]">
+            <span class="material-icons text-sm">filter_list</span>
+            {{ "MODULE_LIST.FILTER" | translate }}
+          </button>
+          <button
+            class="flex items-center gap-2 rounded-md border border-[var(--color-gray-light2)] px-3 py-1.5 text-[var(--color-gray)] hover:bg-[var(--color-gray-light3)]">
+            <span class="material-icons text-sm">swap_vert</span>
+            {{ "MODULE_LIST.SORT" | translate }}
+          </button>
+        </div>
+        <div class="text-sm font-semibold text-[var(--color-gray)] tracking-wider">
+          {{ "MODULE_LIST.ACTIVE_MODULES" | translate:{ count: activeModulesCount } }}
+        </div>
+      </div>
+
+      <!-- Loading -->
+      @if (isLoading) {
+      <div class="flex flex-col items-center justify-center py-20 gap-4">
+        <div
+          class="h-10 w-10 animate-spin rounded-full border-4 border-[var(--color-gray-light2)] border-t-[var(--color-selectedobj)]">
+        </div>
+        <p class="text-sm text-[var(--color-gray)]">{{ "MODULE_LIST.LOADING_MODULES" | translate }}</p>
+      </div>
+      }
+
+      <!-- Error -->
+      @if (!isLoading && errorMessage) {
+      <div class="flex flex-col items-center justify-center py-20 gap-3">
+        <span class="material-icons text-4xl text-[var(--color-red)]">error_outline</span>
+        <p class="text-sm text-[var(--color-gray)]">{{ errorMessage }}</p>
+        <button (click)="loadModules()"
+          class="flex items-center gap-2 rounded-md bg-[var(--color-selectedobj)] px-4 py-2 text-white hover:opacity-90 text-sm">
+          <span class="material-icons text-sm">refresh</span>
+          {{ "MODULE_LIST.RETRY" | translate }}
+        </button>
+      </div>
+      }
+
+      @if (!isLoading && !errorMessage) {
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="border-b border-[var(--color-gray-light2)]">
+            <th
+              class="w-12 px-4 py-3 text-left text-xs font-bold tracking-wider text-[var(--color-gray-border)] uppercase">
+              #</th>
+            <th class="px-4 py-3 text-left text-xs font-bold tracking-wider text-[var(--color-gray-border)] uppercase">
+              {{ "MODULE_LIST.TABLE.MODULE_NAME" | translate }}</th>
+            <th
+              class="w-36 px-4 py-3 text-left text-xs font-bold tracking-wider text-[var(--color-gray-border)] uppercase">
+              {{ "MODULE_LIST.TABLE.CODE" | translate }}</th>
+            <th
+              class="w-36 px-4 py-3 text-left text-xs font-bold tracking-wider text-[var(--color-gray-border)] uppercase">
+              {{ "MODULE_LIST.TABLE.DISPLAY_ORDER" | translate }}</th>
+            <th
+              class="w-40 px-4 py-3 text-left text-xs font-bold tracking-wider text-[var(--color-gray-border)] uppercase">
+              {{ "MODULE_LIST.TABLE.STATUS" | translate }}</th>
+            <th
+              class="w-20 px-4 py-3 text-right text-xs font-bold tracking-wider text-[var(--color-gray-border)] uppercase">
+              {{ "MODULE_LIST.TABLE.ACTIONS" | translate }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (module of modules; track module.id) {
+          <tr
+            class="group border-b border-[var(--color-gray-light2)] hover:bg-[var(--color-gray-light3)] transition-colors">
+            <td class="px-4 py-4 text-sm font-medium text-[var(--color-gray)]">{{ module.display_order }}</td>
+            <td class="px-4 py-4">
+              <div class="flex items-center gap-3">
+                <div
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-gray-light3)] text-[var(--color-primary)]">
+                  <span class="material-icons text-xl">{{ getMaterialIcon(module.icon) }}</span>
+                </div>
+                <div>
+                  <div class="font-bold text-[var(--color-primary)]">{{ module.name }}</div>
+                  <div class="text-xs text-[var(--color-gray)] truncate max-w-xs">{{ module.description }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-4">
+              <span
+                class="rounded px-2 py-1 text-xs font-bold bg-[var(--color-gray-light3)] text-[var(--color-selectedobj)] uppercase">{{
+                module.code }}</span>
+            </td>
+            <td class="px-4 py-4 text-[var(--color-primary)] font-medium">{{ module.display_order }}</td>
+            <td class="px-4 py-4">
+              <div class="flex items-center gap-2">
+                <div
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out"
+                  [style.background-color]="module.is_active ? 'var(--color-selectedobj)' : 'var(--color-gray-light2)'">
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out"
+                    [style.transform]="module.is_active ? 'translateX(1.5rem)' : 'translateX(0.25rem)'"></span>
+                </div>
+                <span class="text-sm font-medium"
+                  [style.color]="module.is_active ? 'var(--color-selectedobj)' : 'var(--color-gray)'">
+                  {{ module.is_active ? ("MODULE_LIST.STATUS_ACTIVE" | translate) : ("MODULE_LIST.STATUS_DISABLED" | translate) }}
+                </span>
+              </div>
+            </td>
+            <td class="px-4 py-4 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+              <button class="text-[var(--color-gray)] hover:text-[var(--color-primary)]">
+                <span class="material-icons text-sm">more_vert</span>
+              </button>
+            </td>
+          </tr>
+          }
+          @if (modules.length === 0) {
+          <tr>
+            <td colspan="6" class="py-16 text-center">
+              <span class="material-icons text-4xl text-[var(--color-gray-light2)]">layers_clear</span>
+              <p class="mt-2 text-sm text-[var(--color-gray)]">{{ "MODULE_LIST.NO_MODULES" | translate }}</p>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+      }
     </div>
+
+    <!-- Pagination -->
+    <div class="my-4 flex items-center justify-between">
+      <div class="text-sm text-[var(--color-gray)]">
+        {{ "MODULE_LIST.PAGINATION_SUMMARY" | translate:{ start: 1, end: modules.length, total: modules.length } }}
+      </div>
+      <div class="flex gap-1">
+        <button
+          class="h-8 w-8 rounded border border-[var(--color-gray-light2)] flex items-center justify-center hover:bg-[var(--color-gray-light3)]">
+          <span class="material-icons text-sm">chevron_left</span>
+        </button>
+        <button
+          class="h-8 w-8 rounded bg-[var(--color-selectedobj)] text-white flex items-center justify-center font-bold">1</button>
+        <button
+          class="h-8 w-8 rounded border border-[var(--color-gray-light2)] flex items-center justify-center hover:bg-[var(--color-gray-light3)]">2</button>
+        <button
+          class="h-8 w-8 rounded border border-[var(--color-gray-light2)] flex items-center justify-center hover:bg-[var(--color-gray-light3)]">3</button>
+        <button
+          class="h-8 w-8 rounded border border-[var(--color-gray-light2)] flex items-center justify-center hover:bg-[var(--color-gray-light3)]">
+          <span class="material-icons text-sm">chevron_right</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="mt-4 mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div class="rounded-lg bg-[var(--color-gray-light3)] p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-icons text-[var(--color-selectedobj)]">info</span>
+          <h4 class="font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.INFO.NAMING_TITLE" | translate }}</h4>
+        </div>
+        <p class="text-xs text-[var(--color-gray)]">{{ "MODULE_LIST.INFO.NAMING_DESC" | translate }}</p>
+      </div>
+      <div class="rounded-lg bg-[var(--color-gray-light3)] p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-icons text-[var(--color-selectedobj)]">sort</span>
+          <h4 class="font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.INFO.DISPLAY_ORDER_TITLE" | translate }}</h4>
+        </div>
+        <p class="text-xs text-[var(--color-gray)]">{{ "MODULE_LIST.INFO.DISPLAY_ORDER_DESC" | translate }}</p>
+      </div>
+      <div class="rounded-lg bg-[var(--color-gray-light3)] p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-icons text-[var(--color-selectedobj)]">visibility</span>
+          <h4 class="font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.INFO.ACTIVE_STATUS_TITLE" | translate }}</h4>
+        </div>
+        <p class="text-xs text-[var(--color-gray)]">{{ "MODULE_LIST.INFO.ACTIVE_STATUS_DESC" | translate }}</p>
+      </div>
+    </div>
+
+    }
+    <!-- END LIST VIEW -->
+
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CREATE MODULE FORM VIEW
+    ════════════════════════════════════════════════════════════════════════ -->
+    @if (showCreateForm) {
+
+    <!-- Header -->
+    <div class="mb-6">
+      <div class="flex items-center gap-2 mb-1">
+        <button (click)="cancelCreate()"
+          class="flex items-center gap-1 text-sm text-[var(--color-gray)] hover:text-[var(--color-primary)] transition-colors">
+          <span class="material-icons text-sm">arrow_back</span>
+          {{ "MODULE_LIST.BACK" | translate }}
+        </button>
+      </div>
+      <h2 class="text-2xl font-bold tracking-tight text-[var(--color-primary)]">{{ "MODULE_LIST.CREATE.TITLE" | translate }}</h2>
+      <p class="text-[var(--color-gray)]">{{ "MODULE_LIST.CREATE.SUBTITLE" | translate }}</p>
+    </div>
+
+    <!-- Two-column layout -->
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+      <!-- Left: Form (2/3 width) -->
+      <div class="lg:col-span-2 flex flex-col gap-6">
+
+        <!-- General Information -->
+        <div class="dashboard-card custom-shadow border-white-light bg-[var(--color-white-snow)] rounded-lg p-6">
+          <div class="flex items-center gap-2 mb-5">
+            <div class="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-selectedobj)]/10">
+              <span class="material-icons text-sm text-[var(--color-selectedobj)]">info</span>
+            </div>
+            <h3 class="font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.CREATE.GENERAL_INFO" | translate }}</h3>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="block text-sm font-medium text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.CREATE.MODULE_NAME" | translate }} <span
+                  class="text-red-400">*</span></label>
+              <input type="text" [(ngModel)]="newModule.name" [placeholder]="'MODULE_LIST.CREATE.MODULE_NAME_PLACEHOLDER' | translate"
+                class="w-full rounded-md border border-[var(--color-gray-light2)] px-3 py-2 text-sm text-[var(--color-primary)] placeholder-[var(--color-gray-light)] focus:border-[var(--color-selectedobj)] focus:outline-none focus:ring-1 focus:ring-[var(--color-selectedobj)]" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.CREATE.UNIQUE_CODE" | translate }} <span
+                  class="text-red-400">*</span></label>
+              <input type="text" [(ngModel)]="newModule.code" [placeholder]="'MODULE_LIST.CREATE.UNIQUE_CODE_PLACEHOLDER' | translate"
+                class="w-full rounded-md border border-[var(--color-gray-light2)] px-3 py-2 text-sm text-[var(--color-primary)] placeholder-[var(--color-gray-light)] focus:border-[var(--color-selectedobj)] focus:outline-none focus:ring-1 focus:ring-[var(--color-selectedobj)] uppercase" />
+            </div>
+          </div>
+          <div class="mt-4">
+            <label class="block text-sm font-medium text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.CREATE.DESCRIPTION" | translate }}</label>
+            <textarea [(ngModel)]="newModule.description" rows="3"
+              [placeholder]="'MODULE_LIST.CREATE.DESCRIPTION_PLACEHOLDER' | translate"
+              class="w-full rounded-md border border-[var(--color-gray-light2)] px-3 py-2 text-sm text-[var(--color-primary)] placeholder-[var(--color-gray-light)] focus:border-[var(--color-selectedobj)] focus:outline-none focus:ring-1 focus:ring-[var(--color-selectedobj)] resize-none"></textarea>
+          </div>
+        </div>
+
+        <!-- Visual Configuration -->
+        <div class="dashboard-card custom-shadow border-white-light bg-[var(--color-white-snow)] rounded-lg p-6">
+          <div class="flex items-center gap-2 mb-5">
+            <div class="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-selectedobj)]/10">
+              <span class="material-icons text-sm text-[var(--color-selectedobj)]">palette</span>
+            </div>
+            <h3 class="font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.CREATE.VISUAL_CONFIGURATION" | translate }}</h3>
+          </div>
+          <label class="block text-sm font-medium text-[var(--color-primary)] mb-3">{{ "MODULE_LIST.CREATE.SELECT_ICON" | translate }}</label>
+          <div class="flex flex-wrap gap-2 rounded-lg border border-[var(--color-gray-light2)] p-3">
+            @for (icon of availableIcons; track icon.name) {
+            <button type="button" (click)="newModule.icon = icon.name"
+              class="flex h-11 w-11 items-center justify-center rounded-lg transition-all"
+              [style.background-color]="newModule.icon === icon.name ? 'var(--color-selectedobj)' : 'var(--color-gray-light3)'"
+              [style.color]="newModule.icon === icon.name ? 'white' : 'var(--color-primary)'" [title]="icon.label">
+              <span class="material-icons text-xl">{{ icon.name }}</span>
+            </button>
+            }
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.TABLE.DISPLAY_ORDER" | translate }}</label>
+              <div class="flex items-center gap-3">
+                <input type="number" [(ngModel)]="newModule.displayOrder" min="1"
+                  class="w-24 rounded-md border border-[var(--color-gray-light2)] px-3 py-2 text-sm text-[var(--color-primary)] focus:border-[var(--color-selectedobj)] focus:outline-none focus:ring-1 focus:ring-[var(--color-selectedobj)]" />
+                <span class="text-xs text-[var(--color-gray)]">{{ "MODULE_LIST.CREATE.DISPLAY_ORDER_HINT" | translate }}</span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.INFO.ACTIVE_STATUS_TITLE" | translate }}</label>
+              <div class="flex items-center gap-3 mt-1">
+                <button type="button" (click)="newModule.isActive = !newModule.isActive"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out"
+                  [style.background-color]="newModule.isActive ? 'var(--color-selectedobj)' : 'var(--color-gray-light2)'">
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out"
+                    [style.transform]="newModule.isActive ? 'translateX(1.5rem)' : 'translateX(0.25rem)'"></span>
+                </button>
+                <span class="text-sm font-medium"
+                  [style.color]="newModule.isActive ? 'var(--color-selectedobj)' : 'var(--color-gray)'">
+                  {{ newModule.isActive ? ("MODULE_LIST.STATUS_ENABLED" | translate) : ("MODULE_LIST.STATUS_DISABLED" | translate) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Default Permissions -->
+        <div class="dashboard-card custom-shadow border-white-light bg-[var(--color-white-snow)] rounded-lg p-6">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-selectedobj)]/10">
+              <span class="material-icons text-sm text-[var(--color-selectedobj)]">lock</span>
+            </div>
+            <h3 class="font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.CREATE.DEFAULT_PERMISSIONS" | translate }}</h3>
+          </div>
+          <p class="text-xs text-[var(--color-gray)] mb-4">
+            {{ "MODULE_LIST.CREATE.PERMISSIONS_DESC_1" | translate }}
+            {{ "MODULE_LIST.CREATE.PERMISSIONS_DESC_2" | translate }}
+            <code class="rounded bg-gray-100 px-1 text-xs">module_name:permission</code>
+            {{ "MODULE_LIST.CREATE.PERMISSIONS_DESC_3" | translate }}
+          </p>
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            @for (perm of permissionKeys; track perm.key) {
+            <label
+              class="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-gray-light2)] px-3 py-2 hover:bg-[var(--color-gray-light3)] transition-colors"
+              [style.border-color]="getPermission(perm.key) ? 'var(--color-selectedobj)' : ''"
+              [style.background-color]="getPermission(perm.key) ? 'color-mix(in srgb, var(--color-selectedobj) 6%, white)' : ''">
+              <input type="checkbox" [checked]="getPermission(perm.key)"
+                (change)="setPermission(perm.key, $any($event.target).checked)"
+                class="h-4 w-4 rounded border-[var(--color-gray-light2)] accent-[var(--color-selectedobj)]" />
+              {{ getPermissionLabel(perm.label) }}
+            </label>
+            }
+          </div>
+          <!-- Preview of what will be sent -->
+          @if (newModule.name) {
+          <div class="mt-4 rounded-lg border border-dashed border-[var(--color-gray-light2)] p-3">
+            <p class="text-xs font-semibold text-[var(--color-gray)] mb-2">{{ "MODULE_LIST.CREATE.WILL_CREATE_PERMISSIONS" | translate }}</p>
+            <div class="flex flex-wrap gap-1">
+              @for (perm of permissionKeys; track perm.key) {
+              @if (getPermission(perm.key)) {
+              <span class="rounded-full px-2 py-0.5 text-xs font-mono text-white"
+                style="background-color: var(--color-selectedobj);">
+                {{ getPermissionCode(perm.key) }}
+              </span>
+              }
+              }
+              @if (!hasSelectedPermissions) {
+              <span class="text-xs text-[var(--color-gray)] italic">{{ "MODULE_LIST.CREATE.NO_PERMISSIONS_SELECTED" | translate }}</span>
+              }
+            </div>
+          </div>
+          }
+        </div>
+
+        <!-- Form Progress & Actions -->
+        <div
+          class="flex flex-col gap-3 rounded-lg bg-[var(--color-gray-light3)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-sm text-[var(--color-gray)]">{{ "MODULE_LIST.CREATE.FORM_PROGRESS" | translate }}</span>
+            <span class="text-sm font-bold" [style.color]="'var(--color-selectedobj)'">{{ formProgress }}%
+              {{ "MODULE_LIST.CREATE.COMPLETE" | translate }}</span>
+            <div class="h-2 w-32 rounded-full bg-[var(--color-gray-light2)]">
+              <div class="h-2 rounded-full transition-all duration-300" [style.width.%]="formProgress"
+                [style.background-color]="'var(--color-selectedobj)'"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            @if (createError) {
+            <div
+              class="flex items-center gap-1.5 rounded-md bg-red-50 border border-red-200 px-3 py-1.5 text-xs text-red-600">
+              <span class="material-icons text-sm">error_outline</span>
+              {{ createError }}
+            </div>
+            }
+            <button type="button" (click)="cancelCreate()" [disabled]="isCreating"
+              class="rounded-md border border-[var(--color-gray-light2)] px-5 py-2 text-sm text-[var(--color-gray)] hover:bg-white transition-colors disabled:opacity-50">
+              {{ "MODULE_LIST.CREATE.DISCARD_CHANGES" | translate }}
+            </button>
+            <button type="button" (click)="createModule()" [disabled]="!newModule.name || !newModule.code || isCreating"
+              class="flex items-center gap-2 rounded-md bg-[var(--color-selectedobj)] px-5 py-2 text-sm text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed min-w-[160px] justify-center">
+              @if (isCreating) {
+              <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+              {{ savingStep || ("MODULE_LIST.SAVING" | translate) }}
+              } @else {
+              <span class="material-icons text-sm">add_circle</span>
+              {{ "MODULE_LIST.CREATE.CREATE_MODULE" | translate }}
+              }
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: Preview Panel (1/3 width) -->
+      <div class="flex flex-col gap-4">
+
+        <!-- Navigation Preview -->
+        <div class="dashboard-card custom-shadow border-white-light bg-[var(--color-white-snow)] rounded-lg p-5">
+          <p class="text-xs font-bold tracking-wider text-[var(--color-gray)] uppercase mb-4">{{ "MODULE_LIST.CREATE.NAVIGATION_PREVIEW" | translate }}</p>
+          <div class="rounded-lg border border-[var(--color-gray-light2)] overflow-hidden">
+            <div class="bg-[var(--color-gray-light3)] px-3 py-2">
+              <div class="h-2 w-24 rounded-full bg-[var(--color-gray-light2)]"></div>
+            </div>
+            @for (item of previewModules; track item.name) {
+            <div
+              class="flex items-center gap-3 px-3 py-2.5 border-b border-[var(--color-gray-light2)] last:border-0 transition-colors"
+              [style.background-color]="item.active ? 'var(--color-selectedobj)' : 'transparent'">
+              <span class="material-icons text-sm" [style.color]="item.active ? 'white' : 'var(--color-gray)'">{{
+                item.icon }}</span>
+              <span class="text-sm font-medium" [style.color]="item.active ? 'white' : 'var(--color-primary)'">{{
+                item.name }}</span>
+              @if (item.active) {
+              <span class="ml-auto h-2 w-2 rounded-full bg-white"></span>
+              }
+            </div>
+            }
+          </div>
+          <div class="mt-4">
+            <p class="text-xs font-semibold text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.CREATE.LIVE_PREVIEW_NOTES" | translate }}</p>
+            <p class="text-xs text-[var(--color-gray)]">{{ "MODULE_LIST.CREATE.LIVE_PREVIEW_DESC" | translate }}</p>
+          </div>
+        </div>
+
+        <!-- 3-Step Flow Info -->
+        <div class="rounded-lg border border-[var(--color-selectedobj)]/30 bg-[var(--color-selectedobj)]/5 p-4">
+          <div class="flex items-start gap-2 mb-3">
+            <span class="material-icons text-sm text-[var(--color-selectedobj)] mt-0.5">info</span>
+            <p class="text-sm font-bold text-[var(--color-primary)]">{{ "MODULE_LIST.CREATE.SAVE_FLOW" | translate }}</p>
+          </div>
+          <ol class="space-y-2">
+            <li class="flex items-start gap-2 text-xs text-[var(--color-gray)]">
+              <span
+                class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white text-[10px] font-bold mt-0.5"
+                style="background-color: var(--color-selectedobj);">1</span>
+              {{ "MODULE_LIST.CREATE.SAVE_FLOW_STEP_1" | translate }}
+            </li>
+            <li class="flex items-start gap-2 text-xs text-[var(--color-gray)]">
+              <span
+                class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white text-[10px] font-bold mt-0.5"
+                style="background-color: var(--color-selectedobj);">2</span>
+              {{ "MODULE_LIST.CREATE.SAVE_FLOW_STEP_2_PREFIX" | translate }} <code class="font-mono">module:view</code>{{ "MODULE_LIST.CREATE.SAVE_FLOW_STEP_2_SUFFIX" | translate }}
+            </li>
+            <li class="flex items-start gap-2 text-xs text-[var(--color-gray)]">
+              <span
+                class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white text-[10px] font-bold mt-0.5"
+                style="background-color: var(--color-selectedobj);">3</span>
+              {{ "MODULE_LIST.CREATE.SAVE_FLOW_STEP_3" | translate }}
+            </li>
+          </ol>
+        </div>
+
+        <!-- Hierarchy Rule -->
+        <div class="rounded-lg border border-[var(--color-selectedobj)]/30 bg-[var(--color-selectedobj)]/5 p-4">
+          <div class="flex items-start gap-2">
+            <span class="material-icons text-sm text-[var(--color-selectedobj)] mt-0.5">account_tree</span>
+            <div>
+              <p class="text-sm font-bold text-[var(--color-primary)] mb-1">{{ "MODULE_LIST.CREATE.HIERARCHY_RULE" | translate }}</p>
+              <p class="text-xs text-[var(--color-gray)]">{{ "MODULE_LIST.CREATE.HIERARCHY_RULE_DESC" | translate }}</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    }
+    <!-- END CREATE FORM VIEW -->
+
   </div>
 </section>

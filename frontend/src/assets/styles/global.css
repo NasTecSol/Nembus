@@ -1,3 +1,6 @@
+/* =========================================================
+   Base Reset & Global Styles
+========================================================= */
 html,
 body {
   height: 100%;
@@ -12,9 +15,24 @@ body {
   background-color: #ffffff;
 }
 
+/* =========================================================
+   Print Styles (Invoice)
+========================================================= */
+@media print {
+  #print-invoice {
+    width: 80mm; /* Thermal printer paper size */
+    font-family: monospace;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+}
+
+/* =========================================================
+   Tailwind Base Layer Overrides
+========================================================= */
 @layer base {
   h2 {
-    @apply text-2xl md:text-[1.7rem] font-bold animate-fade-in;
+    @apply text-2xl md:text-[1.7rem] font-bold;
   }
 
   a,
@@ -22,30 +40,12 @@ body {
     cursor: pointer;
   }
 
-  button:hover {
-    @apply opacity-90;
-  }
-
-  label {
-    color: #0e1726;
-    font-weight: 600;
-
-  }
-
   hr {
     border-top: 1px solid #f4f4f4;
   }
 
-  input::placeholder {
-    @apply text-gray-border font-bold;
-  }
-
-  input {
-    @apply text-gray-border font-semibold;
-  }
-
-  textarea,
-  select {
-    @apply text-gray-border font-bold;
+  label {
+    font-size: 1rem;
+    font-weight: 700;
   }
 }

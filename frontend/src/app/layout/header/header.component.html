@@ -3,65 +3,44 @@
 
     <!-- Right Side Icons -->
     <div class="flex items-center gap-4">
-      
+
       <!-- Search - Collapsible -->
       <div class="relative" [class.w-64]="searchExpanded" [class.w-auto]="!searchExpanded">
         <!-- Search Icon (Default State) -->
-        <button
-          *ngIf="!searchExpanded"
-          (click)="toggleSearch()"
-          class="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:bg-[#87888C1A] transition-colors"
-        >
+        <button *ngIf="!searchExpanded" (click)="toggleSearch()"
+          class="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:bg-[#87888C1A] transition-colors">
           <i class="fas fa-search"></i>
         </button>
 
         <!-- Expanded Search Input -->
-        <div
-          *ngIf="searchExpanded"
-          class="relative flex items-center"
-        >
+        <div *ngIf="searchExpanded" class="relative flex items-center">
           <span class="absolute left-3 text-gray-400">
             <i class="fas fa-search"></i>
           </span>
-          <input
-            #searchInput
-            id="search"
-            type="text"
-            [placeholder]="'HEADER.SEARCH_PLACEHOLDER' | translate"
+          <input #searchInput id="search" type="text" [placeholder]="'HEADER.SEARCH_PLACEHOLDER' | translate"
             class="w-full bg-[#87888C1A] rounded-lg py-2 pr-10 pl-10 outline-none text-secondary placeholder:text-gray-400"
-            (blur)="onSearchBlur()"
-          />
-          <button
-            (click)="closeSearch()"
-            class="absolute right-3 text-gray-400 hover:text-gray-600"
-          >
+            (blur)="onSearchBlur()" />
+          <button (click)="closeSearch()" class="absolute right-3 text-gray-400 hover:text-gray-600">
             <i class="fas fa-times"></i>
           </button>
         </div>
       </div>
-     <!-- Store Selector -->
+      <!-- Store Selector -->
       <div class="relative">
-        <button
-          (click)="toggleStoreDropdown()"
-          class="flex items-center gap-2 rounded-lg bg-[#87888C1A] px-3 py-2 text-secondary transition-colors hover:bg-[#87888C2A]"
-        >
+        <button (click)="toggleStoreDropdown()"
+          class="flex items-center gap-2 rounded-lg bg-[#87888C1A] px-3 py-2 text-secondary transition-colors hover:bg-[#87888C2A]">
           <i class="fas fa-store text-sm text-selectedobj"></i>
           <span class="hidden sm:inline text-sm font-medium">{{ selectedStore }}</span>
           <i class="fas fa-chevron-down text-xs"></i>
         </button>
 
         <!-- Store Dropdown Menu -->
-        <div
-          *ngIf="storeDropdownOpen"
-          class="absolute left-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white shadow-lg"
-        >
+        <div *ngIf="storeDropdownOpen"
+          class="absolute left-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white shadow-lg">
           <div class="py-1">
-            <div
-              *ngFor="let store of stores"
-              (click)="selectStore(store)"
+            <div *ngFor="let store of stores" (click)="selectStore(store)"
               class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors"
-              [class.bg-blue-50]="store === selectedStore"
-            >
+              [class.bg-blue-50]="store === selectedStore">
               <i class="fas fa-store text-gray-400 text-sm"></i>
               <span class="text-sm text-gray-700" [class.font-medium]="store === selectedStore">{{ store }}</span>
               <i *ngIf="store === selectedStore" class="fas fa-check ml-auto text-blue-600 text-sm"></i>
@@ -71,33 +50,25 @@
       </div>
       <!-- Language Selector with Dropdown -->
       <div class="relative">
-        <button
-          (click)="toggleLanguageDropdown()"
-          class="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:bg-[#87888C1A] transition-colors"
-        >
-         <span class="mr-1">{{ currentLang | uppercase }}</span>
+        <button (click)="toggleLanguageDropdown()"
+          class="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:bg-[#87888C1A] transition-colors">
+          <span class="mr-1">{{ currentLang | uppercase }}</span>
           <i class="fas fa-globe"></i>
         </button>
 
         <!-- Language Dropdown Menu -->
-        <div
-          *ngIf="languageDropdownOpen"
-          class="absolute right-0 z-50 mt-2 w-48 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden"
-        >
-          <div
-            (click)="changeLang('en')"
+        <div *ngIf="languageDropdownOpen"
+          class="absolute right-0 z-50 mt-2 w-48 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+          <div (click)="changeLang('en')"
             class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100"
-            [class.bg-blue-50]="currentLang === 'en'"
-          >
+            [class.bg-blue-50]="currentLang === 'en'">
             <span class="text-2xl">🇬🇧</span>
             <span class="text-sm text-gray-700 font-medium">English</span>
             <i *ngIf="currentLang === 'en'" class="fas fa-check ml-auto text-blue-600 text-sm"></i>
           </div>
-          <div
-            (click)="changeLang('ar')"
+          <div (click)="changeLang('ar')"
             class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
-            [class.bg-blue-50]="currentLang === 'ar'"
-          >
+            [class.bg-blue-50]="currentLang === 'ar'">
             <span class="text-2xl">🇸🇦</span>
             <span class="text-sm text-gray-700 font-medium">العربية</span>
             <i *ngIf="currentLang === 'ar'" class="fas fa-check ml-auto text-blue-600 text-sm"></i>
@@ -108,12 +79,10 @@
       <!-- Bell Icon with Notification Badge -->
       <div class="relative">
         <button
-          class="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:bg-[#87888C1A] transition-colors"
-        >
+          class="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:bg-[#87888C1A] transition-colors">
           <i class="fas fa-bell"></i>
           <span
-            class="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 rounded-full bg-[#F04438] text-[10px] font-semibold text-white border-2 border-primary"
-          >
+            class="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 rounded-full bg-[#F04438] text-[10px] font-semibold text-white border-2 border-primary">
             2
           </span>
         </button>
@@ -121,31 +90,20 @@
 
       <!-- User Profile -->
       <div class="relative">
-        <button
-          (click)="toggleUserProfile()"
-          class="flex items-center gap-2 hover:opacity-80 transition-opacity"
-        >
-          <img
-            src="https://i.pravatar.cc/150?img=12"
-            alt="User Avatar"
-            class="w-10 h-10 rounded-full object-cover ring-2 ring-white"
-          />
+        <button (click)="toggleUserProfile()" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <img src="https://i.pravatar.cc/150?img=12" alt="User Avatar"
+            class="w-10 h-10 rounded-full object-cover ring-2 ring-white" />
           <i class="fas fa-chevron-down text-xs text-secondary hidden sm:inline"></i>
         </button>
 
         <!-- User Profile Dropdown -->
-        <div
-          *ngIf="userProfileOpen"
-          class="absolute right-0 z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden"
-        >
+        <div *ngIf="userProfileOpen"
+          class="absolute right-0 z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
           <!-- User Info Header -->
           <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
             <div class="flex items-center gap-3">
-              <img
-                src="https://i.pravatar.cc/150?img=12"
-                alt="User Avatar"
-                class="w-12 h-12 rounded-full object-cover ring-2 ring-white"
-              />
+              <img src="https://i.pravatar.cc/150?img=12" alt="User Avatar"
+                class="w-12 h-12 rounded-full object-cover ring-2 ring-white" />
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-semibold text-gray-900 truncate">Nasar</p>
                 <p class="text-xs text-gray-500 truncate">sarah.johnsoncompany.com</p>
@@ -155,18 +113,14 @@
 
           <!-- Menu Items -->
           <div class="py-1">
-            <button
-              (click)="navigateToProfile()"
-              class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
-            >
+            <button (click)="navigateToProfile()"
+              class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
               <i class="fas fa-user text-gray-400 w-4 text-sm"></i>
               <span class="text-sm text-gray-700" translate>HEADER.PROFILE</span>
             </button>
 
-            <button
-              (click)="navigateToSettings()"
-              class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
-            >
+            <button (click)="navigateToSettings()"
+              class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
               <i class="fas fa-cog text-gray-400 w-4 text-sm"></i>
               <span class="text-sm text-gray-700" translate>HEADER.SETTINGS</span>
             </button>

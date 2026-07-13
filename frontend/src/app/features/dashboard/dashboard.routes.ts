@@ -6,12 +6,9 @@ import { SalesAnalyticsComponent } from "./components/sales-analytics/sales-anal
 import { InventoryAnalyticsComponent } from "./components/inventory-analytics/inventory-analytics.component";
 
 export const DASHBOARD_ROUTES: Routes = [
-
-
   {
     path: "",
-    redirectTo: "admin",
-    pathMatch: "full",
+    component: HomeComponent,
   },
   {
     path: "admin",

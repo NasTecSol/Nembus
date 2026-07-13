@@ -50,11 +50,11 @@ func LoadConfig(env string) *Config {
 		envValue = env
 	}
 
-	return &Config{
+	cfg := &Config{
 		Env:             getEnv("ENV", envValue),
 		Port:            getEnv("PORT", "8080"),
 		MasterDBURL:     getEnv("MASTER_DB_URL", ""),
-		JWTSecret:       getEnv("JWT_SECRET", ""),
+		JWTSecret:       getEnv("JWT_SECRET", "nembus-desktop-jwt-secret-2024"),
 		DevUserID:       getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
 		DevUserLogin:    getEnv("DEV_USER_LOGIN", "dev_user"),
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
@@ -63,6 +63,16 @@ func LoadConfig(env string) *Config {
 		GRPCAddr:        getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
 		BackupAuthToken: getEnv("BACKUP_AUTH_TOKEN", "nembus"),
 	}
+
+	// Propagate resolved secrets back into the OS environment so that any
+	// code that reads os.Getenv directly (e.g. JWTAuthMiddleware in auth.go)
+	// always finds a non-empty value even in production builds where .env
+	// files are not bundled alongside the binary.
+	if cfg.JWTSecret != "" {
+		os.Setenv("JWT_SECRET", cfg.JWTSecret)
+	}
+
+	return cfg
 }
 
 // getEnv gets an environment variable or returns a default value

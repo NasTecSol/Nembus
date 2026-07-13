@@ -1,32 +1,52 @@
-import { Routes } from '@angular/router';
-// import { SetupComponent } from './features/setup/setup.component';
-// import { LoginComponent } from './features/login/login.component';
-import { HomeComponent } from './features/home/home.component';
+import { Routes } from "@angular/router";
+import { environment } from "../environments/environment";
 
-// export const routes: Routes = [
-//     { path: 'setup', component: SetupComponent },
-//     { path: 'login', component: LoginComponent },
-//     { path: 'home', component: HomeComponent },
-//     { path: '', redirectTo: '/login', pathMatch: 'full' }
-// ];
-
-
-export const routes: Routes = [
+const SETUP_AUTH_ROUTES: Routes = [
   {
     path: "auth",
-    loadChildren: () => import("./features/auth/auth-routes").then((m) => m.Auth_ROUTES),
+    loadChildren: () =>
+      import("./features/auth/auth-routes").then((m) => m.Auth_ROUTES),
   },
-  {
-    path: "dashboard",
-    loadChildren: () => import("./features/dashboard/dashboard.routes").then((m) => m.DASHBOARD_ROUTES),
-  },
-  {
-    path: "",
-    redirectTo: "auth/setup",
-    pathMatch: "full"
-  },
-  {
-    path: "**",
-    redirectTo: "auth/setup"
-  }
 ];
+
+export const routes: Routes = environment.pos
+  ? [
+      ...SETUP_AUTH_ROUTES,
+      {
+        path: "dashboard",
+        loadChildren: () =>
+          import(
+            "./features/pos-dashboard-layout/pos-dashboard-layout.routes"
+          ).then((m) => m.POS_DASHBOARD_LAYOUT_ROUTES),
+      },
+      {
+        path: "backoffice",
+        loadChildren: () =>
+          import("./features/dashboard-layout/dashboard-layout.routes").then(
+            (m) => m.DASHBOARD_LAYOUT_ROUTES
+          ),
+      },
+      {
+        path: "",
+        pathMatch: "full",
+        redirectTo: "auth/login",
+      },
+      {
+        path: "**",
+        redirectTo: "auth/login",
+      },
+    ]
+  : [
+      ...SETUP_AUTH_ROUTES,
+      {
+        path: "",
+        loadChildren: () =>
+          import("./features/dashboard-layout/dashboard-layout.routes").then(
+            (m) => m.DASHBOARD_LAYOUT_ROUTES
+          ),
+      },
+      {
+        path: "**",
+        redirectTo: "auth/login",
+      },
+    ];

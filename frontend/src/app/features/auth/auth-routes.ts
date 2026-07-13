@@ -1,20 +1,23 @@
-import { NgModule } from '@angular/core';
-import { RouterModule, Routes } from '@angular/router';
-import { SetupComponent } from './components/setup/setup.component';
-import { LoginComponent } from './components/login/login.component';
+import { Routes } from "@angular/router";
+import { environment } from "../../../environments/environment";
+import { SignInComponent } from "./components/sign-in/sign-in";
+import { PosSignInComponent } from "./components/sign-in/pos-sign-in";
+import { AuthRedirectGuard } from "./guards/auth-redirect.guard";
 
 export const Auth_ROUTES: Routes = [
   {
     path: "setup",
-    loadComponent: () => import('./components/setup/setup.component').then(m => m.SetupComponent)
+    loadComponent: () =>
+      import("./components/setup/setup.component").then((m) => m.SetupComponent),
   },
   {
     path: "login",
-    loadComponent: () => import('./components/login/login.component').then(m => m.LoginComponent)
+    component: environment.pos ? PosSignInComponent : SignInComponent,
+    canActivate: [AuthRedirectGuard],
   },
   {
     path: "",
-    redirectTo: "setup",
-    pathMatch: "full"
-  }
+    redirectTo: "login",
+    pathMatch: "full",
+  },
 ];

@@ -34,6 +34,18 @@ export function IsAppSetup() {
   return window['go']['main']['App']['IsAppSetup']();
 }
 
+export function IsBackendReady() {
+  return window['go']['main']['App']['IsBackendReady']();
+}
+
+export function LoadDeviceConfig() {
+  return window['go']['main']['App']['LoadDeviceConfig']();
+}
+
+export function SaveDeviceConfig(arg1) {
+  return window['go']['main']['App']['SaveDeviceConfig'](arg1);
+}
+
 export function StartDatabase(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['StartDatabase'](arg1, arg2, arg3, arg4);
 }

@@ -4,16 +4,16 @@
     <div
       class="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
       <div>
-        <h2 class="text-2xl font-bold text-gray-900">Permission Matrix</h2>
+        <h2 class="text-2xl font-bold text-gray-900">{{ 'PERMISSION_MATRIX.TITLE' | translate }}</h2>
         <p class="mt-1 text-sm text-gray-600">
-          Manage role-based access control across all modules
+          {{ 'PERMISSION_MATRIX.SUBTITLE' | translate }}
         </p>
       </div>
       <div class="flex items-center gap-3">
         <span
           *ngIf="hasChanges"
           class="rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-800">
-          Unsaved changes
+          {{ 'PERMISSION_MATRIX.UNSAVED_CHANGES' | translate }}
         </span>
 
         <button
@@ -22,7 +22,7 @@
           class="btn-secondary flex items-center gap-2"
           [ngClass]="{ 'opacity-50 cursor-not-allowed': !hasChanges || isSaving }">
           <i class="fa fa-rotate-left"></i>
-          <span>Reset</span>
+          <span>{{ 'PERMISSION_MATRIX.RESET' | translate }}</span>
         </button>
 
         <button
@@ -32,7 +32,7 @@
           [ngClass]="{ 'opacity-50 cursor-not-allowed': !hasChanges || isSaving }">
           <i class="fa"
             [ngClass]="isSaving ? 'fa-spinner fa-spin' : 'fa-save'"></i>
-          <span>{{ isSaving ? 'Saving...' : 'Save Changes' }}</span>
+          <span>{{ isSaving ? ('PERMISSION_MATRIX.SAVING' | translate) : ('PERMISSION_MATRIX.SAVE_CHANGES' | translate) }}</span>
         </button>
       </div>
     </div>
@@ -61,7 +61,7 @@
               type="text"
               [(ngModel)]="searchTerm"
               (ngModelChange)="onSearchChange()"
-              placeholder="Search modules or menus..."
+              [placeholder]="'PERMISSION_MATRIX.SEARCH_PLACEHOLDER' | translate"
               class="w-full rounded-lg border-1 border-gray-300 px-4 py-2 pl-10 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
             <i
               class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
@@ -70,21 +70,20 @@
 
         <!-- Role Filter and Export -->
         <div class="flex flex-wrap items-center gap-3">
-          <label class="text-sm font-medium text-gray-700">Filter by
-            Role:</label>
+          <label class="text-sm font-medium text-gray-700">{{ 'PERMISSION_MATRIX.FILTER_BY_ROLE' | translate }}</label>
           <select
             [(ngModel)]="selectedRole"
             (ngModelChange)="onRoleFilterChange()"
             class="rounded-lg border-1 border-gray-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20">
-            <option value="all">All Roles</option>
+            <option value="all">{{ 'PERMISSION_MATRIX.ALL_ROLES' | translate }}</option>
             <option *ngFor="let role of roles" [value]="role.id">
-              {{ role.name }} ({{ role.userCount }} users)
+              {{ role.name }} ({{ role.userCount }} {{ 'PERMISSION_MATRIX.USERS' | translate }})
             </option>
           </select>
           <button (click)="exportPermissions()"
             class="btn-secondary flex items-center gap-2">
             <i class="fa fa-download"></i>
-            <span>Export</span>
+            <span>{{ 'PERMISSION_MATRIX.EXPORT' | translate }}</span>
           </button>
         </div>
       </div>
@@ -99,7 +98,7 @@
           <tr>
             <th
               class="sticky left-0 z-10 bg-gray-50 px-6 py-4 text-left text-sm font-semibold text-gray-900">
-              Module / Menu
+              {{ 'PERMISSION_MATRIX.MODULE_MENU' | translate }}
             </th>
             <th
               *ngFor="let role of displayRoles"
@@ -109,7 +108,7 @@
                   }}</div>
                 <span
                   class="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                  {{ role.userCount }} users
+                  {{ role.userCount }} {{ 'PERMISSION_MATRIX.USERS' | translate }}
                 </span>
               </div>
             </th>
@@ -156,7 +155,7 @@
                       <div class="text-sm text-gray-700">{{ menu.label }}</div>
                       <div *ngIf="menu.submenus && menu.submenus.length > 0"
                         class="mt-0.5 text-xs text-gray-500">
-                        {{ menu.submenus.length }} submenus
+                        {{ menu.submenus.length }} {{ 'PERMISSION_MATRIX.SUBMENUS' | translate }}
                       </div>
                     </div>
                   </div>
@@ -208,11 +207,11 @@
     <div class="dashboard-card custom-shadow bg-gray-50">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-sm text-gray-600">
-          Showing {{ filteredModules.length }} modules • {{ displayRoles.length
-          }} roles
+          {{ 'PERMISSION_MATRIX.SHOWING' | translate }} {{ filteredModules.length }} {{ 'PERMISSION_MATRIX.MODULES' | translate }} • {{ displayRoles.length
+          }} {{ 'PERMISSION_MATRIX.ROLES' | translate }}
         </div>
         <div class="text-sm text-gray-600">
-          Total permissions: {{ getTotalPermissions() }}
+          {{ 'PERMISSION_MATRIX.TOTAL_PERMISSIONS' | translate }} {{ getTotalPermissions() }}
         </div>
       </div>
     </div>

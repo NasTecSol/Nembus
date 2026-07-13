@@ -1,102 +1,181 @@
 <form class="flex-grow">
   <div class="form-row">
     <div class="form-group">
-      <label translate>INVENTORY.ITEM_NAME</label>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label class="block" translate>INVENTORY.ORGANIZATION</label>
+
+      <select class="input border-white-light" name="store" [(ngModel)]="selectedStoreId"
+        (ngModelChange)="onStoreChange($event)" [ngModelOptions]="{ standalone: true }">
+        <option [ngValue]="null">
+          {{ "INVENTORY.SELECT_ORGANIZATION" | translate }}
+        </option>
+
+        <option *ngFor="let store of stores" [ngValue]="store.id">
+          {{ store.name }}
+        </option>
+      </select>
     </div>
+    <div class="form-group">
+      <label class="block" translate>INVENTORY.BRAND</label>
+
+      <select class="input border-white-light" name="brand" [(ngModel)]="selectedBrandId"
+        (ngModelChange)="onBrandChange($event)" [ngModelOptions]="{ standalone: true }">
+        <option [ngValue]="null">
+          {{ "INVENTORY.SELECT_BRAND" | translate }}
+        </option>
+
+        <option *ngFor="let brand of brands" [value]="brand.id">
+          {{ brand.name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label translate>INVENTORY.ITEM_NAME</label>
+      <input class="input border-white-light" type="text" name="productName" [(ngModel)]="productName"
+        (ngModelChange)="onNameChange($event)" [placeholder]="'INVENTORY.ENTER' | translate" required />
+    </div>
+    <div class="form-group">
+      <label class="mb-2 block invisible">.</label>
+      <div class="custom-checkbox-wrapper">
+        <label>
+          <input type="checkbox" class="peer checkbox-teal" [checked]="isSellable"
+            (change)="onSellableChange($event)" />
+          <span class="checkbox-svg">
+            <check-icon />
+          </span>
+        </label>
+
+        <span class="checkbox-label-text" translate>
+          INVENTORY.IS_SALE_ITEM
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
     <div class="form-group">
       <label class="block" translate>INVENTORY.ITEM_TYPE</label>
-      <select class="input border-white-light">
-        <option value="">{{ "INVENTORY.SELECT_ITEM_TYPE" | translate }}</option>
+
+      <select class="input border-white-light" name="itemType" [(ngModel)]="productType"
+        [ngModelOptions]="{ standalone: true }" (ngModelChange)="onItemTypeChange($event)">
+        <option value>
+          {{ "INVENTORY.SELECT_ITEM_TYPE" | translate }}
+        </option>
+
+        <option value="RAW_MATERIAL">
+          {{ "INVENTORY.RAW_MATERIAL" | translate }}
+        </option>
+        <option value="FINISHED_GOODS">
+          {{ "INVENTORY.FINISHED_GOODS" | translate }}
+        </option>
+        <option value="CONSUMABLE">
+          {{ "INVENTORY.CONSUMABLE" | translate }}
+        </option>
+        <option value="SERVICE">
+          {{ "INVENTORY.SERVICE" | translate }}
+        </option>
+        <option value="NON_STOCK">
+          {{ "INVENTORY.NON_STOCK" | translate }}
+        </option>
       </select>
     </div>
-    <div class="form-group">
-      <label translate>INVENTORY.ITEM_CODE</label>
-      <input
-        class="input border-white-light"
-        type="number"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
-    </div>
-  </div>
 
-  <div
-    class="col-span-4 grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4"
-  >
     <div class="form-group">
       <label class="block" translate>INVENTORY.CATEGORY_GROUP</label>
-      <select class="input border-white-light">
-        <option value="">{{ "INVENTORY.SELECT_ITEM_TYPE" | translate }}</option>
+
+      <select class="input border-white-light" name="parentCategory" [(ngModel)]="selectedParentId"
+        (ngModelChange)="onParentChange($event)">
+        <option [ngValue]="null">
+          {{ "INVENTORY.SELECT_CATEGORY_GROUP" | translate }}
+        </option>
+
+        <option *ngFor="let cat of parentCategories" [value]="cat.id">
+          {{ cat.name }}
+        </option>
       </select>
     </div>
     <div class="form-group">
+      <label class="block" translate>INVENTORY.CHILD_CATEGORY</label>
+
+      <select class="input border-white-light" name="childCategory" [(ngModel)]="selectedChildCategoryId"
+        (ngModelChange)="onChildCategoryChange($event)">
+        <option [ngValue]="null">
+          {{ "INVENTORY.SELECT_CATEGORY" | translate }}
+        </option>
+
+        <option *ngFor="let child of childCategories" [value]="child.category_id">
+          {{ child.category_name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="mb-2 block invisible">.</label>
+      <div class="custom-checkbox-wrapper">
+        <label>
+          <input type="checkbox" class="peer checkbox-teal" [checked]="isPurchasable"
+            (change)="onPurchasableChange($event)" />
+          <span class="checkbox-svg">
+            <check-icon />
+          </span>
+        </label>
+
+        <span class="checkbox-label-text" translate>
+          INVENTORY.IS_PURCHASE_ITEM
+        </span>
+      </div>
+    </div>
+
+
+  </div>
+
+  <div class="grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+
+    <div class="form-group">
       <label translate>INVENTORY.DESCRIPTION</label>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-      />
-    </div>
-  </div>
-
-  <div
-    class="grid w-full grid-cols-1 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4"
-  >
-    <div class="form-group">
-      <label class="mb-2 block" translate>INVENTORY.UPLOAD_INDIVIDUAL</label>
-      <div class="relative">
-        <input
-          type="file"
-          accept="image/*"
-          id="individualUpload"
-          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0"
-        />
-        <div
-          class="border-white-light text-slate-gray flex w-full items-center justify-between rounded border bg-white px-4 py-2"
-        >
-          <span translate>INVENTORY.UPLOAD</span>
-          <i class="fas fa-file text-slate-gray text-lg"></i>
-        </div>
-      </div>
+      <input class="input border-white-light" type="text" name="productDescription" [(ngModel)]="productDescription"
+        (ngModelChange)="onDescriptionChange($event)" [placeholder]="'INVENTORY.ENTER' | translate" />
     </div>
 
     <div class="form-group">
-      <label class="mb-2 block" translate>INVENTORY.UPLOAD_BULK</label>
-      <div class="relative">
-        <input
-          type="file"
-          accept="image/*"
-          id="bulkUpload"
-          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0"
-        />
-        <div
-          class="border-white-light text-slate-gray flex w-full items-center justify-between rounded border bg-white px-4 py-2"
-        >
-          <span translate>INVENTORY.UPLOAD</span>
-          <i class="fas fa-file text-slate-gray text-lg"></i>
-        </div>
+      <label class="block" translate>INVENTORY.UOM</label>
+
+      <select class="input border-white-light" [(ngModel)]="selectedUomId" (ngModelChange)="onUomChange($event)"
+        [ngModelOptions]="{ standalone: true }">
+
+        <option [ngValue]="null">
+          {{ "INVENTORY.SELECT_UOM" | translate }}
+        </option>
+
+        <option *ngFor="let u of uom" [ngValue]="u.id">
+          {{ u.name }}
+        </option>
+      </select>
+
+    </div>
+
+    <div class="form-group">
+      <label class="mb-2 block invisible">.</label>
+      <div class="custom-checkbox-wrapper">
+        <label>
+          <input type="checkbox" class="peer checkbox-teal" [checked]="hasVariants"
+            (change)="onHasVariantsChange($event)" />
+          <span class="checkbox-svg">
+            <check-icon />
+          </span>
+        </label>
+        <span class="checkbox-label-text" translate>INVENTORY.HAS_PRODUCT_VARIANTS</span>
       </div>
     </div>
-  </div>
 
-  <div
-    class="grid w-full grid-cols-2 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4"
-  >
-    <div class="form-group col-span-2">
+    <div class="form-group col-span-2" *ngIf="!hasVariants">
       <label translate>INVENTORY.CODE_BAR</label>
       <div class="flex justify-between gap-3 md:justify-start">
-        <input
-          class="input border-white-light md:w-1/2"
-          [ngClass]="{ 'bg-white-snow': isTyping }"
-          type="text"
-          [placeholder]="'INVENTORY.ENTER' | translate"
-        />
+        <input class="input border-white-light md:w-1/2" [ngClass]="{ 'bg-white-snow': isTyping }" type="text"
+          [placeholder]="'INVENTORY.ENTER' | translate" [(ngModel)]="barcodeValue"
+          (ngModelChange)="onBarcodeChange($event)" [ngModelOptions]="{ standalone: true }" />
+
         <div class="mt-1 flex gap-2">
           <button (click)="onClickPlusIcon()" *ngIf="!isTyping">
             <i class="fa fa-plus-circle plus-icon text-primary"></i>
@@ -110,9 +189,56 @@
         </div>
       </div>
     </div>
+
   </div>
 
-  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
+  <!--
+  <div
+    class="grid w-full grid-cols-2 gap-3 md:mt-2 md:grid-cols-2 lg:grid-cols-4">
+    <div class="form-group">
+      <label translate>INVENTORY.ITEM_CODE</label>
+      <input
+        class="input border-white-light"
+        type="number"
+        [placeholder]="'INVENTORY.ENTER' | translate"
+        required />
+    </div>
+    <div class="form-group">
+      <label class="mb-2 block" translate>INVENTORY.UPLOAD_INDIVIDUAL</label>
+      <div class="relative">
+        <input
+          type="file"
+          accept="image/*"
+          id="individualUpload"
+          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0" />
+        <div
+          class="border-white-light text-slate-gray flex w-full items-center justify-between rounded border bg-white px-4 py-2">
+          <span translate>INVENTORY.UPLOAD</span>
+          <i class="fas fa-file text-slate-gray text-lg"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="mb-2 block" translate>INVENTORY.UPLOAD_BULK</label>
+      <div class="relative">
+        <input
+          type="file"
+          accept="image/*"
+          id="bulkUpload"
+          class="absolute top-0 right-0 bottom-0 left-0 h-full w-full cursor-pointer opacity-0" />
+        <div
+          class="border-white-light text-slate-gray flex w-full items-center justify-between rounded border bg-white px-4 py-2">
+          <span translate>INVENTORY.UPLOAD</span>
+          <i class="fas fa-file text-slate-gray text-lg"></i>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  -->
+
+  <!-- <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
     <button type="submit" class="btn-primary h-12 md:w-30" translate>
       INVENTORY.SUBMIT
     </button>
@@ -122,5 +248,5 @@
     <button type="submit" class="btn-primary h-12 md:w-30" translate>
       INVENTORY.SUBMIT
     </button>
-  </div>
+  </div> -->
 </form>

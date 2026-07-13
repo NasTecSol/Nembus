@@ -1,10 +1,1263 @@
 <section>
   <div class="container px-3 py-1">
-    <div class="mb-3">
-      <h2 translate>MENUE MANAGEMENT</h2>
+
+    <!-- HEADER — LIST VIEW -->
+    <div class="mb-4 flex items-center justify-between"
+      *ngIf="currentView === 'list'">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-800"
+          translate>{{"MENU MANAGEMENT" | translate}}</h2>
+        <p
+          class="text-sm text-gray-500 mt-0.5">{{"Configure navigation menus, routes, and visibility."
+          | translate}}</p>
+      </div>
+      <button (click)="openTypeSelector()"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition hover:opacity-90"
+        style="background-color: var(--color-selectedobj);">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+          viewBox="0 0 24 24" stroke="currentColor"
+          stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M12 4v16m8-8H4" />
+        </svg>
+        {{'Add New Menu' | translate}}
+      </button>
     </div>
-    <div class="dashboard-card custom-shadow border-white-light relative my-6 flex min-h-screen flex-col px-5 py-3">
-      <p>Menue Management Component - Submenu ID: </p>
+
+    <!-- HEADER — ADD/EDIT VIEWS -->
+    <div class="mb-4 flex items-center justify-between"
+      *ngIf="currentView !== 'list'">
+      <div>
+        <p class="text-xs text-gray-400 mb-0.5">{{'Menu Management' |
+          translate}} › {{ getBreadcrumb() }}</p>
+        <h2 class="text-2xl font-bold text-gray-800">
+
+          <span *ngIf="currentView === 'add-menu'">
+            {{ 'MENU_CONFIGURATION.ADD_NEW_MENU' | translate }}
+          </span>
+
+          <span *ngIf="currentView === 'add-submenu'">
+            {{ 'MENU_CONFIGURATION.ADD_NEW_SUBMENU' | translate }}
+          </span>
+
+          <span
+            *ngIf="currentView !== 'add-menu' && currentView !== 'add-submenu'">
+            {{ 'MENU_CONFIGURATION.EDIT_MENU' | translate:{ name:
+            (editingMenu?.name || '') } }}
+          </span>
+        </h2>
+        <p
+          class="text-sm text-gray-500 mt-0.5">{{'Manage hierarchy and permissions for system navigation'| translate}}</p>
+      </div>
+      <button (click)="backToList()"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+          viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        Back to List
+      </button>
     </div>
+
+    <!-- ═══════ LIST VIEW ═══════ -->
+    <ng-container *ngIf="currentView === 'list'">
+
+      <!-- Filters outside card -->
+      <div
+        class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+        <div class="relative flex-1">
+          <svg
+            class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
+          <input type="text" [(ngModel)]="searchQuery" (input)="applyFilters()"
+            [placeholder]="'Search menus, codes, or paths...' | translate "
+            class="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none" />
+        </div>
+        <select [(ngModel)]="statusFilter" (change)="applyFilters()"
+          class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-600 focus:outline-none cursor-pointer">
+          <option value="all">{{'Status: All' | translate}}</option>
+          <option value="active">{{'Active' | translate}}</option>
+          <option value="inactive">{{'Inactive'| translate}}</option>
+        </select>
+        <button (click)="resetFilters()"
+          class="text-sm px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition">
+          {{'Reset Filters' | translate}}
+        </button>
+      </div>
+
+      <!-- Content Card -->
+      <div
+        class="dashboard-card custom-shadow border-white-light relative flex flex-col px-5 py-4 mb-6">
+
+        <!-- Loading -->
+        <div *ngIf="isLoading"
+          class="flex items-center justify-center py-16 text-gray-400">
+          <svg class="animate-spin h-6 w-6 mr-2"
+            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10"
+              stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          {{'Loading menus...'| translate}}
+        </div>
+
+        <!-- Error -->
+        <div *ngIf="errorMsg && !isLoading"
+          class="flex items-center gap-2 py-8 text-red-500 justify-center text-sm">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {{ errorMsg }}
+        </div>
+
+        <!-- Table -->
+        <div class="overflow-x-auto" *ngIf="!isLoading && !errorMsg">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-100">
+                <th
+                  class="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-3 pl-2">{{'Name'
+                  | translate}}</th>
+                <th
+                  class="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-3">{{'Code'
+                  | translate}}</th>
+                <th
+                  class="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-3">{{'Route Path'
+                  | translate}}</th>
+                <th
+                  class="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-3">{{'Order'
+                  | translate}}</th>
+                <th
+                  class="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider pb-3">{{'Status'
+                  | translate}}</th>
+                <th
+                  class="text-right text-xs font-semibold text-gray-400 uppercase tracking-wider pb-3 pr-2">{{'Actions'
+                  | translate}}
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+
+              <tr *ngIf="filteredMenus.length === 0">
+                <td colspan="6" class="py-12 text-center text-gray-400 text-sm">
+                  <svg class="h-10 w-10 mx-auto mb-2 text-gray-200" fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="1.5"
+                      d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                  {{'No menus found.' | translate}}
+                </td>
+              </tr>
+
+              <!-- Parent rows -->
+              <ng-container *ngFor="let menu of filteredParentMenus()">
+                <tr class="hover:bg-gray-50 transition">
+                  <td class="py-3 pl-2">
+                    <div class="flex items-center gap-2">
+                      <button *ngIf="getChildren(menu.id).length > 0"
+                        (click)="toggleExpand(menu.id)"
+                        class="flex-shrink-0 text-gray-400 hover:text-gray-600 transition"
+                        [class.-rotate-90]="!expandedIds.has(menu.id)">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4"
+                          fill="none" viewBox="0 0 24 24"
+                          stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                            stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      <span *ngIf="getChildren(menu.id).length === 0"
+                        class="w-4 flex-shrink-0"></span>
+                      <div
+                        class="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
+                        style="background-color: color-mix(in srgb, var(--color-selectedobj) 15%, white);">
+                        <svg class="h-4 w-4"
+                          style="color: var(--color-selectedobj);" fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 6h16M4 12h10M4 18h16" />
+                        </svg>
+                      </div>
+                      <span class="font-semibold text-gray-800">{{ menu.name
+                        }}</span>
+                    </div>
+                  </td>
+                  <td class="py-3 text-gray-500 font-mono text-xs">{{ menu.code
+                    }}</td>
+                  <td class="py-3 font-medium text-sm"
+                    style="color: var(--color-selectedobj);">{{ menu.route_path
+                    }}
+                  </td>
+                  <td class="py-3">
+                    <span
+                      class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-600">{{
+                      menu.display_order }}</span>
+                  </td>
+                  <td class="py-3">
+                    <span *ngIf="menu.is_active"
+                      class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border"
+                      style="color: var(--color-selectedobj); background-color: color-mix(in srgb, var(--color-selectedobj) 10%, white); border-color: color-mix(in srgb, var(--color-selectedobj) 30%, white);">
+                      <span class="w-1.5 h-1.5 rounded-full"
+                        style="background-color: var(--color-selectedobj);"></span>Active
+                    </span>
+                    <span *ngIf="!menu.is_active"
+                      class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                      <span
+                        class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Inactive
+                    </span>
+                  </td>
+                  <td class="py-3 pr-2">
+                    <div class="flex items-center justify-end gap-2">
+                      <button (click)="openEdit(menu)"
+                        class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                          stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        class="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                          stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Children -->
+                <ng-container *ngIf="expandedIds.has(menu.id)">
+                  <tr *ngFor="let child of getChildren(menu.id)"
+                    class="hover:bg-gray-50 transition bg-gray-50/40">
+                    <td class="py-3 pl-2">
+                      <div class="flex items-center gap-2 pl-8">
+                        <div
+                          class="w-1 h-6 rounded-full bg-gray-200 mr-1 flex-shrink-0"></div>
+                        <div
+                          class="w-6 h-6 rounded-md flex items-center justify-center bg-blue-50 flex-shrink-0">
+                          <svg class="h-3.5 w-3.5 text-blue-500" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                              stroke-width="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                        <span class="text-gray-700">{{ child.name }}</span>
+                      </div>
+                    </td>
+                    <td class="py-3 text-gray-500 font-mono text-xs">{{
+                      child.code }}</td>
+                    <td class="py-3 text-gray-500 text-sm">{{ child.route_path
+                      }}</td>
+                    <td class="py-3">
+                      <span
+                        class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-600">{{
+                        child.display_order }}</span>
+                    </td>
+                    <td class="py-3">
+                      <span *ngIf="child.is_active"
+                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border"
+                        style="color: var(--color-selectedobj); background-color: color-mix(in srgb, var(--color-selectedobj) 10%, white); border-color: color-mix(in srgb, var(--color-selectedobj) 30%, white);">
+                        <span class="w-1.5 h-1.5 rounded-full"
+                          style="background-color: var(--color-selectedobj);"></span>Active
+                      </span>
+                      <span *ngIf="!child.is_active"
+                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                        <span
+                          class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Inactive
+                      </span>
+                    </td>
+                    <td class="py-3 pr-2">
+                      <div class="flex items-center justify-end gap-2">
+                        <button (click)="openEdit(child)"
+                          class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition">
+                          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          class="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition">
+                          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </ng-container>
+              </ng-container>
+
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div
+          class="dashboard-card custom-shadow border-white-light flex items-center gap-4 px-4 py-4">
+          <div
+            class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+            style="background-color: color-mix(in srgb, var(--color-selectedobj) 15%, white);">
+            <svg class="h-5 w-5" style="color: var(--color-selectedobj);"
+              fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </div>
+          <div>
+            <p
+              class="text-xs text-gray-400 uppercase tracking-wide font-medium">Total
+              Menus</p>
+            <p class="text-2xl font-bold text-gray-800 leading-tight">{{
+              allMenus.length }}</p>
+          </div>
+        </div>
+        <div
+          class="dashboard-card custom-shadow border-white-light flex items-center gap-4 px-4 py-4">
+          <div
+            class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-50">
+            <svg class="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <p
+              class="text-xs text-gray-400 uppercase tracking-wide font-medium">Active</p>
+            <p class="text-2xl font-bold text-gray-800 leading-tight">{{
+              activeCount }}</p>
+          </div>
+        </div>
+        <div
+          class="dashboard-card custom-shadow border-white-light flex items-center gap-4 px-4 py-4">
+          <div
+            class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-50">
+            <svg class="h-5 w-5 text-amber-500" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                stroke-width="2" d="M4 6h16M4 12h10M4 18h16" />
+            </svg>
+          </div>
+          <div>
+            <p
+              class="text-xs text-gray-400 uppercase tracking-wide font-medium">Parent
+              Menus</p>
+            <p class="text-2xl font-bold text-gray-800 leading-tight">{{
+              parentCount }}</p>
+          </div>
+        </div>
+        <div
+          class="dashboard-card custom-shadow border-white-light flex items-center gap-4 px-4 py-4">
+          <div
+            class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-50">
+            <svg class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+          <div>
+            <p
+              class="text-xs text-gray-400 uppercase tracking-wide font-medium">Submenus</p>
+            <p class="text-2xl font-bold text-gray-800 leading-tight">{{
+              submenuCount }}</p>
+          </div>
+        </div>
+      </div>
+
+    </ng-container>
+
+    <!-- ═══════ TYPE SELECTOR MODAL ═══════ -->
+    <div *ngIf="showTypeSelector"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      (click)="closeTypeSelector()">
+      <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-lg w-full mx-4"
+        (click)="$event.stopPropagation()">
+        <h3
+          class="text-xl font-bold text-gray-800 mb-1">{{'What would you like to add?'|
+          translate}}</h3>
+        <p
+          class="text-sm text-gray-500 mb-6">{{'Choose the type of navigation item to create.'|
+          translate}}</p>
+        <div class="grid grid-cols-2 gap-4">
+          <button (click)="selectType('menu')"
+            class="relative border-2 rounded-xl p-6 text-left transition-all"
+            [style.border-color]="selectedType === 'menu' ? 'var(--color-selectedobj)' : '#E5E7EB'">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center"
+                style="background-color: color-mix(in srgb, var(--color-selectedobj) 12%, white);">
+                <svg class="h-5 w-5" style="color: var(--color-selectedobj);"
+                  fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2" d="M4 6h16M4 12h10M4 18h16" />
+                </svg>
+              </div>
+              <div
+                class="w-5 h-5 rounded-full border-2 flex items-center justify-center"
+                [style.border-color]="selectedType === 'menu' ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                <div *ngIf="selectedType === 'menu'"
+                  class="w-2.5 h-2.5 rounded-full"
+                  style="background-color: var(--color-selectedobj);"></div>
+              </div>
+            </div>
+            <p class="font-semibold text-gray-800 mb-1">{{'Menu' |
+              translate}}</p>
+            <p
+              class="text-xs text-gray-500">{{'Navigable entry point within a module.'|
+              translate}}</p>
+          </button>
+          <button (click)="selectType('submenu')"
+            class="relative border-2 rounded-xl p-6 text-left transition-all"
+            [style.border-color]="selectedType === 'submenu' ? 'var(--color-selectedobj)' : '#E5E7EB'">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center"
+                style="background-color: color-mix(in srgb, var(--color-selectedobj) 12%, white);">
+                <svg class="h-5 w-5" style="color: var(--color-selectedobj);"
+                  fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+              <div
+                class="w-5 h-5 rounded-full border-2 flex items-center justify-center"
+                [style.border-color]="selectedType === 'submenu' ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                <div *ngIf="selectedType === 'submenu'"
+                  class="w-2.5 h-2.5 rounded-full"
+                  style="background-color: var(--color-selectedobj);"></div>
+              </div>
+            </div>
+            <p class="font-semibold text-gray-800 mb-1">{{'Submenu' |
+              translate}}</p>
+            <p
+              class="text-xs text-gray-500">{{'Nested item for detailed navigation.'|
+              translate}}</p>
+          </button>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+          <button (click)="closeTypeSelector()"
+            class="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition">{{'Cancel'
+            | translate}}</button>
+          <button (click)="confirmTypeAndNavigate()" [disabled]="!selectedType"
+            class="px-5 py-2 text-sm text-white rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+            style="background-color: var(--color-selectedobj);">{{'Continue' |
+            translate}}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ ADD MENU / EDIT FORM ═══════ -->
+    <ng-container *ngIf="currentView === 'add-menu' || currentView === 'edit'">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left col -->
+        <div class="lg:col-span-2 space-y-5">
+
+          <!-- General Information -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center gap-2 mb-5">
+              <div class="w-6 h-6 rounded-md flex items-center justify-center"
+                style="background-color: color-mix(in srgb, var(--color-selectedobj) 15%, white);">
+                <svg class="h-3.5 w-3.5"
+                  style="color: var(--color-selectedobj);" fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 class="font-semibold text-gray-800">{{'General Information'| translate}}</h3>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Menu Name'| translate}} <span
+                    class="text-red-400">*</span></label>
+                <input type="text" [(ngModel)]="form.name"
+                  placeholder="e.g. Warehouse Management"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white" />
+              </div>
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Unique Code'| translate}} <span
+                    class="text-red-400">*</span></label>
+                <input type="text" [(ngModel)]="form.code"
+                  placeholder="e.g. WH_MGMT_01"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white font-mono" />
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label
+                class="block text-xs font-medium text-gray-600 mb-1.5">{{'Route Path' |translate}} <span
+                  class="text-red-400">*</span></label>
+              <div
+                class="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <span
+                  class="px-3 py-2 bg-gray-50 text-xs text-gray-400 border-r border-gray-200 whitespace-nowrap">nembus.erp/</span>
+                <input type="text" [(ngModel)]="form.route_path"
+                  placeholder="inventory/warehouse-management"
+                  class="flex-1 px-3 py-2 text-sm focus:outline-none bg-white" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1.5">
+                  {{'Parent Module' | translate}} <span class="text-red-400">*</span>
+                </label>
+                <select [(ngModel)]="form.module_id"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white text-gray-700 cursor-pointer">
+                  <option value>
+                    {{ modulesLoading ? 'Loading modules...' : 'Select Module'
+                    }}
+                  </option>
+                  <option *ngFor="let mod of allModules" [value]="mod.id">
+                    {{ mod.name }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Display Order' | translate}}</label>
+                <input type="number" [(ngModel)]="form.display_order" min="1"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Icon Selection -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <div
+                  class="w-6 h-6 rounded-md flex items-center justify-center bg-purple-50">
+                  <svg class="h-3.5 w-3.5 text-purple-500" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                </div>
+                <h3 class="font-semibold text-gray-800">{{'Icon Selection' | translate}}</h3>
+              </div>
+              <input type="text" [(ngModel)]="iconSearch"
+                placeholder="Filter icons..."
+                class="pl-3 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none bg-gray-50 w-36" />
+            </div>
+            <div *ngIf="form.icon"
+              class="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-xs font-medium"
+              style="background-color: color-mix(in srgb, var(--color-selectedobj) 8%, white); color: var(--color-selectedobj);">
+              <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+              {{'Selected:' |translate}} {{ form.icon }}
+            </div>
+            <div class="grid grid-cols-8 gap-2">
+              <button *ngFor="let icoKey of filteredIconKeys()"
+                (click)="form.icon = icoKey" [title]="icoKey"
+                class="w-10 h-10 rounded-lg border-2 flex items-center justify-center transition hover:scale-105 group"
+                [style.border-color]="form.icon === icoKey ? 'var(--color-selectedobj)' : '#E5E7EB'"
+                [style.background-color]="form.icon === icoKey ? 'color-mix(in srgb, var(--color-selectedobj) 10%, white)' : 'white'">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  [style.color]="form.icon === icoKey ? 'var(--color-selectedobj)' : '#9CA3AF'">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="1.8"
+                    [attr.d]="getIconSvgPath(icoKey)" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right col -->
+        <div class="space-y-5">
+
+          <!-- Status & Behavior -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center gap-2 mb-5">
+              <div
+                class="w-6 h-6 rounded-md flex items-center justify-center bg-amber-50">
+                <svg class="h-3.5 w-3.5 text-amber-500" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+              </div>
+              <h3 class="font-semibold text-gray-800">{{'Status'| translate}} &amp; {{'Behavior' | translate}}</h3>
+            </div>
+            <div class="space-y-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">{{'Active Status'| translate}}</p>
+                  <p class="text-xs text-gray-400">{{'Enable this menu for all users'| translate}}</p>
+                </div>
+                <button (click)="form.is_active = !form.is_active"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  [style.background-color]="form.is_active ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                  <span
+                    class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-6]="form.is_active"
+                    [class.translate-x-1]="!form.is_active"></span>
+                </button>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">{{'Hide when no permissions' | translate}}</p>
+                  <p class="text-xs text-gray-400">{{'Invisible to unauthorized users'| translate}}</p>
+                </div>
+                <button (click)="form.hide_no_perm = !form.hide_no_perm"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  [style.background-color]="form.hide_no_perm ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                  <span
+                    class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-6]="form.hide_no_perm"
+                    [class.translate-x-1]="!form.hide_no_perm"></span>
+                </button>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">{{'Show in Sidebar' | translate}}</p>
+                  <p class="text-xs text-gray-400">{{'Add to main navigation menu' | translate}}</p>
+                </div>
+                <button (click)="form.show_in_sidebar = !form.show_in_sidebar"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  [style.background-color]="form.show_in_sidebar ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                  <span
+                    class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-6]="form.show_in_sidebar"
+                    [class.translate-x-1]="!form.show_in_sidebar"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ DYNAMIC Permission Assignment Card (Menu / Edit) ═══ -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <div
+                  class="w-6 h-6 rounded-md flex items-center justify-center bg-red-50">
+                  <svg class="h-3.5 w-3.5 text-red-500" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h3 class="font-semibold text-gray-800">{{'Permission Assignment' |translate}}</h3>
+              </div>
+              <span *ngIf="form.selectedPermissionIds.length > 0"
+                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold text-white"
+                style="background-color: var(--color-selectedobj);">
+                {{ form.selectedPermissionIds.length }} {{'selected' | translate }}
+              </span>
+            </div>
+
+            <!-- Search -->
+            <div class="relative mb-2">
+              <svg
+                class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input type="text" [(ngModel)]="permissionSearch"
+                placeholder="Search permissions..."
+                class="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none bg-gray-50" />
+            </div>
+
+            <!-- Select All / Clear -->
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs text-gray-400">
+                {{ filteredPermissions.length }} {{'permission'| translate}}{{
+                filteredPermissions.length !== 1 ? 's' : '' }}
+              </span>
+              <div class="flex gap-3">
+                <button type="button" (click)="selectAllPermissions()"
+                  class="text-xs font-medium hover:underline"
+                  style="color: var(--color-selectedobj);">{{'Select All' | translate}}</button>
+                <button type="button" (click)="clearAllPermissions()"
+                  class="text-xs font-medium text-gray-400 hover:text-gray-600 hover:underline">{{'Clear'| translate}}</button>
+              </div>
+            </div>
+
+            <!-- Loading -->
+            <div *ngIf="permissionsLoading"
+              class="flex items-center justify-center py-8 text-gray-400 text-xs gap-2">
+              <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10"
+                  stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                  d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              {{'Loading permissions...' | translate}}
+            </div>
+
+            <!-- Error -->
+            <div *ngIf="permissionsError && !permissionsLoading"
+              class="flex items-center gap-2 py-4 text-red-500 text-xs justify-center">
+              <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {{ permissionsError }}
+            </div>
+
+            <!-- Empty search -->
+            <div
+              *ngIf="!permissionsLoading && !permissionsError && filteredPermissions.length === 0"
+              class="py-6 text-center text-xs text-gray-400">
+              {{'No permissions match'| translate}} "{{ permissionSearch }}"
+            </div>
+
+            <!-- Permission list -->
+            <div
+              *ngIf="!permissionsLoading && !permissionsError && filteredPermissions.length > 0"
+              class="space-y-1 max-h-56 overflow-y-auto pr-1">
+              <label *ngFor="let perm of filteredPermissions"
+                class="flex items-start gap-3 px-2 py-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                [style.background-color]="isPermissionSelected(perm.id)
+                       ? 'color-mix(in srgb, var(--color-selectedobj) 6%, white)'
+                       : ''">
+                <input type="checkbox" [checked]="isPermissionSelected(perm.id)"
+                  (change)="togglePermission(perm.id)"
+                  class="mt-0.5 w-4 h-4 rounded cursor-pointer flex-shrink-0"
+                  [style.accent-color]="'var(--color-selectedobj)'" />
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-700 leading-tight">{{
+                    perm.name }}</p>
+                  <p class="text-xs text-gray-400 font-mono truncate mt-0.5">{{
+                    perm.code }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+          <!-- ═══ END Permission Assignment Card ═══ -->
+
+        </div>
+      </div>
+
+      <!-- Feedback -->
+      <div *ngIf="saveError"
+        class="mt-5 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+          stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        {{ saveError }}
+      </div>
+      <div *ngIf="saveSuccess"
+        class="mt-5 flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">
+        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+          stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        {{'Menu saved successfully! Redirecting...'| translate}}
+      </div>
+
+      <!-- Footer -->
+      <div
+        class="flex items-center justify-between mt-6 pt-4 border-t border-gray-100">
+        <button *ngIf="currentView === 'edit'"
+          class="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-600 transition">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          {{'Delete Menu'| translate}}
+        </button>
+        <div class="flex gap-3 ml-auto">
+          <button (click)="backToList()" [disabled]="isSaving"
+            class="px-5 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition disabled:opacity-50">
+            {{'Cancel'| translate}}
+          </button>
+          <button (click)="saveMenu()" [disabled]="isSaving"
+            class="flex items-center gap-2 px-5 py-2 text-sm text-white rounded-lg hover:opacity-90 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            style="background-color: var(--color-selectedobj);">
+            <svg *ngIf="isSaving" class="animate-spin h-4 w-4" fill="none"
+              viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10"
+                stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            {{ isSaving ? 'Saving...' : 'Save Changes' }}
+          </button>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- ═══════ ADD SUBMENU FORM ═══════ -->
+    <ng-container *ngIf="currentView === 'add-submenu'">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left col -->
+        <div class="lg:col-span-2 space-y-5">
+
+          <!-- General Information -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center gap-2 mb-5">
+              <div class="w-6 h-6 rounded-md flex items-center justify-center"
+                style="background-color: color-mix(in srgb, var(--color-selectedobj) 15%, white);">
+                <svg class="h-3.5 w-3.5"
+                  style="color: var(--color-selectedobj);" fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 class="font-semibold text-gray-800">{{'General Information'| translate}}</h3>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Submenu Name'| translate}} <span
+                    class="text-red-400">*</span></label>
+                <input type="text" [(ngModel)]="form.name"
+                  placeholder="e.g. Inventory Overview"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white" />
+              </div>
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Unique Code'| translate}} <span
+                    class="text-red-400">*</span></label>
+                <input type="text" [(ngModel)]="form.code"
+                  placeholder="e.g. INV_OVR_001"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white font-mono" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Parent Menu'| translate}} <span
+                    class="text-red-400">*</span></label>
+                <select [(ngModel)]="form.parent_menu_id"
+                  (change)="onParentMenuChange(form.parent_menu_id)"
+                  class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 bg-white text-gray-700 cursor-pointer">
+                  <option [value]="null">
+                    {{ isLoading ? 'Loading menus...' : 'Select Parent Menu' }}
+                  </option>
+                  <option *ngFor="let menu of parentMenus" [value]="menu.id">
+                    {{ menu.name }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label
+                  class="block text-xs font-medium text-gray-600 mb-1.5">{{'Route Path'| translate}} <span
+                    class="text-red-400">*</span></label>
+                <div
+                  class="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:ring-2">
+                  <span *ngIf="form.parent_menu_route"
+                    class="px-3 py-2 bg-gray-50 text-xs border-r border-gray-200 whitespace-nowrap font-mono max-w-[120px] truncate"
+                    style="color: var(--color-selectedobj);"
+                    [title]="form.parent_menu_route">
+                    {{ form.parent_menu_route }}
+                  </span>
+                  <span *ngIf="!form.parent_menu_route"
+                    class="px-3 py-2 bg-gray-50 text-xs text-gray-400 border-r border-gray-200 whitespace-nowrap">/app/</span>
+                  <input type="text" [(ngModel)]="form.route_path"
+                    [placeholder]="form.parent_menu_route ? form.parent_menu_route + '/sub-path' : 'inventory/overview'"
+                    class="flex-1 px-3 py-2 text-sm focus:outline-none bg-white min-w-0" />
+                </div>
+                <p *ngIf="form.parent_menu_route"
+                  class="text-xs text-gray-400 mt-1">
+                  Parent route pre-filled. Edit to set the full submenu path.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label
+                class="block text-xs font-medium text-gray-600 mb-1.5">{{'Display Order'| translate}}</label>
+              <input type="number" [(ngModel)]="form.display_order" min="1"
+                class="w-40 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none bg-white" />
+            </div>
+          </div>
+
+          <!-- Icon Selection -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <div
+                  class="w-6 h-6 rounded-md flex items-center justify-center bg-purple-50">
+                  <svg class="h-3.5 w-3.5 text-purple-500" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                </div>
+                <h3 class="font-semibold text-gray-800">Visual Representation</h3>
+              </div>
+              <input type="text" [(ngModel)]="iconSearch"
+                placeholder="Filter icons..."
+                class="pl-3 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none bg-gray-50 w-36" />
+            </div>
+            <div class="grid grid-cols-8 gap-2">
+              <button *ngFor="let icoKey of filteredIconKeys()"
+                (click)="form.icon = icoKey" [title]="icoKey"
+                class="w-10 h-10 rounded-lg border-2 flex items-center justify-center transition hover:scale-105"
+                [style.border-color]="form.icon === icoKey ? 'var(--color-selectedobj)' : '#E5E7EB'"
+                [style.background-color]="form.icon === icoKey ? 'color-mix(in srgb, var(--color-selectedobj) 10%, white)' : 'white'">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  [style.color]="form.icon === icoKey ? 'var(--color-selectedobj)' : '#9CA3AF'">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="1.8"
+                    [attr.d]="getIconSvgPath(icoKey)" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- ═══ DYNAMIC Permission Mapping Card (Submenu — wider 2-col layout) ═══ -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <div
+                  class="w-6 h-6 rounded-md flex items-center justify-center bg-red-50">
+                  <svg class="h-3.5 w-3.5 text-red-500" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  </svg>
+                </div>
+                <h3 class="font-semibold text-gray-800">{{'Permission Mapping'| translate}}</h3>
+              </div>
+              <div class="flex items-center gap-3">
+                <span *ngIf="form.selectedPermissionIds.length > 0"
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold text-white"
+                  style="background-color: var(--color-selectedobj);">
+                  {{ form.selectedPermissionIds.length }} {{'selected'| translate}}
+                </span>
+                <button type="button" (click)="selectAllPermissions()"
+                  class="text-xs font-medium hover:underline"
+                  style="color: var(--color-selectedobj);">{{'Select All'| translate}}</button>
+                <button type="button" (click)="clearAllPermissions()"
+                  class="text-xs font-medium text-gray-400 hover:text-gray-600 hover:underline">{{'Clear'| translate}}</button>
+              </div>
+            </div>
+
+            <!-- Search -->
+            <div class="relative mb-4">
+              <svg
+                class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input type="text" [(ngModel)]="permissionSearch"
+                placeholder="Search system permissions..."
+                class="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none bg-gray-50" />
+            </div>
+
+            <!-- Count row -->
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs text-gray-400">
+                {{ filteredPermissions.length }} {{'permission'| translate}}{{
+                filteredPermissions.length !== 1 ? 's' : '' }}
+              </span>
+            </div>
+
+            <!-- Loading -->
+            <div *ngIf="permissionsLoading"
+              class="flex items-center justify-center py-8 text-gray-400 text-xs gap-2">
+              <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10"
+                  stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                  d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              {{'Loading permissions...'| translate}}
+            </div>
+
+            <!-- Error -->
+            <div *ngIf="permissionsError && !permissionsLoading"
+              class="flex items-center gap-2 py-4 text-red-500 text-xs justify-center">
+              <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {{ permissionsError }}
+            </div>
+
+            <!-- Empty -->
+            <div
+              *ngIf="!permissionsLoading && !permissionsError && filteredPermissions.length === 0"
+              class="py-6 text-center text-xs text-gray-400">
+              {{'No permissions match'| translate}} "{{ permissionSearch }}"
+            </div>
+
+            <!-- 2-column grid -->
+            <div
+              *ngIf="!permissionsLoading && !permissionsError && filteredPermissions.length > 0"
+              class="grid grid-cols-2 gap-x-4 gap-y-1 max-h-56 overflow-y-auto pr-1">
+              <label *ngFor="let perm of filteredPermissions"
+                class="flex items-start gap-3 px-2 py-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                [style.background-color]="isPermissionSelected(perm.id)
+                       ? 'color-mix(in srgb, var(--color-selectedobj) 6%, white)'
+                       : ''">
+                <input type="checkbox" [checked]="isPermissionSelected(perm.id)"
+                  (change)="togglePermission(perm.id)"
+                  class="mt-0.5 w-4 h-4 rounded cursor-pointer flex-shrink-0"
+                  [style.accent-color]="'var(--color-selectedobj)'" />
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-700 leading-tight">{{
+                    perm.name }}</p>
+                  <p class="text-xs text-gray-400 font-mono truncate mt-0.5">{{
+                    perm.code }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+          <!-- ═══ END Permission Mapping Card ═══ -->
+
+        </div>
+
+        <!-- Right col -->
+        <div class="space-y-5">
+
+          <!-- Menu Behavior -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center gap-2 mb-5">
+              <div
+                class="w-6 h-6 rounded-md flex items-center justify-center bg-amber-50">
+                <svg class="h-3.5 w-3.5 text-amber-500" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+              </div>
+              <h3 class="font-semibold text-gray-800">{{'Menu Behavior'| translate}}</h3>
+            </div>
+            <div class="space-y-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">{{'Active Status'| translate}}</p>
+                  <p class="text-xs text-gray-400">{{'Enable or disable this entry'| translate}}</p>
+                </div>
+                <button (click)="form.is_active = !form.is_active"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  [style.background-color]="form.is_active ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                  <span
+                    class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-6]="form.is_active"
+                    [class.translate-x-1]="!form.is_active"></span>
+                </button>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">Show in Sidebar</p>
+                  <p class="text-xs text-gray-400">Visible in main navigation</p>
+                </div>
+                <button (click)="form.show_in_sidebar = !form.show_in_sidebar"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  [style.background-color]="form.show_in_sidebar ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                  <span
+                    class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-6]="form.show_in_sidebar"
+                    [class.translate-x-1]="!form.show_in_sidebar"></span>
+                </button>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-700">{{'Security Lock'| translate}}</p>
+                  <p class="text-xs text-gray-400">{{'Hide when no permissions'| translate}}</p>
+                </div>
+                <button (click)="form.hide_no_perm = !form.hide_no_perm"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  [style.background-color]="form.hide_no_perm ? 'var(--color-selectedobj)' : '#D1D5DB'">
+                  <span
+                    class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-6]="form.hide_no_perm"
+                    [class.translate-x-1]="!form.hide_no_perm"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sidebar Preview -->
+          <div
+            class="dashboard-card custom-shadow border-white-light px-5 py-5">
+            <div class="flex items-center gap-2 mb-4">
+              <div
+                class="w-6 h-6 rounded-md flex items-center justify-center bg-blue-50">
+                <svg class="h-3.5 w-3.5 text-blue-500" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+                </svg>
+              </div>
+              <h3 class="font-semibold text-gray-800">{{'Sidebar Preview'| translate}}</h3>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-3 text-xs space-y-1">
+              <div class="flex items-center gap-2 px-2 py-1.5 text-gray-500">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span>{{'Dashboard'| translate}}</span>
+              </div>
+              <div class="flex items-center gap-2 px-2 py-1.5 text-gray-500">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                <span>Logistics</span>
+                <svg class="ml-auto h-3 w-3" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              <div class="ml-4 border-l-2 pl-3 space-y-1"
+                style="border-color: var(--color-selectedobj);">
+                <div
+                  class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-white text-xs font-medium"
+                  style="background-color: var(--color-selectedobj);">
+                  <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2"
+                      [attr.d]="getIconSvgPath(form.icon || 'menu')" />
+                  </svg>
+                  <span class="truncate">{{ form.name || 'New Submenu' }}</span>
+                </div>
+                <div class="flex items-center gap-2 px-2 py-1.5 text-gray-500">
+                  <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <span>{{'Storage Units'| translate}}</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 px-2 py-1.5 text-gray-500">
+                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>{{'Employee Directory'| translate}}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Feedback -->
+      <div *ngIf="saveError"
+        class="mt-5 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+          stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        {{ saveError }}
+      </div>
+      <div *ngIf="saveSuccess"
+        class="mt-5 flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">
+        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+          stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Submenu saved successfully! Redirecting...
+      </div>
+
+      <!-- Footer -->
+      <div
+        class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+        <button (click)="backToList()" [disabled]="isSaving"
+          class="px-5 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition disabled:opacity-50">
+          {{'Discard Changes'| translate}}
+        </button>
+        <button (click)="saveMenu()" [disabled]="isSaving"
+          class="flex items-center gap-2 px-5 py-2 text-sm text-white rounded-lg hover:opacity-90 transition disabled:opacity-60 disabled:cursor-not-allowed"
+          style="background-color: var(--color-selectedobj);">
+          <svg *ngIf="isSaving" class="animate-spin h-4 w-4" fill="none"
+            viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10"
+              stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          {{ isSaving ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </div>
+    </ng-container>
+
   </div>
 </section>

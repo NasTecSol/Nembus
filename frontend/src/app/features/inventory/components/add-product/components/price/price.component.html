@@ -1,137 +1,376 @@
 <div class="flex-grow">
-  <div class="form-row">
-    <div class="form-group">
-      <label translate>INVENTORY.LAST_PURCHASE_DATE</label>
-      <input class="input border-white-light" type="date" />
-    </div>
 
-    <div class="form-group">
-      <label translate>INVENTORY.LAST_PURCHASE_PRICE</label>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-      />
-    </div>
-
-    <div class="form-group">
-      <label class="block" translate>INVENTORY.LAST_PURCHASE_CURRENCY</label>
-      <select class="input border-white-light">
-        <option value="">SAR</option>
-        <option value="sar2">SAR2</option>
-      </select>
-    </div>
+  <!-- ══════════════════════════════════════════════════════════════════════
+       BASE UNIT BANNER
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="mb-6 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+    <svg class="h-4 w-4 shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
+    </svg>
+    <span class="text-sm text-primary/80">
+      <span class="font-semibold" translate>PRICING.BASE_UNIT_LABEL</span>:
+      <span class="mx-1.5 rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
+        {{ baseUnit || '—' }}
+      </span>
+      <span translate>PRICING.BASE_UNIT_HINT</span>
+    </span>
   </div>
 
-  <div class="form-row">
-    <div class="form-group">
-      <label translate>INVENTORY.LAST_SALE_DATE</label>
-      <input class="input border-white-light" type="date" />
-    </div>
 
-    <div class="form-group">
-      <label translate>INVENTORY.LATEST_SALE_PRICE</label>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER_UNITS' | translate"
-      />
-    </div>
+  <!-- ══════════════════════════════════════════════════════════════════════
+       SECTION 1 — BASE UNIT PRICING
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="mb-1 flex items-center gap-2">
+    <svg class="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <h3 class="text-sm font-semibold text-gray-700" translate>PRICING.SECTION_PRICING</h3>
+  </div>
+  <p class="mb-4 text-xs text-gray-400" translate>PRICING.SECTION_PRICING_DESC</p>
 
-    <div class="flex flex-wrap items-center gap-3 md:mt-11 lg:flex-nowrap">
-      <div class="custom-checkbox-wrapper">
-        <label>
-          <input type="checkbox" checked class="peer checkbox-teal" />
-          <span class="checkbox-svg">
-            <check-icon />
+  <!-- Column Headers -->
+  <div class="mb-1 grid items-center gap-3" [style.grid-template-columns]="pricingGridTemplate">
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.BASE_UNIT_COL</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.PRICE_LIST</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.UNIT_PRICE</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.MIN_QTY</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.MAX_QTY</span>
+    <span *ngIf="hasVariants" class="text-xs font-semibold uppercase tracking-wide text-gray-400"
+      translate>INVENTORY.PRODUCT_VARIANT</span>
+    <span *ngIf="hasVariants" class="text-xs font-semibold uppercase tracking-wide text-gray-400"
+      translate>INVENTORY.CODE_BAR</span>
+    <span></span>
+  </div>
+
+  <!-- Pricing Rows -->
+  <div class="space-y-1">
+    <ng-container *ngFor="let row of pricingRows; let i = index; let last = last">
+
+      <div class="grid items-center gap-3" [style.grid-template-columns]="pricingGridTemplate">
+
+        <!-- Base Unit — fixed, disabled -->
+        <input class="input border-white-light bg-gray-50 text-center font-semibold text-gray-600" type="text"
+          [value]="baseUnit" readonly disabled />
+
+        <!-- Price List -->
+        <select class="input border-white-light" [class.border-red-400]="row.duplicateError"
+          [(ngModel)]="row.priceListId" [name]="'pl_' + i" (ngModelChange)="onPricingChange(i)">
+          <option value="" translate>PRICING.SELECT</option>
+          <option *ngFor="let pl of availablePriceLists(i)" [value]="pl.id">{{ pl.name }}</option>
+        </select>
+
+        <!-- Unit Price -->
+        <div class="relative">
+          <span
+            class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-semibold text-gray-400">
+            {{ currencySymbol }}
           </span>
-        </label>
-        <span class="checkbox-label-text" translate>
-          INVENTORY.IS_SALE_ITEM
-        </span>
+          <input class="input border-white-light pl-10" type="number" step="0.01" min="0" [(ngModel)]="row.price"
+            [name]="'price_' + i" placeholder="0.00" />
+        </div>
+
+        <!-- Min Qty -->
+        <input class="input border-white-light" type="number" min="0" [(ngModel)]="row.minQty" [name]="'minQty_' + i"
+          placeholder="0" />
+
+        <!-- Max Qty -->
+        <input class="input border-white-light" type="number" min="0" [(ngModel)]="row.maxQty" [name]="'maxQty_' + i"
+          placeholder="∞" />
+
+        <select *ngIf="hasVariants" class="input border-white-light" [(ngModel)]="row.productVariantId"
+          [name]="'baseVariant_' + i" (ngModelChange)="onPricingChange(i)">
+          <option [ngValue]="null" translate>INVENTORY.SELECT_PRODUCT_VARIANT</option>
+          <option *ngFor="let variant of productVariants" [ngValue]="variant.id">
+            {{ variant.name }}
+          </option>
+        </select>
+
+        <input *ngIf="hasVariants" class="input border-white-light" type="text" [(ngModel)]="row.barcode"
+          [name]="'baseBarcode_' + i" [placeholder]="'INVENTORY.ENTER' | translate" />
+
+        <!-- Actions -->
+        <div class="flex items-center gap-1">
+          <button *ngIf="last" type="button"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-white transition-all hover:opacity-90 active:scale-95"
+            (click)="addPricingRow()">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <button *ngIf="pricingRows.length > 1" type="button"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-400 transition-all hover:bg-red-100 hover:text-red-600 active:scale-95"
+            (click)="removePricingRow(i)">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <div class="custom-checkbox-wrapper">
-        <label>
-          <input type="checkbox" class="peer checkbox-teal" />
-          <span class="checkbox-svg">
-            <check-icon />
+
+      <!-- Duplicate error -->
+      <div *ngIf="row.duplicateError" class="mb-1 flex items-center gap-1.5 pl-[112px] text-xs text-red-500">
+        <svg class="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+            clip-rule="evenodd" />
+        </svg>
+        <span translate>PRICING.DUPLICATE_ERROR</span>
+      </div>
+
+    </ng-container>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       SECTION 2 — PACKAGING PRICES
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="mt-8 mb-1 flex items-center gap-2">
+    <svg class="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+    </svg>
+    <h3 class="text-sm font-semibold text-gray-700" translate>PRICING.SECTION_PACKAGING</h3>
+  </div>
+  <p class="mb-4 text-xs text-gray-400" translate>PRICING.SECTION_PACKAGING_DESC</p>
+
+  <!-- Column Headers -->
+  <div class="mb-1 grid items-center gap-3" [style.grid-template-columns]="uomGridTemplate">
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.QTY</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.UOM</span>
+    <span></span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.CONV_FACTOR</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.CONV_UNIT</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.PRICE_LIST</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.MIN_QTY</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.MAX_QTY</span>
+    <span class="text-xs font-semibold uppercase tracking-wide text-gray-400" translate>PRICING.PRICE</span>
+    <span *ngIf="hasVariants" class="text-xs font-semibold uppercase tracking-wide text-gray-400"
+      translate>INVENTORY.PRODUCT_VARIANT</span>
+    <span *ngIf="hasVariants" class="text-xs font-semibold uppercase tracking-wide text-gray-400"
+      translate>INVENTORY.CODE_BAR</span>
+    <span></span>
+  </div>
+
+  <!-- UOM Rows -->
+  <div class="space-y-1">
+    <ng-container *ngFor="let row of uomRows; let i = index; let last = last">
+
+      <div class="grid items-center gap-3" [style.grid-template-columns]="uomGridTemplate">
+
+        <!-- Fixed Qty = 1 -->
+        <input class="input border-white-light bg-gray-50 text-center font-semibold text-gray-500" type="text" value="1"
+          readonly disabled />
+
+        <!-- Packaging UOM -->
+        <select class="input border-white-light" [class.border-red-400]="row.duplicateError" [(ngModel)]="row.uomId"
+          [name]="'uom_' + i" (ngModelChange)="onUomChange(i)">
+          <option value="" translate>PRICING.SELECT_UOM</option>
+          <option *ngFor="let u of uomOptions" [value]="u.value">{{ u.label }}</option>
+        </select>
+
+        <!-- = -->
+        <span class="text-center text-base font-bold text-gray-300">=</span>
+
+        <!-- Conversion Factor -->
+        <input class="input border-white-light" type="number" step="0.01" min="0.01" [(ngModel)]="row.convFactor"
+          [name]="'conv_' + i" placeholder="0" />
+
+        <!-- Conv Unit Dropdown: baseUnit + previous rows' uomNames -->
+        <select class="input border-white-light" [(ngModel)]="row.convUnit" [name]="'convUnit_' + i">
+          <option *ngFor="let opt of getConvUnitOptions(i)" [value]="opt">{{ opt }}</option>
+        </select>
+
+        <!-- Price List -->
+        <select class="input border-white-light" [class.border-red-400]="row.duplicateError"
+          [(ngModel)]="row.priceListId" [name]="'uomPl_' + i" (ngModelChange)="onUomPriceListChange(i)">
+          <option value="" translate>PRICING.SELECT</option>
+          <option *ngFor="let pl of priceList" [value]="pl.id">{{ pl.name }}</option>
+        </select>
+
+        <!-- Min Qty -->
+        <input class="input border-white-light" type="number" min="0" [(ngModel)]="row.minQty" [name]="'uomMin_' + i"
+          placeholder="0" />
+
+        <!-- Max Qty -->
+        <input class="input border-white-light" type="number" min="0" [(ngModel)]="row.maxQty" [name]="'uomMax_' + i"
+          placeholder="∞" />
+
+        <!-- Price -->
+        <div class="relative">
+          <span
+            class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-semibold text-gray-400">
+            {{ currencySymbol }}
           </span>
-        </label>
-        <span class="checkbox-label-text" translate>
-          INVENTORY.IS_PURCHASE_ITEM
-        </span>
+          <input class="input border-white-light pl-10" type="number" step="0.01" min="0" [(ngModel)]="row.price"
+            [name]="'uomPrice_' + i" placeholder="0.00" />
+        </div>
+
+        <select *ngIf="hasVariants" class="input border-white-light" [(ngModel)]="row.productVariantId"
+          [name]="'uomVariant_' + i" (ngModelChange)="onUomPriceListChange(i)">
+          <option [ngValue]="null" translate>INVENTORY.SELECT_PRODUCT_VARIANT</option>
+          <option *ngFor="let variant of productVariants" [ngValue]="variant.id">
+            {{ variant.name }}
+          </option>
+        </select>
+
+        <input *ngIf="hasVariants" class="input border-white-light" type="text" [(ngModel)]="row.barcode"
+          [name]="'uomBarcode_' + i" [placeholder]="'INVENTORY.ENTER' | translate" />
+
+        <!-- Actions -->
+        <div class="flex items-center gap-1">
+          <button *ngIf="last" type="button"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-white transition-all hover:opacity-90 active:scale-95"
+            (click)="addUomRow()">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <button *ngIf="uomRows.length > 1" type="button"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-400 transition-all hover:bg-red-100 hover:text-red-600 active:scale-95"
+            (click)="removeUomRow(i)">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
-    </div>
+
+      <!-- Duplicate error -->
+      <div *ngIf="row.duplicateError" class="mb-1 flex items-center gap-1.5 text-xs text-red-500"
+        style="padding-left: 56px;">
+        <svg class="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+            clip-rule="evenodd" />
+        </svg>
+        <span translate>PRICING.DUPLICATE_UOM_ERROR</span>
+      </div>
+
+    </ng-container>
   </div>
 
-  <div class="form-row flex-wrap">
-    <div class="form-group flex w-full gap-5">
-      <div class="w-1/2">
-        <label class="block" translate>INVENTORY.SALE_PRICE_TYPE</label>
-        <select class="input border-white-light">
-          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
-          <option value="10">10</option>
-          <option value="20">20</option>
-        </select>
-      </div>
-      <div class="w-1/2">
-        <label translate>INVENTORY.PRICING_UNIT</label>
-        <input
-          class="input border-white-light"
-          type="text"
-          [placeholder]="'INVENTORY.ENTER' | translate"
-        />
-      </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       SUMMARY TABLE
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div *ngIf="hasAnySummary()" class="mt-8 overflow-hidden rounded-xl border border-gray-100 shadow-sm">
+    <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3">
+      <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      <h4 class="text-sm font-semibold text-gray-600" translate>PRICING.SUMMARY_TITLE</h4>
     </div>
 
-    <div class="form-group flex w-full gap-5">
-      <div class="w-1/2">
-        <label class="block" translate>INVENTORY.UNIT_PRICE</label>
-        <select class="input border-white-light">
-          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
-          <option value="10">10</option>
-          <option value="20">20</option>
-        </select>
-      </div>
-      <div class="w-1/2">
-        <label class="block" translate>INVENTORY.PRICE_LIST</label>
-        <select class="input border-white-light">
-          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
-          <option value="10">10</option>
-          <option value="20">20</option>
-        </select>
-      </div>
-    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <th class="px-4 py-2.5" translate>PRICING.TYPE</th>
+          <th class="px-4 py-2.5" translate>PRICING.DETAILS</th>
+          <th class="px-4 py-2.5" translate>PRICING.PRICE_LIST</th>
+          <th class="px-4 py-2.5" translate>PRICING.MIN_QTY</th>
+          <th class="px-4 py-2.5" translate>PRICING.MAX_QTY</th>
+          <th *ngIf="hasVariants" class="px-4 py-2.5" translate>INVENTORY.PRODUCT_VARIANT</th>
+          <th *ngIf="hasVariants" class="px-4 py-2.5" translate>INVENTORY.CODE_BAR</th>
+          <th class="px-4 py-2.5 text-right" translate>PRICING.PRICE</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y divide-gray-50">
+
+        <!-- ─── FIX 1: Base unit pricing rows (were missing entirely) ─── -->
+        <ng-container *ngFor="let row of pricingRows">
+          <tr *ngIf="row.price" class="transition-colors hover:bg-gray-50">
+
+            <!-- Unit badge — always baseUnit -->
+            <td class="px-4 py-3">
+              <span class="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                {{ baseUnit }}
+              </span>
+            </td>
+
+            <!-- Details -->
+            <td class="px-4 py-3 text-gray-500" translate>PRICING.BASE_PRICE</td>
+
+            <!-- FIX 2: getPriceListName now coerces string→number internally -->
+            <td class="px-4 py-3">
+              <ng-container *ngIf="getPriceListName(row.priceListId) as plName; else noPl1">
+                <span class="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  {{ plName }}
+                </span>
+              </ng-container>
+              <ng-template #noPl1><span class="text-gray-400">—</span></ng-template>
+            </td>
+
+            <td class="px-4 py-3 text-gray-600">{{ row.minQty ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-600">{{ row.maxQty ?? '—' }}</td>
+            <td *ngIf="hasVariants" class="px-4 py-3 text-gray-600">{{ getVariantName(row.productVariantId) ?? '—' }}
+            </td>
+            <td *ngIf="hasVariants" class="px-4 py-3 text-gray-600">{{ row.barcode || '—' }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-gray-800">
+              {{ currencySymbol }}{{ row.price }}
+            </td>
+          </tr>
+        </ng-container>
+
+        <!-- ─── Packaging rows ─── -->
+        <ng-container *ngFor="let row of uomRows">
+          <tr *ngIf="row.uomId && row.convFactor && row.price" class="transition-colors hover:bg-gray-50">
+
+            <!-- FIX 3: Show uomName (resolved label), NOT uomId -->
+            <td class="px-4 py-3">
+              <span class="rounded-md bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-700">
+                {{ row.uomName || '—' }}
+              </span>
+            </td>
+
+            <!-- FIX 4: Details also uses uomName, not uomId -->
+            <td class="px-4 py-3 text-gray-600">
+              1 {{ row.uomName || '—' }} = {{ row.convFactor }} {{ row.convUnit }}
+            </td>
+
+            <!-- FIX 5: Price list name resolved correctly (same coercion fix) -->
+            <td class="px-4 py-3">
+              <ng-container *ngIf="getPriceListName(row.priceListId) as plName; else noPl2">
+                <span class="rounded bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+                  {{ plName }}
+                </span>
+              </ng-container>
+              <ng-template #noPl2><span class="text-gray-400">—</span></ng-template>
+            </td>
+
+            <td class="px-4 py-3 text-gray-600">{{ row.minQty ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-600">{{ row.maxQty ?? '—' }}</td>
+            <td *ngIf="hasVariants" class="px-4 py-3 text-gray-600">{{ getVariantName(row.productVariantId) ?? '—' }}
+            </td>
+            <td *ngIf="hasVariants" class="px-4 py-3 text-gray-600">{{ row.barcode || '—' }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-gray-800">
+              {{ currencySymbol }}{{ row.price }}
+            </td>
+          </tr>
+        </ng-container>
+
+      </tbody>
+    </table>
   </div>
 
-  <div class="form-row flex-wrap">
-    <div class="form-group flex w-full gap-5">
-      <div class="w-1/2">
-        <label class="block" translate>INVENTORY.SELECT_STORE</label>
-        <select class="input border-white-light">
-          <option value="">{{ "INVENTORY.CHOOSE" | translate }}</option>
-        </select>
-      </div>
-      <div class="w-1/2">
-        <label translate>INVENTORY.PRICE_IN_STORE</label>
-        <input
-          class="input border-white-light"
-          type="text"
-          [placeholder]="'INVENTORY.ENTER' | translate"
-        />
-      </div>
-    </div>
-  </div>
 
+  <!-- ══════════════════════════════════════════════════════════════════════
+       SUBMIT
+  ══════════════════════════════════════════════════════════════════════════ -->
   <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
-    <button class="btn-primary h-12 md:w-30" type="submit" translate>
+    <button class="btn-primary h-12 md:w-30" type="button" (click)="onSubmit()" translate>
+      INVENTORY.SUBMIT
+    </button>
+  </div>
+  <div class="mt-5 flex justify-center md:hidden">
+    <button class="btn-primary h-12 md:w-30" type="button" (click)="onSubmit()" translate>
       INVENTORY.SUBMIT
     </button>
   </div>
 
-  <div class="mt-5 flex justify-center md:hidden">
-    <button class="btn-primary h-12 md:w-30" type="submit" translate>
-      INVENTORY.SUBMIT
-    </button>
-  </div>
 </div>

@@ -1,41 +1,40 @@
 @theme {
-  --font-barlow: "Barlow", sans-serif;
+  --font-barlow: var(--app-font-barlow, "Barlow", sans-serif);
+  --font-mono: var(--app-font-mono, "Roboto Mono", monospace, sans-serif);
 
-  --color-primary: #0F172B;
-  --color-secondary: #f0efeb;
-  --color-selectedobj: #009689;
+  --color-primary: var(--app-color-primary, #0f172b);
+  --color-secondary: var(--app-color-secondary, #f0efeb);
+  --color-selectedobj: var(--app-color-selectedobj, #009689);
 
-  --color-default-black: #191919;
+  --color-default-black: var(--app-color-default-black, #191919);
 
-  --color-gray: #666666;
-  --color-gray-light: #9d9d9d;
-  --color-gray-light2: #e5e7eb;
-  --color-gray-light3: #f3f3f3;
-  --color-gray-border: #888ea8;
+  --color-gray: var(--app-color-gray, #666666);
+  --color-gray-light: var(--app-color-gray-light, #9d9d9d);
+  --color-gray-light2: var(--app-color-gray-light2, #e5e7eb);
+  --color-gray-light3: var(--app-color-gray-light3, #f3f3f3);
+  --color-gray-border: var(--app-color-gray-border, #888ea8);
 
-  --color-white-light: #e0e6ed;
-  --color-white-snow: #fefefe;
+  --color-white-light: var(--app-color-white-light, #e0e6ed);
+  --color-white-snow: var(--app-color-white-snow, #fefefe);
 
-  --color-yellow: #f79009;
-  --color-yellow-light: #fcc538;
-  --color-yellow-dark: #f7931a;
+  --color-yellow: var(--app-color-yellow, #f79009);
+  --color-yellow-light: var(--app-color-yellow-light, #fcc538);
+  --color-yellow-dark: var(--app-color-yellow-dark, #f7931a);
 
-  --color-emerald: #10b981;
+  --color-emerald: var(--app-color-emerald, #10b981);
+  --color-orange: var(--app-color-orange, #f68b00);
 
-  --color-orange: #f68b00;
+  --color-blue: var(--app-color-blue, #06aed4);
+  --color-blue-light: var(--app-color-blue-light, #ebf4ff);
 
-  --color-blue: #06aed4;
-  --color-blue-light: #ebf4ff;
+  --color-red: var(--app-color-red, #c32300);
+  --color-red-bright: var(--app-color-red-bright, #cd1407);
+  --color-red-difference: var(--app-color-red-difference, #ff380d);
+  --color-red-crimson: var(--app-color-red-crimson, #ea2929);
 
-  --color-red: #c32300;
-  --color-red-bright: #cd1407;
-  --color-red-difference: #ff380d;
-  --color-red-crimson: #ea2929;
+  --color-purple: var(--app-color-purple, #9747ff);
+  --color-teal: var(--app-color-teal, #2d9596);
+  --color-sidebar: var(--app-color-sidebar, #e6e6e6);
 
-  --color-purple: #9747ff;
-
-  --color-teal: #2d9596;
-
-  --text-vsm: 12px;
-
+  --text-vsm: var(--app-text-vsm, 12px);
 }

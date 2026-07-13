@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component,ElementRef, HostListener, ViewChild } from "@angular/core";
+import { Component, ElementRef, HostListener, ViewChild } from "@angular/core";
 import { TranslateService, TranslateModule } from "@ngx-translate/core";
 import { AuthService } from "../../core/services/auth.service";
 import { Router } from "@angular/router";
@@ -15,7 +15,7 @@ export class HeaderComponent {
   public currentLang: string = "en";
   public languageDropdownOpen: boolean = false;
   public userProfileOpen: boolean = false;
-    // Search state
+  // Search state
   searchExpanded = false;
   storeDropdownOpen = false;
   selectedStore = 'Downtown Store';
@@ -30,7 +30,7 @@ export class HeaderComponent {
     private translate: TranslateService,
     private router: Router,
     private authService: AuthService,
-     private eRef: ElementRef 
+    private eRef: ElementRef
   ) {
     const savedLang = localStorage.getItem('preferredLanguage') || 'en';
     this.currentLang = savedLang;

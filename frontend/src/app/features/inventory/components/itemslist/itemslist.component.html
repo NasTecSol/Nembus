@@ -1,436 +1,724 @@
-<div class="grid grid-cols-1 gap-3 py-2 md:grid-cols-5">
-  <div
-    class="dashboard-card col-span-2 flex-grow overflow-x-auto rounded-2xl border-0 bg-[#F2F4F7] p-4 shadow-none"
-  >
-    <table class="data-table">
-      <thead>
-        <tr class="text-dark-bold-lg">
-          <th translate>INVENTORY.ITEM_NUMBER</th>
-          <th translate>INVENTORY.NAME</th>
-          <th translate>INVENTORY.CATEGORY</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          *ngFor="let item of items"
-          (click)="selectStore(item)"
-          class="text-[#666666]"
-          [ngClass]="{ 'text-white': selectedStore === item }"
-          [class.selected-row]="selectedStore === item"
-          [class.hoverable-row]="selectedStore !== item"
-        >
-          <td
-            class="font-bold text-black"
-            [ngClass]="{ 'rounded-l-lg text-white': selectedStore === item }"
-          >
-            {{ item.itemNumber }}
-          </td>
-          <td>{{ item.name }}</td>
-          <td [ngClass]="{ 'rounded-r-lg': selectedStore === item }">
-            {{ item.category }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+<ng-container *ngIf="!isEditMode; else editProductView">
+  <div class="space-y-4 rounded-2xl border border-[#e4e7ec] p-4 md:p-6">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div>
+        <h2 class="text-3xl font-bold text-[#101828]">{{ 'ITEMS_LIST.TITLE' | translate }}</h2>
+        <p class="mt-1 text-sm font-medium text-[#667085]">
+          {{ 'ITEMS_LIST.SUBTITLE' | translate }}
+        </p>
+      </div>
 
-  <div class="dashboard-card custom-shadow col-span-3 rounded-2xl p-4">
-    <div role="tablist" class="tabs-container flex-wrap">
-      <button
-        *ngFor="let tab of tabs"
-        (click)="setActiveTab(tab)"
-        class="btn-tab"
-        [ngClass]="{
-          'btn-tab-active': activeTab === tab,
-          'btn-tab-not-active': activeTab !== tab,
-        }"
-      >
-        {{ "INVENTORY." + tabTranslationMap[tab] | translate }}
+      <button type="button" (click)="goToAddProduct()"
+        class="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--color-selectedobj)] px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90">
+        <i class="fa fa-plus text-xs"></i>
+        {{ 'ITEMS_LIST.ADD_PRODUCT' | translate }}
       </button>
     </div>
 
-    <div class="flex h-full flex-col">
-      <hr class="mt-3" />
+    <div class="rounded-xl border border-[#e4e7ec] bg-white p-3">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-12">
+        <div class="relative lg:col-span-4">
+          <i class="fa fa-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#98a2b3]"></i>
+          <input type="text" [(ngModel)]="searchTerm" [placeholder]="'ITEMS_LIST.SEARCH_PLACEHOLDER' | translate"
+            class="h-11 w-full rounded-lg border border-[#e4e7ec] bg-[#f9fafb] pl-9 pr-3 text-sm text-[#344054] outline-none transition-all placeholder:text-[#98a2b3] focus:border-[var(--color-selectedobj)]" />
+        </div>
 
-      <!-- Item Details Tab -->
-      <div *ngIf="activeTab === 'Item Details'">
-        <form class="mb-2 flex-grow">
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_NAME</label>
-              <input
-                class="input general-input"
-                type="number"
-                value="101"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_TYPE</label>
-              <select class="input general-input">
-                <option value="Inventory" selected>
-                  {{ "INVENTORY.ITEM_TYPE" | translate }}
-                </option>
-              </select>
-            </div>
-          </div>
+        <div class="lg:col-span-2">
+          <select [(ngModel)]="selectedCategory" (ngModelChange)="onCategoryChange()"
+            class="h-11 w-full rounded-lg border border-[#e4e7ec] px-3 text-sm font-medium text-[#344054] outline-none transition-all focus:border-[var(--color-selectedobj)]">
+            <option *ngFor="let category of categoryOptions" [value]="category">
+              {{ 'ITEMS_LIST.CATEGORY_LABEL' | translate }}: {{ category === 'All' ? ('ITEMS_LIST.FILTER_ALL' | translate) : category }}
+            </option>
+          </select>
+        </div>
 
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.CODE_BAR</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="*************"
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.DESCRIPTION</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="Knorr Noddles 4 pack"
-              />
-            </div>
-          </div>
+        <div class="lg:col-span-2">
+          <select [(ngModel)]="selectedStatus"
+            class="h-11 w-full rounded-lg border border-[#e4e7ec] px-3 text-sm font-medium text-[#344054] outline-none transition-all focus:border-[var(--color-selectedobj)]">
+            <option *ngFor="let status of statusOptions" [value]="status">
+              {{ 'ITEMS_LIST.STATUS_LABEL' | translate }}: {{ status === 'All' ? ('ITEMS_LIST.FILTER_ALL' | translate) : status === 'Active' ? ('ITEMS_LIST.FILTER_ACTIVE' | translate) : ('ITEMS_LIST.FILTER_INACTIVE' | translate) }}
+            </option>
+          </select>
+        </div>
 
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_CODE</label>
-              <input class="input general-input" type="text" value="02365489" />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.CATEGORY_GROUP</label>
-              <select class="input general-input">
-                <option value="arizona" selected>
-                  {{ "INVENTORY.CHOOSE" | translate }}
-                </option>
-              </select>
-            </div>
-          </div>
-        </form>
+        <div class="lg:col-span-2">
+          <select [(ngModel)]="selectedType"
+            class="h-11 w-full rounded-lg border border-[#e4e7ec] px-3 text-sm font-medium text-[#344054] outline-none transition-all focus:border-[var(--color-selectedobj)]">
+            <option *ngFor="let type of typeOptions" [value]="type">
+              {{ 'ITEMS_LIST.TYPE_LABEL' | translate }}: {{ type === 'All' ? ('ITEMS_LIST.FILTER_ALL' | translate) : type === 'Physical' ? ('ITEMS_LIST.FILTER_PHYSICAL' | translate) : ('ITEMS_LIST.FILTER_DIGITAL' | translate) }}
+            </option>
+          </select>
+        </div>
+
+        <button type="button" (click)="clearFilters()"
+          class="h-11 rounded-lg px-2 text-sm font-semibold text-[#667085] transition-colors hover:text-[var(--color-selectedobj)] lg:col-span-2">
+          {{ 'ITEMS_LIST.CLEAR_FILTERS' | translate }}
+        </button>
       </div>
+    </div>
 
-      <!-- Dimensions Tab -->
-      <div *ngIf="activeTab === 'Dimensions'">
-        <form class="mb-2 flex-grow">
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_LENGTH</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="120cm"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_HEIGHT</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="120cm"
-                required
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_WEIGHT</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="10kg"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_VOLUME</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="50"
-                required
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.ITEM_WIDTH</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="10cm"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.VOLUME_UNITS</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="50 Units"
-                required
-              />
-            </div>
-          </div>
-        </form>
-      </div>
+    <div class="overflow-hidden rounded-xl border border-[#e4e7ec] bg-white">
+      <div class="overflow-x-auto">
+        <table class="min-w-full">
+          <thead class="bg-[#f9fafb]">
+            <tr class="text-left text-[11px] uppercase tracking-[0.06em] text-[#667085]">
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.SKU' | translate }}</th>
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.PRODUCT_NAME' | translate }}</th>
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.CATEGORY' | translate }}</th>
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.TYPE' | translate }}</th>
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.BASE_PRICE' | translate }}</th>
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.STOCK' | translate }}</th>
+              <th class="px-4 py-3 font-semibold">{{ 'ITEMS_LIST.TABLE.STATUS' | translate }}</th>
+              <th class="px-4 py-3 text-center font-semibold">{{ 'ITEMS_LIST.TABLE.ACTIONS' | translate }}</th>
+            </tr>
+          </thead>
 
-      <!-- Inventory Details Tab -->
-      <div *ngIf="activeTab === 'Inventory Details'">
-        <form class="mb-2 flex-grow">
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.IS_COMMITTED</label>
-              <input
-                class="input general-input"
-                type="number"
-                value="101"
-                required
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.ON_HAND</label>
-              <input
-                class="input general-input"
-                type="number"
-                value="101"
-                required
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.VAT_GROUP</label>
-              <select class="input general-input">
-                <option value="Inventory" selected>
-                  {{ "INVENTORY.ITEM_TYPE" | translate }}
-                </option>
-              </select>
-            </div>
-            <div class="form-group flex gap-3">
-              <div>
-                <label translate>INVENTORY.MIN_ORDER_QTY</label>
-                <input
-                  class="input general-input"
-                  type="text"
-                  value="Knorr Noddles 4 pack"
-                />
-              </div>
-              <div>
-                <label translate>INVENTORY.MAX_ORDER_QTY</label>
-                <input
-                  class="input general-input"
-                  type="text"
-                  value="Knorr Noddles 4 pack"
-                />
-              </div>
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.NUMBER_IN_BUY</label>
-              <input class="input general-input" type="text" value="02365489" />
-            </div>
-            <div class="custom-checkbox-wrapper form-group md:mt-11">
-              <label>
-                <input type="checkbox" checked class="peer checkbox-teal" />
-                <span class="checkbox-svg">
-                  <check-icon />
-                </span>
-              </label>
-              <span class="checkbox-label-text" translate>
-                INVENTORY.IS_INVENTORY_ITEM
-              </span>
-            </div>
-          </div>
-        </form>
-      </div>
+          <tbody class="divide-y divide-[#eaecf0]">
+            <tr *ngIf="isLoading">
+              <td colspan="8" class="px-4 py-8 text-center text-sm font-medium text-[#98a2b3]">
+                {{ 'ITEMS_LIST.TABLE.LOADING' | translate }}
+              </td>
+            </tr>
 
-      <!-- Tax Info Tab -->
-      <div *ngIf="activeTab === 'Tax Info'">
-        <form class="mb-2 flex-grow">
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div class="form-group">
-              <label translate>INVENTORY.TAX_CODE_AR</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="Knorr Noddles 4 pack"
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.TAX_CODE_AP</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="Knorr Noddles 4 pack"
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.INDIRECT_TAX</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="Knorr Noddles 4 pack"
-              />
-            </div>
-          </div>
-        </form>
-      </div>
+            <tr *ngIf="!isLoading && errorMessage">
+              <td colspan="8" class="px-4 py-8 text-center text-sm font-medium text-[#ef4444]">
+                {{ errorMessage }}
+              </td>
+            </tr>
 
-      <!-- WholeSale & UoM Tab -->
-      <div *ngIf="activeTab === 'WholeSale & UoM'">
-        <form class="mb-2 flex-grow">
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.CURRENT_COUNT_DATE</label>
-              <input class="input general-input" type="date" required />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.WHOLESALE_NUMBER</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="40"
-                required
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.BULK_VOLUME</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="*************"
-              />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.BULK_VOLUME_UNITS</label>
-              <input
-                class="input general-input"
-                type="text"
-                value="Knorr Noddles 4 pack"
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.WHOLESALE_UNITS_MEASURE</label>
-              <input class="input general-input" type="text" value="02365489" />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.INVENTORY_UOM</label>
-              <input class="input general-input" type="text" value="02365489" />
-            </div>
-          </div>
-        </form>
-      </div>
-
-      <!-- Pricing Tab -->
-      <div *ngIf="activeTab === 'Pricing'">
-        <form class="mb-2 flex-grow">
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.LAST_PURCHASE_DATE</label>
-              <input class="input general-input" type="date" required />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.LAST_PURCHASE_PRICE</label>
-              <input
-                class="input general-input"
-                type="number"
-                value="101"
-                required
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.LAST_PURCHASE_CURRENCY</label>
-              <input class="input general-input" type="date" required />
-            </div>
-            <div class="form-group">
-              <label translate>INVENTORY.LATEST_SALE_PRICE</label>
-              <input
-                class="input general-input"
-                type="number"
-                value="101"
-                required
-              />
-            </div>
-          </div>
-          <div class="general-row">
-            <div class="form-group">
-              <label translate>INVENTORY.LAST_PURCHASE_CURRENCY</label>
-              <select class="input general-input">
-                <option value="Inventory" selected>SAR</option>
-              </select>
-            </div>
-            <div class="flex justify-between">
-              <div class="custom-checkbox-wrapper form-group md:mt-11">
-                <label>
-                  <input type="checkbox" checked class="peer checkbox-teal" />
-                  <span class="checkbox-svg">
-                    <check-icon />
+            <ng-container *ngIf="!isLoading && !errorMessage">
+              <tr *ngFor="let product of filteredProducts; trackBy: trackBySku"
+                class="text-sm text-[#344054] transition-colors hover:bg-[#f9fafb]">
+                <td class="px-4 py-3 text-[11px] font-semibold leading-4 text-[var(--color-selectedobj)]">
+                  {{ product.sku }}
+                </td>
+                <td class="px-4 py-3 font-semibold text-[#101828]">{{ product.name }}</td>
+                <td class="px-4 py-3">
+                  <span
+                    class="inline-flex rounded-full bg-[#f2f4f7] px-2.5 py-1 text-[11px] font-semibold text-[#475467]">
+                    {{ product.category }}
                   </span>
-                </label>
-                <span class="checkbox-label-text" translate>
-                  INVENTORY.IS_SALE_ITEM
-                </span>
-              </div>
-              <div class="custom-checkbox-wrapper form-group md:mt-11">
-                <label>
-                  <input type="checkbox" checked class="peer checkbox-teal" />
-                  <span class="checkbox-svg">
-                    <check-icon />
+                </td>
+                <td class="px-4 py-3 text-[#475467]">{{ product.type }}</td>
+                <td class="px-4 py-3 font-semibold text-[#101828]">{{ product.basePrice }}</td>
+                <td class="px-4 py-3 font-semibold"
+                  [ngClass]="isLowStock(product) ? 'text-[#ef4444]' : 'text-[var(--color-selectedobj)]'">
+                  {{ product.stock ?? "N/A" }}
+                </td>
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center gap-1.5 text-xs font-semibold" [ngClass]="
+                    product.status === 'Active'
+                      ? 'text-[var(--color-selectedobj)]'
+                      : 'text-[#98a2b3]'
+                  ">
+                    <span class="h-1.5 w-1.5 rounded-full" [ngClass]="
+                      product.status === 'Active'
+                        ? 'bg-[var(--color-selectedobj)]'
+                        : 'bg-[#98a2b3]'
+                    "></span>
+                    {{ product.status }}
                   </span>
-                </label>
-                <span class="checkbox-label-text" translate>
-                  INVENTORY.IS_PURCHASE_ITEM
-                </span>
-              </div>
-            </div>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-center gap-3 text-[#98a2b3]">
+                    <button type="button" (click)="openEditView(product)" class="hover:text-[var(--color-selectedobj)]">
+                      <i class="fa fa-eye"></i>
+                    </button>
+                    <button type="button" (click)="openEditView(product)" class="hover:text-[var(--color-selectedobj)]">
+                      <i class="fa fa-edit"></i>
+                    </button>
+                    <button type="button" class="hover:text-[var(--color-selectedobj)]">
+                      <i class="fa fa-copy"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </ng-container>
+
+            <tr *ngIf="!isLoading && !errorMessage && filteredProducts.length === 0">
+              <td colspan="8" class="px-4 py-8 text-center text-sm font-medium text-[#98a2b3]">
+                {{ 'ITEMS_LIST.TABLE.NO_PRODUCTS' | translate }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        class="flex flex-col gap-3 border-t border-[#eaecf0] px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <p class="text-sm text-[#667085]">
+          {{ 'ITEMS_LIST.SHOWING' | translate }}
+          <span class="font-semibold text-[#101828]">{{ showingFrom }}</span>
+          -
+          <span class="font-semibold text-[#101828]">{{ showingTo }}</span>
+          {{ 'ITEMS_LIST.OF' | translate }}
+          <span class="font-semibold text-[#101828]">{{ totalProducts }}</span>
+          {{ 'ITEMS_LIST.PRODUCTS' | translate }}
+        </p>
+
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-semibold text-[#667085]">{{ 'ITEMS_LIST.ROWS' | translate }}</label>
+            <select [(ngModel)]="limit" (ngModelChange)="onPageSizeChange()"
+              class="h-8 rounded-md border border-[#eaecf0] px-2 text-xs font-semibold text-[#475467] outline-none">
+              <option *ngFor="let size of pageSizeOptions" [value]="size">{{ size }}</option>
+            </select>
           </div>
-          <div class="form-group grid grid-cols-1 md:grid-cols-4 md:gap-3">
-            <div>
-              <label translate>INVENTORY.SALE_PRICE_TYPE</label>
-              <select class="input general-input">
-                <option value="Inventory" selected>
-                  {{ "INVENTORY.CHOOSE" | translate }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label translate>INVENTORY.PRICING_UNIT</label>
-              <input
-                class="input general-input"
-                type="text"
-                placeholder="Enter"
-                required
-              />
-            </div>
-            <div>
-              <label translate>INVENTORY.SALE_PRICE_TYPE</label>
-              <select class="input general-input">
-                <option value="Inventory" selected>
-                  {{ "INVENTORY.CHOOSE" | translate }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label translate>INVENTORY.SALE_PRICE_TYPE</label>
-              <select class="input general-input">
-                <option value="Inventory" selected>
-                  {{ "INVENTORY.CHOOSE" | translate }}
-                </option>
-              </select>
-            </div>
+
+          <div class="flex items-center gap-1.5">
+            <button type="button" (click)="goToPreviousPage()"
+              class="flex h-8 w-8 items-center justify-center rounded-md border border-[#eaecf0] text-[#98a2b3] transition-colors hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-50"
+              [disabled]="currentPage === 1">
+              <i class="fa fa-angle-left"></i>
+            </button>
+
+            <ng-container *ngFor="let token of pageTokens">
+              <span *ngIf="token === '...'" class="px-1 text-[#98a2b3]">...</span>
+              <button *ngIf="token !== '...'" type="button" (click)="setPage(+token)"
+                class="h-8 min-w-8 rounded-md px-2 text-xs font-semibold transition-colors" [ngClass]="
+                currentPage === +token
+                  ? 'bg-[var(--color-selectedobj)] text-white'
+                  : 'text-[#475467] hover:bg-[#f2f4f7]'
+              ">
+                {{ token }}
+              </button>
+            </ng-container>
+
+            <button type="button" (click)="goToNextPage()"
+              class="flex h-8 w-8 items-center justify-center rounded-md border border-[#eaecf0] text-[#98a2b3] transition-colors hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-50"
+              [disabled]="!canGoNext">
+              <i class="fa fa-angle-right"></i>
+            </button>
           </div>
-        </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div *ngFor="let summary of summaryCards" class="rounded-xl border border-[#e4e7ec] bg-white px-4 py-3">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg text-base" [ngClass]="summary.iconBgClass">
+            <i [class]="summary.iconClass" [ngClass]="summary.iconColorClass"></i>
+          </div>
+          <div>
+            <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-[#94a3b8]">{{ summary.label | translate }}</p>
+            <p class="text-3xl font-bold leading-none text-[#101828]">{{ summary.value }}</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-</div>
+</ng-container>
+
+<ng-template #editProductView>
+  <div class="space-y-4 rounded-2xl border border-[#e4e7ec] p-4 md:p-5">
+    <div class="rounded-xl border border-[#e4e7ec] bg-white p-4">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div class="flex items-start gap-3">
+          <button type="button" (click)="backToList()"
+            class="mt-1 flex h-8 w-8 items-center justify-center rounded-md border border-[#e4e7ec] text-[#667085] transition-colors hover:bg-[#f9fafb]">
+            <i class="fa fa-arrow-left"></i>
+          </button>
+
+          <div class="flex h-14 w-14 items-center justify-center rounded-lg bg-[#f2f4f7] text-2xl text-[#667085]">
+            <i class="fa fa-cube"></i>
+          </div>
+
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-xl font-bold text-[#101828]">{{ selectedProductTitle }}</h3>
+              <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold" [ngClass]="
+                  selectedProduct?.status === 'Inactive'
+                    ? 'bg-[#f2f4f7] text-[#98a2b3]'
+                    : 'bg-[var(--color-selectedobj)]/10 text-[var(--color-selectedobj)]'
+                ">
+                {{ selectedProduct?.status ?? "Active" }}
+              </span>
+            </div>
+            <p class="mt-1 text-sm text-[#667085]">
+              {{ 'ITEMS_LIST.EDIT.CATEGORY' | translate }}: {{ selectedProductCategoryPath }} | {{ 'ITEMS_LIST.EDIT.MANUFACTURER' | translate }}:
+              {{ selectedProductManufacturer }}
+            </p>
+            <div class="mt-2 flex flex-wrap items-center gap-4 text-xs font-medium text-[#667085]">
+              <span><i class="fa fa-barcode mr-1"></i>{{ 'ITEMS_LIST.EDIT.SKU' | translate }}: {{ selectedProduct?.sku }}</span>
+              <span><i class="fa fa-balance-scale mr-1"></i>{{ 'ITEMS_LIST.EDIT.WEIGHT' | translate }}: {{ selectedProductWeight }}</span>
+            </div>
+            <div *ngIf="hasVariants" class="mt-3">
+              <label class="text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+                {{ 'ITEMS_LIST.EDIT.VARIANT' | translate }}
+              </label>
+              <select [(ngModel)]="selectedVariantId" (ngModelChange)="onVariantChange()"
+                class="mt-1 h-9 min-w-[320px] rounded-lg border border-[#e4e7ec] bg-white px-3 text-sm font-medium text-[#344054] outline-none focus:border-[var(--color-selectedobj)]">
+                <option *ngFor="let variant of selectedProduct?.variants ?? []" [ngValue]="variant.id">
+                  {{ variant.variant_name }}
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 xl:justify-end">
+          <div class="mr-2 text-right">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#98a2b3]">
+              {{ 'ITEMS_LIST.EDIT.TOTAL_GLOBAL_STOCK' | translate }}
+            </p>
+            <p class="text-4xl font-bold leading-none text-[#6941c6]">
+              {{ selectedProductTotalOnHand | number: "1.0-0" }}
+            </p>
+            <p class="text-xs font-semibold text-[#98a2b3]">{{ 'ITEMS_LIST.EDIT.UNITS' | translate }}</p>
+          </div>
+          <button type="button" (click)="openUpdateStockModal()"
+            class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-selectedobj)] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90">
+            <i class="fa fa-pencil"></i>
+            {{ 'ITEMS_LIST.EDIT.UPDATE_STOCK' | translate }}
+          </button>
+          <button type="button" (click)="openHistoryModal()"
+            class="inline-flex items-center gap-2 rounded-lg border border-[#e4e7ec] bg-white px-4 py-2 text-sm font-semibold text-[#475467] transition-colors hover:bg-[#f9fafb]">
+            <i class="fa fa-clock-o"></i>
+            {{ 'ITEMS_LIST.EDIT.HISTORY' | translate }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div *ngFor="let card of editKpis" class="rounded-xl border border-[#e4e7ec] bg-white px-3 py-3">
+        <div class="flex items-start justify-between">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg text-sm" [ngClass]="card.iconBgClass">
+            <i [class]="card.iconClass" [ngClass]="card.iconColorClass"></i>
+          </div>
+          <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold" [ngClass]="card.badgeClass">
+            {{ card.badgeText | translate }}
+          </span>
+        </div>
+        <p class="mt-2 text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+          {{ card.title | translate }}
+        </p>
+        <p class="text-3xl font-bold leading-none text-[#101828]">{{ card.value }}</p>
+        <p class="mt-1 text-xs font-medium text-[#667085]">{{ card.subtitle | translate }}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-12">
+      <div class="overflow-hidden rounded-xl border border-[#e4e7ec] bg-white xl:col-span-9">
+        <div class="flex items-center justify-between border-b border-[#eaecf0] px-4 py-3">
+          <h4 class="text-base font-bold text-[#101828]">
+            {{ 'ITEMS_LIST.EDIT.STOCK_LEVELS_PER_LOCATION' | translate }}
+            <span *ngIf="hasVariants" class="ml-2 text-xs font-semibold text-[#98a2b3]">
+              ({{ selectedVariantName }})
+            </span>
+          </h4>
+          <div class="flex items-center gap-2 text-[#98a2b3]">
+            <button type="button"
+              class="flex h-7 w-7 items-center justify-center rounded-md border border-[#eaecf0] hover:bg-[#f9fafb]">
+              <i class="fa fa-filter"></i>
+            </button>
+            <button type="button"
+              class="flex h-7 w-7 items-center justify-center rounded-md border border-[#eaecf0] hover:bg-[#f9fafb]">
+              <i class="fa fa-download"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full">
+            <thead class="bg-[#f9fafb]">
+              <tr class="text-left text-[10px] uppercase tracking-[0.05em] text-[#98a2b3]">
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.STORE_WAREHOUSE' | translate }}</th>
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.EXACT_LOCATION' | translate }}</th>
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.ON_HAND' | translate }}</th>
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.ALLOCATED' | translate }}</th>
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.AVAILABLE' | translate }}</th>
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.REORDER_LEVEL' | translate }}</th>
+                <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.EDIT.TABLE.STATUS' | translate }}</th>
+              </tr>
+            </thead>
+
+            <tbody class="divide-y divide-[#eaecf0]">
+              <tr *ngFor="let row of stockByLocationRows; trackBy: trackByLocation" (click)="selectStockRow(row)"
+                class="cursor-pointer text-sm text-[#344054] transition-colors hover:bg-[#f9fafb]"
+                [ngClass]="selectedStockId === row.stockId ? 'bg-[var(--color-selectedobj)]/5' : ''">
+                <td class="px-3 py-3 font-semibold text-[#101828]">{{ row.store }}</td>
+                <td class="px-3 py-3 text-[#667085]">{{ row.exactLocation }}</td>
+                <td class="px-3 py-3 font-semibold text-[#101828]">{{ row.onHand | number }}</td>
+                <td class="px-3 py-3 text-[#94a3b8]">{{ row.allocated | number }}</td>
+                <td class="px-3 py-3 font-semibold" [ngClass]="
+                    row.status === 'Critical'
+                      ? 'text-[#ef4444]'
+                      : row.status === 'Low Stock'
+                        ? 'text-[#f59e0b]'
+                        : 'text-[var(--color-selectedobj)]'
+                  ">
+                  {{ row.available | number }}
+                </td>
+                <td class="px-3 py-3 text-[#667085]">{{ row.reorderLevel | number }}</td>
+                <td class="px-3 py-3">
+                  <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    [ngClass]="getLocationStatusClass(row.status)">
+                    <span class="h-1.5 w-1.5 rounded-full" [ngClass]="getLocationStatusDotClass(row.status)"></span>
+                    {{ row.status }}
+                  </span>
+                </td>
+              </tr>
+
+              <tr *ngIf="stockByLocationRows.length === 0">
+                <td colspan="7" class="px-3 py-6 text-center text-sm text-[#98a2b3]">
+                  {{ 'ITEMS_LIST.EDIT.NO_INVENTORY_ROWS' | translate }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="border-t border-[#eaecf0] px-3 py-2 text-xs text-[#98a2b3]">
+          {{ 'ITEMS_LIST.EDIT.SHOWING_LOCATIONS' | translate:{count: stockByLocationRows.length} }}
+        </div>
+      </div>
+
+      <div class="space-y-3 xl:col-span-3">
+        <div class="rounded-xl border border-[#e4e7ec] bg-white p-3">
+          <p class="text-[10px] font-bold uppercase tracking-[0.06em] text-[#98a2b3]">
+            {{ 'ITEMS_LIST.EDIT.QUICK_ACTIONS_LABEL' | translate }}
+          </p>
+          <div class="mt-2 space-y-2">
+            <button *ngFor="let action of quickActions" type="button" (click)="onQuickAction(action.id)"
+              class="flex w-full items-center gap-3 rounded-lg border border-[#eaecf0] bg-[#f9fafb] px-3 py-2 text-left transition-colors hover:bg-white">
+              <div class="flex h-8 w-8 items-center justify-center rounded-md bg-[#f2f4f7] text-[#667085]">
+                <i [class]="action.iconClass"></i>
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-[#101828]">{{ action.title | translate }}</p>
+                <p class="text-[11px] text-[#98a2b3]">{{ action.subtitle | translate }}</p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-[#e4e7ec] bg-white p-3">
+          <p class="text-[10px] font-bold uppercase tracking-[0.06em] text-[#98a2b3]">
+            {{ 'ITEMS_LIST.EDIT.STOCK_ADJUSTMENT' | translate }}
+          </p>
+
+          <div class="mt-3 space-y-2">
+            <div>
+              <label class="text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+                {{ 'ITEMS_LIST.EDIT.MOVEMENT_TYPE' | translate }}
+              </label>
+              <select [(ngModel)]="adjustmentForm.movementType"
+                class="mt-1 h-9 w-full rounded-lg border border-[#e4e7ec] px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]">
+                <option *ngFor="let type of movementTypes" [value]="type">{{ type }}</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+                {{ 'ITEMS_LIST.EDIT.STORAGE_LOCATION' | translate }}
+              </label>
+              <select [(ngModel)]="adjustmentForm.storageLocation"
+                class="mt-1 h-9 w-full rounded-lg border border-[#e4e7ec] px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]">
+                <option *ngFor="let location of storageLocations" [value]="location">
+                  {{ location }}
+                </option>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-[1fr_auto] gap-2">
+              <div>
+                <label class="text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+                  {{ 'ITEMS_LIST.EDIT.QUANTITY' | translate }}
+                </label>
+                <input type="number" [(ngModel)]="adjustmentForm.quantity"
+                  class="mt-1 h-9 w-full rounded-lg border border-[#e4e7ec] px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]" />
+              </div>
+
+              <div>
+                <label class="text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+                  {{ 'ITEMS_LIST.EDIT.ACTION' | translate }}
+                </label>
+                <div class="mt-1 flex overflow-hidden rounded-lg border border-[#e4e7ec]">
+                  <button type="button" (click)="setAdjustmentAction('+')" class="h-9 w-9 text-lg font-bold" [ngClass]="
+                      adjustmentForm.action === '+'
+                        ? 'bg-[var(--color-selectedobj)] text-white'
+                        : 'bg-white text-[#667085]'
+                    ">
+                    +
+                  </button>
+                  <button type="button" (click)="setAdjustmentAction('-')" class="h-9 w-9 text-lg font-bold" [ngClass]="
+                      adjustmentForm.action === '-'
+                        ? 'bg-[var(--color-selectedobj)] text-white'
+                        : 'bg-white text-[#667085]'
+                    ">
+                    -
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-[10px] font-bold uppercase tracking-[0.05em] text-[#98a2b3]">
+                {{ 'ITEMS_LIST.EDIT.REFERENCE_NOTES' | translate }}
+              </label>
+              <textarea rows="3" [(ngModel)]="adjustmentForm.notes" [placeholder]="'ITEMS_LIST.EDIT.NOTES_PLACEHOLDER' | translate"
+                class="mt-1 w-full rounded-lg border border-[#e4e7ec] px-3 py-2 text-sm text-[#344054] outline-none placeholder:text-[#98a2b3] focus:border-[var(--color-selectedobj)]"></textarea>
+            </div>
+
+            <button type="button" (click)="submitAdjustment()"
+              class="mt-1 w-full rounded-lg bg-[var(--color-selectedobj)] px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90">
+              {{ 'ITEMS_LIST.EDIT.SUBMIT_ADJUSTMENT' | translate }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="isUpdateStockModalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-[#101828]/60 px-3 py-4"
+      (click)="closeUpdateStockModal()">
+      <div class="w-full max-w-3xl overflow-hidden rounded-xl border border-[#d0d5dd] bg-white shadow-2xl"
+        (click)="$event.stopPropagation()">
+        <div class="flex items-center justify-between bg-[#1d2939] px-5 py-3 text-white">
+          <div class="flex items-center gap-2">
+            <span class="inline-flex h-6 w-6 items-center justify-center rounded bg-[#0f766e] text-xs">
+              <i class="fa fa-cube"></i>
+            </span>
+            <h5 class="text-sm font-semibold">{{ 'ITEMS_LIST.MODAL.UPDATE_STOCK_TITLE' | translate }}</h5>
+          </div>
+          <button type="button" (click)="closeUpdateStockModal()"
+            class="text-[#98a2b3] transition-colors hover:text-white">
+            <i class="fa fa-times text-base"></i>
+          </button>
+        </div>
+
+        <div class="space-y-4 bg-[#f8fafc] p-5">
+          <div class="rounded-lg border border-[#eaecf0] bg-[#f2f4f7] p-4">
+            <p class="text-[10px] font-bold uppercase tracking-[0.06em] text-[#667085]">
+              {{ 'ITEMS_LIST.MODAL.PRODUCT_INFO' | translate }}
+            </p>
+            <div class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <p class="text-[10px] font-semibold uppercase tracking-[0.05em] text-[#98a2b3]">{{ 'ITEMS_LIST.MODAL.PRODUCT_NAME' | translate }}</p>
+                <p class="text-sm font-semibold text-[#101828]">{{ selectedProduct?.name }}</p>
+              </div>
+              <div>
+                <p class="text-[10px] font-semibold uppercase tracking-[0.05em] text-[#98a2b3]">{{ 'ITEMS_LIST.MODAL.SKU' | translate }}</p>
+                <p class="text-xs font-semibold text-[#475467]">{{ selectedProduct?.sku }}</p>
+              </div>
+              <div>
+                <p class="text-[10px] font-semibold uppercase tracking-[0.05em] text-[#98a2b3]">{{ 'ITEMS_LIST.MODAL.CURRENT_STOCK' | translate }}</p>
+                <p class="text-sm font-bold text-[var(--color-selectedobj)]">
+                  {{ selectedProductTotalOnHand | number: "1.0-0" }} {{ 'ITEMS_LIST.EDIT.UNITS' | translate }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label class="text-xs font-semibold text-[#344054]">{{ 'ITEMS_LIST.MODAL.WAREHOUSE_LOCATION' | translate }}</label>
+              <input type="text" [value]="selectedStockLocationLabel" disabled
+                class="mt-1 h-10 w-full rounded-md border border-[#d0d5dd] bg-[#f2f4f7] px-3 text-sm text-[#475467] outline-none" />
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-[#344054]">{{ 'ITEMS_LIST.MODAL.SELECTED_VARIANT' | translate }}</label>
+              <input type="text" [value]="selectedVariantName" disabled
+                class="mt-1 h-10 w-full rounded-md border border-[#d0d5dd] bg-[#f2f4f7] px-3 text-sm text-[#475467] outline-none" />
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-[#344054]">{{ 'ITEMS_LIST.MODAL.QTY_ON_HAND' | translate }}</label>
+              <div class="mt-1 grid grid-cols-[1fr_auto] overflow-hidden rounded-md border border-[#d0d5dd] bg-white">
+                <input type="number" min="0" [(ngModel)]="stockUpdateForm.quantity"
+                  class="h-10 px-3 text-sm text-[#344054] outline-none" placeholder="0.00" />
+                <span
+                  class="inline-flex items-center border-l border-[#d0d5dd] px-3 text-xs font-medium text-[#98a2b3]">
+                  {{ 'ITEMS_LIST.EDIT.UNITS' | translate }}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-[#344054]">{{ 'ITEMS_LIST.MODAL.REASON_CODE' | translate }}</label>
+              <select [(ngModel)]="stockUpdateForm.reasonCode"
+                class="mt-1 h-10 w-full rounded-md border border-[#d0d5dd] bg-white px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]">
+                <option *ngFor="let reason of stockUpdateReasonCodes" [value]="reason">
+                  {{ reason }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <p *ngIf="stockUpdateErrorMessage" class="text-sm font-medium text-[#d92d20]">
+            {{ stockUpdateErrorMessage }}
+          </p>
+
+          <div>
+            <label class="text-xs font-semibold text-[#344054]">{{ 'ITEMS_LIST.MODAL.REFERENCE_NUMBER' | translate }} <span class="text-[#98a2b3]">{{ 'ITEMS_LIST.MODAL.REFERENCE_OPTIONAL' | translate }}</span></label>
+            <input type="text" [(ngModel)]="stockUpdateForm.referenceNumber" [placeholder]="'ITEMS_LIST.MODAL.REFERENCE_PLACEHOLDER' | translate"
+              class="mt-1 h-10 w-full rounded-md border border-[#d0d5dd] bg-white px-3 text-sm text-[#344054] outline-none placeholder:text-[#98a2b3] focus:border-[var(--color-selectedobj)]" />
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold text-[#344054]">{{ 'ITEMS_LIST.MODAL.NOTES' | translate }}</label>
+            <textarea rows="3" [(ngModel)]="stockUpdateForm.notes" [placeholder]="'ITEMS_LIST.MODAL.NOTES_PLACEHOLDER' | translate"
+              class="mt-1 w-full rounded-md border border-[#d0d5dd] bg-white px-3 py-2 text-sm text-[#344054] outline-none placeholder:text-[#98a2b3] focus:border-[var(--color-selectedobj)]"></textarea>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" (click)="closeUpdateStockModal()"
+              class="rounded-md border border-[#d0d5dd] bg-white px-4 py-2 text-sm font-semibold text-[#475467] transition-colors hover:bg-[#f9fafb]">
+              {{ 'ITEMS_LIST.MODAL.CANCEL' | translate }}
+            </button>
+            <button type="button" (click)="confirmStockUpdate()"
+              class="rounded-md bg-[var(--color-selectedobj)] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              [disabled]="!canSubmitStockUpdate">
+              {{ isUpdatingStock ? ('ITEMS_LIST.MODAL.UPDATING' | translate) : ('ITEMS_LIST.MODAL.CONFIRM_UPDATE' | translate) }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="isHistoryModalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-[#101828]/60 px-3 py-4"
+      (click)="closeHistoryModal()">
+      <div class="w-full max-w-6xl overflow-hidden rounded-xl border border-[#d0d5dd] bg-white shadow-2xl"
+        (click)="$event.stopPropagation()">
+        <div class="flex items-center justify-between bg-[#1d2939] px-5 py-3 text-white">
+          <div>
+            <h5 class="text-lg font-semibold leading-tight">{{ 'ITEMS_LIST.MODAL.HISTORY_TITLE' | translate }}</h5>
+            <p class="mt-1 text-xs text-[#d0d5dd]">
+              {{ selectedProduct?.name }}
+              <span class="mx-2 text-[#98a2b3]">|</span>
+              SKU: {{ selectedProduct?.sku }}
+            </p>
+          </div>
+          <button type="button" (click)="closeHistoryModal()" class="text-[#98a2b3] transition-colors hover:text-white">
+            <i class="fa fa-times text-base"></i>
+          </button>
+        </div>
+
+        <div class="space-y-3 bg-[#f8fafc] p-4">
+          <div class="rounded-lg border border-[#eaecf0] bg-white p-3">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-[1.6fr_1fr_1fr_auto_auto]">
+              <div>
+                <label class="text-[10px] font-bold uppercase tracking-[0.06em] text-[#667085]">
+                  {{ 'ITEMS_LIST.MODAL.DATE_RANGE' | translate }}
+                </label>
+                <input type="text" [(ngModel)]="historyDateRange"
+                  class="mt-1 h-9 w-full rounded-md border border-[#d0d5dd] bg-white px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]" />
+              </div>
+
+              <div>
+                <label class="text-[10px] font-bold uppercase tracking-[0.06em] text-[#667085]">
+                  {{ 'ITEMS_LIST.MODAL.MOVEMENT_TYPE' | translate }}
+                </label>
+                <select [(ngModel)]="selectedHistoryMovementType"
+                  class="mt-1 h-9 w-full rounded-md border border-[#d0d5dd] bg-white px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]">
+                  <option *ngFor="let option of historyMovementTypeOptions" [value]="option">
+                    {{ option }}
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label class="text-[10px] font-bold uppercase tracking-[0.06em] text-[#667085]">
+                  {{ 'ITEMS_LIST.MODAL.STORE_LOCATION' | translate }}
+                </label>
+                <select [(ngModel)]="selectedHistoryLocation"
+                  class="mt-1 h-9 w-full rounded-md border border-[#d0d5dd] bg-white px-3 text-sm text-[#344054] outline-none focus:border-[var(--color-selectedobj)]">
+                  <option *ngFor="let option of historyLocationOptions" [value]="option">
+                    {{ option }}
+                  </option>
+                </select>
+              </div>
+
+              <button type="button"
+                class="mt-5 h-9 rounded-md bg-[var(--color-selectedobj)] px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90">
+                {{ 'ITEMS_LIST.MODAL.APPLY_FILTERS' | translate }}
+              </button>
+
+              <button type="button" (click)="resetHistoryFilters()"
+                class="mt-5 h-9 rounded-md border border-[#d0d5dd] bg-white px-4 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#f9fafb]">
+                {{ 'ITEMS_LIST.MODAL.RESET' | translate }}
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-hidden rounded-lg border border-[#eaecf0] bg-white">
+            <div class="overflow-x-auto">
+              <table class="min-w-full">
+                <thead class="bg-[#f9fafb]">
+                  <tr class="text-left text-[10px] uppercase tracking-[0.06em] text-[#667085]">
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.DATE_TIME' | translate }}</th>
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.TYPE' | translate }}</th>
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.REFERENCE' | translate }}</th>
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.FROM_TO' | translate }}</th>
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.QTY' | translate }}</th>
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.PERFORMED_BY' | translate }}</th>
+                    <th class="px-3 py-2 font-semibold">{{ 'ITEMS_LIST.MODAL.HISTORY_TABLE.STATUS' | translate }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#eaecf0]">
+                  <tr *ngFor="let row of filteredHistoryRows; trackBy: trackByHistoryRow"
+                    class="text-sm text-[#344054]">
+                    <td class="px-3 py-2 text-xs text-[#667085]">{{ row.dateTime }}</td>
+                    <td class="px-3 py-2">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                        [ngClass]="getHistoryTypeClass(row.movementType)">
+                        {{ row.movementType }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2 text-xs font-semibold text-[var(--color-selectedobj)]">
+                      {{ row.reference }}
+                    </td>
+                    <td class="px-3 py-2 text-xs text-[#475467]">{{ row.fromTo }}</td>
+                    <td class="px-3 py-2 text-xs font-semibold" [ngClass]="getHistoryQuantityClass(row.quantity)">
+                      {{ formatSignedQuantity(row.quantity) }}
+                    </td>
+                    <td class="px-3 py-2 text-xs text-[#667085]">{{ row.performedBy }}</td>
+                    <td class="px-3 py-2 text-xs">
+                      <span class="inline-flex items-center gap-1.5" [ngClass]="getHistoryStatusClass(row.status)">
+                        <span class="h-1.5 w-1.5 rounded-full" [ngClass]="getHistoryStatusDotClass(row.status)"></span>
+                        {{ row.status }}
+                      </span>
+                    </td>
+                  </tr>
+
+                  <tr *ngIf="filteredHistoryRows.length === 0">
+                    <td colspan="7" class="px-3 py-8 text-center text-sm text-[#98a2b3]">
+                      {{ 'ITEMS_LIST.MODAL.NO_HISTORY' | translate }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              class="flex flex-col gap-2 border-t border-[#eaecf0] px-3 py-2 md:flex-row md:items-center md:justify-between">
+              <p class="text-xs text-[#98a2b3]">
+                {{ 'ITEMS_LIST.MODAL.SHOWING_ENTRIES' | translate:{count: filteredHistoryRows.length, total: filteredHistoryRows.length} }}
+              </p>
+              <div class="flex items-center gap-2">
+                <button type="button"
+                  class="inline-flex items-center gap-1 rounded-md border border-[#d0d5dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#f9fafb]">
+                  <i class="fa fa-file-text-o"></i>
+                  {{ 'ITEMS_LIST.MODAL.EXPORT_CSV' | translate }}
+                </button>
+                <button type="button"
+                  class="inline-flex items-center gap-1 rounded-md border border-[#d0d5dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#f9fafb]">
+                  <i class="fa fa-file-pdf-o"></i>
+                  {{ 'ITEMS_LIST.MODAL.EXPORT_PDF' | translate }}
+                </button>
+                <button type="button" (click)="closeHistoryModal()"
+                  class="rounded-md border border-[#d0d5dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#f9fafb]">
+                  {{ 'ITEMS_LIST.MODAL.CLOSE' | translate }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ng-template>

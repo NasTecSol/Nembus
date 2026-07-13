@@ -388,8 +388,9 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	promotionUC := usecase.NewPromotionUseCase()
 	loyaltyUC := usecase.NewLoyaltyUseCase()
 	productCatalogUC := usecase.NewProductCatalogUseCase()
+	printUC := usecase.NewPrintUseCase()
 
-	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, a.cfg)
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, a.cfg)
 	r.Static("/images", "./images")
 
 	if err := r.Run(":" + a.cfg.Port); err != nil {
@@ -478,4 +479,48 @@ func (a *App) GetDBStatus() string {
 		return "Not Started"
 	}
 	return a.dbManager.GetConnectionString()
+}
+
+// IsBackendReady returns true once the embedded database and the Gin HTTP
+// server have both finished initialising.  The frontend calls this on startup
+// so it can wait before making any API requests.
+func (a *App) IsBackendReady() bool {
+	return a.masterPool != nil
+}
+
+
+// LoadDeviceConfig reads the persisted device configuration from disk.
+// Returns an empty string if no config has been saved yet (first run).
+func (a *App) LoadDeviceConfig() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("LoadDeviceConfig: cannot get home dir: %v", err)
+		return ""
+	}
+	path := filepath.Join(home, ".nembus", "device_config.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// No config yet — normal on first launch
+		return ""
+	}
+	return string(data)
+}
+
+// SaveDeviceConfig writes the device configuration to disk so it persists
+// across Wails restarts and clean builds.
+func (a *App) SaveDeviceConfig(configJSON string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Sprintf("Error: cannot get home dir: %v", err)
+	}
+	dir := filepath.Join(home, ".nembus")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Sprintf("Error: cannot create dir: %v", err)
+	}
+	path := filepath.Join(dir, "device_config.json")
+	if err := os.WriteFile(path, []byte(configJSON), 0644); err != nil {
+		return fmt.Sprintf("Error: cannot write config: %v", err)
+	}
+	log.Printf("SaveDeviceConfig: config saved to %s", path)
+	return "OK"
 }

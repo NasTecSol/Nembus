@@ -1,149 +1,124 @@
-<form class="flex-grow">
-  <!-- Info Section -->
-  <div class="mb-6">
-    <p class="text-sm text-gray-600" translate>
-      PACKAGING.BASE_UNIT_INFO
-    </p>
-    <p class="text-sm font-medium">
-      <span translate>PACKAGING.SELECTED_BASE_UNIT</span>: 
-      <span class="text-primary">{{ baseUnit }}</span>
-    </p>
-  </div>
+<form class="flex-grow" (ngSubmit)="onSubmit()">
+  <div class="rounded-lg border border-white-light bg-white p-4">
+    <div class="mb-4 flex items-center justify-between gap-3">
+      <h3 class="flex items-center gap-2 text-lg font-semibold text-primary">
+        <i class="fa fa-cubes"></i>
+        <span translate>INVENTORY.PRODUCT_VARIANTS_TITLE</span>
+      </h3>
+      <span class="text-sm text-gray-500">
+        {{ "INVENTORY.PRODUCT_VARIANTS_COUNT" | translate:{ count: variantRows.length } }}
+      </span>
+    </div>
 
-  <!-- Packaging Conversions -->
-  <div class="space-y-4">
-    <!-- Loop through packaging conversions -->
-    <div 
-      *ngFor="let conversion of packagingConversions; let i = index" 
-      class="form-row items-end"
-    >
-      <!-- Fixed Quantity (Always 1) -->
-      <div class="form-group" style="flex: 0 0 80px;">
-        <label *ngIf="i === 0" translate>PACKAGING.QUANTITY</label>
-        <input
-          class="input border-white-light text-center"
-          type="text"
-          value="1"
-          readonly
-          disabled
-        />
+    <div class="mb-4 rounded-lg border border-white-light bg-secondary/40 p-3">
+      <label class="mb-2 block text-sm font-semibold text-primary" translate>
+        INVENTORY.PRODUCT_VARIANTS_ADD_ATTRIBUTE
+      </label>
+      <div class="flex flex-col gap-2 md:flex-row">
+        <input class="input mt-0 border-white-light md:flex-1" type="text" [(ngModel)]="newAttributeName"
+          [name]="'newAttributeName'" [placeholder]="'INVENTORY.PRODUCT_VARIANTS_ATTRIBUTE_PLACEHOLDER' | translate"
+          (keydown)="addAttributeByEnter($event)" />
+        <button type="button"
+          class="rounded-md bg-selectedobj px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          (click)="addAttribute()">
+          <span translate>INVENTORY.PRODUCT_VARIANTS_ADD</span>
+        </button>
       </div>
+    </div>
 
-      <!-- Unit of Measurement Dropdown -->
-      <div class="form-group" style="flex: 1;">
-        <label *ngIf="i === 0" translate>PACKAGING.UNIT_TYPE</label>
-        <select
-          class="input border-white-light"
-          [(ngModel)]="conversion.unitType"
-          [name]="'unitType_' + i"
-          required
-        >
-          <option value="" disabled translate>PACKAGING.SELECT_UNIT</option>
-          <option value="bottle" translate>PACKAGING.BOTTLE</option>
-          <option value="packet" translate>PACKAGING.PACKET</option>
-          <option value="box" translate>PACKAGING.BOX</option>
-          <option value="carton" translate>PACKAGING.CARTON</option>
-          <option value="case" translate>PACKAGING.CASE</option>
-          <option value="bag" translate>PACKAGING.BAG</option>
-          <option value="can" translate>PACKAGING.CAN</option>
-          <option value="jar" translate>PACKAGING.JAR</option>
-        </select>
-      </div>
+    <div class="mb-3 flex justify-end" *ngIf="attributes.length > 0">
+      <button type="button"
+        class="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="!hasPendingValues()" (click)="addAllAttributeValues()">
+        <span translate>INVENTORY.PRODUCT_VARIANTS_ADD</span>
+      </button>
+    </div>
 
-      <!-- Equals/Contains Label -->
-      <div class="form-group flex items-end" style="flex: 0 0 60px;">
-        <span class="mb-3 text-center text-sm font-medium" translate>
-          {{ i === 0 ? 'PACKAGING.EQUALS' : 'PACKAGING.OF' }}
-        </span>
-      </div>
-
-      <!-- Conversion Value -->
-      <div class="form-group" style="flex: 0 0 120px;">
-        <label *ngIf="i === 0" translate>PACKAGING.VALUE</label>
-        <input
-          class="input border-white-light"
-          type="number"
-          step="0.01"
-          min="0.01"
-          [(ngModel)]="conversion.value"
-          [name]="'value_' + i"
-          [placeholder]="'PACKAGING.ENTER_VALUE' | translate"
-          required
-        />
-      </div>
-
-      <!-- Previous Unit Display -->
-      <div class="form-group" style="flex: 1;">
-        <label *ngIf="i === 0" translate>PACKAGING.UNIT</label>
-        <div class="input border-white-light bg-gray-50">
-          {{ i === 0 ? baseUnit : packagingConversions[i-1].unitType }}
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3" *ngIf="attributes.length > 0; else noAttributes">
+      <div *ngFor="let attribute of attributes; let i = index; trackBy: trackByAttribute"
+        class="rounded-lg border border-white-light p-3">
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <p class="text-sm font-semibold text-primary">{{ attribute.name }}</p>
+          <button type="button" class="text-xs text-red-500 hover:text-red-600" (click)="removeAttribute(i)">
+            <span translate>INVENTORY.PRODUCT_VARIANTS_REMOVE</span>
+          </button>
         </div>
-      </div>
 
-      <!-- Action Buttons -->
-      <div class="form-group flex items-end gap-2" style="flex: 0 0 80px;">
-        <label *ngIf="i === 0" class="invisible">Actions</label>
-        <div class="mb-2 flex gap-2">
-          <!-- Add Button (shown on last row) -->
-          <button
-            *ngIf="i === packagingConversions.length - 1"
-            type="button"
-            class="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-white hover:bg-primary-dark"
-            (click)="addConversion()"
-            [title]="'PACKAGING.ADD_CONVERSION' | translate"
-          >
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
+        <div class="flex flex-wrap items-center gap-2">
+          <button *ngFor="let value of attribute.values; let valueIndex = index" type="button"
+            class="rounded-md border border-white-light px-2 py-1 text-xs text-primary"
+            (click)="removeAttributeValue(i, valueIndex)">
+            {{ value }} <i class="fa fa-times"></i>
           </button>
 
-          <!-- Remove Button (shown if more than 1 row) -->
-          <button
-            *ngIf="packagingConversions.length > 1"
-            type="button"
-            class="flex h-10 w-10 items-center justify-center rounded-md bg-red-500 text-white hover:bg-red-600"
-            (click)="removeConversion(i)"
-            [title]="'PACKAGING.REMOVE_CONVERSION' | translate"
-          >
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
+          <input class="input mt-0 min-w-[150px] flex-1 border-white-light" type="text"
+            [(ngModel)]="attribute.inputValue" [name]="'attributeInput_' + i"
+            [placeholder]="'INVENTORY.PRODUCT_VARIANTS_ADD_VALUE_PLACEHOLDER' | translate:{ attribute: attribute.name }"
+            (keydown)="addValueByEnter($event)" />
         </div>
       </div>
     </div>
+
+    <ng-template #noAttributes>
+      <div class="rounded-lg border border-dashed border-white-light bg-white p-4 text-sm text-gray-500" translate>
+        INVENTORY.PRODUCT_VARIANTS_EMPTY_HINT
+      </div>
+    </ng-template>
   </div>
 
-  <!-- Conversion Preview -->
-  <div class="mt-6 rounded-md bg-blue-50 p-4" *ngIf="packagingConversions.length > 0">
-    <h4 class="mb-2 text-sm font-semibold text-blue-900" translate>
-      PACKAGING.CONVERSION_SUMMARY
-    </h4>
-    <div class="space-y-1 text-sm text-blue-800">
-      <p *ngFor="let conversion of packagingConversions; let i = index">
-        <span class="font-medium">
-          1 {{ conversion.unitType || '___' }}
-        </span>
-        = 
-        <span class="font-medium">
-          {{ conversion.value || '___' }} 
-          {{ i === 0 ? baseUnit : packagingConversions[i-1].unitType }}
-        </span>
-      </p>
+  <div class="mt-5 overflow-hidden rounded-lg border border-white-light bg-white">
+    <div class="flex items-center justify-between border-b border-white-light bg-secondary px-4 py-3">
+      <h4 class="font-semibold text-primary" translate>INVENTORY.PRODUCT_VARIANTS_SUMMARY_TITLE</h4>
+      <span class="text-sm text-gray-500">
+        {{ "INVENTORY.PRODUCT_VARIANTS_COUNT" | translate:{ count: variantRows.length } }}
+      </span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[760px] text-sm">
+        <thead>
+          <tr class="border-b border-white-light text-left text-xs uppercase tracking-wide text-gray-500">
+            <th class="px-4 py-3" translate>INVENTORY.PRODUCT_VARIANTS_COL_VARIANT_NAME</th>
+            <th class="px-4 py-3" translate>INVENTORY.PRODUCT_VARIANTS_COL_SKU</th>
+            <th class="px-4 py-3" translate>INVENTORY.PRODUCT_VARIANTS_COL_STATUS</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <tr *ngFor="let variant of variantRows; let i = index; trackBy: trackByVariant">
+            <td class="px-4 py-3">
+              <p class="font-medium text-primary">{{ variant.variantName }}</p>
+            </td>
+            <td class="px-4 py-3">
+              <input class="table-input" type="text" [(ngModel)]="variant.sku" [name]="'variantSku_' + i"
+                (ngModelChange)="onVariantRowChange()" />
+            </td>
+            <td class="px-4 py-3">
+              <label class="inline-flex items-center gap-2">
+                <input type="checkbox" [(ngModel)]="variant.active" [name]="'variantStatus_' + i"
+                  (ngModelChange)="onVariantRowChange()" />
+                <span class="text-xs text-gray-700">
+                  {{
+                  variant.active
+                  ? ("INVENTORY.PRODUCT_VARIANTS_STATUS_ACTIVE" | translate)
+                  : ("INVENTORY.PRODUCT_VARIANTS_STATUS_INACTIVE" | translate)
+                  }}
+                </span>
+              </label>
+            </td>
+          </tr>
+          <tr *ngIf="variantRows.length === 0">
+            <td colspan="3" class="px-4 py-6 text-center text-sm text-gray-500" translate>
+              INVENTORY.PRODUCT_VARIANTS_EMPTY_TABLE_HINT
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
-  <!-- Submit button: pinned at bottom center on md+ -->
-  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
-    <button type="submit" class="btn-primary h-12 md:w-30" translate>
-      PACKAGING.SAVE
-    </button>
-  </div>
-
-  <!-- Submit button for small screens (normal flow) -->
-  <div class="mt-5 flex justify-center md:hidden">
-    <button type="submit" class="btn-primary h-12 md:w-30" translate>
-      PACKAGING.SAVE
+  <div class="mt-6 flex justify-center">
+    <button type="submit" class="btn-primary h-12 md:w-40" translate>
+      INVENTORY.PRODUCT_VARIANTS_SAVE
     </button>
   </div>
 </form>

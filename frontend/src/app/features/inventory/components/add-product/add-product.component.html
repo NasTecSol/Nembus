@@ -31,25 +31,25 @@
       class="dashboard-card custom-shadow border-white-light relative my-6 flex min-h-screen flex-col px-5 py-3"
     >
       <div *ngIf="roleActiveTab === 'Item Details'">
-        <add-item-detail></add-item-detail>
-      </div>
-      <div *ngIf="roleActiveTab === 'Dimensions'">
-        <add-dimension></add-dimension>
-      </div>
-      <div *ngIf="roleActiveTab === 'Inventory Details'">
-        <add-inventory-detail></add-inventory-detail>
+        <add-item-detail (stepComplete)="onStepComplete()"></add-item-detail>
       </div>
       <div *ngIf="roleActiveTab === 'Tax Info'">
-        <add-tax-info></add-tax-info>
+        <add-tax-info (stepComplete)="onStepComplete()"></add-tax-info>
+      </div>
+      <!-- <div *ngIf="roleActiveTab === 'Dimensions'">
+        <add-dimension></add-dimension>
+      </div> -->
+       <div *ngIf="roleActiveTab === 'Product Variants'">
+        <app-packaging (stepComplete)="onStepComplete()"></app-packaging>
+      </div>
+      <div *ngIf="roleActiveTab === 'Inventory Details'">
+        <add-inventory-detail (stepComplete)="onStepComplete()"></add-inventory-detail>
       </div>
       <div *ngIf="roleActiveTab === 'WholeSale & UoM'">
-        <add-wholesale></add-wholesale>
-      </div>
-       <div *ngIf="roleActiveTab === 'Packaging'">
-        <app-packaging></app-packaging>
+        <add-wholesale (stepComplete)="onStepComplete()"></add-wholesale>
       </div>
       <div *ngIf="roleActiveTab === 'Prices'">
-        <add-price></add-price>
+        <add-price (stepComplete)="onStepComplete()"></add-price>
       </div>
     </div>
   </div>

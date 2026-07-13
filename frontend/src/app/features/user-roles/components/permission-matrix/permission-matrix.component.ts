@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TranslateModule } from '@ngx-translate/core';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../../../environments/environment';
@@ -98,7 +98,7 @@ export class PermissionMatrixComponent implements OnInit {
 
   isSaving: boolean = false;
 
-  constructor(private http: HttpClient, private toasty: ToastyService,) { }
+  constructor(private http: HttpClient, private toasty: ToastyService, private translate: TranslateService) { }
 
   ngOnInit(): void {
     this.updateFilters();
@@ -500,16 +500,17 @@ export class PermissionMatrixComponent implements OnInit {
       }
 
       if (toDelete.length > 0) {
-        console.log(`Role ${roleId} → DELETE payload:`, { permissions: toDelete });
+        const permissionIds = toDelete.map(p => p.permission_id);
+        console.log(`Role ${roleId} → DELETE payload:`, { permission_ids: permissionIds });
         saveRequests.push(
-          this.http.request('delete', `${this.apiBaseUrl}/api/roles/${roleId}/permissions`, { body: { permissions: toDelete } })
+          this.http.request('delete', `${this.apiBaseUrl}/api/roles/${roleId}/permissions`, { body: { permission_ids: permissionIds } })
         );
       }
     });
 
     if (saveRequests.length === 0) {
       this.isSaving = false;
-      alert('No changes to save');
+      alert(this.translate.instant('PERMISSION_MATRIX.NO_CHANGES_TO_SAVE'));
       return;
     }
 
@@ -519,12 +520,12 @@ export class PermissionMatrixComponent implements OnInit {
         this.originalPermissions = JSON.parse(JSON.stringify(this.permissions));
         this.hasChanges = false;
         this.isSaving = false;
-        this.toasty.success('Permissions updated successfully');
+        this.toasty.success(this.translate.instant('PERMISSION_MATRIX.PERMISSIONS_UPDATED'));
       },
       error: err => {
         console.error('Error saving permissions', err);
         this.isSaving = false;
-        this.toasty.error('Error saving permissions. Please try again.');
+        this.toasty.error(this.translate.instant('PERMISSION_MATRIX.ERROR_SAVING'));
       }
     });
   }
@@ -600,7 +601,7 @@ export class PermissionMatrixComponent implements OnInit {
   }
 
   handleReset(): void {
-    if (confirm('Are you sure you want to reset all changes?')) {
+    if (confirm(this.translate.instant('PERMISSION_MATRIX.ARE_YOU_SURE_RESET'))) {
       this.permissions = JSON.parse(JSON.stringify(this.originalPermissions));
       this.hasChanges = false;
     }

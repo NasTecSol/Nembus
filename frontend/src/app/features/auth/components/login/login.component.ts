@@ -66,7 +66,8 @@ export class LoginComponent implements OnInit {
             console.log('Navigation response:', navRes);
             sessionStorage.setItem('UI-navigations', JSON.stringify(navRes));
             this.toasty.success('Login is successful');
-            this.router.navigateByUrl('/dashboard');
+            const backofficeUrl = environment.pos ? '/backoffice/dashboard' : '/dashboard';
+            this.router.navigateByUrl(backofficeUrl);
           },
           error: (navErr) => {
             console.error('Navigation API failed:', navErr);

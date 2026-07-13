@@ -1,106 +1,162 @@
-<form class="flex-grow">
+<form class="flex-grow" (ngSubmit)="onSubmit()">
+  <div class="mb-4 space-y-3" *ngIf="hasVariants && selectedVariantCards.length > 0">
+    <div *ngFor="let variantCard of selectedVariantCards; trackBy: trackByVariantCard"
+      class="custom-shadow flex flex-col justify-between gap-4 rounded-xl border border-white-light bg-white p-4 md:flex-row md:items-center">
+      <div class="min-w-0 flex-1">
+        <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <span class="rounded bg-secondary px-2 py-1 font-semibold text-primary">PRODUCT INFO</span>
+          <span class="text-gray-500">SKU: {{ variantCard.variant_sku || "-" }}</span>
+          <span class="rounded px-2 py-1 font-medium"
+            [ngClass]="variantCard.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+            {{ variantCard.is_active ? "Active" : "Inactive" }}
+          </span>
+        </div>
+
+        <h4 class="truncate text-lg font-semibold text-primary">
+          {{ variantCard.variant_name }}
+        </h4>
+
+        <div class="mt-2 flex flex-wrap gap-2">
+          <ng-container *ngIf="(variantCard.variant_attributes | keyvalue).length > 0; else noVariantAttributes">
+            <span *ngFor="let attr of variantCard.variant_attributes | keyvalue"
+              class="rounded bg-secondary px-2 py-1 text-xs text-gray-700">
+              {{ attr.key }}: {{ attr.value }}
+            </span>
+          </ng-container>
+          <ng-template #noVariantAttributes>
+            <span class="text-xs text-gray-500">No variant attributes</span>
+          </ng-template>
+        </div>
+      </div>
+
+      <img [src]="variantCard.image_url || defaultVariantImage" (error)="onVariantImageError($event)"
+        [alt]="variantCard.variant_name" class="h-24 w-24 rounded-lg border border-white-light object-cover" />
+    </div>
+  </div>
+
   <!-- First Grid Section -->
   <div class="form-row">
     <div class="form-group">
-      <label for="committedOrder2" translate>INVENTORY.IS_COMMITTED</label>
-      <input
-        id="committedOrder2"
-        name="committedOrder2"
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label class="block" translate>INVENTORY.STORE</label>
+      <select class="input border-white-light" name="storeId" [(ngModel)]="inventoryPayload.store_id"
+        (ngModelChange)="onStoreChange($event)" [ngModelOptions]="{ standalone: true }">
+        <option [ngValue]="null">
+          {{ "INVENTORY.SELECT_STORE" | translate }}
+        </option>
+        <option *ngFor="let store of stores" [value]="store.id">
+          {{ store.name }}
+        </option>
+      </select>
     </div>
 
     <div class="form-group">
-      <label for="onHand2" translate>INVENTORY.ON_HAND</label>
-      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
-      <input
-        id="onHand2"
-        name="onHand2"
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label class="block" translate>INVENTORY.STORAGE_LOCATION</label>
+      <select class="input border-white-light" name="storageLocationId"
+        [(ngModel)]="inventoryPayload.storage_location_id" [ngModelOptions]="{ standalone: true }"
+        [disabled]="!inventoryPayload.store_id || storageLocations.length === 0">
+        <option [ngValue]="null">
+          {{ storageLocations.length === 0 && inventoryPayload.store_id
+          ? ("INVENTORY.NO_LOCATIONS" | translate)
+          : ("INVENTORY.SELECT_STORAGE_LOCATION" | translate) }}
+        </option>
+        <option *ngFor="let location of storageLocations" [value]="location.id">
+          {{ location.name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="form-group" *ngIf="hasVariants">
+      <label class="block" translate>INVENTORY.PRODUCT_VARIANT</label>
+      <select class="input border-white-light" name="productVariantId" [(ngModel)]="inventoryPayload.product_variant_id"
+        (ngModelChange)="onVariantSelectionChange($event)" [ngModelOptions]="{ standalone: true }"
+        [disabled]="productVariants.length === 0">
+        <option [ngValue]="null">
+          {{ productVariants.length === 0
+          ? ("INVENTORY.NO_PRODUCT_VARIANTS" | translate)
+          : ("INVENTORY.SELECT_PRODUCT_VARIANT" | translate) }}
+        </option>
+        <option *ngFor="let variant of productVariants" [ngValue]="variant.id">
+          {{ variant.variant_name }}
+        </option>
+      </select>
     </div>
 
     <div class="form-group">
-      <label for="numberInBuy2" translate>INVENTORY.NUMBER_IN_BUY</label>
-      <input
-        id="numberInBuy2"
-        name="numberInBuy2"
-        class="input border-white-light"
-        type="number"
-        [placeholder]="'INVENTORY.ENTER_UNITS_PER_CARTON' | translate"
-        required
-      />
+      <label for="quantityOnHand" translate>INVENTORY.ON_HAND</label>
+      <input id="quantityOnHand" name="quantityOnHand" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.quantity_on_hand" [placeholder]="'INVENTORY.ENTER' | translate" required />
     </div>
 
-    <div class="flex items-center gap-2 md:mt-12 md:ml-10">
-      <input
-        id="isInventoryItem2"
-        name="isInventoryItem2"
-        class="accent-primary block"
-        type="checkbox"
-        value="true"
-      />
-      <label for="isInventoryItem2" translate>
-        INVENTORY.IS_INVENTORY_ITEM
-      </label>
-    </div>
+
   </div>
 
   <!-- Second Grid Section -->
   <div class="form-row">
     <div class="form-group">
-      <label for="vatGroup2" class="block" translate>INVENTORY.VAT_GROUP</label>
-      <select id="vatGroup2" name="vatGroup2" class="input border-white-light">
-        <option value="">{{ "INVENTORY.SELECT_GROUP" | translate }}</option>
-        <option value="first">{{ "INVENTORY.FIRST" | translate }}</option>
-        <option value="second">{{ "INVENTORY.SECOND" | translate }}</option>
-      </select>
+      <label for="quantityAvailable" translate>INVENTORY.QUANTITY_AVAILABLE</label>
+      <input id="quantityAvailable" name="quantityAvailable" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.quantity_available" [placeholder]="'INVENTORY.ENTER' | translate" required />
+    </div>
+    <div class="form-group">
+      <label for="quantityAllocated" translate>INVENTORY.QUANTITY_ALLOCATED</label>
+      <input id="quantityAllocated" name="quantityAllocated" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.quantity_allocated" [placeholder]="'INVENTORY.ENTER' | translate" required />
     </div>
 
     <div class="form-group">
-      <label for="minOrderQty2" translate>INVENTORY.MIN_ORDER_QTY</label>
-      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
-      <input
-        id="minOrderQty2"
-        name="minOrderQty2"
-        class="input border-white-light"
-        type="number"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label for="quantityOnOrder" translate>INVENTORY.QUANTITY_ON_ORDER</label>
+      <input id="quantityOnOrder" name="quantityOnOrder" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.quantity_on_order" [placeholder]="'INVENTORY.ENTER' | translate" required />
     </div>
 
     <div class="form-group">
-      <label for="maxOrderQty2" translate>INVENTORY.MAX_ORDER_QTY</label>
-      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
-      <input
-        id="maxOrderQty2"
-        name="maxOrderQty2"
-        class="input border-white-light"
-        type="number"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label for="quantityInTransit" translate>INVENTORY.QUANTITY_IN_TRANSIT</label>
+      <input id="quantityInTransit" name="quantityInTransit" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.quantity_in_transit" [placeholder]="'INVENTORY.ENTER' | translate" required />
+    </div>
+
+
+  </div>
+
+  <!-- Third Grid Section -->
+  <div class="form-row">
+    <div class="form-group">
+      <label for="reorderLevel" translate>INVENTORY.REORDER_LEVEL</label>
+      <input id="reorderLevel" name="reorderLevel" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.reorder_level" [placeholder]="'INVENTORY.ENTER' | translate" required />
+    </div>
+    <div class="form-group">
+      <label for="reorderQuantity" translate>INVENTORY.REORDER_QUANTITY</label>
+      <input id="reorderQuantity" name="reorderQuantity" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.reorder_quantity" [placeholder]="'INVENTORY.ENTER' | translate" required />
+    </div>
+
+    <div class="form-group">
+      <label for="maxStockLevel" translate>INVENTORY.MAX_STOCK_LEVEL</label>
+      <input id="maxStockLevel" name="maxStockLevel" class="input border-white-light" type="number" min="0"
+        [(ngModel)]="inventoryPayload.max_stock_level" [placeholder]="'INVENTORY.ENTER' | translate" required />
     </div>
   </div>
 
+  <!-- Error / Success messages -->
+  <!-- <div *ngIf="errorMessage" class="mt-3 text-center text-red-500 text-sm">
+    {{ errorMessage }}
+  </div>
+  <div *ngIf="successMessage" class="mt-3 text-center text-green-500 text-sm">
+    {{ successMessage }}
+  </div> -->
+
   <!-- Submit button: pinned at bottom center on md+ -->
-  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
-    <button type="submit" class="btn-primary h-12 md:w-30" translate>
-      INVENTORY.SUBMIT
+  <div class="absolute right-0 bottom-50 left-0 hidden justify-center md:flex">
+    <button type="submit" class="btn-primary h-12 md:w-30" [disabled]="isSubmitting" translate>
+      {{ isSubmitting ? ('INVENTORY.SUBMITTING' | translate) : ('INVENTORY.SUBMIT' | translate) }}
     </button>
   </div>
 
   <!-- Submit button for small screens -->
   <div class="mt-5 flex justify-center md:hidden">
-    <button type="submit" class="btn-primary h-12 md:w-30" translate>
-      INVENTORY.SUBMIT
+    <button type="submit" class="btn-primary h-12 md:w-30" [disabled]="isSubmitting" translate>
+      {{ isSubmitting ? ('INVENTORY.SUBMITTING' | translate) : ('INVENTORY.SUBMIT' | translate) }}
     </button>
   </div>
 </form>

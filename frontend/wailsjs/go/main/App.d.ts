@@ -17,6 +17,12 @@ export function InitializeSync():Promise<void>;
 
 export function IsAppSetup():Promise<boolean>;
 
+export function IsBackendReady():Promise<boolean>;
+
+export function LoadDeviceConfig():Promise<string>;
+
+export function SaveDeviceConfig(arg1:string):Promise<string>;
+
 export function StartDatabase(arg1:string,arg2:string,arg3:string,arg4:number):Promise<string>;
 
 export function StartSyncService(arg1:string):Promise<void>;

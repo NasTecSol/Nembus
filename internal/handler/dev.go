@@ -30,8 +30,7 @@ func NewDevHandler() *DevHandler {
 // @Router       /dev/token [get]
 func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// Check if we're in development mode
-	env := os.Getenv("ENV")
-	if env != "development" && env != "dev" {
+	if env := os.Getenv("ENV"); env != "development" && env != "dev" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "dev token endpoint only available in development mode"})
 		return
 	}

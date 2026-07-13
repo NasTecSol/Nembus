@@ -1,6 +1,11 @@
 // Overlay backdrop with light blur
 .overlay-backdrop {
-  @apply fixed top-0 right-0 bottom-0 left-0 flex items-center justify-center z-50;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
   // background-color: rgba(0, 0, 0, 0.15);
   backdrop-filter: blur(1px);
   animation: fadeIn 0.2s ease-in-out;
@@ -8,7 +13,10 @@
 
 // Overlay content box
 .overlay-content {
-  @apply bg-white rounded-lg shadow-2xl p-6;
+  background-color: var(--color-white-snow, #ffffff);
+  border-radius: 0.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 1.5rem;
   width: 90%;
   max-width: 640px;
   animation: slideUp 0.3s ease-out;
@@ -16,13 +24,18 @@
 
 // Input field styling
 .input-field {
-  @apply w-full px-3 py-2 border border-gray-light2 rounded text-sm;
-  
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-gray-light2, #e5e7eb);
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+
   &:focus {
-    @apply outline-none;
+    outline: none;
     border-color: var(--color-primary);
   }
-  
+
   &::placeholder {
     color: var(--color-gray-light);
   }
@@ -30,10 +43,12 @@
 
 // Icon upload button
 .icon-upload-btn {
-  @apply p-2 border border-gray-light2 rounded;
+  padding: 0.5rem;
+  border: 1px solid var(--color-gray-light2, #e5e7eb);
+  border-radius: 0.25rem;
   color: var(--color-gray);
   transition: all 0.2s;
-  
+
   &:hover {
     background-color: var(--color-gray-light3);
   }
@@ -41,28 +56,48 @@
 
 // Toggle switch
 .toggle-switch {
-  @apply relative inline-flex items-center cursor-pointer;
-  
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+
   input[type="checkbox"] {
-    @apply sr-only;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
   }
-  
+
   .toggle-slider {
-    @apply block w-11 h-6 rounded-full;
+    display: block;
+    width: 2.75rem;
+    height: 1.5rem;
+    border-radius: 9999px;
     background-color: var(--color-gray-light2);
     position: relative;
     transition: background-color 0.2s;
-    
+
     &::after {
-      content: '';
-      @apply absolute top-0.5 left-0.5 bg-white rounded-full h-5 w-5;
+      content: "";
+      position: absolute;
+      top: 0.125rem;
+      left: 0.125rem;
+      width: 1.25rem;
+      height: 1.25rem;
+      background-color: var(--color-white-snow, #ffffff);
+      border-radius: 9999px;
       transition: transform 0.2s;
     }
   }
-  
+
   input[type="checkbox"]:checked + .toggle-slider {
     background-color: var(--color-primary);
-    
+
     &::after {
       transform: translateX(20px);
     }
@@ -71,25 +106,27 @@
 
 // Button styles
 .btn-primary {
-  @apply px-6 py-2 rounded;
+  padding: 0.5rem 1.5rem;
+  border-radius: 0.25rem;
   background-color: var(--color-primary);
-  color: white;
+  color: #ffffff;
   transition: opacity 0.2s;
-  
+
   &:hover {
     opacity: 0.9;
   }
 }
 
 .btn-cancel {
-  @apply px-6 py-2 rounded border;
+  padding: 0.5rem 1.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-red);
   color: var(--color-red);
-  border-color: var(--color-red);
   transition: all 0.2s;
-  
+
   &:hover {
     background-color: var(--color-red);
-    color: white;
+    color: #ffffff;
   }
 }
 

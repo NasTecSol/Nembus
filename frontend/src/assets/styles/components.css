@@ -1,86 +1,51 @@
-/*-----------------------------------------------------------------------------------------------------------------*/
-/*                                                Component Layer                                                  */
-/*-----------------------------------------------------------------------------------------------------------------*/
-
+/* =======================================================================================
+   COMPONENT LAYER
+   ======================================================================================= */
 @layer components {
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                                Typography                                                       */
-    /*-----------------------------------------------------------------------------------------------------------------*/
 
-    .text-primary-lg {
-        @apply text-primary text-xl font-bold;
-    }
-
-    .text-primary-sm {
-        @apply text-primary text-[15px] font-bold;
-    }
-
-    .text-secondary-bold {
-        @apply text-secondary font-semibold;
-    }
-
-    .text-secondary-normal {
-        @apply text-[#6c737f] font-[400];
-    }
-
+    /* === TYPOGRAPHY === */
     .text-dark-bold {
-        @apply text-[#0e1726] font-semibold;
+        @apply font-semibold text-[#0e1726];
     }
 
     .text-dark-bold-lg {
-        @apply text-[#0e1726] text-base font-bold;
-    }
-
-    .text-gray-label {
-        @apply text-gray-border font-bold;
+        @apply text-xl font-bold text-[#0e1726];
     }
 
     .text-slate-gray {
         @apply text-gray-border font-semibold;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                      Custom Flexbox Utility Classes                                            */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
+    /* === FLEXBOX UTILITIES === */
     .flex-box-col {
-        @apply flex flex-col justify-center items-center;
+        @apply flex flex-col items-center justify-center;
     }
 
     .flex-box-row {
-        @apply flex justify-center items-center;
+        @apply flex items-center justify-center;
     }
 
     .flex-box-row-between {
-        @apply flex justify-between items-center;
+        @apply flex items-center justify-between;
     }
 
     .flex-responsive {
-        @apply flex flex-col md:flex-row md:justify-between items-center gap-2;
+        @apply flex flex-col items-center gap-2 md:flex-row md:justify-between;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                         Custom Gradient Classes                                                */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
+    /* === GRADIENTS === */
     .grad-vertical-tb {
-        @apply bg-gradient-to-b from-primary to-secondary;
+        @apply from-primary to-secondary bg-gradient-to-b;
     }
 
     .grad-horizontal-lr {
-        @apply bg-gradient-to-r from-primary to-secondary;
+        @apply from-primary to-secondary bg-gradient-to-r;
     }
 
-    .grad-yellow {
-        @apply bg-gradient-to-r from-yellow-light to-yellow-dark;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                               Custom Shadows                                                    */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
+    /* === SHADOWS === */
     .custom-shadow {
-        box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.03),
+        box-shadow:
+            0 0 0 0.5px rgba(0, 0, 0, 0.03),
             0 5px 22px 0 rgba(0, 0, 0, 0.04);
     }
 
@@ -88,333 +53,17 @@
         box-shadow: 0px 5px 5.2px 0px #335c67;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                                Custom Buttons                                                   */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
+    /* === BUTTONS === */
     .btn-primary {
-        @apply w-full h-14 bg-selectedobj rounded-lg text-white hover:bg-primary/90 transition;
-    }
-
-    .btn-add {
-        @apply flex w-full min-h-12 items-center justify-center gap-2 rounded-lg bg-selectedobj px-4 text-white md:w-auto text-lg;
+        @apply bg-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-lg text-white md:w-auto;
     }
 
     .btn-submit {
-        @apply flex w-full min-h-10 items-center justify-center rounded-lg bg-selectedobj px-5 py-2 text-white md:w-auto md:min-w-32 text-lg whitespace-nowrap border border-primary;
+        @apply bg-primary border-primary flex min-h-10 w-full items-center justify-center rounded-lg border px-5 py-2 text-lg whitespace-nowrap text-white md:w-auto md:min-w-32;
     }
 
-    .btn-base {
-        @apply w-full md:w-auto min-w-30 p-4 rounded-lg text-white flex flex-col items-center text-center gap-2;
-    }
-
-    .btn-back {
-        @apply text-xl md:text-3xl text-primary transition-transform duration-300;
-    }
-
-    html[dir="rtl"] .btn-back {
-        transform: rotate(180deg);
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              App Accordion                                                      */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .accordion-header {
-        @apply flex justify-between items-center px-4 py-4 cursor-pointer select-none;
-    }
-
-    .accordion-header>span {
-        @apply font-semibold text-primary;
-    }
-
-    .accordion-header>i {
-        @apply text-primary text-lg transition-transform duration-300;
-    }
-
-    .accordion-content {
-        @apply overflow-hidden transition-all duration-300 ease-in-out px-4;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              App Switch                                                         */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .switch {
-        @apply relative inline-flex items-center cursor-pointer;
-    }
-
-    .switch-background {
-        @apply w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-primary transition-colors duration-300 ease-in-out;
-    }
-
-    .switch-dot {
-        @apply absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out peer-checked:translate-x-5;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              App Form                                                           */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .form-group {
-        @apply mt-3 md:mt-6;
-    }
-
-    .checkbox-wrapper {
-        @apply flex gap-2 items-center;
-    }
-
-    .checkbox-input {
-        @apply w-4 h-4 rounded-sm border border-gray-300 accent-primary;
-    }
-
-    .custom-checkbox-wrapper {
-        @apply flex items-center space-x-2;
-    }
-
-    .custom-checkbox-wrapper>label {
-        @apply flex items-center cursor-pointer relative;
-    }
-
-    .custom-checkbox-wrapper>label>input {
-        @apply h-5 w-5 cursor-pointer transition-all appearance-none rounded shadow hover:shadow-md;
-    }
-
-    .checkbox-teal {
-        @apply border border-teal checked:bg-teal;
-    }
-
-    .checkbox-red {
-        @apply border border-red checked:bg-red;
-    }
-
-    .checkbox-red-crimson {
-        @apply border border-red-crimson checked:bg-red-crimson;
-    }
-
-    .checkbox-orange {
-        @apply border border-orange checked:bg-orange;
-    }
-
-    .checkbox-emerald {
-        @apply border border-emerald checked:bg-emerald;
-    }
-
-    .checkbox-purple {
-        @apply border border-purple checked:bg-purple;
-    }
-
-    .checkbox-label-text {
-        @apply text-gray-border font-semibold text-sm;
-    }
-
-    .checkbox-svg {
-        @apply absolute text-white opacity-0 peer-checked:opacity-100 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              App Table                                                          */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .data-table {
-        @apply min-w-full table-auto border-separate border-spacing-y-2;
-    }
-
-    .data-table>thead>tr>th {
-        @apply px-4 py-3 text-center text-nowrap;
-    }
-
-    .data-table>tbody>tr>td {
-        @apply px-4 py-3 text-center text-nowrap;
-    }
-
-    .data-table>tbody>tr {
-        @apply cursor-pointer transition-all;
-    }
-
-    .selected-row {
-        @apply bg-primary text-white;
-    }
-
-    .hoverable-row {
-        @apply hover:bg-gray-100;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              App Tabs                                                        */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .tabs-container {
-        @apply flex flex-col w-full md:flex-row gap-2;
-    }
-
-    .btn-tab {
-        @apply flex-shrink-0 px-6 py-5 h-10 whitespace-nowrap transition duration-500 rounded-lg font-bold text-lg flex items-center justify-center border border-primary;
-    }
-
-    .btn-tab-active {
-        @apply bg-primary text-white;
-    }
-
-    .btn-tab-not-active {
-        @apply bg-secondary text-primary;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              App Divider                                                        */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .divider {
-        @apply border-b-1 border-gray-border;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              Custom Input Classes                                               */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .login-input-field {
-        @apply outline-none border-b-1 border-gray-light py-2 placeholder:text-xl placeholder:text-gray-light caret-gray-light;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              Icons                                                              */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .plus-icon {
-        @apply mr-2 text-2xl;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              Modals                                                             */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .modal-overlay {
-        @apply fixed top-0 right-0 bottom-0 left-0 bg-black/20 flex items-center justify-center z-50;
-    }
-
-    .modal-content {
-        @apply bg-white w-full h-full md:max-w-[400px] px-5 py-3 rounded-lg shadow-lg relative overflow-y-auto;
-    }
-
-    .btn-modal {
-        @apply flex w-full min-h-10 items-center justify-center rounded-lg bg-primary px-5 text-white md:w-auto md:min-w-32 text-lg whitespace-nowrap border border-primary;
-    }
-
-    .modal-label {
-        @apply text-base text-black;
-    }
-
-    .modal-input {
-        @apply mt-1 w-full block border-1 border-gray-border/30 text-gray-border p-2 rounded-lg outline-none;
-    }
-
-    .modal-form-row {
-        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                              Dashboard Starter                                                  */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .dashboard-card {
-        @apply rounded-lg border-1 border-gray-50 px-3 py-2;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                         User Roles & Permissions                                                */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .input-style {
-        @apply w-full py-2 outline-none bg-transparent border-none;
-    }
-
-    .btn-red {
-        @apply bg-red-bright;
-    }
-
-    .input {
-        @apply mt-2 w-full block border-1 p-2 rounded outline-none;
-    }
-
-    .table-input {
-        @apply w-full py-1 min-w-20 text-center block border-1 border-gray/50 rounded outline-none;
-    }
-
-    .table-divider {
-        @apply border-b-1 border-gray-border/20;
-    }
-
-    .permission-table>thead>tr>th {
-        @apply py-3;
-    }
-
-    .permission-table>tbody>tr>td {
-        @apply py-3;
-    }
-
-    .permission-table>tbody>tr>td>a {
-        @apply bg-[#F2F4F7] shadow rounded p-2 flex justify-between items-center cursor-pointer;
-    }
-
-    .permission-table>tbody>tr>td>a>i {
-        @apply text-lg text-primary transition-transform duration-300;
-    }
-
-    .dropdown-wrapper {
-        @apply absolute text-left right-0 mt-2 bg-[#F2F4F7] shadow-lg rounded p-2 z-10;
-    }
-
-    .dropdown-wrapper>p {
-        @apply hover:bg-gray-100 p-2 cursor-pointer flex justify-between items-center;
-    }
-
-    .dropdown-wrapper>p>i {
-        @apply text-primary ml-2;
-    }
-
-    .shift-table>thead>tr>th,
-    .shift-table>tbody>tr>td {
-        @apply border-b-1 border-gray/10;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                         Add Items and Inventory                                                 */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .cat-card {
-        @apply aspect-square flex flex-col cursor-pointer overflow-hidden rounded-lg bg-white transition-shadow;
-    }
-
-    .cat-img {
-        @apply absolute left-1/2 top-1/2 h-full w-full -translate-x-1/2 -translate-y-1/2 transform object-cover z-100;
-    }
-
-    .prod-card {
-        @apply overflow-hidden rounded-lg bg-white shadow-lg transition-shadow hover:shadow-lg;
-    }
-
-    .form-row {
-        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 col-span-4 w-full;
-    }
-
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                             Wholesale Products                                                  */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .product-table {
-        @apply min-w-full table-auto text-center;
-    }
-
-    .table-heading-row>th {
-        @apply px-4 py-2 border border-secondary border-t-0 text-nowrap;
-    }
-
-    .table-body-row>td {
-        @apply px-4 py-3 border border-secondary border-b-0 text-nowrap;
-    }
-
-    .btn-wholesale {
-        @apply shadow-lg w-[100px] h-[100px] font-bold rounded-lg text-center px-2;
+    .btn-cart {
+        @apply bg-secondary text-gray flex h-10 min-h-10 w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-normal;
     }
 
     .btn-active {
@@ -425,167 +74,216 @@
         @apply bg-secondary text-primary hover:bg-secondary/50;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                             Stores & Locations                                                  */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .general-row {
-        @apply grid grid-cols-1 md:grid-cols-2 md:gap-3;
+    .btn-back {
+        @apply text-primary text-xl transition-transform duration-300 md:text-3xl;
     }
 
-    .add-store-row {
-        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4;
+    html[dir='rtl'] .btn-back {
+        transform: rotate(180deg);
     }
 
-    .general-input {
-        @apply border-white-light;
+    .btn-square {
+        @apply h-10 w-10 rounded bg-white px-2 py-2 shadow-2xl;
     }
 
-    .store-table>thead>tr>th {
-        @apply border-0;
+    .btn-tab-square {
+        @apply h-[100px] w-[100px] rounded-xl px-2 text-center font-bold shadow-lg transition-all duration-300;
     }
 
-    .store-table>tbody>tr>td {
-        @apply border-0 border-b-1 text-primary;
+    .btn-tab-discounts {
+        @apply h-[80px] w-[80px] rounded-xl text-center text-[13px] font-bold shadow-lg transition-all duration-300;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                             Cash Collection                                                     */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .tooltip {
-        @apply flex items-center justify-center;
+    /* === FORMS === */
+   .form-row {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 col-span-4 w-full;
+    }
+    .form-group {
+        @apply mt-3 md:mt-6;
     }
 
-    .tooltip img {
-        @apply w-6 h-6 rounded-full object-cover border-2 border-white cursor-pointer;
+  .form-input {
+    @apply mt-2 w-full block border-1 p-2 rounded outline-none py-3;
+     }
+
+    .custom-input {
+        @apply border-gray/30 text-gray mt-2 block max-h-[50px] w-full rounded-lg border-1 bg-white px-3 py-4 outline-none;
     }
 
-    .tooltip .tooltip-text {
-        @apply absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 hidden group-hover:flex px-2 py-1 bg-black text-white text-[10px] rounded shadow-md whitespace-nowrap z-10;
+    .error-message {
+        @apply text-red-difference mt-1;
     }
 
-    .tooltip .badge {
-        @apply text-[10px] flex items-center justify-center w-6 h-6 bg-[#5cabe7] rounded-full text-white font-medium border-2 border-white cursor-pointer;
+    /* === TABLES === */
+    /* -- Items Table -- */
+    .table-wrapper {
+        @apply grid grid-cols-1 overflow-x-auto rounded-2xl px-4 py-2 shadow-lg;
     }
 
-    .status>span {
-        @apply rounded-full px-2 py-1 text-white text-nowrap;
+    .item-table {
+        @apply min-w-full table-auto border-separate border-spacing-y-1;
     }
 
-    .pending {
-        @apply bg-yellow-light;
+    .item-table > thead > tr > th {
+        @apply text-default-black border-b border-[#A9A9A9] px-8 py-2 text-left text-base font-bold text-nowrap;
     }
 
-    .pending-approval {
-        @apply bg-yellow-light;
+    .item-table > tbody > tr > td {
+        @apply border-b border-[#A9A9A9] px-8 py-2 text-left text-base font-[500] text-nowrap text-black;
     }
 
-    .submitted {
-        @apply bg-emerald;
+    .item-table > tbody > tr {
+        @apply shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)];
     }
 
-    .recount {
-        @apply bg-red-difference;
+    /* -- Bill Table -- */
+    .bill-table {
+        @apply min-w-full table-auto border-separate border-spacing-y-3;
     }
 
-    .invoices-table>tbody>tr>td {
-        @apply border-[#6c737f]/20 border-b-[.5px] text-primary;
+    .bill-table > thead > tr > th {
+        @apply text-default-black border-b border-[#A9A9A9]/30 px-8 py-4 text-left text-base font-bold text-nowrap;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                             Promotions & Discount                                               */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .promotion-form-row {
-        @apply grid grid-cols-1 lg:grid-cols-3 gap-4;
+    .bill-table > tbody > tr > td {
+        @apply border-b border-[#A9A9A9]/30 px-8 py-4 text-left text-base font-[500] text-nowrap;
     }
 
-    .left-col-wrapper {
-        @apply min-h-screen md:col-span-1 flex-grow rounded-2xl shadow-none border-0 bg-[#F2F4F7] p-4 overflow-x-auto;
+    .bill-table > tbody > tr {
+        @apply cursor-pointer transition-all;
     }
 
-    .right-col-wrapper {
-        @apply min-h-screen md:col-span-2 flex-grow border border-black/10 rounded-2xl bg-white-snow p-4 overflow-x-auto;
+    /* -- Wholesale Table -- */
+    .wholesale-table {
+        @apply min-w-full table-auto;
     }
 
-    .btn-action-wrapper {
-        @apply flex flex-wrap justify-end gap-4 md:gap-8 mt-8;
+    .wholesale-table > thead > tr > th {
+        @apply text-default-black border border-[#D2D2D2]/30 px-8 py-4 text-left text-base font-bold;
     }
 
-    .add-promotion-row {
-        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4;
+    .wholesale-table > tbody > tr > td {
+        @apply border border-[#D2D2D2]/30 px-8 py-6 text-left text-base font-[500];
     }
 
-    .add-coupon-row {
-        @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4;
+    .wholesale-table > tbody > tr {
+        @apply cursor-pointer transition-all;
     }
 
-    .promotion-table>thead>tr>th {
-        @apply text-start text-primary;
+    /* -- Log Table -- */
+    .log-table {
+        @apply min-w-full table-auto;
     }
 
-    .promotion-table>tbody>tr {
-        @apply cursor-auto bg-secondary;
+    .log-table > thead > tr > th {
+        @apply text-default-black border border-[#D2D2D2]/50 px-4 py-4 text-left text-base font-bold text-wrap;
     }
 
-    .promotion-table>tbody>tr>td {
-        @apply text-start text-primary font-bold;
+    .log-table > tbody > tr > td {
+        @apply border border-[#D2D2D2]/50 px-4 py-6 text-left text-base font-[500] text-wrap;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                                   Reports                                                       */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .reports-label-wrapper {
-        @apply flex items-center justify-between md:justify-start gap-5;
+    /* === TABS === */
+    .btn-tab {
+        @apply border-primary flex min-h-12 flex-shrink-0 items-center justify-center rounded-lg border px-6 py-3 text-lg font-bold whitespace-nowrap transition duration-500;
     }
 
-    .reports-label-wrapper>label {
-        @apply text-gray-border font-bold;
+    .btn-tab-active {
+        @apply bg-primary text-white;
     }
 
-    .reports-label-wrapper>input {
-        @apply mt-0 w-70 md:w-50 text-gray-border;
+    .btn-tab-not-active {
+        @apply text-primary bg-white;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                                   Suppliers                                                     */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .supplier-form-wrapper>div>label {
-        @apply ml-[6px];
+    /* === INPUTS === */
+    .login-input-field {
+        @apply bg-secondary placeholder:text-gray-light caret-gray-light min-h-[64px] rounded-[10px] px-2 py-5 shadow-lg outline-none placeholder:text-xl;
     }
 
-    .input-plain {
-        @apply border-0 text-gray;
+    .number-pad {
+        @apply bg-secondary hover:bg-secondary/80 active:bg-primary focus:bg-primary flex h-[71px] w-[71px] items-center justify-center rounded-full text-black transition duration-300 hover:text-black/80 focus:text-white;
     }
 
-    /*-----------------------------------------------------------------------------------------------------------------*/
-    /*                                                   Purchasing                                                    */
-    /*-----------------------------------------------------------------------------------------------------------------*/
-
-    .invoice-text {
-        @apply text-gray-border font-bold;
+    /* === ICONS === */
+    .plus-icon {
+        @apply mr-2 text-2xl;
     }
 
-    .invoice-span {
-        @apply inline-block border-1 border-gray/50 rounded px-2 text-black font-semibold min-w-20 text-center ml-2;
+    /* === MODALS === */
+    .modal-overlay {
+        @apply fixed inset-0 z-50 flex items-center justify-center bg-black/20;
     }
 
-    .text-invoice1 {
-        @apply text-[#60737D] text-[10px] font-[400];
+    .modal-content {
+        @apply relative w-full overflow-y-auto rounded-lg bg-white px-5 py-3 shadow-lg md:max-w-[400px];
     }
 
-    .text-invoice2 {
-        @apply text-[#121722] text-[10px] font-[400];
+    /* === HEADER === */
+    .dropdown-wrapper {
+        @apply absolute top-17 z-1000 flex items-center justify-center;
     }
 
-    .invoice-table>thead>tr>th {
-        @apply text-start py-6 px-3;
+    .dropdown-content {
+        @apply border-white-light w-64 rounded-lg border bg-white px-4 py-6 shadow-2xl;
     }
 
-    .invoice-table>tbody>tr>td {
-        @apply text-start px-3 py-2;
+    .dropdown-content > ul {
+        @apply flex flex-col space-y-5;
+    }
+
+    .dropdown-content > ul > li > a {
+        @apply border-gray-light/20 flex items-center gap-4 border-b-1 text-black;
+    }
+
+    .dropdown-content > ul > li > i {
+        @apply text-primary text-lg;
+    }
+
+    /* === CARDS === */
+    .cat-card {
+        @apply flex aspect-square cursor-pointer flex-col overflow-hidden rounded-lg bg-white transition-shadow;
+    }
+
+    .cat-img {
+        @apply absolute top-1/2 left-1/2 z-100 h-full w-full -translate-x-1/2 -translate-y-1/2 transform object-cover;
+    }
+
+    .prod-card {
+        @apply overflow-hidden rounded-lg bg-white shadow-lg transition-shadow hover:shadow-lg;
+    }
+
+    /* === SIDEBAR === */
+    .sidebar-wrapper {
+        @apply bg-sidebar/20 relative grid min-h-[90vh] min-w-[300px] grid-cols-1 rounded-2xl px-4 py-2 shadow-lg;
+    }
+
+     /* === Loader === */
+    .loader {
+        @apply border-2 border-white border-t-transparent rounded-full w-5 h-5 animate-spin;
+    }
+ }
+
+/* =======================================================================================
+   PRINT STYLES — hides everything except .invoice-print-section
+   ======================================================================================= */
+@media print {
+    /* Hide the entire page */
+    body * {
+        visibility: hidden !important;
+    }
+
+    /* Show only the invoice section and all its children */
+    .invoice-print-section,
+    .invoice-print-section * {
+        visibility: visible !important;
+    }
+
+    /* Position invoice at the top-left of the printed page */
+    .invoice-print-section {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
     }
 }

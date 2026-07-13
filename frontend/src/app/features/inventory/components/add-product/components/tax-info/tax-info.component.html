@@ -1,47 +1,48 @@
 <form class="flex-grow">
   <div class="form-row">
     <div class="form-group">
-      <label translate>INVENTORY.TAX_CODE_AR</label>
-      <span class="text-gray ml-1" translate>INVENTORY.READY_TO_ORDER</span>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label class="block" translate>INVENTORY.TAX</label>
+
+      <select class="input border-white-light" [(ngModel)]="selectedTaxId" (ngModelChange)="onTaxChange($event)"
+        [ngModelOptions]="{ standalone: true }">
+
+        <option>
+          {{ "INVENTORY.SELECT_TAX" | translate }}
+        </option>
+
+        <option *ngFor="let store of tax" [value]="store.id">
+          {{ store.name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label translate>INVENTORY.TAX_CODE</label>
+      <input class="input border-white-light" type="text" [value]="selectedTax?.code || ''" readonly />
     </div>
     <div class="form-group">
-      <label translate>INVENTORY.TAX_CODE_AP</label>
-      <span class="text-gray ml-1" translate>INVENTORY.OPTIONAL</span>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+      <label translate>INVENTORY.TAX_RATE</label>
+      <input class="input border-white-light" type="text" [value]="selectedTax?.tax_rate || ''" readonly />
     </div>
-    <div class="form-group">
-      <label translate>INVENTORY.INDIRECT_TAX</label>
-      <input
-        class="input border-white-light"
-        type="text"
-        [placeholder]="'INVENTORY.ENTER' | translate"
-        required
-      />
+
+    <div class="form-group flex items-end">
+      <button type="button" class="btn-primary h-10 w-full md:w-30" translate (click)="onSubmit()">
+        INVENTORY.SUBMIT
+      </button>
     </div>
   </div>
 
-  <!-- Submit button: pinned at bottom center on md+ -->
-  <div class="absolute right-0 bottom-10 left-0 hidden justify-center md:flex">
-    <button type="submit" class="btn-primary h-12 md:w-30" translate>
-      INVENTORY.SUBMIT
-    </button>
+  <div class="form-row">
+
+    <!-- <div class="form-group">
+    <label translate>INVENTORY.INDIRECT_TAX</label>
+    <input
+      class="input border-white-light"
+      type="text"
+      [placeholder]="'INVENTORY.ENTER' | translate"
+      readonly
+    />
+  </div> -->
   </div>
 
-  <!-- Submit button for small screens (normal flow) -->
-  <div class="mt-5 flex justify-center md:hidden">
-    <button type="submit" class="btn-primary h-12 md:w-30" translate>
-      INVENTORY.SUBMIT
-    </button>
-  </div>
 </form>
