@@ -198,6 +198,10 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		// [NEW] Backup management (status, grpc-info, server-side trigger)
 		backupHandler := handler.NewBackupHandler(backupUC)
 		router.RegisterBackupRoutes(api, backupHandler)
+
+		// [NEW] M2M Token management
+		m2mHandler := handler.NewM2MHandler()
+		router.RegisterM2MRoutes(api, m2mHandler)
 	}
 
 	return r

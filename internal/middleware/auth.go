@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,8 @@ type M2MRegistry struct {
 	Clients []M2MClient `json:"clients"`
 }
 
+var m2mMutex sync.RWMutex
+
 // loadM2MClients reads the JSON configuration file
 func loadM2MClients() ([]M2MClient, error) {
 	filePath := "config/m2m_clients.json"
@@ -45,6 +48,79 @@ func loadM2MClients() ([]M2MClient, error) {
 		return nil, err
 	}
 	return registry.Clients, nil
+}
+
+// LoadM2MClients safely loads M2M clients
+func LoadM2MClients() ([]M2MClient, error) {
+	m2mMutex.RLock()
+	defer m2mMutex.RUnlock()
+	return loadM2MClients()
+}
+
+// SaveM2MClient safely registers or updates an M2M client in the config file
+func SaveM2MClient(client M2MClient) error {
+	m2mMutex.Lock()
+	defer m2mMutex.Unlock()
+
+	clients, err := loadM2MClients()
+	if err != nil {
+		return err
+	}
+
+	updated := false
+	for i, c := range clients {
+		if c.ClientID == client.ClientID {
+			clients[i] = client
+			updated = true
+			break
+		}
+	}
+
+	if !updated {
+		clients = append(clients, client)
+	}
+
+	registry := M2MRegistry{
+		Clients: clients,
+	}
+
+	data, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// Ensure config dir exists
+	err = os.MkdirAll("config", 0755)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile("config/m2m_clients.json", data, 0600)
+}
+
+// GenerateM2MToken generates a long-lived JWT token for M2M communication
+func GenerateM2MToken(clientID, clientName, tenantID string, scopes []string, durationYears int) (string, error) {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return "", errors.New("JWT_SECRET not configured")
+	}
+
+	expirationTime := time.Now().AddDate(durationYears, 0, 0)
+
+	claims := jwt.MapClaims{
+		"iss":         "nembus-api",
+		"sub":         clientID,
+		"client_id":   clientID,
+		"client_name": clientName,
+		"tenant_id":   tenantID,
+		"scopes":      scopes,
+		"is_m2m":      true,
+		"exp":         expirationTime.Unix(),
+		"iat":         time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret))
 }
 
 // JWTAuthMiddleware validates JWT tokens from the Authorization header
@@ -118,8 +194,8 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 				return
 			}
 
-			// Load clients from config
-			clients, err := loadM2MClients()
+			// Load clients from config (thread-safe)
+			clients, err := LoadM2MClients()
 			if err != nil {
 				log.Printf("Error loading M2M clients: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})

@@ -676,6 +676,18 @@ const collection = {
         body: { points: '-50.00' },
         description: 'Pass a negative value to redeem/deduct. Pass a positive value to grant bonus points.'
       })
+    ]),
+    // --- M2M Tokens ---
+    folder('M2M Tokens', [
+      req('Create M2M Token', 'POST', '/api/m2m/tokens', {
+        body: {
+          client_id: "pos-App",
+          client_name: "pos-App",
+          scopes: ["products:read", "orders:write"],
+          years: 5
+        }
+      }),
+      req('List M2M Tokens', 'GET', '/api/m2m/tokens')
     ])
   ]
 };

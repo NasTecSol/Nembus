@@ -67,18 +67,6 @@
     {
       "key": "product_id",
       "value": "1"
-    },
-    {
-      "key": "grpc_url",
-      "value": "localhost:50051"
-    },
-    {
-      "key": "tenant_slug",
-      "value": "default"
-    },
-    {
-      "key": "backup_job_id",
-      "value": ""
     }
   ],
   "item": [
@@ -127,7 +115,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{base_url}}/api/dev/token",
+            "url": "{{base_url}}{{base_url}}/api/dev/token",
             "auth": {
               "type": "noauth"
             }
@@ -6433,11 +6421,28 @@
       ]
     },
     {
-      "name": "Product Catalog",
-      "description": "Admin product catalog — master products with embedded variants and inventory stock per storage location.",
+      "name": "M2M Tokens",
       "item": [
         {
-          "name": "List Products with Variants & Inventory",
+          "name": "Create M2M Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/m2m/tokens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"client_id\":\"pos-App\",\"client_name\":\"pos-App\",\"scopes\":[\"products:read\",\"orders:write\"],\"years\":5}"
+            }
+          }
+        },
+        {
+          "name": "List M2M Tokens",
           "request": {
             "method": "GET",
             "header": [
@@ -6447,237 +6452,8 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{base_url}}/api/products/catalog?organization_id=1&limit=20&offset=0",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "products",
-                "catalog"
-              ],
-              "query": [
-                {
-                  "key": "organization_id",
-                  "value": "1",
-                  "description": "Required. Scopes results to this organization."
-                },
-                {
-                  "key": "category_id",
-                  "value": "",
-                  "description": "Optional. Filter by category ID. Leave blank or 0 for all.",
-                  "disabled": true
-                },
-                {
-                  "key": "limit",
-                  "value": "20",
-                  "description": "Page size (default 20)."
-                },
-                {
-                  "key": "offset",
-                  "value": "0",
-                  "description": "Page offset (default 0)."
-                }
-              ]
-            },
-            "description": "Returns master products with two embedded arrays:\n- `variants`: product variants (id, variant_sku, variant_name, variant_attributes, is_active)\n- `inventory`: stock levels per storage location (stock_id, store_id, storage_location_id, storage_location_name, storage_location_code, product_variant_id, quantity_on_hand, quantity_available, quantity_allocated, quantity_on_order, reorder_level, reorder_quantity, max_stock_level)\n\nProducts with no variants/stock return empty arrays []."
+            "url": "{{base_url}}/api/m2m/tokens"
           }
-        },
-        {
-          "name": "List Products with Variants & Inventory (by Category)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/products/catalog?organization_id=1&category_id=1&limit=10&offset=0",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "products",
-                "catalog"
-              ],
-              "query": [
-                {
-                  "key": "organization_id",
-                  "value": "1",
-                  "description": "Required."
-                },
-                {
-                  "key": "category_id",
-                  "value": "1",
-                  "description": "Filter by this specific category ID."
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                },
-                {
-                  "key": "offset",
-                  "value": "0"
-                }
-              ]
-            },
-            "description": "Same as the base catalog request but filtered to a single category_id."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Backup",
-      "description": "HTTP management endpoints for the gRPC backup streaming service.\n\nAll routes require Bearer auth + x-tenant-id header (inherited from collection).\n\nActual byte-level streaming happens over gRPC — use the gRPC subfolder or the CLI client.",
-      "item": [
-        {
-          "name": "HTTP — Status & Info",
-          "item": [
-            {
-              "name": "Get Backup Status",
-              "request": {
-                "method": "GET",
-                "header": [
-                  { "key": "x-tenant-id", "value": "{{tenant_id}}", "type": "text" }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/backup/status/{{tenant_slug}}",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "backup", "status", "{{tenant_slug}}"]
-                },
-                "description": "Returns whether a gRPC backup stream is currently active for the tenant and how many bytes have been sent. Polls the live in-memory state of the gRPC server."
-              }
-            },
-            {
-              "name": "Get gRPC Connection Info",
-              "request": {
-                "method": "GET",
-                "header": [
-                  { "key": "x-tenant-id", "value": "{{tenant_id}}", "type": "text" }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/backup/grpc-info/{{tenant_slug}}",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "backup", "grpc-info", "{{tenant_slug}}"]
-                },
-                "description": "Returns the gRPC server address + tenant slug so a POS terminal or offline app can configure its gRPC client and call BackupService.StreamBackup directly."
-              }
-            }
-          ]
-        },
-        {
-          "name": "HTTP — Server-Side Jobs",
-          "item": [
-            {
-              "name": "Trigger Server-Side Backup",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "var resp = pm.response.json();",
-                      "if (resp && resp.data && resp.data.job_id) {",
-                      "  pm.collectionVariables.set('backup_job_id', resp.data.job_id);",
-                      "  console.log('Saved backup_job_id:', resp.data.job_id);",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  { "key": "x-tenant-id", "value": "{{tenant_id}}", "type": "text" },
-                  { "key": "Content-Type", "value": "application/json", "type": "text" }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"tenant_slug\": \"{{tenant_slug}}\",\n  \"auth_token\": \"{{token}}\",\n  \"compressed\": false\n}",
-                  "options": { "raw": { "language": "json" } }
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/backup/trigger",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "backup", "trigger"]
-                },
-                "description": "Starts an async server-side backup job. The pg_dump output is saved to ./backups/ on the server (not streamed to the caller). Returns a job_id. Set compressed=true to use pg_dump --format=custom (smaller file, restore with pg_restore)."
-              }
-            },
-            {
-              "name": "Poll Job Status",
-              "request": {
-                "method": "GET",
-                "header": [
-                  { "key": "x-tenant-id", "value": "{{tenant_id}}", "type": "text" }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/backup/jobs/{{backup_job_id}}",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "backup", "jobs", "{{backup_job_id}}"]
-                },
-                "description": "Poll the status of a specific backup job (running / done / failed). backup_job_id is set automatically by the Trigger request test script."
-              }
-            },
-            {
-              "name": "List All Backup Jobs",
-              "request": {
-                "method": "GET",
-                "header": [
-                  { "key": "x-tenant-id", "value": "{{tenant_id}}", "type": "text" }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/backup/jobs",
-                  "host": ["{{base_url}}"],
-                  "path": ["api", "backup", "jobs"]
-                },
-                "description": "Returns all server-side backup jobs (running, done, failed) held in memory for this server instance."
-              }
-            }
-          ]
-        },
-        {
-          "name": "gRPC — StreamBackup (Streaming)",
-          "description": "gRPC server-streaming call. Use Postman v10.20+ with gRPC support, or use the CLI client:\n\n  go run ./cmd/backup-client -server {{grpc_url}} -tenant {{tenant_slug}} -token <JWT>\n\nServer address: {{grpc_url}} (default: localhost:50051)\nProto file: proto/backup.proto",
-          "item": [
-            {
-              "name": "StreamBackup",
-              "request": {
-                "method": "GRPC",
-                "url": {
-                  "raw": "{{grpc_url}}",
-                  "host": ["{{grpc_url}}"]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"tenant_slug\": \"{{tenant_slug}}\",\n  \"auth_token\": \"{{token}}\",\n  \"compressed\": false\n}",
-                  "options": { "raw": { "language": "json" } }
-                },
-                "description": "Server-streaming RPC. The server runs pg_dump and sends the output as 32 KB BackupChunk messages until the dump is complete. Each chunk includes:\n- data: raw bytes\n- offset: cumulative bytes sent\n- sha256: hex checksum of this chunk\n- is_last: true on the final sentinel chunk\n\nService: backup.BackupService\nMethod: StreamBackup\nProto: proto/backup.proto"
-              }
-            },
-            {
-              "name": "BackupStatus (Unary)",
-              "request": {
-                "method": "GRPC",
-                "url": {
-                  "raw": "{{grpc_url}}",
-                  "host": ["{{grpc_url}}"]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"tenant_slug\": \"{{tenant_slug}}\"\n}",
-                  "options": { "raw": { "language": "json" } }
-                },
-                "description": "Unary RPC — returns the live streaming progress for the given tenant slug (bytes_sent, in_progress, started_at). Useful for polling from a separate client goroutine while StreamBackup is running.\n\nService: backup.BackupService\nMethod: BackupStatus\nProto: proto/backup.proto"
-              }
-            }
-          ]
         }
       ]
     }
