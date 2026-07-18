@@ -47,3 +47,4 @@ docs/swagger/
 # Config files with secrets (keep examples)
 configs/.env.dev
 configs/.env.stg
+config/m2m_clients.json
