@@ -821,3 +821,16 @@ func (uc *UserUseCase) GetUserStores(ctx context.Context, userID int32) *reposit
 
 	return utils.NewResponse(utils.CodeOK, "user stores fetched successfully", stores)
 }
+
+// DeleteUser deletes a user by ID
+func (uc *UserUseCase) DeleteUser(ctx context.Context, userID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	if err := uc.repo.DeleteUser(ctx, userID); err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "user deleted successfully", nil)
+}

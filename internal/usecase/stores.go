@@ -432,3 +432,25 @@ func (uc *StoreUseCase) GetStorageLocationHierarchy(ctx context.Context, storeID
 
 	return utils.NewResponse(utils.CodeOK, "storage location hierarchy fetched successfully", hierarchy)
 }
+
+// --------------------------------------------------
+// Get Active Session
+// --------------------------------------------------
+
+func (uc *StoreUseCase) GetActiveSession(ctx context.Context, storeID string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	id, err := strconv.ParseInt(storeID, 10, 32)
+	if err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "invalid store id", nil)
+	}
+
+	sessions, err := uc.repo.ListActiveSessionsByStoreId(ctx, int32(id))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch active sessions", nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "active sessions fetched successfully", sessions)
+}

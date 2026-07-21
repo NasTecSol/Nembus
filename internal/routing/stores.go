@@ -21,6 +21,7 @@ func RegisterStoreRoutes(r *gin.RouterGroup, h *handler.StoreHandler) {
 		
 		// Generic :id routes (register after specific routes)
 		store.GET("/:id", h.GetStore)       // Get store by ID
+		store.GET("/:id/active-session", h.GetActiveSession) // Get store active session
 		store.PATCH("/:id", h.UpdateStore)  // Update store
 		store.DELETE("/:id", h.DeleteStore) // Delete store by ID
 	}

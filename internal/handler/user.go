@@ -793,3 +793,36 @@ func (h *UserHandler) GetUserPrimaryStore(c *gin.Context) {
 	resp := h.useCase.GetUserPrimaryStore(c.Request.Context(), int32(userID))
 	c.JSON(resp.StatusCode, resp)
 }
+
+// DeleteUser handles DELETE /users/:id
+// @Summary      Delete user
+// @Description  Delete a user by ID
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        Authorization  header    string  true  "Bearer token"
+// @Param        id            path      int  true  "User ID"
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /api/users/{id} [delete]
+func (h *UserHandler) DeleteUser(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid user id", nil))
+		return
+	}
+
+	resp := h.useCase.DeleteUser(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
