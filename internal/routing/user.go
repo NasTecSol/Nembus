@@ -15,6 +15,7 @@ func RegisterUserRoutes(r *gin.RouterGroup, h *handler.UserHandler) {
 		user.GET("", h.ListUsers)
 		user.PATCH("/:id", h.UpdateUser)                // Update user details
 		user.PUT("/:id/password", h.UpdateUserPassword) // Update user password
+		user.DELETE("/:id", h.DeleteUser)               // Delete user
 
 		// User Roles
 		user.POST("addUserRoles/:id", h.AssignRoleToUser)

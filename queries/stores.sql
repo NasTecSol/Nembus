@@ -68,6 +68,31 @@ SELECT COUNT(*) FROM stores
 WHERE organization_id = $1
   AND is_active = COALESCE(sqlc.narg(is_active), is_active);
 
+-- name: ListActiveSessionsByStoreId :many
+SELECT 
+    cs.id AS session_id,
+    cs.pos_terminal_id,
+    cs.session_number,
+    cs.opening_time,
+    cs.opening_balance,
+    cs.status AS session_status,
+    c.id AS cashier_id,
+    c.user_id,
+    c.cashier_code,
+    c.drawer_limit,
+    c.is_active AS cashier_is_active,
+    s.id AS store_id,
+    s.name AS store_name,
+    s.code AS store_code,
+    s.timezone AS store_timezone,
+    s.store_type
+FROM cashier_sessions cs
+JOIN cashiers c ON cs.cashier_id = c.id
+JOIN stores s ON c.store_id = s.id
+WHERE s.id = $1 
+  AND cs.status != 'closed'
+ORDER BY cs.opening_time DESC;
+
 -- =====================================================
 -- STORAGE LOCATIONS
 -- Note: Storage location queries are in storage_locations_query.sql

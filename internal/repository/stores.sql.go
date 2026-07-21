@@ -243,6 +243,88 @@ func (q *Queries) GetStoreByCode(ctx context.Context, arg GetStoreByCodeParams) 
 	return i, err
 }
 
+const listActiveSessionsByStoreId = `-- name: ListActiveSessionsByStoreId :many
+SELECT 
+    cs.id AS session_id,
+    cs.pos_terminal_id,
+    cs.session_number,
+    cs.opening_time,
+    cs.opening_balance,
+    cs.status AS session_status,
+    c.id AS cashier_id,
+    c.user_id,
+    c.cashier_code,
+    c.drawer_limit,
+    c.is_active AS cashier_is_active,
+    s.id AS store_id,
+    s.name AS store_name,
+    s.code AS store_code,
+    s.timezone AS store_timezone,
+    s.store_type
+FROM cashier_sessions cs
+JOIN cashiers c ON cs.cashier_id = c.id
+JOIN stores s ON c.store_id = s.id
+WHERE s.id = $1 
+  AND cs.status != 'closed'
+ORDER BY cs.opening_time DESC
+`
+
+type ListActiveSessionsByStoreIdRow struct {
+	SessionID       int32            `json:"session_id"`
+	PosTerminalID   int32            `json:"pos_terminal_id"`
+	SessionNumber   string           `json:"session_number"`
+	OpeningTime     pgtype.Timestamp `json:"opening_time"`
+	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
+	SessionStatus   pgtype.Text      `json:"session_status"`
+	CashierID       int32            `json:"cashier_id"`
+	UserID          int32            `json:"user_id"`
+	CashierCode     string           `json:"cashier_code"`
+	DrawerLimit     pgtype.Numeric   `json:"drawer_limit"`
+	CashierIsActive pgtype.Bool      `json:"cashier_is_active"`
+	StoreID         int32            `json:"store_id"`
+	StoreName       string           `json:"store_name"`
+	StoreCode       string           `json:"store_code"`
+	StoreTimezone   pgtype.Text      `json:"store_timezone"`
+	StoreType       pgtype.Text      `json:"store_type"`
+}
+
+func (q *Queries) ListActiveSessionsByStoreId(ctx context.Context, id int32) ([]ListActiveSessionsByStoreIdRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSessionsByStoreId, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveSessionsByStoreIdRow
+	for rows.Next() {
+		var i ListActiveSessionsByStoreIdRow
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.PosTerminalID,
+			&i.SessionNumber,
+			&i.OpeningTime,
+			&i.OpeningBalance,
+			&i.SessionStatus,
+			&i.CashierID,
+			&i.UserID,
+			&i.CashierCode,
+			&i.DrawerLimit,
+			&i.CashierIsActive,
+			&i.StoreID,
+			&i.StoreName,
+			&i.StoreCode,
+			&i.StoreTimezone,
+			&i.StoreType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPOSEnabledStores = `-- name: ListPOSEnabledStores :many
 SELECT id, organization_id, parent_store_id, name, code, store_type, is_warehouse, is_pos_enabled, timezone, is_active, metadata, created_at, updated_at FROM stores
 WHERE organization_id = $1

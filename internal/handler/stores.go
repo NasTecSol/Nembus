@@ -433,3 +433,36 @@ func (h *StoreHandler) UpdateStore(c *gin.Context) {
 
 	c.JSON(resp.StatusCode, resp)
 }
+
+// --------------------------------------------------
+// Get Active Session
+// --------------------------------------------------
+
+// GetActiveSession handles GET /stores/:id/active-session
+// @Summary      Get store's active session
+// @Description  Retrieve the currently active cashier session for a store
+// @Tags         stores
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id    header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id             path      int     true  "Store ID"
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /api/stores/{id}/active-session [get]
+func (h *StoreHandler) GetActiveSession(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeID := c.Param("id")
+	resp := h.useCase.GetActiveSession(c.Request.Context(), storeID)
+
+	c.JSON(resp.StatusCode, resp)
+}
