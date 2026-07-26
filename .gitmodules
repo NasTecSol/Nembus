@@ -1,0 +1,4 @@
+[submodule "apps/pos-client/frontend"]
+	path = apps/pos-client/frontend
+	url = https://github.com/NasTecSol/NPOS-Bofc.git
+	branch = nembus-client

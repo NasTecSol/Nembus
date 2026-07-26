@@ -1,0 +1,11 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "NEMBUS",
+  "outputfilename": "NEMBUS",
+  "frontend:install": "npm install --legacy-peer-deps",
+  "frontend:build": "npm run build -- --output-path=dist",
+  "author": {
+    "name": "NasTecSol",
+    "email": "nastecsol@gmail.com"
+  }
+}

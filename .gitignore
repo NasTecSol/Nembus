@@ -1,50 +1,37 @@
-# Binaries for programs and plugins
+# Binaries & Executables
 *.exe
-*.exe~
+*.exe.min
 *.dll
 *.so
 *.dylib
+*.test
+*.out
 bin/
+build/bin/
 dist/
 
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool
-*.out
-
-# Dependency directories
-vendor/
-
-# Go workspace file
-go.work
-
-# Environment files
-.env
+# Environment Overrides & Local Files
 .env.local
-.env.dev
-.env.stg
 .env.*.local
+*.log
+startup.log
+startup_utf8.log
+build_errors.txt
+scratch/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# Go & Build Artifacts
+*.o
+*.a
+go.work.sum
 
-# OS
+# Node & Frontend Dependencies
+node_modules/
+.angular/
+npm-debug.log*
+
+# IDE & OS Files
 .DS_Store
 Thumbs.db
-
-# Swagger generated docs
-docs/swagger/
-
-# Build artifacts
-*.log
-*.tmp
-
-# Config files with secrets (keep examples)
-configs/.env.dev
-configs/.env.stg
-config/m2m_clients.json
+.vscode/
+.idea/
+.cursor/

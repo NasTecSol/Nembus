@@ -1,0 +1,54 @@
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+
+# Go workspace (local dev only — never commit go.work)
+go.work
+go.work.sum
+
+# Wails build output
+build/
+dist/
+
+# Vendor
+vendor/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.stg
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.tmp
+
+# Swagger generated docs
+docs/swagger/
+
+# NEMBUS executable (dev build artifact)
+NEMBUS.exe
+
+# frontend is a git submodule — tracked by .gitmodules, NOT gitignored
+# Do NOT add frontend/ here
