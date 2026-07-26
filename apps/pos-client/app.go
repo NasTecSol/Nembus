@@ -50,7 +50,16 @@ func (a *App) startup(ctx context.Context) {
 	if a.IsAppSetup() {
 		// Auto-start DB if setup is already complete
 		// Using default credentials as these are local to the machine
-		go a.StartDatabase("postgres", "password", "nembus", 5433)
+		go func() {
+			log.Println("Auto-starting local database and backend server...")
+			if res := a.StartDatabase("postgres", "password", "nembus", 5433); res != "Success" {
+				log.Printf("[ERROR] Failed to start database and backend server: %s", res)
+			} else {
+				log.Printf("[SUCCESS] Database and backend Gin server started on port %s", a.cfg.Port)
+			}
+		}()
+	} else {
+		log.Println("[INFO] App setup is not completed yet. Setup wizard is required before backend API starts.")
 	}
 }
 
@@ -394,6 +403,7 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, a.cfg)
 	r.Static("/images", "./images")
 
+	log.Printf("Starting Gin HTTP server on port %s (Swagger: http://localhost:%s/swagger/index.html)", a.cfg.Port, a.cfg.Port)
 	if err := r.Run(":" + a.cfg.Port); err != nil {
 		log.Printf("failed to run server: %v", err)
 	}

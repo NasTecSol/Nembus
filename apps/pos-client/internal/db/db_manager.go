@@ -66,6 +66,10 @@ func (m *DBManager) Start() error {
 				return nil
 			}
 		}
+		if strings.Contains(err.Error(), "already listening on port") {
+			log.Printf("Embedded PostgreSQL already listening on port %d, attaching to existing database process", m.config.Port)
+			return nil
+		}
 		return fmt.Errorf("failed to start embedded postgres: %w", err)
 	}
 
