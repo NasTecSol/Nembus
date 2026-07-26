@@ -36,3 +36,8 @@ tidy:
 	@cd apps/cloud-server && go mod tidy
 	@cd apps/pos-client && go mod tidy
 
+swagger:
+	@echo "==> Generating Swagger documentation..."
+	@cd apps/cloud-server && swag init -g main.go --dir ./,../../packages/core/handler -o docs/swagger -p camelcase --parseInternal --parseDependency
+
+

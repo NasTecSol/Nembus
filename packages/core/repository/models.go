@@ -675,6 +675,41 @@ type DraftCartTemplateItem struct {
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
+type GoodsReceiptNote struct {
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	GrnNumber          string           `json:"grn_number"`
+	PurchaseOrderID    pgtype.Int4      `json:"purchase_order_id"`
+	SupplierID         int32            `json:"supplier_id"`
+	StoreID            int32            `json:"store_id"`
+	ReceivedBy         pgtype.Int4      `json:"received_by"`
+	ReceiptDate        pgtype.Timestamp `json:"receipt_date"`
+	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
+	Status             pgtype.Text      `json:"status"`
+	Notes              pgtype.Text      `json:"notes"`
+	Metadata           []byte           `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+}
+
+type GoodsReceiptNoteItem struct {
+	ID                  int32            `json:"id"`
+	GrnID               int32            `json:"grn_id"`
+	PurchaseOrderLineID pgtype.Int4      `json:"purchase_order_line_id"`
+	ProductID           int32            `json:"product_id"`
+	ProductVariantID    pgtype.Int4      `json:"product_variant_id"`
+	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
+	QuantityReceived    pgtype.Numeric   `json:"quantity_received"`
+	QuantityRejected    pgtype.Numeric   `json:"quantity_rejected"`
+	UomID               pgtype.Int4      `json:"uom_id"`
+	UnitCost            pgtype.Numeric   `json:"unit_cost"`
+	BatchNumber         pgtype.Text      `json:"batch_number"`
+	ExpiryDate          pgtype.Date      `json:"expiry_date"`
+	RejectionReason     pgtype.Text      `json:"rejection_reason"`
+	Notes               pgtype.Text      `json:"notes"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+}
+
 type InventoryAnalytic struct {
 	ID                 int32            `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
@@ -1929,6 +1964,44 @@ type Tenant struct {
 	Settings   []byte           `json:"settings"`
 	CreatedAt  pgtype.Timestamp `json:"created_at"`
 	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+}
+
+type TransferRequest struct {
+	ID                   int32            `json:"id"`
+	OrganizationID       int32            `json:"organization_id"`
+	TransferNumber       string           `json:"transfer_number"`
+	FromStoreID          int32            `json:"from_store_id"`
+	ToStoreID            int32            `json:"to_store_id"`
+	Status               string           `json:"status"`
+	RequestedBy          pgtype.Int4      `json:"requested_by"`
+	ApprovedBy           pgtype.Int4      `json:"approved_by"`
+	ShippedBy            pgtype.Int4      `json:"shipped_by"`
+	ReceivedBy           pgtype.Int4      `json:"received_by"`
+	RequestDate          pgtype.Timestamp `json:"request_date"`
+	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
+	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
+	ReceivedAt           pgtype.Timestamp `json:"received_at"`
+	Notes                pgtype.Text      `json:"notes"`
+	Metadata             []byte           `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+}
+
+type TransferRequestItem struct {
+	ID                int32            `json:"id"`
+	TransferRequestID int32            `json:"transfer_request_id"`
+	ProductID         int32            `json:"product_id"`
+	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
+	FromLocationID    pgtype.Int4      `json:"from_location_id"`
+	ToLocationID      pgtype.Int4      `json:"to_location_id"`
+	RequestedQuantity pgtype.Numeric   `json:"requested_quantity"`
+	ApprovedQuantity  pgtype.Numeric   `json:"approved_quantity"`
+	ShippedQuantity   pgtype.Numeric   `json:"shipped_quantity"`
+	ReceivedQuantity  pgtype.Numeric   `json:"received_quantity"`
+	UomID             pgtype.Int4      `json:"uom_id"`
+	BatchNumber       pgtype.Text      `json:"batch_number"`
+	Notes             pgtype.Text      `json:"notes"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
 }
 
 type UiSetting struct {

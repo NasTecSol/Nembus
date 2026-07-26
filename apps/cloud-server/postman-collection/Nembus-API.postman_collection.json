@@ -6456,6 +6456,166 @@
           }
         }
       ]
+    },
+    {
+      "name": "Transfer Requests",
+      "item": [
+        {
+          "name": "Create Transfer Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/transfer-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"transfer_number\":\"TR-20260727-001\",\"from_store_id\":1,\"to_store_id\":2,\"requested_by\":1,\"expected_delivery_date\":\"2026-07-30\",\"notes\":\"Urgent inter-store restock\",\"items\":[{\"product_id\":1,\"requested_quantity\":50,\"uom_id\":1,\"notes\":\"Restock front shelf\"}]}"
+            }
+          }
+        },
+        {
+          "name": "List Transfer Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/transfer-requests?organization_id=1&limit=50&offset=0"
+          }
+        },
+        {
+          "name": "Get Transfer Request by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/transfer-requests/1"
+          }
+        },
+        {
+          "name": "Approve Transfer Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/transfer-requests/1/approve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approved_by\":1}"
+            },
+            "description": "State transition: Draft/Pending -> Approved"
+          }
+        },
+        {
+          "name": "Ship Transfer Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/transfer-requests/1/ship",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"shipped_by\":1}"
+            },
+            "description": "Deducts stock at source, increments quantity_in_transit at destination"
+          }
+        },
+        {
+          "name": "Receive Transfer Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/transfer-requests/1/receive",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"received_by\":1}"
+            },
+            "description": "Clears in-transit stock, increments quantity_on_hand and available at destination"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Goods Receipt Notes (GRN)",
+      "item": [
+        {
+          "name": "Create Goods Receipt Note",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/goods-receipt-notes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"grn_number\":\"GRN-20260727-001\",\"purchase_order_id\":1,\"supplier_id\":1,\"store_id\":1,\"received_by\":1,\"delivery_note_number\":\"DN-998822\",\"notes\":\"Received delivery at warehouse dock\",\"items\":[{\"purchase_order_line_id\":1,\"product_id\":1,\"quantity_received\":100,\"quantity_rejected\":0,\"unit_cost\":15.5,\"batch_number\":\"BATCH-2026A\",\"expiry_date\":\"2027-12-31\"}]}"
+            }
+          }
+        },
+        {
+          "name": "Get Goods Receipt Note by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/goods-receipt-notes/1"
+          }
+        },
+        {
+          "name": "Post / Process Goods Receipt Note",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/goods-receipt-notes/1/post",
+            "description": "Updates PO lines received qty, updates PO status, increments inventory stock, logs stock movement"
+          }
+        }
+      ]
     }
   ]
 }

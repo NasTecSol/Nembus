@@ -709,6 +709,79 @@ CREATE TABLE purchase_order_lines (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE transfer_requests (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    transfer_number VARCHAR(50) UNIQUE NOT NULL,
+    from_store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    to_store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    shipped_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expected_delivery_date DATE,
+    shipped_at TIMESTAMP,
+    received_at TIMESTAMP,
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE transfer_request_items (
+    id SERIAL PRIMARY KEY,
+    transfer_request_id INTEGER NOT NULL REFERENCES transfer_requests(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    from_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,
+    to_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,
+    requested_quantity DECIMAL(15,3) NOT NULL,
+    approved_quantity DECIMAL(15,3) DEFAULT 0,
+    shipped_quantity DECIMAL(15,3) DEFAULT 0,
+    received_quantity DECIMAL(15,3) DEFAULT 0,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    batch_number VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE goods_receipt_notes (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    grn_number VARCHAR(50) UNIQUE NOT NULL,
+    purchase_order_id INTEGER REFERENCES purchase_orders(id) ON DELETE SET NULL,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    receipt_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    delivery_note_number VARCHAR(100),
+    status VARCHAR(50) DEFAULT 'posted',
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE goods_receipt_note_items (
+    id SERIAL PRIMARY KEY,
+    grn_id INTEGER NOT NULL REFERENCES goods_receipt_notes(id) ON DELETE CASCADE,
+    purchase_order_line_id INTEGER REFERENCES purchase_order_lines(id) ON DELETE SET NULL,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    storage_location_id INTEGER REFERENCES storage_locations(id) ON DELETE SET NULL,
+    quantity_received DECIMAL(15,3) NOT NULL,
+    quantity_rejected DECIMAL(15,3) DEFAULT 0,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    unit_cost DECIMAL(15,4),
+    batch_number VARCHAR(100),
+    expiry_date DATE,
+    rejection_reason TEXT,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE sales_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2483,6 +2556,10 @@ DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
 CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_purchase_orders_updated_at ON purchase_orders;
 CREATE TRIGGER update_purchase_orders_updated_at BEFORE UPDATE ON purchase_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_transfer_requests_updated_at ON transfer_requests;
+CREATE TRIGGER update_transfer_requests_updated_at BEFORE UPDATE ON transfer_requests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_goods_receipt_notes_updated_at ON goods_receipt_notes;
+CREATE TRIGGER update_goods_receipt_notes_updated_at BEFORE UPDATE ON goods_receipt_notes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_sales_orders_updated_at ON sales_orders;
 CREATE TRIGGER update_sales_orders_updated_at BEFORE UPDATE ON sales_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_sales_analytics_updated_at ON sales_analytics;
@@ -4040,6 +4117,306 @@ BEGIN
     RETURNING id INTO v_movement_id;
 
     RETURN QUERY SELECT true, 'Transfer completed successfully. Ref: ' || v_ref_num, v_movement_id;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- =====================================================
+-- LOGISTICS & IN-TRANSIT WORKFLOW FUNCTIONS
+-- =====================================================
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_approve_transfer_request(
+    p_transfer_request_id INTEGER,
+    p_approved_by INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_req RECORD;
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.status NOT IN ('draft', 'pending_approval') THEN
+        RETURN QUERY SELECT false, 'Transfer request can only be approved from draft or pending_approval state.';
+        RETURN;
+    END IF;
+
+    UPDATE transfer_requests
+    SET status = 'approved',
+        approved_by = p_approved_by,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_transfer_request_id;
+
+    RETURN QUERY SELECT true, 'Transfer request approved successfully.';
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_ship_transfer_request(
+    p_transfer_request_id INTEGER,
+    p_shipped_by INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_available DECIMAL(15,3);
+    v_qty DECIMAL(15,3);
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.status NOT IN ('approved', 'pending_approval', 'draft') THEN
+        RETURN QUERY SELECT false, 'Transfer request must be approved to ship.';
+        RETURN;
+    END IF;
+
+    FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+        v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+        IF v_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        -- Check available stock at source
+        SELECT quantity_available INTO v_available
+        FROM inventory_stock
+        WHERE product_id = v_item.product_id
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+          AND store_id = v_req.from_store_id
+        FOR UPDATE;
+
+        IF v_available IS NULL OR v_available < v_qty THEN
+            RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
+            RETURN;
+        END IF;
+
+        -- Deduct from source store
+        UPDATE inventory_stock
+        SET quantity_on_hand = quantity_on_hand - v_qty,
+            quantity_available = quantity_available - v_qty,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_item.product_id
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+          AND store_id = v_req.from_store_id;
+
+        -- Increment quantity_in_transit at destination store
+        INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
+            quantity_on_hand, quantity_available, quantity_in_transit)
+        VALUES (v_item.product_id, v_item.product_variant_id, v_req.to_store_id, v_item.to_location_id,
+                0, 0, v_qty)
+        ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
+        DO UPDATE SET
+            quantity_in_transit = inventory_stock.quantity_in_transit + EXCLUDED.quantity_in_transit,
+            updated_at = CURRENT_TIMESTAMP;
+
+        -- Update item shipped_quantity
+        UPDATE transfer_request_items
+        SET shipped_quantity = v_qty,
+            approved_quantity = v_qty
+        WHERE id = v_item.id;
+
+        -- Record stock movement (transfer_out / shipped)
+        INSERT INTO stock_movements (
+            movement_type, reference_type, reference_id, product_id, product_variant_id,
+            from_store_id, to_store_id, from_location_id, to_location_id,
+            quantity, uom_id, batch_number, posted_by, status, metadata
+        ) VALUES (
+            'transfer_out', 'transfer_request', p_transfer_request_id, v_item.product_id, v_item.product_variant_id,
+            v_req.from_store_id, v_req.to_store_id, v_item.from_location_id, v_item.to_location_id,
+            v_qty, v_item.uom_id, v_item.batch_number, p_shipped_by, 'shipped',
+            jsonb_build_object('transfer_number', v_req.transfer_number)
+        );
+    END LOOP;
+
+    -- Update header
+    UPDATE transfer_requests
+    SET status = 'shipped',
+        shipped_by = p_shipped_by,
+        shipped_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_transfer_request_id;
+
+    RETURN QUERY SELECT true, 'Transfer request shipped successfully.';
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_receive_transfer_request(
+    p_transfer_request_id INTEGER,
+    p_received_by INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_qty DECIMAL(15,3);
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.status NOT IN ('shipped', 'partially_received') THEN
+        RETURN QUERY SELECT false, 'Transfer request must be shipped or partially_received to receive.';
+        RETURN;
+    END IF;
+
+    FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+        v_qty := CASE WHEN v_item.shipped_quantity > 0 THEN v_item.shipped_quantity ELSE v_item.requested_quantity END;
+        IF v_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        -- Decrement in-transit and increment on_hand & available at destination store
+        UPDATE inventory_stock
+        SET quantity_in_transit = GREATEST(0, quantity_in_transit - v_qty),
+            quantity_on_hand = quantity_on_hand + v_qty,
+            quantity_available = quantity_available + v_qty,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_item.product_id
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+          AND store_id = v_req.to_store_id;
+
+        -- Update item received_quantity
+        UPDATE transfer_request_items
+        SET received_quantity = v_qty
+        WHERE id = v_item.id;
+
+        -- Record stock movement (transfer_in / completed)
+        INSERT INTO stock_movements (
+            movement_type, reference_type, reference_id, product_id, product_variant_id,
+            from_store_id, to_store_id, from_location_id, to_location_id,
+            quantity, uom_id, batch_number, posted_by, status, metadata
+        ) VALUES (
+            'transfer_in', 'transfer_request', p_transfer_request_id, v_item.product_id, v_item.product_variant_id,
+            v_req.from_store_id, v_req.to_store_id, v_item.from_location_id, v_item.to_location_id,
+            v_qty, v_item.uom_id, v_item.batch_number, p_received_by, 'completed',
+            jsonb_build_object('transfer_number', v_req.transfer_number)
+        );
+    END LOOP;
+
+    -- Update header
+    UPDATE transfer_requests
+    SET status = 'received',
+        received_by = p_received_by,
+        received_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_transfer_request_id;
+
+    RETURN QUERY SELECT true, 'Transfer request received successfully.';
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_process_goods_receipt(
+    p_grn_id INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_grn RECORD;
+    v_item RECORD;
+    v_all_po_received BOOLEAN := true;
+    v_any_po_received BOOLEAN := false;
+    v_po_line RECORD;
+BEGIN
+    SELECT * INTO v_grn FROM goods_receipt_notes WHERE id = p_grn_id FOR UPDATE;
+    IF v_grn IS NULL THEN
+        RETURN QUERY SELECT false, 'Goods receipt note not found.';
+        RETURN;
+    END IF;
+
+    IF v_grn.status = 'completed' THEN
+        RETURN QUERY SELECT false, 'Goods receipt note is already completed.';
+        RETURN;
+    END IF;
+
+    FOR v_item IN SELECT * FROM goods_receipt_note_items WHERE grn_id = p_grn_id FOR UPDATE LOOP
+        IF v_item.quantity_received <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        -- Update PO Line if associated
+        IF v_item.purchase_order_line_id IS NOT NULL THEN
+            UPDATE purchase_order_lines
+            SET received_quantity = received_quantity + v_item.quantity_received
+            WHERE id = v_item.purchase_order_line_id;
+        END IF;
+
+        -- Increment inventory stock at store
+        INSERT INTO inventory_stock (
+            product_id, product_variant_id, store_id, storage_location_id,
+            quantity_on_hand, quantity_available
+        ) VALUES (
+            v_item.product_id, v_item.product_variant_id, v_grn.store_id, v_item.storage_location_id,
+            v_item.quantity_received, v_item.quantity_received
+        )
+        ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
+        DO UPDATE SET
+            quantity_on_hand = inventory_stock.quantity_on_hand + EXCLUDED.quantity_on_hand,
+            quantity_available = inventory_stock.quantity_available + EXCLUDED.quantity_available,
+            updated_at = CURRENT_TIMESTAMP;
+
+        -- Insert stock movement (purchase_receipt)
+        INSERT INTO stock_movements (
+            movement_type, reference_type, reference_id, product_id, product_variant_id,
+            to_store_id, to_location_id, quantity, uom_id, batch_number,
+            posted_by, status, cost_per_unit, total_value, metadata
+        ) VALUES (
+            'purchase_receipt', 'goods_receipt_note', p_grn_id, v_item.product_id, v_item.product_variant_id,
+            v_grn.store_id, v_item.storage_location_id, v_item.quantity_received, v_item.uom_id, COALESCE(v_item.batch_number, ''),
+            v_grn.received_by, 'completed', COALESCE(v_item.unit_cost, 0), (COALESCE(v_item.unit_cost, 0) * v_item.quantity_received),
+            jsonb_build_object('grn_number', v_grn.grn_number, 'delivery_note_number', COALESCE(v_grn.delivery_note_number, ''))
+        );
+    END LOOP;
+
+    -- Update GRN status
+    UPDATE goods_receipt_notes
+    SET status = 'completed',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_grn_id;
+
+    -- Update Purchase Order status if PO ID present
+    IF v_grn.purchase_order_id IS NOT NULL THEN
+        FOR v_po_line IN SELECT quantity, received_quantity FROM purchase_order_lines WHERE purchase_order_id = v_grn.purchase_order_id LOOP
+            IF v_po_line.received_quantity < v_po_line.quantity THEN
+                v_all_po_received := false;
+            END IF;
+            IF v_po_line.received_quantity > 0 THEN
+                v_any_po_received := true;
+            END IF;
+        END LOOP;
+
+        IF v_all_po_received THEN
+            UPDATE purchase_orders SET status = 'received', updated_at = CURRENT_TIMESTAMP WHERE id = v_grn.purchase_order_id;
+        ELSIF v_any_po_received THEN
+            UPDATE purchase_orders SET status = 'partially_received', updated_at = CURRENT_TIMESTAMP WHERE id = v_grn.purchase_order_id;
+        END IF;
+    END IF;
+
+    RETURN QUERY SELECT true, 'Goods receipt processed successfully.';
 END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd

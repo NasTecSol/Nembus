@@ -688,6 +688,72 @@ const collection = {
         }
       }),
       req('List M2M Tokens', 'GET', '/api/m2m/tokens')
+    ]),
+    // --- Warehouse Transfer Requests ---
+    folder('Transfer Requests', [
+      req('Create Transfer Request', 'POST', '/api/transfer-requests', {
+        body: {
+          organization_id: 1,
+          transfer_number: "TR-20260727-001",
+          from_store_id: 1,
+          to_store_id: 2,
+          requested_by: 1,
+          expected_delivery_date: "2026-07-30",
+          notes: "Urgent inter-store restock",
+          items: [
+            {
+              product_id: 1,
+              requested_quantity: 50,
+              uom_id: 1,
+              notes: "Restock front shelf"
+            }
+          ]
+        }
+      }),
+      req('List Transfer Requests', 'GET', '/api/transfer-requests?organization_id=1&limit=50&offset=0'),
+      req('Get Transfer Request by ID', 'GET', '/api/transfer-requests/1'),
+      req('Approve Transfer Request', 'POST', '/api/transfer-requests/1/approve', {
+        body: { approved_by: 1 },
+        description: "State transition: Draft/Pending -> Approved"
+      }),
+      req('Ship Transfer Request', 'POST', '/api/transfer-requests/1/ship', {
+        body: { shipped_by: 1 },
+        description: "Deducts stock at source, increments quantity_in_transit at destination"
+      }),
+      req('Receive Transfer Request', 'POST', '/api/transfer-requests/1/receive', {
+        body: { received_by: 1 },
+        description: "Clears in-transit stock, increments quantity_on_hand and available at destination"
+      })
+    ]),
+    // --- Goods Receipt Notes (GRN) ---
+    folder('Goods Receipt Notes (GRN)', [
+      req('Create Goods Receipt Note', 'POST', '/api/goods-receipt-notes', {
+        body: {
+          organization_id: 1,
+          grn_number: "GRN-20260727-001",
+          purchase_order_id: 1,
+          supplier_id: 1,
+          store_id: 1,
+          received_by: 1,
+          delivery_note_number: "DN-998822",
+          notes: "Received delivery at warehouse dock",
+          items: [
+            {
+              purchase_order_line_id: 1,
+              product_id: 1,
+              quantity_received: 100,
+              quantity_rejected: 0,
+              unit_cost: 15.50,
+              batch_number: "BATCH-2026A",
+              expiry_date: "2027-12-31"
+            }
+          ]
+        }
+      }),
+      req('Get Goods Receipt Note by ID', 'GET', '/api/goods-receipt-notes/1'),
+      req('Post / Process Goods Receipt Note', 'POST', '/api/goods-receipt-notes/1/post', {
+        description: "Updates PO lines received qty, updates PO status, increments inventory stock, logs stock movement"
+      })
     ])
   ]
 };
