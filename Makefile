@@ -26,8 +26,13 @@ dev-server:
 dev-client:
 	@cd apps/pos-client && wails dev
 
+sync-notebook:
+	@echo "==> Bundling NotebookLM context sources..."
+	@powershell -ExecutionPolicy Bypass -File scripts/build_notebook_sources.ps1
+
 tidy:
 	@go work sync
 	@cd packages/core && go mod tidy
 	@cd apps/cloud-server && go mod tidy
 	@cd apps/pos-client && go mod tidy
+
