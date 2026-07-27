@@ -70,7 +70,7 @@ jobs:
       - name: Install Frontend Dependencies
         run: |
           cd apps/pos-client/frontend
-          npm install
+          npm install --legacy-peer-deps
 
       - name: Build POS Client Application
         env:
