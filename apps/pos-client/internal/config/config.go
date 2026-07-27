@@ -20,6 +20,8 @@ type Config struct {
 	CloudURL        string
 	GRPCAddr        string // bare host:port for the cloud gRPC backup server
 	BackupAuthToken string // Auth token for downloading tenant backups
+	GithubToken     string // GitHub token for private repo release updates
+	GithubRepo      string // Repository owner/name (default: NasTecSol/Nembus)
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -50,6 +52,11 @@ func LoadConfig(env string) *Config {
 		envValue = env
 	}
 
+	ghToken := os.Getenv("GITHUB_TOKEN")
+	if ghToken == "" {
+		ghToken = os.Getenv("GH_TOKEN")
+	}
+
 	cfg := &Config{
 		Env:             getEnv("ENV", envValue),
 		Port:            getEnv("PORT", "8080"),
@@ -62,6 +69,8 @@ func LoadConfig(env string) *Config {
 		CloudURL:        getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
 		GRPCAddr:        getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
 		BackupAuthToken: getEnv("BACKUP_AUTH_TOKEN", "nembus"),
+		GithubToken:     ghToken,
+		GithubRepo:      getEnv("GITHUB_REPO", "NasTecSol/Nembus"),
 	}
 
 	// Propagate resolved secrets back into the OS environment so that any
