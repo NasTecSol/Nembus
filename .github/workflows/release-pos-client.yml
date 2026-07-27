@@ -1,0 +1,98 @@
+name: Release POS Client
+
+on:
+  push:
+    branches:
+      - release-pos
+
+jobs:
+  build-and-release:
+    name: Build and Create Release
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'apps/pos-client/frontend/package-lock.json'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Determine Next Version Tag
+        id: versioning
+        shell: powershell
+        run: |
+          $tags = git tag --sort=-v:refname
+          $latestTag = $tags | Select-Object -First 1
+          if (-not $latestTag) {
+              $newTag = "v1.0.0"
+          } else {
+              $versionString = $latestTag.TrimStart("v")
+              $parts = $versionString.Split(".")
+              if ($parts.Count -eq 3) {
+                  $major = [int]$parts[0]
+                  $minor = [int]$parts[1]
+                  $patch = [int]$parts[2] + 1
+                  $newTag = "v$major.$minor.$patch"
+              } else {
+                  $newTag = "v1.0.0"
+              }
+          }
+          Write-Host "Latest Tag: $latestTag"
+          Write-Host "New Version Tag: $newTag"
+          echo "VERSION=$newTag" >> $env:GITHUB_OUTPUT
+
+      - name: Install Wails CLI
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd apps/pos-client/frontend
+          npm ci
+
+      - name: Build POS Client Application
+        env:
+          VERSION: ${{ steps.versioning.outputs.VERSION }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd apps/pos-client
+          $version = "${{ steps.versioning.outputs.VERSION }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $ldflags = "-X main.Version=$version -X main.GithubToken=$token"
+          wails build -platform windows/amd64 -ldflags "$ldflags" -o nembus-client.exe
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.versioning.outputs.VERSION }}
+          git push origin ${{ steps.versioning.outputs.VERSION }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.versioning.outputs.VERSION }}
+          name: POS Client ${{ steps.versioning.outputs.VERSION }}
+          body: |
+            ## Nembus POS Client Release ${{ steps.versioning.outputs.VERSION }}
+            Automated release build triggered by merge to `release/pos`.
+          files: |
+            apps/pos-client/build/bin/nembus-client.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
