@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
 
       - name: Set GHCR owner lowercase
         shell: bash
