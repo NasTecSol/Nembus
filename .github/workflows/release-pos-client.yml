@@ -76,6 +76,8 @@ jobs:
         env:
           VERSION: ${{ steps.versioning.outputs.VERSION }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOPRIVATE: github.com/NasTecSol/*
+          GONOSUMCHECK: github.com/NasTecSol/*
         run: |
           cd apps/pos-client
           $version = "${{ steps.versioning.outputs.VERSION }}"
