@@ -60,7 +60,7 @@ jobs:
       - name: Install Frontend Dependencies
         run: |
           cd apps/pos-client/frontend
-          npm ci
+          npm install
 
       - name: Build POS Client Application
         env:
