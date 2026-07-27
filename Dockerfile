@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Copy workspace configuration and module dependencies
-COPY go.work go.work.sum ./
+COPY go.work go.work.sum* ./
 COPY packages/core/go.mod packages/core/go.sum* ./packages/core/
 COPY apps/cloud-server/go.mod apps/cloud-server/go.sum* ./apps/cloud-server/
 COPY apps/pos-client/go.mod apps/pos-client/go.sum* ./apps/pos-client/
