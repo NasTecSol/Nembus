@@ -59,7 +59,7 @@ func CheckForUpdate(currentVersion, ghRepo, ghToken string) (*UpdateInfo, error)
 		req.Header.Set("Authorization", "Bearer "+ghToken)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for updates: %w", err)
@@ -89,7 +89,8 @@ func CheckForUpdate(currentVersion, ghRepo, ghToken string) (*UpdateInfo, error)
 	}
 
 	for _, asset := range release.Assets {
-		if (expectedExt != "" && strings.HasSuffix(asset.Name, expectedExt)) || strings.Contains(asset.Name, "nembus-client") {
+		assetNameLower := strings.ToLower(asset.Name)
+		if (expectedExt != "" && strings.HasSuffix(assetNameLower, expectedExt)) || strings.Contains(assetNameLower, "nembus") {
 			downloadURL = asset.BrowserDownloadURL
 			assetID = asset.ID
 			break
@@ -133,7 +134,8 @@ func ApplyUpdate(downloadURL string, assetID int64, ghRepo string, ghToken strin
 	}
 	req.Header.Set("User-Agent", "Nembus-POS-Client-Updater")
 
-	client := &http.Client{Timeout: 10 * time.Minute}
+	// Allow up to 30 minutes for large binary downloads on slow networks
+	client := &http.Client{Timeout: 30 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download update asset: %w", err)
@@ -164,17 +166,22 @@ func ApplyUpdate(downloadURL string, assetID int64, ghRepo string, ghToken strin
 	}
 
 	_, err = io.Copy(out, resp.Body)
-	out.Close()
+	// Explicitly close file before attempting rename operations (critical on Windows)
+	closeErr := out.Close()
 	if err != nil {
-		os.Remove(newExePath)
+		_ = os.Remove(newExePath)
 		return fmt.Errorf("failed to write update content: %w", err)
+	}
+	if closeErr != nil {
+		_ = os.Remove(newExePath)
+		return fmt.Errorf("failed to flush update file to disk: %w", closeErr)
 	}
 
 	_ = os.Chmod(newExePath, 0755)
 	_ = os.Remove(oldExePath)
 
 	if err := os.Rename(exePath, oldExePath); err != nil {
-		os.Remove(newExePath)
+		_ = os.Remove(newExePath)
 		return fmt.Errorf("failed to backup current executable: %w", err)
 	}
 
@@ -183,15 +190,20 @@ func ApplyUpdate(downloadURL string, assetID int64, ghRepo string, ghToken strin
 		return fmt.Errorf("failed to replace executable: %w", err)
 	}
 
+	// Spawn new process
 	cmd := exec.Command(exePath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
+
 	if err := cmd.Start(); err != nil {
+		// Restore original binary if start fails
+		_ = os.Rename(oldExePath, exePath)
 		return fmt.Errorf("failed to start updated application: %w", err)
 	}
 
 	log.Println("[UPDATER] Update applied successfully! Restarting process...")
+	time.Sleep(200 * time.Millisecond)
 	os.Exit(0)
 	return nil
 }
