@@ -20,7 +20,7 @@ COPY . .
 # Generate Swagger docs inside apps/cloud-server
 WORKDIR /app/apps/cloud-server
 RUN go install github.com/swaggo/swag/cmd/swag@latest
-RUN $(go env GOPATH)/bin/swag init -g main.go -o docs/swagger --parseDependency --parseInternal
+RUN $(go env GOPATH)/bin/swag init -g main.go -d ./,/app/packages/core/handler -o docs/swagger --parseDependency --parseInternal
 
 # Build static binary for Linux x86_64
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o server main.go
