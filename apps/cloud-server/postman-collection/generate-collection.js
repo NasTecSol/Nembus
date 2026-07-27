@@ -99,7 +99,7 @@ const collection = {
     folder('Cart Items', [
       req('Get Cart Item', 'GET', '/api/cart-items/1'),
       req('Update Cart Item', 'PUT', '/api/cart-items/1', { body: {} }),
-      req('Update Item Quantity', 'PATCH', '/api/cart-items/1/quantity', { body: { quantity: 2 } }),
+      req('Update Item Quantity', 'PATCH', '/api/cart-items/1/quantity', { body: { delta_quantity: '1.00' } }),
       req('Delete Cart Item', 'DELETE', '/api/cart-items/1')
     ]),
     // --- POS ---

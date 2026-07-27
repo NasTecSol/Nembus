@@ -1150,9 +1150,19 @@ func (h *CartHandler) UpdateCartItemQuantity(c *gin.Context) {
 		return
 	}
 
-	delta, err := numericFromString(req.DeltaQuantity)
+	var rawDelta string
+	if req.DeltaQuantity != nil && *req.DeltaQuantity != "" {
+		rawDelta = *req.DeltaQuantity
+	} else if req.Quantity != nil && *req.Quantity != "" {
+		rawDelta = *req.Quantity
+	} else {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "either delta_quantity or quantity is required", nil))
+		return
+	}
+
+	delta, err := numericFromString(rawDelta)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid delta_quantity", nil))
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid delta_quantity or quantity", nil))
 		return
 	}
 

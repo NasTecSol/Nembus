@@ -195,10 +195,11 @@ SELECT
     cs.closing_time,
     cs.opening_balance,
     cs.closing_balance,
-    cs.expected_balance,
+    COALESCE(cs.expected_balance, cs.opening_balance, 0) AS expected_balance,
     cs.variance,
     COUNT(t.id) AS transaction_count,
     COALESCE(SUM(t.total_amount), 0) AS total_sales,
+    COALESCE(SUM(t.total_amount), 0) AS cash_sales,
     COALESCE(SUM(t.discount_amount), 0) AS total_discounts_given
 FROM cashier_sessions cs
 LEFT JOIN pos_transactions t 
@@ -219,6 +220,7 @@ type GetSessionSummaryRow struct {
 	Variance            pgtype.Numeric   `json:"variance"`
 	TransactionCount    int64            `json:"transaction_count"`
 	TotalSales          interface{}      `json:"total_sales"`
+	CashSales           interface{}      `json:"cash_sales"`
 	TotalDiscountsGiven interface{}      `json:"total_discounts_given"`
 }
 
@@ -236,6 +238,7 @@ func (q *Queries) GetSessionSummary(ctx context.Context, id int32) (GetSessionSu
 		&i.Variance,
 		&i.TransactionCount,
 		&i.TotalSales,
+		&i.CashSales,
 		&i.TotalDiscountsGiven,
 	)
 	return i, err
@@ -248,10 +251,11 @@ INSERT INTO cashier_sessions (
     session_number,
     opening_time,
     opening_balance,
+    expected_balance,
     status
 ) VALUES (
-    $1, $2, $3, CURRENT_TIMESTAMP, $4, 'open'
-) RETURNING id, session_number, opening_time, status
+    $1, $2, $3, CURRENT_TIMESTAMP, $4, $4, 'open'
+) RETURNING id, session_number, opening_time, expected_balance, status
 `
 
 type OpenCashierSessionParams struct {
@@ -262,10 +266,11 @@ type OpenCashierSessionParams struct {
 }
 
 type OpenCashierSessionRow struct {
-	ID            int32            `json:"id"`
-	SessionNumber string           `json:"session_number"`
-	OpeningTime   pgtype.Timestamp `json:"opening_time"`
-	Status        pgtype.Text      `json:"status"`
+	ID              int32            `json:"id"`
+	SessionNumber   string           `json:"session_number"`
+	OpeningTime     pgtype.Timestamp `json:"opening_time"`
+	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
+	Status          pgtype.Text      `json:"status"`
 }
 
 func (q *Queries) OpenCashierSession(ctx context.Context, arg OpenCashierSessionParams) (OpenCashierSessionRow, error) {
@@ -280,6 +285,7 @@ func (q *Queries) OpenCashierSession(ctx context.Context, arg OpenCashierSession
 		&i.ID,
 		&i.SessionNumber,
 		&i.OpeningTime,
+		&i.ExpectedBalance,
 		&i.Status,
 	)
 	return i, err

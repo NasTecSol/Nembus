@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/printing"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -48,6 +49,11 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound,
 			fmt.Sprintf("organisation %d not found: %s", input.OrgID, err.Error()), nil)
+	}
+
+	// Use organization currency_code from DB if receipt currency is not specified
+	if input.Receipt.Currency == "" && org.CurrencyCode.Valid && strings.TrimSpace(org.CurrencyCode.String) != "" {
+		input.Receipt.Currency = strings.TrimSpace(org.CurrencyCode.String)
 	}
 
 	// 2. Build ReceiptTemplate from org record

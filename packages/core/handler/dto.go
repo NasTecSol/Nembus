@@ -885,7 +885,8 @@ type UpdateCartItemRequest struct {
 }
 
 type UpdateCartItemQuantityRequest struct {
-	DeltaQuantity string `json:"delta_quantity" binding:"required" example:"1.00"`
+	DeltaQuantity *string `json:"delta_quantity,omitempty" example:"1.00"`
+	Quantity      *string `json:"quantity,omitempty" example:"2.00"`
 }
 
 type CreateCartActivityRequest struct {

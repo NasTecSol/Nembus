@@ -5,10 +5,11 @@ INSERT INTO cashier_sessions (
     session_number,
     opening_time,
     opening_balance,
+    expected_balance,
     status
 ) VALUES (
-    $1, $2, $3, CURRENT_TIMESTAMP, $4, 'open'
-) RETURNING id, session_number, opening_time, status;
+    $1, $2, $3, CURRENT_TIMESTAMP, $4, $4, 'open'
+) RETURNING id, session_number, opening_time, expected_balance, status;
 
 -- name: GetActiveCashierSession :one
 SELECT 
@@ -51,10 +52,11 @@ SELECT
     cs.closing_time,
     cs.opening_balance,
     cs.closing_balance,
-    cs.expected_balance,
+    COALESCE(cs.expected_balance, cs.opening_balance, 0) AS expected_balance,
     cs.variance,
     COUNT(t.id) AS transaction_count,
     COALESCE(SUM(t.total_amount), 0) AS total_sales,
+    COALESCE(SUM(t.total_amount), 0) AS cash_sales,
     COALESCE(SUM(t.discount_amount), 0) AS total_discounts_given
 FROM cashier_sessions cs
 LEFT JOIN pos_transactions t 

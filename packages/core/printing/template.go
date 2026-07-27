@@ -85,9 +85,6 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	nl := func() { buf.WriteByte(LF) }
 
 	currency := data.Currency
-	if currency == "" {
-		currency = "PKR"
-	}
 
 	now := time.Now()
 
@@ -233,9 +230,6 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	p := func(s string) { buf.WriteString(s) }
 
 	currency := data.Currency
-	if currency == "" {
-		currency = "PKR"
-	}
 
 	now := time.Now()
 

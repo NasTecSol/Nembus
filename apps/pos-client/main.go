@@ -60,6 +60,11 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Ensure legacy DB triggers that double-count cashier session balances are dropped
+	_, _ = pool.Exec(ctx, "DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
+	_, _ = pool.Exec(ctx, "DROP FUNCTION IF EXISTS update_cashier_session_balance();")
+
 	// Initialize SQLC repository
 	queries := repository.New(pool)
 
@@ -81,7 +86,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		} else {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 

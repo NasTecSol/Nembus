@@ -166,6 +166,10 @@ func (a *App) migrate(dbURL string) error {
 		return fmt.Errorf("failed to run migrations: %v", err)
 	}
 
+	// Ensure legacy DB triggers that double-count cashier session balances are dropped
+	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
+	_, _ = sqlDB.Exec("DROP FUNCTION IF EXISTS update_cashier_session_balance();")
+
 	return nil
 }
 

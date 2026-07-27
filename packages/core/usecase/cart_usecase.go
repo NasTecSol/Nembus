@@ -623,6 +623,30 @@ func (uc *CartUseCase) UpdateCartItemQuantity(ctx context.Context, arg repositor
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
+	existing, err := uc.repo.GetCartItem(ctx, arg.ID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "cart item not found", nil)
+	}
+
+	var currentQty float64
+	if existing.Quantity.Valid {
+		f, _ := existing.Quantity.Float64Value()
+		currentQty = f.Float64
+	}
+	var delta float64
+	if arg.Quantity.Valid {
+		f, _ := arg.Quantity.Float64Value()
+		delta = f.Float64
+	}
+
+	if currentQty+delta <= 0 {
+		if err := uc.repo.DeleteCartItem(ctx, arg.ID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to delete cart item", err.Error())
+		}
+		_, _ = uc.repo.RecalculateCartTotals(ctx, existing.CartID)
+		return utils.NewResponse(utils.CodeOK, "cart item removed as quantity reached 0", nil)
+	}
+
 	item, err := uc.repo.UpdateCartItemQuantity(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to update cart item quantity", err.Error())
@@ -1056,11 +1080,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 					ReferenceNumber: pgtype.Text{},
 					Metadata:        order.Metadata,
 				})
-				// Update drawer expected_balance for this sale
-				_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
-					ID:              posTxn.CashierSessionID,
-					ExpectedBalance: order.TotalAmount,
-				})
+				// Session expected_balance will be updated upon payment processing (POST /api/pos/payments)
 			}
 		}
 	}

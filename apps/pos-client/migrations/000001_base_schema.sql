@@ -2221,25 +2221,9 @@ $$;
 -- TRIGGERS FOR CASHIER SESSION BALANCE TRACKING
 -- =====================================================
 
--- +goose StatementBegin
-CREATE OR REPLACE FUNCTION update_cashier_session_balance()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.cashier_session_id IS NOT NULL THEN
-        UPDATE cashier_sessions
-        SET expected_balance = COALESCE(expected_balance, opening_balance, 0) + NEW.total_amount
-        WHERE id = NEW.cashier_session_id;
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
--- +goose StatementEnd
-
-CREATE TRIGGER trg_update_cashier_session_balance
-    AFTER INSERT ON pos_transactions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_cashier_session_balance();
+-- DB trigger trg_update_cashier_session_balance dropped in favor of explicit app-level balance updates.
+DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;
+DROP FUNCTION IF EXISTS update_cashier_session_balance();
 
 
 -- Log cart status changes
