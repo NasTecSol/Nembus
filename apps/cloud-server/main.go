@@ -8,6 +8,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/config"
 	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
+	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -209,6 +210,18 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		goodsReceiptNotesHandler := handler.NewGoodsReceiptNotesHandler(goodsReceiptNotesUC)
 		router.RegisterGoodsReceiptNoteRoutes(api, goodsReceiptNotesHandler)
+
+		// ZATCA Phase 2 + Sync Routes
+		zatcaCfg := &usecase.ZatcaConfig{
+			Enabled:  cfg.ZatcaEnabled,
+			Env:      cfg.ZatcaEnv,
+			BaseURL:  cfg.ZatcaBaseURL,
+			OrgVATID: cfg.ZatcaOrgVATID,
+		}
+		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		zatcaUC.SetRepository(masterRepo)
+		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		router.RegisterZatcaRoutes(api, zatcaHandler)
 	}
 
 	return r
@@ -293,6 +306,18 @@ func main() {
 
 	// BackupUseCase talks to the local gRPC backup server (same process)
 	backupUC := usecase.NewBackupUseCase(tenantManager, "localhost:"+cfg.GRPCPort)
+
+	// ZATCA Phase 2 Cloud Service & Reporting Worker
+	zatcaCfg := &usecase.ZatcaConfig{
+		Enabled:  cfg.ZatcaEnabled,
+		Env:      cfg.ZatcaEnv,
+		BaseURL:  cfg.ZatcaBaseURL,
+		OrgVATID: cfg.ZatcaOrgVATID,
+	}
+	zatcaSvc := cloudzatca.NewService(masterRepo, zatcaCfg)
+	if cfg.ZatcaEnabled {
+		zatcaSvc.StartReportingWorker(ctx)
+	}
 
 	// Setup Router
 	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, cfg)

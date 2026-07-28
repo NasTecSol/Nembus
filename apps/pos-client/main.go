@@ -204,6 +204,18 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		// [NEW] Template-based ESC/POS receipt printing
 		printHandler := handler.NewPrintHandler(printUC)
 		router.RegisterPrintRoutes(api, printHandler)
+
+		// ZATCA Phase 2 + Sync Routes
+		zatcaCfg := &usecase.ZatcaConfig{
+			Enabled:  cfg.ZatcaEnabled,
+			Env:      cfg.ZatcaEnv,
+			BaseURL:  cfg.ZatcaBaseURL,
+			OrgVATID: cfg.ZatcaOrgVATID,
+		}
+		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		zatcaUC.SetRepository(masterRepo)
+		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		router.RegisterZatcaRoutes(api, zatcaHandler)
 	}
 
 	return r
