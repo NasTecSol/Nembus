@@ -8,6 +8,7 @@ import (
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-client/internal/sync"
+	"github.com/NasTecSol/nembus-client/internal/updater"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"context"
 	"database/sql"
@@ -37,16 +38,27 @@ type App struct {
 	masterPool  *pgxpool.Pool
 	syncService *sync.SyncService
 	cfg         *config.Config
+	version     string
+	ghToken     string
+	ghRepo      string
 }
 
 // NewApp creates a new App application struct
-func NewApp() *App {
-	return &App{}
+func NewApp(version, ghToken, ghRepo string) *App {
+	return &App{
+		version: version,
+		ghToken: ghToken,
+		ghRepo:  ghRepo,
+	}
 }
 
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Clean up legacy executable backups from previous update cycles
+	updater.CleanupOldExecutables()
+
 	if a.IsAppSetup() {
 		// Auto-start DB if setup is already complete
 		// Using default credentials as these are local to the machine
@@ -61,6 +73,40 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		log.Println("[INFO] App setup is not completed yet. Setup wizard is required before backend API starts.")
 	}
+}
+
+// GetAppVersion returns current application version
+func (a *App) GetAppVersion() string {
+	if a.version == "" {
+		return "v1.0.0"
+	}
+	return a.version
+}
+
+// CheckForUpdates queries GitHub releases to detect newer versions
+func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
+	token := a.ghToken
+	if token == "" && a.cfg != nil {
+		token = a.cfg.GithubToken
+	}
+	repo := a.ghRepo
+	if repo == "" && a.cfg != nil {
+		repo = a.cfg.GithubRepo
+	}
+	return updater.CheckForUpdate(a.GetAppVersion(), repo, token)
+}
+
+// ApplyUpdate downloads release asset and restarts application
+func (a *App) ApplyUpdate(downloadURL string, assetID int64) error {
+	token := a.ghToken
+	if token == "" && a.cfg != nil {
+		token = a.cfg.GithubToken
+	}
+	repo := a.ghRepo
+	if repo == "" && a.cfg != nil {
+		repo = a.cfg.GithubRepo
+	}
+	return updater.ApplyUpdate(downloadURL, assetID, repo, token)
 }
 
 // domReady is called after front-end resources have been loaded

@@ -35,6 +35,19 @@ type CreateTransferRequestInput struct {
 	Items                []TransferRequestItemInput `json:"items"`
 }
 
+type ApproveTransferRequestInput struct {
+	ApprovedBy int32 `json:"approved_by"`
+}
+
+type ShipTransferRequestInput struct {
+	ShippedBy int32 `json:"shipped_by"`
+}
+
+type ReceiveTransferRequestInput struct {
+	ReceivedBy int32 `json:"received_by"`
+}
+
+
 type TransferRequestItemOutput struct {
 	ID                int32           `json:"id"`
 	TransferRequestID int32           `json:"transfer_request_id"`
