@@ -2556,6 +2556,9 @@ DROP TRIGGER IF EXISTS update_profit_loss_analytics_updated_at ON profit_loss_an
 CREATE TRIGGER update_profit_loss_analytics_updated_at BEFORE UPDATE ON profit_loss_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_discount_analytics_updated_at ON discount_analytics;
 CREATE TRIGGER update_discount_analytics_updated_at BEFORE UPDATE ON discount_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP INDEX IF EXISTS idx_inventory_stock_unique_item;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_stock_unique_item ON inventory_stock (product_id, COALESCE(product_variant_id, -1), store_id);
+
 
 -- Restaurant triggers
 DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -96,8 +97,7 @@ func TimeToPgDate(t *time.Time) pgtype.Date {
 // Float64ToPgNumeric converts float64 to pgtype.Numeric.
 func Float64ToPgNumeric(v float64) pgtype.Numeric {
 	var num pgtype.Numeric
-	_ = num.Scan(time.Duration(0).String()) // initialize
-	_ = num.Scan(v)
+	_ = num.Scan(fmt.Sprintf("%f", v))
 	return num
 }
 
@@ -107,7 +107,7 @@ func Float64PointerToPgNumeric(v *float64) pgtype.Numeric {
 		return pgtype.Numeric{Valid: false}
 	}
 	var num pgtype.Numeric
-	_ = num.Scan(*v)
+	_ = num.Scan(fmt.Sprintf("%f", *v))
 	return num
 }
 
