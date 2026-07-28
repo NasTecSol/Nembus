@@ -145,6 +145,7 @@ func (h *TransferRequestsHandler) ListTransferRequests(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
+// @Param        body          body      usecase.ApproveTransferRequestInput true "Approval payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -163,9 +164,7 @@ func (h *TransferRequestsHandler) ApproveTransferRequest(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		ApprovedBy int32 `json:"approved_by"`
-	}
+	var req usecase.ApproveTransferRequestInput
 	_ = c.ShouldBindJSON(&req)
 
 	resp := h.useCase.ApproveTransferRequest(c.Request.Context(), int32(id), req.ApprovedBy)
@@ -182,6 +181,7 @@ func (h *TransferRequestsHandler) ApproveTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
+// @Param        body          body      usecase.ShipTransferRequestInput true "Shipping payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -200,9 +200,7 @@ func (h *TransferRequestsHandler) ShipTransferRequest(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		ShippedBy int32 `json:"shipped_by"`
-	}
+	var req usecase.ShipTransferRequestInput
 	_ = c.ShouldBindJSON(&req)
 
 	resp := h.useCase.ShipTransferRequest(c.Request.Context(), int32(id), req.ShippedBy)
@@ -219,6 +217,7 @@ func (h *TransferRequestsHandler) ShipTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
+// @Param        body          body      usecase.ReceiveTransferRequestInput true "Receiving payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -237,9 +236,7 @@ func (h *TransferRequestsHandler) ReceiveTransferRequest(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		ReceivedBy int32 `json:"received_by"`
-	}
+	var req usecase.ReceiveTransferRequestInput
 	_ = c.ShouldBindJSON(&req)
 
 	resp := h.useCase.ReceiveTransferRequest(c.Request.Context(), int32(id), req.ReceivedBy)
