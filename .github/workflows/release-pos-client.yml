@@ -72,6 +72,12 @@ jobs:
           cd apps/pos-client/frontend
           npm install --legacy-peer-deps
 
+      - name: Generate Swagger Docs
+        run: |
+          go install github.com/swaggo/swag/cmd/swag@latest
+          cd apps/pos-client
+          swag init -o docs/swagger --parseDependency --parseInternal
+
       - name: Build POS Client Application
         env:
           VERSION: ${{ steps.versioning.outputs.VERSION }}
