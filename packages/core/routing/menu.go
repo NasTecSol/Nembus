@@ -12,10 +12,15 @@ func RegisterMenuRoutes(r *gin.RouterGroup, h *handler.MenuHandler) {
 		menu.POST("", h.CreateMenu)
 		menu.GET("", h.ListMenus)
 		menu.GET("/:id", h.GetMenu)
-		menu.GET("/module/:moduleId", h.ListMenusByModule)
 		menu.GET("/parent/:parentId", h.ListMenusByParent)
 		menu.PATCH("/:id/toggle-active", h.ToggleMenuActive)
 		menu.PUT("/:id", h.UpdateMenu)
 		menu.DELETE("/:id", h.DeleteMenu)
+	}
+
+	modules := r.Group("/modules")
+	{
+		modules.GET("/:id/menus", h.ListMenusByModule)
+		modules.GET("/:id/menus/active", h.ListActiveMenusByModule)
 	}
 }

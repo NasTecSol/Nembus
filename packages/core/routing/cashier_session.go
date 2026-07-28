@@ -14,6 +14,6 @@ func RegisterCashierSessionRoutes(r *gin.RouterGroup, h *handler.CashierSessionH
 		cashierSessions.GET("/:id", h.GetSessionByID)
 		cashierSessions.PUT("/:id/close", h.CloseCashierSession)
 		cashierSessions.GET("/:id/summary", h.GetSessionSummary)
-		cashierSessions.GET("/closed/:cashier_id", h.GetClosedCashierSessionsByDateRange)
+		cashierSessions.GET("/list/:cashier_id", h.GetCashierSessions)
 	}
 }
