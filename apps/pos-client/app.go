@@ -510,7 +510,7 @@ func (a *App) CreateInitialAdmin(firstName, lastName, username, email, password 
 	uc := usecase.NewUserUseCase()
 	uc.SetRepository(a.masterRepo)
 
-	resp := uc.CreateUser(a.ctx, firstName, lastName, username, email, true, &password, nil)
+	resp := uc.CreateUser(a.ctx, firstName, lastName, username, email, true, &password, nil, nil)
 	if resp.StatusCode != 201 {
 		return fmt.Sprintf("Error: %s", resp.Message)
 	}
