@@ -237,6 +237,13 @@ func main() {
 	}
 
 	cfg := config.LoadConfig(env)
+
+	// Allow overriding the build-time version via environment variable so that
+	// the update checker works like production during local development.
+	if envVersion := os.Getenv("APP_VERSION"); envVersion != "" {
+		Version = envVersion
+	}
+
 	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
 
 	// Wails Setup
