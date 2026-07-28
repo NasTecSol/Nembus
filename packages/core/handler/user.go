@@ -60,22 +60,19 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	// Bind JSON input
-	var req struct {
-		FirstName    string  `json:"first_name" binding:"required"`
-		LastName     string  `json:"last_name"`
-		Username     string  `json:"username" binding:"required"`
-		Email        string  `json:"email" binding:"required"`
-		IsActive     bool    `json:"is_active"`
-		Password     *string `json:"password,omitempty"`
-		EmployeeCode *string `json:"employee_code,omitempty"`
-	}
+	var req CreateUserRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
 		return
 	}
 
+	var metaBytes []byte
+	if len(req.Metadata) > 0 {
+		metaBytes = []byte(req.Metadata)
+	}
+
 	// Call UseCase
-	response := h.useCase.CreateUser(c.Request.Context(), req.FirstName, req.LastName, req.Username, req.Email, req.IsActive, req.Password, req.EmployeeCode)
+	response := h.useCase.CreateUser(c.Request.Context(), req.FirstName, req.LastName, req.Username, req.Email, req.IsActive, req.Password, req.EmployeeCode, metaBytes)
 
 	// Respond with the response from use case
 	c.JSON(response.StatusCode, response)

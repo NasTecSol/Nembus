@@ -187,7 +187,7 @@ func (q *Queries) GetActiveCashierSession(ctx context.Context, cashierID int32) 
 	return i, err
 }
 
-const getClosedCashierSessionsByDateRange = `-- name: GetClosedCashierSessionsByDateRange :many
+const getCashierSessions = `-- name: GetCashierSessions :many
 SELECT 
     cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
     c.cashier_code,
@@ -199,19 +199,24 @@ LEFT JOIN cashiers      c ON cs.cashier_id      = c.id
 LEFT JOIN users         u ON c.user_id          = u.id
 LEFT JOIN pos_terminals t ON cs.pos_terminal_id = t.id
 WHERE cs.cashier_id = $1
-  AND (LOWER(cs.status) = 'closed' OR cs.status IS NULL)
-  AND cs.closing_time >= $2
-  AND cs.closing_time <= $3
-ORDER BY cs.closing_time DESC
+  AND (
+      $2::text = 'all' 
+      OR LOWER(cs.status) = LOWER($2::text) 
+      OR (LOWER($2::text) = 'closed' AND cs.status IS NULL)
+  )
+  AND ($3::timestamp IS NULL OR cs.opening_time >= $3)
+  AND ($4::timestamp IS NULL OR cs.opening_time <= $4)
+ORDER BY cs.opening_time DESC
 `
 
-type GetClosedCashierSessionsByDateRangeParams struct {
-	CashierID     int32            `json:"cashier_id"`
-	ClosingTime   pgtype.Timestamp `json:"closing_time"`
-	ClosingTime_2 pgtype.Timestamp `json:"closing_time_2"`
+type GetCashierSessionsParams struct {
+	CashierID    int32            `json:"cashier_id"`
+	StatusFilter string           `json:"status_filter"`
+	StartDate    pgtype.Timestamp `json:"start_date"`
+	EndDate      pgtype.Timestamp `json:"end_date"`
 }
 
-type GetClosedCashierSessionsByDateRangeRow struct {
+type GetCashierSessionsRow struct {
 	ID              int32            `json:"id"`
 	CashierID       int32            `json:"cashier_id"`
 	PosTerminalID   int32            `json:"pos_terminal_id"`
@@ -232,15 +237,20 @@ type GetClosedCashierSessionsByDateRangeRow struct {
 	TerminalCode    pgtype.Text      `json:"terminal_code"`
 }
 
-func (q *Queries) GetClosedCashierSessionsByDateRange(ctx context.Context, arg GetClosedCashierSessionsByDateRangeParams) ([]GetClosedCashierSessionsByDateRangeRow, error) {
-	rows, err := q.db.Query(ctx, getClosedCashierSessionsByDateRange, arg.CashierID, arg.ClosingTime, arg.ClosingTime_2)
+func (q *Queries) GetCashierSessions(ctx context.Context, arg GetCashierSessionsParams) ([]GetCashierSessionsRow, error) {
+	rows, err := q.db.Query(ctx, getCashierSessions,
+		arg.CashierID,
+		arg.StatusFilter,
+		arg.StartDate,
+		arg.EndDate,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetClosedCashierSessionsByDateRangeRow
+	var items []GetCashierSessionsRow
 	for rows.Next() {
-		var i GetClosedCashierSessionsByDateRangeRow
+		var i GetCashierSessionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.CashierID,

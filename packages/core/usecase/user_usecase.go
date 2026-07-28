@@ -47,6 +47,61 @@ func userToOutput(u repository.User) UserOutput {
 	}
 }
 
+type UserWithDetailsOutput struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	Username       string           `json:"username"`
+	Email          string           `json:"email"`
+	PasswordHash   string           `json:"-"`
+	FirstName      pgtype.Text      `json:"first_name"`
+	LastName       pgtype.Text      `json:"last_name"`
+	EmployeeCode   pgtype.Text      `json:"employee_code"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	Roles          json.RawMessage  `json:"roles"`
+	Stores         json.RawMessage  `json:"stores"`
+}
+
+func userWithDetailsRowToOutput(r repository.GetUserWithDetailsRow) UserWithDetailsOutput {
+	return UserWithDetailsOutput{
+		ID:             r.ID,
+		OrganizationID: r.OrganizationID,
+		Username:       r.Username,
+		Email:          r.Email,
+		PasswordHash:   "",
+		FirstName:      r.FirstName,
+		LastName:       r.LastName,
+		EmployeeCode:   r.EmployeeCode,
+		IsActive:       r.IsActive,
+		Metadata:       utils.BytesToJSONRawMessage(r.Metadata),
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+		Roles:          utils.BytesToJSONRawMessage(r.Roles),
+		Stores:         utils.BytesToJSONRawMessage(r.Stores),
+	}
+}
+
+func listUsersWithDetailsRowToOutput(r repository.ListUsersWithDetailsRow) UserWithDetailsOutput {
+	return UserWithDetailsOutput{
+		ID:             r.ID,
+		OrganizationID: r.OrganizationID,
+		Username:       r.Username,
+		Email:          r.Email,
+		PasswordHash:   "",
+		FirstName:      r.FirstName,
+		LastName:       r.LastName,
+		EmployeeCode:   r.EmployeeCode,
+		IsActive:       r.IsActive,
+		Metadata:       utils.BytesToJSONRawMessage(r.Metadata),
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+		Roles:          utils.BytesToJSONRawMessage(r.Roles),
+		Stores:         utils.BytesToJSONRawMessage(r.Stores),
+	}
+}
+
 type UserUseCase struct {
 	repo *repository.Queries
 }
@@ -85,7 +140,7 @@ func (uc *UserUseCase) getOrganizationID(ctx context.Context) *repository.Respon
 }
 
 // CreateUser creates a new user
-func (uc *UserUseCase) CreateUser(ctx context.Context, firstName, lastName, username, email string, isActive bool, password *string, employeeCode *string) *repository.Response {
+func (uc *UserUseCase) CreateUser(ctx context.Context, firstName, lastName, username, email string, isActive bool, password *string, employeeCode *string, metadata []byte) *repository.Response {
 	if uc.repo == nil {
 		//return repository.User{}, errors.New("repository not set")
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
@@ -140,17 +195,11 @@ func (uc *UserUseCase) CreateUser(ctx context.Context, firstName, lastName, user
 		employeeCodeText = pgtype.Text{String: *employeeCode, Valid: true}
 	}
 
-	// return uc.repo.CreateUser(ctx, repository.CreateUserParams{
-	// 	OrganizationID: orgID,
-	// 	Username:       username,
-	// 	Email:          email,
-	// 	PasswordHash:   passwordHash,
-	// 	FirstName:      firstNameText,
-	// 	LastName:       lastNameText,
-	// 	EmployeeCode:   employeeCodeText,
-	// 	IsActive:       pgtype.Bool{Bool: isActive, Valid: true},
-	// 	Metadata:       []byte("{}"),
-	// })
+	metaBytes := metadata
+	if len(metaBytes) == 0 {
+		metaBytes = []byte("{}")
+	}
+
 	user, err := uc.repo.CreateUser(ctx, repository.CreateUserParams{
 		OrganizationID: orgID,
 		Username:       username,
@@ -160,7 +209,7 @@ func (uc *UserUseCase) CreateUser(ctx context.Context, firstName, lastName, user
 		LastName:       lastNameText,
 		EmployeeCode:   employeeCodeText,
 		IsActive:       pgtype.Bool{Bool: isActive, Valid: true},
-		Metadata:       []byte("{}"),
+		Metadata:       metaBytes,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -589,7 +638,7 @@ func (uc *UserUseCase) UpdateUser(
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "user updated successfully", user)
+	return utils.NewResponse(utils.CodeOK, "user updated successfully", userToOutput(user))
 }
 
 // UpdateUserPassword updates a user's password
@@ -731,7 +780,12 @@ func (uc *UserUseCase) SearchUsers(ctx context.Context, searchTerm string, limit
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "users fetched successfully", users)
+	out := make([]UserOutput, len(users))
+	for i := range users {
+		out[i] = userToOutput(users[i])
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched successfully", out)
 }
 
 // GetUserWithDetails fetches user with roles and stores
@@ -745,7 +799,7 @@ func (uc *UserUseCase) GetUserWithDetails(ctx context.Context, userID int32) *re
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "user fetched with details successfully", user)
+	return utils.NewResponse(utils.CodeOK, "user fetched with details successfully", userWithDetailsRowToOutput(user))
 }
 
 // ListUsersWithDetails lists users with roles and stores
@@ -777,7 +831,12 @@ func (uc *UserUseCase) ListUsersWithDetails(ctx context.Context, limit, offset i
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "users fetched with details successfully", users)
+	out := make([]UserWithDetailsOutput, len(users))
+	for i := range users {
+		out[i] = listUsersWithDetailsRowToOutput(users[i])
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched with details successfully", out)
 }
 
 // GetStoreUsers fetches all users for a store
@@ -791,7 +850,12 @@ func (uc *UserUseCase) GetStoreUsers(ctx context.Context, storeID int32) *reposi
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "users fetched for store successfully", users)
+	out := make([]UserOutput, len(users))
+	for i := range users {
+		out[i] = userToOutput(users[i])
+	}
+
+	return utils.NewResponse(utils.CodeOK, "users fetched for store successfully", out)
 }
 
 // GetUserPrimaryStore fetches user's primary store
@@ -805,7 +869,7 @@ func (uc *UserUseCase) GetUserPrimaryStore(ctx context.Context, userID int32) *r
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "user primary store fetched successfully", store)
+	return utils.NewResponse(utils.CodeOK, "user primary store fetched successfully", storeToOutput(store))
 }
 
 // GetUserStores fetches all stores for a user
@@ -819,7 +883,12 @@ func (uc *UserUseCase) GetUserStores(ctx context.Context, userID int32) *reposit
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "user stores fetched successfully", stores)
+	out := make([]StoreOutput, len(stores))
+	for i := range stores {
+		out[i] = storeToOutput(stores[i])
+	}
+
+	return utils.NewResponse(utils.CodeOK, "user stores fetched successfully", out)
 }
 
 // DeleteUser deletes a user by ID

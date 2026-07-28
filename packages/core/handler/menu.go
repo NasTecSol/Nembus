@@ -201,11 +201,11 @@ func (h *MenuHandler) ListMenus(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id    header  string  true  "Tenant identifier"
 // @Param        Authorization header  string  true  "Bearer token"
-// @Param        moduleId      path    int     true  "Module ID"
+// @Param        id      path    int     true  "Module ID"
 // @Success      200  {object}  SuccessResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
-// @Router       /api/modules/{moduleId}/menus [get]
+// @Router       /api/modules/{id}/menus [get]
 func (h *MenuHandler) ListMenusByModule(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -213,7 +213,7 @@ func (h *MenuHandler) ListMenusByModule(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	moduleID, err := strconv.ParseInt(c.Param("moduleId"), 10, 32)
+	moduleID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		resp := utils.NewResponse(utils.CodeBadReq, "invalid module id", nil)
 		c.JSON(resp.StatusCode, resp)
@@ -232,11 +232,11 @@ func (h *MenuHandler) ListMenusByModule(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id    header  string  true  "Tenant identifier"
 // @Param        Authorization header  string  true  "Bearer token"
-// @Param        moduleId      path    int     true  "Module ID"
+// @Param        id      path    int     true  "Module ID"
 // @Success      200  {object}  SuccessResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
-// @Router       /api/modules/{moduleId}/menus/active [get]
+// @Router       /api/modules/{id}/menus/active [get]
 func (h *MenuHandler) ListActiveMenusByModule(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -244,7 +244,7 @@ func (h *MenuHandler) ListActiveMenusByModule(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	moduleID, err := strconv.ParseInt(c.Param("moduleId"), 10, 32)
+	moduleID, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
 		resp := utils.NewResponse(utils.CodeBadReq, "invalid module id", nil)
 		c.JSON(resp.StatusCode, resp)

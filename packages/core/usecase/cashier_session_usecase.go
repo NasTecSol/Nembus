@@ -95,13 +95,13 @@ func (uc *CashierSessionUseCase) GetSessionSummary(ctx context.Context, id int32
 	return utils.NewResponse(utils.CodeOK, "session summary fetched successfully", summary)
 }
 
-func (uc *CashierSessionUseCase) GetClosedCashierSessionsByDateRange(ctx context.Context, arg repository.GetClosedCashierSessionsByDateRangeParams) *repository.Response {
+func (uc *CashierSessionUseCase) GetCashierSessions(ctx context.Context, arg repository.GetCashierSessionsParams) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
-	sessions, err := uc.repo.GetClosedCashierSessionsByDateRange(ctx, arg)
+	sessions, err := uc.repo.GetCashierSessions(ctx, arg)
 	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to get closed cashier sessions", err.Error())
+		return utils.NewResponse(utils.CodeError, "failed to get cashier sessions", err.Error())
 	}
-	return utils.NewResponse(utils.CodeOK, "closed cashier sessions fetched successfully", sessions)
+	return utils.NewResponse(utils.CodeOK, "cashier sessions fetched successfully", sessions)
 }
