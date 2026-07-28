@@ -35,8 +35,9 @@ type CreateUserRequest struct {
 	Username     string  `json:"username" binding:"required" example:"johndoe"`
 	Email        string  `json:"email" binding:"required" example:"john@example.com"`
 	IsActive     bool    `json:"is_active" example:"true"`
-	Password     *string `json:"password,omitempty" example:"securepassword123"`
-	EmployeeCode *string `json:"employee_code,omitempty" example:"EMP001"`
+	Password     *string         `json:"password,omitempty" example:"securepassword123"`
+	EmployeeCode *string         `json:"employee_code,omitempty" example:"EMP001"`
+	Metadata     json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // ErrorResponse represents an error response
