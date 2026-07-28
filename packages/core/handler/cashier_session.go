@@ -238,24 +238,25 @@ func (h *CashierSessionHandler) GetSessionSummary(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// GetClosedCashierSessionsByDateRange handles GET /api/cashier-sessions/closed/:cashier_id
-// @Summary      Get closed cashier sessions by date range
-// @Description  Get all closed sessions for a specific cashier within a given date range
+// GetCashierSessions handles GET /api/cashier-sessions/list/:cashier_id
+// @Summary      Get cashier sessions with optional date and status filters
+// @Description  Get sessions for a specific cashier. Status can be 'all', 'open', or 'closed'.
 // @Tags         cashier-sessions
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id   header    string  true  "Tenant identifier"
-// @Param        Authorization header    string  true  "Bearer token"
-// @Param        cashier_id    path      int     true  "Cashier ID"
-// @Param        start_date    query     string  true  "Start date (e.g. 2006-01-02 or RFC3339)"
-// @Param        end_date      query     string  true  "End date (e.g. 2006-01-02 or RFC3339)"
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        Authorization header    string  true   "Bearer token"
+// @Param        cashier_id    path      int     true   "Cashier ID"
+// @Param        status        query     string  false  "Status filter: all, open, closed" default(all)
+// @Param        start_date    query     string  false  "Start date (e.g. 2006-01-02)"
+// @Param        end_date      query     string  false  "End date (e.g. 2006-01-02)"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
-// @Router       /api/cashier-sessions/closed/{cashier_id} [get]
-func (h *CashierSessionHandler) GetClosedCashierSessionsByDateRange(c *gin.Context) {
+// @Router       /api/cashier-sessions/list/{cashier_id} [get]
+func (h *CashierSessionHandler) GetCashierSessions(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
@@ -267,6 +268,11 @@ func (h *CashierSessionHandler) GetClosedCashierSessionsByDateRange(c *gin.Conte
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier_id", nil))
 		return
+	}
+
+	statusFilter := c.Query("status")
+	if statusFilter == "" {
+		statusFilter = "all"
 	}
 
 	startDateStr := c.Query("start_date")
@@ -297,12 +303,13 @@ func (h *CashierSessionHandler) GetClosedCashierSessionsByDateRange(c *gin.Conte
 		pgEnd = pgtype.Timestamp{Time: parsedEnd, Valid: true}
 	}
 
-	arg := repository.GetClosedCashierSessionsByDateRangeParams{
-		CashierID:   int32(cashierID),
-		ClosingTime: pgStart,
-		ClosingTime_2: pgEnd,
+	arg := repository.GetCashierSessionsParams{
+		CashierID:    int32(cashierID),
+		StatusFilter: statusFilter,
+		StartDate:    pgStart,
+		EndDate:      pgEnd,
 	}
 
-	resp := h.useCase.GetClosedCashierSessionsByDateRange(c.Request.Context(), arg)
+	resp := h.useCase.GetCashierSessions(c.Request.Context(), arg)
 	c.JSON(resp.StatusCode, resp)
 }
