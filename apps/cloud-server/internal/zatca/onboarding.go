@@ -144,3 +144,52 @@ func ccsidBinaryToken(resp *ComplianceCSIDResponse) string {
 	}
 	return resp.IssuedCertificate
 }
+
+// RenewDeviceCSID executes CSID renewal for an active device configuration near expiration.
+func (s *OnboardingService) RenewDeviceCSID(ctx context.Context, configID int32) (*repository.ZatcaDeviceConfig, error) {
+	if s.repo == nil {
+		return nil, fmt.Errorf("repository not set")
+	}
+
+	config, err := s.repo.GetZatcaDeviceConfig(ctx, configID)
+	if err != nil {
+		return nil, fmt.Errorf("device config not found: %w", err)
+	}
+
+	var secret string
+	if len(config.Metadata) > 0 {
+		var meta map[string]interface{}
+		if err := json.Unmarshal(config.Metadata, &meta); err == nil {
+			if s, ok := meta["secret"].(string); ok {
+				secret = s
+			}
+		}
+	}
+
+	csrPEM := config.CsrPem.String
+	currentPCSID := config.ProductionCsid.String
+
+	resp, err := s.client.RenewProductionCSID(ctx, currentPCSID, secret, csrPEM)
+	if err != nil {
+		return nil, fmt.Errorf("failed to renew Production CSID: %w", err)
+	}
+
+	newExpiry := time.Now().Add(365 * 24 * time.Hour)
+	params := repository.UpdateZatcaDeviceCSIDParams{
+		ID:             config.ID,
+		ComplianceCsid: config.ComplianceCsid,
+		ProductionCsid: pgtype.Text{String: resp.BinarySecurityToken, Valid: true},
+		CsidExpiry:     pgtype.Timestamptz{Time: newExpiry, Valid: true},
+	}
+
+	if err := s.repo.UpdateZatcaDeviceCSID(ctx, params); err != nil {
+		return nil, fmt.Errorf("failed to save renewed CSID to database: %w", err)
+	}
+
+	updated, err := s.repo.GetZatcaDeviceConfig(ctx, config.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch updated device config: %w", err)
+	}
+
+	return &updated, nil
+}

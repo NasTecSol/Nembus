@@ -113,30 +113,85 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 		return fmt.Errorf("failed to get tenant pool: %w", err)
 	}
 
+	// Dynamic ingestion routing by entity type
+	switch event.EntityType {
+	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
+		"sales_orders_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
+		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
+		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.PayloadJson); err != nil {
+			log.Printf("[gRPC SyncServer] Ingestion error for %s (ID %d): %v", event.EntityType, event.EntityId, err)
+			return err
+		}
+		log.Printf("[gRPC SyncServer] Successfully ingested %s entity ID %d (Correlation: %s) for store %d",
+			event.EntityType, event.EntityId, event.CorrelationId, event.StoreId)
+	default:
+		log.Printf("[gRPC SyncServer] Processed generic entity %s ID %d", event.EntityType, event.EntityId)
+	}
+
 	// Insert into raw sync log / store outbox log for processing
+	metadataJSON, _ := json.Marshal(map[string]interface{}{
+		"last_event_id":  event.Id,
+		"action":         event.Action,
+		"correlation_id": event.CorrelationId,
+	})
+
 	_, err = pool.Exec(ctx, `
 		INSERT INTO sync_watermarks (entity_type, store_id, last_sync_at, metadata)
 		VALUES ($1, $2, NOW(), $3)
 		ON CONFLICT (entity_type, store_id) DO UPDATE SET
 			last_sync_at = EXCLUDED.last_sync_at,
 			metadata     = EXCLUDED.metadata;
-	`, event.EntityType, event.StoreId, fmt.Sprintf(`{"last_event_id": %d, "action": "%s"}`, event.Id, event.Action))
+	`, event.EntityType, event.StoreId, string(metadataJSON))
 
 	if err != nil {
 		log.Printf("[gRPC SyncServer] Watermark update warning: %v", err)
 	}
 
-	// Dynamic ingestion routing by entity type
-	switch event.EntityType {
-	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
-		"sales_orders_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
-		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
-		log.Printf("[gRPC SyncServer] Successfully processed %s entity ID %d for store %d", event.EntityType, event.EntityId, event.StoreId)
-		return nil
-	default:
-		log.Printf("[gRPC SyncServer] Processed generic entity %s ID %d", event.EntityType, event.EntityId)
+	return nil
+}
+
+// upsertEntityJSON executes PostgreSQL json_populate_record upsert inside a database transaction
+func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, entityType string, payload []byte) error {
+	if len(payload) == 0 {
 		return nil
 	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	validTables := map[string]bool{
+		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
+		"cashier_sessions": true, "sales_orders_v2": true, "draft_cart_templates": true,
+		"restaurant_orders": true, "restaurant_order_items": true, "kiosk_sessions": true,
+		"stock_counts": true, "stock_count_lines": true, "waste_logs": true,
+	}
+
+	if !validTables[entityType] {
+		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO %s
+		SELECT * FROM json_populate_record(NULL::%s, $1::json)
+		ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
+	`, entityType, entityType)
+
+	_, err = tx.Exec(ctx, query, string(payload))
+	if err != nil {
+		fallbackQuery := fmt.Sprintf(`
+			INSERT INTO %s
+			SELECT * FROM json_populate_record(NULL::%s, $1::json)
+			ON CONFLICT (id) DO NOTHING;
+		`, entityType, entityType)
+		if _, err2 := tx.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
+			return fmt.Errorf("failed to upsert %s: %w (fallback: %v)", entityType, err, err2)
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 // StreamPull handles Cloud -> Local Terminal delta updates based on sync watermarks.
@@ -200,27 +255,8 @@ func (s *SyncServer) streamEntityDeltas(
 	limit int32,
 	stream syncpb.SyncService_StreamPullServer,
 ) error {
-	// Query modified entities updated after watermark
-	var query string
-	switch entityType {
-	case "zatca_device_configs":
-		query = `SELECT id, json_build_object(
-			'id', id, 'organization_id', organization_id, 'store_id', store_id,
-			'device_serial', device_serial, 'production_csid', production_csid,
-			'is_active', is_active, 'updated_at', updated_at
-		)::text, updated_at FROM zatca_device_configs WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`
-	case "product_barcodes":
-		query = `SELECT id, json_build_object(
-			'id', id, 'barcode', barcode, 'product_id', product_id, 'updated_at', updated_at
-		)::text, updated_at FROM product_barcodes WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`
-	case "customers":
-		query = `SELECT id, json_build_object(
-			'id', id, 'name', name, 'outstanding_balance', outstanding_balance, 'credit_limit', credit_limit, 'updated_at', updated_at
-		)::text, updated_at FROM customers WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`
-	default:
-		// Generic fallback query if entity table exists
-		query = fmt.Sprintf(`SELECT id, json_build_object('id', id, 'entity_type', '%s', 'updated_at', updated_at)::text, updated_at FROM %s WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`, entityType, entityType)
-	}
+	// Query modified entities updated after watermark using PostgreSQL row_to_json
+	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`, entityType)
 
 	rows, err := pool.Query(ctx, query, since, limit)
 	if err != nil {

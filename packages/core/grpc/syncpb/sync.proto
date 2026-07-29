@@ -28,6 +28,7 @@ message SyncEvent {
   string sha256 = 9;                       // SHA-256 hex checksum of payload_json
   uint64 chunk_offset = 10;                // Byte offset for chunked messages (0 if unchunked)
   bool is_last_chunk = 11;                 // True if last chunk or single-chunk message
+  string correlation_id = 12;              // Group identifier for atomic transaction batches
 }
 
 // SyncAck acknowledges receipt and processing of a SyncEvent

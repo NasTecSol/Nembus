@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -28,12 +27,13 @@ type SyncService struct {
 }
 
 type OutboxItem struct {
-	ID         int64           `json:"id"`
-	EntityType string          `json:"entity_type"`
-	EntityID   int64           `json:"entity_id"`
-	Action     string          `json:"action"`
-	Payload    json.RawMessage `json:"payload"`
-	CreatedAt  time.Time       `json:"created_at"`
+	ID            int64           `json:"id"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      int64           `json:"entity_id"`
+	Action        string          `json:"action"`
+	Payload       json.RawMessage `json:"payload"`
+	CreatedAt     time.Time       `json:"created_at"`
+	CorrelationID *string         `json:"correlation_id"`
 }
 
 func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug string) *SyncService {
@@ -97,7 +97,7 @@ func (s *SyncService) performSync() {
 // drainOutboxGRPC streams pending sync_queue items to Cloud via gRPC StreamPush with SHA-256 checksums
 func (s *SyncService) drainOutboxGRPC() {
 	rows, err := s.masterPool.Query(s.ctx, `
-		SELECT id, entity_type, entity_id, action, payload, created_at
+		SELECT id, entity_type, entity_id, action, payload, created_at, correlation_id
 		FROM sync_queue
 		WHERE status = 'pending'
 		ORDER BY priority DESC, created_at ASC
@@ -112,7 +112,7 @@ func (s *SyncService) drainOutboxGRPC() {
 	var items []OutboxItem
 	for rows.Next() {
 		var item OutboxItem
-		if err := rows.Scan(&item.ID, &item.EntityType, &item.EntityID, &item.Action, &item.Payload, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.EntityType, &item.EntityID, &item.Action, &item.Payload, &item.CreatedAt, &item.CorrelationID); err != nil {
 			continue
 		}
 		items = append(items, item)
@@ -149,17 +149,23 @@ func (s *SyncService) drainOutboxGRPC() {
 		hasher.Write(payloadBytes)
 		shaHex := hex.EncodeToString(hasher.Sum(nil))
 
+		var corrID string
+		if item.CorrelationID != nil {
+			corrID = *item.CorrelationID
+		}
+
 		event := &syncpb.SyncEvent{
-			Id:          item.ID,
-			EntityType:  item.EntityType,
-			EntityId:    item.EntityID,
-			Action:      item.Action,
-			PayloadJson: payloadBytes,
-			StoreId:     storeID,
-			TenantSlug:  s.tenantSlug,
-			EventTime:   timestamppb.New(item.CreatedAt),
-			Sha256:      shaHex,
-			IsLastChunk: true,
+			Id:            item.ID,
+			EntityType:    item.EntityType,
+			EntityId:      item.EntityID,
+			Action:        item.Action,
+			PayloadJson:   payloadBytes,
+			StoreId:       storeID,
+			TenantSlug:    s.tenantSlug,
+			EventTime:     timestamppb.New(item.CreatedAt),
+			Sha256:        shaHex,
+			IsLastChunk:   true,
+			CorrelationId: corrID,
 		}
 
 		if err := stream.Send(event); err != nil {
@@ -288,56 +294,42 @@ func (s *SyncService) fetchDeltaGRPC() {
 }
 
 func (s *SyncService) applyPulledEntity(event *syncpb.SyncEvent) {
-	switch event.EntityType {
-	case "customers":
-		var c struct {
-			ID                 int64   `json:"id"`
-			Name               string  `json:"name"`
-			OutstandingBalance float64 `json:"outstanding_balance"`
-			CreditLimit        float64 `json:"credit_limit"`
-		}
-		if err := json.Unmarshal(event.PayloadJson, &c); err == nil {
-			_, _ = s.masterPool.Exec(s.ctx, `
-				UPDATE customers
-				SET outstanding_balance = $1, credit_limit = $2, updated_at = NOW()
-				WHERE id = $3;
-			`, c.OutstandingBalance, c.CreditLimit, c.ID)
-		}
-	case "inventory_stock":
-		var inv struct {
-			ID       int64   `json:"id"`
-			StoreID  int32   `json:"store_id"`
-			Quantity float64 `json:"quantity"`
-		}
-		if err := json.Unmarshal(event.PayloadJson, &inv); err == nil {
-			_, _ = s.masterPool.Exec(s.ctx, `
-				UPDATE inventory_stock
-				SET quantity = $1, updated_at = NOW()
-				WHERE id = $2;
-			`, inv.Quantity, inv.ID)
-		}
-	case "zatca_device_configs":
-		var cfg struct {
-			ID             int32     `json:"id"`
-			OrganizationID int32     `json:"organization_id"`
-			DeviceSerial   string    `json:"device_serial"`
-			ProductionCsid *string   `json:"production_csid"`
-			IsActive       bool      `json:"is_active"`
-			UpdatedAt      time.Time `json:"updated_at"`
-		}
-		if err := json.Unmarshal(event.PayloadJson, &cfg); err == nil {
-			query := `
-				INSERT INTO zatca_device_configs (id, organization_id, device_serial, production_csid, is_active, updated_at)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (organization_id, device_serial) DO UPDATE SET
-					production_csid = EXCLUDED.production_csid,
-					is_active       = EXCLUDED.is_active,
-					updated_at      = EXCLUDED.updated_at;
-			`
-			_, _ = s.masterPool.Exec(s.ctx, query, cfg.ID, cfg.OrganizationID, cfg.DeviceSerial, cfg.ProductionCsid, cfg.IsActive, cfg.UpdatedAt)
-		}
-	default:
-		// Log receipt of generic domain entity
-		log.Printf("[gRPC SYNC] Applied entity delta: %s (ID %d)", event.EntityType, event.EntityId)
+	if len(event.PayloadJson) == 0 {
+		return
 	}
+
+	// Supported catalog, pricing, menu, promotion, and compliance entities
+	validTables := map[string]bool{
+		"product_barcodes": true, "product_prices": true, "promotions": true,
+		"menu_items": true, "menu_modifier_groups": true, "combo_bundles": true,
+		"recipes": true, "menu_item_availability_schedules": true,
+		"customers": true, "inventory_stock": true, "zatca_device_configs": true,
+	}
+
+	if !validTables[event.EntityType] {
+		log.Printf("[gRPC SYNC] Applied generic entity delta: %s (ID %d)", event.EntityType, event.EntityId)
+		return
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO %s
+		SELECT * FROM json_populate_record(NULL::%s, $1::json)
+		ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
+	`, event.EntityType, event.EntityType)
+
+	_, err := s.masterPool.Exec(s.ctx, query, string(event.PayloadJson))
+	if err != nil {
+		fallbackQuery := fmt.Sprintf(`
+			INSERT INTO %s
+			SELECT * FROM json_populate_record(NULL::%s, $1::json)
+			ON CONFLICT (id) DO NOTHING;
+		`, event.EntityType, event.EntityType)
+		if _, err2 := s.masterPool.Exec(s.ctx, fallbackQuery, string(event.PayloadJson)); err2 != nil {
+			log.Printf("[gRPC SYNC] Error applying pulled entity %s (ID %d): %v (fallback error: %v)",
+				event.EntityType, event.EntityId, err, err2)
+			return
+		}
+	}
+
+	log.Printf("[gRPC SYNC] Successfully applied delta for %s (ID %d)", event.EntityType, event.EntityId)
 }

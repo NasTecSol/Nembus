@@ -19,6 +19,11 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+var (
+	_ = reflect.TypeOf
+	_ = sync.Once{}
+)
+
 type SyncEvent struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -35,6 +40,7 @@ type SyncEvent struct {
 	Sha256      string                 `protobuf:"bytes,9,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	ChunkOffset uint64                 `protobuf:"varint,10,opt,name=chunk_offset,json=chunkOffset,proto3" json:"chunk_offset,omitempty"`
 	IsLastChunk bool                   `protobuf:"varint,11,opt,name=is_last_chunk,json=isLastChunk,proto3" json:"is_last_chunk,omitempty"`
+	CorrelationId string               `protobuf:"bytes,12,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
 }
 
 func (x *SyncEvent) Reset() {
@@ -134,6 +140,13 @@ func (x *SyncEvent) GetIsLastChunk() bool {
 		return x.IsLastChunk
 	}
 	return false
+}
+
+func (x *SyncEvent) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
 }
 
 type SyncAck struct {

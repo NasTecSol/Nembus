@@ -17,10 +17,22 @@ type ZatcaClient struct {
 	httpClient *http.Client
 }
 
-// NewZatcaClient initializes a new ZATCA API client for sandbox or production.
+// GetBaseURLForEnv returns the appropriate ZATCA API gateway base URL according to the environment.
+func GetBaseURLForEnv(env string) string {
+	switch env {
+	case "production", "prod":
+		return "https://gw-fatoora.zatca.gov.sa/e-invoicing/core"
+	case "simulation", "sim":
+		return "https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation"
+	default:
+		return "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
+	}
+}
+
+// NewZatcaClient initializes a new ZATCA API client for sandbox, simulation, or production.
 func NewZatcaClient(baseURL string) *ZatcaClient {
 	if baseURL == "" {
-		baseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
+		baseURL = GetBaseURLForEnv("sandbox")
 	}
 	return &ZatcaClient{
 		baseURL: baseURL,
@@ -28,6 +40,11 @@ func NewZatcaClient(baseURL string) *ZatcaClient {
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// NewZatcaClientForEnv returns an initialized client targeting the specified ZATCA environment.
+func NewZatcaClientForEnv(env string) *ZatcaClient {
+	return NewZatcaClient(GetBaseURLForEnv(env))
 }
 
 // ─── Data Structures ────────────────────────────────────────────────────────
@@ -265,6 +282,45 @@ func (c *ZatcaClient) ReportSimplifiedInvoice(ctx context.Context, pcsidBinaryTo
 	var res ReportingResponse
 	if err := json.Unmarshal(respBody, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode reporting response: %w", err)
+	}
+
+	return &res, nil
+}
+
+// RenewProductionCSID calls POST /production/csids/renewal to exchange a current CSID for a renewed Production CSID.
+func (c *ZatcaClient) RenewProductionCSID(ctx context.Context, currentPCSID string, secret string, csrPEM string) (*ProductionCSIDResponse, error) {
+	csrBase64 := base64.StdEncoding.EncodeToString([]byte(csrPEM))
+	reqBody := ComplianceCSIDRequest{CSR: csrBase64}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal CSID renewal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/production/csids/renewal", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CSID renewal request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", "en")
+	req.SetBasicAuth(currentPCSID, secret)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("CSID renewal API call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("CSID renewal API error (HTTP %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var res ProductionCSIDResponse
+	if err := json.Unmarshal(respBody, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode CSID renewal response: %w", err)
 	}
 
 	return &res, nil
