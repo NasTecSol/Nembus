@@ -754,6 +754,37 @@ const collection = {
       req('Post / Process Goods Receipt Note', 'POST', '/api/goods-receipt-notes/1/post', {
         description: "Updates PO lines received qty, updates PO status, increments inventory stock, logs stock movement"
       })
+    ]),
+    // --- ZATCA Phase 2 & Sync ---
+    folder('ZATCA Phase 2 & Sync', [
+      req('Get ZATCA Status', 'GET', '/api/zatca/status', {
+        description: "Returns ZATCA enabled flag, environment mode (sandbox/production), base URL, and Org VAT ID"
+      }),
+      req('Get ZATCA Config Deltas (Pull Sync)', 'GET', '/api/zatca/configs?store_id=1&since=2026-01-01T00:00:00Z', {
+        description: "Delta-fetch ZATCA device configs, active CSID certificates, and revocation status for POS terminals"
+      }),
+      req('Receive Push Sync Payload (Outbox Push)', 'POST', '/api/zatca/sync/push', {
+        body: {
+          store_id: 1,
+          items: [
+            {
+              id: 101,
+              entity_type: "pos_transaction",
+              entity_id: 5001,
+              action: "INSERT",
+              payload: {
+                transaction_number: "POS-2026-0001",
+                total_amount: 115.00,
+                vat_amount: 15.00,
+                zatca_signed_xml: "<Invoice>...</Invoice>",
+                qr_code_base64: "AQZTZWxsZXIS..."
+              },
+              created_at: "2026-07-29T01:00:00Z"
+            }
+          ]
+        },
+        description: "Ingests offline signed transactions and operational outbox payloads pushed from POS terminals"
+      })
     ])
   ]
 };
