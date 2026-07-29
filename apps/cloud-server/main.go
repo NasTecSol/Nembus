@@ -10,6 +10,7 @@ import (
 	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
 	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
@@ -334,9 +335,13 @@ func main() {
 		grpcServer := grpc.NewServer()
 		backupSrv := grpcbackup.NewBackupServer(tenantManager, cfg.JWTSecret, cfg.PGDumpPath)
 		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
+
+		syncSrv := grpcbackup.NewSyncServer(tenantManager, masterPool)
+		syncpb.RegisterSyncServiceServer(grpcServer, syncSrv)
+
 		// Enable reflection so grpcurl/Postman can discover services at runtime
 		reflection.Register(grpcServer)
-		log.Printf("✅ gRPC Backup Service listening on %s (reflection enabled)", grpcAddr)
+		log.Printf("✅ gRPC Backup & Sync Service listening on %s (reflection enabled)", grpcAddr)
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("gRPC: serve error: %v", err)
 		}

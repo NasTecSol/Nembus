@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package sync;
+
+option go_package = "github.com/NasTecSol/nembus-core/grpc/syncpb";
+
+import "google/protobuf/timestamp.proto";
+
+// SyncService handles high-throughput streaming sync between POS terminals and Cloud.
+service SyncService {
+  // Client-to-Cloud push stream for local outbox items
+  rpc StreamPush (stream SyncEvent) returns (stream SyncAck);
+  
+  // Cloud-to-Client pull stream for incremental delta updates
+  rpc StreamPull (PullRequest) returns (stream SyncEvent);
+}
+
+// SyncEvent represents a single sync item or binary chunk passed in gRPC stream
+message SyncEvent {
+  int64 id = 1;                            // Outbox item ID / Sequence ID
+  string entity_type = 2;                  // Domain entity type (e.g. pos_transactions, product_barcodes)
+  int64 entity_id = 3;                     // Entity primary key ID
+  string action = 4;                       // Action type: INSERT, UPDATE, DELETE
+  bytes payload_json = 5;                  // Serialized JSON/binary payload
+  int32 store_id = 6;                      // Store ID
+  string tenant_slug = 7;                  // Tenant identifier
+  google.protobuf.Timestamp event_time = 8; // Event creation timestamp
+  string sha256 = 9;                       // SHA-256 hex checksum of payload_json
+  uint64 chunk_offset = 10;                // Byte offset for chunked messages (0 if unchunked)
+  bool is_last_chunk = 11;                 // True if last chunk or single-chunk message
+}
+
+// SyncAck acknowledges receipt and processing of a SyncEvent
+message SyncAck {
+  int64 id = 1;                            // ID matching SyncEvent
+  string entity_type = 2;                  // Entity type acknowledged
+  int64 entity_id = 3;                     // Entity primary key ID
+  bool success = 4;                        // True if successfully applied
+  string error_message = 5;                // Error details if failed
+  string sha256 = 6;                       // SHA-256 checksum verified by receiver
+  google.protobuf.Timestamp processed_at = 7; // Processing completion timestamp
+}
+
+// PullRequest initiates incremental delta-fetch from Cloud
+message PullRequest {
+  string tenant_slug = 1;                  // Tenant slug
+  int32 store_id = 2;                      // Local store ID
+  google.protobuf.Timestamp since = 3;     // Sync watermark timestamp (records updated_at > since)
+  repeated string entity_types = 4;        // Filter requested entities (empty = all)
+  int32 limit = 5;                         // Maximum records to fetch
+}
