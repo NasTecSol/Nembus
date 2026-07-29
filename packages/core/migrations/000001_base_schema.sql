@@ -4964,7 +4964,117 @@ END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
 
+
+-- =====================================================
+-- ZATCA PHASE 2 COMPLIANCE
+-- =====================================================
+
+-- ZATCA document submission status
+CREATE TYPE zatca_doc_status AS ENUM (
+    'pending',      -- Awaiting submission
+    'cleared',      -- ZATCA cleared (B2B Standard)
+    'reported',     -- ZATCA reported (B2C Simplified)
+    'warning',      -- Cleared/reported with warnings
+    'rejected',     -- ZATCA rejected
+    'failed'        -- Network/system failure
+);
+
+-- Per-device (EGS unit) cryptographic configuration
+-- Stores CSIDs for both Cloud server (B2B) and POS terminals (B2C)
+CREATE TABLE zatca_device_configs (
+    id              SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id        INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
+
+    -- Device identity
+    device_serial   VARCHAR(255) NOT NULL,        -- EGS serial number
+    device_type     VARCHAR(20) NOT NULL,         -- 'cloud' or 'pos'
+
+    -- Cryptographic material (encrypted at rest)
+    csr_pem         TEXT,                          -- Certificate Signing Request
+    private_key_pem TEXT NOT NULL,                 -- ECDSA secp256k1 private key (PEM)
+    compliance_csid TEXT,                          -- Compliance CSID (temporary, used during onboarding)
+    production_csid TEXT,                          -- Production CSID (active signing certificate)
+    csid_expiry     TIMESTAMPTZ,                  -- Certificate expiry date
+
+    -- ZATCA environment
+    zatca_env       VARCHAR(20) DEFAULT 'sandbox', -- 'sandbox' or 'production'
+
+    -- Status
+    is_active       BOOLEAN DEFAULT true,
+    is_revoked      BOOLEAN DEFAULT false,
+    revoked_at      TIMESTAMPTZ,
+    revoked_reason  TEXT,
+
+    metadata        JSONB DEFAULT '{}',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(organization_id, device_serial)
+);
+
+-- Lightweight sequential chaining ledger
+-- Tracks the cryptographic hash chain per device for ZATCA compliance
+CREATE TABLE zatca_document_chain (
+    id               BIGSERIAL PRIMARY KEY,
+
+    -- Link to source document (invoice or POS transaction)
+    entity_type      VARCHAR(20) NOT NULL,          -- 'invoice' or 'pos_transaction'
+    entity_id        TEXT NOT NULL,                  -- UUID for invoices, integer cast to text for pos_txn
+
+    -- Device that signed this document
+    device_config_id INTEGER NOT NULL REFERENCES zatca_device_configs(id),
+    organization_id  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+
+    -- ZATCA sequential fields
+    zatca_uuid       UUID NOT NULL DEFAULT uuid_generate_v4(),
+    icv              BIGINT NOT NULL,                -- Invoice Counter Value (sequential per device)
+    pih              TEXT NOT NULL,                   -- Previous Invoice Hash (Base64 SHA-256)
+    xml_hash         TEXT NOT NULL,                   -- This document's XML hash (Base64 SHA-256)
+
+    -- ZATCA API response
+    zatca_status     zatca_doc_status DEFAULT 'pending',
+    zatca_response   JSONB DEFAULT '{}',             -- Full API response payload
+    qr_code_base64   TEXT,                           -- TLV QR code (Base64 encoded)
+    signed_xml       TEXT,                           -- Full signed UBL 2.1 XML document
+
+    -- Submission tracking
+    submitted_at     TIMESTAMPTZ,
+    cleared_at       TIMESTAMPTZ,
+
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Ensure sequential ICV per device (no gaps allowed by ZATCA)
+    UNIQUE(device_config_id, icv)
+);
+
+-- Index for fast chain lookups (latest entry per device)
+CREATE INDEX idx_zatca_chain_device_icv ON zatca_document_chain(device_config_id, icv DESC);
+-- Index for entity lookups (find chain entry for a specific invoice/transaction)
+CREATE INDEX idx_zatca_chain_entity ON zatca_document_chain(entity_type, entity_id);
+-- Index for pending/failed entries (reporting worker picks these up)
+CREATE INDEX idx_zatca_chain_status ON zatca_document_chain(zatca_status) WHERE zatca_status IN ('pending', 'failed');
+
+-- Sync watermarks for delta-fetch mechanism (Cloud ↔ POS)
+CREATE TABLE sync_watermarks (
+    id              SERIAL PRIMARY KEY,
+    entity_type     VARCHAR(50) NOT NULL,           -- 'zatca_config', 'orders', 'inventory', etc.
+    store_id        INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+    last_sync_at    TIMESTAMPTZ NOT NULL DEFAULT '1970-01-01',
+    metadata        JSONB DEFAULT '{}',
+
+    UNIQUE(entity_type, store_id)
+);
+
+
 -- +goose Down
+
+-- ZATCA Phase 2 drops
+DROP TABLE IF EXISTS sync_watermarks CASCADE;
+DROP TABLE IF EXISTS zatca_document_chain CASCADE;
+DROP TABLE IF EXISTS zatca_device_configs CASCADE;
+DROP TYPE IF EXISTS zatca_doc_status;
 
 DROP VIEW IF EXISTS vw_pos_categories CASCADE;
 DROP FUNCTION IF EXISTS fn_get_kds_orders CASCADE;

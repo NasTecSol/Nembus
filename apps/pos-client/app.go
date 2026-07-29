@@ -1,15 +1,6 @@
 package main
 
 import (
-	clientbackup "github.com/NasTecSol/nembus-client/client"
-	"github.com/NasTecSol/nembus-client/internal/config"
-	"github.com/NasTecSol/nembus-client/internal/db"
-	"github.com/NasTecSol/nembus-core/middleware"
-	"github.com/NasTecSol/nembus-core/middleware/manager"
-	"github.com/NasTecSol/nembus-core/repository"
-	"github.com/NasTecSol/nembus-client/internal/sync"
-	"github.com/NasTecSol/nembus-client/internal/updater"
-	"github.com/NasTecSol/nembus-core/usecase"
 	"context"
 	"database/sql"
 	"embed"
@@ -20,6 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	clientbackup "github.com/NasTecSol/nembus-client/client"
+	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/db"
+	"github.com/NasTecSol/nembus-client/internal/sync"
+	"github.com/NasTecSol/nembus-client/internal/updater"
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/usecase"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -83,8 +84,19 @@ func (a *App) GetAppVersion() string {
 	return a.version
 }
 
-// CheckForUpdates queries GitHub releases to detect newer versions
+// CheckForUpdates queries GitHub releases to detect newer versions.
+// In development mode (wails dev), the version is the hardcoded default "v1.0.0"
+// because -ldflags are not injected, which would always trigger a false-positive
+// update notification. Skip the check entirely in that case.
 func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
+	if a.version == "" {
+		log.Println("[UPDATER] Skipping update check — running in development mode (default version)")
+		return &updater.UpdateInfo{
+			HasUpdate:      false,
+			CurrentVersion: a.GetAppVersion(),
+		}, nil
+	}
+
 	token := a.ghToken
 	if token == "" && a.cfg != nil {
 		token = a.cfg.GithubToken
@@ -510,7 +522,7 @@ func (a *App) CreateInitialAdmin(firstName, lastName, username, email, password 
 	uc := usecase.NewUserUseCase()
 	uc.SetRepository(a.masterRepo)
 
-	resp := uc.CreateUser(a.ctx, firstName, lastName, username, email, true, &password, nil)
+	resp := uc.CreateUser(a.ctx, firstName, lastName, username, email, true, &password, nil, nil)
 	if resp.StatusCode != 201 {
 		return fmt.Sprintf("Error: %s", resp.Message)
 	}
@@ -548,7 +560,6 @@ func (a *App) GetDBStatus() string {
 func (a *App) IsBackendReady() bool {
 	return a.masterPool != nil
 }
-
 
 // LoadDeviceConfig reads the persisted device configuration from disk.
 // Returns an empty string if no config has been saved yet (first run).
