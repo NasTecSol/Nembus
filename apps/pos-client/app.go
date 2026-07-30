@@ -214,6 +214,31 @@ func (a *App) migrate(dbURL string) error {
 	}
 	defer sqlDB.Close()
 
+	// If the database was restored from a Cloud backup, the base schema tables (e.g. organizations)
+	// already exist, but goose_db_version may not be initialized. Mark version 1 as applied
+	// so Goose skips 000001_base_schema.sql and proceeds to apply 000002_pos_extensions.sql.
+	var baseSchemaExists bool
+	_ = sqlDB.QueryRow(`
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' AND table_name = 'organizations'
+		);
+	`).Scan(&baseSchemaExists)
+
+	if baseSchemaExists {
+		_, _ = sqlDB.Exec(`
+			CREATE TABLE IF NOT EXISTS goose_db_version (
+				id serial PRIMARY KEY,
+				version_id bigint NOT NULL,
+				is_applied boolean NOT NULL,
+				tstamp timestamp NULL default now()
+			);
+			INSERT INTO goose_db_version (version_id, is_applied)
+			SELECT 1, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 1);
+		`)
+	}
+
 	goose.SetBaseFS(migrations)
 
 	if err := goose.SetDialect("postgres"); err != nil {
@@ -361,7 +386,15 @@ func (a *App) CloneTenant(slug string) string {
 	}
 	log.Printf("Tenant backup restored from: %s", backupPath)
 
-	// 4. Ensure the local tenant record is correct in the master DB.
+	// 4. Run POS extensions migrations directly on the restored tenant database
+	log.Printf("CloneTenant: applying POS migrations to tenant DB [%s]", tenant.Slug)
+	if err := a.migrate(tenantDBURL); err != nil {
+		log.Printf("Error applying POS migrations to tenant DB: %v", err)
+		return fmt.Sprintf("Error applying POS migrations to tenant database: %v", err)
+	}
+	log.Printf("POS migrations applied successfully to tenant DB [%s]", tenant.Slug)
+
+	// 5. Ensure the local tenant record is correct in the master DB.
 	// We upsert it to make sure the slug exists and points to our local tenant DB URL.
 	upsertSQL := `
 		INSERT INTO tenants (id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at)
@@ -379,12 +412,11 @@ func (a *App) CloneTenant(slug string) string {
 		log.Printf("Error upserting tenant record: %v", err)
 		return fmt.Sprintf("Error finalizing local tenant record: %v", err)
 	}
-	log.Printf("Tenant backup restored from: %s", backupPath)
 
-	// 5. Initialize sync (will use the newly created tenant)
+	// 6. Initialize sync (will use the newly created tenant)
 	a.InitializeSync()
 
-	// 6. Finalize setup
+	// 7. Finalize setup
 	markerPath := filepath.Join(home, ".nembus", ".setup_done")
 	_ = os.MkdirAll(filepath.Dir(markerPath), 0755)
 	_ = os.WriteFile(markerPath, []byte("done"), 0644)
@@ -398,7 +430,19 @@ func (a *App) StartSyncService(slug string) {
 		log.Println("Warning: Cannot start sync service without master pool")
 		return
 	}
-	a.syncService = sync.NewSyncService(a.ctx, a.masterPool, a.cfg.CloudURL, slug)
+
+	tenantPool := a.masterPool
+	if a.masterRepo != nil {
+		tenantManager := manager.NewManager(a.masterRepo)
+		pool, err := tenantManager.GetPool(a.ctx, slug)
+		if err == nil && pool != nil {
+			tenantPool = pool
+		} else {
+			log.Printf("[SyncService] Could not resolve pool for tenant [%s]: %v (falling back to masterPool)", slug, err)
+		}
+	}
+
+	a.syncService = sync.NewSyncService(a.ctx, tenantPool, a.cfg.CloudURL, slug)
 	a.syncService.Start()
 }
 

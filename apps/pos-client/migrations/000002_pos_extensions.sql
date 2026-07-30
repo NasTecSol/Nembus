@@ -45,7 +45,67 @@ CREATE TABLE IF NOT EXISTS local_device_config (
     created_at          TIMESTAMPTZ  DEFAULT NOW()
 );
 
+-- +goose StatementBegin
+-- Generic outbox trigger function for automatic sync_queue population
+CREATE OR REPLACE FUNCTION trg_enqueue_sync_outbox()
+RETURNS TRIGGER AS $$
+DECLARE
+    entity_name VARCHAR(50);
+    prio INTEGER := 5;
+BEGIN
+    entity_name := TG_ARGV[0];
+    IF entity_name = 'pos_transactions' OR entity_name = 'pos_payments' THEN
+        prio := 10;
+    END IF;
+
+    INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority)
+    VALUES (
+        entity_name,
+        NEW.id,
+        TG_OP,
+        row_to_json(NEW)::jsonb,
+        'pending',
+        prio
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- Automatically enqueue POS transactions into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_pos_transactions ON pos_transactions;
+CREATE TRIGGER trg_sync_pos_transactions
+    AFTER INSERT ON pos_transactions
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_transactions');
+
+-- Automatically enqueue POS transaction lines into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_pos_transaction_lines ON pos_transaction_lines;
+CREATE TRIGGER trg_sync_pos_transaction_lines
+    AFTER INSERT ON pos_transaction_lines
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_transaction_lines');
+
+-- Automatically enqueue POS payments into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_pos_payments ON pos_payments;
+CREATE TRIGGER trg_sync_pos_payments
+    AFTER INSERT ON pos_payments
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_payments');
+
+-- Automatically enqueue cashier sessions into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
+CREATE TRIGGER trg_sync_cashier_sessions
+    AFTER INSERT OR UPDATE ON cashier_sessions
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('cashier_sessions');
+
 -- +goose Down
+DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
+DROP TRIGGER IF EXISTS trg_sync_pos_payments ON pos_payments;
+DROP TRIGGER IF EXISTS trg_sync_pos_transaction_lines ON pos_transaction_lines;
+DROP TRIGGER IF EXISTS trg_sync_pos_transactions ON pos_transactions;
+DROP FUNCTION IF EXISTS trg_enqueue_sync_outbox();
 DROP TABLE IF EXISTS local_device_config;
 DROP TABLE IF EXISTS sync_queue;
 DROP TABLE IF EXISTS local_printer_configs;

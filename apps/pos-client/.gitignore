@@ -24,7 +24,7 @@ dist/
 vendor/
 
 # Environment files (contain secrets)
-.env
+
 .env.local
 .env.stg
 .env.*.local
