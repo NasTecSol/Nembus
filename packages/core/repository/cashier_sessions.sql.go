@@ -187,6 +187,100 @@ func (q *Queries) GetActiveCashierSession(ctx context.Context, cashierID int32) 
 	return i, err
 }
 
+const getCashierSessions = `-- name: GetCashierSessions :many
+SELECT 
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name AS cashier_name,
+    t.terminal_name,
+    t.terminal_code
+FROM cashier_sessions cs
+LEFT JOIN cashiers      c ON cs.cashier_id      = c.id
+LEFT JOIN users         u ON c.user_id          = u.id
+LEFT JOIN pos_terminals t ON cs.pos_terminal_id = t.id
+WHERE cs.cashier_id = $1
+  AND (
+      $2::text = 'all' 
+      OR LOWER(cs.status) = LOWER($2::text) 
+      OR (LOWER($2::text) = 'closed' AND cs.status IS NULL)
+  )
+  AND ($3::timestamp IS NULL OR cs.opening_time >= $3)
+  AND ($4::timestamp IS NULL OR cs.opening_time <= $4)
+ORDER BY cs.opening_time DESC
+`
+
+type GetCashierSessionsParams struct {
+	CashierID    int32            `json:"cashier_id"`
+	StatusFilter string           `json:"status_filter"`
+	StartDate    pgtype.Timestamp `json:"start_date"`
+	EndDate      pgtype.Timestamp `json:"end_date"`
+}
+
+type GetCashierSessionsRow struct {
+	ID              int32            `json:"id"`
+	CashierID       int32            `json:"cashier_id"`
+	PosTerminalID   int32            `json:"pos_terminal_id"`
+	SessionNumber   string           `json:"session_number"`
+	OpeningTime     pgtype.Timestamp `json:"opening_time"`
+	ClosingTime     pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
+	Variance        pgtype.Numeric   `json:"variance"`
+	Status          pgtype.Text      `json:"status"`
+	Metadata        []byte           `json:"metadata"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+	CashierCode     pgtype.Text      `json:"cashier_code"`
+	CashierName     interface{}      `json:"cashier_name"`
+	TerminalName    pgtype.Text      `json:"terminal_name"`
+	TerminalCode    pgtype.Text      `json:"terminal_code"`
+}
+
+func (q *Queries) GetCashierSessions(ctx context.Context, arg GetCashierSessionsParams) ([]GetCashierSessionsRow, error) {
+	rows, err := q.db.Query(ctx, getCashierSessions,
+		arg.CashierID,
+		arg.StatusFilter,
+		arg.StartDate,
+		arg.EndDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCashierSessionsRow
+	for rows.Next() {
+		var i GetCashierSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierID,
+			&i.PosTerminalID,
+			&i.SessionNumber,
+			&i.OpeningTime,
+			&i.ClosingTime,
+			&i.OpeningBalance,
+			&i.ClosingBalance,
+			&i.ExpectedBalance,
+			&i.Variance,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CashierCode,
+			&i.CashierName,
+			&i.TerminalName,
+			&i.TerminalCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSessionSummary = `-- name: GetSessionSummary :one
 SELECT 
     cs.id,

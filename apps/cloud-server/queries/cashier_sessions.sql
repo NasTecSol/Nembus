@@ -86,3 +86,23 @@ SET
 WHERE id = $1
   AND status = 'open'
 RETURNING id, session_number, opening_time, closing_time, expected_balance, variance, status;
+-- name: GetCashierSessions :many
+SELECT 
+    cs.*,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name AS cashier_name,
+    t.terminal_name,
+    t.terminal_code
+FROM cashier_sessions cs
+LEFT JOIN cashiers      c ON cs.cashier_id      = c.id
+LEFT JOIN users         u ON c.user_id          = u.id
+LEFT JOIN pos_terminals t ON cs.pos_terminal_id = t.id
+WHERE cs.cashier_id = $1
+  AND (
+      sqlc.arg('status_filter')::text = 'all' 
+      OR LOWER(cs.status) = LOWER(sqlc.arg('status_filter')::text) 
+      OR (LOWER(sqlc.arg('status_filter')::text) = 'closed' AND cs.status IS NULL)
+  )
+  AND (sqlc.narg('start_date')::timestamp IS NULL OR cs.opening_time >= sqlc.narg('start_date'))
+  AND (sqlc.narg('end_date')::timestamp IS NULL OR cs.opening_time <= sqlc.narg('end_date'))
+ORDER BY cs.opening_time DESC;

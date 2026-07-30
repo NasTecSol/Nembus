@@ -17,6 +17,12 @@ type Config struct {
 	DevUserLogin string
 	LogLevel     string
 	PGDumpPath   string // full path to pg_dump binary
+
+	// ZATCA Phase 2 Configuration
+	ZatcaEnabled  bool   // ZATCA_ENABLED — false for non-Saudi deployments
+	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
+	ZatcaBaseURL  string // Derived from ZatcaEnv
+	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -49,16 +55,29 @@ func LoadConfig(env string) *Config {
 		envValue = env
 	}
 
+	zatcaEnv := getEnv("ZATCA_ENV", "sandbox")
+	var zatcaBaseURL string
+	switch zatcaEnv {
+	case "production":
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/core"
+	default:
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
+	}
+
 	return &Config{
-		Env:          getEnv("ENV", envValue),
-		Port:         getEnv("PORT", "8080"),
-		GRPCPort:     getEnv("GRPC_PORT", "50051"),
-		MasterDBURL:  getEnv("MASTER_DB_URL", ""),
-		JWTSecret:    getEnv("JWT_SECRET", ""),
-		DevUserID:    getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
-		DevUserLogin: getEnv("DEV_USER_LOGIN", "dev_user"),
-		LogLevel:     getEnv("LOG_LEVEL", "info"),
-		PGDumpPath:   getEnv("PG_DUMP_PATH", "pg_dump"),
+		Env:           getEnv("ENV", envValue),
+		Port:          getEnv("PORT", "8080"),
+		GRPCPort:      getEnv("GRPC_PORT", "50051"),
+		MasterDBURL:   getEnv("MASTER_DB_URL", ""),
+		JWTSecret:     getEnv("JWT_SECRET", ""),
+		DevUserID:     getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
+		DevUserLogin:  getEnv("DEV_USER_LOGIN", "dev_user"),
+		LogLevel:      getEnv("LOG_LEVEL", "info"),
+		PGDumpPath:    getEnv("PG_DUMP_PATH", "pg_dump"),
+		ZatcaEnabled:  getEnv("ZATCA_ENABLED", "false") == "true",
+		ZatcaEnv:      zatcaEnv,
+		ZatcaBaseURL:  zatcaBaseURL,
+		ZatcaOrgVATID: getEnv("ZATCA_ORG_VAT_ID", ""),
 	}
 }
 

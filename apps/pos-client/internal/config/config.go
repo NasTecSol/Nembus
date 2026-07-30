@@ -22,6 +22,12 @@ type Config struct {
 	BackupAuthToken string // Auth token for downloading tenant backups
 	GithubToken     string // GitHub token for private repo release updates
 	GithubRepo      string // Repository owner/name (default: NasTecSol/Nembus)
+
+	// ZATCA Phase 2 Configuration
+	ZatcaEnabled  bool   // ZATCA_ENABLED — false for non-Saudi deployments
+	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
+	ZatcaBaseURL  string // Derived from ZatcaEnv
+	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -57,6 +63,15 @@ func LoadConfig(env string) *Config {
 		ghToken = os.Getenv("GH_TOKEN")
 	}
 
+	zatcaEnv := getEnv("ZATCA_ENV", "sandbox")
+	var zatcaBaseURL string
+	switch zatcaEnv {
+	case "production":
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/core"
+	default:
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
+	}
+
 	cfg := &Config{
 		Env:             getEnv("ENV", envValue),
 		Port:            getEnv("PORT", "8080"),
@@ -71,6 +86,10 @@ func LoadConfig(env string) *Config {
 		BackupAuthToken: getEnv("BACKUP_AUTH_TOKEN", "nembus"),
 		GithubToken:     ghToken,
 		GithubRepo:      getEnv("GITHUB_REPO", "NasTecSol/Nembus"),
+		ZatcaEnabled:    getEnv("ZATCA_ENABLED", "false") == "true",
+		ZatcaEnv:        zatcaEnv,
+		ZatcaBaseURL:    zatcaBaseURL,
+		ZatcaOrgVATID:   getEnv("ZATCA_ORG_VAT_ID", ""),
 	}
 
 	// Propagate resolved secrets back into the OS environment so that any
