@@ -170,15 +170,14 @@ func (s *SyncService) drainOutboxGRPC() {
 
 		if err := stream.Send(event); err != nil {
 			log.Printf("[gRPC SYNC] Failed to send SyncEvent item %d: %v", item.ID, err)
+			s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("send error: %v", err))
 			continue
 		}
 
 		ack, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
 			log.Printf("[gRPC SYNC] Failed to receive SyncAck for item %d: %v", item.ID, err)
+			s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("recv error: %v", err))
 			break
 		}
 
