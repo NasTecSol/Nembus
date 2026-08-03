@@ -83,6 +83,7 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 		CouponCode:        promoTextOpt(req.CouponCode),
 		IsStackable:       promoBoolOpt(req.IsStackable),
 		IsActive:          promoBoolOpt(req.IsActive),
+		StoreIds:          req.StoreIds,
 	}
 
 	if req.MinOrderAmount != nil {
@@ -309,6 +310,7 @@ func (h *PromotionHandler) UpdatePromotion(c *gin.Context) {
 		TargetProductIds:  req.TargetProductIds,
 		TargetCategoryIds: req.TargetCategoryIds,
 		IsStackable:       promoBoolOpt(req.IsStackable),
+		StoreIds:          req.StoreIds,
 	}
 	if req.MinOrderAmount != nil {
 		n := pgtype.Numeric{}
