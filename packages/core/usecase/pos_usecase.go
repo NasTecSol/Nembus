@@ -406,6 +406,66 @@ func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *r
 	return utils.NewResponse(utils.CodeCreated, "product created", prod)
 }
 
+// computeNetCashImpact extracts the net cash impact (tendered cash minus change given) from transaction metadata.
+func computeNetCashImpact(metadata []byte, totalAmount pgtype.Numeric) float64 {
+	if len(metadata) == 0 {
+		return numericToFloat(totalAmount)
+	}
+
+	var meta struct {
+		PaymentMethod  string      `json:"payment_method"`
+		AmountTendered json.Number `json:"amount_tendered"`
+		ChangeGiven    json.Number `json:"change_given"`
+		Payments       []struct {
+			PaymentMethod string      `json:"payment_method"`
+			Amount        json.Number `json:"amount"`
+		} `json:"payments"`
+	}
+
+	if err := json.Unmarshal(metadata, &meta); err != nil {
+		return numericToFloat(totalAmount)
+	}
+
+	changeGiven, _ := meta.ChangeGiven.Float64()
+
+	if len(meta.Payments) > 0 {
+		var cashTotal float64
+		for _, p := range meta.Payments {
+			if strings.EqualFold(strings.TrimSpace(p.PaymentMethod), "cash") {
+				amt, _ := p.Amount.Float64()
+				cashTotal += amt
+			}
+		}
+		return cashTotal - changeGiven
+	}
+
+	method := strings.ToLower(strings.TrimSpace(meta.PaymentMethod))
+	if method == "" || method == "cash" {
+		total := numericToFloat(totalAmount)
+		return total - changeGiven
+	}
+
+	return 0
+}
+
+func updateSessionBalanceForTransaction(ctx context.Context, repo *repository.Queries, sessionID int32, metadata []byte, totalAmount pgtype.Numeric) {
+	if repo == nil || sessionID == 0 {
+		return
+	}
+	netCash := computeNetCashImpact(metadata, totalAmount)
+	if netCash == 0 {
+		return
+	}
+	var netNum pgtype.Numeric
+	if err := netNum.Scan(fmt.Sprintf("%.2f", netCash)); err != nil {
+		return
+	}
+	_ = repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+		ID:              sessionID,
+		ExpectedBalance: netNum,
+	})
+}
+
 // ProcessPOSPayment records a payment and updates the cashier session expected balance.
 func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddPaymentToTransactionParams) *repository.Response {
 	if uc.repo == nil {
@@ -424,14 +484,31 @@ func (uc *PosUseCase) ProcessPOSPayment(ctx context.Context, arg repository.AddP
 		return utils.NewResponse(utils.CodeError, "failed to fetch transaction: "+err.Error(), nil)
 	}
 
-	// 3. Update the expected balance in the cashier session
-	err = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
-		ID:              txn.CashierSessionID,
-		ExpectedBalance: arg.Amount,
-	})
-	if err != nil {
-		// Note: We log the error but don't fail the payment recording if just the balance update fails
-		fmt.Printf("Error: failed to update session expected balance for session %d: %s\n", txn.CashierSessionID, err.Error())
+	// 3. Update the expected balance in the cashier session (only for cash payments)
+	if strings.EqualFold(strings.TrimSpace(arg.PaymentMethod), "cash") && txn.CashierSessionID != 0 {
+		var changeGiven float64
+		if len(arg.Metadata) > 0 {
+			var meta struct {
+				ChangeGiven json.Number `json:"change_given"`
+			}
+			if json.Unmarshal(arg.Metadata, &meta) == nil {
+				changeGiven, _ = meta.ChangeGiven.Float64()
+			}
+		}
+		amt := numericToFloat(arg.Amount)
+		netCash := amt - changeGiven
+		if netCash != 0 {
+			var netNum pgtype.Numeric
+			if err := netNum.Scan(fmt.Sprintf("%.2f", netCash)); err == nil {
+				err = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+					ID:              txn.CashierSessionID,
+					ExpectedBalance: netNum,
+				})
+				if err != nil {
+					fmt.Printf("Error: failed to update session expected balance for session %d: %s\n", txn.CashierSessionID, err.Error())
+				}
+			}
+		}
 	}
 
 	return utils.NewResponse(utils.CodeOK, "payment processed successfully", nil)
@@ -701,6 +778,8 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create line %d: %s", lineNo, err.Error()), nil)
 		}
 	}
+
+	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
 
 	return utils.NewResponse(utils.CodeCreated, "transaction created", header)
 }

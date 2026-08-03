@@ -1406,6 +1406,7 @@ type CreatePromotionRequest struct {
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
 	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
+	StoreIds          []int32                `json:"store_ids,omitempty" example:"[1,2]"`
 	CreatedBy         *int32                 `json:"created_by,omitempty" example:"1"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
@@ -1427,6 +1428,7 @@ type UpdatePromotionRequest struct {
 	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"200"`
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"25.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty"`
+	StoreIds          []int32                `json:"store_ids,omitempty" example:"[1,2]"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 

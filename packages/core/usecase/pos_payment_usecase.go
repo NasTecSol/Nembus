@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
@@ -70,13 +72,31 @@ func (uc *PosPaymentUseCase) CreatePayment(ctx context.Context, in *CreatePosPay
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create payment: "+err.Error(), nil)
 	}
-	// Update cashier session expected balance
-	txn, _ := uc.repo.GetPosTransaction(ctx, in.TransactionID)
-	if txn.CashierSessionID != 0 {
-		_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
-			ID:              txn.CashierSessionID,
-			ExpectedBalance: in.Amount,
-		})
+	// Update cashier session expected balance for cash payments
+	if strings.EqualFold(strings.TrimSpace(in.PaymentMethod), "cash") {
+		txn, _ := uc.repo.GetPosTransaction(ctx, in.TransactionID)
+		if txn.CashierSessionID != 0 {
+			var changeGiven float64
+			if len(in.Metadata) > 0 {
+				var meta struct {
+					ChangeGiven json.Number `json:"change_given"`
+				}
+				if json.Unmarshal(in.Metadata, &meta) == nil {
+					changeGiven, _ = meta.ChangeGiven.Float64()
+				}
+			}
+			amt := numericToFloat(in.Amount)
+			netCash := amt - changeGiven
+			if netCash != 0 {
+				var netNum pgtype.Numeric
+				if err := netNum.Scan(fmt.Sprintf("%.2f", netCash)); err == nil {
+					_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+						ID:              txn.CashierSessionID,
+						ExpectedBalance: netNum,
+					})
+				}
+			}
+		}
 	}
 	return utils.NewResponse(utils.CodeCreated, "payment created", payment)
 }

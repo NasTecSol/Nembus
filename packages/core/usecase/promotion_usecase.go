@@ -204,6 +204,11 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 		return utils.NewResponse(utils.CodeNotFound, "coupon code is invalid, expired, or has reached its usage limit", nil)
 	}
 
+	// 2a. Check store restriction
+	if !isStoreAllowed(promo.StoreIds, cart.StoreID) {
+		return utils.NewResponse(utils.CodeBadReq, "coupon is not valid for this store", nil)
+	}
+
 	// 3. Fetch cart totals for constraint checks
 	totals, err := uc.repo.GetCartTotals(ctx, in.CartID)
 	if err != nil {
@@ -466,6 +471,10 @@ func (uc *PromotionUseCase) ValidateCoupon(ctx context.Context, in ApplyCouponIn
 	subtotalFloat := interfaceToFloat(totals.Subtotal)
 	var validationErrors []string
 
+	if !isStoreAllowed(promo.StoreIds, cart.StoreID) {
+		validationErrors = append(validationErrors, "coupon is not valid for this store")
+	}
+
 	if promo.MinOrderAmount.Valid {
 		minAmount := numericToFloat(promo.MinOrderAmount)
 		if subtotalFloat < minAmount {
@@ -597,4 +606,20 @@ func interfaceToFloat(v interface{}) float64 {
 	var f float64
 	fmt.Sscanf(fmt.Sprintf("%v", v), "%f", &f)
 	return f
+}
+
+// isStoreAllowed returns true if storeIDs is empty or contains cartStoreID.
+func isStoreAllowed(storeIDs []int32, cartStoreID pgtype.Int4) bool {
+	if len(storeIDs) == 0 {
+		return true
+	}
+	if !cartStoreID.Valid {
+		return false
+	}
+	for _, id := range storeIDs {
+		if id == cartStoreID.Int32 {
+			return true
+		}
+	}
+	return false
 }
