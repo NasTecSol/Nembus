@@ -9,6 +9,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/nastecsol/pos-api
+
 jobs:
   deploy-backup-migrate:
     runs-on: ubuntu-latest
@@ -31,8 +34,8 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
-            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}
+            ${{ env.IMAGE_REPOSITORY }}:dev
+            ${{ env.IMAGE_REPOSITORY }}:dev-${{ github.sha }}
 
       - name: Backup, Migrate and Deploy on EC2
         uses: appleboy/ssh-action@v1.2.0
@@ -113,6 +116,7 @@ jobs:
 
             sort -u "${TARGET_DATABASES_FILE}" \
               > "${TARGET_DATABASES_FILE}.sorted"
+
             mv "${TARGET_DATABASES_FILE}.sorted" \
               "${TARGET_DATABASES_FILE}"
 
@@ -162,30 +166,53 @@ jobs:
 
             echo "✅ All database backups completed."
 
-            echo "🚀 3. Pulling the latest POS API image..."
+            echo "🚀 3. Pulling the immutable POS API image..."
 
             echo "${{ secrets.GHCR_PAT }}" |
               docker login ghcr.io \
                 -u "${{ secrets.GHCR_USER }}" \
                 --password-stdin
 
-            docker compose pull pos-api
+            DEPLOY_IMAGE="${{ env.IMAGE_REPOSITORY }}:dev-${{ github.sha }}"
+            COMPOSE_IMAGE="${{ env.IMAGE_REPOSITORY }}:dev"
+
+            docker pull "${DEPLOY_IMAGE}"
+            docker tag "${DEPLOY_IMAGE}" "${COMPOSE_IMAGE}"
+
+            echo "Validating migration artifacts in ${DEPLOY_IMAGE}..."
+
+            docker run --rm \
+              --entrypoint sh \
+              "${DEPLOY_IMAGE}" \
+              -ec '
+                test -x /app/server
+                test -x /app/migrate-tenants
+                test -x /usr/local/bin/goose
+                test -f /app/migrations/000001_init_schema.sql
+                /usr/local/bin/goose -version
+              '
+
+            echo "✅ Migration artifacts verified."
 
             echo "⚡ 4. Running master and tenant migrations..."
 
             if ! docker compose run --rm --no-deps pos-api sh -ec '
               echo "Running master database migrations..."
-              goose \
+
+              /usr/local/bin/goose \
                 -dir /app/migrations \
                 postgres \
                 "$MASTER_DB_URL" \
                 up
 
               echo "Running active tenant database migrations..."
-              /app/migrate-tenants -dir /app/migrations
+
+              /app/migrate-tenants \
+                -dir /app/migrations
             '; then
               echo "❌ Migration failed. Restoring all databases..."
 
+              # Stop the existing API container during database restoration.
               docker compose stop pos-api || true
 
               while IFS= read -r DB_NAME; do
@@ -227,15 +254,23 @@ jobs:
                 echo "✅ Restored: ${DB_NAME}"
               done < "${TARGET_DATABASES_FILE}"
 
+              echo "Restarting the previous POS API container..."
+              docker compose start pos-api
+
               rm -rf "${BACKUP_DIR}"
 
               echo "✅ All databases restored to their pre-migration state."
+              echo "✅ Previous POS API container restarted."
               exit 1
             fi
 
             echo "🎉 5. Migrations successful. Deploying POS API..."
 
-            docker compose up -d --no-deps pos-api
+            docker compose up \
+              -d \
+              --no-deps \
+              --pull never \
+              pos-api
 
             docker image prune -f
             rm -rf "${BACKUP_DIR}"
