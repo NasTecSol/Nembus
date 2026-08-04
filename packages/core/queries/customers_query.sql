@@ -107,3 +107,20 @@ RETURNING *;
 SELECT id, name, loyalty_points
 FROM customers
 WHERE id = $1;
+
+-- name: GetCustomerWithPartner :one
+-- Fetches customer with linked business partner details.
+-- Used by AccountingUseCase for AR routing (ar_retail vs ar_corporate)
+-- and PriceListsUseCase for Tier-1 contract price resolution.
+SELECT
+    c.*,
+    bp.id                   AS bp_id,
+    bp.partner_role         AS bp_partner_role,
+    bp.credit_limit         AS bp_credit_limit,
+    bp.outstanding_balance  AS bp_outstanding_balance,
+    bp.payment_terms_id     AS bp_payment_terms_id,
+    bp.currency_code        AS bp_currency_code
+FROM customers c
+LEFT JOIN business_partners bp ON c.business_partner_id = bp.id
+WHERE c.id = $1;
+

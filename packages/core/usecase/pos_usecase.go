@@ -16,7 +16,8 @@ import (
 )
 
 type PosUseCase struct {
-	repo *repository.Queries
+	repo       *repository.Queries
+	accounting *AccountingUseCase
 }
 
 func NewPosUseCase() *PosUseCase {
@@ -25,6 +26,12 @@ func NewPosUseCase() *PosUseCase {
 
 func (uc *PosUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
+}
+
+// SetAccounting wires in the accounting use case for automatic GL posting.
+// Optional: if not set, GL posting is silently skipped.
+func (uc *PosUseCase) SetAccounting(accounting *AccountingUseCase) {
+	uc.accounting = accounting
 }
 
 // ListProductsForStore returns POS products with stock for a store (categories, prices, barcode).
@@ -780,6 +787,33 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	}
 
 	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
+
+	// Non-blocking async GL posting — fires after transaction is safely committed.
+	// Will silently skip if no GL mappings are configured (non-fatal by design).
+	if uc.accounting != nil {
+		store, storeErr := uc.repo.GetStore(ctx, in.StoreID)
+		orgID := int32(0)
+		if storeErr == nil {
+			orgID = store.OrganizationID
+		}
+		capturedNumber := header.TransactionNumber
+		capturedTotal := in.TotalAmount
+		capturedTax := in.TaxAmount
+		capturedStoreID := in.StoreID
+		capturedCustomerID := in.CustomerID
+		capturedOrgID := orgID
+		go func() {
+			_ = uc.accounting.PostSaleJournalEntry(
+				context.Background(),
+				capturedOrgID,
+				capturedStoreID,
+				capturedCustomerID,
+				capturedNumber,
+				capturedTotal,
+				capturedTax,
+			)
+		}()
+	}
 
 	return utils.NewResponse(utils.CodeCreated, "transaction created", header)
 }

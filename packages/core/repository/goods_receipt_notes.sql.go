@@ -34,6 +34,7 @@ INSERT INTO goods_receipt_notes (
     grn_number,
     purchase_order_id,
     supplier_id,
+    business_partner_id,
     store_id,
     received_by,
     receipt_date,
@@ -42,8 +43,8 @@ INSERT INTO goods_receipt_notes (
     notes,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-) RETURNING id, organization_id, grn_number, purchase_order_id, supplier_id, store_id, received_by, receipt_date, delivery_note_number, status, notes, metadata, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+) RETURNING id, organization_id, grn_number, purchase_order_id, supplier_id, store_id, received_by, receipt_date, delivery_note_number, status, notes, metadata, created_at, updated_at, business_partner_id
 `
 
 type CreateGoodsReceiptNoteParams struct {
@@ -51,6 +52,7 @@ type CreateGoodsReceiptNoteParams struct {
 	GrnNumber          string           `json:"grn_number"`
 	PurchaseOrderID    pgtype.Int4      `json:"purchase_order_id"`
 	SupplierID         int32            `json:"supplier_id"`
+	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 	StoreID            int32            `json:"store_id"`
 	ReceivedBy         pgtype.Int4      `json:"received_by"`
 	ReceiptDate        pgtype.Timestamp `json:"receipt_date"`
@@ -62,6 +64,8 @@ type CreateGoodsReceiptNoteParams struct {
 
 // =====================================================
 // GOODS RECEIPT NOTES (GRN) QUERIES
+// Updated to adopt business_partners model.
+// business_partner_id is the primary link; supplier_id kept for backward compat.
 // =====================================================
 func (q *Queries) CreateGoodsReceiptNote(ctx context.Context, arg CreateGoodsReceiptNoteParams) (GoodsReceiptNote, error) {
 	row := q.db.QueryRow(ctx, createGoodsReceiptNote,
@@ -69,6 +73,7 @@ func (q *Queries) CreateGoodsReceiptNote(ctx context.Context, arg CreateGoodsRec
 		arg.GrnNumber,
 		arg.PurchaseOrderID,
 		arg.SupplierID,
+		arg.BusinessPartnerID,
 		arg.StoreID,
 		arg.ReceivedBy,
 		arg.ReceiptDate,
@@ -93,6 +98,7 @@ func (q *Queries) CreateGoodsReceiptNote(ctx context.Context, arg CreateGoodsRec
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
@@ -171,7 +177,7 @@ func (q *Queries) CreateGoodsReceiptNoteItem(ctx context.Context, arg CreateGood
 }
 
 const getGoodsReceiptNote = `-- name: GetGoodsReceiptNote :one
-SELECT id, organization_id, grn_number, purchase_order_id, supplier_id, store_id, received_by, receipt_date, delivery_note_number, status, notes, metadata, created_at, updated_at FROM goods_receipt_notes WHERE id = $1
+SELECT id, organization_id, grn_number, purchase_order_id, supplier_id, store_id, received_by, receipt_date, delivery_note_number, status, notes, metadata, created_at, updated_at, business_partner_id FROM goods_receipt_notes WHERE id = $1
 `
 
 func (q *Queries) GetGoodsReceiptNote(ctx context.Context, id int32) (GoodsReceiptNote, error) {
@@ -192,44 +198,54 @@ func (q *Queries) GetGoodsReceiptNote(ctx context.Context, id int32) (GoodsRecei
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
 
 const getGoodsReceiptNoteWithDetails = `-- name: GetGoodsReceiptNoteWithDetails :one
-SELECT 
-    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at,
-    sup.name AS supplier_name,
-    st.name AS store_name,
-    u.username AS received_by_name,
+SELECT
+    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at, grn.business_partner_id,
+    -- Business partner (primary, supersedes supplier)
+    COALESCE(bp.name, sup.name) AS supplier_name,
+    bp.id                        AS business_partner_id_resolved,
+    bp.partner_role              AS partner_role,
+    bp.tax_id                    AS partner_tax_id,
+    st.name                      AS store_name,
+    u.username                   AS received_by_name,
     po.po_number
 FROM goods_receipt_notes grn
-JOIN suppliers sup ON grn.supplier_id = sup.id
-JOIN stores st ON grn.store_id = st.id
-LEFT JOIN users u ON grn.received_by = u.id
-LEFT JOIN purchase_orders po ON grn.purchase_order_id = po.id
+LEFT JOIN business_partners bp  ON grn.business_partner_id = bp.id
+LEFT JOIN suppliers sup         ON grn.supplier_id = sup.id
+JOIN  stores st                 ON grn.store_id = st.id
+LEFT JOIN users u               ON grn.received_by = u.id
+LEFT JOIN purchase_orders po    ON grn.purchase_order_id = po.id
 WHERE grn.id = $1
 `
 
 type GetGoodsReceiptNoteWithDetailsRow struct {
-	ID                 int32            `json:"id"`
-	OrganizationID     int32            `json:"organization_id"`
-	GrnNumber          string           `json:"grn_number"`
-	PurchaseOrderID    pgtype.Int4      `json:"purchase_order_id"`
-	SupplierID         int32            `json:"supplier_id"`
-	StoreID            int32            `json:"store_id"`
-	ReceivedBy         pgtype.Int4      `json:"received_by"`
-	ReceiptDate        pgtype.Timestamp `json:"receipt_date"`
-	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
-	Status             pgtype.Text      `json:"status"`
-	Notes              pgtype.Text      `json:"notes"`
-	Metadata           []byte           `json:"metadata"`
-	CreatedAt          pgtype.Timestamp `json:"created_at"`
-	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
-	SupplierName       string           `json:"supplier_name"`
-	StoreName          string           `json:"store_name"`
-	ReceivedByName     pgtype.Text      `json:"received_by_name"`
-	PoNumber           pgtype.Text      `json:"po_number"`
+	ID                        int32            `json:"id"`
+	OrganizationID            int32            `json:"organization_id"`
+	GrnNumber                 string           `json:"grn_number"`
+	PurchaseOrderID           pgtype.Int4      `json:"purchase_order_id"`
+	SupplierID                int32            `json:"supplier_id"`
+	StoreID                   int32            `json:"store_id"`
+	ReceivedBy                pgtype.Int4      `json:"received_by"`
+	ReceiptDate               pgtype.Timestamp `json:"receipt_date"`
+	DeliveryNoteNumber        pgtype.Text      `json:"delivery_note_number"`
+	Status                    pgtype.Text      `json:"status"`
+	Notes                     pgtype.Text      `json:"notes"`
+	Metadata                  []byte           `json:"metadata"`
+	CreatedAt                 pgtype.Timestamp `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID         pgtype.Int4      `json:"business_partner_id"`
+	SupplierName              string           `json:"supplier_name"`
+	BusinessPartnerIDResolved pgtype.Int4      `json:"business_partner_id_resolved"`
+	PartnerRole               pgtype.Text      `json:"partner_role"`
+	PartnerTaxID              pgtype.Text      `json:"partner_tax_id"`
+	StoreName                 string           `json:"store_name"`
+	ReceivedByName            pgtype.Text      `json:"received_by_name"`
+	PoNumber                  pgtype.Text      `json:"po_number"`
 }
 
 func (q *Queries) GetGoodsReceiptNoteWithDetails(ctx context.Context, id int32) (GetGoodsReceiptNoteWithDetailsRow, error) {
@@ -250,7 +266,11 @@ func (q *Queries) GetGoodsReceiptNoteWithDetails(ctx context.Context, id int32) 
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 		&i.SupplierName,
+		&i.BusinessPartnerIDResolved,
+		&i.PartnerRole,
+		&i.PartnerTaxID,
 		&i.StoreName,
 		&i.ReceivedByName,
 		&i.PoNumber,
@@ -259,10 +279,10 @@ func (q *Queries) GetGoodsReceiptNoteWithDetails(ctx context.Context, id int32) 
 }
 
 const listGoodsReceiptNoteItems = `-- name: ListGoodsReceiptNoteItems :many
-SELECT 
+SELECT
     grni.id, grni.grn_id, grni.purchase_order_line_id, grni.product_id, grni.product_variant_id, grni.storage_location_id, grni.quantity_received, grni.quantity_rejected, grni.uom_id, grni.unit_cost, grni.batch_number, grni.expiry_date, grni.rejection_reason, grni.notes, grni.created_at,
-    p.name AS product_name,
-    p.sku AS product_sku,
+    p.name   AS product_name,
+    p.sku    AS product_sku,
     uom.name AS uom_name
 FROM goods_receipt_note_items grni
 JOIN products p ON grni.product_id = p.id
@@ -330,14 +350,100 @@ func (q *Queries) ListGoodsReceiptNoteItems(ctx context.Context, grnID int32) ([
 	return items, nil
 }
 
-const listGoodsReceiptNotesByOrganization = `-- name: ListGoodsReceiptNotesByOrganization :many
-SELECT 
-    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at,
-    sup.name AS supplier_name,
-    st.name AS store_name
+const listGoodsReceiptNotesByBusinessPartner = `-- name: ListGoodsReceiptNotesByBusinessPartner :many
+SELECT
+    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at, grn.business_partner_id,
+    bp.name  AS supplier_name,
+    st.name  AS store_name
 FROM goods_receipt_notes grn
-JOIN suppliers sup ON grn.supplier_id = sup.id
-JOIN stores st ON grn.store_id = st.id
+JOIN business_partners bp ON grn.business_partner_id = bp.id
+JOIN stores st             ON grn.store_id = st.id
+WHERE grn.organization_id = $1
+  AND grn.business_partner_id = $2
+ORDER BY grn.created_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListGoodsReceiptNotesByBusinessPartnerParams struct {
+	OrganizationID    int32       `json:"organization_id"`
+	BusinessPartnerID pgtype.Int4 `json:"business_partner_id"`
+	Limit             int32       `json:"limit"`
+	Offset            int32       `json:"offset"`
+}
+
+type ListGoodsReceiptNotesByBusinessPartnerRow struct {
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	GrnNumber          string           `json:"grn_number"`
+	PurchaseOrderID    pgtype.Int4      `json:"purchase_order_id"`
+	SupplierID         int32            `json:"supplier_id"`
+	StoreID            int32            `json:"store_id"`
+	ReceivedBy         pgtype.Int4      `json:"received_by"`
+	ReceiptDate        pgtype.Timestamp `json:"receipt_date"`
+	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
+	Status             pgtype.Text      `json:"status"`
+	Notes              pgtype.Text      `json:"notes"`
+	Metadata           []byte           `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
+	SupplierName       string           `json:"supplier_name"`
+	StoreName          string           `json:"store_name"`
+}
+
+// New query: list all GRNs for a specific business partner
+func (q *Queries) ListGoodsReceiptNotesByBusinessPartner(ctx context.Context, arg ListGoodsReceiptNotesByBusinessPartnerParams) ([]ListGoodsReceiptNotesByBusinessPartnerRow, error) {
+	rows, err := q.db.Query(ctx, listGoodsReceiptNotesByBusinessPartner,
+		arg.OrganizationID,
+		arg.BusinessPartnerID,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGoodsReceiptNotesByBusinessPartnerRow
+	for rows.Next() {
+		var i ListGoodsReceiptNotesByBusinessPartnerRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.GrnNumber,
+			&i.PurchaseOrderID,
+			&i.SupplierID,
+			&i.StoreID,
+			&i.ReceivedBy,
+			&i.ReceiptDate,
+			&i.DeliveryNoteNumber,
+			&i.Status,
+			&i.Notes,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.BusinessPartnerID,
+			&i.SupplierName,
+			&i.StoreName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGoodsReceiptNotesByOrganization = `-- name: ListGoodsReceiptNotesByOrganization :many
+SELECT
+    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at, grn.business_partner_id,
+    COALESCE(bp.name, sup.name) AS supplier_name,
+    st.name                      AS store_name
+FROM goods_receipt_notes grn
+LEFT JOIN business_partners bp ON grn.business_partner_id = bp.id
+LEFT JOIN suppliers sup        ON grn.supplier_id = sup.id
+JOIN  stores st                ON grn.store_id = st.id
 WHERE grn.organization_id = $1
 ORDER BY grn.created_at DESC
 LIMIT $2 OFFSET $3
@@ -364,6 +470,7 @@ type ListGoodsReceiptNotesByOrganizationRow struct {
 	Metadata           []byte           `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 	SupplierName       string           `json:"supplier_name"`
 	StoreName          string           `json:"store_name"`
 }
@@ -392,6 +499,7 @@ func (q *Queries) ListGoodsReceiptNotesByOrganization(ctx context.Context, arg L
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 			&i.SupplierName,
 			&i.StoreName,
 		); err != nil {
@@ -406,13 +514,14 @@ func (q *Queries) ListGoodsReceiptNotesByOrganization(ctx context.Context, arg L
 }
 
 const listGoodsReceiptNotesByPurchaseOrder = `-- name: ListGoodsReceiptNotesByPurchaseOrder :many
-SELECT 
-    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at,
-    sup.name AS supplier_name,
-    st.name AS store_name
+SELECT
+    grn.id, grn.organization_id, grn.grn_number, grn.purchase_order_id, grn.supplier_id, grn.store_id, grn.received_by, grn.receipt_date, grn.delivery_note_number, grn.status, grn.notes, grn.metadata, grn.created_at, grn.updated_at, grn.business_partner_id,
+    COALESCE(bp.name, sup.name) AS supplier_name,
+    st.name                      AS store_name
 FROM goods_receipt_notes grn
-JOIN suppliers sup ON grn.supplier_id = sup.id
-JOIN stores st ON grn.store_id = st.id
+LEFT JOIN business_partners bp ON grn.business_partner_id = bp.id
+LEFT JOIN suppliers sup        ON grn.supplier_id = sup.id
+JOIN  stores st                ON grn.store_id = st.id
 WHERE grn.purchase_order_id = $1
 ORDER BY grn.created_at DESC
 `
@@ -432,6 +541,7 @@ type ListGoodsReceiptNotesByPurchaseOrderRow struct {
 	Metadata           []byte           `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 	SupplierName       string           `json:"supplier_name"`
 	StoreName          string           `json:"store_name"`
 }
@@ -460,6 +570,7 @@ func (q *Queries) ListGoodsReceiptNotesByPurchaseOrder(ctx context.Context, purc
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 			&i.SupplierName,
 			&i.StoreName,
 		); err != nil {
@@ -471,4 +582,36 @@ func (q *Queries) ListGoodsReceiptNotesByPurchaseOrder(ctx context.Context, purc
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateGoodsReceiptNoteStatus = `-- name: UpdateGoodsReceiptNoteStatus :one
+UPDATE goods_receipt_notes SET status = $2 WHERE id = $1 RETURNING id, organization_id, grn_number, purchase_order_id, supplier_id, store_id, received_by, receipt_date, delivery_note_number, status, notes, metadata, created_at, updated_at, business_partner_id
+`
+
+type UpdateGoodsReceiptNoteStatusParams struct {
+	ID     int32       `json:"id"`
+	Status pgtype.Text `json:"status"`
+}
+
+func (q *Queries) UpdateGoodsReceiptNoteStatus(ctx context.Context, arg UpdateGoodsReceiptNoteStatusParams) (GoodsReceiptNote, error) {
+	row := q.db.QueryRow(ctx, updateGoodsReceiptNoteStatus, arg.ID, arg.Status)
+	var i GoodsReceiptNote
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.GrnNumber,
+		&i.PurchaseOrderID,
+		&i.SupplierID,
+		&i.StoreID,
+		&i.ReceivedBy,
+		&i.ReceiptDate,
+		&i.DeliveryNoteNumber,
+		&i.Status,
+		&i.Notes,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BusinessPartnerID,
+	)
+	return i, err
 }

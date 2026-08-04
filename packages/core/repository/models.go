@@ -495,6 +495,23 @@ type AuditLog struct {
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 }
 
+type BpPriceContract struct {
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	BusinessPartnerID  int32            `json:"business_partner_id"`
+	ProductID          int32            `json:"product_id"`
+	ProductVariantID   pgtype.Int4      `json:"product_variant_id"`
+	ContractPrice      pgtype.Numeric   `json:"contract_price"`
+	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
+	ValidFrom          pgtype.Date      `json:"valid_from"`
+	ValidTo            pgtype.Date      `json:"valid_to"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	Notes              pgtype.Text      `json:"notes"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+}
+
 type Brand struct {
 	ID        int32            `json:"id"`
 	Name      string           `json:"name"`
@@ -503,6 +520,24 @@ type Brand struct {
 	Metadata  []byte           `json:"metadata"`
 	CreatedAt pgtype.Timestamp `json:"created_at"`
 	UpdatedAt pgtype.Timestamp `json:"updated_at"`
+}
+
+type BusinessPartner struct {
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	Code               string           `json:"code"`
+	Name               string           `json:"name"`
+	PartnerRole        string           `json:"partner_role"`
+	TaxID              pgtype.Text      `json:"tax_id"`
+	CurrencyCode       pgtype.Text      `json:"currency_code"`
+	CreditLimit        pgtype.Numeric   `json:"credit_limit"`
+	OutstandingBalance pgtype.Numeric   `json:"outstanding_balance"`
+	PaymentTermsID     pgtype.Int4      `json:"payment_terms_id"`
+	SalesRepUserID     pgtype.Int4      `json:"sales_rep_user_id"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	Metadata           []byte           `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 }
 
 // Shopping carts for online and POS channels, supporting both registered customers and guests
@@ -613,6 +648,17 @@ type CashierSession struct {
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 }
 
+type ChartOfAccount struct {
+	ID              int32            `json:"id"`
+	OrganizationID  int32            `json:"organization_id"`
+	AccountCode     string           `json:"account_code"`
+	AccountName     string           `json:"account_name"`
+	AccountType     string           `json:"account_type"`
+	ParentAccountID pgtype.Int4      `json:"parent_account_id"`
+	IsActive        pgtype.Bool      `json:"is_active"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+}
+
 type ComboBundle struct {
 	ID           int32            `json:"id"`
 	StoreID      int32            `json:"store_id"`
@@ -646,6 +692,23 @@ type ComboBundleItem struct {
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 }
 
+type CostCenter struct {
+	ID             int32       `json:"id"`
+	OrganizationID int32       `json:"organization_id"`
+	Code           string      `json:"code"`
+	Name           string      `json:"name"`
+	Dimension      pgtype.Text `json:"dimension"`
+	IsActive       pgtype.Bool `json:"is_active"`
+}
+
+type Currency struct {
+	Code          string      `json:"code"`
+	Name          string      `json:"name"`
+	Symbol        string      `json:"symbol"`
+	DecimalPlaces pgtype.Int4 `json:"decimal_places"`
+	IsActive      pgtype.Bool `json:"is_active"`
+}
+
 type Customer struct {
 	ID                 int32            `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
@@ -663,6 +726,7 @@ type Customer struct {
 	Metadata           []byte           `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 }
 
 type DiscountAnalytic struct {
@@ -722,6 +786,24 @@ type DraftCartTemplateItem struct {
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
+type ExchangeRate struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	FromCurrency   string           `json:"from_currency"`
+	ToCurrency     string           `json:"to_currency"`
+	RateDate       pgtype.Date      `json:"rate_date"`
+	Rate           pgtype.Numeric   `json:"rate"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type GlAccountMapping struct {
+	ID             int32       `json:"id"`
+	OrganizationID int32       `json:"organization_id"`
+	MappingType    string      `json:"mapping_type"`
+	StoreID        pgtype.Int4 `json:"store_id"`
+	GlAccountID    int32       `json:"gl_account_id"`
+}
+
 type GoodsReceiptNote struct {
 	ID                 int32            `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
@@ -737,6 +819,7 @@ type GoodsReceiptNote struct {
 	Metadata           []byte           `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 }
 
 type GoodsReceiptNoteItem struct {
@@ -914,6 +997,27 @@ type InvoiceStatusHistory struct {
 	Notes           pgtype.Text       `json:"notes"`
 	ChangedByUserID pgtype.Int4       `json:"changed_by_user_id"`
 	ChangedAt       pgtype.Timestamp  `json:"changed_at"`
+}
+
+type JournalEntry struct {
+	ID             int64            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	EntryNumber    string           `json:"entry_number"`
+	PostingDate    pgtype.Date      `json:"posting_date"`
+	ReferenceType  string           `json:"reference_type"`
+	ReferenceID    string           `json:"reference_id"`
+	Memo           pgtype.Text      `json:"memo"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type JournalLine struct {
+	ID           int64          `json:"id"`
+	JournalID    int64          `json:"journal_id"`
+	AccountID    int32          `json:"account_id"`
+	CostCenterID pgtype.Int4    `json:"cost_center_id"`
+	Debit        pgtype.Numeric `json:"debit"`
+	Credit       pgtype.Numeric `json:"credit"`
+	Memo         pgtype.Text    `json:"memo"`
 }
 
 type KioskSession struct {
@@ -1129,6 +1233,45 @@ type Organization struct {
 	Metadata          []byte           `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+}
+
+type PartnerAddress struct {
+	ID          int32            `json:"id"`
+	PartnerID   int32            `json:"partner_id"`
+	AddressName string           `json:"address_name"`
+	AddressType string           `json:"address_type"`
+	Street      pgtype.Text      `json:"street"`
+	City        pgtype.Text      `json:"city"`
+	State       pgtype.Text      `json:"state"`
+	ZipCode     pgtype.Text      `json:"zip_code"`
+	CountryCode pgtype.Text      `json:"country_code"`
+	IsDefault   pgtype.Bool      `json:"is_default"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+}
+
+type PartnerContact struct {
+	ID        int32            `json:"id"`
+	PartnerID int32            `json:"partner_id"`
+	FirstName string           `json:"first_name"`
+	LastName  pgtype.Text      `json:"last_name"`
+	Email     pgtype.Text      `json:"email"`
+	Phone     pgtype.Text      `json:"phone"`
+	Position  pgtype.Text      `json:"position"`
+	IsPrimary pgtype.Bool      `json:"is_primary"`
+	CreatedAt pgtype.Timestamp `json:"created_at"`
+}
+
+type PaymentTerm struct {
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	Code               string           `json:"code"`
+	Name               string           `json:"name"`
+	DueDays            int32            `json:"due_days"`
+	DiscountDays       pgtype.Int4      `json:"discount_days"`
+	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	LateFeePercentage  pgtype.Numeric   `json:"late_fee_percentage"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
 }
 
 type Permission struct {
@@ -1449,6 +1592,7 @@ type PurchaseOrder struct {
 	Metadata             []byte           `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID    pgtype.Int4      `json:"business_partner_id"`
 }
 
 type PurchaseOrderLine struct {

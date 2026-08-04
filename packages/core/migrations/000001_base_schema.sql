@@ -16,7 +16,7 @@ CREATE TABLE organizations (
     code VARCHAR(50) UNIQUE NOT NULL,
     legal_name VARCHAR(255),
     tax_id VARCHAR(50),
-    currency_code VARCHAR(3) DEFAULT 'USD',
+    currency_code VARCHAR(3) DEFAULT 'SAR',
     fiscal_year_variant VARCHAR(10),
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
@@ -5125,7 +5125,249 @@ CREATE TABLE sync_watermarks (
 );
 
 
+-- ============================================================
+-- ENTERPRISE LAYER: SAP B1-Patterned Financial & BP Foundation
+-- ============================================================
+
+CREATE TABLE currencies (
+    code VARCHAR(3) PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
+    decimal_places INTEGER DEFAULT 2,
+    is_active BOOLEAN DEFAULT true
+);
+
+CREATE TABLE exchange_rates (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    from_currency VARCHAR(3) NOT NULL REFERENCES currencies(code),
+    to_currency VARCHAR(3) NOT NULL REFERENCES currencies(code),
+    rate_date DATE NOT NULL,
+    rate DECIMAL(18,6) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(organization_id, from_currency, to_currency, rate_date)
+);
+
+CREATE TABLE chart_of_accounts (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    account_code VARCHAR(50) UNIQUE NOT NULL,
+    account_name VARCHAR(255) NOT NULL,
+    account_type VARCHAR(30) NOT NULL CHECK (account_type IN ('asset','liability','equity','revenue','expense')),
+    parent_account_id INTEGER REFERENCES chart_of_accounts(id) ON DELETE SET NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE cost_centers (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    dimension VARCHAR(50) DEFAULT 'general',
+    is_active BOOLEAN DEFAULT true
+);
+
+CREATE TABLE payment_terms (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    due_days INTEGER NOT NULL DEFAULT 0,
+    discount_days INTEGER DEFAULT 0,
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    late_fee_percentage DECIMAL(5,2) DEFAULT 0.00,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- B2B Unified Partner Layer.
+-- Supersedes the legacy thin `suppliers` table.
+-- partner_role: 'supplier' | 'vendor' | 'special_customer' | 'corporate_group'
+-- sales_rep_user_id references a system user (account manager), not a separate entity.
+CREATE TABLE business_partners (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    partner_role VARCHAR(20) NOT NULL CHECK (partner_role IN ('supplier','vendor','special_customer','corporate_group')),
+    tax_id VARCHAR(50),
+    currency_code VARCHAR(3) REFERENCES currencies(code) DEFAULT 'SAR',
+    credit_limit DECIMAL(15,2) DEFAULT 0.00,
+    outstanding_balance DECIMAL(15,2) DEFAULT 0.00,
+    payment_terms_id INTEGER REFERENCES payment_terms(id) ON DELETE SET NULL,
+    sales_rep_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    is_active BOOLEAN DEFAULT true,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE partner_addresses (
+    id SERIAL PRIMARY KEY,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    address_name VARCHAR(100) NOT NULL,
+    address_type VARCHAR(20) NOT NULL CHECK (address_type IN ('bill_to','ship_to','both')),
+    street TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    zip_code VARCHAR(20),
+    country_code VARCHAR(3) DEFAULT 'SA',
+    is_default BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE partner_contacts (
+    id SERIAL PRIMARY KEY,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100),
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    position VARCHAR(100),
+    is_primary BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- GL routing rules: maps transaction contexts to specific CoA accounts
+-- mapping_type values: 'inventory_asset' | 'cogs' | 'revenue' | 'tax_payable' | 'ar_retail' | 'ar_corporate' | 'ap'
+CREATE TABLE gl_account_mappings (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    mapping_type VARCHAR(50) NOT NULL,
+    store_id INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+    gl_account_id INTEGER NOT NULL REFERENCES chart_of_accounts(id) ON DELETE CASCADE,
+    UNIQUE(organization_id, mapping_type, store_id)
+);
+
+CREATE TABLE journal_entries (
+    id BIGSERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    entry_number VARCHAR(50) UNIQUE NOT NULL,
+    posting_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    reference_type VARCHAR(50) NOT NULL, -- 'pos_transaction' | 'grn' | 'sales_order'
+    reference_id VARCHAR(100) NOT NULL,
+    memo TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE journal_lines (
+    id BIGSERIAL PRIMARY KEY,
+    journal_id BIGINT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES chart_of_accounts(id) ON DELETE RESTRICT,
+    cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
+    debit DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    credit DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    memo TEXT
+);
+
+-- B2B negotiated price contracts: Tier-1 pricing override per partner + product SKU
+CREATE TABLE bp_price_contracts (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    business_partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    contract_price DECIMAL(15,4) NOT NULL,
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    min_quantity DECIMAL(15,3) DEFAULT 1,
+    valid_from DATE,
+    valid_to DATE,
+    is_active BOOLEAN DEFAULT true,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(business_partner_id, product_id, product_variant_id)
+);
+
+-- Link B2C customers to B2B partner profiles for AR routing & contract pricing
+ALTER TABLE customers
+    ADD COLUMN IF NOT EXISTS business_partner_id INTEGER
+        REFERENCES business_partners(id) ON DELETE SET NULL;
+
+-- New purchase flows reference business_partners directly (suppliers superseded)
+ALTER TABLE purchase_orders
+    ADD COLUMN IF NOT EXISTS business_partner_id INTEGER
+        REFERENCES business_partners(id) ON DELETE SET NULL;
+
+-- GRN now references business_partners (suppliers superseded)
+ALTER TABLE goods_receipt_notes
+    ADD COLUMN IF NOT EXISTS business_partner_id INTEGER
+        REFERENCES business_partners(id) ON DELETE SET NULL;
+
+-- Indexes for enterprise tables
+CREATE INDEX idx_business_partners_organization_id ON business_partners(organization_id);
+CREATE INDEX idx_business_partners_partner_role ON business_partners(partner_role);
+CREATE INDEX idx_business_partners_code ON business_partners(code);
+CREATE INDEX idx_business_partners_is_active ON business_partners(is_active);
+CREATE INDEX idx_partner_addresses_partner_id ON partner_addresses(partner_id);
+CREATE INDEX idx_partner_contacts_partner_id ON partner_contacts(partner_id);
+CREATE INDEX idx_gl_account_mappings_org_type ON gl_account_mappings(organization_id, mapping_type);
+CREATE INDEX idx_journal_entries_organization_id ON journal_entries(organization_id);
+CREATE INDEX idx_journal_entries_reference ON journal_entries(reference_type, reference_id);
+CREATE INDEX idx_journal_entries_posting_date ON journal_entries(posting_date);
+CREATE INDEX idx_journal_lines_journal_id ON journal_lines(journal_id);
+CREATE INDEX idx_journal_lines_account_id ON journal_lines(account_id);
+CREATE INDEX idx_bp_price_contracts_bp_product ON bp_price_contracts(business_partner_id, product_id);
+CREATE INDEX idx_bp_price_contracts_is_active ON bp_price_contracts(is_active);
+CREATE INDEX idx_chart_of_accounts_organization_id ON chart_of_accounts(organization_id);
+CREATE INDEX idx_chart_of_accounts_type ON chart_of_accounts(account_type);
+CREATE INDEX idx_customers_business_partner_id ON customers(business_partner_id);
+CREATE INDEX idx_grn_business_partner_id ON goods_receipt_notes(business_partner_id);
+CREATE INDEX idx_po_business_partner_id ON purchase_orders(business_partner_id);
+
+-- Triggers for enterprise tables
+CREATE TRIGGER trg_business_partners_updated_at
+    BEFORE UPDATE ON business_partners FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_bp_price_contracts_updated_at
+    BEFORE UPDATE ON bp_price_contracts FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+
 -- +goose Down
+
+-- +goose Down
+
+-- Enterprise Layer drops (reverse dependency order)
+DROP TRIGGER IF EXISTS trg_bp_price_contracts_updated_at ON bp_price_contracts;
+
+DROP TRIGGER IF EXISTS trg_business_partners_updated_at ON business_partners;
+DROP INDEX IF EXISTS idx_po_business_partner_id;
+DROP INDEX IF EXISTS idx_grn_business_partner_id;
+DROP INDEX IF EXISTS idx_customers_business_partner_id;
+DROP INDEX IF EXISTS idx_chart_of_accounts_type;
+DROP INDEX IF EXISTS idx_chart_of_accounts_organization_id;
+DROP INDEX IF EXISTS idx_bp_price_contracts_is_active;
+DROP INDEX IF EXISTS idx_bp_price_contracts_bp_product;
+DROP INDEX IF EXISTS idx_journal_lines_account_id;
+DROP INDEX IF EXISTS idx_journal_lines_journal_id;
+DROP INDEX IF EXISTS idx_journal_entries_posting_date;
+DROP INDEX IF EXISTS idx_journal_entries_reference;
+DROP INDEX IF EXISTS idx_journal_entries_organization_id;
+DROP INDEX IF EXISTS idx_gl_account_mappings_org_type;
+DROP INDEX IF EXISTS idx_partner_contacts_partner_id;
+DROP INDEX IF EXISTS idx_partner_addresses_partner_id;
+DROP INDEX IF EXISTS idx_business_partners_is_active;
+DROP INDEX IF EXISTS idx_business_partners_code;
+DROP INDEX IF EXISTS idx_business_partners_partner_role;
+DROP INDEX IF EXISTS idx_business_partners_organization_id;
+ALTER TABLE goods_receipt_notes DROP COLUMN IF EXISTS business_partner_id;
+ALTER TABLE purchase_orders DROP COLUMN IF EXISTS business_partner_id;
+ALTER TABLE customers DROP COLUMN IF EXISTS business_partner_id;
+DROP TABLE IF EXISTS bp_price_contracts CASCADE;
+DROP TABLE IF EXISTS journal_lines CASCADE;
+DROP TABLE IF EXISTS journal_entries CASCADE;
+DROP TABLE IF EXISTS gl_account_mappings CASCADE;
+DROP TABLE IF EXISTS partner_contacts CASCADE;
+DROP TABLE IF EXISTS partner_addresses CASCADE;
+DROP TABLE IF EXISTS business_partners CASCADE;
+DROP TABLE IF EXISTS payment_terms CASCADE;
+DROP TABLE IF EXISTS cost_centers CASCADE;
+DROP TABLE IF EXISTS chart_of_accounts CASCADE;
+DROP TABLE IF EXISTS exchange_rates CASCADE;
+DROP TABLE IF EXISTS currencies CASCADE;
 
 -- ZATCA Phase 2 drops
 DROP TABLE IF EXISTS sync_watermarks CASCADE;

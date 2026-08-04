@@ -16,7 +16,7 @@ UPDATE customers
 SET loyalty_points = loyalty_points + $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id
 `
 
 type AdjustCustomerLoyaltyPointsParams struct {
@@ -45,6 +45,7 @@ func (q *Queries) AdjustCustomerLoyaltyPoints(ctx context.Context, arg AdjustCus
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
@@ -65,7 +66,7 @@ INSERT INTO customers (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-) RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+) RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id
 `
 
 type CreateCustomerParams struct {
@@ -116,6 +117,7 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
@@ -131,7 +133,7 @@ func (q *Queries) DeleteCustomer(ctx context.Context, id int32) error {
 }
 
 const getCustomer = `-- name: GetCustomer :one
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE id = $1
 `
 
@@ -155,12 +157,13 @@ func (q *Queries) GetCustomer(ctx context.Context, id int32) (Customer, error) {
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
 
 const getCustomerByCode = `-- name: GetCustomerByCode :one
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE organization_id = $1 AND customer_code = $2
 `
 
@@ -189,6 +192,7 @@ func (q *Queries) GetCustomerByCode(ctx context.Context, arg GetCustomerByCodePa
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
@@ -245,8 +249,82 @@ func (q *Queries) GetCustomerLoyaltyBalance(ctx context.Context, id int32) (GetC
 	return i, err
 }
 
+const getCustomerWithPartner = `-- name: GetCustomerWithPartner :one
+SELECT
+    c.id, c.organization_id, c.customer_code, c.name, c.email, c.phone, c.address, c.customer_type, c.price_list_id, c.credit_limit, c.outstanding_balance, c.loyalty_points, c.is_active, c.metadata, c.created_at, c.updated_at, c.business_partner_id,
+    bp.id                   AS bp_id,
+    bp.partner_role         AS bp_partner_role,
+    bp.credit_limit         AS bp_credit_limit,
+    bp.outstanding_balance  AS bp_outstanding_balance,
+    bp.payment_terms_id     AS bp_payment_terms_id,
+    bp.currency_code        AS bp_currency_code
+FROM customers c
+LEFT JOIN business_partners bp ON c.business_partner_id = bp.id
+WHERE c.id = $1
+`
+
+type GetCustomerWithPartnerRow struct {
+	ID                   int32            `json:"id"`
+	OrganizationID       int32            `json:"organization_id"`
+	CustomerCode         string           `json:"customer_code"`
+	Name                 string           `json:"name"`
+	Email                pgtype.Text      `json:"email"`
+	Phone                pgtype.Text      `json:"phone"`
+	Address              pgtype.Text      `json:"address"`
+	CustomerType         pgtype.Text      `json:"customer_type"`
+	PriceListID          pgtype.Int4      `json:"price_list_id"`
+	CreditLimit          pgtype.Numeric   `json:"credit_limit"`
+	OutstandingBalance   pgtype.Numeric   `json:"outstanding_balance"`
+	LoyaltyPoints        pgtype.Numeric   `json:"loyalty_points"`
+	IsActive             pgtype.Bool      `json:"is_active"`
+	Metadata             []byte           `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	BusinessPartnerID    pgtype.Int4      `json:"business_partner_id"`
+	BpID                 pgtype.Int4      `json:"bp_id"`
+	BpPartnerRole        pgtype.Text      `json:"bp_partner_role"`
+	BpCreditLimit        pgtype.Numeric   `json:"bp_credit_limit"`
+	BpOutstandingBalance pgtype.Numeric   `json:"bp_outstanding_balance"`
+	BpPaymentTermsID     pgtype.Int4      `json:"bp_payment_terms_id"`
+	BpCurrencyCode       pgtype.Text      `json:"bp_currency_code"`
+}
+
+// Fetches customer with linked business partner details.
+// Used by AccountingUseCase for AR routing (ar_retail vs ar_corporate)
+// and PriceListsUseCase for Tier-1 contract price resolution.
+func (q *Queries) GetCustomerWithPartner(ctx context.Context, id int32) (GetCustomerWithPartnerRow, error) {
+	row := q.db.QueryRow(ctx, getCustomerWithPartner, id)
+	var i GetCustomerWithPartnerRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.CustomerCode,
+		&i.Name,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.CustomerType,
+		&i.PriceListID,
+		&i.CreditLimit,
+		&i.OutstandingBalance,
+		&i.LoyaltyPoints,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BusinessPartnerID,
+		&i.BpID,
+		&i.BpPartnerRole,
+		&i.BpCreditLimit,
+		&i.BpOutstandingBalance,
+		&i.BpPaymentTermsID,
+		&i.BpCurrencyCode,
+	)
+	return i, err
+}
+
 const getCustomersWithOutstandingBalance = `-- name: GetCustomersWithOutstandingBalance :many
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE organization_id = $1 
   AND outstanding_balance > 0
   AND is_active = true
@@ -279,6 +357,7 @@ func (q *Queries) GetCustomersWithOutstandingBalance(ctx context.Context, organi
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -291,7 +370,7 @@ func (q *Queries) GetCustomersWithOutstandingBalance(ctx context.Context, organi
 }
 
 const listActiveCustomers = `-- name: ListActiveCustomers :many
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE organization_id = $1 AND is_active = true
 ORDER BY name
 `
@@ -322,6 +401,7 @@ func (q *Queries) ListActiveCustomers(ctx context.Context, organizationID int32)
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -334,7 +414,7 @@ func (q *Queries) ListActiveCustomers(ctx context.Context, organizationID int32)
 }
 
 const listCustomers = `-- name: ListCustomers :many
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE organization_id = $1
 ORDER BY name
 `
@@ -365,6 +445,7 @@ func (q *Queries) ListCustomers(ctx context.Context, organizationID int32) ([]Cu
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -377,7 +458,7 @@ func (q *Queries) ListCustomers(ctx context.Context, organizationID int32) ([]Cu
 }
 
 const listCustomersByType = `-- name: ListCustomersByType :many
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE organization_id = $1 AND customer_type = $2
 ORDER BY name
 `
@@ -413,6 +494,7 @@ func (q *Queries) ListCustomersByType(ctx context.Context, arg ListCustomersByTy
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -425,7 +507,7 @@ func (q *Queries) ListCustomersByType(ctx context.Context, arg ListCustomersByTy
 }
 
 const searchCustomers = `-- name: SearchCustomers :many
-SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at FROM customers
+SELECT id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id FROM customers
 WHERE organization_id = $1 
   AND (name ILIKE $2 OR customer_code ILIKE $2)
 ORDER BY name
@@ -464,6 +546,7 @@ func (q *Queries) SearchCustomers(ctx context.Context, arg SearchCustomersParams
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BusinessPartnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -479,7 +562,7 @@ const toggleCustomerActive = `-- name: ToggleCustomerActive :one
 UPDATE customers
 SET is_active = $2
 WHERE id = $1
-RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id
 `
 
 type ToggleCustomerActiveParams struct {
@@ -507,6 +590,7 @@ func (q *Queries) ToggleCustomerActive(ctx context.Context, arg ToggleCustomerAc
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
@@ -524,7 +608,7 @@ SET
     is_active = $9,
     metadata = $10
 WHERE id = $1
-RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id
 `
 
 type UpdateCustomerParams struct {
@@ -571,6 +655,7 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }
@@ -579,7 +664,7 @@ const updateCustomerBalance = `-- name: UpdateCustomerBalance :one
 UPDATE customers
 SET outstanding_balance = outstanding_balance + $2
 WHERE id = $1
-RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, customer_code, name, email, phone, address, customer_type, price_list_id, credit_limit, outstanding_balance, loyalty_points, is_active, metadata, created_at, updated_at, business_partner_id
 `
 
 type UpdateCustomerBalanceParams struct {
@@ -607,6 +692,7 @@ func (q *Queries) UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerB
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BusinessPartnerID,
 	)
 	return i, err
 }

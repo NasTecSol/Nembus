@@ -12,24 +12,28 @@ import (
 )
 
 const getPurchaseOrderWithReceivedQty = `-- name: GetPurchaseOrderWithReceivedQty :many
-SELECT 
+SELECT
     po.id,
     po.po_number,
     po.status,
     po.total_amount,
     po.expected_delivery_date,
-    sup.name AS supplier_name,
+    -- business_partner is primary; fall back to legacy supplier name
+    COALESCE(bp.name, sup.name) AS supplier_name,
+    bp.id                        AS business_partner_id,
+    bp.partner_role,
     pol.line_number,
     pol.product_id,
-    pol.quantity           AS ordered_qty,
-    pol.received_quantity  AS received_qty,
+    pol.quantity          AS ordered_qty,
+    pol.received_quantity AS received_qty,
     pol.quantity - pol.received_quantity AS pending_qty,
     p.sku,
     p.name AS product_name
 FROM purchase_orders po
-JOIN suppliers sup ON po.supplier_id = sup.id
-JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
-JOIN products p ON pol.product_id = p.id
+LEFT JOIN business_partners bp ON po.business_partner_id = bp.id
+LEFT JOIN suppliers sup        ON po.supplier_id = sup.id
+JOIN purchase_order_lines pol  ON pol.purchase_order_id = po.id
+JOIN products p                ON pol.product_id = p.id
 WHERE po.id = $1
 ORDER BY pol.line_number
 `
@@ -41,6 +45,8 @@ type GetPurchaseOrderWithReceivedQtyRow struct {
 	TotalAmount          pgtype.Numeric `json:"total_amount"`
 	ExpectedDeliveryDate pgtype.Date    `json:"expected_delivery_date"`
 	SupplierName         string         `json:"supplier_name"`
+	BusinessPartnerID    pgtype.Int4    `json:"business_partner_id"`
+	PartnerRole          pgtype.Text    `json:"partner_role"`
 	LineNumber           pgtype.Int4    `json:"line_number"`
 	ProductID            int32          `json:"product_id"`
 	OrderedQty           pgtype.Numeric `json:"ordered_qty"`
@@ -66,6 +72,8 @@ func (q *Queries) GetPurchaseOrderWithReceivedQty(ctx context.Context, id int32)
 			&i.TotalAmount,
 			&i.ExpectedDeliveryDate,
 			&i.SupplierName,
+			&i.BusinessPartnerID,
+			&i.PartnerRole,
 			&i.LineNumber,
 			&i.ProductID,
 			&i.OrderedQty,

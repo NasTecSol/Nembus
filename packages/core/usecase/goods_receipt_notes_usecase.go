@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -30,7 +31,10 @@ type CreateGoodsReceiptNoteInput struct {
 	OrganizationID     int32                       `json:"organization_id"`
 	GRNNumber          string                      `json:"grn_number"`
 	PurchaseOrderID    *int32                      `json:"purchase_order_id,omitempty"`
-	SupplierID         int32                       `json:"supplier_id"`
+	// BusinessPartnerID is the primary partner reference (supersedes SupplierID).
+	// Set this for all new GRNs. SupplierID is kept for backward compatibility only.
+	BusinessPartnerID  *int32                      `json:"business_partner_id,omitempty"`
+	SupplierID         *int32                      `json:"supplier_id,omitempty"` // deprecated: use BusinessPartnerID
 	StoreID            int32                       `json:"store_id"`
 	ReceivedBy         *int32                      `json:"received_by,omitempty"`
 	ReceiptDate        *time.Time                  `json:"receipt_date,omitempty"`
@@ -67,8 +71,12 @@ type GoodsReceiptNoteOutput struct {
 	GRNNumber          string                       `json:"grn_number"`
 	PurchaseOrderID    pgtype.Int4                  `json:"purchase_order_id"`
 	PONumber           pgtype.Text                  `json:"po_number"`
-	SupplierID         int32                        `json:"supplier_id"`
-	SupplierName       pgtype.Text                  `json:"supplier_name"`
+	// BusinessPartnerID is the primary partner reference
+	BusinessPartnerID  pgtype.Int4                  `json:"business_partner_id"`
+	PartnerName        pgtype.Text                  `json:"partner_name"` // resolved from business_partner or legacy supplier
+	PartnerRole        pgtype.Text                  `json:"partner_role"`
+	// SupplierID is kept for backward compat during migration period
+	SupplierID         pgtype.Int4                  `json:"supplier_id"`
 	StoreID            int32                        `json:"store_id"`
 	StoreName          pgtype.Text                  `json:"store_name"`
 	ReceivedBy         pgtype.Int4                  `json:"received_by"`
@@ -84,7 +92,8 @@ type GoodsReceiptNoteOutput struct {
 }
 
 type GoodsReceiptNotesUseCase struct {
-	repo *repository.Queries
+	repo       *repository.Queries
+	accounting *AccountingUseCase
 }
 
 func NewGoodsReceiptNotesUseCase() *GoodsReceiptNotesUseCase {
@@ -93,6 +102,12 @@ func NewGoodsReceiptNotesUseCase() *GoodsReceiptNotesUseCase {
 
 func (uc *GoodsReceiptNotesUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
+}
+
+// SetAccounting wires in the accounting use case for automatic GL posting on GRNs.
+// Optional: if not set, GL posting is silently skipped.
+func (uc *GoodsReceiptNotesUseCase) SetAccounting(accounting *AccountingUseCase) {
+	uc.accounting = accounting
 }
 
 func (uc *GoodsReceiptNotesUseCase) repoOrErr() *repository.Response {
@@ -110,8 +125,10 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 	if input.OrganizationID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil)
 	}
-	if input.SupplierID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "supplier_id is required", nil)
+	// At least one of BusinessPartnerID or SupplierID must be provided
+	if (input.BusinessPartnerID == nil || *input.BusinessPartnerID <= 0) &&
+		(input.SupplierID == nil || *input.SupplierID <= 0) {
+		return utils.NewResponse(utils.CodeBadReq, "business_partner_id or supplier_id is required", nil)
 	}
 	if input.StoreID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "store_id is required", nil)
@@ -131,7 +148,8 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 		OrganizationID:     input.OrganizationID,
 		GrnNumber:          input.GRNNumber,
 		PurchaseOrderID:    utils.Int32ToPgInt4(input.PurchaseOrderID),
-		SupplierID:         input.SupplierID,
+		SupplierID:         utils.DerefInt32(input.SupplierID), // legacy: populated if provided
+		BusinessPartnerID:  utils.Int32ToPgInt4(input.BusinessPartnerID), // primary B2B reference
 		StoreID:            input.StoreID,
 		ReceivedBy:         utils.Int32ToPgInt4(input.ReceivedBy),
 		ReceiptDate:        receiptDate,
@@ -140,6 +158,7 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 		Notes:              utils.StringToPgText(input.Notes),
 		Metadata:           metaBytes,
 	})
+
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -194,7 +213,8 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 		OrganizationID:     grn.OrganizationID,
 		GRNNumber:          grn.GrnNumber,
 		PurchaseOrderID:    grn.PurchaseOrderID,
-		SupplierID:         grn.SupplierID,
+		BusinessPartnerID:  grn.BusinessPartnerID,
+		SupplierID:         pgtype.Int4{Int32: grn.SupplierID, Valid: grn.SupplierID > 0},
 		StoreID:            grn.StoreID,
 		ReceivedBy:         grn.ReceivedBy,
 		ReceiptDate:        grn.ReceiptDate,
@@ -205,6 +225,32 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 		CreatedAt:          grn.CreatedAt,
 		UpdatedAt:          grn.UpdatedAt,
 		Items:              itemsOutput,
+	}
+
+	// Non-blocking async GL posting after GRN commit.
+	// Calculates total received value from items for the journal entry.
+	if uc.accounting != nil {
+		totalValue := pgtype.Numeric{}
+		totalCost := 0.0
+		for _, item := range input.Items {
+			if item.UnitCost != nil && item.QuantityReceived > 0 {
+				totalCost += (*item.UnitCost) * item.QuantityReceived
+			}
+		}
+		_ = totalValue.Scan(fmt.Sprintf("%.2f", totalCost))
+		capturedGRNNumber := grn.GrnNumber
+		capturedStoreID := input.StoreID
+		capturedOrgID := input.OrganizationID
+		capturedTotal := totalValue
+		go func() {
+			_ = uc.accounting.PostReceivingJournalEntry(
+				context.Background(),
+				capturedOrgID,
+				capturedStoreID,
+				capturedGRNNumber,
+				capturedTotal,
+			)
+		}()
 	}
 
 	return utils.NewResponse(utils.CodeOK, "goods receipt note created successfully", out)
@@ -255,8 +301,10 @@ func (uc *GoodsReceiptNotesUseCase) GetGoodsReceiptNote(ctx context.Context, id 
 		GRNNumber:          grn.GrnNumber,
 		PurchaseOrderID:    grn.PurchaseOrderID,
 		PONumber:           grn.PoNumber,
-		SupplierID:         grn.SupplierID,
-		SupplierName:       pgtype.Text{String: grn.SupplierName, Valid: true},
+		BusinessPartnerID:  grn.BusinessPartnerIDResolved,
+		PartnerName:        pgtype.Text{String: grn.SupplierName, Valid: true},
+		PartnerRole:        grn.PartnerRole,
+		SupplierID:         pgtype.Int4{Int32: grn.SupplierID, Valid: grn.SupplierID > 0},
 		StoreID:            grn.StoreID,
 		StoreName:          pgtype.Text{String: grn.StoreName, Valid: true},
 		ReceivedBy:         grn.ReceivedBy,
