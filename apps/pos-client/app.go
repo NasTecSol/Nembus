@@ -431,10 +431,11 @@ func (a *App) StartSyncService(slug string) {
 		return
 	}
 
+	bgCtx := context.Background()
 	tenantPool := a.masterPool
 	if a.masterRepo != nil {
 		tenantManager := manager.NewManager(a.masterRepo)
-		pool, err := tenantManager.GetPool(a.ctx, slug)
+		pool, err := tenantManager.GetPool(bgCtx, slug)
 		if err == nil && pool != nil {
 			tenantPool = pool
 		} else {
@@ -442,7 +443,7 @@ func (a *App) StartSyncService(slug string) {
 		}
 	}
 
-	a.syncService = sync.NewSyncService(a.ctx, tenantPool, a.cfg.CloudURL, slug)
+	a.syncService = sync.NewSyncService(bgCtx, tenantPool, a.cfg.CloudURL, slug)
 	a.syncService.Start()
 }
 
