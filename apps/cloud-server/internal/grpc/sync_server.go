@@ -173,6 +173,8 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
 	}
 
+	_, _ = tx.Exec(ctx, "SAVEPOINT sp_upsert;")
+
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
@@ -181,6 +183,7 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 
 	_, err = tx.Exec(ctx, query, string(payload))
 	if err != nil {
+		_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT sp_upsert;")
 		fallbackQuery := fmt.Sprintf(`
 			INSERT INTO %s
 			SELECT * FROM json_populate_record(NULL::%s, $1::json)
@@ -189,6 +192,8 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		if _, err2 := tx.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
 			return fmt.Errorf("failed to upsert %s: %w (fallback: %v)", entityType, err, err2)
 		}
+	} else {
+		_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT sp_upsert;")
 	}
 
 	return tx.Commit(ctx)
