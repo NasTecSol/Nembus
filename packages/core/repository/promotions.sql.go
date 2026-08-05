@@ -12,16 +12,15 @@ import (
 )
 
 const createPromotion = `-- name: CreatePromotion :one
-
 INSERT INTO promotions (
     organization_id, code, name, description, promotion_type,
     action_metadata, valid_from, valid_to, schedule_json,
     applies_to, target_product_ids, target_category_ids,
     min_order_amount, min_quantity, coupon_code,
     usage_limit, discount_value, is_stackable, is_active,
-    store_ids
+    store_ids, created_by, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 ) RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
 `
 
@@ -46,6 +45,8 @@ type CreatePromotionParams struct {
 	IsStackable       pgtype.Bool      `json:"is_stackable"`
 	IsActive          pgtype.Bool      `json:"is_active"`
 	StoreIds          []int32          `json:"store_ids"`
+	CreatedBy         pgtype.Int4      `json:"created_by"`
+	Metadata          []byte           `json:"metadata"`
 }
 
 // =====================================================
@@ -74,6 +75,8 @@ func (q *Queries) CreatePromotion(ctx context.Context, arg CreatePromotionParams
 		arg.IsStackable,
 		arg.IsActive,
 		arg.StoreIds,
+		arg.CreatedBy,
+		arg.Metadata,
 	)
 	var i Promotion
 	err := row.Scan(
