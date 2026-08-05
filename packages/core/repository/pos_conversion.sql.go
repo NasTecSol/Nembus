@@ -18,7 +18,11 @@ INSERT INTO pos_transactions (
     transaction_number, total_amount, status
 )
 SELECT 
-    store_id, cashier_id, (SELECT id FROM cashier_sessions WHERE status = 'open' AND cashier_id = o.cashier_id LIMIT 1),
+    store_id, cashier_id, COALESCE(
+        (SELECT id FROM cashier_sessions WHERE status = 'open' AND cashier_id = o.cashier_id LIMIT 1),
+        (SELECT id FROM cashier_sessions WHERE status = 'open' AND store_id = o.store_id LIMIT 1),
+        (SELECT id FROM cashier_sessions WHERE status = 'open' ORDER BY opening_time DESC LIMIT 1)
+    ),
     customer_id, pos_terminal_id, id, source_cart_id,
     'TXN-' || order_number, total_amount, 'completed'
 FROM sales_orders_v2 o

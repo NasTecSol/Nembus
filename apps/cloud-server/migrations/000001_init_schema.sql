@@ -2556,9 +2556,6 @@ DROP TRIGGER IF EXISTS update_profit_loss_analytics_updated_at ON profit_loss_an
 CREATE TRIGGER update_profit_loss_analytics_updated_at BEFORE UPDATE ON profit_loss_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_discount_analytics_updated_at ON discount_analytics;
 CREATE TRIGGER update_discount_analytics_updated_at BEFORE UPDATE ON discount_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-DROP INDEX IF EXISTS idx_inventory_stock_unique_item;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_stock_unique_item ON inventory_stock (product_id, COALESCE(product_variant_id, -1), store_id);
-
 
 -- Restaurant triggers
 DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;
@@ -3120,12 +3117,12 @@ BEGIN
         cat.uom_code::VARCHAR,
         cat.decimal_places::INTEGER,
         cat.retail_price,
-        cat.promo_price,
-        cat.effective_price,
-        cat.has_active_promotion,
-        cat.promotion_name::VARCHAR,
-        cat.discount_percent::VARCHAR,
-        cat.promo_min_quantity,
+        COALESCE(cat.promo_price, promo_rule.calculated_promo_price) AS promo_price,
+        COALESCE(cat.effective_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
+        COALESCE(cat.has_active_promotion, (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
+        COALESCE(cat.promotion_name, promo_rule.promo_name)::VARCHAR AS promotion_name,
+        COALESCE(cat.discount_percent, promo_rule.calc_discount_percent)::VARCHAR AS discount_percent,
+        COALESCE(cat.promo_min_quantity, promo_rule.promo_min_qty) AS promo_min_quantity,
         cat.tax_rate,
         cat.tax_is_inclusive,
         -- FIX 9.3: Join on both product_id AND product_variant_id
@@ -3220,6 +3217,37 @@ BEGIN
              WHERE puc.product_id = cat.product_id
          ) AS conv)
     FROM vw_pos_product_catalog cat
+    LEFT JOIN LATERAL (
+        SELECT 
+            pr.name AS promo_name,
+            pr.min_quantity AS promo_min_qty,
+            pr.discount_value,
+            pr.promotion_type,
+            CASE 
+                WHEN pr.promotion_type = 'percentage_discount' AND cat.retail_price IS NOT NULL THEN
+                    ROUND(cat.retail_price * (1.0 - (pr.discount_value / 100.0)), 2)
+                WHEN pr.promotion_type = 'fixed_discount' AND cat.retail_price IS NOT NULL THEN
+                    GREATEST(0.00, cat.retail_price - pr.discount_value)
+                ELSE cat.retail_price
+            END AS calculated_promo_price,
+            CASE
+                WHEN pr.promotion_type = 'percentage_discount' AND pr.discount_value IS NOT NULL THEN
+                    CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM pr.discount_value::text)), '%')
+                ELSE NULL
+            END AS calc_discount_percent
+        FROM promotions pr
+        WHERE pr.is_active = true
+          AND (pr.valid_from IS NULL OR pr.valid_from <= CURRENT_TIMESTAMP)
+          AND (pr.valid_to IS NULL OR pr.valid_to >= CURRENT_TIMESTAMP)
+          AND (cardinality(pr.store_ids) = 0 OR p_store_id = ANY(pr.store_ids))
+          AND (
+              pr.applies_to = 'all'
+              OR (pr.applies_to = 'product' AND cat.product_id = ANY(pr.target_product_ids))
+              OR (pr.applies_to = 'category' AND cat.category_id = ANY(pr.target_category_ids))
+          )
+        ORDER BY pr.created_at DESC
+        LIMIT 1
+    ) promo_rule ON true
     -- FIX 9.3: correct variant-aware inventory join
     LEFT JOIN inventory_stock inv
         ON inv.product_id = cat.product_id
@@ -4967,7 +4995,117 @@ END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
 
+
+-- =====================================================
+-- ZATCA PHASE 2 COMPLIANCE
+-- =====================================================
+
+-- ZATCA document submission status
+CREATE TYPE zatca_doc_status AS ENUM (
+    'pending',      -- Awaiting submission
+    'cleared',      -- ZATCA cleared (B2B Standard)
+    'reported',     -- ZATCA reported (B2C Simplified)
+    'warning',      -- Cleared/reported with warnings
+    'rejected',     -- ZATCA rejected
+    'failed'        -- Network/system failure
+);
+
+-- Per-device (EGS unit) cryptographic configuration
+-- Stores CSIDs for both Cloud server (B2B) and POS terminals (B2C)
+CREATE TABLE zatca_device_configs (
+    id              SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id        INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    pos_terminal_id INTEGER REFERENCES pos_terminals(id) ON DELETE SET NULL,
+
+    -- Device identity
+    device_serial   VARCHAR(255) NOT NULL,        -- EGS serial number
+    device_type     VARCHAR(20) NOT NULL,         -- 'cloud' or 'pos'
+
+    -- Cryptographic material (encrypted at rest)
+    csr_pem         TEXT,                          -- Certificate Signing Request
+    private_key_pem TEXT NOT NULL,                 -- ECDSA secp256k1 private key (PEM)
+    compliance_csid TEXT,                          -- Compliance CSID (temporary, used during onboarding)
+    production_csid TEXT,                          -- Production CSID (active signing certificate)
+    csid_expiry     TIMESTAMPTZ,                  -- Certificate expiry date
+
+    -- ZATCA environment
+    zatca_env       VARCHAR(20) DEFAULT 'sandbox', -- 'sandbox' or 'production'
+
+    -- Status
+    is_active       BOOLEAN DEFAULT true,
+    is_revoked      BOOLEAN DEFAULT false,
+    revoked_at      TIMESTAMPTZ,
+    revoked_reason  TEXT,
+
+    metadata        JSONB DEFAULT '{}',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(organization_id, device_serial)
+);
+
+-- Lightweight sequential chaining ledger
+-- Tracks the cryptographic hash chain per device for ZATCA compliance
+CREATE TABLE zatca_document_chain (
+    id               BIGSERIAL PRIMARY KEY,
+
+    -- Link to source document (invoice or POS transaction)
+    entity_type      VARCHAR(20) NOT NULL,          -- 'invoice' or 'pos_transaction'
+    entity_id        TEXT NOT NULL,                  -- UUID for invoices, integer cast to text for pos_txn
+
+    -- Device that signed this document
+    device_config_id INTEGER NOT NULL REFERENCES zatca_device_configs(id),
+    organization_id  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+
+    -- ZATCA sequential fields
+    zatca_uuid       UUID NOT NULL DEFAULT uuid_generate_v4(),
+    icv              BIGINT NOT NULL,                -- Invoice Counter Value (sequential per device)
+    pih              TEXT NOT NULL,                   -- Previous Invoice Hash (Base64 SHA-256)
+    xml_hash         TEXT NOT NULL,                   -- This document's XML hash (Base64 SHA-256)
+
+    -- ZATCA API response
+    zatca_status     zatca_doc_status DEFAULT 'pending',
+    zatca_response   JSONB DEFAULT '{}',             -- Full API response payload
+    qr_code_base64   TEXT,                           -- TLV QR code (Base64 encoded)
+    signed_xml       TEXT,                           -- Full signed UBL 2.1 XML document
+
+    -- Submission tracking
+    submitted_at     TIMESTAMPTZ,
+    cleared_at       TIMESTAMPTZ,
+
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Ensure sequential ICV per device (no gaps allowed by ZATCA)
+    UNIQUE(device_config_id, icv)
+);
+
+-- Index for fast chain lookups (latest entry per device)
+CREATE INDEX idx_zatca_chain_device_icv ON zatca_document_chain(device_config_id, icv DESC);
+-- Index for entity lookups (find chain entry for a specific invoice/transaction)
+CREATE INDEX idx_zatca_chain_entity ON zatca_document_chain(entity_type, entity_id);
+-- Index for pending/failed entries (reporting worker picks these up)
+CREATE INDEX idx_zatca_chain_status ON zatca_document_chain(zatca_status) WHERE zatca_status IN ('pending', 'failed');
+
+-- Sync watermarks for delta-fetch mechanism (Cloud ↔ POS)
+CREATE TABLE sync_watermarks (
+    id              SERIAL PRIMARY KEY,
+    entity_type     VARCHAR(50) NOT NULL,           -- 'zatca_config', 'orders', 'inventory', etc.
+    store_id        INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+    last_sync_at    TIMESTAMPTZ NOT NULL DEFAULT '1970-01-01',
+    metadata        JSONB DEFAULT '{}',
+
+    UNIQUE(entity_type, store_id)
+);
+
+
 -- +goose Down
+
+-- ZATCA Phase 2 drops
+DROP TABLE IF EXISTS sync_watermarks CASCADE;
+DROP TABLE IF EXISTS zatca_document_chain CASCADE;
+DROP TABLE IF EXISTS zatca_device_configs CASCADE;
+DROP TYPE IF EXISTS zatca_doc_status;
 
 DROP VIEW IF EXISTS vw_pos_categories CASCADE;
 DROP FUNCTION IF EXISTS fn_get_kds_orders CASCADE;

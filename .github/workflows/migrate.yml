@@ -1,0 +1,75 @@
+name: Deploy, Backup, Migrate & Auto-Restore on Junction Merge
+
+on:
+  push:
+    branches:
+      - junction
+
+jobs:
+  deploy-backup-migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build & Push POS API Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}
+
+      - name: SSH to EC2 Server and Perform Backup, Migration & Deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd /opt/apps/pos
+
+            # 1. Load Postgres credentials from your .env file
+            if [ -f .env ]; then
+              export $(grep -v '^#' .env | xargs)
+            fi
+
+            TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+            BACKUP_FILE="/tmp/backup_pos_${TIMESTAMP}.sql"
+            CONTAINER_DB="pos-postgres"
+            CONTAINER_API="pos-api"
+
+            echo "📦 1. Taking database backup from '${CONTAINER_DB}'..."
+            docker exec $CONTAINER_DB pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -F c -f /tmp/backup.sql
+            docker cp ${CONTAINER_DB}:/tmp/backup.sql $BACKUP_FILE
+            docker exec $CONTAINER_DB rm -f /tmp/backup.sql
+            echo "✅ Backup stored at: ${BACKUP_FILE}"
+
+            echo "🚀 2. Pulling latest containers..."
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            docker compose pull pos-api
+
+            echo "⚡ 3. Running Migrations..."
+            # Execute migrations (if migrations run inside pos-api container or via host make)
+            if ! docker compose run --rm pos-api make migrate-all; then
+              echo "❌ MIGRATION FAILED! Restoring database from backup: ${BACKUP_FILE}..."
+              
+              # Copy backup file into container and restore using pg_restore
+              docker cp $BACKUP_FILE ${CONTAINER_DB}:/tmp/backup.sql
+              docker exec $CONTAINER_DB pg_restore -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists -v /tmp/backup.sql
+              docker exec $CONTAINER_DB rm -f /tmp/backup.sql
+              
+              echo "✅ Database successfully restored to pre-migration state!"
+              rm -f $BACKUP_FILE
+              exit 1
+            fi
+
+            echo "🎉 4. Migration successful! Restarting POS API service..."
+            docker compose up -d --no-deps pos-api
+            docker image prune -f
+            rm -f $BACKUP_FILE
+            echo "🚀 Deployment & Migrations Completed Successfully!"
