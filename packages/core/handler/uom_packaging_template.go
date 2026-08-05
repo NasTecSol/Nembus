@@ -294,25 +294,27 @@ func (h *UomPackagingTemplateHandler) GetTemplateWithLevels(c *gin.Context) {
 
 // CreateTemplatePipelineRequest represents the payload for bulk pipeline creation.
 type CreateTemplatePipelineRequest struct {
-	BaseUomCode      string `json:"base_uom_code" binding:"required" example:"KG"`
-	BaseUomName      string `json:"base_uom_name" binding:"required" example:"Kilogram"`
-	BaseUomType      string `json:"base_uom_type" binding:"required" example:"packaging"`
-	BaseUomDecimals  int32  `json:"base_uom_decimals" example:"0"`
-	BaseUomActive    bool   `json:"base_uom_active" example:"true"`
-	OrganizationID   int32  `json:"organization_id" binding:"required" example:"1"`
-	TemplateName     string `json:"template_name" binding:"required" example:"Template A"`
-	TemplateCode     string `json:"template_code" binding:"required" example:"1-24-12"`
-	TemplateActive   bool   `json:"template_active" example:"true"`
-	Tier1Multiplier  string `json:"tier1_multiplier" binding:"required" example:"1.000000"`
-	Tier2UomCode     string `json:"tier2_uom_code" binding:"required" example:"PKT"`
-	Tier2Multiplier  string `json:"tier2_multiplier" binding:"required" example:"24.000000"`
-	Tier3UomCode     string `json:"tier3_uom_code" binding:"required" example:"CAN"`
-	Tier3Multiplier  string `json:"tier3_multiplier" binding:"required" example:"12.000000"`
+	OrganizationID int32             `json:"organization_id" binding:"required" example:"1"`
+	UomID          int32             `json:"uom_id" binding:"required" example:"1"`
+	Templates      []TemplatePayload `json:"templates" binding:"required"`
+}
+
+type TemplatePayload struct {
+	TemplateName   string         `json:"template_name" binding:"required" example:"Template A"`
+	TemplateCode   string         `json:"template_code" binding:"required" example:"1-24-12"`
+	TemplateActive bool           `json:"template_active" example:"true"`
+	Levels         []LevelPayload `json:"levels" binding:"required"`
+}
+
+type LevelPayload struct {
+	LevelOrder int32  `json:"level_order" binding:"required" example:"1"`
+	UomCode    string `json:"uom_code" binding:"required" example:"KG"`
+	Multiplier string `json:"multiplier" binding:"required" example:"1.000000"`
 }
 
 // CreateTemplatePipeline handles POST /api/uom-packaging-templates/pipeline
 // @Summary      Create UOM packaging template pipeline
-// @Description  Create a template, its base UOM, and its level hierarchy in a single query execution
+// @Description  Create templates and their level hierarchy in a single execution
 // @Tags         uom-packaging-templates
 // @Accept       json
 // @Produce      json
@@ -334,21 +336,28 @@ func (h *UomPackagingTemplateHandler) CreateTemplatePipeline(c *gin.Context) {
 		return
 	}
 
+	templatesInput := make([]usecase.TemplatePayloadInput, len(req.Templates))
+	for i, t := range req.Templates {
+		levelsInput := make([]usecase.LevelPayloadInput, len(t.Levels))
+		for j, l := range t.Levels {
+			levelsInput[j] = usecase.LevelPayloadInput{
+				LevelOrder: l.LevelOrder,
+				UomCode:    l.UomCode,
+				Multiplier: l.Multiplier,
+			}
+		}
+		templatesInput[i] = usecase.TemplatePayloadInput{
+			TemplateName:   t.TemplateName,
+			TemplateCode:   t.TemplateCode,
+			TemplateActive: t.TemplateActive,
+			Levels:         levelsInput,
+		}
+	}
+
 	resp := h.useCase.CreateTemplatePipeline(c.Request.Context(), usecase.CreateUomPackagingTemplatePipelineInput{
-		BaseUomCode:     req.BaseUomCode,
-		BaseUomName:     req.BaseUomName,
-		BaseUomType:     req.BaseUomType,
-		BaseUomDecimals: req.BaseUomDecimals,
-		BaseUomActive:   req.BaseUomActive,
-		OrganizationID:  req.OrganizationID,
-		TemplateName:    req.TemplateName,
-		TemplateCode:    req.TemplateCode,
-		TemplateActive:  req.TemplateActive,
-		Tier1Multiplier: req.Tier1Multiplier,
-		Tier2UomCode:    req.Tier2UomCode,
-		Tier2Multiplier: req.Tier2Multiplier,
-		Tier3UomCode:    req.Tier3UomCode,
-		Tier3Multiplier: req.Tier3Multiplier,
+		OrganizationID: req.OrganizationID,
+		UomID:          req.UomID,
+		Templates:      templatesInput,
 	})
 	c.JSON(resp.StatusCode, resp)
 }

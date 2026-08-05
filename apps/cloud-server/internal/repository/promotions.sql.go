@@ -12,6 +12,7 @@ import (
 )
 
 const createPromotion = `-- name: CreatePromotion :one
+
 INSERT INTO promotions (
     organization_id, code, name, description, promotion_type,
     action_metadata, valid_from, valid_to, schedule_json,
