@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -68,6 +69,7 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 
 	actionMeta, _ := json.Marshal(req.ActionMetadata)
 	scheduleMeta, _ := json.Marshal(req.ScheduleJson)
+	metaBytes, _ := json.Marshal(req.Metadata)
 
 	arg := repository.CreatePromotionParams{
 		OrganizationID:    req.OrganizationID,
@@ -84,6 +86,15 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 		IsStackable:       promoBoolOpt(req.IsStackable),
 		IsActive:          promoBoolOpt(req.IsActive),
 		StoreIds:          req.StoreIds,
+		Metadata:          metaBytes,
+	}
+
+	if req.CreatedBy != nil {
+		arg.CreatedBy = pgtype.Int4{Int32: *req.CreatedBy, Valid: true}
+	} else if userIDStr, ok := middleware.GetUserIDFromContext(c); ok {
+		if uid, err := strconv.ParseInt(userIDStr, 10, 32); err == nil {
+			arg.CreatedBy = pgtype.Int4{Int32: int32(uid), Valid: true}
+		}
 	}
 
 	if req.MinOrderAmount != nil {
@@ -105,14 +116,20 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
 	if req.ValidFrom != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidFrom); err == nil {
-			arg.ValidFrom = pgtype.Timestamp{Time: t, Valid: true}
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
 		}
+		arg.ValidFrom = vf
 	}
 	if req.ValidTo != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidTo); err == nil {
-			arg.ValidTo = pgtype.Timestamp{Time: t, Valid: true}
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
 		}
+		arg.ValidTo = vt
 	}
 
 	resp := h.useCase.CreatePromotion(c.Request.Context(), arg)
@@ -331,14 +348,20 @@ func (h *PromotionHandler) UpdatePromotion(c *gin.Context) {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
 	if req.ValidFrom != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidFrom); err == nil {
-			arg.ValidFrom = pgtype.Timestamp{Time: t, Valid: true}
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
 		}
+		arg.ValidFrom = vf
 	}
 	if req.ValidTo != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidTo); err == nil {
-			arg.ValidTo = pgtype.Timestamp{Time: t, Valid: true}
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
 		}
+		arg.ValidTo = vt
 	}
 
 	resp := h.useCase.UpdatePromotion(c.Request.Context(), arg)
@@ -530,4 +553,23 @@ func promoStrDeref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func parsePromotionTimestamp(s *string) (pgtype.Timestamp, error) {
+	if s == nil || *s == "" {
+		return pgtype.Timestamp{Valid: false}, nil
+	}
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+	for _, fmtStr := range formats {
+		if t, err := time.Parse(fmtStr, *s); err == nil {
+			return pgtype.Timestamp{Time: t, Valid: true}, nil
+		}
+	}
+	return pgtype.Timestamp{}, fmt.Errorf("invalid timestamp '%s'", *s)
 }

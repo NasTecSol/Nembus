@@ -260,14 +260,60 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 
 	// ── 1. Simple Minimum-Spend (fixed or percentage) ──────────────────────────
 	case "percentage_discount":
-		// Applies a % off the subtotal (optionally constrained by min_order_amount already checked)
-		discountFloat = subtotalFloat * (discountValueFloat / 100)
+		if isProductTargeted {
+			targetProductSet := make(map[int32]bool, len(promo.TargetProductIds))
+			for _, pid := range promo.TargetProductIds {
+				targetProductSet[pid] = true
+			}
+			discountFloat = uc.applyProductSetDiscount(ctx, items, targetProductSet, discountValueFloat, promo.Code)
+			if discountFloat == 0 {
+				return utils.NewResponse(utils.CodeBadReq, "coupon is not applicable to any products in your cart", nil)
+			}
+			isProductTargeted = false
+		} else {
+			// Applies a % off the subtotal (optionally constrained by min_order_amount already checked)
+			discountFloat = subtotalFloat * (discountValueFloat / 100)
+		}
 
 	case "fixed_discount":
-		// Flat SAR amount off the order (example: "Spend 500 SAR, Get 50 SAR Off")
-		discountFloat = discountValueFloat
-		if discountFloat > subtotalFloat {
-			discountFloat = subtotalFloat // clamp — never negative total
+		if isProductTargeted {
+			targetProductSet := make(map[int32]bool, len(promo.TargetProductIds))
+			for _, pid := range promo.TargetProductIds {
+				targetProductSet[pid] = true
+			}
+			var eligibleSubtotal float64
+			var matchingItems []repository.ListCartItemsRow
+			for _, item := range items {
+				if targetProductSet[item.ProductID] {
+					eligibleSubtotal += numericToFloat(item.UnitPrice) * numericToFloat(item.Quantity)
+					matchingItems = append(matchingItems, item)
+				}
+			}
+			if len(matchingItems) == 0 || eligibleSubtotal == 0 {
+				return utils.NewResponse(utils.CodeBadReq, "coupon is not applicable to any products in your cart", nil)
+			}
+			discountFloat = discountValueFloat
+			if discountFloat > eligibleSubtotal {
+				discountFloat = eligibleSubtotal
+			}
+			for _, item := range matchingItems {
+				itemLineTotal := numericToFloat(item.UnitPrice) * numericToFloat(item.Quantity)
+				lineDiscount := discountFloat * (itemLineTotal / eligibleSubtotal)
+				perItemNumeric := pgtype.Numeric{}
+				_ = perItemNumeric.Scan(fmt.Sprintf("%.2f", lineDiscount))
+				_, _ = uc.repo.ApplyDiscountToCartItem(ctx, repository.ApplyDiscountToCartItemParams{
+					ID:             item.ID,
+					DiscountAmount: perItemNumeric,
+					Column3:        promo.Code,
+				})
+			}
+			isProductTargeted = false
+		} else {
+			// Flat SAR amount off the order (example: "Spend 500 SAR, Get 50 SAR Off")
+			discountFloat = discountValueFloat
+			if discountFloat > subtotalFloat {
+				discountFloat = subtotalFloat // clamp — never negative total
+			}
 		}
 
 	// ── 2. Buy X Get Y ─────────────────────────────────────────────────────────
@@ -374,7 +420,7 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 	}
 
 	// 6a. For product-targeted promotions (generic path, not handled inline above)
-	if isProductTargeted && discountFloat > 0 {
+	if isProductTargeted {
 		targetProductSet := make(map[int32]bool, len(promo.TargetProductIds))
 		for _, pid := range promo.TargetProductIds {
 			targetProductSet[pid] = true
@@ -386,7 +432,10 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 				matchingCount++
 			}
 		}
-		if matchingCount > 0 {
+		if matchingCount == 0 {
+			return utils.NewResponse(utils.CodeBadReq, "coupon is not applicable to any products in your cart", nil)
+		}
+		if discountFloat > 0 {
 			perItemDiscount := discountFloat / float64(matchingCount)
 			perItemNumeric := pgtype.Numeric{}
 			_ = perItemNumeric.Scan(fmt.Sprintf("%.2f", perItemDiscount))
