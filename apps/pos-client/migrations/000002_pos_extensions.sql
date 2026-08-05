@@ -100,23 +100,7 @@ CREATE TRIGGER trg_sync_cashier_sessions
     FOR EACH ROW
     EXECUTE FUNCTION trg_enqueue_sync_outbox('cashier_sessions');
 
--- Automatically enqueue sales orders into sync_queue
-DROP TRIGGER IF EXISTS trg_sync_sales_orders_v2 ON sales_orders_v2;
-CREATE TRIGGER trg_sync_sales_orders_v2
-    AFTER INSERT OR UPDATE ON sales_orders_v2
-    FOR EACH ROW
-    EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_orders_v2');
-
--- Automatically enqueue sales order lines into sync_queue
-DROP TRIGGER IF EXISTS trg_sync_sales_order_lines_v2 ON sales_order_lines_v2;
-CREATE TRIGGER trg_sync_sales_order_lines_v2
-    AFTER INSERT OR UPDATE ON sales_order_lines_v2
-    FOR EACH ROW
-    EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_order_lines_v2');
-
 -- +goose Down
-DROP TRIGGER IF EXISTS trg_sync_sales_order_lines_v2 ON sales_order_lines_v2;
-DROP TRIGGER IF EXISTS trg_sync_sales_orders_v2 ON sales_orders_v2;
 DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
 DROP TRIGGER IF EXISTS trg_sync_pos_payments ON pos_payments;
 DROP TRIGGER IF EXISTS trg_sync_pos_transaction_lines ON pos_transaction_lines;
