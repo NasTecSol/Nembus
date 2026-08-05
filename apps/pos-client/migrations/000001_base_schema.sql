@@ -3537,11 +3537,11 @@ BEGIN
         cat.uom_code::VARCHAR,
         (cat.decimal_places)::INTEGER,
         cat.retail_price,
-        cat.promo_price,
-        cat.effective_price,
-        cat.has_active_promotion,
-        cat.promotion_name::VARCHAR,
-        cat.promo_min_quantity,
+        COALESCE(cat.promo_price, promo_rule.calculated_promo_price) AS promo_price,
+        COALESCE(cat.effective_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
+        COALESCE(cat.has_active_promotion, (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
+        COALESCE(cat.promotion_name, promo_rule.promo_name)::VARCHAR AS promotion_name,
+        COALESCE(cat.promo_min_quantity, promo_rule.promo_min_qty) AS promo_min_quantity,
         cat.tax_rate,
         cat.tax_is_inclusive,
         COALESCE(inv.quantity_available, 0)::NUMERIC,
@@ -3599,6 +3599,32 @@ BEGIN
              WHERE puc.product_id = cat.product_id
          ) AS conv)
     FROM vw_pos_product_catalog cat
+    LEFT JOIN LATERAL (
+        SELECT 
+            pr.name AS promo_name,
+            pr.min_quantity AS promo_min_qty,
+            pr.discount_value,
+            pr.promotion_type,
+            CASE 
+                WHEN pr.promotion_type = 'percentage_discount' AND cat.retail_price IS NOT NULL THEN
+                    ROUND(cat.retail_price * (1.0 - (pr.discount_value / 100.0)), 2)
+                WHEN pr.promotion_type = 'fixed_discount' AND cat.retail_price IS NOT NULL THEN
+                    GREATEST(0.00, cat.retail_price - pr.discount_value)
+                ELSE cat.retail_price
+            END AS calculated_promo_price
+        FROM promotions pr
+        WHERE pr.is_active = true
+          AND (pr.valid_from IS NULL OR pr.valid_from <= CURRENT_TIMESTAMP)
+          AND (pr.valid_to IS NULL OR pr.valid_to >= CURRENT_TIMESTAMP)
+          AND (cardinality(pr.store_ids) = 0 OR p_store_id = ANY(pr.store_ids))
+          AND (
+              pr.applies_to = 'all'
+              OR (pr.applies_to = 'product' AND cat.product_id = ANY(pr.target_product_ids))
+              OR (pr.applies_to = 'category' AND cat.category_id = ANY(pr.target_category_ids))
+          )
+        ORDER BY pr.created_at DESC
+        LIMIT 1
+    ) promo_rule ON true
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
     WHERE cat.barcode = p_barcode
     LIMIT 1;
