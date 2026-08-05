@@ -334,3 +334,87 @@ func (uc *UomPackagingTemplateUseCase) GetTemplateWithLevels(ctx context.Context
 
 	return utils.NewResponse(utils.CodeOK, "packaging template with levels fetched", out)
 }
+
+// CreateUomPackagingTemplatePipelineInput represents parameters for creating UOM template pipeline.
+type CreateUomPackagingTemplatePipelineInput struct {
+	BaseUomCode      string `json:"base_uom_code"`
+	BaseUomName      string `json:"base_uom_name"`
+	BaseUomType      string `json:"base_uom_type"`
+	BaseUomDecimals  int32  `json:"base_uom_decimals"`
+	BaseUomActive    bool   `json:"base_uom_active"`
+	OrganizationID   int32  `json:"organization_id"`
+	TemplateName     string `json:"template_name"`
+	TemplateCode     string `json:"template_code"`
+	TemplateActive   bool   `json:"template_active"`
+	Tier1Multiplier  string `json:"tier1_multiplier"`
+	Tier2UomCode     string `json:"tier2_uom_code"`
+	Tier2Multiplier  string `json:"tier2_multiplier"`
+	Tier3UomCode     string `json:"tier3_uom_code"`
+	Tier3Multiplier  string `json:"tier3_multiplier"`
+}
+
+// CreateTemplatePipeline creates a new template pipeline using a single query.
+func (uc *UomPackagingTemplateUseCase) CreateTemplatePipeline(
+	ctx context.Context,
+	input CreateUomPackagingTemplatePipelineInput,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	var t1Mult, t2Mult, t3Mult pgtype.Numeric
+	if err := t1Mult.Scan(input.Tier1Multiplier); err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "invalid tier 1 multiplier: "+err.Error(), nil)
+	}
+	if err := t2Mult.Scan(input.Tier2Multiplier); err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "invalid tier 2 multiplier: "+err.Error(), nil)
+	}
+	if err := t3Mult.Scan(input.Tier3Multiplier); err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "invalid tier 3 multiplier: "+err.Error(), nil)
+	}
+
+	row, err := uc.repo.CreateUomPackagingTemplatePipeline(ctx, repository.CreateUomPackagingTemplatePipelineParams{
+		Code:           input.BaseUomCode,
+		Name:           input.BaseUomName,
+		UomType:        pgtype.Text{String: input.BaseUomType, Valid: input.BaseUomType != ""},
+		DecimalPlaces:  pgtype.Int4{Int32: input.BaseUomDecimals, Valid: true},
+		IsActive:       pgtype.Bool{Bool: input.BaseUomActive, Valid: true},
+		OrganizationID: input.OrganizationID,
+		Name_2:         input.TemplateName,
+		Code_2:         input.TemplateCode,
+		IsActive_2:     pgtype.Bool{Bool: input.TemplateActive, Valid: true},
+		Multiplier:     t1Mult,
+		Code_3:         input.Tier2UomCode,
+		Multiplier_2:   t2Mult,
+		Code_4:         input.Tier3UomCode,
+		Multiplier_3:   t3Mult,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "packaging template pipeline created successfully", row)
+}
+
+// GetTemplatesByUomID retrieves packaging templates that utilize a specific UOM ID.
+func (uc *UomPackagingTemplateUseCase) GetTemplatesByUomID(
+	ctx context.Context,
+	uomID string,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	parsed, err := strconv.ParseInt(uomID, 10, 32)
+	if err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "invalid uom id", nil)
+	}
+
+	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, int32(parsed))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "packaging templates fetched successfully", rows)
+}
+
