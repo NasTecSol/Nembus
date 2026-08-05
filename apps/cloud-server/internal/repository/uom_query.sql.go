@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -100,6 +101,46 @@ func (q *Queries) CreateUnitOfMeasure(ctx context.Context, arg CreateUnitOfMeasu
 	return i, err
 }
 
+const createUomPackagingTemplatesPipeline = `-- name: CreateUomPackagingTemplatesPipeline :exec
+
+WITH inserted_templates AS (
+    -- 1. Extract and insert all templates from the templates array
+    INSERT INTO uom_packaging_templates (organization_id, name, code, is_active)
+    SELECT 
+        ($1::jsonb->>'organization_id')::INTEGER,
+        t->>'template_name',
+        t->>'template_code',
+        COALESCE((t->>'template_active')::BOOLEAN, true)
+    FROM jsonb_array_elements($1::jsonb->'templates') AS t
+    ON CONFLICT (code) DO UPDATE 
+    SET name = EXCLUDED.name, 
+        is_active = EXCLUDED.is_active
+    RETURNING id, code
+)
+INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)
+SELECT 
+    it.id AS template_id,
+    (lvl->>'level_order')::INTEGER AS level_order,
+    -- Resolve UOM ID: lookup existing ID by code
+    (SELECT id FROM units_of_measure WHERE code = lvl->>'uom_code' LIMIT 1) AS uom_id,
+    (lvl->>'multiplier')::DECIMAL AS multiplier
+FROM jsonb_array_elements($1::jsonb->'templates') AS t
+JOIN inserted_templates it ON it.code = t->>'template_code'
+CROSS JOIN LATERAL jsonb_array_elements(t->'levels') AS lvl
+ON CONFLICT (template_id, level_order) DO UPDATE
+SET uom_id = EXCLUDED.uom_id,
+    multiplier = EXCLUDED.multiplier
+`
+
+// ================================
+// PIPELINE & LOOKUP QUERIES
+// ================================
+// 2. Extract and insert levels for all templates dynamically
+func (q *Queries) CreateUomPackagingTemplatesPipeline(ctx context.Context, dollar_1 json.RawMessage) error {
+	_, err := q.db.Exec(ctx, createUomPackagingTemplatesPipeline, dollar_1)
+	return err
+}
+
 const deleteProductUOMConversion = `-- name: DeleteProductUOMConversion :exec
 DELETE FROM product_uom_conversions
 WHERE id = $1
@@ -185,6 +226,70 @@ func (q *Queries) GetUnitOfMeasureByCode(ctx context.Context, code string) (Unit
 		&i.Metadata,
 	)
 	return i, err
+}
+
+const getUomPackagingTemplatesByUomID = `-- name: GetUomPackagingTemplatesByUomID :many
+SELECT 
+    t.id AS template_id,
+    t.name AS template_name,
+    t.code AS template_pattern_code,
+    t.is_active AS template_is_active,
+    -- Aggregates the levels in hierarchical order into a clean JSON array
+    jsonb_agg(
+        jsonb_build_object(
+            'level_order', tl.level_order,
+            'multiplier', tl.multiplier,
+            'uom_id', u.id,
+            'uom_code', u.code,
+            'uom_name', u.name,
+            'uom_type', u.uom_type,
+            'decimal_places', u.decimal_places
+        ) ORDER BY tl.level_order
+    ) AS levels
+FROM uom_packaging_templates t
+JOIN uom_packaging_template_levels tl ON t.id = tl.template_id
+JOIN units_of_measure u ON tl.uom_id = u.id
+WHERE t.id IN (
+    -- Subquery: Finds any template ID where the input UOM ID is used
+    SELECT DISTINCT uom_packaging_template_levels.template_id 
+    FROM uom_packaging_template_levels 
+    WHERE uom_packaging_template_levels.uom_id = $1
+)
+GROUP BY t.id, t.name, t.code, t.is_active
+`
+
+type GetUomPackagingTemplatesByUomIDRow struct {
+	TemplateID          int32           `json:"template_id"`
+	TemplateName        string          `json:"template_name"`
+	TemplatePatternCode string          `json:"template_pattern_code"`
+	TemplateIsActive    pgtype.Bool     `json:"template_is_active"`
+	Levels              json.RawMessage `json:"levels"`
+}
+
+func (q *Queries) GetUomPackagingTemplatesByUomID(ctx context.Context, uomID int32) ([]GetUomPackagingTemplatesByUomIDRow, error) {
+	rows, err := q.db.Query(ctx, getUomPackagingTemplatesByUomID, uomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUomPackagingTemplatesByUomIDRow
+	for rows.Next() {
+		var i GetUomPackagingTemplatesByUomIDRow
+		if err := rows.Scan(
+			&i.TemplateID,
+			&i.TemplateName,
+			&i.TemplatePatternCode,
+			&i.TemplateIsActive,
+			&i.Levels,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveUnitsOfMeasure = `-- name: ListActiveUnitsOfMeasure :many

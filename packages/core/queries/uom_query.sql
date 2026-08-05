@@ -86,40 +86,35 @@ WHERE id = $1;
 -- PIPELINE & LOOKUP QUERIES
 -- ================================
 
--- name: CreateUomPackagingTemplatePipeline :one
-WITH new_uom AS (
-    -- 1. Insert the Base UOM from the Left Panel
-    INSERT INTO units_of_measure (code, name, uom_type, decimal_places, is_active)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (code) DO UPDATE 
-    SET name = EXCLUDED.name, uom_type = EXCLUDED.uom_type, decimal_places = EXCLUDED.decimal_places, is_active = EXCLUDED.is_active
-    RETURNING id
-),
-new_template AS (
-    -- 2. Insert the Packaging Template Container
+-- name: CreateUomPackagingTemplatesPipeline :exec
+WITH inserted_templates AS (
+    -- 1. Extract and insert all templates from the templates array
     INSERT INTO uom_packaging_templates (organization_id, name, code, is_active)
-    VALUES ($6, $7, $8, $9)
+    SELECT 
+        ($1::jsonb->>'organization_id')::INTEGER,
+        t->>'template_name',
+        t->>'template_code',
+        COALESCE((t->>'template_active')::BOOLEAN, true)
+    FROM jsonb_array_elements($1::jsonb->'templates') AS t
     ON CONFLICT (code) DO UPDATE 
-    SET name = EXCLUDED.name, is_active = EXCLUDED.is_active
-    RETURNING id
-),
-inserted_levels AS (
-    -- 3. Insert the 3 levels of your pipeline
-    INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)
-    VALUES 
-        -- Tier 1 (Base Level using the new KG ID)
-        ((SELECT id FROM new_template), 1, (SELECT id FROM new_uom), $10),
-        
-        -- Tier 2 (PKT Level - looks up the database ID for PKT)
-        ((SELECT id FROM new_template), 2, (SELECT id FROM units_of_measure WHERE units_of_measure.code = $11 LIMIT 1), $12),
-        
-        -- Tier 3 (CAN Level - looks up the database ID for CAN)
-        ((SELECT id FROM new_template), 3, (SELECT id FROM units_of_measure WHERE units_of_measure.code = $13 LIMIT 1), $14)
-    RETURNING template_id
+    SET name = EXCLUDED.name, 
+        is_active = EXCLUDED.is_active
+    RETURNING id, code
 )
+-- 2. Extract and insert levels for all templates dynamically
+INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)
 SELECT 
-    (SELECT id FROM new_template) AS template_id,
-    (SELECT id FROM new_uom) AS base_uom_id;
+    it.id AS template_id,
+    (lvl->>'level_order')::INTEGER AS level_order,
+    -- Resolve UOM ID: lookup existing ID by code
+    (SELECT id FROM units_of_measure WHERE code = lvl->>'uom_code' LIMIT 1) AS uom_id,
+    (lvl->>'multiplier')::DECIMAL AS multiplier
+FROM jsonb_array_elements($1::jsonb->'templates') AS t
+JOIN inserted_templates it ON it.code = t->>'template_code'
+CROSS JOIN LATERAL jsonb_array_elements(t->'levels') AS lvl
+ON CONFLICT (template_id, level_order) DO UPDATE
+SET uom_id = EXCLUDED.uom_id,
+    multiplier = EXCLUDED.multiplier;
 
 
 
