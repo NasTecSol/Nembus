@@ -162,16 +162,21 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	}
 	defer tx.Rollback(ctx)
 
+	// Disable foreign key constraint checks during sync ingestion so entities can be inserted out of order
+	_, _ = tx.Exec(ctx, "SET LOCAL session_replication_role = 'replica';")
+
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
-		"cashier_sessions": true, "sales_orders_v2": true, "draft_cart_templates": true,
-		"restaurant_orders": true, "restaurant_order_items": true, "kiosk_sessions": true,
-		"stock_counts": true, "stock_count_lines": true, "waste_logs": true,
+		"cashier_sessions": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
+		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
+		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
 	}
 
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
 	}
+
+	_, _ = tx.Exec(ctx, "SAVEPOINT sp_upsert;")
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s
@@ -181,6 +186,7 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 
 	_, err = tx.Exec(ctx, query, string(payload))
 	if err != nil {
+		_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT sp_upsert;")
 		fallbackQuery := fmt.Sprintf(`
 			INSERT INTO %s
 			SELECT * FROM json_populate_record(NULL::%s, $1::json)
@@ -189,6 +195,8 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		if _, err2 := tx.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
 			return fmt.Errorf("failed to upsert %s: %w (fallback: %v)", entityType, err, err2)
 		}
+	} else {
+		_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT sp_upsert;")
 	}
 
 	return tx.Commit(ctx)

@@ -41,7 +41,7 @@ func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug stri
 	grpcTarget := extractGRPCTarget(cloudURL)
 
 	return &SyncService{
-		ctx:        ctx,
+		ctx:        context.Background(),
 		masterPool: pool,
 		cloudURL:   cloudURL,
 		tenantSlug: slug,
@@ -68,7 +68,7 @@ func (s *SyncService) Start() {
 	// Immediate sync on startup, then periodic loop
 	go s.performSync()
 
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(15 * time.Second)
 	go func() {
 		for {
 			select {
@@ -79,7 +79,12 @@ func (s *SyncService) Start() {
 			}
 		}
 	}()
-	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s)", s.tenantSlug, s.grpcAddr)
+	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s, interval: 15s)", s.tenantSlug, s.grpcAddr)
+}
+
+// SyncNow triggers immediate outbox draining and delta fetch
+func (s *SyncService) SyncNow() {
+	go s.performSync()
 }
 
 func (s *SyncService) performSync() {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -1080,7 +1081,13 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 					ReferenceNumber: pgtype.Text{},
 					Metadata:        order.Metadata,
 				})
-				// Session expected_balance will be updated upon payment processing (POST /api/pos/payments)
+				// Session expected_balance updated for cash payments
+				if strings.EqualFold(strings.TrimSpace(paymentMethod), "cash") && posTxn.CashierSessionID != 0 {
+					_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+						ID:              posTxn.CashierSessionID,
+						ExpectedBalance: order.TotalAmount,
+					})
+				}
 			}
 		}
 	}
