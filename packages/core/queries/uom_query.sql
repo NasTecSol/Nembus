@@ -101,7 +101,7 @@ WITH inserted_templates AS (
     SET code = EXCLUDED.code, 
         is_active = EXCLUDED.is_active,
         uom_id = EXCLUDED.uom_id
-    RETURNING id, code
+    RETURNING id, name
 )
 -- 2. Extract and insert levels for all templates dynamically
 INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)
@@ -112,7 +112,7 @@ SELECT
     (SELECT id FROM units_of_measure WHERE code = lvl->>'uom_code' LIMIT 1) AS uom_id,
     (lvl->>'multiplier')::DECIMAL AS multiplier
 FROM jsonb_array_elements($1::jsonb->'templates') AS t
-JOIN inserted_templates it ON it.code = t->>'template_code'
+JOIN inserted_templates it ON it.name = t->>'template_name'
 CROSS JOIN LATERAL jsonb_array_elements(t->'levels') AS lvl
 ON CONFLICT (template_id, level_order) DO UPDATE
 SET uom_id = EXCLUDED.uom_id,
