@@ -64,6 +64,12 @@ jobs:
             BACKUP_DIR="/tmp/pos-backups-${TIMESTAMP}"
             TARGET_DATABASES_FILE="${BACKUP_DIR}/databases.txt"
 
+            # Validate required environment variables
+            POSTGRES_USER="${POSTGRES_USER:-postgres}"
+            POSTGRES_DB="${POSTGRES_DB:-masterDB}"
+            
+            echo "ℹ️ Using DB User: ${POSTGRES_USER}, Master DB: ${POSTGRES_DB}"
+
             umask 077
             mkdir -p "${BACKUP_DIR}"
 
@@ -73,7 +79,7 @@ jobs:
             printf '%s\n' "${POSTGRES_DB}" > "${TARGET_DATABASES_FILE}"
 
             # Query all active tenant DB names from the tenants table
-            docker exec "${CONTAINER_DB}" psql \
+            if ! docker exec "${CONTAINER_DB}" psql \
               -U "${POSTGRES_USER}" \
               -d "${POSTGRES_DB}" \
               -Atc "
@@ -82,10 +88,13 @@ jobs:
                 FROM tenants
                 WHERE is_active = true
                 ORDER BY 1;
-              " >> "${TARGET_DATABASES_FILE}"
+              " >> "${TARGET_DATABASES_FILE}"; then
+                echo "⚠️ Warning: Failed to query tenants table or tenants table doesn't exist yet. Proceeding with Master DB only."
+            fi
 
-            # Deduplicate database list
-            sort -u "${TARGET_DATABASES_FILE}" -o "${TARGET_DATABASES_FILE}"
+            # Clean and deduplicate database list
+            grep -v '^$' "${TARGET_DATABASES_FILE}" | sort -u > "${TARGET_DATABASES_FILE}.tmp"
+            mv "${TARGET_DATABASES_FILE}.tmp" "${TARGET_DATABASES_FILE}"
 
             echo "Target Databases Selected:"
             sed 's/^/  - /' "${TARGET_DATABASES_FILE}"
@@ -100,11 +109,14 @@ jobs:
 
               echo "Backing up: ${DB_NAME}"
 
-              docker exec "${CONTAINER_DB}" pg_dump \
+              if ! docker exec "${CONTAINER_DB}" pg_dump \
                 -U "${POSTGRES_USER}" \
                 -d "${DB_NAME}" \
                 -F c \
-                -f "${CONTAINER_BACKUP}"
+                -f "${CONTAINER_BACKUP}"; then
+                  echo "❌ pg_dump failed for database: ${DB_NAME}"
+                  exit 1
+              fi
 
               docker cp "${CONTAINER_DB}:${CONTAINER_BACKUP}" "${HOST_BACKUP}"
               docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
@@ -124,8 +136,9 @@ jobs:
             docker pull "${DEPLOY_IMAGE}"
 
             # Detect Docker network used by the postgres container
-            DOCKER_NET=$(docker inspect "${CONTAINER_DB}" --format '{{json .NetworkSettings.Networks}}' | grep -o '"[^"]*"' | head -n 1 | tr -d '"')
+            DOCKER_NET=$(docker inspect "${CONTAINER_DB}" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | head -n 1)
             [ -z "${DOCKER_NET}" ] && DOCKER_NET="bridge"
+            echo "ℹ️ Using Docker Network: ${DOCKER_NET}"
 
             echo "⚡ 4. Running migrations database by database (One-by-One)..."
 
@@ -138,7 +151,11 @@ jobs:
               echo "🚀 Running migrations on database: ${DB_NAME}..."
 
               # Form DB connection string inside Docker network
-              TARGET_DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
+              if [ -n "${POSTGRES_PASSWORD}" ]; then
+                TARGET_DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
+              else
+                TARGET_DB_URL="postgresql://${POSTGRES_USER}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
+              fi
 
               # Run goose migration container for this specific DB
               if ! docker run --rm \
