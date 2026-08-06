@@ -34,8 +34,8 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_REPOSITORY }}:dev
-            ${{ env.IMAGE_REPOSITORY }}:dev-${{ github.sha }}
+            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}
+            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
 
       - name: Backup, Migrate and Deploy on EC2
         uses: appleboy/ssh-action@v1.2.0
@@ -49,97 +49,52 @@ jobs:
 
             cd /opt/apps/pos
 
+            # 1. Load Postgres & App Environment Variables
             if [ ! -f .env ]; then
               echo "❌ Missing required file: /opt/apps/pos/.env"
               exit 1
             fi
-
+            
             set -a
             . ./.env
             set +a
 
-            if [ -z "${POSTGRES_USER:-}" ] ||
-               [ -z "${POSTGRES_DB:-}" ] ||
-               [ -z "${MASTER_DB_URL:-}" ]; then
-              echo "❌ POSTGRES_USER, POSTGRES_DB and MASTER_DB_URL are required"
-              exit 1
-            fi
-
             CONTAINER_DB="pos-postgres"
-            TIMESTAMP="$(date +'%Y%m%d_%H%M%S')"
+            TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
             BACKUP_DIR="/tmp/pos-backups-${TIMESTAMP}"
             TARGET_DATABASES_FILE="${BACKUP_DIR}/databases.txt"
 
             umask 077
             mkdir -p "${BACKUP_DIR}"
 
-            echo "🔎 1. Discovering databases targeted by migrations..."
+            echo "🔎 1. Discovering master and tenant databases..."
 
-            UNSUPPORTED_TENANTS="$(
-              docker exec "${CONTAINER_DB}" psql \
-                -U "${POSTGRES_USER}" \
-                -d "${POSTGRES_DB}" \
-                -Atc "
-                  SELECT count(*)
-                  FROM tenants
-                  WHERE is_active = true
-                    AND split_part(
-                      split_part(db_conn_str, '@', 2),
-                      '/',
-                      1
-                    ) <> 'postgres:5432';
-                "
-            )"
-
-            if [ "${UNSUPPORTED_TENANTS}" != "0" ]; then
-              echo "❌ One or more active tenant databases are outside pos-postgres."
-              echo "   Automatic backup and restore cannot safely continue."
-              exit 1
-            fi
-
+            # Write Master DB first
             printf '%s\n' "${POSTGRES_DB}" > "${TARGET_DATABASES_FILE}"
 
+            # Query all active tenant DB names from the tenants table
             docker exec "${CONTAINER_DB}" psql \
               -U "${POSTGRES_USER}" \
               -d "${POSTGRES_DB}" \
               -Atc "
                 SELECT DISTINCT
-                  split_part(
-                    split_part(db_conn_str, '/', 4),
-                    '?',
-                    1
-                  )
+                  split_part(split_part(db_conn_str, '/', 4), '?', 1)
                 FROM tenants
                 WHERE is_active = true
                 ORDER BY 1;
               " >> "${TARGET_DATABASES_FILE}"
 
-            sort -u "${TARGET_DATABASES_FILE}" \
-              > "${TARGET_DATABASES_FILE}.sorted"
+            # Deduplicate database list
+            sort -u "${TARGET_DATABASES_FILE}" -o "${TARGET_DATABASES_FILE}"
 
-            mv "${TARGET_DATABASES_FILE}.sorted" \
-              "${TARGET_DATABASES_FILE}"
-
-            echo "Databases selected:"
+            echo "Target Databases Selected:"
             sed 's/^/  - /' "${TARGET_DATABASES_FILE}"
 
-            while IFS= read -r DB_NAME; do
-              case "${DB_NAME}" in
-                ""|*[!A-Za-z0-9_-]*)
-                  echo "❌ Unsafe database name: ${DB_NAME}"
-                  exit 1
-                  ;;
-              esac
-
-              docker exec "${CONTAINER_DB}" psql \
-                -U "${POSTGRES_USER}" \
-                -d "${DB_NAME}" \
-                -Atc "SELECT 1;" > /dev/null
-            done < "${TARGET_DATABASES_FILE}"
-
-            echo "📦 2. Backing up all targeted databases..."
+            echo "📦 2. Creating individual backups for all target databases..."
 
             while IFS= read -r DB_NAME; do
+              [ -z "${DB_NAME}" ] && continue
+              
               CONTAINER_BACKUP="/tmp/${DB_NAME}_${TIMESTAMP}.dump"
               HOST_BACKUP="${BACKUP_DIR}/${DB_NAME}.dump"
 
@@ -151,90 +106,66 @@ jobs:
                 -F c \
                 -f "${CONTAINER_BACKUP}"
 
-              docker cp \
-                "${CONTAINER_DB}:${CONTAINER_BACKUP}" \
-                "${HOST_BACKUP}"
-
-              docker exec "${CONTAINER_DB}" \
-                rm -f "${CONTAINER_BACKUP}"
+              docker cp "${CONTAINER_DB}:${CONTAINER_BACKUP}" "${HOST_BACKUP}"
+              docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
 
               if [ ! -s "${HOST_BACKUP}" ]; then
-                echo "❌ Backup is empty or missing: ${HOST_BACKUP}"
+                echo "❌ Backup failed or empty for database: ${DB_NAME}"
                 exit 1
               fi
             done < "${TARGET_DATABASES_FILE}"
 
-            echo "✅ All database backups completed."
+            echo "✅ All pre-migration backups completed successfully!"
 
-            echo "🚀 3. Pulling the immutable POS API image..."
-
-            echo "${{ secrets.GHCR_PAT }}" |
-              docker login ghcr.io \
-                -u "${{ secrets.GHCR_USER }}" \
-                --password-stdin
-
-            DEPLOY_IMAGE="${{ env.IMAGE_REPOSITORY }}:dev-${{ github.sha }}"
-            COMPOSE_IMAGE="${{ env.IMAGE_REPOSITORY }}:dev"
-
+            echo "🚀 3. Pulling latest POS API container image..."
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            
+            DEPLOY_IMAGE="ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}"
             docker pull "${DEPLOY_IMAGE}"
-            docker tag "${DEPLOY_IMAGE}" "${COMPOSE_IMAGE}"
 
-            echo "Validating migration artifacts in ${DEPLOY_IMAGE}..."
+            # Detect Docker network used by the postgres container
+            DOCKER_NET=$(docker inspect "${CONTAINER_DB}" --format '{{json .NetworkSettings.Networks}}' | grep -o '"[^"]*"' | head -n 1 | tr -d '"')
+            [ -z "${DOCKER_NET}" ] && DOCKER_NET="bridge"
 
-            docker run --rm \
-              --entrypoint sh \
-              "${DEPLOY_IMAGE}" \
-              -ec '
-                test -x /app/server
-                test -x /app/migrate-tenants
-                test -x /usr/local/bin/goose
-                test -f /app/migrations/000001_init_schema.sql
-                /usr/local/bin/goose -version
-              '
+            echo "⚡ 4. Running migrations database by database (One-by-One)..."
 
-            echo "✅ Migration artifacts verified."
+            MIGRATION_FAILED=0
 
-            echo "⚡ 4. Running master and tenant migrations..."
+            while IFS= read -r DB_NAME; do
+              [ -z "${DB_NAME}" ] && continue
+              
+              echo "--------------------------------------------------"
+              echo "🚀 Running migrations on database: ${DB_NAME}..."
 
-            if ! docker compose run --rm --no-deps pos-api sh -ec '
-              echo "Running master database migrations..."
+              # Form DB connection string inside Docker network
+              TARGET_DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
 
-              /usr/local/bin/goose \
-                -dir /app/migrations \
-                postgres \
-                "$MASTER_DB_URL" \
-                up
+              # Run goose migration container for this specific DB
+              if ! docker run --rm \
+                --network "${DOCKER_NET}" \
+                -e GOOSE_DRIVER=postgres \
+                -e GOOSE_DBSTRING="${TARGET_DB_URL}" \
+                "${DEPLOY_IMAGE}" \
+                /usr/local/bin/goose -dir /app/migrations up; then
 
-              echo "Running active tenant database migrations..."
+                echo "❌ Migration FAILED for database: ${DB_NAME}"
+                echo "🔄 Restoring ${DB_NAME} to pre-migration state..."
 
-              /app/migrate-tenants \
-                -dir /app/migrations
-            '; then
-              echo "❌ Migration failed. Restoring all databases..."
-
-              # Stop the existing API container during database restoration.
-              docker compose stop pos-api || true
-
-              while IFS= read -r DB_NAME; do
                 HOST_BACKUP="${BACKUP_DIR}/${DB_NAME}.dump"
                 CONTAINER_BACKUP="/tmp/restore_${DB_NAME}_${TIMESTAMP}.dump"
 
-                echo "Restoring: ${DB_NAME}"
-
+                # Terminate active DB connections before restore
                 docker exec "${CONTAINER_DB}" psql \
                   -U "${POSTGRES_USER}" \
                   -d postgres \
-                  -v ON_ERROR_STOP=1 \
                   -c "
                     SELECT pg_terminate_backend(pid)
                     FROM pg_stat_activity
                     WHERE datname = '${DB_NAME}'
                       AND pid <> pg_backend_pid();
-                  "
+                  " || true
 
-                docker cp \
-                  "${HOST_BACKUP}" \
-                  "${CONTAINER_DB}:${CONTAINER_BACKUP}"
+                docker cp "${HOST_BACKUP}" "${CONTAINER_DB}:${CONTAINER_BACKUP}"
 
                 docker exec "${CONTAINER_DB}" pg_restore \
                   -U "${POSTGRES_USER}" \
@@ -245,34 +176,28 @@ jobs:
                   --no-privileges \
                   --exit-on-error \
                   --single-transaction \
-                  -v \
-                  "${CONTAINER_BACKUP}"
+                  -v "${CONTAINER_BACKUP}"
 
-                docker exec "${CONTAINER_DB}" \
-                  rm -f "${CONTAINER_BACKUP}"
+                docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
+                echo "✅ Database '${DB_NAME}' successfully restored!"
 
-                echo "✅ Restored: ${DB_NAME}"
-              done < "${TARGET_DATABASES_FILE}"
+                MIGRATION_FAILED=1
+                break # Stop migration loop
+              fi
 
-              echo "Restarting the previous POS API container..."
-              docker compose start pos-api
+              echo "✅ Migration successful for database: ${DB_NAME}"
+            done < "${TARGET_DATABASES_FILE}"
 
+            if [ "${MIGRATION_FAILED}" -eq 1 ]; then
+              echo "❌ Migration pipeline aborted due to failure."
               rm -rf "${BACKUP_DIR}"
-
-              echo "✅ All databases restored to their pre-migration state."
-              echo "✅ Previous POS API container restarted."
               exit 1
             fi
 
-            echo "🎉 5. Migrations successful. Deploying POS API..."
-
-            docker compose up \
-              -d \
-              --no-deps \
-              --pull never \
-              pos-api
-
+            echo "🎉 5. All database migrations succeeded! Restarting POS API..."
+            
+            docker compose up -d --no-deps pos-api
             docker image prune -f
             rm -rf "${BACKUP_DIR}"
-
-            echo "🚀 Deployment and migrations completed successfully!"
+            
+            echo "🚀 Deployment & One-by-One Tenant Migrations Completed Successfully!"
