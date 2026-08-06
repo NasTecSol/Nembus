@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,22 +22,22 @@ RETURNING id, store_id, menu_category_id, product_id, recipe_id, name, short_nam
 `
 
 type CreateMenuItemParams struct {
-	StoreID            int32          `json:"store_id"`
-	MenuCategoryID     int32          `json:"menu_category_id"`
-	ProductID          pgtype.Int4    `json:"product_id"`
-	RecipeID           pgtype.Int4    `json:"recipe_id"`
-	Name               string         `json:"name"`
-	ShortName          pgtype.Text    `json:"short_name"`
-	Description        pgtype.Text    `json:"description"`
-	ImageUrl           pgtype.Text    `json:"image_url"`
-	BasePrice          pgtype.Numeric `json:"base_price"`
-	CostPrice          pgtype.Numeric `json:"cost_price"`
-	PreparationTimeMin pgtype.Int4    `json:"preparation_time_min"`
-	TaxCategoryID      pgtype.Int4    `json:"tax_category_id"`
-	IsAvailable        pgtype.Bool    `json:"is_available"`
-	IsActive           pgtype.Bool    `json:"is_active"`
-	DisplayOrder       pgtype.Int4    `json:"display_order"`
-	Metadata           []byte         `json:"metadata"`
+	StoreID            int32           `json:"store_id"`
+	MenuCategoryID     int32           `json:"menu_category_id"`
+	ProductID          pgtype.Int4     `json:"product_id"`
+	RecipeID           pgtype.Int4     `json:"recipe_id"`
+	Name               string          `json:"name"`
+	ShortName          pgtype.Text     `json:"short_name"`
+	Description        pgtype.Text     `json:"description"`
+	ImageUrl           pgtype.Text     `json:"image_url"`
+	BasePrice          pgtype.Numeric  `json:"base_price"`
+	CostPrice          pgtype.Numeric  `json:"cost_price"`
+	PreparationTimeMin pgtype.Int4     `json:"preparation_time_min"`
+	TaxCategoryID      pgtype.Int4     `json:"tax_category_id"`
+	IsAvailable        pgtype.Bool     `json:"is_available"`
+	IsActive           pgtype.Bool     `json:"is_active"`
+	DisplayOrder       pgtype.Int4     `json:"display_order"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error) {
@@ -243,22 +244,22 @@ RETURNING id, store_id, menu_category_id, product_id, recipe_id, name, short_nam
 `
 
 type UpdateMenuItemParams struct {
-	ID                 int32          `json:"id"`
-	MenuCategoryID     int32          `json:"menu_category_id"`
-	ProductID          pgtype.Int4    `json:"product_id"`
-	RecipeID           pgtype.Int4    `json:"recipe_id"`
-	Name               string         `json:"name"`
-	ShortName          pgtype.Text    `json:"short_name"`
-	Description        pgtype.Text    `json:"description"`
-	ImageUrl           pgtype.Text    `json:"image_url"`
-	BasePrice          pgtype.Numeric `json:"base_price"`
-	CostPrice          pgtype.Numeric `json:"cost_price"`
-	PreparationTimeMin pgtype.Int4    `json:"preparation_time_min"`
-	TaxCategoryID      pgtype.Int4    `json:"tax_category_id"`
-	IsAvailable        pgtype.Bool    `json:"is_available"`
-	IsActive           pgtype.Bool    `json:"is_active"`
-	DisplayOrder       pgtype.Int4    `json:"display_order"`
-	Metadata           []byte         `json:"metadata"`
+	ID                 int32           `json:"id"`
+	MenuCategoryID     int32           `json:"menu_category_id"`
+	ProductID          pgtype.Int4     `json:"product_id"`
+	RecipeID           pgtype.Int4     `json:"recipe_id"`
+	Name               string          `json:"name"`
+	ShortName          pgtype.Text     `json:"short_name"`
+	Description        pgtype.Text     `json:"description"`
+	ImageUrl           pgtype.Text     `json:"image_url"`
+	BasePrice          pgtype.Numeric  `json:"base_price"`
+	CostPrice          pgtype.Numeric  `json:"cost_price"`
+	PreparationTimeMin pgtype.Int4     `json:"preparation_time_min"`
+	TaxCategoryID      pgtype.Int4     `json:"tax_category_id"`
+	IsAvailable        pgtype.Bool     `json:"is_available"`
+	IsActive           pgtype.Bool     `json:"is_active"`
+	DisplayOrder       pgtype.Int4     `json:"display_order"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error) {

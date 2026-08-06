@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -26,13 +27,13 @@ INSERT INTO storage_locations (
 `
 
 type CreateStorageLocationParams struct {
-	StoreID          int32       `json:"store_id"`
-	Code             string      `json:"code"`
-	Name             string      `json:"name"`
-	LocationType     pgtype.Text `json:"location_type"`
-	ParentLocationID pgtype.Int4 `json:"parent_location_id"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
+	StoreID          int32           `json:"store_id"`
+	Code             string          `json:"code"`
+	Name             string          `json:"name"`
+	LocationType     pgtype.Text     `json:"location_type"`
+	ParentLocationID pgtype.Int4     `json:"parent_location_id"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateStorageLocation(ctx context.Context, arg CreateStorageLocationParams) (StorageLocation, error) {
@@ -345,12 +346,12 @@ RETURNING id, store_id, code, name, location_type, parent_location_id, is_active
 `
 
 type UpdateStorageLocationParams struct {
-	ID               int32       `json:"id"`
-	Name             string      `json:"name"`
-	LocationType     pgtype.Text `json:"location_type"`
-	ParentLocationID pgtype.Int4 `json:"parent_location_id"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
+	ID               int32           `json:"id"`
+	Name             string          `json:"name"`
+	LocationType     pgtype.Text     `json:"location_type"`
+	ParentLocationID pgtype.Int4     `json:"parent_location_id"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateStorageLocation(ctx context.Context, arg UpdateStorageLocationParams) (StorageLocation, error) {

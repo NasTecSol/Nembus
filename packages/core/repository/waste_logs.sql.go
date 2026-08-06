@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -34,7 +35,7 @@ type CreateWasteLogParams struct {
 	LoggedBy    pgtype.Int4      `json:"logged_by"`
 	OrderID     pgtype.Int4      `json:"order_id"`
 	WastedAt    pgtype.Timestamp `json:"wasted_at"`
-	Metadata    []byte           `json:"metadata"`
+	Metadata    json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) CreateWasteLog(ctx context.Context, arg CreateWasteLogParams) (WasteLog, error) {
@@ -194,7 +195,7 @@ type UpdateWasteLogParams struct {
 	LoggedBy    pgtype.Int4      `json:"logged_by"`
 	OrderID     pgtype.Int4      `json:"order_id"`
 	WastedAt    pgtype.Timestamp `json:"wasted_at"`
-	Metadata    []byte           `json:"metadata"`
+	Metadata    json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) UpdateWasteLog(ctx context.Context, arg UpdateWasteLogParams) (WasteLog, error) {

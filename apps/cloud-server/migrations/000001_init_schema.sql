@@ -369,11 +369,13 @@ CREATE TABLE units_of_measure (
 CREATE TABLE uom_packaging_templates (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    uom_id INTEGER NOT NULL REFERENCES units_of_measure(id),
     name VARCHAR(255) NOT NULL, -- e.g., 'Beverage Standard Pattern'
-    code VARCHAR(50) UNIQUE NOT NULL, -- e.g., '1-24-12'
+    code VARCHAR(50) NOT NULL, -- e.g., '1-24-12'
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (uom_id, code)
 );
 
 -- Pattern Levels Table
@@ -3031,25 +3033,25 @@ LEFT JOIN tax_categories        tc           ON p.tax_category_id = tc.id
 LEFT JOIN product_prices pp_retail
     ON p.id = pp_retail.product_id
     AND pp_retail.product_variant_id IS NULL
-    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
+    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL' AND is_active = true LIMIT 1)
     AND pp_retail.is_active = true
 -- Retail price: variant (FIX 9.2 / 9.3)
 LEFT JOIN product_prices pp_retail_v
     ON p.id = pp_retail_v.product_id
     AND pp_retail_v.product_variant_id = pv.id
-    AND pp_retail_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
+    AND pp_retail_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL' AND is_active = true LIMIT 1)
     AND pp_retail_v.is_active = true
 -- Promo price: base product
 LEFT JOIN product_prices pp_promo
     ON p.id = pp_promo.product_id
     AND pp_promo.product_variant_id IS NULL
-    AND pp_promo.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true LIMIT 1)
+    AND pp_promo.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO' AND is_active = true LIMIT 1)
     AND pp_promo.is_active = true
 -- Promo price: variant
 LEFT JOIN product_prices pp_promo_v
     ON p.id = pp_promo_v.product_id
     AND pp_promo_v.product_variant_id = pv.id
-    AND pp_promo_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true LIMIT 1)
+    AND pp_promo_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO' AND is_active = true LIMIT 1)
     AND pp_promo_v.is_active = true
 WHERE p.is_active = true
   AND p.is_sellable = true
@@ -3937,7 +3939,7 @@ JOIN products p                 ON ri.product_id = p.id
 LEFT JOIN product_variants pv   ON ri.product_variant_id = pv.id
 LEFT JOIN units_of_measure uom  ON ri.uom_id = uom.id
 LEFT JOIN product_prices pp     ON p.id = pp.product_id
-    AND pp.price_list_id        = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
+    AND pp.price_list_id        = (SELECT id FROM price_lists WHERE code = 'RETAIL' AND is_active = true LIMIT 1)
     AND pp.is_active            = true
 WHERE r.is_active = true;
 

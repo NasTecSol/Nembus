@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -28,15 +29,15 @@ INSERT INTO price_lists (
 `
 
 type CreatePriceListParams struct {
-	Name          string      `json:"name"`
-	Code          string      `json:"code"`
-	PriceListType pgtype.Text `json:"price_list_type"`
-	CurrencyCode  pgtype.Text `json:"currency_code"`
-	ValidFrom     pgtype.Date `json:"valid_from"`
-	ValidTo       pgtype.Date `json:"valid_to"`
-	IsDefault     pgtype.Bool `json:"is_default"`
-	IsActive      pgtype.Bool `json:"is_active"`
-	Metadata      []byte      `json:"metadata"`
+	Name          string          `json:"name"`
+	Code          string          `json:"code"`
+	PriceListType pgtype.Text     `json:"price_list_type"`
+	CurrencyCode  pgtype.Text     `json:"currency_code"`
+	ValidFrom     pgtype.Date     `json:"valid_from"`
+	ValidTo       pgtype.Date     `json:"valid_to"`
+	IsDefault     pgtype.Bool     `json:"is_default"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreatePriceList(ctx context.Context, arg CreatePriceListParams) (PriceList, error) {
@@ -331,15 +332,15 @@ RETURNING id, name, code, price_list_type, currency_code, valid_from, valid_to, 
 `
 
 type UpdatePriceListParams struct {
-	ID            int32       `json:"id"`
-	Name          string      `json:"name"`
-	PriceListType pgtype.Text `json:"price_list_type"`
-	CurrencyCode  pgtype.Text `json:"currency_code"`
-	ValidFrom     pgtype.Date `json:"valid_from"`
-	ValidTo       pgtype.Date `json:"valid_to"`
-	IsDefault     pgtype.Bool `json:"is_default"`
-	IsActive      pgtype.Bool `json:"is_active"`
-	Metadata      []byte      `json:"metadata"`
+	ID            int32           `json:"id"`
+	Name          string          `json:"name"`
+	PriceListType pgtype.Text     `json:"price_list_type"`
+	CurrencyCode  pgtype.Text     `json:"currency_code"`
+	ValidFrom     pgtype.Date     `json:"valid_from"`
+	ValidTo       pgtype.Date     `json:"valid_to"`
+	IsDefault     pgtype.Bool     `json:"is_default"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdatePriceList(ctx context.Context, arg UpdatePriceListParams) (PriceList, error) {

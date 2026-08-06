@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -25,12 +26,12 @@ INSERT INTO pos_terminals (
 `
 
 type CreatePOSTerminalParams struct {
-	StoreID      int32       `json:"store_id"`
-	TerminalCode string      `json:"terminal_code"`
-	TerminalName pgtype.Text `json:"terminal_name"`
-	DeviceID     pgtype.Text `json:"device_id"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	Metadata     []byte      `json:"metadata"`
+	StoreID      int32           `json:"store_id"`
+	TerminalCode string          `json:"terminal_code"`
+	TerminalName pgtype.Text     `json:"terminal_name"`
+	DeviceID     pgtype.Text     `json:"device_id"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreatePOSTerminal(ctx context.Context, arg CreatePOSTerminalParams) (PosTerminal, error) {
@@ -264,11 +265,11 @@ RETURNING id, store_id, terminal_code, terminal_name, device_id, is_active, meta
 `
 
 type UpdatePOSTerminalParams struct {
-	ID           int32       `json:"id"`
-	TerminalName pgtype.Text `json:"terminal_name"`
-	DeviceID     pgtype.Text `json:"device_id"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	Metadata     []byte      `json:"metadata"`
+	ID           int32           `json:"id"`
+	TerminalName pgtype.Text     `json:"terminal_name"`
+	DeviceID     pgtype.Text     `json:"device_id"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdatePOSTerminal(ctx context.Context, arg UpdatePOSTerminalParams) (PosTerminal, error) {

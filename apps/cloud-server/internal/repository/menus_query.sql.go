@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -28,15 +29,15 @@ INSERT INTO menus (
 `
 
 type CreateMenuParams struct {
-	ModuleID     int32       `json:"module_id"`
-	ParentMenuID pgtype.Int4 `json:"parent_menu_id"`
-	Name         string      `json:"name"`
-	Code         string      `json:"code"`
-	RoutePath    pgtype.Text `json:"route_path"`
-	Icon         pgtype.Text `json:"icon"`
-	DisplayOrder pgtype.Int4 `json:"display_order"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	Metadata     []byte      `json:"metadata"`
+	ModuleID     int32           `json:"module_id"`
+	ParentMenuID pgtype.Int4     `json:"parent_menu_id"`
+	Name         string          `json:"name"`
+	Code         string          `json:"code"`
+	RoutePath    pgtype.Text     `json:"route_path"`
+	Icon         pgtype.Text     `json:"icon"`
+	DisplayOrder pgtype.Int4     `json:"display_order"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error) {
@@ -336,14 +337,14 @@ RETURNING id, module_id, parent_menu_id, name, code, route_path, icon, display_o
 `
 
 type UpdateMenuParams struct {
-	ID           int32       `json:"id"`
-	ParentMenuID pgtype.Int4 `json:"parent_menu_id"`
-	Name         string      `json:"name"`
-	RoutePath    pgtype.Text `json:"route_path"`
-	Icon         pgtype.Text `json:"icon"`
-	DisplayOrder pgtype.Int4 `json:"display_order"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	Metadata     []byte      `json:"metadata"`
+	ID           int32           `json:"id"`
+	ParentMenuID pgtype.Int4     `json:"parent_menu_id"`
+	Name         string          `json:"name"`
+	RoutePath    pgtype.Text     `json:"route_path"`
+	Icon         pgtype.Text     `json:"icon"`
+	DisplayOrder pgtype.Int4     `json:"display_order"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error) {

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -51,7 +52,7 @@ type CreatePosTransactionParams struct {
 	TotalAmount       pgtype.Numeric   `json:"total_amount"`
 	TotalCost         pgtype.Numeric   `json:"total_cost"`
 	Status            pgtype.Text      `json:"status"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 }
 
 type CreatePosTransactionRow struct {
@@ -99,21 +100,21 @@ INSERT INTO pos_transaction_lines (
 `
 
 type CreatePosTransactionLineParams struct {
-	TransactionID    int32          `json:"transaction_id"`
-	LineNumber       pgtype.Int4    `json:"line_number"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	SerialNumber     pgtype.Text    `json:"serial_number"`
-	BatchNumber      pgtype.Text    `json:"batch_number"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	UnitPrice        pgtype.Numeric `json:"unit_price"`
-	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
-	TaxAmount        pgtype.Numeric `json:"tax_amount"`
-	Subtotal         pgtype.Numeric `json:"subtotal"`
-	LineTotal        pgtype.Numeric `json:"line_total"`
-	CostPrice        pgtype.Numeric `json:"cost_price"`
-	Metadata         []byte         `json:"metadata"`
+	TransactionID    int32           `json:"transaction_id"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	SerialNumber     pgtype.Text     `json:"serial_number"`
+	BatchNumber      pgtype.Text     `json:"batch_number"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	Subtotal         pgtype.Numeric  `json:"subtotal"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	CostPrice        pgtype.Numeric  `json:"cost_price"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTransactionLineParams) error {
@@ -411,7 +412,7 @@ type ListPosTransactionsByCashierSessionRow struct {
 	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
 	VoidedBy          pgtype.Int4      `json:"voided_by"`
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	CashierName       interface{}      `json:"cashier_name"`
 	TerminalName      pgtype.Text      `json:"terminal_name"`

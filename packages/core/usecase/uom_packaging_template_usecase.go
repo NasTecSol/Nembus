@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -14,6 +15,7 @@ import (
 type UomPackagingTemplateOutput struct {
 	ID             int32                             `json:"id"`
 	OrganizationID int32                             `json:"organization_id"`
+	UomID          int32                             `json:"uom_id"`
 	Name           string                            `json:"name"`
 	Code           string                            `json:"code"`
 	IsActive       pgtype.Bool                       `json:"is_active"`
@@ -35,6 +37,7 @@ func templateToOutput(t repository.UomPackagingTemplate) UomPackagingTemplateOut
 	return UomPackagingTemplateOutput{
 		ID:             t.ID,
 		OrganizationID: t.OrganizationID,
+		UomID:          t.UomID,
 		Name:           t.Name,
 		Code:           t.Code,
 		IsActive:       t.IsActive,
@@ -76,6 +79,7 @@ func (uc *UomPackagingTemplateUseCase) repoOrErr() *repository.Response {
 func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 	ctx context.Context,
 	organizationID int32,
+	uomID int32,
 	name string,
 	code string,
 	isActive bool,
@@ -92,6 +96,7 @@ func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 
 	row, err := uc.repo.CreateUomPackagingTemplate(ctx, repository.CreateUomPackagingTemplateParams{
 		OrganizationID: organizationID,
+		UomID:          uomID,
 		Name:           name,
 		Code:           code,
 		IsActive:       active,
@@ -337,23 +342,25 @@ func (uc *UomPackagingTemplateUseCase) GetTemplateWithLevels(ctx context.Context
 
 // CreateUomPackagingTemplatePipelineInput represents parameters for creating UOM template pipeline.
 type CreateUomPackagingTemplatePipelineInput struct {
-	BaseUomCode      string `json:"base_uom_code"`
-	BaseUomName      string `json:"base_uom_name"`
-	BaseUomType      string `json:"base_uom_type"`
-	BaseUomDecimals  int32  `json:"base_uom_decimals"`
-	BaseUomActive    bool   `json:"base_uom_active"`
-	OrganizationID   int32  `json:"organization_id"`
-	TemplateName     string `json:"template_name"`
-	TemplateCode     string `json:"template_code"`
-	TemplateActive   bool   `json:"template_active"`
-	Tier1Multiplier  string `json:"tier1_multiplier"`
-	Tier2UomCode     string `json:"tier2_uom_code"`
-	Tier2Multiplier  string `json:"tier2_multiplier"`
-	Tier3UomCode     string `json:"tier3_uom_code"`
-	Tier3Multiplier  string `json:"tier3_multiplier"`
+	OrganizationID int32                   `json:"organization_id"`
+	UomID          int32                   `json:"uom_id"`
+	Templates      []TemplatePayloadInput  `json:"templates"`
 }
 
-// CreateTemplatePipeline creates a new template pipeline using a single query.
+type TemplatePayloadInput struct {
+	TemplateName   string              `json:"template_name"`
+	TemplateCode   string              `json:"template_code"`
+	TemplateActive bool                `json:"template_active"`
+	Levels         []LevelPayloadInput `json:"levels"`
+}
+
+type LevelPayloadInput struct {
+	LevelOrder int32  `json:"level_order"`
+	UomCode    string `json:"uom_code"`
+	Multiplier string `json:"multiplier"`
+}
+
+// CreateTemplatePipeline creates new templates and levels, then fetches them by the base UOM ID.
 func (uc *UomPackagingTemplateUseCase) CreateTemplatePipeline(
 	ctx context.Context,
 	input CreateUomPackagingTemplatePipelineInput,
@@ -362,38 +369,22 @@ func (uc *UomPackagingTemplateUseCase) CreateTemplatePipeline(
 		return resp
 	}
 
-	var t1Mult, t2Mult, t3Mult pgtype.Numeric
-	if err := t1Mult.Scan(input.Tier1Multiplier); err != nil {
-		return utils.NewResponse(utils.CodeBadReq, "invalid tier 1 multiplier: "+err.Error(), nil)
-	}
-	if err := t2Mult.Scan(input.Tier2Multiplier); err != nil {
-		return utils.NewResponse(utils.CodeBadReq, "invalid tier 2 multiplier: "+err.Error(), nil)
-	}
-	if err := t3Mult.Scan(input.Tier3Multiplier); err != nil {
-		return utils.NewResponse(utils.CodeBadReq, "invalid tier 3 multiplier: "+err.Error(), nil)
+	payloadBytes, err := json.Marshal(input)
+	if err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "failed to marshal payload: "+err.Error(), nil)
 	}
 
-	row, err := uc.repo.CreateUomPackagingTemplatePipeline(ctx, repository.CreateUomPackagingTemplatePipelineParams{
-		Code:           input.BaseUomCode,
-		Name:           input.BaseUomName,
-		UomType:        pgtype.Text{String: input.BaseUomType, Valid: input.BaseUomType != ""},
-		DecimalPlaces:  pgtype.Int4{Int32: input.BaseUomDecimals, Valid: true},
-		IsActive:       pgtype.Bool{Bool: input.BaseUomActive, Valid: true},
-		OrganizationID: input.OrganizationID,
-		Name_2:         input.TemplateName,
-		Code_2:         input.TemplateCode,
-		IsActive_2:     pgtype.Bool{Bool: input.TemplateActive, Valid: true},
-		Multiplier:     t1Mult,
-		Code_3:         input.Tier2UomCode,
-		Multiplier_2:   t2Mult,
-		Code_4:         input.Tier3UomCode,
-		Multiplier_3:   t3Mult,
-	})
+	err = uc.repo.CreateUomPackagingTemplatesPipeline(ctx, payloadBytes)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "packaging template pipeline created successfully", row)
+	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, input.UomID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "packaging templates pipeline created successfully", rows)
 }
 
 // GetTemplatesByUomID retrieves packaging templates that utilize a specific UOM ID.

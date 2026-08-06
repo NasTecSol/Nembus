@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -59,7 +60,7 @@ type CreateStockMovementParams struct {
 	Status           pgtype.Text      `json:"status"`
 	CostPerUnit      pgtype.Numeric   `json:"cost_per_unit"`
 	TotalValue       pgtype.Numeric   `json:"total_value"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
@@ -855,7 +856,7 @@ type ListStockMovementsByProductWithDateRangeRow struct {
 	Status           pgtype.Text      `json:"status"`
 	CostPerUnit      pgtype.Numeric   `json:"cost_per_unit"`
 	TotalValue       pgtype.Numeric   `json:"total_value"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	FromStoreName    pgtype.Text      `json:"from_store_name"`
 	ToStoreName      pgtype.Text      `json:"to_store_name"`

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -23,12 +24,12 @@ INSERT INTO pos_payments (
 `
 
 type AddPaymentToTransactionParams struct {
-	TransactionID   int32          `json:"transaction_id"`
-	PaymentMethod   string         `json:"payment_method"`
-	PaymentGateway  pgtype.Text    `json:"payment_gateway"`
-	Amount          pgtype.Numeric `json:"amount"`
-	ReferenceNumber pgtype.Text    `json:"reference_number"`
-	Metadata        []byte         `json:"metadata"`
+	TransactionID   int32           `json:"transaction_id"`
+	PaymentMethod   string          `json:"payment_method"`
+	PaymentGateway  pgtype.Text     `json:"payment_gateway"`
+	Amount          pgtype.Numeric  `json:"amount"`
+	ReferenceNumber pgtype.Text     `json:"reference_number"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 // AddPaymentToTransaction stores a payment for a POS transaction.
@@ -60,13 +61,13 @@ RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_r
 `
 
 type CreatePosPaymentParams struct {
-	TransactionID    int32          `json:"transaction_id"`
-	PaymentMethod    string         `json:"payment_method"`
-	PaymentGateway   pgtype.Text    `json:"payment_gateway"`
-	Amount           pgtype.Numeric `json:"amount"`
-	PaymentReference pgtype.Text    `json:"payment_reference"`
-	ReferenceNumber  pgtype.Text    `json:"reference_number"`
-	Metadata         []byte         `json:"metadata"`
+	TransactionID    int32           `json:"transaction_id"`
+	PaymentMethod    string          `json:"payment_method"`
+	PaymentGateway   pgtype.Text     `json:"payment_gateway"`
+	Amount           pgtype.Numeric  `json:"amount"`
+	PaymentReference pgtype.Text     `json:"payment_reference"`
+	ReferenceNumber  pgtype.Text     `json:"reference_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreatePosPayment(ctx context.Context, arg CreatePosPaymentParams) (PosPayment, error) {
@@ -251,13 +252,13 @@ RETURNING id, transaction_id, payment_method, payment_gateway, amount, payment_r
 `
 
 type UpdatePosPaymentParams struct {
-	ID               int32          `json:"id"`
-	PaymentMethod    string         `json:"payment_method"`
-	PaymentGateway   pgtype.Text    `json:"payment_gateway"`
-	Amount           pgtype.Numeric `json:"amount"`
-	PaymentReference pgtype.Text    `json:"payment_reference"`
-	ReferenceNumber  pgtype.Text    `json:"reference_number"`
-	Metadata         []byte         `json:"metadata"`
+	ID               int32           `json:"id"`
+	PaymentMethod    string          `json:"payment_method"`
+	PaymentGateway   pgtype.Text     `json:"payment_gateway"`
+	Amount           pgtype.Numeric  `json:"amount"`
+	PaymentReference pgtype.Text     `json:"payment_reference"`
+	ReferenceNumber  pgtype.Text     `json:"reference_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdatePosPayment(ctx context.Context, arg UpdatePosPaymentParams) (PosPayment, error) {

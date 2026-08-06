@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -32,19 +33,19 @@ INSERT INTO loyalty_redemption_rules (
 `
 
 type CreateLoyaltyRuleParams struct {
-	OrganizationID       int32          `json:"organization_id"`
-	RuleName             string         `json:"rule_name"`
-	PointsEarningRate    pgtype.Numeric `json:"points_earning_rate"`
-	PointsRedemptionRate pgtype.Numeric `json:"points_redemption_rate"`
-	MinPointsToRedeem    pgtype.Numeric `json:"min_points_to_redeem"`
-	MaxPointsPerTxn      pgtype.Numeric `json:"max_points_per_txn"`
-	MaxRedemptionPercent pgtype.Numeric `json:"max_redemption_percent"`
-	EligibleProductTypes []string       `json:"eligible_product_types"`
-	ExpiryDays           pgtype.Int4    `json:"expiry_days"`
-	IsActive             pgtype.Bool    `json:"is_active"`
-	ValidFrom            pgtype.Date    `json:"valid_from"`
-	ValidTo              pgtype.Date    `json:"valid_to"`
-	Metadata             []byte         `json:"metadata"`
+	OrganizationID       int32           `json:"organization_id"`
+	RuleName             string          `json:"rule_name"`
+	PointsEarningRate    pgtype.Numeric  `json:"points_earning_rate"`
+	PointsRedemptionRate pgtype.Numeric  `json:"points_redemption_rate"`
+	MinPointsToRedeem    pgtype.Numeric  `json:"min_points_to_redeem"`
+	MaxPointsPerTxn      pgtype.Numeric  `json:"max_points_per_txn"`
+	MaxRedemptionPercent pgtype.Numeric  `json:"max_redemption_percent"`
+	EligibleProductTypes []string        `json:"eligible_product_types"`
+	ExpiryDays           pgtype.Int4     `json:"expiry_days"`
+	IsActive             pgtype.Bool     `json:"is_active"`
+	ValidFrom            pgtype.Date     `json:"valid_from"`
+	ValidTo              pgtype.Date     `json:"valid_to"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateLoyaltyRule(ctx context.Context, arg CreateLoyaltyRuleParams) (LoyaltyRedemptionRule, error) {
@@ -258,17 +259,17 @@ RETURNING id, organization_id, rule_name, points_earning_rate, points_redemption
 `
 
 type UpdateLoyaltyRuleParams struct {
-	ID                   int32          `json:"id"`
-	RuleName             string         `json:"rule_name"`
-	PointsEarningRate    pgtype.Numeric `json:"points_earning_rate"`
-	PointsRedemptionRate pgtype.Numeric `json:"points_redemption_rate"`
-	MinPointsToRedeem    pgtype.Numeric `json:"min_points_to_redeem"`
-	MaxPointsPerTxn      pgtype.Numeric `json:"max_points_per_txn"`
-	MaxRedemptionPercent pgtype.Numeric `json:"max_redemption_percent"`
-	IsActive             pgtype.Bool    `json:"is_active"`
-	ValidFrom            pgtype.Date    `json:"valid_from"`
-	ValidTo              pgtype.Date    `json:"valid_to"`
-	Metadata             []byte         `json:"metadata"`
+	ID                   int32           `json:"id"`
+	RuleName             string          `json:"rule_name"`
+	PointsEarningRate    pgtype.Numeric  `json:"points_earning_rate"`
+	PointsRedemptionRate pgtype.Numeric  `json:"points_redemption_rate"`
+	MinPointsToRedeem    pgtype.Numeric  `json:"min_points_to_redeem"`
+	MaxPointsPerTxn      pgtype.Numeric  `json:"max_points_per_txn"`
+	MaxRedemptionPercent pgtype.Numeric  `json:"max_redemption_percent"`
+	IsActive             pgtype.Bool     `json:"is_active"`
+	ValidFrom            pgtype.Date     `json:"valid_from"`
+	ValidTo              pgtype.Date     `json:"valid_to"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateLoyaltyRule(ctx context.Context, arg UpdateLoyaltyRuleParams) (LoyaltyRedemptionRule, error) {

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -69,18 +70,18 @@ INSERT INTO customers (
 `
 
 type CreateCustomerParams struct {
-	OrganizationID     int32          `json:"organization_id"`
-	CustomerCode       string         `json:"customer_code"`
-	Name               string         `json:"name"`
-	Email              pgtype.Text    `json:"email"`
-	Phone              pgtype.Text    `json:"phone"`
-	Address            pgtype.Text    `json:"address"`
-	CustomerType       pgtype.Text    `json:"customer_type"`
-	PriceListID        pgtype.Int4    `json:"price_list_id"`
-	CreditLimit        pgtype.Numeric `json:"credit_limit"`
-	OutstandingBalance pgtype.Numeric `json:"outstanding_balance"`
-	IsActive           pgtype.Bool    `json:"is_active"`
-	Metadata           []byte         `json:"metadata"`
+	OrganizationID     int32           `json:"organization_id"`
+	CustomerCode       string          `json:"customer_code"`
+	Name               string          `json:"name"`
+	Email              pgtype.Text     `json:"email"`
+	Phone              pgtype.Text     `json:"phone"`
+	Address            pgtype.Text     `json:"address"`
+	CustomerType       pgtype.Text     `json:"customer_type"`
+	PriceListID        pgtype.Int4     `json:"price_list_id"`
+	CreditLimit        pgtype.Numeric  `json:"credit_limit"`
+	OutstandingBalance pgtype.Numeric  `json:"outstanding_balance"`
+	IsActive           pgtype.Bool     `json:"is_active"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error) {
@@ -528,16 +529,16 @@ RETURNING id, organization_id, customer_code, name, email, phone, address, custo
 `
 
 type UpdateCustomerParams struct {
-	ID           int32          `json:"id"`
-	Name         string         `json:"name"`
-	Email        pgtype.Text    `json:"email"`
-	Phone        pgtype.Text    `json:"phone"`
-	Address      pgtype.Text    `json:"address"`
-	CustomerType pgtype.Text    `json:"customer_type"`
-	PriceListID  pgtype.Int4    `json:"price_list_id"`
-	CreditLimit  pgtype.Numeric `json:"credit_limit"`
-	IsActive     pgtype.Bool    `json:"is_active"`
-	Metadata     []byte         `json:"metadata"`
+	ID           int32           `json:"id"`
+	Name         string          `json:"name"`
+	Email        pgtype.Text     `json:"email"`
+	Phone        pgtype.Text     `json:"phone"`
+	Address      pgtype.Text     `json:"address"`
+	CustomerType pgtype.Text     `json:"customer_type"`
+	PriceListID  pgtype.Int4     `json:"price_list_id"`
+	CreditLimit  pgtype.Numeric  `json:"credit_limit"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (Customer, error) {

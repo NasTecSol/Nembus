@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -38,24 +39,24 @@ INSERT INTO inventory_analytics (
 `
 
 type CreateInventoryAnalyticsParams struct {
-	OrganizationID     int32          `json:"organization_id"`
-	StoreID            pgtype.Int4    `json:"store_id"`
-	ProductID          pgtype.Int4    `json:"product_id"`
-	CategoryID         pgtype.Int4    `json:"category_id"`
-	Date               pgtype.Date    `json:"date"`
-	Month              pgtype.Int4    `json:"month"`
-	Quarter            pgtype.Int4    `json:"quarter"`
-	Year               pgtype.Int4    `json:"year"`
-	OpeningStock       pgtype.Numeric `json:"opening_stock"`
-	ClosingStock       pgtype.Numeric `json:"closing_stock"`
-	AverageStock       pgtype.Numeric `json:"average_stock"`
-	StockValue         pgtype.Numeric `json:"stock_value"`
-	Receipts           pgtype.Numeric `json:"receipts"`
-	Issues             pgtype.Numeric `json:"issues"`
-	Adjustments        pgtype.Numeric `json:"adjustments"`
-	StockTurnoverRatio pgtype.Numeric `json:"stock_turnover_ratio"`
-	DaysOfInventory    pgtype.Numeric `json:"days_of_inventory"`
-	Metadata           []byte         `json:"metadata"`
+	OrganizationID     int32           `json:"organization_id"`
+	StoreID            pgtype.Int4     `json:"store_id"`
+	ProductID          pgtype.Int4     `json:"product_id"`
+	CategoryID         pgtype.Int4     `json:"category_id"`
+	Date               pgtype.Date     `json:"date"`
+	Month              pgtype.Int4     `json:"month"`
+	Quarter            pgtype.Int4     `json:"quarter"`
+	Year               pgtype.Int4     `json:"year"`
+	OpeningStock       pgtype.Numeric  `json:"opening_stock"`
+	ClosingStock       pgtype.Numeric  `json:"closing_stock"`
+	AverageStock       pgtype.Numeric  `json:"average_stock"`
+	StockValue         pgtype.Numeric  `json:"stock_value"`
+	Receipts           pgtype.Numeric  `json:"receipts"`
+	Issues             pgtype.Numeric  `json:"issues"`
+	Adjustments        pgtype.Numeric  `json:"adjustments"`
+	StockTurnoverRatio pgtype.Numeric  `json:"stock_turnover_ratio"`
+	DaysOfInventory    pgtype.Numeric  `json:"days_of_inventory"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateInventoryAnalytics(ctx context.Context, arg CreateInventoryAnalyticsParams) (InventoryAnalytic, error) {
@@ -617,17 +618,17 @@ RETURNING id, organization_id, store_id, product_id, category_id, date, month, q
 `
 
 type UpdateInventoryAnalyticsParams struct {
-	ID                 int32          `json:"id"`
-	OpeningStock       pgtype.Numeric `json:"opening_stock"`
-	ClosingStock       pgtype.Numeric `json:"closing_stock"`
-	AverageStock       pgtype.Numeric `json:"average_stock"`
-	StockValue         pgtype.Numeric `json:"stock_value"`
-	Receipts           pgtype.Numeric `json:"receipts"`
-	Issues             pgtype.Numeric `json:"issues"`
-	Adjustments        pgtype.Numeric `json:"adjustments"`
-	StockTurnoverRatio pgtype.Numeric `json:"stock_turnover_ratio"`
-	DaysOfInventory    pgtype.Numeric `json:"days_of_inventory"`
-	Metadata           []byte         `json:"metadata"`
+	ID                 int32           `json:"id"`
+	OpeningStock       pgtype.Numeric  `json:"opening_stock"`
+	ClosingStock       pgtype.Numeric  `json:"closing_stock"`
+	AverageStock       pgtype.Numeric  `json:"average_stock"`
+	StockValue         pgtype.Numeric  `json:"stock_value"`
+	Receipts           pgtype.Numeric  `json:"receipts"`
+	Issues             pgtype.Numeric  `json:"issues"`
+	Adjustments        pgtype.Numeric  `json:"adjustments"`
+	StockTurnoverRatio pgtype.Numeric  `json:"stock_turnover_ratio"`
+	DaysOfInventory    pgtype.Numeric  `json:"days_of_inventory"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateInventoryAnalytics(ctx context.Context, arg UpdateInventoryAnalyticsParams) (InventoryAnalytic, error) {
