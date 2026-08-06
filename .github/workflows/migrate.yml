@@ -9,6 +9,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/nastecsol/pos-api
+
 jobs:
   deploy-backup-migrate:
     runs-on: ubuntu-latest
@@ -33,8 +36,9 @@ jobs:
           tags: |
             ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
             ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}
+            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
 
-      - name: SSH to EC2 Server and Perform Backup, Migration & Deploy
+      - name: Backup, Migrate and Deploy on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -43,70 +47,193 @@ jobs:
           port: 22
           script: |
             set -e
+
             cd /opt/apps/pos
 
-            # 1. Load PostgreSQL credentials from the environment file.
-            if [ -f .env ]; then
-              set -a
-              . ./.env
-              set +a
-            else
+            # 1. Load Postgres & App Environment Variables
+            if [ ! -f .env ]; then
               echo "❌ Missing required file: /opt/apps/pos/.env"
               exit 1
             fi
+            
+            set -a
+            . ./.env
+            set +a
 
-            if [ -z "${POSTGRES_USER:-}" ] || [ -z "${POSTGRES_DB:-}" ]; then
-              echo "❌ POSTGRES_USER and POSTGRES_DB must be defined in .env"
-              exit 1
-            fi
-
-            TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
-            BACKUP_FILE="/tmp/backup_pos_${TIMESTAMP}.dump"
             CONTAINER_DB="pos-postgres"
-            CONTAINER_API="pos-api"
+            TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+            BACKUP_DIR="/tmp/pos-backups-${TIMESTAMP}"
+            TARGET_DATABASES_FILE="${BACKUP_DIR}/databases.txt"
 
-            echo "📦 1. Taking database backup from '${CONTAINER_DB}'..."
-            docker exec "${CONTAINER_DB}" pg_dump \
+            # Validate required environment variables
+            POSTGRES_USER="${POSTGRES_USER:-postgres}"
+            POSTGRES_DB="${POSTGRES_DB:-masterDB}"
+            
+            echo "ℹ️ Using DB User: ${POSTGRES_USER}, Master DB: ${POSTGRES_DB}"
+
+            umask 077
+            mkdir -p "${BACKUP_DIR}"
+
+            echo "🔎 1. Discovering master and tenant databases..."
+
+            # Write Master DB first
+            printf '%s\n' "${POSTGRES_DB}" > "${TARGET_DATABASES_FILE}"
+
+            # Query all active tenant DB names from the tenants table
+            if ! docker exec "${CONTAINER_DB}" psql \
               -U "${POSTGRES_USER}" \
               -d "${POSTGRES_DB}" \
-              -F c \
-              -f /tmp/backup.dump
-            docker cp "${CONTAINER_DB}:/tmp/backup.dump" "${BACKUP_FILE}"
-            docker exec "${CONTAINER_DB}" rm -f /tmp/backup.dump
-            echo "✅ Backup stored at: ${BACKUP_FILE}"
+              -Atc "
+                SELECT DISTINCT
+                  split_part(split_part(db_conn_str, '/', 4), '?', 1)
+                FROM tenants
+                WHERE is_active = true
+                ORDER BY 1;
+              " >> "${TARGET_DATABASES_FILE}"; then
+                echo "⚠️ Warning: Failed to query tenants table or tenants table doesn't exist yet. Proceeding with Master DB only."
+            fi
 
-            echo "🚀 2. Pulling latest POS API image..."
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io \
-              -u "${{ secrets.GHCR_USER }}" \
-              --password-stdin
-            docker compose pull pos-api
+            # Clean and deduplicate database list
+            grep -v '^$' "${TARGET_DATABASES_FILE}" | sort -u > "${TARGET_DATABASES_FILE}.tmp"
+            mv "${TARGET_DATABASES_FILE}.tmp" "${TARGET_DATABASES_FILE}"
 
-            echo "⚡ 3. Running migrations..."
-            if ! docker compose run --rm pos-api make migrate-all; then
-              echo "❌ Migration failed. Restoring database from: ${BACKUP_FILE}"
+            echo "Target Databases Selected:"
+            sed 's/^/  - /' "${TARGET_DATABASES_FILE}"
 
-              # Stop the API to avoid active application connections during restore.
-              docker compose stop pos-api || true
+            echo "📦 2. Creating individual backups for all target databases..."
 
-              docker cp "${BACKUP_FILE}" "${CONTAINER_DB}:/tmp/backup.dump"
-              docker exec "${CONTAINER_DB}" pg_restore \
+            while IFS= read -r DB_NAME; do
+              [ -z "${DB_NAME}" ] && continue
+              
+              CONTAINER_BACKUP="/tmp/${DB_NAME}_${TIMESTAMP}.dump"
+              HOST_BACKUP="${BACKUP_DIR}/${DB_NAME}.dump"
+
+              echo "Backing up: ${DB_NAME}"
+
+              if ! docker exec "${CONTAINER_DB}" pg_dump \
                 -U "${POSTGRES_USER}" \
-                -d "${POSTGRES_DB}" \
-                --clean \
-                --if-exists \
-                --no-owner \
-                --no-privileges \
-                -v \
-                /tmp/backup.dump
-              docker exec "${CONTAINER_DB}" rm -f /tmp/backup.dump
+                -d "${DB_NAME}" \
+                -F c \
+                -f "${CONTAINER_BACKUP}"; then
+                  echo "❌ pg_dump failed for database: ${DB_NAME}"
+                  exit 1
+              fi
 
-              echo "✅ Database restored to its pre-migration state."
-              rm -f "${BACKUP_FILE}"
+              docker cp "${CONTAINER_DB}:${CONTAINER_BACKUP}" "${HOST_BACKUP}"
+              docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
+
+              if [ ! -s "${HOST_BACKUP}" ]; then
+                echo "❌ Backup failed or empty for database: ${DB_NAME}"
+                exit 1
+              fi
+            done < "${TARGET_DATABASES_FILE}"
+
+            echo "✅ All pre-migration backups completed successfully!"
+
+            echo "🚀 3. Pulling latest POS API container image..."
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            
+            DEPLOY_IMAGE="ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}"
+            docker pull "${DEPLOY_IMAGE}"
+
+            # Detect Docker network used by the postgres container
+            DOCKER_NET=$(docker inspect "${CONTAINER_DB}" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | head -n 1)
+            [ -z "${DOCKER_NET}" ] && DOCKER_NET="bridge"
+            echo "ℹ️ Using Docker Network: ${DOCKER_NET}"
+
+            echo "⚡ 4. Running migrations database by database (One-by-One)..."
+
+            MIGRATION_FAILED=0
+
+            while IFS= read -r DB_NAME; do
+              [ -z "${DB_NAME}" ] && continue
+              
+              echo "--------------------------------------------------"
+              echo "🚀 Running migrations on database: ${DB_NAME}..."
+
+              # ── Clean DB Before Migration ─────────────────────────────────────────
+              # Drop and recreate the public schema to ensure a clean slate before
+              # running migrations. This avoids "relation already exists" conflicts.
+              # NOTE: All existing data in this DB is wiped. The backup taken above
+              #       in step 2 can be used to restore manually if needed.
+              echo "🧹 Cleaning database schema for: ${DB_NAME}..."
+              docker exec "${CONTAINER_DB}" psql \
+                -U "${POSTGRES_USER}" \
+                -d "${DB_NAME}" \
+                -c "
+                  DROP SCHEMA public CASCADE;
+                  CREATE SCHEMA public;
+                  GRANT ALL ON SCHEMA public TO ${POSTGRES_USER};
+                  GRANT ALL ON SCHEMA public TO public;
+                "
+              echo "✅ Schema cleaned for: ${DB_NAME}"
+              # ─────────────────────────────────────────────────────────────────────
+
+              # Form DB connection string inside Docker network
+              if [ -n "${POSTGRES_PASSWORD}" ]; then
+                TARGET_DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
+              else
+                TARGET_DB_URL="postgresql://${POSTGRES_USER}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
+              fi
+
+              # Run goose migration container for this specific DB
+              if ! docker run --rm \
+                --network "${DOCKER_NET}" \
+                -e GOOSE_DRIVER=postgres \
+                -e GOOSE_DBSTRING="${TARGET_DB_URL}" \
+                "${DEPLOY_IMAGE}" \
+                /usr/local/bin/goose -dir /app/migrations up; then
+
+                echo "❌ Migration FAILED for database: ${DB_NAME}"
+                echo "🔄 Restoring ${DB_NAME} to pre-migration state..."
+
+                HOST_BACKUP="${BACKUP_DIR}/${DB_NAME}.dump"
+                CONTAINER_BACKUP="/tmp/restore_${DB_NAME}_${TIMESTAMP}.dump"
+
+                # Terminate active DB connections before restore
+                docker exec "${CONTAINER_DB}" psql \
+                  -U "${POSTGRES_USER}" \
+                  -d postgres \
+                  -c "
+                    SELECT pg_terminate_backend(pid)
+                    FROM pg_stat_activity
+                    WHERE datname = '${DB_NAME}'
+                      AND pid <> pg_backend_pid();
+                  " || true
+
+                docker cp "${HOST_BACKUP}" "${CONTAINER_DB}:${CONTAINER_BACKUP}"
+
+                docker exec "${CONTAINER_DB}" pg_restore \
+                  -U "${POSTGRES_USER}" \
+                  -d "${DB_NAME}" \
+                  --clean \
+                  --if-exists \
+                  --no-owner \
+                  --no-privileges \
+                  --exit-on-error \
+                  --single-transaction \
+                  -v "${CONTAINER_BACKUP}"
+
+                docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
+                echo "✅ Database '${DB_NAME}' successfully restored!"
+
+                MIGRATION_FAILED=1
+                break # Stop migration loop
+              fi
+
+              echo "✅ Migration successful for database: ${DB_NAME}"
+            done < "${TARGET_DATABASES_FILE}"
+
+            if [ "${MIGRATION_FAILED}" -eq 1 ]; then
+              echo "❌ Migration pipeline aborted due to failure."
+              rm -rf "${BACKUP_DIR}"
               exit 1
             fi
 
-            echo "🎉 4. Migration successful. Restarting POS API service..."
+            echo "🎉 5. All database migrations succeeded! Restarting POS API..."
+            
             docker compose up -d --no-deps pos-api
             docker image prune -f
-            rm -f "${BACKUP_FILE}"
-            echo "🚀 Deployment and migrations completed successfully!"
+            rm -rf "${BACKUP_DIR}"
+            
+            echo "🚀 Deployment & One-by-One Tenant Migrations Completed Successfully!"

@@ -13,6 +13,7 @@ import (
 )
 
 const createPromotion = `-- name: CreatePromotion :one
+
 INSERT INTO promotions (
     organization_id, code, name, description, promotion_type,
     action_metadata, valid_from, valid_to, schedule_json,
@@ -47,7 +48,7 @@ type CreatePromotionParams struct {
 	IsActive          pgtype.Bool      `json:"is_active"`
 	StoreIds          []int32          `json:"store_ids"`
 	CreatedBy         pgtype.Int4      `json:"created_by"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
