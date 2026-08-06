@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -39,12 +40,12 @@ INSERT INTO product_barcodes (
 `
 
 type CreateProductBarcodeParams struct {
-	ProductID        int32       `json:"product_id"`
-	ProductVariantID pgtype.Int4 `json:"product_variant_id"`
-	Barcode          string      `json:"barcode"`
-	BarcodeType      pgtype.Text `json:"barcode_type"`
-	IsPrimary        pgtype.Bool `json:"is_primary"`
-	Metadata         []byte      `json:"metadata"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Barcode          string          `json:"barcode"`
+	BarcodeType      pgtype.Text     `json:"barcode_type"`
+	IsPrimary        pgtype.Bool     `json:"is_primary"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateProductBarcode(ctx context.Context, arg CreateProductBarcodeParams) (ProductBarcode, error) {
@@ -137,7 +138,7 @@ type GetProductByBarcodeRow struct {
 	Barcode          string           `json:"barcode"`
 	BarcodeType      pgtype.Text      `json:"barcode_type"`
 	IsPrimary        pgtype.Bool      `json:"is_primary"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	ProductName      string           `json:"product_name"`
 	Sku              string           `json:"sku"`
@@ -292,10 +293,10 @@ RETURNING id, product_id, product_variant_id, barcode, barcode_type, is_primary,
 `
 
 type UpdateProductBarcodeParams struct {
-	ID          int32       `json:"id"`
-	BarcodeType pgtype.Text `json:"barcode_type"`
-	IsPrimary   pgtype.Bool `json:"is_primary"`
-	Metadata    []byte      `json:"metadata"`
+	ID          int32           `json:"id"`
+	BarcodeType pgtype.Text     `json:"barcode_type"`
+	IsPrimary   pgtype.Bool     `json:"is_primary"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateProductBarcode(ctx context.Context, arg UpdateProductBarcodeParams) (ProductBarcode, error) {

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -25,12 +26,12 @@ INSERT INTO tax_categories (
 `
 
 type CreateTaxCategoryParams struct {
-	Name        string         `json:"name"`
-	Code        string         `json:"code"`
-	TaxRate     pgtype.Numeric `json:"tax_rate"`
-	IsInclusive pgtype.Bool    `json:"is_inclusive"`
-	IsActive    pgtype.Bool    `json:"is_active"`
-	Metadata    []byte         `json:"metadata"`
+	Name        string          `json:"name"`
+	Code        string          `json:"code"`
+	TaxRate     pgtype.Numeric  `json:"tax_rate"`
+	IsInclusive pgtype.Bool     `json:"is_inclusive"`
+	IsActive    pgtype.Bool     `json:"is_active"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateTaxCategory(ctx context.Context, arg CreateTaxCategoryParams) (TaxCategory, error) {
@@ -218,12 +219,12 @@ RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_a
 `
 
 type UpdateTaxCategoryParams struct {
-	ID          int32          `json:"id"`
-	Name        string         `json:"name"`
-	TaxRate     pgtype.Numeric `json:"tax_rate"`
-	IsInclusive pgtype.Bool    `json:"is_inclusive"`
-	IsActive    pgtype.Bool    `json:"is_active"`
-	Metadata    []byte         `json:"metadata"`
+	ID          int32           `json:"id"`
+	Name        string          `json:"name"`
+	TaxRate     pgtype.Numeric  `json:"tax_rate"`
+	IsInclusive pgtype.Bool     `json:"is_inclusive"`
+	IsActive    pgtype.Bool     `json:"is_active"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateTaxCategory(ctx context.Context, arg UpdateTaxCategoryParams) (TaxCategory, error) {

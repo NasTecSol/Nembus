@@ -24,10 +24,10 @@ INSERT INTO role_ui_customizations (
 `
 
 type CreateRoleUICustomizationParams struct {
-	RoleID            int32  `json:"role_id"`
-	SubmenuID         int32  `json:"submenu_id"`
-	CustomizationData []byte `json:"customization_data"`
-	Metadata          []byte `json:"metadata"`
+	RoleID            int32           `json:"role_id"`
+	SubmenuID         int32           `json:"submenu_id"`
+	CustomizationData json.RawMessage `json:"customization_data"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateRoleUICustomization(ctx context.Context, arg CreateRoleUICustomizationParams) (RoleUiCustomization, error) {
@@ -67,7 +67,7 @@ type CreateUISettingParams struct {
 	SettingKey   string          `json:"setting_key"`
 	SettingValue json.RawMessage `json:"setting_value"`
 	Description  pgtype.Text     `json:"description"`
-	Metadata     []byte          `json:"metadata"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateUISetting(ctx context.Context, arg CreateUISettingParams) (UiSetting, error) {
@@ -384,9 +384,9 @@ RETURNING id, role_id, submenu_id, customization_data, metadata, created_at, upd
 `
 
 type UpdateRoleUICustomizationParams struct {
-	ID                int32  `json:"id"`
-	CustomizationData []byte `json:"customization_data"`
-	Metadata          []byte `json:"metadata"`
+	ID                int32           `json:"id"`
+	CustomizationData json.RawMessage `json:"customization_data"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateRoleUICustomization(ctx context.Context, arg UpdateRoleUICustomizationParams) (RoleUiCustomization, error) {
@@ -418,7 +418,7 @@ type UpdateUISettingParams struct {
 	ID           int32           `json:"id"`
 	SettingValue json.RawMessage `json:"setting_value"`
 	Description  pgtype.Text     `json:"description"`
-	Metadata     []byte          `json:"metadata"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateUISetting(ctx context.Context, arg UpdateUISettingParams) (UiSetting, error) {

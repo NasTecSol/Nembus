@@ -20,3 +20,6 @@ sql:
               type: "Time"
           - db_type: "jsonb"
             go_type: "encoding/json.RawMessage"
+          - db_type: "jsonb"
+            go_type: "encoding/json.RawMessage"
+            nullable: true

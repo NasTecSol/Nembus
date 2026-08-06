@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,17 +22,17 @@ RETURNING id, store_id, parent_category_id, name, code, description, category_le
 `
 
 type CreateMenuCategoryParams struct {
-	StoreID          int32       `json:"store_id"`
-	ParentCategoryID pgtype.Int4 `json:"parent_category_id"`
-	Name             string      `json:"name"`
-	Code             string      `json:"code"`
-	Description      pgtype.Text `json:"description"`
-	CategoryLevel    pgtype.Int4 `json:"category_level"`
-	DisplayOrder     pgtype.Int4 `json:"display_order"`
-	Icon             pgtype.Text `json:"icon"`
-	ImageUrl         pgtype.Text `json:"image_url"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
+	StoreID          int32           `json:"store_id"`
+	ParentCategoryID pgtype.Int4     `json:"parent_category_id"`
+	Name             string          `json:"name"`
+	Code             string          `json:"code"`
+	Description      pgtype.Text     `json:"description"`
+	CategoryLevel    pgtype.Int4     `json:"category_level"`
+	DisplayOrder     pgtype.Int4     `json:"display_order"`
+	Icon             pgtype.Text     `json:"icon"`
+	ImageUrl         pgtype.Text     `json:"image_url"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateMenuCategory(ctx context.Context, arg CreateMenuCategoryParams) (MenuCategory, error) {
@@ -167,17 +168,17 @@ RETURNING id, store_id, parent_category_id, name, code, description, category_le
 `
 
 type UpdateMenuCategoryParams struct {
-	ID               int32       `json:"id"`
-	ParentCategoryID pgtype.Int4 `json:"parent_category_id"`
-	Name             string      `json:"name"`
-	Code             string      `json:"code"`
-	Description      pgtype.Text `json:"description"`
-	CategoryLevel    pgtype.Int4 `json:"category_level"`
-	DisplayOrder     pgtype.Int4 `json:"display_order"`
-	Icon             pgtype.Text `json:"icon"`
-	ImageUrl         pgtype.Text `json:"image_url"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
+	ID               int32           `json:"id"`
+	ParentCategoryID pgtype.Int4     `json:"parent_category_id"`
+	Name             string          `json:"name"`
+	Code             string          `json:"code"`
+	Description      pgtype.Text     `json:"description"`
+	CategoryLevel    pgtype.Int4     `json:"category_level"`
+	DisplayOrder     pgtype.Int4     `json:"display_order"`
+	Icon             pgtype.Text     `json:"icon"`
+	ImageUrl         pgtype.Text     `json:"image_url"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateMenuCategory(ctx context.Context, arg UpdateMenuCategoryParams) (MenuCategory, error) {

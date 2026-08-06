@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -22,20 +23,20 @@ RETURNING id, order_number, status, total_amount
 `
 
 type CreateSalesOrderHeaderParams struct {
-	OrderNumber    string         `json:"order_number"`
-	OrganizationID int32          `json:"organization_id"`
-	CustomerID     pgtype.Int4    `json:"customer_id"`
-	StoreID        int32          `json:"store_id"`
-	OrderDate      pgtype.Date    `json:"order_date"`
-	DeliveryDate   pgtype.Date    `json:"delivery_date"`
-	PriceListID    pgtype.Int4    `json:"price_list_id"`
-	Status         pgtype.Text    `json:"status"`
-	Subtotal       pgtype.Numeric `json:"subtotal"`
-	TaxAmount      pgtype.Numeric `json:"tax_amount"`
-	DiscountAmount pgtype.Numeric `json:"discount_amount"`
-	TotalAmount    pgtype.Numeric `json:"total_amount"`
-	CreatedBy      pgtype.Int4    `json:"created_by"`
-	Metadata       []byte         `json:"metadata"`
+	OrderNumber    string          `json:"order_number"`
+	OrganizationID int32           `json:"organization_id"`
+	CustomerID     pgtype.Int4     `json:"customer_id"`
+	StoreID        int32           `json:"store_id"`
+	OrderDate      pgtype.Date     `json:"order_date"`
+	DeliveryDate   pgtype.Date     `json:"delivery_date"`
+	PriceListID    pgtype.Int4     `json:"price_list_id"`
+	Status         pgtype.Text     `json:"status"`
+	Subtotal       pgtype.Numeric  `json:"subtotal"`
+	TaxAmount      pgtype.Numeric  `json:"tax_amount"`
+	DiscountAmount pgtype.Numeric  `json:"discount_amount"`
+	TotalAmount    pgtype.Numeric  `json:"total_amount"`
+	CreatedBy      pgtype.Int4     `json:"created_by"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 type CreateSalesOrderHeaderRow struct {
@@ -117,7 +118,7 @@ type GetSalesOrderFullRow struct {
 	TotalAmount      pgtype.Numeric   `json:"total_amount"`
 	PriceListID      pgtype.Int4      `json:"price_list_id"`
 	CreatedBy        pgtype.Int4      `json:"created_by"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	CustomerName     pgtype.Text      `json:"customer_name"`

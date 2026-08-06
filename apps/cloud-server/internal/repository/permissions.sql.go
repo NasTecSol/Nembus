@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,9 +22,9 @@ INSERT INTO menu_permissions (
 `
 
 type AssignPermissionToMenuParams struct {
-	MenuID       int32  `json:"menu_id"`
-	PermissionID int32  `json:"permission_id"`
-	Metadata     []byte `json:"metadata"`
+	MenuID       int32           `json:"menu_id"`
+	PermissionID int32           `json:"permission_id"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -51,9 +52,9 @@ INSERT INTO module_permissions (
 `
 
 type AssignPermissionToModuleParams struct {
-	ModuleID     int32  `json:"module_id"`
-	PermissionID int32  `json:"permission_id"`
-	Metadata     []byte `json:"metadata"`
+	ModuleID     int32           `json:"module_id"`
+	PermissionID int32           `json:"permission_id"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -81,9 +82,9 @@ INSERT INTO submenu_permissions (
 `
 
 type AssignPermissionToSubmenuParams struct {
-	SubmenuID    int32  `json:"submenu_id"`
-	PermissionID int32  `json:"permission_id"`
-	Metadata     []byte `json:"metadata"`
+	SubmenuID    int32           `json:"submenu_id"`
+	PermissionID int32           `json:"permission_id"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -132,10 +133,10 @@ INSERT INTO permissions (
 `
 
 type CreatePermissionParams struct {
-	Name        string      `json:"name"`
-	Code        string      `json:"code"`
-	Description pgtype.Text `json:"description"`
-	Metadata    []byte      `json:"metadata"`
+	Name        string          `json:"name"`
+	Code        string          `json:"code"`
+	Description pgtype.Text     `json:"description"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -284,7 +285,7 @@ type GetRolePermissionsWithScopeRow struct {
 	Name        string           `json:"name"`
 	Code        string           `json:"code"`
 	Description pgtype.Text      `json:"description"`
-	Metadata    []byte           `json:"metadata"`
+	Metadata    json.RawMessage  `json:"metadata"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	Scope       pgtype.Text      `json:"scope"`
 }
@@ -532,7 +533,7 @@ type GetUserPermissionsWithScopeRow struct {
 	Name        string           `json:"name"`
 	Code        string           `json:"code"`
 	Description pgtype.Text      `json:"description"`
-	Metadata    []byte           `json:"metadata"`
+	Metadata    json.RawMessage  `json:"metadata"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	Scope       pgtype.Text      `json:"scope"`
 }
@@ -674,10 +675,10 @@ RETURNING id, name, code, description, metadata, created_at
 `
 
 type UpdatePermissionParams struct {
-	Name        pgtype.Text `json:"name"`
-	Description pgtype.Text `json:"description"`
-	Metadata    []byte      `json:"metadata"`
-	ID          int32       `json:"id"`
+	Name        pgtype.Text     `json:"name"`
+	Description pgtype.Text     `json:"description"`
+	Metadata    json.RawMessage `json:"metadata"`
+	ID          int32           `json:"id"`
 }
 
 func (q *Queries) UpdatePermission(ctx context.Context, arg UpdatePermissionParams) (Permission, error) {

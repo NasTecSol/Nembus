@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -54,7 +55,7 @@ type CreateSalesReturnParams struct {
 	RefundReference       pgtype.Text      `json:"refund_reference"`
 	ApprovedBy            pgtype.Int4      `json:"approved_by"`
 	Notes                 pgtype.Text      `json:"notes"`
-	Metadata              []byte           `json:"metadata"`
+	Metadata              json.RawMessage  `json:"metadata"`
 }
 
 // sales_returns.sql
@@ -126,19 +127,19 @@ RETURNING id, return_id, product_id, product_variant_id, original_line_id, quant
 `
 
 type CreateSalesReturnLineParams struct {
-	ReturnID         int32          `json:"return_id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	OriginalLineID   pgtype.Int4    `json:"original_line_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UnitPrice        pgtype.Numeric `json:"unit_price"`
-	RefundAmount     pgtype.Numeric `json:"refund_amount"`
-	ReturnToStock    pgtype.Bool    `json:"return_to_stock"`
-	SerialNumber     pgtype.Text    `json:"serial_number"`
-	BatchNumber      pgtype.Text    `json:"batch_number"`
-	Condition        pgtype.Text    `json:"condition"`
-	LineNumber       pgtype.Int4    `json:"line_number"`
-	Metadata         []byte         `json:"metadata"`
+	ReturnID         int32           `json:"return_id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	OriginalLineID   pgtype.Int4     `json:"original_line_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	RefundAmount     pgtype.Numeric  `json:"refund_amount"`
+	ReturnToStock    pgtype.Bool     `json:"return_to_stock"`
+	SerialNumber     pgtype.Text     `json:"serial_number"`
+	BatchNumber      pgtype.Text     `json:"batch_number"`
+	Condition        pgtype.Text     `json:"condition"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateSalesReturnLine(ctx context.Context, arg CreateSalesReturnLineParams) (SalesReturnLine, error) {

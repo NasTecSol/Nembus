@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -31,10 +32,10 @@ type CreatePromotionParams struct {
 	Name              string           `json:"name"`
 	Description       pgtype.Text      `json:"description"`
 	PromotionType     string           `json:"promotion_type"`
-	ActionMetadata    []byte           `json:"action_metadata"`
+	ActionMetadata    json.RawMessage  `json:"action_metadata"`
 	ValidFrom         pgtype.Timestamp `json:"valid_from"`
 	ValidTo           pgtype.Timestamp `json:"valid_to"`
-	ScheduleJson      []byte           `json:"schedule_json"`
+	ScheduleJson      json.RawMessage  `json:"schedule_json"`
 	AppliesTo         pgtype.Text      `json:"applies_to"`
 	TargetProductIds  []int32          `json:"target_product_ids"`
 	TargetCategoryIds []int32          `json:"target_category_ids"`
@@ -450,10 +451,10 @@ type UpdatePromotionParams struct {
 	ID                int32            `json:"id"`
 	Name              string           `json:"name"`
 	Description       pgtype.Text      `json:"description"`
-	ActionMetadata    []byte           `json:"action_metadata"`
+	ActionMetadata    json.RawMessage  `json:"action_metadata"`
 	ValidFrom         pgtype.Timestamp `json:"valid_from"`
 	ValidTo           pgtype.Timestamp `json:"valid_to"`
-	ScheduleJson      []byte           `json:"schedule_json"`
+	ScheduleJson      json.RawMessage  `json:"schedule_json"`
 	AppliesTo         pgtype.Text      `json:"applies_to"`
 	TargetProductIds  []int32          `json:"target_product_ids"`
 	TargetCategoryIds []int32          `json:"target_category_ids"`

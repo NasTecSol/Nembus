@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,13 +22,13 @@ RETURNING id, menu_item_id, modifier_name, modifier_type, price_adjustment, is_a
 `
 
 type CreateMenuItemModifierParams struct {
-	MenuItemID      int32          `json:"menu_item_id"`
-	ModifierName    string         `json:"modifier_name"`
-	ModifierType    string         `json:"modifier_type"`
-	PriceAdjustment pgtype.Numeric `json:"price_adjustment"`
-	IsActive        pgtype.Bool    `json:"is_active"`
-	DisplayOrder    pgtype.Int4    `json:"display_order"`
-	Metadata        []byte         `json:"metadata"`
+	MenuItemID      int32           `json:"menu_item_id"`
+	ModifierName    string          `json:"modifier_name"`
+	ModifierType    string          `json:"modifier_type"`
+	PriceAdjustment pgtype.Numeric  `json:"price_adjustment"`
+	IsActive        pgtype.Bool     `json:"is_active"`
+	DisplayOrder    pgtype.Int4     `json:"display_order"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateMenuItemModifier(ctx context.Context, arg CreateMenuItemModifierParams) (MenuItemModifier, error) {
@@ -139,13 +140,13 @@ RETURNING id, menu_item_id, modifier_name, modifier_type, price_adjustment, is_a
 `
 
 type UpdateMenuItemModifierParams struct {
-	ID              int32          `json:"id"`
-	ModifierName    string         `json:"modifier_name"`
-	ModifierType    string         `json:"modifier_type"`
-	PriceAdjustment pgtype.Numeric `json:"price_adjustment"`
-	IsActive        pgtype.Bool    `json:"is_active"`
-	DisplayOrder    pgtype.Int4    `json:"display_order"`
-	Metadata        []byte         `json:"metadata"`
+	ID              int32           `json:"id"`
+	ModifierName    string          `json:"modifier_name"`
+	ModifierType    string          `json:"modifier_type"`
+	PriceAdjustment pgtype.Numeric  `json:"price_adjustment"`
+	IsActive        pgtype.Bool     `json:"is_active"`
+	DisplayOrder    pgtype.Int4     `json:"display_order"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateMenuItemModifier(ctx context.Context, arg UpdateMenuItemModifierParams) (MenuItemModifier, error) {

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -91,13 +92,13 @@ INSERT INTO stock_counts (
 `
 
 type CreateStockCountParams struct {
-	CountNumber   string      `json:"count_number"`
-	StoreID       int32       `json:"store_id"`
-	CountType     pgtype.Text `json:"count_type"`
-	Status        pgtype.Text `json:"status"`
-	ScheduledDate pgtype.Date `json:"scheduled_date"`
-	CountedBy     pgtype.Int4 `json:"counted_by"`
-	Metadata      []byte      `json:"metadata"`
+	CountNumber   string          `json:"count_number"`
+	StoreID       int32           `json:"store_id"`
+	CountType     pgtype.Text     `json:"count_type"`
+	Status        pgtype.Text     `json:"status"`
+	ScheduledDate pgtype.Date     `json:"scheduled_date"`
+	CountedBy     pgtype.Int4     `json:"counted_by"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateStockCount(ctx context.Context, arg CreateStockCountParams) (StockCount, error) {
@@ -160,7 +161,7 @@ type CreateStockCountLineParams struct {
 	BatchNumber       pgtype.Text      `json:"batch_number"`
 	SerialNumber      pgtype.Text      `json:"serial_number"`
 	CountedAt         pgtype.Timestamp `json:"counted_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) CreateStockCountLine(ctx context.Context, arg CreateStockCountLineParams) (StockCountLine, error) {
@@ -535,9 +536,9 @@ RETURNING id, count_number, store_id, storage_location_id, count_type, status, s
 `
 
 type UpdateStockCountParams struct {
-	ID       int32       `json:"id"`
-	Status   pgtype.Text `json:"status"`
-	Metadata []byte      `json:"metadata"`
+	ID       int32           `json:"id"`
+	Status   pgtype.Text     `json:"status"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateStockCount(ctx context.Context, arg UpdateStockCountParams) (StockCount, error) {

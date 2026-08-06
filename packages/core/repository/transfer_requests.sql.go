@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -102,7 +103,7 @@ type CreateTransferRequestParams struct {
 	RequestDate          pgtype.Timestamp `json:"request_date"`
 	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
@@ -275,7 +276,7 @@ type GetTransferRequestWithDetailsRow struct {
 	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
 	ReceivedAt           pgtype.Timestamp `json:"received_at"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	FromStoreName        pgtype.Text      `json:"from_store_name"`
@@ -419,7 +420,7 @@ type ListTransferRequestsByOrganizationRow struct {
 	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
 	ReceivedAt           pgtype.Timestamp `json:"received_at"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	FromStoreName        pgtype.Text      `json:"from_store_name"`
@@ -502,7 +503,7 @@ type ListTransferRequestsByStoreRow struct {
 	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
 	ReceivedAt           pgtype.Timestamp `json:"received_at"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	FromStoreName        pgtype.Text      `json:"from_store_name"`

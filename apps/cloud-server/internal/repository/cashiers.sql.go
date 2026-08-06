@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -38,21 +39,21 @@ func (q *Queries) ActivateCashier(ctx context.Context, id int32) (Cashier, error
 }
 
 type BulkCreatePosTransactionLinesParams struct {
-	TransactionID    int32          `json:"transaction_id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	UnitPrice        pgtype.Numeric `json:"unit_price"`
-	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
-	TaxAmount        pgtype.Numeric `json:"tax_amount"`
-	Subtotal         pgtype.Numeric `json:"subtotal"`
-	LineTotal        pgtype.Numeric `json:"line_total"`
-	CostPrice        pgtype.Numeric `json:"cost_price"`
-	LineNumber       pgtype.Int4    `json:"line_number"`
-	SerialNumber     pgtype.Text    `json:"serial_number"`
-	BatchNumber      pgtype.Text    `json:"batch_number"`
-	Metadata         []byte         `json:"metadata"`
+	TransactionID    int32           `json:"transaction_id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	Subtotal         pgtype.Numeric  `json:"subtotal"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	CostPrice        pgtype.Numeric  `json:"cost_price"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	SerialNumber     pgtype.Text     `json:"serial_number"`
+	BatchNumber      pgtype.Text     `json:"batch_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 const calculateSessionExpectedBalance = `-- name: CalculateSessionExpectedBalance :one
@@ -213,13 +214,13 @@ RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_
 `
 
 type CreateCashierParams struct {
-	UserID        int32          `json:"user_id"`
-	StoreID       int32          `json:"store_id"`
-	CashierCode   string         `json:"cashier_code"`
-	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
-	DiscountLimit pgtype.Numeric `json:"discount_limit"`
-	IsActive      pgtype.Bool    `json:"is_active"`
-	Metadata      []byte         `json:"metadata"`
+	UserID        int32           `json:"user_id"`
+	StoreID       int32           `json:"store_id"`
+	CashierCode   string          `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric  `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric  `json:"discount_limit"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -277,7 +278,7 @@ type CreateCashierSessionParams struct {
 	SessionNumber  string           `json:"session_number"`
 	OpeningTime    pgtype.Timestamp `json:"opening_time"`
 	OpeningBalance pgtype.Numeric   `json:"opening_balance"`
-	Metadata       []byte           `json:"metadata"`
+	Metadata       json.RawMessage  `json:"metadata"`
 }
 
 // Create a new cashier session
@@ -915,7 +916,7 @@ type GetCashierWithUserDetailsRow struct {
 	DrawerLimit   pgtype.Numeric   `json:"drawer_limit"`
 	DiscountLimit pgtype.Numeric   `json:"discount_limit"`
 	IsActive      pgtype.Bool      `json:"is_active"`
-	Metadata      []byte           `json:"metadata"`
+	Metadata      json.RawMessage  `json:"metadata"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
 	Username      string           `json:"username"`
 	FullName      interface{}      `json:"full_name"`
@@ -975,7 +976,7 @@ type GetOpenSessionsForStoreRow struct {
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	Status          pgtype.Text      `json:"status"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     string           `json:"cashier_code"`
@@ -1266,7 +1267,7 @@ type GetSessionsByStatusRow struct {
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	Status          pgtype.Text      `json:"status"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     string           `json:"cashier_code"`
@@ -1425,7 +1426,7 @@ type GetVoidedTransactionsByDateRow struct {
 	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
 	VoidedBy          pgtype.Int4      `json:"voided_by"`
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	CashierCode       string           `json:"cashier_code"`
 	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
@@ -1514,7 +1515,7 @@ type GetVoidedTransactionsBySessionRow struct {
 	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
 	VoidedBy          pgtype.Int4      `json:"voided_by"`
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
 	VoidedByName      interface{}      `json:"voided_by_name"`
@@ -1882,7 +1883,7 @@ type ListCashiersWithUserDetailsRow struct {
 	DrawerLimit   pgtype.Numeric   `json:"drawer_limit"`
 	DiscountLimit pgtype.Numeric   `json:"discount_limit"`
 	IsActive      pgtype.Bool      `json:"is_active"`
-	Metadata      []byte           `json:"metadata"`
+	Metadata      json.RawMessage  `json:"metadata"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
 	Username      string           `json:"username"`
 	FullName      interface{}      `json:"full_name"`
@@ -2030,14 +2031,14 @@ RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_
 `
 
 type UpdateCashierParams struct {
-	ID            int32          `json:"id"`
-	UserID        int32          `json:"user_id"`
-	StoreID       int32          `json:"store_id"`
-	CashierCode   string         `json:"cashier_code"`
-	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
-	DiscountLimit pgtype.Numeric `json:"discount_limit"`
-	IsActive      pgtype.Bool    `json:"is_active"`
-	Metadata      []byte         `json:"metadata"`
+	ID            int32           `json:"id"`
+	UserID        int32           `json:"user_id"`
+	StoreID       int32           `json:"store_id"`
+	CashierCode   string          `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric  `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric  `json:"discount_limit"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -2171,8 +2172,8 @@ RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_
 `
 
 type UpdateCashierMetadataParams struct {
-	ID       int32  `json:"id"`
-	Metadata []byte `json:"metadata"`
+	ID       int32           `json:"id"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // Update cashier metadata

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -27,14 +28,14 @@ INSERT INTO suppliers (
 `
 
 type CreateSupplierParams struct {
-	OrganizationID int32          `json:"organization_id"`
-	Name           string         `json:"name"`
-	Code           string         `json:"code"`
-	SupplierType   pgtype.Text    `json:"supplier_type"`
-	PaymentTerms   pgtype.Text    `json:"payment_terms"`
-	CreditLimit    pgtype.Numeric `json:"credit_limit"`
-	IsActive       pgtype.Bool    `json:"is_active"`
-	Metadata       []byte         `json:"metadata"`
+	OrganizationID int32           `json:"organization_id"`
+	Name           string          `json:"name"`
+	Code           string          `json:"code"`
+	SupplierType   pgtype.Text     `json:"supplier_type"`
+	PaymentTerms   pgtype.Text     `json:"payment_terms"`
+	CreditLimit    pgtype.Numeric  `json:"credit_limit"`
+	IsActive       pgtype.Bool     `json:"is_active"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateSupplier(ctx context.Context, arg CreateSupplierParams) (Supplier, error) {
@@ -386,13 +387,13 @@ RETURNING id, organization_id, code, name, supplier_type, credit_limit, contact_
 `
 
 type UpdateSupplierParams struct {
-	ID           int32          `json:"id"`
-	Name         string         `json:"name"`
-	SupplierType pgtype.Text    `json:"supplier_type"`
-	PaymentTerms pgtype.Text    `json:"payment_terms"`
-	CreditLimit  pgtype.Numeric `json:"credit_limit"`
-	IsActive     pgtype.Bool    `json:"is_active"`
-	Metadata     []byte         `json:"metadata"`
+	ID           int32           `json:"id"`
+	Name         string          `json:"name"`
+	SupplierType pgtype.Text     `json:"supplier_type"`
+	PaymentTerms pgtype.Text     `json:"payment_terms"`
+	CreditLimit  pgtype.Numeric  `json:"credit_limit"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) (Supplier, error) {

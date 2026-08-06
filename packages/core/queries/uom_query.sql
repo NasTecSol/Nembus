@@ -89,16 +89,18 @@ WHERE id = $1;
 -- name: CreateUomPackagingTemplatesPipeline :exec
 WITH inserted_templates AS (
     -- 1. Extract and insert all templates from the templates array
-    INSERT INTO uom_packaging_templates (organization_id, name, code, is_active)
+    INSERT INTO uom_packaging_templates (organization_id, uom_id, name, code, is_active)
     SELECT 
         ($1::jsonb->>'organization_id')::INTEGER,
+        ($1::jsonb->>'uom_id')::INTEGER,
         t->>'template_name',
         t->>'template_code',
         COALESCE((t->>'template_active')::BOOLEAN, true)
     FROM jsonb_array_elements($1::jsonb->'templates') AS t
-    ON CONFLICT (code) DO UPDATE 
+    ON CONFLICT (uom_id, code) DO UPDATE 
     SET name = EXCLUDED.name, 
-        is_active = EXCLUDED.is_active
+        is_active = EXCLUDED.is_active,
+        uom_id = EXCLUDED.uom_id
     RETURNING id, code
 )
 -- 2. Extract and insert levels for all templates dynamically
@@ -139,11 +141,6 @@ SELECT
 FROM uom_packaging_templates t
 JOIN uom_packaging_template_levels tl ON t.id = tl.template_id
 JOIN units_of_measure u ON tl.uom_id = u.id
-WHERE t.id IN (
-    -- Subquery: Finds any template ID where the input UOM ID is used
-    SELECT DISTINCT uom_packaging_template_levels.template_id 
-    FROM uom_packaging_template_levels 
-    WHERE uom_packaging_template_levels.uom_id = $1
-)
+WHERE t.uom_id = $1
 GROUP BY t.id, t.name, t.code, t.is_active;
 
