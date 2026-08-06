@@ -135,6 +135,24 @@ jobs:
               echo "--------------------------------------------------"
               echo "🚀 Running migrations on database: ${DB_NAME}..."
 
+              # ── Clean DB Before Migration ─────────────────────────────────────────
+              # Drop and recreate the public schema to ensure a clean slate before
+              # running migrations. This avoids "relation already exists" conflicts.
+              # NOTE: All existing data in this DB is wiped. The backup taken above
+              #       in step 2 can be used to restore manually if needed.
+              echo "🧹 Cleaning database schema for: ${DB_NAME}..."
+              docker exec "${CONTAINER_DB}" psql \
+                -U "${POSTGRES_USER}" \
+                -d "${DB_NAME}" \
+                -c "
+                  DROP SCHEMA public CASCADE;
+                  CREATE SCHEMA public;
+                  GRANT ALL ON SCHEMA public TO ${POSTGRES_USER};
+                  GRANT ALL ON SCHEMA public TO public;
+                "
+              echo "✅ Schema cleaned for: ${DB_NAME}"
+              # ─────────────────────────────────────────────────────────────────────
+
               # Form DB connection string inside Docker network
               if [ -n "${POSTGRES_PASSWORD}" ]; then
                 TARGET_DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
