@@ -375,7 +375,7 @@ CREATE TABLE uom_packaging_templates (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (uom_id, code)
+    UNIQUE (uom_id, name)
 );
 
 -- Pattern Levels Table

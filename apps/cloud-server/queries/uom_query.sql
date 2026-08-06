@@ -97,8 +97,8 @@ WITH inserted_templates AS (
         t->>'template_code',
         COALESCE((t->>'template_active')::BOOLEAN, true)
     FROM jsonb_array_elements($1::jsonb->'templates') AS t
-    ON CONFLICT (uom_id, code) DO UPDATE 
-    SET name = EXCLUDED.name, 
+    ON CONFLICT (uom_id, name) DO UPDATE 
+    SET code = EXCLUDED.code, 
         is_active = EXCLUDED.is_active,
         uom_id = EXCLUDED.uom_id
     RETURNING id, code
