@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,7 +39,7 @@ type CreateZatcaDeviceConfigParams struct {
 	CsidExpiry     pgtype.Timestamptz `json:"csid_expiry"`
 	ZatcaEnv       pgtype.Text        `json:"zatca_env"`
 	IsActive       pgtype.Bool        `json:"is_active"`
-	Metadata       []byte             `json:"metadata"`
+	Metadata       json.RawMessage    `json:"metadata"`
 }
 
 func (q *Queries) CreateZatcaDeviceConfig(ctx context.Context, arg CreateZatcaDeviceConfigParams) (ZatcaDeviceConfig, error) {
@@ -742,7 +743,7 @@ WHERE id = $1
 type UpdateChainEntryStatusParams struct {
 	ID            int64              `json:"id"`
 	ZatcaStatus   NullZatcaDocStatus `json:"zatca_status"`
-	ZatcaResponse []byte             `json:"zatca_response"`
+	ZatcaResponse json.RawMessage    `json:"zatca_response"`
 	SubmittedAt   pgtype.Timestamptz `json:"submitted_at"`
 	ClearedAt     pgtype.Timestamptz `json:"cleared_at"`
 }

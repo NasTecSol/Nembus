@@ -46,23 +46,23 @@ INSERT INTO products (
 `
 
 type CreateProductParams struct {
-	OrganizationID       int32       `json:"organization_id"`
-	Sku                  string      `json:"sku"`
-	Name                 string      `json:"name"`
-	Description          pgtype.Text `json:"description"`
-	CategoryID           pgtype.Int4 `json:"category_id"`
-	BrandID              pgtype.Int4 `json:"brand_id"`
-	BaseUomID            pgtype.Int4 `json:"base_uom_id"`
-	ProductType          pgtype.Text `json:"product_type"`
-	TaxCategoryID        pgtype.Int4 `json:"tax_category_id"`
-	IsSerialized         pgtype.Bool `json:"is_serialized"`
-	IsBatchManaged       pgtype.Bool `json:"is_batch_managed"`
-	IsActive             pgtype.Bool `json:"is_active"`
-	IsSellable           pgtype.Bool `json:"is_sellable"`
-	IsPurchasable        pgtype.Bool `json:"is_purchasable"`
-	AllowDecimalQuantity pgtype.Bool `json:"allow_decimal_quantity"`
-	TrackInventory       pgtype.Bool `json:"track_inventory"`
-	Metadata             []byte      `json:"metadata"`
+	OrganizationID       int32           `json:"organization_id"`
+	Sku                  string          `json:"sku"`
+	Name                 string          `json:"name"`
+	Description          pgtype.Text     `json:"description"`
+	CategoryID           pgtype.Int4     `json:"category_id"`
+	BrandID              pgtype.Int4     `json:"brand_id"`
+	BaseUomID            pgtype.Int4     `json:"base_uom_id"`
+	ProductType          pgtype.Text     `json:"product_type"`
+	TaxCategoryID        pgtype.Int4     `json:"tax_category_id"`
+	IsSerialized         pgtype.Bool     `json:"is_serialized"`
+	IsBatchManaged       pgtype.Bool     `json:"is_batch_managed"`
+	IsActive             pgtype.Bool     `json:"is_active"`
+	IsSellable           pgtype.Bool     `json:"is_sellable"`
+	IsPurchasable        pgtype.Bool     `json:"is_purchasable"`
+	AllowDecimalQuantity pgtype.Bool     `json:"allow_decimal_quantity"`
+	TrackInventory       pgtype.Bool     `json:"track_inventory"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -137,13 +137,13 @@ INSERT INTO product_categories (
 `
 
 type CreateProductCategoryParams struct {
-	ParentCategoryID pgtype.Int4 `json:"parent_category_id"`
-	Name             string      `json:"name"`
-	Code             string      `json:"code"`
-	Description      pgtype.Text `json:"description"`
-	CategoryLevel    pgtype.Int4 `json:"category_level"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
+	ParentCategoryID pgtype.Int4     `json:"parent_category_id"`
+	Name             string          `json:"name"`
+	Code             string          `json:"code"`
+	Description      pgtype.Text     `json:"description"`
+	CategoryLevel    pgtype.Int4     `json:"category_level"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -224,17 +224,17 @@ ORDER BY ct.path
 `
 
 type GetCategoryHierarchyRow struct {
-	ID               int32       `json:"id"`
-	ParentCategoryID pgtype.Int4 `json:"parent_category_id"`
-	Name             string      `json:"name"`
-	Code             string      `json:"code"`
-	Description      pgtype.Text `json:"description"`
-	CategoryLevel    pgtype.Int4 `json:"category_level"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
-	Level            int32       `json:"level"`
-	Path             interface{} `json:"path"`
-	FullPath         string      `json:"full_path"`
+	ID               int32           `json:"id"`
+	ParentCategoryID pgtype.Int4     `json:"parent_category_id"`
+	Name             string          `json:"name"`
+	Code             string          `json:"code"`
+	Description      pgtype.Text     `json:"description"`
+	CategoryLevel    pgtype.Int4     `json:"category_level"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
+	Level            int32           `json:"level"`
+	Path             interface{}     `json:"path"`
+	FullPath         string          `json:"full_path"`
 }
 
 func (q *Queries) GetCategoryHierarchy(ctx context.Context, filterIsActive interface{}) ([]GetCategoryHierarchyRow, error) {
@@ -422,7 +422,7 @@ type GetProductWithDetailsRow struct {
 	IsPurchasable        pgtype.Bool      `json:"is_purchasable"`
 	AllowDecimalQuantity pgtype.Bool      `json:"allow_decimal_quantity"`
 	TrackInventory       pgtype.Bool      `json:"track_inventory"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	CategoryName         pgtype.Text      `json:"category_name"`
@@ -950,22 +950,22 @@ RETURNING id, organization_id, sku, name, description, category_id, brand_id, ba
 `
 
 type UpdateProductParams struct {
-	Name                 pgtype.Text `json:"name"`
-	Description          pgtype.Text `json:"description"`
-	CategoryID           pgtype.Int4 `json:"category_id"`
-	BrandID              pgtype.Int4 `json:"brand_id"`
-	BaseUomID            pgtype.Int4 `json:"base_uom_id"`
-	ProductType          pgtype.Text `json:"product_type"`
-	TaxCategoryID        pgtype.Int4 `json:"tax_category_id"`
-	IsSerialized         pgtype.Bool `json:"is_serialized"`
-	IsBatchManaged       pgtype.Bool `json:"is_batch_managed"`
-	IsActive             pgtype.Bool `json:"is_active"`
-	IsSellable           pgtype.Bool `json:"is_sellable"`
-	IsPurchasable        pgtype.Bool `json:"is_purchasable"`
-	AllowDecimalQuantity pgtype.Bool `json:"allow_decimal_quantity"`
-	TrackInventory       pgtype.Bool `json:"track_inventory"`
-	Metadata             []byte      `json:"metadata"`
-	ID                   int32       `json:"id"`
+	Name                 pgtype.Text     `json:"name"`
+	Description          pgtype.Text     `json:"description"`
+	CategoryID           pgtype.Int4     `json:"category_id"`
+	BrandID              pgtype.Int4     `json:"brand_id"`
+	BaseUomID            pgtype.Int4     `json:"base_uom_id"`
+	ProductType          pgtype.Text     `json:"product_type"`
+	TaxCategoryID        pgtype.Int4     `json:"tax_category_id"`
+	IsSerialized         pgtype.Bool     `json:"is_serialized"`
+	IsBatchManaged       pgtype.Bool     `json:"is_batch_managed"`
+	IsActive             pgtype.Bool     `json:"is_active"`
+	IsSellable           pgtype.Bool     `json:"is_sellable"`
+	IsPurchasable        pgtype.Bool     `json:"is_purchasable"`
+	AllowDecimalQuantity pgtype.Bool     `json:"allow_decimal_quantity"`
+	TrackInventory       pgtype.Bool     `json:"track_inventory"`
+	Metadata             json.RawMessage `json:"metadata"`
+	ID                   int32           `json:"id"`
 }
 
 func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error) {
@@ -1027,13 +1027,13 @@ RETURNING id, parent_category_id, name, code, description, category_level, is_ac
 `
 
 type UpdateProductCategoryParams struct {
-	ParentCategoryID pgtype.Int4 `json:"parent_category_id"`
-	Name             pgtype.Text `json:"name"`
-	Description      pgtype.Text `json:"description"`
-	CategoryLevel    pgtype.Int4 `json:"category_level"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
-	ID               int32       `json:"id"`
+	ParentCategoryID pgtype.Int4     `json:"parent_category_id"`
+	Name             pgtype.Text     `json:"name"`
+	Description      pgtype.Text     `json:"description"`
+	CategoryLevel    pgtype.Int4     `json:"category_level"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
+	ID               int32           `json:"id"`
 }
 
 func (q *Queries) UpdateProductCategory(ctx context.Context, arg UpdateProductCategoryParams) (ProductCategory, error) {

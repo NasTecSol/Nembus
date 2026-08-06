@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -27,14 +28,14 @@ INSERT INTO product_serial_numbers (
 `
 
 type CreateProductSerialNumberParams struct {
-	ProductID         int32       `json:"product_id"`
-	ProductVariantID  pgtype.Int4 `json:"product_variant_id"`
-	SerialNumber      string      `json:"serial_number"`
-	Status            pgtype.Text `json:"status"`
-	CurrentStoreID    pgtype.Int4 `json:"current_store_id"`
-	ManufacturingDate pgtype.Date `json:"manufacturing_date"`
-	ExpiryDate        pgtype.Date `json:"expiry_date"`
-	Metadata          []byte      `json:"metadata"`
+	ProductID         int32           `json:"product_id"`
+	ProductVariantID  pgtype.Int4     `json:"product_variant_id"`
+	SerialNumber      string          `json:"serial_number"`
+	Status            pgtype.Text     `json:"status"`
+	CurrentStoreID    pgtype.Int4     `json:"current_store_id"`
+	ManufacturingDate pgtype.Date     `json:"manufacturing_date"`
+	ExpiryDate        pgtype.Date     `json:"expiry_date"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateProductSerialNumber(ctx context.Context, arg CreateProductSerialNumberParams) (ProductSerialNumber, error) {
@@ -442,10 +443,10 @@ RETURNING id, product_id, product_variant_id, serial_number, status, current_sto
 `
 
 type UpdateProductSerialNumberParams struct {
-	ID             int32       `json:"id"`
-	Status         pgtype.Text `json:"status"`
-	CurrentStoreID pgtype.Int4 `json:"current_store_id"`
-	Metadata       []byte      `json:"metadata"`
+	ID             int32           `json:"id"`
+	Status         pgtype.Text     `json:"status"`
+	CurrentStoreID pgtype.Int4     `json:"current_store_id"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateProductSerialNumber(ctx context.Context, arg UpdateProductSerialNumberParams) (ProductSerialNumber, error) {

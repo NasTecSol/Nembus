@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -23,10 +24,10 @@ INSERT INTO role_permissions (
 `
 
 type AssignPermissionToRoleParams struct {
-	RoleID       int32       `json:"role_id"`
-	PermissionID int32       `json:"permission_id"`
-	Scope        pgtype.Text `json:"scope"`
-	Metadata     []byte      `json:"metadata"`
+	RoleID       int32           `json:"role_id"`
+	PermissionID int32           `json:"permission_id"`
+	Scope        pgtype.Text     `json:"scope"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) AssignPermissionToRole(ctx context.Context, arg AssignPermissionToRoleParams) (RolePermission, error) {
@@ -81,12 +82,12 @@ INSERT INTO roles (
 `
 
 type CreateRoleParams struct {
-	Name         string      `json:"name"`
-	Code         string      `json:"code"`
-	Description  pgtype.Text `json:"description"`
-	IsSystemRole pgtype.Bool `json:"is_system_role"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	Metadata     []byte      `json:"metadata"`
+	Name         string          `json:"name"`
+	Code         string          `json:"code"`
+	Description  pgtype.Text     `json:"description"`
+	IsSystemRole pgtype.Bool     `json:"is_system_role"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
@@ -179,7 +180,7 @@ type GetRolePermissionsRow struct {
 	RoleID       int32            `json:"role_id"`
 	PermissionID int32            `json:"permission_id"`
 	Scope        pgtype.Text      `json:"scope"`
-	Metadata     []byte           `json:"metadata"`
+	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	Name         string           `json:"name"`
 	Code         string           `json:"code"`
@@ -379,11 +380,11 @@ RETURNING id, name, code, description, is_system_role, is_active, metadata, crea
 `
 
 type UpdateRoleParams struct {
-	ID          int32       `json:"id"`
-	Name        string      `json:"name"`
-	Description pgtype.Text `json:"description"`
-	IsActive    pgtype.Bool `json:"is_active"`
-	Metadata    []byte      `json:"metadata"`
+	ID          int32           `json:"id"`
+	Name        string          `json:"name"`
+	Description pgtype.Text     `json:"description"`
+	IsActive    pgtype.Bool     `json:"is_active"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, error) {

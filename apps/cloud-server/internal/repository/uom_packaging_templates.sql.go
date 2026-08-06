@@ -14,17 +14,19 @@ import (
 const createUomPackagingTemplate = `-- name: CreateUomPackagingTemplate :one
 INSERT INTO uom_packaging_templates (
     organization_id,
+    uom_id,
     name,
     code,
     is_active
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
-RETURNING id, organization_id, name, code, is_active, created_at, updated_at
+RETURNING id, organization_id, uom_id, name, code, is_active, created_at, updated_at
 `
 
 type CreateUomPackagingTemplateParams struct {
 	OrganizationID int32       `json:"organization_id"`
+	UomID          int32       `json:"uom_id"`
 	Name           string      `json:"name"`
 	Code           string      `json:"code"`
 	IsActive       pgtype.Bool `json:"is_active"`
@@ -33,6 +35,7 @@ type CreateUomPackagingTemplateParams struct {
 func (q *Queries) CreateUomPackagingTemplate(ctx context.Context, arg CreateUomPackagingTemplateParams) (UomPackagingTemplate, error) {
 	row := q.db.QueryRow(ctx, createUomPackagingTemplate,
 		arg.OrganizationID,
+		arg.UomID,
 		arg.Name,
 		arg.Code,
 		arg.IsActive,
@@ -41,6 +44,7 @@ func (q *Queries) CreateUomPackagingTemplate(ctx context.Context, arg CreateUomP
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
+		&i.UomID,
 		&i.Name,
 		&i.Code,
 		&i.IsActive,
@@ -173,7 +177,7 @@ func (q *Queries) GetPackagingTemplateWithLevels(ctx context.Context, id int32) 
 
 const getUomPackagingTemplate = `-- name: GetUomPackagingTemplate :one
 
-SELECT id, organization_id, name, code, is_active, created_at, updated_at
+SELECT id, organization_id, uom_id, name, code, is_active, created_at, updated_at
 FROM uom_packaging_templates
 WHERE id = $1
 LIMIT 1
@@ -188,6 +192,7 @@ func (q *Queries) GetUomPackagingTemplate(ctx context.Context, id int32) (UomPac
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
+		&i.UomID,
 		&i.Name,
 		&i.Code,
 		&i.IsActive,
@@ -255,7 +260,7 @@ func (q *Queries) ListUomPackagingTemplateLevels(ctx context.Context, templateID
 }
 
 const listUomPackagingTemplates = `-- name: ListUomPackagingTemplates :many
-SELECT id, organization_id, name, code, is_active, created_at, updated_at
+SELECT id, organization_id, uom_id, name, code, is_active, created_at, updated_at
 FROM uom_packaging_templates
 WHERE organization_id = $1
 ORDER BY created_at DESC
@@ -273,6 +278,7 @@ func (q *Queries) ListUomPackagingTemplates(ctx context.Context, organizationID 
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
+			&i.UomID,
 			&i.Name,
 			&i.Code,
 			&i.IsActive,
@@ -297,7 +303,7 @@ SET
     is_active = $4,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, name, code, is_active, created_at, updated_at
+RETURNING id, organization_id, uom_id, name, code, is_active, created_at, updated_at
 `
 
 type UpdateUomPackagingTemplateParams struct {
@@ -318,6 +324,7 @@ func (q *Queries) UpdateUomPackagingTemplate(ctx context.Context, arg UpdateUomP
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
+		&i.UomID,
 		&i.Name,
 		&i.Code,
 		&i.IsActive,

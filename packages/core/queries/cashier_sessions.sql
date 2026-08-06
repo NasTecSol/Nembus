@@ -37,12 +37,12 @@ SET
     variance         = $4,
     status           = 'closed',
     metadata         = jsonb_set(
-        jsonb_set(metadata, '{closing_note}', to_jsonb($5::text)),
+        jsonb_set(COALESCE(metadata, '{}'::jsonb) || COALESCE($7::jsonb, '{}'::jsonb), '{closing_note}', to_jsonb($5::text)),
         '{closed_by}', to_jsonb($6::bigint)
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, session_number, opening_time, closing_time, variance, status;
+RETURNING *;
 
 -- name: GetSessionSummary :one
 SELECT 
@@ -80,12 +80,12 @@ SET
     expected_balance = COALESCE(expected_balance, opening_balance),
     status           = 'closed',
     metadata         = jsonb_set(
-        jsonb_set(COALESCE(metadata, '{}'), '{closing_note}', to_jsonb($3::text)),
+        jsonb_set(COALESCE(metadata, '{}'::jsonb) || COALESCE($5::jsonb, '{}'::jsonb), '{closing_note}', to_jsonb($3::text)),
         '{closed_by}', to_jsonb($4::bigint)
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, session_number, opening_time, closing_time, expected_balance, variance, status;
+RETURNING *;
 
 -- name: GetCashierSessions :many
 SELECT 

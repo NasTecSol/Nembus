@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -41,27 +42,27 @@ INSERT INTO profit_loss_analytics (
 `
 
 type CreateProfitLossAnalyticsParams struct {
-	OrganizationID        int32          `json:"organization_id"`
-	StoreID               pgtype.Int4    `json:"store_id"`
-	Date                  pgtype.Date    `json:"date"`
-	PeriodType            pgtype.Text    `json:"period_type"`
-	Month                 pgtype.Int4    `json:"month"`
-	Quarter               pgtype.Int4    `json:"quarter"`
-	Year                  pgtype.Int4    `json:"year"`
-	GrossRevenue          pgtype.Numeric `json:"gross_revenue"`
-	SalesDiscounts        pgtype.Numeric `json:"sales_discounts"`
-	SalesReturns          pgtype.Numeric `json:"sales_returns"`
-	NetRevenue            pgtype.Numeric `json:"net_revenue"`
-	OpeningInventoryValue pgtype.Numeric `json:"opening_inventory_value"`
-	Purchases             pgtype.Numeric `json:"purchases"`
-	ClosingInventoryValue pgtype.Numeric `json:"closing_inventory_value"`
-	Cogs                  pgtype.Numeric `json:"cogs"`
-	GrossProfit           pgtype.Numeric `json:"gross_profit"`
-	GrossProfitMargin     pgtype.Numeric `json:"gross_profit_margin"`
-	TotalExpenses         pgtype.Numeric `json:"total_expenses"`
-	NetProfit             pgtype.Numeric `json:"net_profit"`
-	NetProfitMargin       pgtype.Numeric `json:"net_profit_margin"`
-	Metadata              []byte         `json:"metadata"`
+	OrganizationID        int32           `json:"organization_id"`
+	StoreID               pgtype.Int4     `json:"store_id"`
+	Date                  pgtype.Date     `json:"date"`
+	PeriodType            pgtype.Text     `json:"period_type"`
+	Month                 pgtype.Int4     `json:"month"`
+	Quarter               pgtype.Int4     `json:"quarter"`
+	Year                  pgtype.Int4     `json:"year"`
+	GrossRevenue          pgtype.Numeric  `json:"gross_revenue"`
+	SalesDiscounts        pgtype.Numeric  `json:"sales_discounts"`
+	SalesReturns          pgtype.Numeric  `json:"sales_returns"`
+	NetRevenue            pgtype.Numeric  `json:"net_revenue"`
+	OpeningInventoryValue pgtype.Numeric  `json:"opening_inventory_value"`
+	Purchases             pgtype.Numeric  `json:"purchases"`
+	ClosingInventoryValue pgtype.Numeric  `json:"closing_inventory_value"`
+	Cogs                  pgtype.Numeric  `json:"cogs"`
+	GrossProfit           pgtype.Numeric  `json:"gross_profit"`
+	GrossProfitMargin     pgtype.Numeric  `json:"gross_profit_margin"`
+	TotalExpenses         pgtype.Numeric  `json:"total_expenses"`
+	NetProfit             pgtype.Numeric  `json:"net_profit"`
+	NetProfitMargin       pgtype.Numeric  `json:"net_profit_margin"`
+	Metadata              json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateProfitLossAnalytics(ctx context.Context, arg CreateProfitLossAnalyticsParams) (ProfitLossAnalytic, error) {
@@ -617,21 +618,21 @@ RETURNING id, organization_id, store_id, date, period_type, month, quarter, year
 `
 
 type UpdateProfitLossAnalyticsParams struct {
-	ID                    int32          `json:"id"`
-	GrossRevenue          pgtype.Numeric `json:"gross_revenue"`
-	SalesDiscounts        pgtype.Numeric `json:"sales_discounts"`
-	SalesReturns          pgtype.Numeric `json:"sales_returns"`
-	NetRevenue            pgtype.Numeric `json:"net_revenue"`
-	OpeningInventoryValue pgtype.Numeric `json:"opening_inventory_value"`
-	Purchases             pgtype.Numeric `json:"purchases"`
-	ClosingInventoryValue pgtype.Numeric `json:"closing_inventory_value"`
-	Cogs                  pgtype.Numeric `json:"cogs"`
-	GrossProfit           pgtype.Numeric `json:"gross_profit"`
-	GrossProfitMargin     pgtype.Numeric `json:"gross_profit_margin"`
-	TotalExpenses         pgtype.Numeric `json:"total_expenses"`
-	NetProfit             pgtype.Numeric `json:"net_profit"`
-	NetProfitMargin       pgtype.Numeric `json:"net_profit_margin"`
-	Metadata              []byte         `json:"metadata"`
+	ID                    int32           `json:"id"`
+	GrossRevenue          pgtype.Numeric  `json:"gross_revenue"`
+	SalesDiscounts        pgtype.Numeric  `json:"sales_discounts"`
+	SalesReturns          pgtype.Numeric  `json:"sales_returns"`
+	NetRevenue            pgtype.Numeric  `json:"net_revenue"`
+	OpeningInventoryValue pgtype.Numeric  `json:"opening_inventory_value"`
+	Purchases             pgtype.Numeric  `json:"purchases"`
+	ClosingInventoryValue pgtype.Numeric  `json:"closing_inventory_value"`
+	Cogs                  pgtype.Numeric  `json:"cogs"`
+	GrossProfit           pgtype.Numeric  `json:"gross_profit"`
+	GrossProfitMargin     pgtype.Numeric  `json:"gross_profit_margin"`
+	TotalExpenses         pgtype.Numeric  `json:"total_expenses"`
+	NetProfit             pgtype.Numeric  `json:"net_profit"`
+	NetProfitMargin       pgtype.Numeric  `json:"net_profit_margin"`
+	Metadata              json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateProfitLossAnalytics(ctx context.Context, arg UpdateProfitLossAnalyticsParams) (ProfitLossAnalytic, error) {

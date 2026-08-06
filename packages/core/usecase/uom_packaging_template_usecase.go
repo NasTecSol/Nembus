@@ -15,6 +15,7 @@ import (
 type UomPackagingTemplateOutput struct {
 	ID             int32                             `json:"id"`
 	OrganizationID int32                             `json:"organization_id"`
+	UomID          int32                             `json:"uom_id"`
 	Name           string                            `json:"name"`
 	Code           string                            `json:"code"`
 	IsActive       pgtype.Bool                       `json:"is_active"`
@@ -36,6 +37,7 @@ func templateToOutput(t repository.UomPackagingTemplate) UomPackagingTemplateOut
 	return UomPackagingTemplateOutput{
 		ID:             t.ID,
 		OrganizationID: t.OrganizationID,
+		UomID:          t.UomID,
 		Name:           t.Name,
 		Code:           t.Code,
 		IsActive:       t.IsActive,
@@ -77,6 +79,7 @@ func (uc *UomPackagingTemplateUseCase) repoOrErr() *repository.Response {
 func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 	ctx context.Context,
 	organizationID int32,
+	uomID int32,
 	name string,
 	code string,
 	isActive bool,
@@ -93,6 +96,7 @@ func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 
 	row, err := uc.repo.CreateUomPackagingTemplate(ctx, repository.CreateUomPackagingTemplateParams{
 		OrganizationID: organizationID,
+		UomID:          uomID,
 		Name:           name,
 		Code:           code,
 		IsActive:       active,

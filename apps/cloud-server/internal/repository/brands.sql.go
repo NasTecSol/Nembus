@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -171,10 +172,10 @@ RETURNING id, name, code, is_active, metadata, created_at, updated_at
 `
 
 type CreateBrandParams struct {
-	Name     string      `json:"name"`
-	Code     string      `json:"code"`
-	IsActive pgtype.Bool `json:"is_active"`
-	Metadata []byte      `json:"metadata"`
+	Name     string          `json:"name"`
+	Code     string          `json:"code"`
+	IsActive pgtype.Bool     `json:"is_active"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -346,8 +347,8 @@ WHERE id = $1
 `
 
 type GetBrandMetadataByKeyParams struct {
-	ID       int32  `json:"id"`
-	Metadata []byte `json:"metadata"`
+	ID       int32           `json:"id"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 type GetBrandMetadataByKeyRow struct {
@@ -386,7 +387,7 @@ type GetBrandWithProductCountRow struct {
 	Name         string           `json:"name"`
 	Code         string           `json:"code"`
 	IsActive     pgtype.Bool      `json:"is_active"`
-	Metadata     []byte           `json:"metadata"`
+	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	ProductCount int64            `json:"product_count"`
@@ -505,7 +506,7 @@ type GetInactiveBrandsWithActiveProductsRow struct {
 	Name               string           `json:"name"`
 	Code               string           `json:"code"`
 	IsActive           pgtype.Bool      `json:"is_active"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 	ActiveProductCount int64            `json:"active_product_count"`
@@ -632,7 +633,7 @@ type GetTopBrandsByProductCountRow struct {
 	Name         string           `json:"name"`
 	Code         string           `json:"code"`
 	IsActive     pgtype.Bool      `json:"is_active"`
-	Metadata     []byte           `json:"metadata"`
+	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	ProductCount int64            `json:"product_count"`
@@ -760,7 +761,7 @@ type ListActiveBrandsWithProductCountsRow struct {
 	Name         string           `json:"name"`
 	Code         string           `json:"code"`
 	IsActive     pgtype.Bool      `json:"is_active"`
-	Metadata     []byte           `json:"metadata"`
+	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	ProductCount int64            `json:"product_count"`
@@ -885,7 +886,7 @@ type ListBrandsWithProductCountsRow struct {
 	Name         string           `json:"name"`
 	Code         string           `json:"code"`
 	IsActive     pgtype.Bool      `json:"is_active"`
-	Metadata     []byte           `json:"metadata"`
+	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
 	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	ProductCount int64            `json:"product_count"`
@@ -1135,11 +1136,11 @@ RETURNING id, name, code, is_active, metadata, created_at, updated_at
 `
 
 type UpdateBrandParams struct {
-	ID       int32       `json:"id"`
-	Name     string      `json:"name"`
-	Code     string      `json:"code"`
-	IsActive pgtype.Bool `json:"is_active"`
-	Metadata []byte      `json:"metadata"`
+	ID       int32           `json:"id"`
+	Name     string          `json:"name"`
+	Code     string          `json:"code"`
+	IsActive pgtype.Bool     `json:"is_active"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1207,8 +1208,8 @@ RETURNING id, name, code, is_active, metadata, created_at, updated_at
 `
 
 type UpdateBrandMetadataParams struct {
-	ID       int32  `json:"id"`
-	Metadata []byte `json:"metadata"`
+	ID       int32           `json:"id"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // Update only the brand metadata
