@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -55,15 +56,15 @@ INSERT INTO product_batches (
 `
 
 type CreateProductBatchParams struct {
-	ProductID         int32          `json:"product_id"`
-	ProductVariantID  pgtype.Int4    `json:"product_variant_id"`
-	BatchNumber       string         `json:"batch_number"`
-	ManufacturingDate pgtype.Date    `json:"manufacturing_date"`
-	ExpiryDate        pgtype.Date    `json:"expiry_date"`
-	StoreID           pgtype.Int4    `json:"store_id"`
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	Status            pgtype.Text    `json:"status"`
-	Metadata          []byte         `json:"metadata"`
+	ProductID         int32           `json:"product_id"`
+	ProductVariantID  pgtype.Int4     `json:"product_variant_id"`
+	BatchNumber       string          `json:"batch_number"`
+	ManufacturingDate pgtype.Date     `json:"manufacturing_date"`
+	ExpiryDate        pgtype.Date     `json:"expiry_date"`
+	StoreID           pgtype.Int4     `json:"store_id"`
+	QuantityAvailable pgtype.Numeric  `json:"quantity_available"`
+	Status            pgtype.Text     `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -257,7 +258,7 @@ type GetExpiredBatchesRow struct {
 	StoreID           pgtype.Int4      `json:"store_id"`
 	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
 	Status            pgtype.Text      `json:"status"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	ProductName       string           `json:"product_name"`
@@ -333,7 +334,7 @@ type GetExpiringSoonBatchesRow struct {
 	StoreID           pgtype.Int4      `json:"store_id"`
 	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
 	Status            pgtype.Text      `json:"status"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	ProductName       string           `json:"product_name"`
@@ -584,7 +585,7 @@ type GetSerialNumberHistoryRow struct {
 	Status           pgtype.Text      `json:"status"`
 	CostPerUnit      pgtype.Numeric   `json:"cost_per_unit"`
 	TotalValue       pgtype.Numeric   `json:"total_value"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	ProductName      string           `json:"product_name"`
 	ProductSku       string           `json:"product_sku"`
@@ -717,7 +718,7 @@ type ListBatchesByStoreRow struct {
 	StoreID           pgtype.Int4      `json:"store_id"`
 	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
 	Status            pgtype.Text      `json:"status"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	ProductName       string           `json:"product_name"`
@@ -793,7 +794,7 @@ type ListProductBatchesRow struct {
 	StoreID           pgtype.Int4      `json:"store_id"`
 	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
 	Status            pgtype.Text      `json:"status"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	ProductName       string           `json:"product_name"`
@@ -855,10 +856,10 @@ RETURNING id, product_id, product_variant_id, batch_number, manufacturing_date, 
 `
 
 type UpdateProductBatchParams struct {
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	Status            pgtype.Text    `json:"status"`
-	Metadata          []byte         `json:"metadata"`
-	ID                int32          `json:"id"`
+	QuantityAvailable pgtype.Numeric  `json:"quantity_available"`
+	Status            pgtype.Text     `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
+	ID                int32           `json:"id"`
 }
 
 func (q *Queries) UpdateProductBatch(ctx context.Context, arg UpdateProductBatchParams) (ProductBatch, error) {

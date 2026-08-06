@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -26,7 +27,7 @@ type CreateKioskSessionParams struct {
 	SessionToken  string           `json:"session_token"`
 	Status        pgtype.Text      `json:"status"`
 	OpenedAt      pgtype.Timestamp `json:"opened_at"`
-	Metadata      []byte           `json:"metadata"`
+	Metadata      json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) CreateKioskSession(ctx context.Context, arg CreateKioskSessionParams) (KioskSession, error) {
@@ -159,7 +160,7 @@ type UpdateKioskSessionParams struct {
 	ID       int32            `json:"id"`
 	Status   pgtype.Text      `json:"status"`
 	ClosedAt pgtype.Timestamp `json:"closed_at"`
-	Metadata []byte           `json:"metadata"`
+	Metadata json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) UpdateKioskSession(ctx context.Context, arg UpdateKioskSessionParams) (KioskSession, error) {

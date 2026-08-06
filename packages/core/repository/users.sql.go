@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,9 +22,9 @@ INSERT INTO user_roles (
 `
 
 type AssignRoleToUserParams struct {
-	UserID   int32  `json:"user_id"`
-	RoleID   int32  `json:"role_id"`
-	Metadata []byte `json:"metadata"`
+	UserID   int32           `json:"user_id"`
+	RoleID   int32           `json:"role_id"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -109,15 +110,15 @@ INSERT INTO users (
 `
 
 type CreateUserParams struct {
-	OrganizationID int32       `json:"organization_id"`
-	Username       string      `json:"username"`
-	Email          string      `json:"email"`
-	PasswordHash   string      `json:"password_hash"`
-	FirstName      pgtype.Text `json:"first_name"`
-	LastName       pgtype.Text `json:"last_name"`
-	EmployeeCode   pgtype.Text `json:"employee_code"`
-	IsActive       pgtype.Bool `json:"is_active"`
-	Metadata       []byte      `json:"metadata"`
+	OrganizationID int32           `json:"organization_id"`
+	Username       string          `json:"username"`
+	Email          string          `json:"email"`
+	PasswordHash   string          `json:"password_hash"`
+	FirstName      pgtype.Text     `json:"first_name"`
+	LastName       pgtype.Text     `json:"last_name"`
+	EmployeeCode   pgtype.Text     `json:"employee_code"`
+	IsActive       pgtype.Bool     `json:"is_active"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -446,7 +447,7 @@ type GetUserWithDetailsRow struct {
 	LastName       pgtype.Text      `json:"last_name"`
 	EmployeeCode   pgtype.Text      `json:"employee_code"`
 	IsActive       pgtype.Bool      `json:"is_active"`
-	Metadata       []byte           `json:"metadata"`
+	Metadata       json.RawMessage  `json:"metadata"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 	Roles          []byte           `json:"roles"`
@@ -529,10 +530,10 @@ INSERT INTO user_store_access (
 `
 
 type GrantStoreAccessToUserParams struct {
-	UserID    int32       `json:"user_id"`
-	StoreID   int32       `json:"store_id"`
-	IsPrimary pgtype.Bool `json:"is_primary"`
-	Metadata  []byte      `json:"metadata"`
+	UserID    int32           `json:"user_id"`
+	StoreID   int32           `json:"store_id"`
+	IsPrimary pgtype.Bool     `json:"is_primary"`
+	Metadata  json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -653,7 +654,7 @@ type ListUsersWithDetailsRow struct {
 	LastName       pgtype.Text      `json:"last_name"`
 	EmployeeCode   pgtype.Text      `json:"employee_code"`
 	IsActive       pgtype.Bool      `json:"is_active"`
-	Metadata       []byte           `json:"metadata"`
+	Metadata       json.RawMessage  `json:"metadata"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 	Roles          []byte           `json:"roles"`
@@ -834,13 +835,13 @@ RETURNING id, organization_id, username, email, password_hash, first_name, last_
 `
 
 type UpdateUserParams struct {
-	Email        pgtype.Text `json:"email"`
-	FirstName    pgtype.Text `json:"first_name"`
-	LastName     pgtype.Text `json:"last_name"`
-	EmployeeCode pgtype.Text `json:"employee_code"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	Metadata     []byte      `json:"metadata"`
-	ID           int32       `json:"id"`
+	Email        pgtype.Text     `json:"email"`
+	FirstName    pgtype.Text     `json:"first_name"`
+	LastName     pgtype.Text     `json:"last_name"`
+	EmployeeCode pgtype.Text     `json:"employee_code"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	Metadata     json.RawMessage `json:"metadata"`
+	ID           int32           `json:"id"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
@@ -904,10 +905,10 @@ RETURNING id, user_id, store_id, is_primary, metadata, granted_at
 `
 
 type UpdateUserStoreAccessParams struct {
-	UserID    int32       `json:"user_id"`
-	StoreID   int32       `json:"store_id"`
-	IsPrimary pgtype.Bool `json:"is_primary"`
-	Metadata  []byte      `json:"metadata"`
+	UserID    int32           `json:"user_id"`
+	StoreID   int32           `json:"store_id"`
+	IsPrimary pgtype.Bool     `json:"is_primary"`
+	Metadata  json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateUserStoreAccess(ctx context.Context, arg UpdateUserStoreAccessParams) (UserStoreAccess, error) {

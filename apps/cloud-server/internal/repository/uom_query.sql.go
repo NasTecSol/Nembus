@@ -26,12 +26,12 @@ INSERT INTO product_uom_conversions (
 `
 
 type CreateProductUOMConversionParams struct {
-	ProductID        int32          `json:"product_id"`
-	FromUomID        int32          `json:"from_uom_id"`
-	ToUomID          int32          `json:"to_uom_id"`
-	ConversionFactor pgtype.Numeric `json:"conversion_factor"`
-	IsDefault        pgtype.Bool    `json:"is_default"`
-	Metadata         []byte         `json:"metadata"`
+	ProductID        int32           `json:"product_id"`
+	FromUomID        int32           `json:"from_uom_id"`
+	ToUomID          int32           `json:"to_uom_id"`
+	ConversionFactor pgtype.Numeric  `json:"conversion_factor"`
+	IsDefault        pgtype.Bool     `json:"is_default"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateProductUOMConversion(ctx context.Context, arg CreateProductUOMConversionParams) (ProductUomConversion, error) {
@@ -71,12 +71,12 @@ INSERT INTO units_of_measure (
 `
 
 type CreateUnitOfMeasureParams struct {
-	Code          string      `json:"code"`
-	Name          string      `json:"name"`
-	UomType       pgtype.Text `json:"uom_type"`
-	DecimalPlaces pgtype.Int4 `json:"decimal_places"`
-	IsActive      pgtype.Bool `json:"is_active"`
-	Metadata      []byte      `json:"metadata"`
+	Code          string          `json:"code"`
+	Name          string          `json:"name"`
+	UomType       pgtype.Text     `json:"uom_type"`
+	DecimalPlaces pgtype.Int4     `json:"decimal_places"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateUnitOfMeasure(ctx context.Context, arg CreateUnitOfMeasureParams) (UnitsOfMeasure, error) {
@@ -105,16 +105,18 @@ const createUomPackagingTemplatesPipeline = `-- name: CreateUomPackagingTemplate
 
 WITH inserted_templates AS (
     -- 1. Extract and insert all templates from the templates array
-    INSERT INTO uom_packaging_templates (organization_id, name, code, is_active)
+    INSERT INTO uom_packaging_templates (organization_id, uom_id, name, code, is_active)
     SELECT 
         ($1::jsonb->>'organization_id')::INTEGER,
+        ($1::jsonb->>'uom_id')::INTEGER,
         t->>'template_name',
         t->>'template_code',
         COALESCE((t->>'template_active')::BOOLEAN, true)
     FROM jsonb_array_elements($1::jsonb->'templates') AS t
-    ON CONFLICT (code) DO UPDATE 
+    ON CONFLICT (uom_id, code) DO UPDATE 
     SET name = EXCLUDED.name, 
-        is_active = EXCLUDED.is_active
+        is_active = EXCLUDED.is_active,
+        uom_id = EXCLUDED.uom_id
     RETURNING id, code
 )
 INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)
@@ -249,12 +251,7 @@ SELECT
 FROM uom_packaging_templates t
 JOIN uom_packaging_template_levels tl ON t.id = tl.template_id
 JOIN units_of_measure u ON tl.uom_id = u.id
-WHERE t.id IN (
-    -- Subquery: Finds any template ID where the input UOM ID is used
-    SELECT DISTINCT uom_packaging_template_levels.template_id 
-    FROM uom_packaging_template_levels 
-    WHERE uom_packaging_template_levels.uom_id = $1
-)
+WHERE t.uom_id = $1
 GROUP BY t.id, t.name, t.code, t.is_active
 `
 
@@ -439,10 +436,10 @@ RETURNING id, product_id, from_uom_id, to_uom_id, conversion_factor, is_default,
 `
 
 type UpdateProductUOMConversionParams struct {
-	ID               int32          `json:"id"`
-	ConversionFactor pgtype.Numeric `json:"conversion_factor"`
-	IsDefault        pgtype.Bool    `json:"is_default"`
-	Metadata         []byte         `json:"metadata"`
+	ID               int32           `json:"id"`
+	ConversionFactor pgtype.Numeric  `json:"conversion_factor"`
+	IsDefault        pgtype.Bool     `json:"is_default"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateProductUOMConversion(ctx context.Context, arg UpdateProductUOMConversionParams) (ProductUomConversion, error) {
@@ -479,12 +476,12 @@ RETURNING id, code, name, uom_type, decimal_places, is_active, metadata
 `
 
 type UpdateUnitOfMeasureParams struct {
-	ID            int32       `json:"id"`
-	Name          string      `json:"name"`
-	UomType       pgtype.Text `json:"uom_type"`
-	DecimalPlaces pgtype.Int4 `json:"decimal_places"`
-	IsActive      pgtype.Bool `json:"is_active"`
-	Metadata      []byte      `json:"metadata"`
+	ID            int32           `json:"id"`
+	Name          string          `json:"name"`
+	UomType       pgtype.Text     `json:"uom_type"`
+	DecimalPlaces pgtype.Int4     `json:"decimal_places"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateUnitOfMeasure(ctx context.Context, arg UpdateUnitOfMeasureParams) (UnitsOfMeasure, error) {

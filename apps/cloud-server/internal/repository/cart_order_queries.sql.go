@@ -511,18 +511,18 @@ type CreateCartParams struct {
 	Channel         pgtype.Text      `json:"channel"`
 	PaymentMethod   pgtype.Text      `json:"payment_method"`
 	PaymentGateway  pgtype.Text      `json:"payment_gateway"`
-	DeviceInfo      []byte           `json:"device_info"`
+	DeviceInfo      json.RawMessage  `json:"device_info"`
 	CreatedByUserID pgtype.Int4      `json:"created_by_user_id"`
 	CashierID       pgtype.Int4      `json:"cashier_id"`
 	PosTerminalID   pgtype.Int4      `json:"pos_terminal_id"`
-	ShippingAddress []byte           `json:"shipping_address"`
-	BillingAddress  []byte           `json:"billing_address"`
+	ShippingAddress json.RawMessage  `json:"shipping_address"`
+	BillingAddress  json.RawMessage  `json:"billing_address"`
 	ShippingMethod  pgtype.Text      `json:"shipping_method"`
 	CouponCode      pgtype.Text      `json:"coupon_code"`
 	DiscountCode    pgtype.Text      `json:"discount_code"`
 	ExpiresAt       pgtype.Timestamp `json:"expires_at"`
 	Notes           pgtype.Text      `json:"notes"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
@@ -619,15 +619,15 @@ INSERT INTO cart_activity_log (
 `
 
 type CreateCartActivityParams struct {
-	CartID            uuid.UUID   `json:"cart_id"`
-	OrganizationID    int32       `json:"organization_id"`
-	ActivityType      string      `json:"activity_type"`
-	Description       pgtype.Text `json:"description"`
-	PerformedByUserID pgtype.Int4 `json:"performed_by_user_id"`
-	IpAddress         *netip.Addr `json:"ip_address"`
-	UserAgent         pgtype.Text `json:"user_agent"`
-	OldValue          []byte      `json:"old_value"`
-	NewValue          []byte      `json:"new_value"`
+	CartID            uuid.UUID       `json:"cart_id"`
+	OrganizationID    int32           `json:"organization_id"`
+	ActivityType      string          `json:"activity_type"`
+	Description       pgtype.Text     `json:"description"`
+	PerformedByUserID pgtype.Int4     `json:"performed_by_user_id"`
+	IpAddress         *netip.Addr     `json:"ip_address"`
+	UserAgent         pgtype.Text     `json:"user_agent"`
+	OldValue          json.RawMessage `json:"old_value"`
+	NewValue          json.RawMessage `json:"new_value"`
 }
 
 // =====================================================
@@ -689,23 +689,23 @@ INSERT INTO cart_items (
 `
 
 type CreateCartItemParams struct {
-	CartID               uuid.UUID      `json:"cart_id"`
-	OrganizationID       int32          `json:"organization_id"`
-	ProductID            int32          `json:"product_id"`
-	ProductVariantID     pgtype.Int4    `json:"product_variant_id"`
-	Quantity             pgtype.Numeric `json:"quantity"`
-	UomID                pgtype.Int4    `json:"uom_id"`
-	UnitPrice            pgtype.Numeric `json:"unit_price"`
-	DiscountAmount       pgtype.Numeric `json:"discount_amount"`
-	TaxAmount            pgtype.Numeric `json:"tax_amount"`
-	LineTotal            pgtype.Numeric `json:"line_total"`
-	PriceListID          pgtype.Int4    `json:"price_list_id"`
-	TaxCategoryID        pgtype.Int4    `json:"tax_category_id"`
-	BatchNumber          pgtype.Text    `json:"batch_number"`
-	SerialNumber         pgtype.Text    `json:"serial_number"`
-	CustomizationDetails []byte         `json:"customization_details"`
-	Notes                pgtype.Text    `json:"notes"`
-	Metadata             []byte         `json:"metadata"`
+	CartID               uuid.UUID       `json:"cart_id"`
+	OrganizationID       int32           `json:"organization_id"`
+	ProductID            int32           `json:"product_id"`
+	ProductVariantID     pgtype.Int4     `json:"product_variant_id"`
+	Quantity             pgtype.Numeric  `json:"quantity"`
+	UomID                pgtype.Int4     `json:"uom_id"`
+	UnitPrice            pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount       pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric  `json:"tax_amount"`
+	LineTotal            pgtype.Numeric  `json:"line_total"`
+	PriceListID          pgtype.Int4     `json:"price_list_id"`
+	TaxCategoryID        pgtype.Int4     `json:"tax_category_id"`
+	BatchNumber          pgtype.Text     `json:"batch_number"`
+	SerialNumber         pgtype.Text     `json:"serial_number"`
+	CustomizationDetails json.RawMessage `json:"customization_details"`
+	Notes                pgtype.Text     `json:"notes"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -777,17 +777,17 @@ INSERT INTO draft_cart_templates (
 `
 
 type CreateDraftCartTemplateParams struct {
-	OrganizationID       int32       `json:"organization_id"`
-	CustomerID           int32       `json:"customer_id"`
-	TemplateName         string      `json:"template_name"`
-	Description          pgtype.Text `json:"description"`
-	TemplateType         pgtype.Text `json:"template_type"`
-	IsFavorite           pgtype.Bool `json:"is_favorite"`
-	AutoReorderEnabled   pgtype.Bool `json:"auto_reorder_enabled"`
-	ReorderFrequencyDays pgtype.Int4 `json:"reorder_frequency_days"`
-	NextReorderDate      pgtype.Date `json:"next_reorder_date"`
-	Notes                pgtype.Text `json:"notes"`
-	Metadata             []byte      `json:"metadata"`
+	OrganizationID       int32           `json:"organization_id"`
+	CustomerID           int32           `json:"customer_id"`
+	TemplateName         string          `json:"template_name"`
+	Description          pgtype.Text     `json:"description"`
+	TemplateType         pgtype.Text     `json:"template_type"`
+	IsFavorite           pgtype.Bool     `json:"is_favorite"`
+	AutoReorderEnabled   pgtype.Bool     `json:"auto_reorder_enabled"`
+	ReorderFrequencyDays pgtype.Int4     `json:"reorder_frequency_days"`
+	NextReorderDate      pgtype.Date     `json:"next_reorder_date"`
+	Notes                pgtype.Text     `json:"notes"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -848,16 +848,16 @@ INSERT INTO draft_cart_template_items (
 `
 
 type CreateDraftCartTemplateItemParams struct {
-	TemplateID       uuid.UUID      `json:"template_id"`
-	OrganizationID   int32          `json:"organization_id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	LastKnownPrice   pgtype.Numeric `json:"last_known_price"`
-	Priority         pgtype.Int4    `json:"priority"`
-	Notes            pgtype.Text    `json:"notes"`
-	Metadata         []byte         `json:"metadata"`
+	TemplateID       uuid.UUID       `json:"template_id"`
+	OrganizationID   int32           `json:"organization_id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	LastKnownPrice   pgtype.Numeric  `json:"last_known_price"`
+	Priority         pgtype.Int4     `json:"priority"`
+	Notes            pgtype.Text     `json:"notes"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -952,7 +952,7 @@ type CreateInvoiceParams struct {
 	CurrencyCode      pgtype.Text     `json:"currency_code"`
 	ExchangeRate      pgtype.Numeric  `json:"exchange_rate"`
 	BillingAddress    json.RawMessage `json:"billing_address"`
-	ShippingAddress   []byte          `json:"shipping_address"`
+	ShippingAddress   json.RawMessage `json:"shipping_address"`
 	IsRecurring       pgtype.Bool     `json:"is_recurring"`
 	RecurrencePattern pgtype.Text     `json:"recurrence_pattern"`
 	NextInvoiceDate   pgtype.Date     `json:"next_invoice_date"`
@@ -961,7 +961,7 @@ type CreateInvoiceParams struct {
 	ReferenceNumber   pgtype.Text     `json:"reference_number"`
 	CreatedByUserID   pgtype.Int4     `json:"created_by_user_id"`
 	Tags              []string        `json:"tags"`
-	Metadata          []byte          `json:"metadata"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1166,24 +1166,24 @@ INSERT INTO invoice_lines (
 `
 
 type CreateInvoiceLineParams struct {
-	InvoiceID        uuid.UUID      `json:"invoice_id"`
-	OrganizationID   int32          `json:"organization_id"`
-	LineNumber       int32          `json:"line_number"`
-	Description      string         `json:"description"`
-	ItemType         pgtype.Text    `json:"item_type"`
-	ProductID        pgtype.Int4    `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	ProductSku       pgtype.Text    `json:"product_sku"`
-	OrderLineID      pgtype.UUID    `json:"order_line_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UnitPrice        pgtype.Numeric `json:"unit_price"`
-	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
-	TaxAmount        pgtype.Numeric `json:"tax_amount"`
-	LineTotal        pgtype.Numeric `json:"line_total"`
-	TaxCategoryID    pgtype.Int4    `json:"tax_category_id"`
-	TaxRate          pgtype.Numeric `json:"tax_rate"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	Metadata         []byte         `json:"metadata"`
+	InvoiceID        uuid.UUID       `json:"invoice_id"`
+	OrganizationID   int32           `json:"organization_id"`
+	LineNumber       int32           `json:"line_number"`
+	Description      string          `json:"description"`
+	ItemType         pgtype.Text     `json:"item_type"`
+	ProductID        pgtype.Int4     `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	ProductSku       pgtype.Text     `json:"product_sku"`
+	OrderLineID      pgtype.UUID     `json:"order_line_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	TaxCategoryID    pgtype.Int4     `json:"tax_category_id"`
+	TaxRate          pgtype.Numeric  `json:"tax_rate"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1263,22 +1263,22 @@ INSERT INTO invoice_payments (
 `
 
 type CreateInvoicePaymentParams struct {
-	InvoiceID        uuid.UUID      `json:"invoice_id"`
-	OrganizationID   int32          `json:"organization_id"`
-	PaymentNumber    string         `json:"payment_number"`
-	PaymentDate      pgtype.Date    `json:"payment_date"`
-	PaymentAmount    pgtype.Numeric `json:"payment_amount"`
-	PaymentMethod    string         `json:"payment_method"`
-	PaymentGateway   pgtype.Text    `json:"payment_gateway"`
-	PaymentReference pgtype.Text    `json:"payment_reference"`
-	CurrencyCode     pgtype.Text    `json:"currency_code"`
-	ExchangeRate     pgtype.Numeric `json:"exchange_rate"`
-	BankAccountID    pgtype.Int4    `json:"bank_account_id"`
-	Reconciled       pgtype.Bool    `json:"reconciled"`
-	ReconciledDate   pgtype.Date    `json:"reconciled_date"`
-	Notes            pgtype.Text    `json:"notes"`
-	ReceivedByUserID pgtype.Int4    `json:"received_by_user_id"`
-	Metadata         []byte         `json:"metadata"`
+	InvoiceID        uuid.UUID       `json:"invoice_id"`
+	OrganizationID   int32           `json:"organization_id"`
+	PaymentNumber    string          `json:"payment_number"`
+	PaymentDate      pgtype.Date     `json:"payment_date"`
+	PaymentAmount    pgtype.Numeric  `json:"payment_amount"`
+	PaymentMethod    string          `json:"payment_method"`
+	PaymentGateway   pgtype.Text     `json:"payment_gateway"`
+	PaymentReference pgtype.Text     `json:"payment_reference"`
+	CurrencyCode     pgtype.Text     `json:"currency_code"`
+	ExchangeRate     pgtype.Numeric  `json:"exchange_rate"`
+	BankAccountID    pgtype.Int4     `json:"bank_account_id"`
+	Reconciled       pgtype.Bool     `json:"reconciled"`
+	ReconciledDate   pgtype.Date     `json:"reconciled_date"`
+	Notes            pgtype.Text     `json:"notes"`
+	ReceivedByUserID pgtype.Int4     `json:"received_by_user_id"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1482,19 +1482,19 @@ INSERT INTO order_fulfillments (
 `
 
 type CreateOrderFulfillmentParams struct {
-	SalesOrderID          uuid.UUID   `json:"sales_order_id"`
-	OrganizationID        int32       `json:"organization_id"`
-	FulfillmentNumber     string      `json:"fulfillment_number"`
-	FulfillmentStatus     pgtype.Text `json:"fulfillment_status"`
-	ShipmentStatus        pgtype.Text `json:"shipment_status"`
-	FulfillmentStoreID    pgtype.Int4 `json:"fulfillment_store_id"`
-	ShippingCarrier       pgtype.Text `json:"shipping_carrier"`
-	ShippingMethod        pgtype.Text `json:"shipping_method"`
-	TrackingNumber        pgtype.Text `json:"tracking_number"`
-	TrackingUrl           pgtype.Text `json:"tracking_url"`
-	EstimatedDeliveryDate pgtype.Date `json:"estimated_delivery_date"`
-	Notes                 pgtype.Text `json:"notes"`
-	Metadata              []byte      `json:"metadata"`
+	SalesOrderID          uuid.UUID       `json:"sales_order_id"`
+	OrganizationID        int32           `json:"organization_id"`
+	FulfillmentNumber     string          `json:"fulfillment_number"`
+	FulfillmentStatus     pgtype.Text     `json:"fulfillment_status"`
+	ShipmentStatus        pgtype.Text     `json:"shipment_status"`
+	FulfillmentStoreID    pgtype.Int4     `json:"fulfillment_store_id"`
+	ShippingCarrier       pgtype.Text     `json:"shipping_carrier"`
+	ShippingMethod        pgtype.Text     `json:"shipping_method"`
+	TrackingNumber        pgtype.Text     `json:"tracking_number"`
+	TrackingUrl           pgtype.Text     `json:"tracking_url"`
+	EstimatedDeliveryDate pgtype.Date     `json:"estimated_delivery_date"`
+	Notes                 pgtype.Text     `json:"notes"`
+	Metadata              json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1673,23 +1673,23 @@ INSERT INTO quotes (
 `
 
 type CreateQuoteParams struct {
-	QuoteNumber        string      `json:"quote_number"`
-	OrganizationID     int32       `json:"organization_id"`
-	StoreID            pgtype.Int4 `json:"store_id"`
-	CustomerID         pgtype.Int4 `json:"customer_id"`
-	CustomerName       string      `json:"customer_name"`
-	CustomerEmail      pgtype.Text `json:"customer_email"`
-	CustomerPhone      pgtype.Text `json:"customer_phone"`
-	QuoteStatus        QuoteStatus `json:"quote_status"`
-	QuoteDate          pgtype.Date `json:"quote_date"`
-	ValidUntil         pgtype.Date `json:"valid_until"`
-	PaymentTerms       pgtype.Text `json:"payment_terms"`
-	DeliveryTerms      pgtype.Text `json:"delivery_terms"`
-	TermsAndConditions pgtype.Text `json:"terms_and_conditions"`
-	Notes              pgtype.Text `json:"notes"`
-	InternalNotes      pgtype.Text `json:"internal_notes"`
-	CreatedByUserID    pgtype.Int4 `json:"created_by_user_id"`
-	Metadata           []byte      `json:"metadata"`
+	QuoteNumber        string          `json:"quote_number"`
+	OrganizationID     int32           `json:"organization_id"`
+	StoreID            pgtype.Int4     `json:"store_id"`
+	CustomerID         pgtype.Int4     `json:"customer_id"`
+	CustomerName       string          `json:"customer_name"`
+	CustomerEmail      pgtype.Text     `json:"customer_email"`
+	CustomerPhone      pgtype.Text     `json:"customer_phone"`
+	QuoteStatus        QuoteStatus     `json:"quote_status"`
+	QuoteDate          pgtype.Date     `json:"quote_date"`
+	ValidUntil         pgtype.Date     `json:"valid_until"`
+	PaymentTerms       pgtype.Text     `json:"payment_terms"`
+	DeliveryTerms      pgtype.Text     `json:"delivery_terms"`
+	TermsAndConditions pgtype.Text     `json:"terms_and_conditions"`
+	Notes              pgtype.Text     `json:"notes"`
+	InternalNotes      pgtype.Text     `json:"internal_notes"`
+	CreatedByUserID    pgtype.Int4     `json:"created_by_user_id"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1773,20 +1773,20 @@ INSERT INTO quote_lines (
 `
 
 type CreateQuoteLineParams struct {
-	QuoteID          uuid.UUID      `json:"quote_id"`
-	OrganizationID   int32          `json:"organization_id"`
-	LineNumber       int32          `json:"line_number"`
-	ProductID        pgtype.Int4    `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	Description      string         `json:"description"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UnitPrice        pgtype.Numeric `json:"unit_price"`
-	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
-	TaxAmount        pgtype.Numeric `json:"tax_amount"`
-	LineTotal        pgtype.Numeric `json:"line_total"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	Notes            pgtype.Text    `json:"notes"`
-	Metadata         []byte         `json:"metadata"`
+	QuoteID          uuid.UUID       `json:"quote_id"`
+	OrganizationID   int32           `json:"organization_id"`
+	LineNumber       int32           `json:"line_number"`
+	ProductID        pgtype.Int4     `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Description      string          `json:"description"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	Notes            pgtype.Text     `json:"notes"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -1867,30 +1867,30 @@ INSERT INTO sales_order_lines_v2 (
 `
 
 type CreateSalesOrderLineV2Params struct {
-	SalesOrderID         uuid.UUID      `json:"sales_order_id"`
-	OrganizationID       int32          `json:"organization_id"`
-	LineNumber           int32          `json:"line_number"`
-	ProductID            int32          `json:"product_id"`
-	ProductVariantID     pgtype.Int4    `json:"product_variant_id"`
-	ProductName          string         `json:"product_name"`
-	ProductSku           pgtype.Text    `json:"product_sku"`
-	QuantityOrdered      pgtype.Numeric `json:"quantity_ordered"`
-	UomID                pgtype.Int4    `json:"uom_id"`
-	UnitPrice            pgtype.Numeric `json:"unit_price"`
-	DiscountAmount       pgtype.Numeric `json:"discount_amount"`
-	DiscountPercentage   pgtype.Numeric `json:"discount_percentage"`
-	TaxAmount            pgtype.Numeric `json:"tax_amount"`
-	LineTotal            pgtype.Numeric `json:"line_total"`
-	TaxCategoryID        pgtype.Int4    `json:"tax_category_id"`
-	TaxRate              pgtype.Numeric `json:"tax_rate"`
-	BatchNumber          pgtype.Text    `json:"batch_number"`
-	SerialNumbers        []string       `json:"serial_numbers"`
-	ExpiryDate           pgtype.Date    `json:"expiry_date"`
-	LineStatus           pgtype.Text    `json:"line_status"`
-	CustomizationDetails []byte         `json:"customization_details"`
-	UnitCost             pgtype.Numeric `json:"unit_cost"`
-	Notes                pgtype.Text    `json:"notes"`
-	Metadata             []byte         `json:"metadata"`
+	SalesOrderID         uuid.UUID       `json:"sales_order_id"`
+	OrganizationID       int32           `json:"organization_id"`
+	LineNumber           int32           `json:"line_number"`
+	ProductID            int32           `json:"product_id"`
+	ProductVariantID     pgtype.Int4     `json:"product_variant_id"`
+	ProductName          string          `json:"product_name"`
+	ProductSku           pgtype.Text     `json:"product_sku"`
+	QuantityOrdered      pgtype.Numeric  `json:"quantity_ordered"`
+	UomID                pgtype.Int4     `json:"uom_id"`
+	UnitPrice            pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount       pgtype.Numeric  `json:"discount_amount"`
+	DiscountPercentage   pgtype.Numeric  `json:"discount_percentage"`
+	TaxAmount            pgtype.Numeric  `json:"tax_amount"`
+	LineTotal            pgtype.Numeric  `json:"line_total"`
+	TaxCategoryID        pgtype.Int4     `json:"tax_category_id"`
+	TaxRate              pgtype.Numeric  `json:"tax_rate"`
+	BatchNumber          pgtype.Text     `json:"batch_number"`
+	SerialNumbers        []string        `json:"serial_numbers"`
+	ExpiryDate           pgtype.Date     `json:"expiry_date"`
+	LineStatus           pgtype.Text     `json:"line_status"`
+	CustomizationDetails json.RawMessage `json:"customization_details"`
+	UnitCost             pgtype.Numeric  `json:"unit_cost"`
+	Notes                pgtype.Text     `json:"notes"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -2039,7 +2039,7 @@ type CreateSalesOrderV2Params struct {
 	InternalNotes        pgtype.Text       `json:"internal_notes"`
 	Tags                 []string          `json:"tags"`
 	Priority             pgtype.Text       `json:"priority"`
-	Metadata             []byte            `json:"metadata"`
+	Metadata             json.RawMessage   `json:"metadata"`
 }
 
 // =====================================================
@@ -3687,7 +3687,7 @@ type ListAbandonedCartsRow struct {
 	Channel            pgtype.Text      `json:"channel"`
 	PaymentMethod      pgtype.Text      `json:"payment_method"`
 	PaymentGateway     pgtype.Text      `json:"payment_gateway"`
-	DeviceInfo         []byte           `json:"device_info"`
+	DeviceInfo         json.RawMessage  `json:"device_info"`
 	CreatedByUserID    pgtype.Int4      `json:"created_by_user_id"`
 	CashierID          pgtype.Int4      `json:"cashier_id"`
 	PosTerminalID      pgtype.Int4      `json:"pos_terminal_id"`
@@ -3699,8 +3699,8 @@ type ListAbandonedCartsRow struct {
 	CouponCode         pgtype.Text      `json:"coupon_code"`
 	DiscountCode       pgtype.Text      `json:"discount_code"`
 	PromotionalCredits pgtype.Numeric   `json:"promotional_credits"`
-	ShippingAddress    []byte           `json:"shipping_address"`
-	BillingAddress     []byte           `json:"billing_address"`
+	ShippingAddress    json.RawMessage  `json:"shipping_address"`
+	BillingAddress     json.RawMessage  `json:"billing_address"`
 	ShippingMethod     pgtype.Text      `json:"shipping_method"`
 	ConvertedToOrderID pgtype.UUID      `json:"converted_to_order_id"`
 	ConvertedAt        pgtype.Timestamp `json:"converted_at"`
@@ -3708,7 +3708,7 @@ type ListAbandonedCartsRow struct {
 	ExpiresAt          pgtype.Timestamp `json:"expires_at"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	Notes              pgtype.Text      `json:"notes"`
 	ItemCount          int64            `json:"item_count"`
 	CartValue          pgtype.Numeric   `json:"cart_value"`
@@ -3969,9 +3969,9 @@ type ListCartItemsRow struct {
 	TaxCategoryID        pgtype.Int4      `json:"tax_category_id"`
 	BatchNumber          pgtype.Text      `json:"batch_number"`
 	SerialNumber         pgtype.Text      `json:"serial_number"`
-	CustomizationDetails []byte           `json:"customization_details"`
+	CustomizationDetails json.RawMessage  `json:"customization_details"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	AddedAt              pgtype.Timestamp `json:"added_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	ProductName          string           `json:"product_name"`
@@ -4295,7 +4295,7 @@ type ListDraftCartTemplateItemsRow struct {
 	LastKnownPrice   pgtype.Numeric   `json:"last_known_price"`
 	Priority         pgtype.Int4      `json:"priority"`
 	Notes            pgtype.Text      `json:"notes"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	ProductName      string           `json:"product_name"`
@@ -4371,7 +4371,7 @@ type ListDraftCartTemplatesRow struct {
 	NextReorderDate      pgtype.Date      `json:"next_reorder_date"`
 	TotalItems           pgtype.Int4      `json:"total_items"`
 	EstimatedTotal       pgtype.Numeric   `json:"estimated_total"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	Notes                pgtype.Text      `json:"notes"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
@@ -4555,7 +4555,7 @@ type ListInvoiceLinesRow struct {
 	TaxCategoryID    pgtype.Int4      `json:"tax_category_id"`
 	TaxRate          pgtype.Numeric   `json:"tax_rate"`
 	UomID            pgtype.Int4      `json:"uom_id"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	ProductName      pgtype.Text      `json:"product_name"`
@@ -4629,7 +4629,7 @@ type ListInvoicePaymentsRow struct {
 	ReconciledDate   pgtype.Date      `json:"reconciled_date"`
 	Notes            pgtype.Text      `json:"notes"`
 	ReceivedByUserID pgtype.Int4      `json:"received_by_user_id"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	ReceivedByName   interface{}      `json:"received_by_name"`
@@ -5048,7 +5048,7 @@ type ListOrdersByStatusRow struct {
 	InternalNotes        pgtype.Text       `json:"internal_notes"`
 	Tags                 []string          `json:"tags"`
 	Priority             pgtype.Text       `json:"priority"`
-	Metadata             []byte            `json:"metadata"`
+	Metadata             json.RawMessage   `json:"metadata"`
 	CreatedAt            pgtype.Timestamp  `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp  `json:"updated_at"`
 	CustomerNameFull     pgtype.Text       `json:"customer_name_full"`
@@ -5188,7 +5188,7 @@ type ListOverdueInvoicesRow struct {
 	CurrencyCode       pgtype.Text      `json:"currency_code"`
 	ExchangeRate       pgtype.Numeric   `json:"exchange_rate"`
 	BillingAddress     json.RawMessage  `json:"billing_address"`
-	ShippingAddress    []byte           `json:"shipping_address"`
+	ShippingAddress    json.RawMessage  `json:"shipping_address"`
 	IsRecurring        pgtype.Bool      `json:"is_recurring"`
 	RecurrencePattern  pgtype.Text      `json:"recurrence_pattern"`
 	NextInvoiceDate    pgtype.Date      `json:"next_invoice_date"`
@@ -5200,7 +5200,7 @@ type ListOverdueInvoicesRow struct {
 	InternalNotes      pgtype.Text      `json:"internal_notes"`
 	ReferenceNumber    pgtype.Text      `json:"reference_number"`
 	CreatedByUserID    pgtype.Int4      `json:"created_by_user_id"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	Tags               []string         `json:"tags"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
@@ -5392,7 +5392,7 @@ type ListQuoteLinesRow struct {
 	LineTotal        pgtype.Numeric   `json:"line_total"`
 	UomID            pgtype.Int4      `json:"uom_id"`
 	Notes            pgtype.Text      `json:"notes"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	ProductName      pgtype.Text      `json:"product_name"`
@@ -5630,10 +5630,10 @@ type ListSalesOrderLinesV2Row struct {
 	SerialNumbers        []string         `json:"serial_numbers"`
 	ExpiryDate           pgtype.Date      `json:"expiry_date"`
 	LineStatus           pgtype.Text      `json:"line_status"`
-	CustomizationDetails []byte           `json:"customization_details"`
+	CustomizationDetails json.RawMessage  `json:"customization_details"`
 	UnitCost             pgtype.Numeric   `json:"unit_cost"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	ProductNameCurrent   pgtype.Text      `json:"product_name_current"`
@@ -5833,7 +5833,7 @@ type ListUnreconciledPaymentsRow struct {
 	ReconciledDate   pgtype.Date      `json:"reconciled_date"`
 	Notes            pgtype.Text      `json:"notes"`
 	ReceivedByUserID pgtype.Int4      `json:"received_by_user_id"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	InvoiceNumber    string           `json:"invoice_number"`
@@ -6132,22 +6132,22 @@ RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identif
 `
 
 type UpdateCartParams struct {
-	ID                 uuid.UUID      `json:"id"`
-	Subtotal           pgtype.Numeric `json:"subtotal"`
-	DiscountAmount     pgtype.Numeric `json:"discount_amount"`
-	TaxAmount          pgtype.Numeric `json:"tax_amount"`
-	ShippingAmount     pgtype.Numeric `json:"shipping_amount"`
-	TotalAmount        pgtype.Numeric `json:"total_amount"`
-	CouponCode         pgtype.Text    `json:"coupon_code"`
-	DiscountCode       pgtype.Text    `json:"discount_code"`
-	PromotionalCredits pgtype.Numeric `json:"promotional_credits"`
-	ShippingAddress    []byte         `json:"shipping_address"`
-	BillingAddress     []byte         `json:"billing_address"`
-	ShippingMethod     pgtype.Text    `json:"shipping_method"`
-	PaymentMethod      pgtype.Text    `json:"payment_method"`
-	PaymentGateway     pgtype.Text    `json:"payment_gateway"`
-	Notes              pgtype.Text    `json:"notes"`
-	Metadata           []byte         `json:"metadata"`
+	ID                 uuid.UUID       `json:"id"`
+	Subtotal           pgtype.Numeric  `json:"subtotal"`
+	DiscountAmount     pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount          pgtype.Numeric  `json:"tax_amount"`
+	ShippingAmount     pgtype.Numeric  `json:"shipping_amount"`
+	TotalAmount        pgtype.Numeric  `json:"total_amount"`
+	CouponCode         pgtype.Text     `json:"coupon_code"`
+	DiscountCode       pgtype.Text     `json:"discount_code"`
+	PromotionalCredits pgtype.Numeric  `json:"promotional_credits"`
+	ShippingAddress    json.RawMessage `json:"shipping_address"`
+	BillingAddress     json.RawMessage `json:"billing_address"`
+	ShippingMethod     pgtype.Text     `json:"shipping_method"`
+	PaymentMethod      pgtype.Text     `json:"payment_method"`
+	PaymentGateway     pgtype.Text     `json:"payment_gateway"`
+	Notes              pgtype.Text     `json:"notes"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateCart(ctx context.Context, arg UpdateCartParams) (Cart, error) {
@@ -6284,14 +6284,14 @@ RETURNING id, cart_id, organization_id, product_id, product_variant_id, quantity
 `
 
 type UpdateCartItemParams struct {
-	ID             uuid.UUID      `json:"id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	UnitPrice      pgtype.Numeric `json:"unit_price"`
-	DiscountAmount pgtype.Numeric `json:"discount_amount"`
-	TaxAmount      pgtype.Numeric `json:"tax_amount"`
-	LineTotal      pgtype.Numeric `json:"line_total"`
-	Notes          pgtype.Text    `json:"notes"`
-	Metadata       []byte         `json:"metadata"`
+	ID             uuid.UUID       `json:"id"`
+	Quantity       pgtype.Numeric  `json:"quantity"`
+	UnitPrice      pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount      pgtype.Numeric  `json:"tax_amount"`
+	LineTotal      pgtype.Numeric  `json:"line_total"`
+	Notes          pgtype.Text     `json:"notes"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateCartItem(ctx context.Context, arg UpdateCartItemParams) (CartItem, error) {
@@ -6460,16 +6460,16 @@ RETURNING id, organization_id, customer_id, template_name, description, template
 `
 
 type UpdateDraftCartTemplateParams struct {
-	ID                   uuid.UUID   `json:"id"`
-	TemplateName         string      `json:"template_name"`
-	Description          pgtype.Text `json:"description"`
-	TemplateType         pgtype.Text `json:"template_type"`
-	IsFavorite           pgtype.Bool `json:"is_favorite"`
-	AutoReorderEnabled   pgtype.Bool `json:"auto_reorder_enabled"`
-	ReorderFrequencyDays pgtype.Int4 `json:"reorder_frequency_days"`
-	NextReorderDate      pgtype.Date `json:"next_reorder_date"`
-	Notes                pgtype.Text `json:"notes"`
-	Metadata             []byte      `json:"metadata"`
+	ID                   uuid.UUID       `json:"id"`
+	TemplateName         string          `json:"template_name"`
+	Description          pgtype.Text     `json:"description"`
+	TemplateType         pgtype.Text     `json:"template_type"`
+	IsFavorite           pgtype.Bool     `json:"is_favorite"`
+	AutoReorderEnabled   pgtype.Bool     `json:"auto_reorder_enabled"`
+	ReorderFrequencyDays pgtype.Int4     `json:"reorder_frequency_days"`
+	NextReorderDate      pgtype.Date     `json:"next_reorder_date"`
+	Notes                pgtype.Text     `json:"notes"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateDraftCartTemplate(ctx context.Context, arg UpdateDraftCartTemplateParams) (DraftCartTemplate, error) {
@@ -6520,12 +6520,12 @@ RETURNING id, template_id, organization_id, product_id, product_variant_id, quan
 `
 
 type UpdateDraftCartTemplateItemParams struct {
-	ID             uuid.UUID      `json:"id"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	LastKnownPrice pgtype.Numeric `json:"last_known_price"`
-	Priority       pgtype.Int4    `json:"priority"`
-	Notes          pgtype.Text    `json:"notes"`
-	Metadata       []byte         `json:"metadata"`
+	ID             uuid.UUID       `json:"id"`
+	Quantity       pgtype.Numeric  `json:"quantity"`
+	LastKnownPrice pgtype.Numeric  `json:"last_known_price"`
+	Priority       pgtype.Int4     `json:"priority"`
+	Notes          pgtype.Text     `json:"notes"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateDraftCartTemplateItem(ctx context.Context, arg UpdateDraftCartTemplateItemParams) (DraftCartTemplateItem, error) {
@@ -6683,12 +6683,12 @@ type UpdateInvoiceParams struct {
 	DueDate         pgtype.Date     `json:"due_date"`
 	PaymentTerms    pgtype.Text     `json:"payment_terms"`
 	BillingAddress  json.RawMessage `json:"billing_address"`
-	ShippingAddress []byte          `json:"shipping_address"`
+	ShippingAddress json.RawMessage `json:"shipping_address"`
 	Notes           pgtype.Text     `json:"notes"`
 	InternalNotes   pgtype.Text     `json:"internal_notes"`
 	ReferenceNumber pgtype.Text     `json:"reference_number"`
 	Tags            []string        `json:"tags"`
-	Metadata        []byte          `json:"metadata"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (Invoice, error) {
@@ -6774,14 +6774,14 @@ RETURNING id, invoice_id, organization_id, line_number, description, item_type, 
 `
 
 type UpdateInvoiceLineParams struct {
-	ID             uuid.UUID      `json:"id"`
-	Description    string         `json:"description"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	UnitPrice      pgtype.Numeric `json:"unit_price"`
-	DiscountAmount pgtype.Numeric `json:"discount_amount"`
-	TaxAmount      pgtype.Numeric `json:"tax_amount"`
-	LineTotal      pgtype.Numeric `json:"line_total"`
-	Metadata       []byte         `json:"metadata"`
+	ID             uuid.UUID       `json:"id"`
+	Description    string          `json:"description"`
+	Quantity       pgtype.Numeric  `json:"quantity"`
+	UnitPrice      pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount      pgtype.Numeric  `json:"tax_amount"`
+	LineTotal      pgtype.Numeric  `json:"line_total"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateInvoiceLine(ctx context.Context, arg UpdateInvoiceLineParams) (InvoiceLine, error) {
@@ -6835,12 +6835,12 @@ RETURNING id, invoice_id, organization_id, payment_number, payment_date, payment
 `
 
 type UpdateInvoicePaymentParams struct {
-	ID               uuid.UUID      `json:"id"`
-	PaymentAmount    pgtype.Numeric `json:"payment_amount"`
-	PaymentMethod    string         `json:"payment_method"`
-	PaymentReference pgtype.Text    `json:"payment_reference"`
-	Notes            pgtype.Text    `json:"notes"`
-	Metadata         []byte         `json:"metadata"`
+	ID               uuid.UUID       `json:"id"`
+	PaymentAmount    pgtype.Numeric  `json:"payment_amount"`
+	PaymentMethod    string          `json:"payment_method"`
+	PaymentReference pgtype.Text     `json:"payment_reference"`
+	Notes            pgtype.Text     `json:"notes"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateInvoicePayment(ctx context.Context, arg UpdateInvoicePaymentParams) (InvoicePayment, error) {
@@ -7278,16 +7278,16 @@ RETURNING id, sales_order_id, organization_id, fulfillment_number, fulfillment_s
 `
 
 type UpdateOrderFulfillmentParams struct {
-	ID                    uuid.UUID   `json:"id"`
-	FulfillmentStatus     pgtype.Text `json:"fulfillment_status"`
-	ShipmentStatus        pgtype.Text `json:"shipment_status"`
-	ShippingCarrier       pgtype.Text `json:"shipping_carrier"`
-	TrackingNumber        pgtype.Text `json:"tracking_number"`
-	TrackingUrl           pgtype.Text `json:"tracking_url"`
-	EstimatedDeliveryDate pgtype.Date `json:"estimated_delivery_date"`
-	ActualDeliveryDate    pgtype.Date `json:"actual_delivery_date"`
-	Notes                 pgtype.Text `json:"notes"`
-	Metadata              []byte      `json:"metadata"`
+	ID                    uuid.UUID       `json:"id"`
+	FulfillmentStatus     pgtype.Text     `json:"fulfillment_status"`
+	ShipmentStatus        pgtype.Text     `json:"shipment_status"`
+	ShippingCarrier       pgtype.Text     `json:"shipping_carrier"`
+	TrackingNumber        pgtype.Text     `json:"tracking_number"`
+	TrackingUrl           pgtype.Text     `json:"tracking_url"`
+	EstimatedDeliveryDate pgtype.Date     `json:"estimated_delivery_date"`
+	ActualDeliveryDate    pgtype.Date     `json:"actual_delivery_date"`
+	Notes                 pgtype.Text     `json:"notes"`
+	Metadata              json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateOrderFulfillment(ctx context.Context, arg UpdateOrderFulfillmentParams) (OrderFulfillment, error) {
@@ -7807,17 +7807,17 @@ RETURNING id, quote_number, organization_id, store_id, customer_id, customer_nam
 `
 
 type UpdateQuoteParams struct {
-	ID                 uuid.UUID   `json:"id"`
-	CustomerName       string      `json:"customer_name"`
-	CustomerEmail      pgtype.Text `json:"customer_email"`
-	CustomerPhone      pgtype.Text `json:"customer_phone"`
-	ValidUntil         pgtype.Date `json:"valid_until"`
-	PaymentTerms       pgtype.Text `json:"payment_terms"`
-	DeliveryTerms      pgtype.Text `json:"delivery_terms"`
-	TermsAndConditions pgtype.Text `json:"terms_and_conditions"`
-	Notes              pgtype.Text `json:"notes"`
-	InternalNotes      pgtype.Text `json:"internal_notes"`
-	Metadata           []byte      `json:"metadata"`
+	ID                 uuid.UUID       `json:"id"`
+	CustomerName       string          `json:"customer_name"`
+	CustomerEmail      pgtype.Text     `json:"customer_email"`
+	CustomerPhone      pgtype.Text     `json:"customer_phone"`
+	ValidUntil         pgtype.Date     `json:"valid_until"`
+	PaymentTerms       pgtype.Text     `json:"payment_terms"`
+	DeliveryTerms      pgtype.Text     `json:"delivery_terms"`
+	TermsAndConditions pgtype.Text     `json:"terms_and_conditions"`
+	Notes              pgtype.Text     `json:"notes"`
+	InternalNotes      pgtype.Text     `json:"internal_notes"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateQuote(ctx context.Context, arg UpdateQuoteParams) (Quote, error) {
@@ -7884,15 +7884,15 @@ RETURNING id, quote_id, organization_id, line_number, product_id, product_varian
 `
 
 type UpdateQuoteLineParams struct {
-	ID             uuid.UUID      `json:"id"`
-	Description    string         `json:"description"`
-	Quantity       pgtype.Numeric `json:"quantity"`
-	UnitPrice      pgtype.Numeric `json:"unit_price"`
-	DiscountAmount pgtype.Numeric `json:"discount_amount"`
-	TaxAmount      pgtype.Numeric `json:"tax_amount"`
-	LineTotal      pgtype.Numeric `json:"line_total"`
-	Notes          pgtype.Text    `json:"notes"`
-	Metadata       []byte         `json:"metadata"`
+	ID             uuid.UUID       `json:"id"`
+	Description    string          `json:"description"`
+	Quantity       pgtype.Numeric  `json:"quantity"`
+	UnitPrice      pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount      pgtype.Numeric  `json:"tax_amount"`
+	LineTotal      pgtype.Numeric  `json:"line_total"`
+	Notes          pgtype.Text     `json:"notes"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateQuoteLine(ctx context.Context, arg UpdateQuoteLineParams) (QuoteLine, error) {
@@ -8126,15 +8126,15 @@ RETURNING id, sales_order_id, organization_id, line_number, product_id, product_
 `
 
 type UpdateSalesOrderLineV2Params struct {
-	ID                 uuid.UUID      `json:"id"`
-	QuantityOrdered    pgtype.Numeric `json:"quantity_ordered"`
-	UnitPrice          pgtype.Numeric `json:"unit_price"`
-	DiscountAmount     pgtype.Numeric `json:"discount_amount"`
-	DiscountPercentage pgtype.Numeric `json:"discount_percentage"`
-	TaxAmount          pgtype.Numeric `json:"tax_amount"`
-	LineTotal          pgtype.Numeric `json:"line_total"`
-	Notes              pgtype.Text    `json:"notes"`
-	Metadata           []byte         `json:"metadata"`
+	ID                 uuid.UUID       `json:"id"`
+	QuantityOrdered    pgtype.Numeric  `json:"quantity_ordered"`
+	UnitPrice          pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount     pgtype.Numeric  `json:"discount_amount"`
+	DiscountPercentage pgtype.Numeric  `json:"discount_percentage"`
+	TaxAmount          pgtype.Numeric  `json:"tax_amount"`
+	LineTotal          pgtype.Numeric  `json:"line_total"`
+	Notes              pgtype.Text     `json:"notes"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateSalesOrderLineV2(ctx context.Context, arg UpdateSalesOrderLineV2Params) (SalesOrderLinesV2, error) {
@@ -8223,7 +8223,7 @@ type UpdateSalesOrderV2Params struct {
 	InternalNotes        pgtype.Text     `json:"internal_notes"`
 	Tags                 []string        `json:"tags"`
 	Priority             pgtype.Text     `json:"priority"`
-	Metadata             []byte          `json:"metadata"`
+	Metadata             json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateSalesOrderV2(ctx context.Context, arg UpdateSalesOrderV2Params) (SalesOrdersV2, error) {

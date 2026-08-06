@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -20,33 +21,25 @@ SET
     variance         = $4,
     status           = 'closed',
     metadata         = jsonb_set(
-        jsonb_set(metadata, '{closing_note}', to_jsonb($5::text)),
+        jsonb_set(COALESCE(metadata, '{}'::jsonb) || COALESCE($7::jsonb, '{}'::jsonb), '{closing_note}', to_jsonb($5::text)),
         '{closed_by}', to_jsonb($6::bigint)
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, session_number, opening_time, closing_time, variance, status
+RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at
 `
 
 type CloseCashierSessionParams struct {
-	ID              int32          `json:"id"`
-	ClosingBalance  pgtype.Numeric `json:"closing_balance"`
-	ExpectedBalance pgtype.Numeric `json:"expected_balance"`
-	Variance        pgtype.Numeric `json:"variance"`
-	Column5         string         `json:"column_5"`
-	Column6         int64          `json:"column_6"`
+	ID              int32           `json:"id"`
+	ClosingBalance  pgtype.Numeric  `json:"closing_balance"`
+	ExpectedBalance pgtype.Numeric  `json:"expected_balance"`
+	Variance        pgtype.Numeric  `json:"variance"`
+	Column5         string          `json:"column_5"`
+	Column6         int64           `json:"column_6"`
+	Column7         json.RawMessage `json:"column_7"`
 }
 
-type CloseCashierSessionRow struct {
-	ID            int32            `json:"id"`
-	SessionNumber string           `json:"session_number"`
-	OpeningTime   pgtype.Timestamp `json:"opening_time"`
-	ClosingTime   pgtype.Timestamp `json:"closing_time"`
-	Variance      pgtype.Numeric   `json:"variance"`
-	Status        pgtype.Text      `json:"status"`
-}
-
-func (q *Queries) CloseCashierSession(ctx context.Context, arg CloseCashierSessionParams) (CloseCashierSessionRow, error) {
+func (q *Queries) CloseCashierSession(ctx context.Context, arg CloseCashierSessionParams) (CashierSession, error) {
 	row := q.db.QueryRow(ctx, closeCashierSession,
 		arg.ID,
 		arg.ClosingBalance,
@@ -54,15 +47,24 @@ func (q *Queries) CloseCashierSession(ctx context.Context, arg CloseCashierSessi
 		arg.Variance,
 		arg.Column5,
 		arg.Column6,
+		arg.Column7,
 	)
-	var i CloseCashierSessionRow
+	var i CashierSession
 	err := row.Scan(
 		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
 		&i.SessionNumber,
 		&i.OpeningTime,
 		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
+		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -76,48 +78,47 @@ SET
     expected_balance = COALESCE(expected_balance, opening_balance),
     status           = 'closed',
     metadata         = jsonb_set(
-        jsonb_set(COALESCE(metadata, '{}'), '{closing_note}', to_jsonb($3::text)),
+        jsonb_set(COALESCE(metadata, '{}'::jsonb) || COALESCE($5::jsonb, '{}'::jsonb), '{closing_note}', to_jsonb($3::text)),
         '{closed_by}', to_jsonb($4::bigint)
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, session_number, opening_time, closing_time, expected_balance, variance, status
+RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at
 `
 
 type CloseCashierSessionReconcileParams struct {
-	ID             int32          `json:"id"`
-	ClosingBalance pgtype.Numeric `json:"closing_balance"`
-	Column3        string         `json:"column_3"`
-	Column4        int64          `json:"column_4"`
-}
-
-type CloseCashierSessionReconcileRow struct {
-	ID              int32            `json:"id"`
-	SessionNumber   string           `json:"session_number"`
-	OpeningTime     pgtype.Timestamp `json:"opening_time"`
-	ClosingTime     pgtype.Timestamp `json:"closing_time"`
-	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
-	Variance        pgtype.Numeric   `json:"variance"`
-	Status          pgtype.Text      `json:"status"`
+	ID             int32           `json:"id"`
+	ClosingBalance pgtype.Numeric  `json:"closing_balance"`
+	Column3        string          `json:"column_3"`
+	Column4        int64           `json:"column_4"`
+	Column5        json.RawMessage `json:"column_5"`
 }
 
 // Close session and set variance = physical closing_balance - expected_balance (reconciliation at shift end)
-func (q *Queries) CloseCashierSessionReconcile(ctx context.Context, arg CloseCashierSessionReconcileParams) (CloseCashierSessionReconcileRow, error) {
+func (q *Queries) CloseCashierSessionReconcile(ctx context.Context, arg CloseCashierSessionReconcileParams) (CashierSession, error) {
 	row := q.db.QueryRow(ctx, closeCashierSessionReconcile,
 		arg.ID,
 		arg.ClosingBalance,
 		arg.Column3,
 		arg.Column4,
+		arg.Column5,
 	)
-	var i CloseCashierSessionReconcileRow
+	var i CashierSession
 	err := row.Scan(
 		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
 		&i.SessionNumber,
 		&i.OpeningTime,
 		&i.ClosingTime,
+		&i.OpeningBalance,
+		&i.ClosingBalance,
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -152,7 +153,7 @@ type GetActiveCashierSessionRow struct {
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	Status          pgtype.Text      `json:"status"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     string           `json:"cashier_code"`
@@ -228,7 +229,7 @@ type GetCashierSessionsRow struct {
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	Status          pgtype.Text      `json:"status"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     pgtype.Text      `json:"cashier_code"`

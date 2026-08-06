@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -57,7 +58,7 @@ type CreateGoodsReceiptNoteParams struct {
 	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
 	Status             pgtype.Text      `json:"status"`
 	Notes              pgtype.Text      `json:"notes"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
@@ -223,7 +224,7 @@ type GetGoodsReceiptNoteWithDetailsRow struct {
 	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
 	Status             pgtype.Text      `json:"status"`
 	Notes              pgtype.Text      `json:"notes"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 	SupplierName       string           `json:"supplier_name"`
@@ -361,7 +362,7 @@ type ListGoodsReceiptNotesByOrganizationRow struct {
 	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
 	Status             pgtype.Text      `json:"status"`
 	Notes              pgtype.Text      `json:"notes"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 	SupplierName       string           `json:"supplier_name"`
@@ -429,7 +430,7 @@ type ListGoodsReceiptNotesByPurchaseOrderRow struct {
 	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
 	Status             pgtype.Text      `json:"status"`
 	Notes              pgtype.Text      `json:"notes"`
-	Metadata           []byte           `json:"metadata"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 	SupplierName       string           `json:"supplier_name"`

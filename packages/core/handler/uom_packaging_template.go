@@ -35,6 +35,7 @@ func (h *UomPackagingTemplateHandler) getRepositoryFromContext(c *gin.Context) *
 // CreateUomPackagingTemplateRequest represents the body for creating a template.
 type CreateUomPackagingTemplateRequest struct {
 	OrganizationID int32  `json:"organization_id" binding:"required" example:"1"`
+	UomID          int32  `json:"uom_id" binding:"required" example:"1"`
 	Name           string `json:"name" binding:"required" example:"Bottle Pack"`
 	Code           string `json:"code" binding:"required" example:"BTL_PK"`
 	IsActive       bool   `json:"is_active" example:"true"`
@@ -85,7 +86,7 @@ func (h *UomPackagingTemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.CreateTemplate(c.Request.Context(), req.OrganizationID, req.Name, req.Code, req.IsActive)
+	resp := h.useCase.CreateTemplate(c.Request.Context(), req.OrganizationID, req.UomID, req.Name, req.Code, req.IsActive)
 	c.JSON(resp.StatusCode, resp)
 }
 

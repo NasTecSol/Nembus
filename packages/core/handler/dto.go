@@ -1114,11 +1114,12 @@ type OpenCashierSessionRequest struct {
 }
 
 type CloseCashierSessionRequest struct {
-	ClosingBalance  string `json:"closing_balance" binding:"required" example:"500.00"` // Physical count; server computes variance = closing_balance - expected_balance
-	ExpectedBalance string `json:"expected_balance,omitempty" example:"500.00"`         // Optional; server uses DB value for reconciliation
-	Variance        string `json:"variance,omitempty" example:"0.00"`                   // Optional; server computes at close
-	ClosingNote     string `json:"closing_note,omitempty" example:"All good"`
-	ClosedBy        int64  `json:"closed_by" binding:"required" example:"1"`
+	ClosingBalance  string          `json:"closing_balance" binding:"required" example:"500.00"` // Physical count; server computes variance = closing_balance - expected_balance
+	ExpectedBalance string          `json:"expected_balance,omitempty" example:"500.00"`         // Optional; server uses DB value for reconciliation
+	Variance        string          `json:"variance,omitempty" example:"0.00"`                   // Optional; server computes at close
+	ClosingNote     string          `json:"closing_note,omitempty" example:"All good"`
+	ClosedBy        int64           `json:"closed_by" binding:"required" example:"1"`
+	Metadata        json.RawMessage `json:"metadata,omitempty"`
 }
 
 // =====================================================

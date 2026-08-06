@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,15 +22,15 @@ RETURNING id, recipe_id, product_id, product_variant_id, quantity, uom_id, is_op
 `
 
 type CreateRecipeIngredientParams struct {
-	RecipeID         int32          `json:"recipe_id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	IsOptional       pgtype.Bool    `json:"is_optional"`
-	IsByproduct      pgtype.Bool    `json:"is_byproduct"`
-	LineNumber       pgtype.Int4    `json:"line_number"`
-	Metadata         []byte         `json:"metadata"`
+	RecipeID         int32           `json:"recipe_id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	IsOptional       pgtype.Bool     `json:"is_optional"`
+	IsByproduct      pgtype.Bool     `json:"is_byproduct"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateRecipeIngredient(ctx context.Context, arg CreateRecipeIngredientParams) (RecipeIngredient, error) {
@@ -151,15 +152,15 @@ RETURNING id, recipe_id, product_id, product_variant_id, quantity, uom_id, is_op
 `
 
 type UpdateRecipeIngredientParams struct {
-	ID               int32          `json:"id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	IsOptional       pgtype.Bool    `json:"is_optional"`
-	IsByproduct      pgtype.Bool    `json:"is_byproduct"`
-	LineNumber       pgtype.Int4    `json:"line_number"`
-	Metadata         []byte         `json:"metadata"`
+	ID               int32           `json:"id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	IsOptional       pgtype.Bool     `json:"is_optional"`
+	IsByproduct      pgtype.Bool     `json:"is_byproduct"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateRecipeIngredient(ctx context.Context, arg UpdateRecipeIngredientParams) (RecipeIngredient, error) {
