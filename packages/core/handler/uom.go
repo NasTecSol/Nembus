@@ -392,6 +392,40 @@ func (h *UOMHandler) ListProductUOMConversions(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// GetProductUOMConversionsDetailed handles GET /api/products/:product_id/uom-conversions/detailed
+// @Summary      Get detailed product UOM conversions
+// @Description  Get all UOM conversions for a product with detailed UOM and product info
+// @Tags         uoms
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        product_id    path      int     true  "Product ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/products/{product_id}/uom-conversions/detailed [get]
+func (h *UOMHandler) GetProductUOMConversionsDetailed(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	productIDStr := c.Param("product_id")
+	productID64, err := strconv.ParseInt(productIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid product_id", nil))
+		return
+	}
+
+	resp := h.useCase.GetProductUOMConversionsDetailed(c.Request.Context(), int32(productID64))
+	c.JSON(resp.StatusCode, resp)
+}
+
+
 // GetProductUOMConversion handles GET /api/products/:product_id/uom-conversions/lookup?from_uom_id=&to_uom_id=
 // @Summary      Get a specific product UOM conversion
 // @Description  Retrieve a conversion row for a product given from_uom_id and to_uom_id
