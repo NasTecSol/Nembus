@@ -190,6 +190,66 @@ func (q *Queries) GetProductUOMConversion(ctx context.Context, arg GetProductUOM
 	return i, err
 }
 
+const getProductUOMConversionsDetailed = `-- name: GetProductUOMConversionsDetailed :many
+SELECT 
+    p.id AS product_id,
+    p.sku AS product_sku,
+    p.name AS product_name,
+    pkg_uom.code AS packaging_uom_code,
+    pkg_uom.name AS packaging_uom_name,
+    target_uom.code AS target_uom_code,
+    target_uom.name AS target_uom_name,
+    puc.conversion_factor,
+    puc.is_default AS is_default_packaging
+FROM product_uom_conversions puc
+JOIN products p ON puc.product_id = p.id
+JOIN units_of_measure pkg_uom ON puc.from_uom_id = pkg_uom.id
+JOIN units_of_measure target_uom ON puc.to_uom_id = target_uom.id
+WHERE puc.product_id = $1
+`
+
+type GetProductUOMConversionsDetailedRow struct {
+	ProductID          int32          `json:"product_id"`
+	ProductSku         string         `json:"product_sku"`
+	ProductName        string         `json:"product_name"`
+	PackagingUomCode   string         `json:"packaging_uom_code"`
+	PackagingUomName   string         `json:"packaging_uom_name"`
+	TargetUomCode      string         `json:"target_uom_code"`
+	TargetUomName      string         `json:"target_uom_name"`
+	ConversionFactor   pgtype.Numeric `json:"conversion_factor"`
+	IsDefaultPackaging pgtype.Bool    `json:"is_default_packaging"`
+}
+
+func (q *Queries) GetProductUOMConversionsDetailed(ctx context.Context, productID int32) ([]GetProductUOMConversionsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, getProductUOMConversionsDetailed, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProductUOMConversionsDetailedRow
+	for rows.Next() {
+		var i GetProductUOMConversionsDetailedRow
+		if err := rows.Scan(
+			&i.ProductID,
+			&i.ProductSku,
+			&i.ProductName,
+			&i.PackagingUomCode,
+			&i.PackagingUomName,
+			&i.TargetUomCode,
+			&i.TargetUomName,
+			&i.ConversionFactor,
+			&i.IsDefaultPackaging,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUnitOfMeasure = `-- name: GetUnitOfMeasure :one
 SELECT id, code, name, uom_type, decimal_places, is_active, metadata FROM units_of_measure
 WHERE id = $1
