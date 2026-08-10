@@ -1872,13 +1872,13 @@ WHERE code IN (
 );
 
 
-INSERT INTO uom_packaging_templates (organization_id, name, code, is_active)
+INSERT INTO uom_packaging_templates (organization_id,uom_id, name, code, is_active)
 VALUES
-(1, 'Beverage Standard Pattern', '1-24-12', true),
-(1, 'Snack Box Pattern', '1-12-6', true),
-(1, 'Warehouse Bulk Pattern', '1-50-10', true),
-(1, 'Retail Small Pattern', '1-6-4', true),
-(1, 'Pharma Packaging Pattern', '1-100-10', true);
+(1,1, 'Beverage Standard Pattern', '1-24-12', true),
+(1,2, 'Snack Box Pattern', '1-12-6', true),
+(1,3, 'Warehouse Bulk Pattern', '1-50-10', true),
+(1,4, 'Retail Small Pattern', '1-6-4', true),
+(1,5, 'Pharma Packaging Pattern', '1-100-10', true);
 
 
 INSERT INTO uom_packaging_template_levels (template_id, level_order, uom_id, multiplier)

@@ -144,3 +144,22 @@ JOIN units_of_measure u ON tl.uom_id = u.id
 WHERE t.uom_id = $1
 GROUP BY t.id, t.name, t.code, t.is_active;
 
+
+-- name: GetProductUOMConversionsDetailed :many
+SELECT 
+    p.id AS product_id,
+    p.sku AS product_sku,
+    p.name AS product_name,
+    pkg_uom.code AS packaging_uom_code,
+    pkg_uom.name AS packaging_uom_name,
+    target_uom.code AS target_uom_code,
+    target_uom.name AS target_uom_name,
+    puc.conversion_factor,
+    puc.is_default AS is_default_packaging
+FROM product_uom_conversions puc
+JOIN products p ON puc.product_id = p.id
+JOIN units_of_measure pkg_uom ON puc.from_uom_id = pkg_uom.id
+JOIN units_of_measure target_uom ON puc.to_uom_id = target_uom.id
+WHERE puc.product_id = $1;
+
+

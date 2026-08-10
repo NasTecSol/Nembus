@@ -10,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- CORE MASTER DATA
 -- =====================================================
 
-CREATE TABLE IF NOT EXISTS organizations (
+CREATE TABLE IF NOT EXISTS organizations(
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     code VARCHAR(50) UNIQUE NOT NULL,
@@ -4169,6 +4169,69 @@ $$ LANGUAGE plpgsql;
 -- =====================================================
 
 -- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_convert_uom_quantity(
+    p_product_id INTEGER,
+    p_from_uom_code VARCHAR,
+    p_quantity NUMERIC
+)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_base_uom_id INTEGER;
+    v_from_uom_id INTEGER;
+    v_base_quantity NUMERIC;
+BEGIN
+    -- Get base UOM for product
+    SELECT base_uom_id INTO v_base_uom_id
+    FROM products
+    WHERE id = p_product_id;
+    
+    -- Get from UOM ID
+    SELECT id INTO v_from_uom_id
+    FROM units_of_measure
+    WHERE code = p_from_uom_code;
+    
+    -- If from_uom is already base_uom, return as is
+    IF v_from_uom_id = v_base_uom_id THEN
+        RETURN p_quantity;
+    END IF;
+    
+    -- Calculate conversion
+    WITH RECURSIVE uom_path AS (
+        -- Base case: direct conversion
+        SELECT 
+            from_uom_id,
+            to_uom_id,
+            conversion_factor::NUMERIC,
+            1 as level
+        FROM product_uom_conversions
+        WHERE product_id = p_product_id
+            AND from_uom_id = v_from_uom_id
+        
+        UNION ALL
+        
+        -- Recursive case: chain conversions
+        SELECT 
+            puc.from_uom_id,
+            puc.to_uom_id,
+            (up.conversion_factor * puc.conversion_factor)::NUMERIC,
+            up.level + 1
+        FROM product_uom_conversions puc
+        JOIN uom_path up ON puc.from_uom_id = up.to_uom_id
+        WHERE puc.product_id = p_product_id
+            AND up.level < 10  -- Prevent infinite loops
+    )
+    SELECT p_quantity * conversion_factor INTO v_base_quantity
+    FROM uom_path
+    WHERE to_uom_id = v_base_uom_id
+    ORDER BY level
+    LIMIT 1;
+    
+    RETURN COALESCE(v_base_quantity, p_quantity);
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION fn_approve_transfer_request(
     p_transfer_request_id INTEGER,
     p_approved_by INTEGER
@@ -4216,6 +4279,8 @@ DECLARE
     v_item RECORD;
     v_available DECIMAL(15,3);
     v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
 BEGIN
     SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
     IF v_req IS NULL THEN
@@ -4234,7 +4299,16 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Check available stock at source
+        -- Retrieve UOM code for conversion
+        SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+        
+        -- Convert requested qty to base unit qty
+        v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+        IF v_base_qty IS NULL THEN
+            v_base_qty := v_qty;
+        END IF;
+
+        -- Check available stock at source using v_base_qty
         SELECT quantity_available INTO v_available
         FROM inventory_stock
         WHERE product_id = v_item.product_id
@@ -4242,25 +4316,25 @@ BEGIN
           AND store_id = v_req.from_store_id
         FOR UPDATE;
 
-        IF v_available IS NULL OR v_available < v_qty THEN
+        IF v_available IS NULL OR v_available < v_base_qty THEN
             RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
             RETURN;
         END IF;
 
-        -- Deduct from source store
+        -- Deduct from source store using v_base_qty
         UPDATE inventory_stock
-        SET quantity_on_hand = quantity_on_hand - v_qty,
-            quantity_available = quantity_available - v_qty,
+        SET quantity_on_hand = quantity_on_hand - v_base_qty,
+            quantity_available = quantity_available - v_base_qty,
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_item.product_id
           AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
           AND store_id = v_req.from_store_id;
 
-        -- Increment quantity_in_transit at destination store
+        -- Increment quantity_in_transit at destination store using v_base_qty
         INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
             quantity_on_hand, quantity_available, quantity_in_transit)
         VALUES (v_item.product_id, v_item.product_variant_id, v_req.to_store_id, v_item.to_location_id,
-                0, 0, v_qty)
+                0, 0, v_base_qty)
         ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
         DO UPDATE SET
             quantity_in_transit = inventory_stock.quantity_in_transit + EXCLUDED.quantity_in_transit,
@@ -4272,7 +4346,7 @@ BEGIN
             approved_quantity = v_qty
         WHERE id = v_item.id;
 
-        -- Record stock movement (transfer_out / shipped)
+        -- Record stock movement (transfer_out / shipped) using v_base_qty
         INSERT INTO stock_movements (
             movement_type, reference_type, reference_id, product_id, product_variant_id,
             from_store_id, to_store_id, from_location_id, to_location_id,
@@ -4280,7 +4354,7 @@ BEGIN
         ) VALUES (
             'transfer_out', 'transfer_request', p_transfer_request_id, v_item.product_id, v_item.product_variant_id,
             v_req.from_store_id, v_req.to_store_id, v_item.from_location_id, v_item.to_location_id,
-            v_qty, v_item.uom_id, v_item.batch_number, p_shipped_by, 'shipped',
+            v_base_qty, v_item.uom_id, v_item.batch_number, p_shipped_by, 'shipped',
             jsonb_build_object('transfer_number', v_req.transfer_number)
         );
     END LOOP;
@@ -4311,6 +4385,8 @@ DECLARE
     v_req RECORD;
     v_item RECORD;
     v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
 BEGIN
     SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
     IF v_req IS NULL THEN
@@ -4329,11 +4405,20 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Decrement in-transit and increment on_hand & available at destination store
+        -- Retrieve UOM code for conversion
+        SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+        
+        -- Convert requested qty to base unit qty
+        v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+        IF v_base_qty IS NULL THEN
+            v_base_qty := v_qty;
+        END IF;
+
+        -- Decrement in-transit and increment on_hand & available at destination store using v_base_qty
         UPDATE inventory_stock
-        SET quantity_in_transit = GREATEST(0, quantity_in_transit - v_qty),
-            quantity_on_hand = quantity_on_hand + v_qty,
-            quantity_available = quantity_available + v_qty,
+        SET quantity_in_transit = GREATEST(0, quantity_in_transit - v_base_qty),
+            quantity_on_hand = quantity_on_hand + v_base_qty,
+            quantity_available = quantity_available + v_base_qty,
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_item.product_id
           AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
@@ -4344,7 +4429,7 @@ BEGIN
         SET received_quantity = v_qty
         WHERE id = v_item.id;
 
-        -- Record stock movement (transfer_in / completed)
+        -- Record stock movement (transfer_in / completed) using v_base_qty
         INSERT INTO stock_movements (
             movement_type, reference_type, reference_id, product_id, product_variant_id,
             from_store_id, to_store_id, from_location_id, to_location_id,
@@ -4352,7 +4437,7 @@ BEGIN
         ) VALUES (
             'transfer_in', 'transfer_request', p_transfer_request_id, v_item.product_id, v_item.product_variant_id,
             v_req.from_store_id, v_req.to_store_id, v_item.from_location_id, v_item.to_location_id,
-            v_qty, v_item.uom_id, v_item.batch_number, p_received_by, 'completed',
+            v_base_qty, v_item.uom_id, v_item.batch_number, p_received_by, 'completed',
             jsonb_build_object('transfer_number', v_req.transfer_number)
         );
     END LOOP;
@@ -5126,8 +5211,186 @@ CREATE TABLE sync_watermarks (
     UNIQUE(entity_type, store_id)
 );
 
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_log_transfer_request_history()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_history_entry JSONB;
+    v_items_array JSONB := '[]'::jsonb;
+    v_item RECORD;
+    v_user_id INTEGER;
+    v_user_name VARCHAR;
+    v_from_store_name VARCHAR;
+    v_to_store_name VARCHAR;
+    
+    -- Quantities
+    v_qty_moved NUMERIC;
+    v_base_qty_moved NUMERIC;
+    v_base_uom_code VARCHAR;
+    
+    -- Stock tracking variables
+    v_from_before_on_hand NUMERIC := 0;
+    v_from_after_on_hand NUMERIC := 0;
+    v_to_before_on_hand NUMERIC := 0;
+    v_to_after_on_hand NUMERIC := 0;
+    v_to_before_transit NUMERIC := 0;
+    v_to_after_transit NUMERIC := 0;
+BEGIN
+    -- If it's an UPDATE, and status did not change, skip history logging
+    IF TG_OP = 'UPDATE' AND OLD.status = NEW.status THEN
+        RETURN NEW;
+    END IF;
+
+    -- Ensure metadata block is initialized as a JSON object (avoids "cannot set path in scalar")
+    IF NEW.metadata IS NULL OR jsonb_typeof(NEW.metadata) != 'object' THEN
+        NEW.metadata := '{}'::jsonb;
+    END IF;
+
+    -- Determine who changed the status based on current state
+    IF NEW.status = 'draft' THEN v_user_id := NEW.requested_by;
+    ELSIF NEW.status = 'approved' THEN v_user_id := NEW.approved_by;
+    ELSIF NEW.status = 'shipped' THEN v_user_id := NEW.shipped_by;
+    ELSIF NEW.status = 'received' THEN v_user_id := NEW.received_by;
+    ELSE v_user_id := COALESCE(NEW.approved_by, NEW.requested_by);
+    END IF;
+
+    -- Fetch user name and store names for auditing
+    SELECT username INTO v_user_name FROM users WHERE id = v_user_id;
+    SELECT name INTO v_from_store_name FROM stores WHERE id = NEW.from_store_id;
+    SELECT name INTO v_to_store_name FROM stores WHERE id = NEW.to_store_id;
+
+    -- Loop through all products/items linked to this transfer request
+    FOR v_item IN (
+        SELECT tri.*, p.sku, p.name AS prod_name, u.code AS req_uom_code, p.base_uom_id
+        FROM transfer_request_items tri
+        JOIN products p ON tri.product_id = p.id
+        LEFT JOIN units_of_measure u ON tri.uom_id = u.id
+        WHERE tri.transfer_request_id = NEW.id
+    ) LOOP
+        -- Retrieve base UOM code
+        SELECT code INTO v_base_uom_code FROM units_of_measure WHERE id = v_item.base_uom_id;
+
+        -- Get current live stock at sending Store (Source)
+        SELECT COALESCE(quantity_on_hand, 0)
+        INTO v_from_after_on_hand
+        FROM inventory_stock
+        WHERE product_id = v_item.product_id 
+          AND store_id = NEW.from_store_id 
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL));
+
+        -- Get current live stock at receiving Store (Destination)
+        SELECT COALESCE(quantity_on_hand, 0), COALESCE(quantity_in_transit, 0)
+        INTO v_to_after_on_hand, v_to_after_transit
+        FROM inventory_stock
+        WHERE product_id = v_item.product_id 
+          AND store_id = NEW.to_store_id 
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL));
+
+        -- Resolve the quantity moved in the current state transition
+        IF NEW.status = 'shipped' THEN
+            v_qty_moved := COALESCE(v_item.shipped_quantity, v_item.requested_quantity);
+        ELSIF NEW.status = 'received' THEN
+            v_qty_moved := COALESCE(v_item.received_quantity, v_item.shipped_quantity);
+        ELSE
+            v_qty_moved := v_item.requested_quantity;
+        END IF;
+
+        -- Convert to base unit quantity for inventory calculations
+        v_base_qty_moved := fn_convert_uom_quantity(v_item.product_id, COALESCE(v_item.req_uom_code, ''), v_qty_moved);
+        IF v_base_qty_moved IS NULL THEN
+            v_base_qty_moved := v_qty_moved;
+        END IF;
+
+        -- Calculate predicted stock outcomes based on transition states using base quantities
+        IF NEW.status = 'shipped' THEN
+            -- Shipped: Stock has been deducted from source, and added to transit at destination
+            v_from_before_on_hand := v_from_after_on_hand + v_base_qty_moved;
+            
+            v_to_before_transit   := v_to_after_transit - v_base_qty_moved;
+            v_to_before_on_hand   := v_to_after_on_hand;
+        ELSIF NEW.status = 'received' THEN
+            -- Received: Stock was moved from transit to on_hand at destination
+            v_from_before_on_hand := v_from_after_on_hand;
+            v_from_after_on_hand  := v_from_after_on_hand;
+            
+            v_to_before_transit   := v_to_after_transit + v_base_qty_moved;
+            v_to_before_on_hand   := v_to_after_on_hand - v_base_qty_moved;
+        ELSE
+            -- Default/Approval state: Physical stock levels unchanged
+            v_from_before_on_hand := v_from_after_on_hand;
+            v_to_before_transit   := v_to_after_transit;
+            v_to_before_on_hand   := v_to_after_on_hand;
+        END IF;
+
+        -- Append item audit blocks to array
+        v_items_array := v_items_array || jsonb_build_array(
+            jsonb_build_object(
+                'product_id', v_item.product_id,
+                'product_variant_id', v_item.product_variant_id,
+                'sku', v_item.sku,
+                'product_name', v_item.prod_name,
+                'requested_quantity', v_item.requested_quantity,
+                'shipped_quantity', v_item.shipped_quantity,
+                'received_quantity', v_item.received_quantity,
+                'uom', COALESCE(v_item.req_uom_code, ''),
+                'converted_base_quantity', v_base_qty_moved,
+                'base_uom', COALESCE(v_base_uom_code, ''),
+                'inventory_snapshot', jsonb_build_object(
+                    'source_store', jsonb_build_object(
+                        'store_name', v_from_store_name,
+                        'before_on_hand', COALESCE(v_from_before_on_hand, 0),
+                        'after_on_hand', COALESCE(v_from_after_on_hand, 0),
+                        'deducted', CASE WHEN NEW.status = 'shipped' THEN v_base_qty_moved ELSE 0 END
+                    ),
+                    'destination_store', jsonb_build_object(
+                        'store_name', v_to_store_name,
+                        'before_on_hand', COALESCE(v_to_before_on_hand, 0),
+                        'after_on_hand', COALESCE(v_to_after_on_hand, 0),
+                        'before_in_transit', COALESCE(v_to_before_transit, 0),
+                        'after_in_transit', COALESCE(v_to_after_transit, 0),
+                        'added_received', CASE WHEN NEW.status = 'received' THEN v_base_qty_moved ELSE 0 END
+                    )
+                )
+            )
+        );
+    END LOOP;
+
+    -- Build the history state entry
+    v_history_entry := jsonb_build_object(
+        'status', NEW.status,
+        'changed_at', CURRENT_TIMESTAMP,
+        'user_details', jsonb_build_object('id', v_user_id, 'username', COALESCE(v_user_name, 'system')),
+        'notes', COALESCE(NEW.notes, ''),
+        'transfer_items_snapshot', v_items_array
+    );
+
+    -- Build nested history array key
+    IF NOT (NEW.metadata ? 'history') THEN
+        NEW.metadata := jsonb_set(NEW.metadata, '{history}', '[]'::jsonb);
+    END IF;
+
+    -- Append the state audit to the history queue
+    NEW.metadata := jsonb_set(
+        NEW.metadata, 
+        '{history}', 
+        (NEW.metadata->'history') || jsonb_build_array(v_history_entry)
+    );
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_transfer_request_history ON transfer_requests;
+CREATE TRIGGER trg_transfer_request_history
+BEFORE INSERT OR UPDATE ON transfer_requests
+FOR EACH ROW
+EXECUTE FUNCTION fn_log_transfer_request_history();
+-- +goose StatementEnd
+
 
 -- +goose Down
+DROP TRIGGER IF EXISTS trg_transfer_request_history ON transfer_requests;
+DROP FUNCTION IF EXISTS fn_log_transfer_request_history();
 
 -- ZATCA Phase 2 drops
 DROP TABLE IF EXISTS sync_watermarks CASCADE;

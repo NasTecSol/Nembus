@@ -24,6 +24,7 @@ func RegisterUOMRoutes(r *gin.RouterGroup, h *handler.UOMHandler) {
 	{
 		productConversions.POST("", h.CreateProductUOMConversion)
 		productConversions.GET("", h.ListProductUOMConversions)
+		productConversions.GET("/detailed", h.GetProductUOMConversionsDetailed)
 		productConversions.GET("/lookup", h.GetProductUOMConversion)
 	}
 

@@ -34,6 +34,7 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
+            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
             ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}
             ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
 
