@@ -3120,8 +3120,8 @@ BEGIN
         cat.decimal_places::INTEGER,
         cat.retail_price,
         COALESCE(cat.promo_price, promo_rule.calculated_promo_price) AS promo_price,
-        COALESCE(cat.effective_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
-        COALESCE(cat.has_active_promotion, (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
+        COALESCE(cat.promo_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
+        (cat.has_active_promotion OR (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
         COALESCE(cat.promotion_name, promo_rule.promo_name)::VARCHAR AS promotion_name,
         COALESCE(cat.discount_percent, promo_rule.calc_discount_percent)::VARCHAR AS discount_percent,
         COALESCE(cat.promo_min_quantity, promo_rule.promo_min_qty) AS promo_min_quantity,
@@ -3540,8 +3540,8 @@ BEGIN
         (cat.decimal_places)::INTEGER,
         cat.retail_price,
         COALESCE(cat.promo_price, promo_rule.calculated_promo_price) AS promo_price,
-        COALESCE(cat.effective_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
-        COALESCE(cat.has_active_promotion, (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
+        COALESCE(cat.promo_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
+        (cat.has_active_promotion OR (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
         COALESCE(cat.promotion_name, promo_rule.promo_name)::VARCHAR AS promotion_name,
         COALESCE(cat.promo_min_quantity, promo_rule.promo_min_qty) AS promo_min_quantity,
         cat.tax_rate,
@@ -5385,6 +5385,140 @@ CREATE TRIGGER trg_transfer_request_history
 BEFORE INSERT OR UPDATE ON transfer_requests
 FOR EACH ROW
 EXECUTE FUNCTION fn_log_transfer_request_history();
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_sync_promotion_to_product_prices()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_promo_pl_id INTEGER;
+    v_target_product_id INTEGER;
+    v_retail_pp RECORD;
+    v_calculated_price NUMERIC(15,2);
+    v_discount_percent_str VARCHAR;
+BEGIN
+    -- Locate existing PROMO price list
+    SELECT id INTO v_promo_pl_id
+    FROM price_lists
+    WHERE (code = 'PROMO' OR price_list_type = 'promotional')
+      AND is_active = true
+    ORDER BY id ASC
+    LIMIT 1;
+
+    -- If no PROMO price list exists, dynamically create one
+    IF v_promo_pl_id IS NULL AND (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
+        INSERT INTO price_lists (code, name, price_list_type, currency_code, is_active)
+        VALUES (
+            'PROMO', 
+            'Promotional Price List', 
+            'promotional', 
+            'SAR', 
+            true
+        )
+        ON CONFLICT (code) DO UPDATE SET is_active = true
+        RETURNING id INTO v_promo_pl_id;
+    END IF;
+
+    -- If DELETING or DEACTIVATING promotion, remove/deactivate promo package prices
+    IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND NEW.is_active = false) THEN
+        DELETE FROM product_prices
+        WHERE price_list_id = v_promo_pl_id
+          AND metadata->>'promotion_id' = COALESCE(OLD.id, NEW.id)::text;
+        
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    -- If INSERTING or UPDATING active promotion, generate promotional package prices
+    IF NEW.is_active = true AND v_promo_pl_id IS NOT NULL THEN
+        -- Format discount percent string for metadata
+        IF NEW.promotion_type = 'percentage_discount' AND NEW.discount_value IS NOT NULL THEN
+            v_discount_percent_str := CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM NEW.discount_value::text)), '%');
+        ELSE
+            v_discount_percent_str := NULL;
+        END IF;
+
+        -- Find all target products matching the promotion criteria
+        FOR v_target_product_id IN (
+            SELECT p.id
+            FROM products p
+            WHERE p.organization_id = NEW.organization_id
+              AND p.is_active = true
+              AND (
+                  NEW.applies_to = 'all'
+                  OR (NEW.applies_to = 'product' AND p.id = ANY(NEW.target_product_ids))
+                  OR (NEW.applies_to = 'category' AND p.category_id = ANY(NEW.target_category_ids))
+              )
+        ) LOOP
+            -- Loop through existing retail package prices for this product to compute promotional price per UOM
+            FOR v_retail_pp IN (
+                SELECT pp.*
+                FROM product_prices pp
+                JOIN price_lists pl ON pp.price_list_id = pl.id
+                WHERE pp.product_id = v_target_product_id
+                  AND pl.price_list_type = 'retail'
+                  AND pp.is_active = true
+            ) LOOP
+                -- Calculate promo price
+                IF NEW.promotion_type = 'percentage_discount' AND NEW.discount_value IS NOT NULL THEN
+                    v_calculated_price := ROUND(v_retail_pp.price * (1.0 - (NEW.discount_value / 100.0)), 2);
+                ELSIF NEW.promotion_type = 'fixed_discount' AND NEW.discount_value IS NOT NULL THEN
+                    v_calculated_price := GREATEST(0.00, v_retail_pp.price - NEW.discount_value);
+                ELSE
+                    v_calculated_price := v_retail_pp.price;
+                END IF;
+
+                -- Remove previous promo price entry for this product + UOM + PROMO price list if it exists
+                DELETE FROM product_prices
+                WHERE product_id = v_target_product_id
+                  AND price_list_id = v_promo_pl_id
+                  AND (product_variant_id = v_retail_pp.product_variant_id OR (product_variant_id IS NULL AND v_retail_pp.product_variant_id IS NULL))
+                  AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
+
+                -- Insert new promotional package price into product_prices
+                INSERT INTO product_prices (
+                    product_id,
+                    product_variant_id,
+                    price_list_id,
+                    uom_id,
+                    price,
+                    min_quantity,
+                    max_quantity,
+                    valid_from,
+                    valid_to,
+                    is_active,
+                    metadata
+                ) VALUES (
+                    v_target_product_id,
+                    v_retail_pp.product_variant_id,
+                    v_promo_pl_id,
+                    v_retail_pp.uom_id,
+                    v_calculated_price,
+                    v_retail_pp.min_quantity,
+                    v_retail_pp.max_quantity,
+                    NEW.valid_from,
+                    NEW.valid_to,
+                    true,
+                    jsonb_build_object(
+                        'promotion_id', NEW.id,
+                        'promotion_name', NEW.name,
+                        'discount_percent', v_discount_percent_str
+                    )
+                );
+            END LOOP;
+        END LOOP;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_sync_promotion_to_product_prices ON promotions;
+CREATE TRIGGER trg_sync_promotion_to_product_prices
+AFTER INSERT OR UPDATE OR DELETE ON promotions
+FOR EACH ROW
+EXECUTE FUNCTION fn_sync_promotion_to_product_prices();
 -- +goose StatementEnd
 
 
