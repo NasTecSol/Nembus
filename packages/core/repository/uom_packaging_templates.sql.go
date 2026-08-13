@@ -26,7 +26,7 @@ RETURNING id, organization_id, uom_id, name, code, is_active, created_at, update
 
 type CreateUomPackagingTemplateParams struct {
 	OrganizationID int32       `json:"organization_id"`
-	UomID          int32       `json:"uom_id"`
+	UomID          pgtype.Int4 `json:"uom_id"`
 	Name           string      `json:"name"`
 	Code           string      `json:"code"`
 	IsActive       pgtype.Bool `json:"is_active"`

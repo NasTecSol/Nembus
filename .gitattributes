@@ -1,9 +1,12 @@
 # Normalize line endings to LF in the repository
 * text=auto
 
-# Force LF for all SQL files and Atlas checksums so they are consistent
-# across Windows (local) and Linux (CI/GitHub Actions). This prevents
-# atlas.sum checksum mismatches caused by CRLF or UTF-8 BOM differences.
-*.sql text eol=lf
-packages/core/db/migrations/atlas.sum text eol=lf
-packages/core/db/schema/*.sql text eol=lf
+# Force LF for source code files — prevents CRLF-induced diffs between
+# Windows (local development) and Linux (CI/GitHub Actions runners).
+*.go   text eol=lf
+*.sql  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.hcl  text eol=lf
+*.md   text eol=lf
+*.sum  text eol=lf

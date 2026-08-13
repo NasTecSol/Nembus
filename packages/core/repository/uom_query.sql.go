@@ -323,7 +323,7 @@ type GetUomPackagingTemplatesByUomIDRow struct {
 	Levels              json.RawMessage `json:"levels"`
 }
 
-func (q *Queries) GetUomPackagingTemplatesByUomID(ctx context.Context, uomID int32) ([]GetUomPackagingTemplatesByUomIDRow, error) {
+func (q *Queries) GetUomPackagingTemplatesByUomID(ctx context.Context, uomID pgtype.Int4) ([]GetUomPackagingTemplatesByUomIDRow, error) {
 	rows, err := q.db.Query(ctx, getUomPackagingTemplatesByUomID, uomID)
 	if err != nil {
 		return nil, err
