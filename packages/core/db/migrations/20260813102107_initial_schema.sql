@@ -1,4 +1,4 @@
-﻿-- Create extension "uuid-ossp"
+-- Create extension "uuid-ossp"
 CREATE EXTENSION "uuid-ossp" WITH SCHEMA "public" VERSION "1.1";
 -- Create enum type "order_type"
 CREATE TYPE "public"."order_type" AS ENUM ('standard', 'quote', 'subscription', 'return', 'exchange');
