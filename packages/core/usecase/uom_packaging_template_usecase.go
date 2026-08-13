@@ -37,7 +37,7 @@ func templateToOutput(t repository.UomPackagingTemplate) UomPackagingTemplateOut
 	return UomPackagingTemplateOutput{
 		ID:             t.ID,
 		OrganizationID: t.OrganizationID,
-		UomID:          t.UomID,
+		UomID:          t.UomID.Int32,
 		Name:           t.Name,
 		Code:           t.Code,
 		IsActive:       t.IsActive,
@@ -96,7 +96,7 @@ func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 
 	row, err := uc.repo.CreateUomPackagingTemplate(ctx, repository.CreateUomPackagingTemplateParams{
 		OrganizationID: organizationID,
-		UomID:          uomID,
+		UomID:          pgtype.Int4{Int32: uomID, Valid: uomID != 0},
 		Name:           name,
 		Code:           code,
 		IsActive:       active,
@@ -379,7 +379,7 @@ func (uc *UomPackagingTemplateUseCase) CreateTemplatePipeline(
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, input.UomID)
+	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, pgtype.Int4{Int32: input.UomID, Valid: input.UomID != 0})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -401,7 +401,7 @@ func (uc *UomPackagingTemplateUseCase) GetTemplatesByUomID(
 		return utils.NewResponse(utils.CodeBadReq, "invalid uom id", nil)
 	}
 
-	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, int32(parsed))
+	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, pgtype.Int4{Int32: int32(parsed), Valid: true})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
