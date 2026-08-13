@@ -1,24 +1,71 @@
-name: Deploy, Backup, Migrate & Auto-Restore on Junction Merge
+name: Deploy & Migrate Multi-Tenant DBs on Junction Merge
 
 on:
   push:
     branches:
       - junction
+    paths:
+      - 'packages/core/db/**'
+      - 'packages/core/migrations/**'
+      - 'packages/core/queries/**'
+      - 'packages/core/**'
+      - 'apps/cloud-server/**'
+      - 'Dockerfile'
+      - '.github/workflows/migrate.yml'
+  workflow_dispatch:
+    inputs:
+      force_migrate:
+        description: 'Force run migrations even if no schema diff detected'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
   packages: write
 
-env:
-  IMAGE_REPOSITORY: ghcr.io/nastecsol/pos-api
-
 jobs:
-  deploy-backup-migrate:
+  build-migrate-deploy:
+    name: Build, Backup, Multi-Tenant Migrate & Deploy
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set GHCR owner lowercase
+        shell: bash
+        run: echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+
+      - name: Detect Schema / Migration Changes
+        id: detect-changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "schema_changed=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ Workflow dispatched manually. Migration enabled."
+          else
+            # Check if previous commit exists to diff
+            if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+              CHANGES=$(git diff --name-only HEAD~1 HEAD -- packages/core/db/ packages/core/migrations/ packages/core/queries/ apps/cloud-server/ || true)
+            else
+              CHANGES="first-commit"
+            fi
+
+            if [ -n "$CHANGES" ]; then
+              echo "schema_changed=true" >> $GITHUB_OUTPUT
+              echo "✅ Database schema/queries changes detected:"
+              echo "$CHANGES"
+            else
+              echo "schema_changed=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ No schema or migration files modified in this commit."
+            fi
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -34,11 +81,10 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
-            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}
-            ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev
+            ghcr.io/${{ env.OWNER_LC }}/pos-api:dev
+            ghcr.io/${{ env.OWNER_LC }}/pos-api:dev-${{ github.sha }}
 
-      - name: Backup, Migrate and Deploy on EC2
+      - name: Backup, Migrate Tenants & Deploy on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -65,22 +111,23 @@ jobs:
             BACKUP_DIR="/tmp/pos-backups-${TIMESTAMP}"
             TARGET_DATABASES_FILE="${BACKUP_DIR}/databases.txt"
 
-            # Validate required environment variables
             POSTGRES_USER="${POSTGRES_USER:-postgres}"
             POSTGRES_DB="${POSTGRES_DB:-masterDB}"
             
-            echo "ℹ️ Using DB User: ${POSTGRES_USER}, Master DB: ${POSTGRES_DB}"
+            echo "=================================================="
+            echo "ℹ️ DB User: ${POSTGRES_USER} | Master DB: ${POSTGRES_DB}"
+            echo "=================================================="
 
             umask 077
             mkdir -p "${BACKUP_DIR}"
 
-            echo "🔎 1. Discovering master and tenant databases..."
+            echo "🔎 1. Discovering Master DB and all active Tenant DBs..."
 
-            # Write Master DB first
+            # Master database is always included
             printf '%s\n' "${POSTGRES_DB}" > "${TARGET_DATABASES_FILE}"
 
-            # Query all active tenant DB names from the tenants table
-            if ! docker exec "${CONTAINER_DB}" psql \
+            # Discover all active tenant databases from the tenants table
+            if docker exec "${CONTAINER_DB}" psql \
               -U "${POSTGRES_USER}" \
               -d "${POSTGRES_DB}" \
               -Atc "
@@ -89,18 +136,22 @@ jobs:
                 FROM tenants
                 WHERE is_active = true
                 ORDER BY 1;
-              " >> "${TARGET_DATABASES_FILE}"; then
-                echo "⚠️ Warning: Failed to query tenants table or tenants table doesn't exist yet. Proceeding with Master DB only."
+              " >> "${TARGET_DATABASES_FILE}" 2>/dev/null; then
+                echo "✓ Discovered tenant databases from master registry."
+            else
+                echo "⚠️ Note: tenants table query skipped or not yet initialized. Proceeding with Master DB."
             fi
 
-            # Clean and deduplicate database list
+            # Deduplicate database list
             grep -v '^$' "${TARGET_DATABASES_FILE}" | sort -u > "${TARGET_DATABASES_FILE}.tmp"
             mv "${TARGET_DATABASES_FILE}.tmp" "${TARGET_DATABASES_FILE}"
 
-            echo "Target Databases Selected:"
+            DB_COUNT=$(wc -l < "${TARGET_DATABASES_FILE}")
+            echo "Target Databases Found (${DB_COUNT}):"
             sed 's/^/  - /' "${TARGET_DATABASES_FILE}"
 
-            echo "📦 2. Creating individual backups for all target databases..."
+            echo ""
+            echo "📦 2. Taking pre-migration safety backups for all databases..."
 
             while IFS= read -r DB_NAME; do
               [ -z "${DB_NAME}" ] && continue
@@ -108,7 +159,7 @@ jobs:
               CONTAINER_BACKUP="/tmp/${DB_NAME}_${TIMESTAMP}.dump"
               HOST_BACKUP="${BACKUP_DIR}/${DB_NAME}.dump"
 
-              echo "Backing up: ${DB_NAME}"
+              echo "  -> Backing up: ${DB_NAME}"
 
               if ! docker exec "${CONTAINER_DB}" pg_dump \
                 -U "${POSTGRES_USER}" \
@@ -116,6 +167,7 @@ jobs:
                 -F c \
                 -f "${CONTAINER_BACKUP}"; then
                   echo "❌ pg_dump failed for database: ${DB_NAME}"
+                  rm -rf "${BACKUP_DIR}"
                   exit 1
               fi
 
@@ -123,74 +175,62 @@ jobs:
               docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
 
               if [ ! -s "${HOST_BACKUP}" ]; then
-                echo "❌ Backup failed or empty for database: ${DB_NAME}"
+                echo "❌ Backup file empty for database: ${DB_NAME}"
+                rm -rf "${BACKUP_DIR}"
                 exit 1
               fi
             done < "${TARGET_DATABASES_FILE}"
 
-            echo "✅ All pre-migration backups completed successfully!"
+            echo "✅ All pre-migration backups created in ${BACKUP_DIR}"
 
+            echo ""
             echo "🚀 3. Pulling latest POS API container image..."
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
             
-            DEPLOY_IMAGE="ghcr.io/${{ secrets.GHCR_USER }}/pos-api:dev-${{ github.sha }}"
+            DEPLOY_IMAGE="ghcr.io/${{ env.OWNER_LC }}/pos-api:dev-${{ github.sha }}"
             docker pull "${DEPLOY_IMAGE}"
 
-            # Detect Docker network used by the postgres container
+            # Detect Docker network
             DOCKER_NET=$(docker inspect "${CONTAINER_DB}" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | head -n 1)
             [ -z "${DOCKER_NET}" ] && DOCKER_NET="bridge"
             echo "ℹ️ Using Docker Network: ${DOCKER_NET}"
 
-            echo "⚡ 4. Running migrations database by database (One-by-One)..."
+            echo ""
+            echo "⚡ 4. Applying Atlas migrations across Master and Tenant DBs..."
 
             MIGRATION_FAILED=0
+            FAILED_DB=""
 
             while IFS= read -r DB_NAME; do
               [ -z "${DB_NAME}" ] && continue
               
               echo "--------------------------------------------------"
-              echo "🚀 Running migrations on database: ${DB_NAME}..."
+              echo "🚀 Running Atlas migration on: ${DB_NAME}..."
+              echo "--------------------------------------------------"
 
-              # ── Clean DB Before Migration ─────────────────────────────────────────
-              # Drop and recreate the public schema to ensure a clean slate before
-              # running migrations. This avoids "relation already exists" conflicts.
-              # NOTE: All existing data in this DB is wiped. The backup taken above
-              #       in step 2 can be used to restore manually if needed.
-              echo "🧹 Cleaning database schema for: ${DB_NAME}..."
-              docker exec "${CONTAINER_DB}" psql \
-                -U "${POSTGRES_USER}" \
-                -d "${DB_NAME}" \
-                -c "
-                  DROP SCHEMA public CASCADE;
-                  CREATE SCHEMA public;
-                  GRANT ALL ON SCHEMA public TO ${POSTGRES_USER};
-                  GRANT ALL ON SCHEMA public TO public;
-                "
-              echo "✅ Schema cleaned for: ${DB_NAME}"
-              # ─────────────────────────────────────────────────────────────────────
-
-              # Form DB connection string inside Docker network
+              # Build target database URL inside docker network
               if [ -n "${POSTGRES_PASSWORD}" ]; then
                 TARGET_DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
               else
                 TARGET_DB_URL="postgresql://${POSTGRES_USER}@${CONTAINER_DB}:5432/${DB_NAME}?sslmode=disable"
               fi
 
-              # Run goose migration container for this specific DB
+              # Execute Atlas migration with baseline protection (preserves existing data)
               if ! docker run --rm \
                 --network "${DOCKER_NET}" \
-                -e GOOSE_DRIVER=postgres \
-                -e GOOSE_DBSTRING="${TARGET_DB_URL}" \
                 "${DEPLOY_IMAGE}" \
-                /usr/local/bin/goose -dir /app/migrations up; then
+                /usr/local/bin/atlas migrate apply \
+                  --url "${TARGET_DB_URL}" \
+                  --dir "file:///app/migrations" \
+                  --baseline "20260101000000"; then
 
-                echo "❌ Migration FAILED for database: ${DB_NAME}"
-                echo "🔄 Restoring ${DB_NAME} to pre-migration state..."
+                echo "❌ Atlas migration FAILED on database: ${DB_NAME}"
+                echo "🔄 Automatically rolling back ${DB_NAME} from backup..."
 
                 HOST_BACKUP="${BACKUP_DIR}/${DB_NAME}.dump"
                 CONTAINER_BACKUP="/tmp/restore_${DB_NAME}_${TIMESTAMP}.dump"
 
-                # Terminate active DB connections before restore
+                # Terminate active DB connections prior to restore
                 docker exec "${CONTAINER_DB}" psql \
                   -U "${POSTGRES_USER}" \
                   -d postgres \
@@ -215,25 +255,29 @@ jobs:
                   -v "${CONTAINER_BACKUP}"
 
                 docker exec "${CONTAINER_DB}" rm -f "${CONTAINER_BACKUP}"
-                echo "✅ Database '${DB_NAME}' successfully restored!"
+                echo "✅ Database '${DB_NAME}' successfully restored to pre-migration state."
 
                 MIGRATION_FAILED=1
-                break # Stop migration loop
+                FAILED_DB="${DB_NAME}"
+                break
               fi
 
-              echo "✅ Migration successful for database: ${DB_NAME}"
+              echo "✅ Migration successful for: ${DB_NAME}"
             done < "${TARGET_DATABASES_FILE}"
 
             if [ "${MIGRATION_FAILED}" -eq 1 ]; then
-              echo "❌ Migration pipeline aborted due to failure."
-              rm -rf "${BACKUP_DIR}"
+              echo "❌ Pipeline aborted due to migration failure on: ${FAILED_DB}"
+              echo "Pre-migration backups preserved at: ${BACKUP_DIR}"
               exit 1
             fi
 
-            echo "🎉 5. All database migrations succeeded! Restarting POS API..."
+            echo ""
+            echo "🎉 5. All migrations applied successfully! Restarting POS API service..."
             
             docker compose up -d --no-deps pos-api
             docker image prune -f
             rm -rf "${BACKUP_DIR}"
             
-            echo "🚀 Deployment & One-by-One Tenant Migrations Completed Successfully!"
+            echo "=================================================="
+            echo "🚀 Deployment & Multi-Tenant Migrations Completed Successfully!"
+            echo "=================================================="
