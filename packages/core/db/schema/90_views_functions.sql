@@ -268,6 +268,10 @@ DROP TRIGGER IF EXISTS update_profit_loss_analytics_updated_at ON profit_loss_an
 CREATE TRIGGER update_profit_loss_analytics_updated_at BEFORE UPDATE ON profit_loss_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_discount_analytics_updated_at ON discount_analytics;
 CREATE TRIGGER update_discount_analytics_updated_at BEFORE UPDATE ON discount_analytics FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_business_partners_updated_at ON business_partners;
+CREATE TRIGGER trg_business_partners_updated_at BEFORE UPDATE ON business_partners FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_bp_price_contracts_updated_at ON bp_price_contracts;
+CREATE TRIGGER trg_bp_price_contracts_updated_at BEFORE UPDATE ON bp_price_contracts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Restaurant triggers
 DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;
@@ -743,25 +747,25 @@ LEFT JOIN tax_categories        tc           ON p.tax_category_id = tc.id
 LEFT JOIN product_prices pp_retail
     ON p.id = pp_retail.product_id
     AND pp_retail.product_variant_id IS NULL
-    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL' AND is_active = true LIMIT 1)
+    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
     AND pp_retail.is_active = true
 -- Retail price: variant (FIX 9.2 / 9.3)
 LEFT JOIN product_prices pp_retail_v
     ON p.id = pp_retail_v.product_id
     AND pp_retail_v.product_variant_id = pv.id
-    AND pp_retail_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL' AND is_active = true LIMIT 1)
+    AND pp_retail_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
     AND pp_retail_v.is_active = true
 -- Promo price: base product
 LEFT JOIN product_prices pp_promo
     ON p.id = pp_promo.product_id
     AND pp_promo.product_variant_id IS NULL
-    AND pp_promo.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO' AND is_active = true LIMIT 1)
+    AND pp_promo.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true LIMIT 1)
     AND pp_promo.is_active = true
 -- Promo price: variant
 LEFT JOIN product_prices pp_promo_v
     ON p.id = pp_promo_v.product_id
     AND pp_promo_v.product_variant_id = pv.id
-    AND pp_promo_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO' AND is_active = true LIMIT 1)
+    AND pp_promo_v.price_list_id = (SELECT id FROM price_lists WHERE code = 'PROMO_SAR' AND is_active = true LIMIT 1)
     AND pp_promo_v.is_active = true
 WHERE p.is_active = true
   AND p.is_sellable = true
@@ -1641,7 +1645,7 @@ JOIN products p                 ON ri.product_id = p.id
 LEFT JOIN product_variants pv   ON ri.product_variant_id = pv.id
 LEFT JOIN units_of_measure uom  ON ri.uom_id = uom.id
 LEFT JOIN product_prices pp     ON p.id = pp.product_id
-    AND pp.price_list_id        = (SELECT id FROM price_lists WHERE code = 'RETAIL' AND is_active = true LIMIT 1)
+    AND pp.price_list_id        = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR' AND is_active = true LIMIT 1)
     AND pp.is_active            = true
 WHERE r.is_active = true;
 
@@ -3085,3 +3089,44 @@ FOR EACH ROW
 EXECUTE FUNCTION fn_sync_promotion_to_product_prices();
 
 
+
+
+
+-- =====================================================
+-- CART TRIGGERS & FUNCTIONS
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION log_cart_status_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.cart_status IS DISTINCT FROM NEW.cart_status THEN
+        INSERT INTO cart_activity_log (
+            cart_id, 
+            organization_id, 
+            activity_type, 
+            description, 
+            old_value, 
+            new_value
+        )
+        VALUES (
+            NEW.id,
+            NEW.organization_id,
+            'status_changed',
+            'Cart status changed from ' || OLD.cart_status || ' to ' || NEW.cart_status,
+            jsonb_build_object('status', OLD.cart_status),
+            jsonb_build_object('status', NEW.cart_status)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION update_cart_activity()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE carts 
+    SET last_activity_at = CURRENT_TIMESTAMP
+    WHERE id = COALESCE(NEW.cart_id, OLD.cart_id);
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;

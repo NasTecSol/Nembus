@@ -3,13 +3,13 @@
 
 variable "master_db_url" {
   type        = string
-  default     = getenv("MASTER_DB_URL") != "" ? getenv("MASTER_DB_URL") : "postgres://postgres:postgres@localhost:5432/masterDB?sslmode=disable"
+  default     = getenv("MASTER_DB_URL") != "" ? getenv("MASTER_DB_URL") : "postgres://root:nastecsol@localhost:5432/masterDB?sslmode=disable"
   description = "Connection URL for the target database"
 }
 
 variable "stg_db_url" {
   type        = string
-  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgres://postgres:postgres@localhost:5432/stg?sslmode=disable"
+  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgresql://nembus_admin_user:your-password-here@localhost:5432/qitaf?sslmode=disable"
   description = "Connection URL for the staging database"
 }
 

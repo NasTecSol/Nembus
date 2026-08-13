@@ -38,13 +38,12 @@ CREATE TABLE units_of_measure (
 CREATE TABLE uom_packaging_templates (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    uom_id INTEGER NOT NULL REFERENCES units_of_measure(id),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
     name VARCHAR(255) NOT NULL, -- e.g., 'Beverage Standard Pattern'
-    code VARCHAR(50) NOT NULL, -- e.g., '1-24-12'
+    code VARCHAR(50) UNIQUE NOT NULL, -- e.g., '1-24-12'
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (uom_id, name)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Pattern Levels Table
@@ -209,3 +208,7 @@ CREATE TABLE product_batches (
     UNIQUE(product_id, batch_number, store_id)
 );
 
+
+
+CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode_lookup 
+ON product_barcodes(barcode) WHERE is_primary = true;

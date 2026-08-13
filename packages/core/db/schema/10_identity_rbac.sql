@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS organizations(
     code VARCHAR(50) UNIQUE NOT NULL,
     legal_name VARCHAR(255),
     tax_id VARCHAR(50),
-    currency_code VARCHAR(3) DEFAULT 'USD',
+    currency_code VARCHAR(3) DEFAULT 'SAR',
     fiscal_year_variant VARCHAR(10),
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
