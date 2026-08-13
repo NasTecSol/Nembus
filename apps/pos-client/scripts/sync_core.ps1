@@ -1,30 +1,37 @@
 <#
 .SYNOPSIS
-    Synchronizes the base schema from the core package into POS client and Cloud server.
-    Run this script whenever packages/core/migrations or packages/core/queries are updated.
+    Synchronizes schema, migrations, and generated code from packages/core into POS client and Cloud server.
+    Run this script whenever packages/core/db/schema or packages/core/queries are updated.
 #>
 
 $ScriptDir = $PSScriptRoot
 $RepoRoot = (Get-Item "$ScriptDir\..\..\..").FullName
 $CoreDir = Join-Path $RepoRoot "packages\core"
-$CoreMigrations = Join-Path $CoreDir "migrations"
+$CoreMigrations = Join-Path $CoreDir "db\migrations"
 $ClientMigrations = Join-Path $RepoRoot "apps\pos-client\migrations"
 $ServerMigrations = Join-Path $RepoRoot "apps\cloud-server\migrations"
 
-Write-Host "Syncing base schema & migrations from core to pos-client..." -ForegroundColor Cyan
-Get-ChildItem -Path "$CoreMigrations" -Filter "*.sql" | ForEach-Object {
-    Copy-Item $_.FullName "$ClientMigrations\$($_.Name)" -Force
+Write-Host "Syncing Atlas migrations from core to pos-client..." -ForegroundColor Cyan
+if (Test-Path "$CoreMigrations") {
+    if (-not (Test-Path "$ClientMigrations")) {
+        New-Item -ItemType Directory -Path "$ClientMigrations" -Force | Out-Null
+    }
+    Get-ChildItem -Path "$CoreMigrations" | ForEach-Object {
+        Copy-Item $_.FullName "$ClientMigrations\$($_.Name)" -Force
+    }
 }
 
-Write-Host "Syncing base schema & migrations from core to cloud-server..." -ForegroundColor Cyan
-if (Test-Path "$ServerMigrations") {
-    Copy-Item "$CoreMigrations\000001_base_schema.sql" "$ServerMigrations\000001_init_schema.sql" -Force
-    Get-ChildItem -Path "$CoreMigrations" -Filter "*.sql" | Where-Object { $_.Name -ne "000001_base_schema.sql" } | ForEach-Object {
+Write-Host "Syncing Atlas migrations from core to cloud-server..." -ForegroundColor Cyan
+if (Test-Path "$CoreMigrations") {
+    if (-not (Test-Path "$ServerMigrations")) {
+        New-Item -ItemType Directory -Path "$ServerMigrations" -Force | Out-Null
+    }
+    Get-ChildItem -Path "$CoreMigrations" | ForEach-Object {
         Copy-Item $_.FullName "$ServerMigrations\$($_.Name)" -Force
     }
 }
 
-Write-Host "Running sqlc generate in core..." -ForegroundColor Cyan
+Write-Host "Running sqlc generate in packages/core..." -ForegroundColor Cyan
 Push-Location "$CoreDir"
 sqlc generate
 Pop-Location
