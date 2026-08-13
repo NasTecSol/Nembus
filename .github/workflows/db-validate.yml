@@ -1,14 +1,8 @@
 name: DB Schema, Migration & sqlc Validation
 
 on:
-  pull_request:
-    branches:
-      - main
-      - junction
-      - dev
   push:
     branches:
-      - main
       - junction
 
 jobs:
