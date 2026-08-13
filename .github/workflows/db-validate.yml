@@ -41,7 +41,7 @@ jobs:
           version: latest
 
       - name: Install sqlc
-        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
 
       - name: Validate Atlas Migration Checksums
         run: atlas migrate validate --dir "file://packages/core/db/migrations"
