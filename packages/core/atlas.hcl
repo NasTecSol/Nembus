@@ -9,7 +9,7 @@ variable "master_db_url" {
 
 variable "stg_db_url" {
   type        = string
-  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgresql://nembus_admin_user:your-password-here@localhost:5432/qitaf?sslmode=disable"
+  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgres://nembus_admin_user:your-password-here@127.0.0.1:5432/qitaf?sslmode=disable"
   description = "Connection URL for the staging database"
 }
 
