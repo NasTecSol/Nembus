@@ -442,6 +442,7 @@ CREATE INDEX idx_inventory_stock_product_id ON inventory_stock(product_id);
 CREATE INDEX idx_inventory_stock_product_variant_id ON inventory_stock(product_variant_id);
 CREATE INDEX idx_inventory_stock_store_id ON inventory_stock(store_id);
 CREATE INDEX idx_inventory_stock_storage_location_id ON inventory_stock(storage_location_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_stock_unique_product_variant_store ON inventory_stock(product_id, COALESCE(product_variant_id, -1), store_id);
 
 -- Stock Movements
 CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id);
@@ -1831,15 +1832,20 @@ BEGIN
       AND store_id = p_from_store_id;
 
     -- Add to destination
-    INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
-        quantity_on_hand, quantity_available, quantity_in_transit)
-    VALUES (p_product_id, p_product_variant_id, p_to_store_id, p_to_location_id,
-            p_quantity, p_quantity, 0)
-    ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
-    DO UPDATE SET
-        quantity_on_hand   = inventory_stock.quantity_on_hand   + EXCLUDED.quantity_on_hand,
-        quantity_available = inventory_stock.quantity_available + EXCLUDED.quantity_available,
-        updated_at = CURRENT_TIMESTAMP;
+    UPDATE inventory_stock
+    SET quantity_on_hand   = quantity_on_hand   + p_quantity,
+        quantity_available = quantity_available + p_quantity,
+        updated_at         = CURRENT_TIMESTAMP
+    WHERE product_id = p_product_id
+      AND (product_variant_id = p_product_variant_id OR (product_variant_id IS NULL AND p_product_variant_id IS NULL))
+      AND store_id = p_to_store_id;
+
+    IF NOT FOUND THEN
+        INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
+            quantity_on_hand, quantity_available, quantity_in_transit)
+        VALUES (p_product_id, p_product_variant_id, p_to_store_id, p_to_location_id,
+                p_quantity, p_quantity, 0);
+    END IF;
 
     -- Clear in-transit at source
     UPDATE inventory_stock
@@ -2026,14 +2032,19 @@ BEGIN
           AND store_id = v_req.from_store_id;
 
         -- Increment quantity_in_transit at destination store using v_base_qty
-        INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
-            quantity_on_hand, quantity_available, quantity_in_transit)
-        VALUES (v_item.product_id, v_item.product_variant_id, v_req.to_store_id, v_item.to_location_id,
-                0, 0, v_base_qty)
-        ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
-        DO UPDATE SET
-            quantity_in_transit = inventory_stock.quantity_in_transit + EXCLUDED.quantity_in_transit,
-            updated_at = CURRENT_TIMESTAMP;
+        UPDATE inventory_stock
+        SET quantity_in_transit = quantity_in_transit + v_base_qty,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_item.product_id
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+          AND store_id = v_req.to_store_id;
+
+        IF NOT FOUND THEN
+            INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
+                quantity_on_hand, quantity_available, quantity_in_transit)
+            VALUES (v_item.product_id, v_item.product_variant_id, v_req.to_store_id, v_item.to_location_id,
+                    0, 0, v_base_qty);
+        END IF;
 
         -- Update item shipped_quantity
         UPDATE transfer_request_items
@@ -2117,6 +2128,13 @@ BEGIN
           AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
           AND store_id = v_req.to_store_id;
 
+        IF NOT FOUND THEN
+            INSERT INTO inventory_stock (product_id, product_variant_id, store_id, storage_location_id,
+                quantity_on_hand, quantity_available, quantity_in_transit)
+            VALUES (v_item.product_id, v_item.product_variant_id, v_req.to_store_id, v_item.to_location_id,
+                    v_base_qty, v_base_qty, 0);
+        END IF;
+
         -- Update item received_quantity
         UPDATE transfer_request_items
         SET received_quantity = v_qty
@@ -2185,18 +2203,23 @@ BEGIN
         END IF;
 
         -- Increment inventory stock at store
-        INSERT INTO inventory_stock (
-            product_id, product_variant_id, store_id, storage_location_id,
-            quantity_on_hand, quantity_available
-        ) VALUES (
-            v_item.product_id, v_item.product_variant_id, v_grn.store_id, v_item.storage_location_id,
-            v_item.quantity_received, v_item.quantity_received
-        )
-        ON CONFLICT (product_id, COALESCE(product_variant_id, -1), store_id)
-        DO UPDATE SET
-            quantity_on_hand = inventory_stock.quantity_on_hand + EXCLUDED.quantity_on_hand,
-            quantity_available = inventory_stock.quantity_available + EXCLUDED.quantity_available,
-            updated_at = CURRENT_TIMESTAMP;
+        UPDATE inventory_stock
+        SET quantity_on_hand = quantity_on_hand + v_item.quantity_received,
+            quantity_available = quantity_available + v_item.quantity_received,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_item.product_id
+          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+          AND store_id = v_grn.store_id;
+
+        IF NOT FOUND THEN
+            INSERT INTO inventory_stock (
+                product_id, product_variant_id, store_id, storage_location_id,
+                quantity_on_hand, quantity_available
+            ) VALUES (
+                v_item.product_id, v_item.product_variant_id, v_grn.store_id, v_item.storage_location_id,
+                v_item.quantity_received, v_item.quantity_received
+            );
+        END IF;
 
         -- Insert stock movement (purchase_receipt)
         INSERT INTO stock_movements (
