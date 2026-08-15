@@ -458,12 +458,12 @@ CREATE INDEX idx_quote_lines_product_id ON quote_lines(product_id);
 -- Function to update updated_at timestamp
 -- Generic updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $func$
 BEGIN
     NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 -- Apply updated_at triggers
 DO $$
