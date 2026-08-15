@@ -39,10 +39,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" \
     -o /out/migrate-tenants ./cmd/migrate-tenants
 
-# Build a pinned Goose migration CLI.
-ARG GOOSE_VERSION=v3.27.3
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go install github.com/pressly/goose/v3/cmd/goose@${GOOSE_VERSION}
+# Download Atlas CLI binary.
+RUN wget -qO /out/atlas https://release.ariga.io/atlas/atlas-linux-amd64-latest && \
+    chmod +x /out/atlas
 
 # Production runtime container.
 FROM alpine:3.20
@@ -58,10 +57,11 @@ RUN apk add --no-cache \
 # Application and migration executables.
 COPY --from=build /out/server /app/server
 COPY --from=build /out/migrate-tenants /app/migrate-tenants
-COPY --from=build /go/bin/goose /usr/local/bin/goose
+COPY --from=build /out/atlas /usr/local/bin/atlas
 
-# SQL migration files.
-COPY --from=build /app/apps/cloud-server/migrations /app/migrations
+# Atlas configuration and migrations.
+COPY --from=build /app/packages/core/db/migrations /app/migrations
+COPY --from=build /app/atlas.hcl /app/atlas.hcl
 
 RUN mkdir -p /app/images
 

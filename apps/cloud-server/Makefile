@@ -100,27 +100,22 @@ install-grpcurl:
 	@go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
 	@echo "grpcurl installed. Make sure $(shell go env GOPATH)/bin is in your PATH"
 
-# Database migration commands
+# Database migration commands (Atlas)
 migrate-master:
-	@echo "Running migrations on master database..."
-	@ENV_FILE=$$([ -f .env.dev ] && echo .env.dev || echo .env); \
-	if [ ! -f "$$ENV_FILE" ]; then \
-		echo "Error: Neither .env.dev nor .env file found"; \
-		exit 1; \
-	fi; \
-	MASTER_DB_URL=$$(grep -E '^MASTER_DB_URL=' "$$ENV_FILE" | cut -d '=' -f 2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'); \
-	if [ -z "$$MASTER_DB_URL" ]; then \
-		echo "Error: MASTER_DB_URL is not set in $$ENV_FILE"; \
-		exit 1; \
-	fi; \
-	GOOSE_DRIVER=postgres GOOSE_DBSTRING="$$MASTER_DB_URL" go run github.com/pressly/goose/v3/cmd/goose@latest -dir migrations up
+	@echo "Running Atlas migrations on master database..."
+	@go run cmd/migrate-tenants/main.go -master=true
 
 migrate-tenants:
-	@echo "Running migrations on all active tenant databases..."
-	@go run cmd/migrate-tenants/main.go
+	@echo "Running Atlas migrations on all active tenant databases..."
+	@go run cmd/migrate-tenants/main.go -master=false
 
-migrate-all: migrate-master migrate-tenants
-	@echo "All migrations completed!"
+migrate-all:
+	@echo "Running Atlas migrations on master and all tenant databases..."
+	@go run cmd/migrate-tenants/main.go -master=true
+
+migrate-status:
+	@echo "Checking Atlas migration status across databases..."
+	@go run cmd/migrate-tenants/main.go -status=true
 
 # Install dependencies
 deps:

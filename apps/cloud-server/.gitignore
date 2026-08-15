@@ -37,9 +37,6 @@ go.work
 .DS_Store
 Thumbs.db
 
-# Swagger generated docs
-docs/swagger/
-
 # Build artifacts
 *.log
 *.tmp
