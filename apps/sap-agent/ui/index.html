@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nembus SAP B1 Migration Agent</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h2>NEMBUS</h2>
+                    <span class="badge badge-accent">SAP AGENT</span>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="tab-discovery" id="nav-discovery">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                    <span>Discovery & Setup</span>
+                </button>
+                <button class="nav-item" data-tab="tab-migration" id="nav-migration">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    <span>Migration Pipeline</span>
+                </button>
+                <button class="nav-item" data-tab="tab-logs" id="nav-logs">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    <span>Live Console</span>
+                </button>
+                <button class="nav-item" data-tab="tab-reconciliation" id="nav-reconciliation">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    <span>Reconciliation</span>
+                </button>
+                <button class="nav-item" data-tab="tab-history" id="nav-history">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    <span>Run History</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="status-dot connected" id="ws-status-dot"></span>
+                    <span id="ws-status-text">Agent Online</span>
+                </div>
+                <div class="agent-version">v1.0.0 (Windows Native)</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-header">
+                <div class="header-title">
+                    <h1 id="page-title">Discovery & Configuration</h1>
+                    <p id="page-subtitle">Configure SAP SQL Server source and target Nembus Cloud ERP</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" id="btn-refresh-all">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                        Refresh State
+                    </button>
+                </div>
+            </header>
+
+            <!-- Tab 1: Discovery & Setup -->
+            <section id="tab-discovery" class="tab-pane active">
+                <div class="grid grid-2">
+                    <!-- SAP B1 Source Card -->
+                    <div class="card glass-card">
+                        <div class="card-header">
+                            <div class="card-title-wrap">
+                                <h3>SAP Business One SQL Server</h3>
+                                <span class="badge" id="mssql-badge">Not Connected</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <form id="form-mssql">
+                                <div class="form-row">
+                                     <div class="form-group flex-2">
+                                         <label>Host / IP</label>
+                                         <input type="text" id="mssql-host" value="192.168.18.77" required>
+                                     </div>
+                                     <div class="form-group flex-1">
+                                         <label>Port</label>
+                                         <input type="number" id="mssql-port" value="1433" required>
+                                     </div>
+                                 </div>
+                                 <div class="form-row">
+                                     <div class="form-group flex-1">
+                                         <label>SQL User</label>
+                                         <input type="text" id="mssql-user" value="admin" placeholder="admin">
+                                     </div>
+                                     <div class="form-group flex-1">
+                                         <label>Password</label>
+                                         <input type="password" id="mssql-pass" value="nastecsol" placeholder="••••••••">
+                                     </div>
+                                 </div>
+                                 <div class="form-group">
+                                     <label>Company Database (`CompanyDB`)</label>
+                                     <input type="text" id="mssql-db" value="Qadsiya" required>
+                                 </div>
+                                <div class="form-row-checkbox">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="mssql-trust" checked> Trust Server Certificate
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="mssql-encrypt"> Encrypt Connection
+                                    </label>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="button" class="btn btn-secondary" id="btn-test-mssql">Test Connection</button>
+                                    <button type="submit" class="btn btn-primary">Save Config</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Cloud Ingestion Gateway Card -->
+                    <div class="card glass-card">
+                        <div class="card-header">
+                            <div class="card-title-wrap">
+                                <h3>Nembus Cloud Gateway</h3>
+                                <span class="badge" id="cloud-badge">Not Connected</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <form id="form-cloud">
+                                <div class="form-group">
+                                    <label>Cloud API Server URL</label>
+                                    <input type="url" id="cloud-url" value="http://127.0.0.1:8080" required>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group flex-1">
+                                        <label>Organization / Tenant ID</label>
+                                        <input type="number" id="cloud-org-id" value="1" required>
+                                    </div>
+                                    <div class="form-group flex-1">
+                                        <label>Batch Size</label>
+                                        <input type="number" id="agent-batch-size" value="500" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Migration Ingestion API Key / Bearer Token</label>
+                                    <input type="password" id="cloud-api-key" placeholder="Enter JWT or API Key">
+                                </div>
+                                <div class="form-actions">
+                                    <button type="button" class="btn btn-secondary" id="btn-test-cloud">Test Endpoint</button>
+                                    <button type="submit" class="btn btn-primary">Save Config</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discovery Stats -->
+                <div class="discovery-section">
+                    <div class="section-header">
+                        <h2>SAP B1 Database Discovery</h2>
+                        <button class="btn btn-sm btn-outline" id="btn-run-discovery">Run Full Discovery</button>
+                    </div>
+                    <div class="discovery-meta-card glass-card" id="discovery-summary-box">
+                        <div class="meta-item">
+                            <span class="meta-label">Company Name</span>
+                            <span class="meta-value" id="disc-company">-</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">SAP Version</span>
+                            <span class="meta-value" id="disc-version">-</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Database</span>
+                            <span class="meta-value" id="disc-dbname">-</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Status</span>
+                            <span class="badge badge-success" id="disc-status">Ready</span>
+                        </div>
+                    </div>
+
+                    <!-- Entity Count Grid -->
+                    <div class="entity-grid" id="entity-count-grid">
+                        <div class="entity-card"><span class="entity-name">Products (OITM)</span><span class="entity-count" id="count-oitm">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Warehouses (OWHS)</span><span class="entity-count" id="count-owhs">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Stock Balances (OITW)</span><span class="entity-count" id="count-oitw">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Customers (OCRD)</span><span class="entity-count" id="count-ocrd-c">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Suppliers (OCRD)</span><span class="entity-count" id="count-ocrd-s">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Sales Orders (ORDR)</span><span class="entity-count" id="count-ordr">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Invoices (OINV)</span><span class="entity-count" id="count-oinv">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Users / Cashiers</span><span class="entity-count" id="count-ousr">0</span></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 2: Migration Pipeline -->
+            <section id="tab-migration" class="tab-pane">
+                <div class="migration-control-panel glass-card">
+                    <div class="control-header">
+                        <div>
+                            <h2>Migration Execution Engine</h2>
+                            <p class="subtitle">Select domains, configure execution mode and launch the migration.</p>
+                        </div>
+                        <div class="control-buttons">
+                            <button class="btn btn-danger" id="btn-cancel-migration" disabled>Cancel Run</button>
+                            <button class="btn btn-success btn-lg" id="btn-start-migration">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                Launch Migration
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar Header -->
+                    <div class="progress-wrap">
+                        <div class="progress-info">
+                            <span class="progress-status" id="overall-status-text">Status: Idle</span>
+                            <span class="progress-percent" id="overall-percent-text">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="overall-progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Domain Checkbox List -->
+                    <div class="domain-selection-grid">
+                        <label class="domain-card" id="card-domain-stores">
+                            <input type="checkbox" name="domain" value="stores" checked>
+                            <div class="domain-content">
+                                <h4>Warehouses & Locations</h4>
+                                <p>OWHS & OBIN tables</p>
+                                <span class="step-indicator" id="step-status-stores">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-users">
+                            <input type="checkbox" name="domain" value="users" checked>
+                            <div class="domain-content">
+                                <h4>Users & Cashiers</h4>
+                                <p>OUSR & OSLP sales persons</p>
+                                <span class="step-indicator" id="step-status-users">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-categories">
+                            <input type="checkbox" name="domain" value="categories" checked>
+                            <div class="domain-content">
+                                <h4>Item Groups & Categories</h4>
+                                <p>OITB item hierarchy</p>
+                                <span class="step-indicator" id="step-status-categories">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-brands">
+                            <input type="checkbox" name="domain" value="brands" checked>
+                            <div class="domain-content">
+                                <h4>Manufacturers & Brands</h4>
+                                <p>OMRG firm records</p>
+                                <span class="step-indicator" id="step-status-brands">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-products">
+                            <input type="checkbox" name="domain" value="products" checked>
+                            <div class="domain-content">
+                                <h4>Item Master Data</h4>
+                                <p>OITM products catalog</p>
+                                <span class="step-indicator" id="step-status-products">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-barcodes">
+                            <input type="checkbox" name="domain" value="barcodes" checked>
+                            <div class="domain-content">
+                                <h4>Barcodes</h4>
+                                <p>OBCD alternate barcodes</p>
+                                <span class="step-indicator" id="step-status-barcodes">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-inventory">
+                            <input type="checkbox" name="domain" value="inventory" checked>
+                            <div class="domain-content">
+                                <h4>Warehouse Stock Balances</h4>
+                                <p>OITW on-hand quantities</p>
+                                <span class="step-indicator" id="step-status-inventory">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-partners">
+                            <input type="checkbox" name="domain" value="partners" checked>
+                            <div class="domain-content">
+                                <h4>Customers & Suppliers</h4>
+                                <p>OCRD business partners</p>
+                                <span class="step-indicator" id="step-status-partners">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-sales_orders">
+                            <input type="checkbox" name="domain" value="sales_orders" checked>
+                            <div class="domain-content">
+                                <h4>Sales Orders</h4>
+                                <p>ORDR & RDR1 lines</p>
+                                <span class="step-indicator" id="step-status-sales_orders">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-invoices">
+                            <input type="checkbox" name="domain" value="invoices" checked>
+                            <div class="domain-content">
+                                <h4>A/R Invoices</h4>
+                                <p>OINV & INV1 lines</p>
+                                <span class="step-indicator" id="step-status-invoices">Pending</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 3: Live Console & Logs -->
+            <section id="tab-logs" class="tab-pane">
+                <div class="terminal-container glass-card">
+                    <div class="terminal-header">
+                        <div class="terminal-controls">
+                            <span class="terminal-dot red"></span>
+                            <span class="terminal-dot yellow"></span>
+                            <span class="terminal-dot green"></span>
+                            <span class="terminal-title">agent.db & streaming log stream</span>
+                        </div>
+                        <div class="terminal-actions">
+                            <button class="btn btn-xs btn-outline" id="btn-clear-logs">Clear</button>
+                            <label class="autoscroll-label">
+                                <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
+                            </label>
+                        </div>
+                    </div>
+                    <div class="terminal-body" id="terminal-output">
+                        <div class="log-line info"><span class="log-time">[00:00:00]</span> <span class="log-tag">SYSTEM</span> Windows SAP B1 Migration Agent initialized.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 4: Reconciliation -->
+            <section id="tab-reconciliation" class="tab-pane">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Audit & Reconciliation Parity Report</h3>
+                            <p class="subtitle">Verifies numeric sums and entity counts between SAP B1 and Nembus PostgreSQL.</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-run-reconciliation">Execute Audit Now</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="audit-summary-box" id="audit-summary-text">Click "Execute Audit Now" to perform post-migration verification.</div>
+                        <table class="data-table" id="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>SAP Source Count</th>
+                                    <th>Target Cloud Count</th>
+                                    <th>Variance</th>
+                                    <th>Source Sum</th>
+                                    <th>Target Sum</th>
+                                    <th>Audit Parity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body">
+                                <tr><td colspan="7" class="text-center text-muted">No audit executed yet</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 5: Run History -->
+            <section id="tab-history" class="tab-pane">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h3>Local SQLite Execution History (`agent.db`)</h3>
+                    </div>
+                    <div class="card-body">
+                        <table class="data-table" id="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>Mode</th>
+                                    <th>Status</th>
+                                    <th>Domains</th>
+                                    <th>Total Records</th>
+                                    <th>Started</th>
+                                    <th>Finished</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                                <tr><td colspan="7" class="text-center text-muted">Loading history...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="/app.js"></script>
+</body>
+</html>

@@ -64,11 +64,11 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	return pool, queries, nil
 }
 
-// setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, sapMigrationUC *usecase.SAPMigrationUseCase, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
 
 	r := gin.Default()
 
@@ -223,10 +223,22 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+
+		// [NEW] SAP B1 Migration routes
+		sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
+		router.RegisterSAPMigrationRoutes(api, sapMigrationHandler)
+	}
+
+	// Also support /api/v1/migration directly for migration agents
+	apiV1 := r.Group("/api/v1")
+	{
+		sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
+		router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
 	}
 
 	return r
 }
+
 
 func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
@@ -320,10 +332,14 @@ func main() {
 		zatcaSvc.StartReportingWorker(ctx)
 	}
 
+	// SAP B1 Migration
+	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
+
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, cfg)
+	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, sapMigrationUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
+
 
 	// ── gRPC Backup Service ────────────────────────────────────────────────
 	go func() {

@@ -4,7 +4,9 @@ go 1.25.0
 
 require (
 	github.com/NasTecSol/nembus-core v0.0.0
+	github.com/NasTecSol/nembus-sap v0.0.0
 	github.com/gin-gonic/gin v1.11.0
+
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
@@ -66,5 +68,5 @@ require (
 )
 
 replace github.com/NasTecSol/nembus-core => ../../packages/core
-
+replace github.com/NasTecSol/nembus-sap => ../../packages/sap
 replace github.com/NasTecSol/nembus-client => ../pos-client

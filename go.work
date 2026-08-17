@@ -3,5 +3,8 @@ go 1.25.0
 use (
 	./apps/cloud-server
 	./apps/pos-client
+	./apps/sap-agent
 	./packages/core
+	./packages/sap
 )
+
