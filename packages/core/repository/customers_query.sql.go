@@ -46,7 +46,7 @@ func (q *Queries) AdjustCustomerLoyaltyPoints(ctx context.Context, arg AdjustCus
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }
@@ -118,7 +118,7 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }
@@ -158,7 +158,7 @@ func (q *Queries) GetCustomer(ctx context.Context, id int32) (Customer, error) {
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }
@@ -193,7 +193,7 @@ func (q *Queries) GetCustomerByCode(ctx context.Context, arg GetCustomerByCodePa
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }
@@ -284,7 +284,7 @@ func (q *Queries) GetCustomersWithOutstandingBalance(ctx context.Context, organi
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.BusinessPartnerID,
+			
 		); err != nil {
 			return nil, err
 		}
@@ -328,7 +328,7 @@ func (q *Queries) ListActiveCustomers(ctx context.Context, organizationID int32)
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.BusinessPartnerID,
+			
 		); err != nil {
 			return nil, err
 		}
@@ -372,7 +372,7 @@ func (q *Queries) ListCustomers(ctx context.Context, organizationID int32) ([]Cu
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.BusinessPartnerID,
+			
 		); err != nil {
 			return nil, err
 		}
@@ -421,7 +421,7 @@ func (q *Queries) ListCustomersByType(ctx context.Context, arg ListCustomersByTy
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.BusinessPartnerID,
+			
 		); err != nil {
 			return nil, err
 		}
@@ -473,7 +473,7 @@ func (q *Queries) SearchCustomers(ctx context.Context, arg SearchCustomersParams
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.BusinessPartnerID,
+			
 		); err != nil {
 			return nil, err
 		}
@@ -517,7 +517,7 @@ func (q *Queries) ToggleCustomerActive(ctx context.Context, arg ToggleCustomerAc
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }
@@ -582,7 +582,7 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }
@@ -619,7 +619,7 @@ func (q *Queries) UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerB
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.BusinessPartnerID,
+		
 	)
 	return i, err
 }

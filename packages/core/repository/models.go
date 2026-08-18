@@ -726,7 +726,7 @@ type Customer struct {
 	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
-	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
+	// BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 }
 
 type DiscountAnalytic struct {
