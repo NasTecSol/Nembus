@@ -1,138 +1,131 @@
-# Database Migrations Guide
+# Database Migrations & Schema Management Guide
 
-This project uses [goose](https://github.com/pressly/goose) for database migrations in a multi-tenant architecture.
+This project uses [Atlas](https://atlasgo.io/) for declarative schema management and versioned migrations in a multi-tenant PostgreSQL architecture, integrated with [sqlc](https://sqlc.dev/) for type-safe Go code generation.
 
-## Prerequisites
+---
 
-1. Install goose:
-   ```bash
-   go install github.com/pressly/goose/v3/cmd/goose@latest
-   ```
+## 🏛️ Architecture & Single Source of Truth
 
-2. Set environment variable:
-   ```bash
-   export MASTER_DB_URL="postgresql://user:password@localhost:5432/master_db?sslmode=disable"
-   ```
-   
-   Or create a `.env` file:
-   ```
-   MASTER_DB_URL=postgresql://user:password@localhost:5432/master_db?sslmode=disable
-   ```
-
-## Makefile Commands
-
-### Migrate Master Database
-```bash
-make migrate-master
 ```
-Runs migrations on the master database (where the `tenants` table is stored).
-
-### Migrate All Tenant Databases
-```bash
-make migrate-tenants
-```
-Runs migrations on all active tenant databases. The script:
-1. Connects to the master database
-2. Retrieves all active tenants
-3. Runs migrations on each tenant's database
-
-### Migrate Everything
-```bash
-make migrate-all
-```
-Runs migrations on both master and all tenant databases.
-
-### Rollback Commands
-
-```bash
-make migrate-down-master    # Rollback master database
-make migrate-down-tenants    # Rollback all tenant databases
-make migrate-down-all        # Rollback master and all tenants
+Desired Schema State                 sqlc Type-Safe Go
+(packages/core/db/schema/)          (packages/core/queries/)
+          │                                   │
+          ├───────────────────────────────────┤
+          ▼                                   ▼
+    Atlas Diff Engine                   sqlc generate
+          ▼                                   ▼
+Versioned Migration Files           packages/core/repository/
+(packages/core/db/migrations/)
+          ▼
+PostgreSQL (Master & Tenants)
 ```
 
-## Manual Usage
+1. **Modular Desired Schema** (`packages/core/db/schema/`):
+   * `00_extensions.sql` (PostgreSQL extensions)
+   * `10_identity_rbac.sql` (Organizations, tenants, modules, menus, permissions, roles, UI settings)
+   * `20_stores_terminals.sql` (Stores, storage locations, users, cashiers, terminals, sessions)
+   * `30_catalog.sql` (Categories, brands, UOM, packaging templates, price lists, taxes, products, variants, barcodes, pricing, batches)
+   * `40_inventory.sql` (Stock, movements, stock counts)
+   * `50_purchasing_suppliers.sql` (Suppliers, customers, purchase orders, transfers, GRN)
+   * `60_sales_pos.sql` (Sales orders, returns, POS transactions, payments, cart, checkout)
+   * `70_restaurant.sql` (Tables, restaurant orders, menu items, recipes, waste logs)
+   * `80_promotions_loyalty.sql` (Promotions, loyalty rules, points, rewards)
+   * `85_zatca.sql` (ZATCA e-invoicing tables, device configs, document chain, watermarks)
+   * `90_views_functions.sql` (Stored procedures, triggers, views, indexes)
 
-### Using the Go Script Directly
+2. **Immutable Migration History** (`packages/core/db/migrations/`):
+   * Versioned SQL files (`YYYYMMDDHHMMSS_name.sql`) tracked with cryptographically signed `atlas.sum`.
+
+---
+
+## 🛠️ Prerequisites
+
+1. **Atlas CLI**:
+   * **Windows**: `Invoke-WebRequest -Uri https://release.ariga.io/atlas/atlas-windows-amd64-latest.exe -OutFile $env:USERPROFILE\go\bin\atlas.exe`
+   * **macOS / Linux**: `curl -sSf https://atlasgo.io/install.sh | sh`
+   * Verify: `atlas version`
+
+2. **sqlc**:
+   * `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
+   * Verify: `sqlc version`
+
+3. **Environment Setup**:
+   Ensure `MASTER_DB_URL` is configured in `apps/cloud-server/.env.dev` or `.env`:
+   ```env
+   MASTER_DB_URL=postgres://postgres:postgres@localhost:5432/masterDB?sslmode=disable
+   ```
+
+---
+
+## 🚀 Developer Workflow for Schema Changes
+
+When you need to modify or add database tables, columns, or indexes:
+
+### Step 1: Update the Modular Schema
+Edit the appropriate domain SQL file in `packages/core/db/schema/` (e.g. `30_catalog.sql`).
+
+### Step 2: Generate Migration Diff
+From the monorepo root:
+```bash
+make db-diff name=add_product_metadata
+```
+Atlas automatically calculates the diff between your desired `db/schema/` and the latest migration state, writing a new versioned file to `packages/core/db/migrations/` and updating `atlas.sum`.
+
+### Step 3: Review and Apply Locally
+Review the generated SQL file in `packages/core/db/migrations/`, then apply:
+```bash
+make db-migrate
+```
+This runs migrations across both `masterDB` and all active tenant databases.
+
+### Step 4: Update SQL Queries & Regenerate sqlc
+Add or edit query definitions in `packages/core/queries/`, then run:
+```bash
+make sqlc
+```
+This regenerates `packages/core/repository/` with type-safe Go structs and query methods.
+
+### Step 5: Test & Verify
+```bash
+make verify
+```
+Runs migration checksum validation, `sqlc generate`, and unit/integration test suites.
+
+---
+
+## 🏢 Multi-Tenant Database Migrations
+
+Tenant migration is managed by `apps/cloud-server/cmd/migrate-tenants/main.go`:
 
 ```bash
-# Migrate all tenants (up)
+# Migrate Master DB and all active Tenant DBs
 go run cmd/migrate-tenants/main.go
 
-# Rollback all tenants (down)
-go run cmd/migrate-tenants/main.go -down
+# Migrate only active Tenant DBs
+go run cmd/migrate-tenants/main.go -master=false
 
-# Custom migrations directory
-go run cmd/migrate-tenants/main.go -dir ./custom-migrations
+# Inspect migration status across all databases
+go run cmd/migrate-tenants/main.go -status=true
 ```
 
-### Using Goose Directly
+### Baseline Strategy for Existing Databases
+When introducing Atlas to an existing database containing data, Atlas uses the initial baseline version:
+`20260101000000_initial_baseline.sql`.
+* Existing databases are registered at the baseline without dropping schema or losing data.
+* Future migrations are applied incrementally.
+* Fresh databases apply all migrations from scratch seamlessly.
 
-```bash
-# Master database
-GOOSE_DRIVER=postgres GOOSE_DBSTRING="postgresql://..." goose -dir ./migrations up
+---
 
-# Specific tenant database
-GOOSE_DRIVER=postgres GOOSE_DBSTRING="postgresql://..." goose -dir ./migrations up
-```
+## ⚡ Summary of Makefile Commands
 
-## Migration Files
-
-Migrations are stored in the `./migrations` directory. Each migration file should follow the naming convention:
-- `XXXXX_description.sql` (e.g., `00001_initialise_db.sql`)
-
-Migration files use goose directives:
-- `-- +goose Up` - Migration to apply
-- `-- +goose Down` - Migration to rollback
-
-## Architecture
-
-```
-Master Database (tenants table)
-    ├── Tenant 1 Database (acme-corp)
-    ├── Tenant 2 Database (techstart)
-    └── Tenant 3 Database (startupxyz)
-```
-
-Each tenant has its own database with the same schema. Migrations are applied to:
-1. Master database (contains tenant metadata)
-2. Each tenant database (contains tenant-specific data)
-
-## Troubleshooting
-
-### "MASTER_DB_URL is not set"
-Set the environment variable or create a `.env` file with `MASTER_DB_URL`.
-
-### "goose: command not found"
-Install goose: `go install github.com/pressly/goose/v3/cmd/goose@latest`
-
-### Migration fails on a specific tenant
-The script will continue with other tenants and report failures at the end. Check the tenant's database connection string in the master database.
-
-### Tenant database doesn't exist
-Create the tenant database before running migrations, or ensure the connection string in the `tenants` table is correct.
-
-## Example Workflow
-
-1. Create a new migration file:
-   ```bash
-   touch migrations/00002_add_new_table.sql
-   ```
-
-2. Add migration SQL:
-   ```sql
-   -- +goose Up
-   CREATE TABLE new_table (...);
-   
-   -- +goose Down
-   DROP TABLE IF EXISTS new_table;
-   ```
-
-3. Run migrations:
-   ```bash
-   make migrate-all
-   ```
-
-4. Verify:
-   - Check master database
-   - Check each tenant database
-   - Verify tables exist in all databases
+| Command | Action |
+|---------|--------|
+| `make db-diff name=<name>` | Diff `db/schema/` vs migrations and create new migration file |
+| `make db-migrate` | Run Atlas migrations on master and all tenant databases |
+| `make db-status` | Check Atlas migration status |
+| `make db-hash` | Recalculate and verify `atlas.sum` |
+| `make db-lint` | Lint migrations for safety and backward compatibility |
+| `make sqlc` | Regenerate Go repository code with sqlc |
+| `make test` | Run Go test suites |
+| `make verify` | Run end-to-end verification (hash, sqlc, tests) |

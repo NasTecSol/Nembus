@@ -1,0 +1,64 @@
+name: DB Schema, Migration & sqlc Validation
+
+on:
+  push:
+    branches:
+      - junction
+
+jobs:
+  validate-db:
+    name: Validate Schema, Migrations & sqlc
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: masterDB_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Install Atlas CLI
+        uses: ariga/setup-atlas@v0
+        with:
+          version: latest
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Validate Atlas Migration Checksums
+        run: atlas migrate validate --dir "file://packages/core/db/migrations"
+
+      - name: Test Fresh Database Migration from Scratch
+        run: |
+          atlas migrate apply \
+            --url "postgres://postgres:password@localhost:5432/masterDB_test?sslmode=disable" \
+            --dir "file://packages/core/db/migrations"
+
+      - name: Verify sqlc Generation Freshness
+        run: |
+          cd packages/core
+          sqlc generate
+          git diff --exit-code repository/
+
+      - name: Run Core & Server Tests
+        run: |
+          cd packages/core && go test -v ./...
+          cd ../../apps/cloud-server && go test -v ./...
