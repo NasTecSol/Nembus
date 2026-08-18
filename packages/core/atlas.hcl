@@ -34,6 +34,28 @@ env "local" {
   }
 }
 
+# Environment for Cloud Server
+env "cloud" {
+  src = "file://db/schema"
+  url = var.master_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://../../apps/cloud-server/migrations"
+    format = atlas
+  }
+}
+
+# Environment for POS Client
+env "pos" {
+  src = "file://db/schema"
+  url = var.master_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://../../apps/pos-client/migrations"
+    format = atlas
+  }
+}
+
 env "stg" {
   src = "file://db/schema"
   url = var.stg_db_url
