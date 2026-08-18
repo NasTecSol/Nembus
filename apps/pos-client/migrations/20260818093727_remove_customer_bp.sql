@@ -1,6 +1,6 @@
 -- +goose Up
 -- Modify "customers" table
-ALTER TABLE "public"."customers" DROP COLUMN "business_partner_id";
+ALTER TABLE "public"."customers" DROP COLUMN IF EXISTS "business_partner_id";
 -- Create index "idx_inventory_stock_unique_product_variant_store" to table: "inventory_stock"
 CREATE UNIQUE INDEX "idx_inventory_stock_unique_product_variant_store" ON "public"."inventory_stock" ("product_id", (COALESCE(product_variant_id, '-1'::integer)), "store_id");
 -- Modify "fn_process_goods_receipt" function
