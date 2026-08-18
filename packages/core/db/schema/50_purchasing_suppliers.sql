@@ -489,7 +489,6 @@ CREATE TABLE IF NOT EXISTS journal_lines (
 );
 
 -- Foreign Key Alterations
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS business_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL;
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS business_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL;
 ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS business_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL;
 
@@ -510,7 +509,6 @@ CREATE INDEX IF NOT EXISTS idx_journal_lines_journal_id ON journal_lines(journal
 CREATE INDEX IF NOT EXISTS idx_journal_lines_account_id ON journal_lines(account_id);
 CREATE INDEX IF NOT EXISTS idx_bp_price_contracts_bp_product ON bp_price_contracts(business_partner_id, product_id);
 CREATE INDEX IF NOT EXISTS idx_bp_price_contracts_is_active ON bp_price_contracts(is_active);
-CREATE INDEX IF NOT EXISTS idx_customers_business_partner_id ON customers(business_partner_id);
 CREATE INDEX IF NOT EXISTS idx_po_business_partner_id ON purchase_orders(business_partner_id);
 CREATE INDEX IF NOT EXISTS idx_grn_business_partner_id ON goods_receipt_notes(business_partner_id);
 
