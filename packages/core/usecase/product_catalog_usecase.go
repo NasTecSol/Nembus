@@ -77,3 +77,25 @@ func (uc *ProductCatalogUseCase) ListProductsWithVariants(
 
 	return utils.NewResponse(utils.CodeOK, "products fetched successfully", products)
 }
+
+// GetMasterProductCatalog returns the detailed master catalog for an organization.
+func (uc *ProductCatalogUseCase) GetMasterProductCatalog(
+	ctx context.Context,
+	orgIDStr string,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 32)
+	if err != nil || orgID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
+	}
+
+	catalog, err := uc.repo.GetMasterProductCatalog(ctx, int32(orgID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog", err.Error())
+	}
+
+	return utils.NewResponse(utils.CodeOK, "master product catalog fetched successfully", catalog)
+}

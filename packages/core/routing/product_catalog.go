@@ -12,5 +12,7 @@ func RegisterProductCatalogRoutes(r *gin.RouterGroup, h *handler.ProductCatalogH
 	{
 		// Admin catalog: products with embedded variants
 		products.GET("/catalog", h.ListProductsWithVariants)
+		// Master catalog: full product details including variants, pricing, barcodes, UOMs, conversions
+		products.GET("/master-catalog", h.GetMasterProductCatalog)
 	}
 }

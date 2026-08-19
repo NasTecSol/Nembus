@@ -22360,6 +22360,75 @@
                 }
             }
         },
+        "/api/products/master-catalog": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "products"
+                ],
+                "summary": "Master product catalog (detailed)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/repository.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/repository.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/repository.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/repository.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/products/{product_id}/barcodes": {
             "get": {
                 "security": [
@@ -22718,6 +22787,75 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/products/{product_id}/uom-conversions/detailed": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all UOM conversions for a product with detailed UOM and product info",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "uoms"
+                ],
+                "summary": "Get detailed product UOM conversions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Product ID",
+                        "name": "product_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
@@ -32194,6 +32332,77 @@
                 }
             }
         },
+        "/api/uom-packaging-templates/by-uom/{uom_id}": {
+            "get": {
+                "description": "Retrieve all templates and their levels that use the specified UOM ID",
+                "tags": [
+                    "uom-packaging-templates"
+                ],
+                "summary": "Get packaging templates by UOM ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UOM ID",
+                        "name": "uom_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/uom-packaging-templates/pipeline": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create templates and their level hierarchy in a single execution",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "uom-packaging-templates"
+                ],
+                "summary": "Create UOM packaging template pipeline",
+                "parameters": [
+                    {
+                        "description": "Pipeline payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateTemplatePipelineRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/uom-packaging-templates/{id}": {
             "get": {
                 "description": "Retrieve a packaging template by its ID",
@@ -35148,6 +35357,12 @@
                     "type": "string",
                     "example": "500.00"
                 },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "variance": {
                     "description": "Optional; server computes at close",
                     "type": "string",
@@ -37162,6 +37377,30 @@
                 }
             }
         },
+        "handler.CreateTemplatePipelineRequest": {
+            "type": "object",
+            "required": [
+                "organization_id",
+                "templates",
+                "uom_id"
+            ],
+            "properties": {
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "templates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.TemplatePayload"
+                    }
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.CreateTenantRequest": {
             "type": "object",
             "properties": {
@@ -37248,7 +37487,8 @@
             "required": [
                 "code",
                 "name",
-                "organization_id"
+                "organization_id",
+                "uom_id"
             ],
             "properties": {
                 "code": {
@@ -37264,6 +37504,10 @@
                     "example": "Bottle Pack"
                 },
                 "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "uom_id": {
                     "type": "integer",
                     "example": 1
                 }
@@ -37509,6 +37753,28 @@
                 "store_id": {
                     "description": "ID of the store to grant access",
                     "type": "integer"
+                }
+            }
+        },
+        "handler.LevelPayload": {
+            "type": "object",
+            "required": [
+                "level_order",
+                "multiplier",
+                "uom_code"
+            ],
+            "properties": {
+                "level_order": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "multiplier": {
+                    "type": "string",
+                    "example": "1.000000"
+                },
+                "uom_code": {
+                    "type": "string",
+                    "example": "KG"
                 }
             }
         },
@@ -38426,6 +38692,34 @@
                 "message": {
                     "type": "string",
                     "example": "User created successfully"
+                }
+            }
+        },
+        "handler.TemplatePayload": {
+            "type": "object",
+            "required": [
+                "levels",
+                "template_code",
+                "template_name"
+            ],
+            "properties": {
+                "levels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.LevelPayload"
+                    }
+                },
+                "template_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "template_code": {
+                    "type": "string",
+                    "example": "1-24-12"
+                },
+                "template_name": {
+                    "type": "string",
+                    "example": "Template A"
                 }
             }
         },

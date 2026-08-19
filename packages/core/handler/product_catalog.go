@@ -86,3 +86,38 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 	)
 	c.JSON(resp.StatusCode, resp)
 }
+
+// GetMasterProductCatalog handles GET /api/products/master-catalog
+// @Summary      Master product catalog (detailed)
+// @Description  Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested.
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id      header    string  true   "Tenant identifier"
+// @Param        Authorization    header    string  true   "Bearer token"
+// @Param        organization_id  query     int     true   "Organization ID"
+// @Success      200  {object}  repository.Response
+// @Failure      400  {object}  repository.Response
+// @Failure      401  {object}  repository.Response
+// @Failure      500  {object}  repository.Response
+// @Router       /api/products/master-catalog [get]
+func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	orgIDStr := c.Query("organization_id")
+	if orgIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil))
+		return
+	}
+
+	resp := h.useCase.GetMasterProductCatalog(
+		c.Request.Context(),
+		orgIDStr,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
