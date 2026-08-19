@@ -2275,6 +2275,43 @@ type UserStoreAccess struct {
 	GrantedAt pgtype.Timestamp `json:"granted_at"`
 }
 
+type VMasterProductCatalog struct {
+	ProductID            int32            `json:"product_id"`
+	OrganizationID       int32            `json:"organization_id"`
+	Sku                  string           `json:"sku"`
+	Name                 string           `json:"name"`
+	Description          pgtype.Text      `json:"description"`
+	ProductType          pgtype.Text      `json:"product_type"`
+	IsSerialized         pgtype.Bool      `json:"is_serialized"`
+	IsBatchManaged       pgtype.Bool      `json:"is_batch_managed"`
+	IsActive             pgtype.Bool      `json:"is_active"`
+	IsSellable           pgtype.Bool      `json:"is_sellable"`
+	IsPurchasable        pgtype.Bool      `json:"is_purchasable"`
+	AllowDecimalQuantity pgtype.Bool      `json:"allow_decimal_quantity"`
+	TrackInventory       pgtype.Bool      `json:"track_inventory"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	CategoryID           pgtype.Int4      `json:"category_id"`
+	CategoryName         pgtype.Text      `json:"category_name"`
+	CategoryCode         pgtype.Text      `json:"category_code"`
+	BrandID              pgtype.Int4      `json:"brand_id"`
+	BrandName            pgtype.Text      `json:"brand_name"`
+	BrandCode            pgtype.Text      `json:"brand_code"`
+	TaxCategoryID        pgtype.Int4      `json:"tax_category_id"`
+	TaxCategoryName      pgtype.Text      `json:"tax_category_name"`
+	TaxRate              pgtype.Numeric   `json:"tax_rate"`
+	TaxInclusive         pgtype.Bool      `json:"tax_inclusive"`
+	BaseUomID            pgtype.Int4      `json:"base_uom_id"`
+	BaseUomCode          pgtype.Text      `json:"base_uom_code"`
+	BaseUomName          pgtype.Text      `json:"base_uom_name"`
+	UomConversions       interface{}      `json:"uom_conversions"`
+	Prices               interface{}      `json:"prices"`
+	Variants             interface{}      `json:"variants"`
+	Barcodes             interface{}      `json:"barcodes"`
+	Inventory            interface{}      `json:"inventory"`
+}
+
 type VwAccountsPayable struct {
 	PoID                 int32            `json:"po_id"`
 	PoNumber             string           `json:"po_number"`
