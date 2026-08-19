@@ -423,6 +423,10 @@ definitions:
         description: Optional; server uses DB value for reconciliation
         example: "500.00"
         type: string
+      metadata:
+        items:
+          type: integer
+        type: array
       variance:
         description: Optional; server computes at close
         example: "0.00"
@@ -1861,6 +1865,23 @@ definitions:
     - name
     - tax_rate
     type: object
+  handler.CreateTemplatePipelineRequest:
+    properties:
+      organization_id:
+        example: 1
+        type: integer
+      templates:
+        items:
+          $ref: '#/definitions/handler.TemplatePayload'
+        type: array
+      uom_id:
+        example: 1
+        type: integer
+    required:
+    - organization_id
+    - templates
+    - uom_id
+    type: object
   handler.CreateTenantRequest:
     properties:
       db_conn_str:
@@ -1934,10 +1955,14 @@ definitions:
       organization_id:
         example: 1
         type: integer
+      uom_id:
+        example: 1
+        type: integer
     required:
     - code
     - name
     - organization_id
+    - uom_id
     type: object
   handler.CreateUserRequest:
     properties:
@@ -2110,6 +2135,22 @@ definitions:
         type: integer
     required:
     - store_id
+    type: object
+  handler.LevelPayload:
+    properties:
+      level_order:
+        example: 1
+        type: integer
+      multiplier:
+        example: "1.000000"
+        type: string
+      uom_code:
+        example: KG
+        type: string
+    required:
+    - level_order
+    - multiplier
+    - uom_code
     type: object
   handler.ListProductsWithVariantsResponse:
     properties:
@@ -2772,6 +2813,26 @@ definitions:
       message:
         example: User created successfully
         type: string
+    type: object
+  handler.TemplatePayload:
+    properties:
+      levels:
+        items:
+          $ref: '#/definitions/handler.LevelPayload'
+        type: array
+      template_active:
+        example: true
+        type: boolean
+      template_code:
+        example: 1-24-12
+        type: string
+      template_name:
+        example: Template A
+        type: string
+    required:
+    - levels
+    - template_code
+    - template_name
     type: object
   handler.TenantResponse:
     properties:
@@ -19187,6 +19248,52 @@ paths:
       summary: Create product UOM conversion
       tags:
       - uoms
+  /api/products/{product_id}/uom-conversions/detailed:
+    get:
+      consumes:
+      - application/json
+      description: Get all UOM conversions for a product with detailed UOM and product
+        info
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: product_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get detailed product UOM conversions
+      tags:
+      - uoms
   /api/products/{product_id}/uom-conversions/lookup:
     get:
       consumes:
@@ -19304,6 +19411,52 @@ paths:
       security:
       - BearerAuth: []
       summary: Admin product catalog
+      tags:
+      - products
+  /api/products/master-catalog:
+    get:
+      consumes:
+      - application/json
+      description: Returns all master products with their base details, UOMs, conversions,
+        pricing, variants, and barcodes nested.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/repository.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/repository.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/repository.Response'
+      security:
+      - BearerAuth: []
+      summary: Master product catalog (detailed)
       tags:
       - products
   /api/promotions:
@@ -25524,6 +25677,52 @@ paths:
           schema:
             $ref: '#/definitions/handler.SuccessResponse'
       summary: Create a template level
+      tags:
+      - uom-packaging-templates
+  /api/uom-packaging-templates/by-uom/{uom_id}:
+    get:
+      description: Retrieve all templates and their levels that use the specified
+        UOM ID
+      parameters:
+      - description: UOM ID
+        in: path
+        name: uom_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+      summary: Get packaging templates by UOM ID
+      tags:
+      - uom-packaging-templates
+  /api/uom-packaging-templates/pipeline:
+    post:
+      consumes:
+      - application/json
+      description: Create templates and their level hierarchy in a single execution
+      parameters:
+      - description: Pipeline payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateTemplatePipelineRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create UOM packaging template pipeline
       tags:
       - uom-packaging-templates
   /api/uoms:

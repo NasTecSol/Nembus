@@ -3153,3 +3153,235 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
+
+
+-- =====================================================
+-- MASTER PRODUCT CATALOG FETCH FUNCTION
+-- =====================================================
+
+CREATE OR REPLACE VIEW v_master_product_catalog AS
+SELECT 
+    p.id AS product_id,
+    p.organization_id,
+    p.sku,
+    p.name,
+    p.description,
+    p.product_type,
+    p.is_serialized,
+    p.is_batch_managed,
+    p.is_active,
+    p.is_sellable,
+    p.is_purchasable,
+    p.allow_decimal_quantity,
+    p.track_inventory,
+    p.metadata,
+    p.created_at,
+    p.updated_at,
+    p.category_id,
+    pc.name AS category_name,
+    pc.code AS category_code,
+    p.brand_id,
+    b.name AS brand_name,
+    b.code AS brand_code,
+    p.tax_category_id,
+    tc.name AS tax_category_name,
+    tc.tax_rate AS tax_rate,
+    tc.is_inclusive AS tax_inclusive,
+    p.base_uom_id,
+    uom.code AS base_uom_code,
+    uom.name AS base_uom_name,
+    -- Conversions
+    COALESCE(
+        (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', puc.id,
+                    'from_uom_id', puc.from_uom_id,
+                    'from_uom_code', fuom.code,
+                    'from_uom_name', fuom.name,
+                    'to_uom_id', puc.to_uom_id,
+                    'to_uom_code', tuom.code,
+                    'to_uom_name', tuom.name,
+                    'conversion_factor', puc.conversion_factor,
+                    'is_default', puc.is_default
+                )
+            )
+            FROM product_uom_conversions puc
+            JOIN units_of_measure fuom ON puc.from_uom_id = fuom.id
+            JOIN units_of_measure tuom ON puc.to_uom_id = tuom.id
+            WHERE puc.product_id = p.id
+        ),
+        '[]'::jsonb
+    ) AS uom_conversions,
+    -- Prices
+    COALESCE(
+        (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', pp.id,
+                    'product_variant_id', pp.product_variant_id,
+                    'price_list_id', pp.price_list_id,
+                    'price_list_name', pl.name,
+                    'price_list_code', pl.code,
+                    'uom_id', pp.uom_id,
+                    'uom_code', puom.code,
+                    'uom_name', puom.name,
+                    'price', pp.price,
+                    'min_quantity', pp.min_quantity,
+                    'max_quantity', pp.max_quantity,
+                    'valid_from', pp.valid_from,
+                    'valid_to', pp.valid_to,
+                    'is_active', pp.is_active
+                )
+            )
+            FROM product_prices pp
+            JOIN price_lists pl ON pp.price_list_id = pl.id
+            LEFT JOIN units_of_measure puom ON pp.uom_id = puom.id
+            WHERE pp.product_id = p.id
+        ),
+        '[]'::jsonb
+    ) AS prices,
+    -- Variants
+    COALESCE(
+        (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', pv.id,
+                    'variant_sku', pv.variant_sku,
+                    'variant_name', pv.variant_name,
+                    'variant_attributes', pv.variant_attributes,
+                    'is_active', pv.is_active,
+                    'metadata', pv.metadata
+                )
+            )
+            FROM product_variants pv
+            WHERE pv.product_id = p.id
+        ),
+        '[]'::jsonb
+    ) AS variants,
+    -- Barcodes
+    COALESCE(
+        (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', pb.id,
+                    'product_variant_id', pb.product_variant_id,
+                    'barcode', pb.barcode,
+                    'barcode_type', pb.barcode_type,
+                    'is_primary', pb.is_primary
+                )
+            )
+            FROM product_barcodes pb
+            WHERE pb.product_id = p.id
+        ),
+        '[]'::jsonb
+    ) AS barcodes,
+    -- Inventory
+    COALESCE(
+        (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'stock_id', ist.id,
+                    'store_id', ist.store_id,
+                    'storage_location_id', ist.storage_location_id,
+                    'storage_location_name', sl.name,
+                    'storage_location_code', sl.code,
+                    'product_variant_id', ist.product_variant_id,
+                    'quantity_on_hand', ist.quantity_on_hand,
+                    'quantity_available', ist.quantity_available,
+                    'quantity_allocated', ist.quantity_allocated,
+                    'quantity_on_order', ist.quantity_on_order,
+                    'reorder_level', ist.reorder_level,
+                    'reorder_quantity', ist.reorder_quantity,
+                    'max_stock_level', ist.max_stock_level
+                )
+            )
+            FROM inventory_stock ist
+            LEFT JOIN storage_locations sl ON ist.storage_location_id = sl.id
+            WHERE ist.product_id = p.id
+        ),
+        '[]'::jsonb
+    ) AS inventory
+FROM products p
+LEFT JOIN product_categories pc ON p.category_id = pc.id
+LEFT JOIN brands b ON p.brand_id = b.id
+LEFT JOIN units_of_measure uom ON p.base_uom_id = uom.id
+LEFT JOIN tax_categories tc ON p.tax_category_id = tc.id;
+
+
+CREATE OR REPLACE FUNCTION get_master_product_catalog(p_organization_id INT)
+RETURNS TABLE (
+    product_id INT,
+    sku VARCHAR(100),
+    name VARCHAR(255),
+    description TEXT,
+    product_type VARCHAR(50),
+    is_serialized BOOLEAN,
+    is_batch_managed BOOLEAN,
+    is_active BOOLEAN,
+    is_sellable BOOLEAN,
+    is_purchasable BOOLEAN,
+    allow_decimal_quantity BOOLEAN,
+    track_inventory BOOLEAN,
+    metadata JSONB,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    category_id INT,
+    category_name VARCHAR(255),
+    category_code VARCHAR(50),
+    brand_id INT,
+    brand_name VARCHAR(255),
+    brand_code VARCHAR(50),
+    tax_category_id INT,
+    tax_category_name VARCHAR(100),
+    tax_rate DECIMAL(5,2),
+    tax_inclusive BOOLEAN,
+    base_uom_id INT,
+    base_uom_code VARCHAR(20),
+    base_uom_name VARCHAR(50),
+    uom_conversions JSONB,
+    prices JSONB,
+    variants JSONB,
+    barcodes JSONB,
+    inventory JSONB
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        v.product_id,
+        v.sku,
+        v.name,
+        v.description,
+        v.product_type,
+        v.is_serialized,
+        v.is_batch_managed,
+        v.is_active,
+        v.is_sellable,
+        v.is_purchasable,
+        v.allow_decimal_quantity,
+        v.track_inventory,
+        v.metadata,
+        v.created_at,
+        v.updated_at,
+        v.category_id,
+        v.category_name,
+        v.category_code,
+        v.brand_id,
+        v.brand_name,
+        v.brand_code,
+        v.tax_category_id,
+        v.tax_category_name,
+        v.tax_rate,
+        v.tax_inclusive,
+        v.base_uom_id,
+        v.base_uom_code,
+        v.base_uom_name,
+        v.uom_conversions,
+        v.prices,
+        v.variants,
+        v.barcodes,
+        v.inventory
+    FROM v_master_product_catalog v
+    WHERE v.organization_id = p_organization_id;
+END;
+$$ LANGUAGE plpgsql;
