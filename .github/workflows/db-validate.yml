@@ -11,8 +11,11 @@ name: DB Schema, Migration & Tenant Apply (Junction)
 #   3. Commit    — only after validation passes, the generated migration is
 #                  committed back to `junction` (GITHUB_TOKEN pushes do NOT
 #                  retrigger workflows, so there is no infinite loop).
-#   4. Apply     — applies pending migrations to the master DB and to every
-#                  active tenant DB (via apps/cloud-server/cmd/migrate-tenants).
+#   4. Apply     — ships the built migrate-tenants runner + migrations to
+#                  the EC2 instance (scp) and executes it there over SSH,
+#                  applying pending migrations to the master DB and every
+#                  active tenant DB via localhost (DBs are containers on
+#                  that same host).
 #   5. Verify    — sqlc freshness + core/server tests.
 
 on:
@@ -181,18 +184,67 @@ jobs:
           echo "Migration committed and pushed to junction."
 
       # ---------------------------------------------------------------
-      # 4. APPLY — master DB + every active tenant
+      # 4. APPLY — run ON the instance. The Postgres containers (master +
+      # tenant DBs) live on the same EC2 host, so migrate-tenants must
+      # execute there and connect via localhost. This also makes the
+      # tenant db_conn_str values stored in the master DB (localhost /
+      # docker-network names) work as-is.
       # ---------------------------------------------------------------
-      - name: Apply Migrations to Master & All Active Tenants
-        shell: bash
-        env:
-          # URL of the master DB (holds the `tenants` registry table).
-          # Point this at staging first if you want a safe rollout.
-          MASTER_DB_URL: ${{ secrets.MASTER_DB_URL }}
+      - name: Build migrate-tenants Runner
         run: |
           cd apps/cloud-server
-          go run ./cmd/migrate-tenants/main.go \
-            -dir "${{ github.workspace }}/packages/core/db/migrations"
+          go build -o "${{ github.workspace }}/migrate-tenants-bin" ./cmd/migrate-tenants
+
+      - name: Package Runner + Migrations
+        run: |
+          mkdir -p nembus-db-migrate
+          cp migrate-tenants-bin nembus-db-migrate/
+          cp -r packages/core/db/migrations nembus-db-migrate/migrations
+          tar -czf nembus-db-migrate.tar.gz nembus-db-migrate
+
+      - name: Copy Runner + Migrations to Instance
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          source: "nembus-db-migrate.tar.gz"
+          target: /opt/apps
+
+      - name: Apply Migrations on Instance (Master + All Active Tenants)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            # Ensure the pinned Atlas version is present on the host — the
+            # checksum algorithm must match CI + local dev, or `migrate
+            # apply` will reject atlas.sum. Installs to ~/bin (no sudo).
+            mkdir -p "$HOME/bin"
+            if ! "$HOME/bin/atlas" version 2>/dev/null | grep -q "v1.3.0"; then
+              curl -sL -o "$HOME/bin/atlas" "https://atlasbinaries.com/atlas/atlas-linux-amd64-v1.3.0"
+              chmod +x "$HOME/bin/atlas"
+            fi
+            export PATH="$HOME/bin:$PATH"
+            atlas version
+
+            # MASTER_DB_URL is the LOCAL url (localhost) — the runner
+            # executes on the same host as the Postgres containers.
+            # Adjust the port if your container publishes a different one.
+            # (Single quotes: keeps the shell from expanding special
+            # characters inside the URL.)
+            export MASTER_DB_URL='${{ secrets.MASTER_DB_URL }}'
+
+            cd /opt/apps
+            rm -rf nembus-db-migrate
+            tar -xzf nembus-db-migrate.tar.gz
+            cd nembus-db-migrate
+            ./migrate-tenants-bin -dir "$PWD/migrations"
 
       # ---------------------------------------------------------------
       # 5. VERIFY — sqlc freshness + tests (unchanged from before)
