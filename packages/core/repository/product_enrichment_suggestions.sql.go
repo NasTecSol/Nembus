@@ -18,11 +18,13 @@ SET status = 'approved',
     reviewer_id = $3,
     reviewed_at = CURRENT_TIMESTAMP,
     applied_at = NULL,
+    next_attempt_at = NULL,
+    last_error_code = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
   AND status = 'in_review'
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type ApproveProductEnrichmentSuggestionParams struct {
@@ -55,6 +57,9 @@ func (q *Queries) ApproveProductEnrichmentSuggestion(ctx context.Context, arg Ap
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -83,7 +88,7 @@ INSERT INTO product_enrichment_suggestions (
 )
 ON CONFLICT (organization_id, product_id, source_data_fingerprint, contract_version)
 DO UPDATE SET updated_at = product_enrichment_suggestions.updated_at
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type CreateOrGetProductEnrichmentSuggestionParams struct {
@@ -146,6 +151,9 @@ func (q *Queries) CreateOrGetProductEnrichmentSuggestion(ctx context.Context, ar
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -153,7 +161,7 @@ func (q *Queries) CreateOrGetProductEnrichmentSuggestion(ctx context.Context, ar
 }
 
 const getProductEnrichmentSuggestionByID = `-- name: GetProductEnrichmentSuggestionByID :one
-SELECT id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at FROM product_enrichment_suggestions
+SELECT id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at FROM product_enrichment_suggestions
 WHERE organization_id = $1
   AND id = $2
 LIMIT 1
@@ -188,6 +196,9 @@ func (q *Queries) GetProductEnrichmentSuggestionByID(ctx context.Context, arg Ge
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -195,7 +206,7 @@ func (q *Queries) GetProductEnrichmentSuggestionByID(ctx context.Context, arg Ge
 }
 
 const listProductEnrichmentSuggestions = `-- name: ListProductEnrichmentSuggestions :many
-SELECT id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at FROM product_enrichment_suggestions
+SELECT id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at FROM product_enrichment_suggestions
 WHERE organization_id = $1
   AND status = COALESCE($4, status)
 ORDER BY created_at DESC, id DESC
@@ -244,6 +255,9 @@ func (q *Queries) ListProductEnrichmentSuggestions(ctx context.Context, arg List
 			&i.ReviewerID,
 			&i.ReviewedAt,
 			&i.AppliedAt,
+			&i.AttemptCount,
+			&i.NextAttemptAt,
+			&i.LastErrorCode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -265,7 +279,7 @@ SET status = 'applied',
 WHERE organization_id = $1
   AND id = $2
   AND status = 'approved'
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type MarkProductEnrichmentSuggestionAppliedParams struct {
@@ -297,6 +311,9 @@ func (q *Queries) MarkProductEnrichmentSuggestionApplied(ctx context.Context, ar
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -309,11 +326,13 @@ SET status = 'failed',
     reviewer_id = NULL,
     reviewed_at = NULL,
     applied_at = NULL,
+    next_attempt_at = NULL,
+    last_error_code = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
   AND status = 'processing'
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type MarkProductEnrichmentSuggestionFailedParams struct {
@@ -345,6 +364,9 @@ func (q *Queries) MarkProductEnrichmentSuggestionFailed(ctx context.Context, arg
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -364,11 +386,13 @@ SET status = 'in_review',
     reviewer_id = NULL,
     reviewed_at = NULL,
     applied_at = NULL,
+    next_attempt_at = NULL,
+    last_error_code = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
   AND status = 'processing'
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type MarkProductEnrichmentSuggestionInReviewParams struct {
@@ -417,6 +441,9 @@ func (q *Queries) MarkProductEnrichmentSuggestionInReview(ctx context.Context, a
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -429,11 +456,13 @@ SET status = 'processing',
     reviewer_id = NULL,
     reviewed_at = NULL,
     applied_at = NULL,
+    next_attempt_at = NULL,
+    last_error_code = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
   AND status IN ('pending', 'retryable')
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type MarkProductEnrichmentSuggestionProcessingParams struct {
@@ -465,6 +494,9 @@ func (q *Queries) MarkProductEnrichmentSuggestionProcessing(ctx context.Context,
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -477,11 +509,13 @@ SET status = 'retryable',
     reviewer_id = NULL,
     reviewed_at = NULL,
     applied_at = NULL,
+    next_attempt_at = NULL,
+    last_error_code = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
   AND status = 'processing'
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type MarkProductEnrichmentSuggestionRetryableParams struct {
@@ -513,6 +547,9 @@ func (q *Queries) MarkProductEnrichmentSuggestionRetryable(ctx context.Context, 
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -525,11 +562,13 @@ SET status = 'rejected',
     reviewer_id = $3,
     reviewed_at = CURRENT_TIMESTAMP,
     applied_at = NULL,
+    next_attempt_at = NULL,
+    last_error_code = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
   AND status = 'in_review'
-RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, created_at, updated_at
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
 `
 
 type RejectProductEnrichmentSuggestionParams struct {
@@ -562,6 +601,9 @@ func (q *Queries) RejectProductEnrichmentSuggestion(ctx context.Context, arg Rej
 		&i.ReviewerID,
 		&i.ReviewedAt,
 		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

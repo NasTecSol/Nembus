@@ -1470,6 +1470,9 @@ type ProductEnrichmentSuggestion struct {
 	ReviewerID            pgtype.Int4      `json:"reviewer_id"`
 	ReviewedAt            pgtype.Timestamp `json:"reviewed_at"`
 	AppliedAt             pgtype.Timestamp `json:"applied_at"`
+	AttemptCount          int32            `json:"attempt_count"`
+	NextAttemptAt         pgtype.Timestamp `json:"next_attempt_at"`
+	LastErrorCode         pgtype.Text      `json:"last_error_code"`
 	CreatedAt             pgtype.Timestamp `json:"created_at"`
 	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
 }

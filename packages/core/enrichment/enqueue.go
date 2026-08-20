@@ -228,6 +228,12 @@ type EnrichmentRequestPolicy struct {
 type EnrichmentResult struct {
 	SourceItemCode string
 	Proposals      ProposalSet
+	// Trusted adapter metadata. These values are attached by the server-side
+	// provider implementation, never accepted from model JSON.
+	Provider     string
+	Model        string
+	ModelVersion string
+	ResponseID   string
 }
 
 // ProductEnrichmentProvider is a future adapter contract only. Stage 2A does

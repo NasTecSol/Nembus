@@ -719,3 +719,53 @@ retryable -> processing
 - Stage 2A: SAFE TO KEEP.
 - Stage 2B: SAFE TO KEEP. The provider-neutral request, strict parser, candidate security, structured precedence, description policy, unsupported-semantic protection, and model instruction contract are implemented and verified without provider execution.
 - Next Action: make the provider/model/region/retention selection decision before beginning Stage 2C concrete adapter implementation.
+
+## Stage 2C — OpenAI Provider + Worker
+
+### Provider and boundary
+
+- The initial provider is the OpenAI Responses API using the official `github.com/openai/openai-go/v3` SDK pinned at `v3.50.0`. OpenAI is the initial provider, not an architectural dependency. Future provider replacement should be isolated to a new `ProductEnrichmentProvider` adapter and configuration/wiring.
+- `ProductEnrichmentProvider` remains provider-neutral. OpenAI SDK request/response types are isolated in `packages/core/enrichment/openaiadapter/provider.go`; generic enrichment request, eligibility, parser, lifecycle, and review contracts do not import the OpenAI SDK.
+- The configured model is `OPENAI_ENRICHMENT_MODEL`, defaulting to the recommended `gpt-5.6-terra`; arbitrary future model strings remain supported. `ENRICHMENT_PROVIDER=openai` is validated only when enrichment is enabled.
+- The adapter uses Responses API Structured Outputs with an explicit strict JSON Schema. It sends the Stage 2B instruction contract plus an allowlisted request payload. UoM identity may be context; conversion factors and operational data are excluded from the provider payload.
+- OpenAI output is extracted with `Response.OutputText`, then passed through `ParseEnrichmentResponseString` and the Stage 2B request/candidate/precedence validation. Provider metadata is attached by the adapter and never accepted from generated JSON.
+
+### Durable worker and lifecycle
+
+- `packages/core/enrichment/worker.go` runs a bounded sequential worker. It lists due `pending`/`retryable` rows, atomically claims each as `processing`, reconstructs the current SAP snapshot and candidate dictionaries, checks the source fingerprint and current eligibility, invokes the provider with a finite timeout, and persists validated proposals atomically with `processing -> in_review`.
+- Transient provider/network/timeout/rate-limit/5xx errors become `retryable` with deterministic capped exponential backoff. Authentication, invalid-request/model, malformed/contract/prohibited/candidate/correlation failures become terminal `failed`. Graceful context cancellation does not create a retry loop. One row failure does not stop the batch.
+- Source changes are fail-closed as `stale_source` (or `stale_source_no_gap`); no stale result is applied and no product is mutated. The worker never writes products, brands, categories, metadata, inventory, pricing, barcodes, or UoM conversions.
+- Durable execution metadata was added in forward migration `20260820010000.sql`: `attempt_count INTEGER NOT NULL DEFAULT 0`, `next_attempt_at TIMESTAMP`, and bounded `last_error_code VARCHAR(100)`. No raw provider response or secret is stored.
+
+### Configuration and security
+
+- Stage 2C configuration is disabled by default. When enabled, API key, provider, model, finite timeout, worker interval, batch size, and max attempts are validated from environment-backed core config. The key is never logged, persisted, sent to SAP, or included in suggestion JSON.
+- The worker logs only operational identifiers/classifications and does not log full prompts, raw model output, authorization headers, or API keys.
+
+### Files changed and verification
+
+- Business/domain: `packages/core/enrichment/enqueue.go`, `packages/core/enrichment/execution.go`, `packages/core/enrichment/worker.go`, `packages/core/enrichment/worker_test.go`.
+- OpenAI adapter: `packages/core/enrichment/openaiadapter/provider.go`.
+- Worker/config/wiring: `packages/core/config/config.go`, `apps/cloud-server/main.go`.
+- SQL/schema/migration: `packages/core/db/schema/35_product_enrichment.sql`, `packages/core/db/migrations/20260820010000.sql`, `packages/core/queries/product_enrichment_execution.sql`, `packages/core/repository/product_enrichment_execution_store.go`.
+- Generated SQLC: `packages/core/repository/models.go`, `packages/core/repository/product_enrichment_suggestions.sql.go`, and `packages/core/repository/product_enrichment_execution.sql.go` were generated with real SQLC v1.30.0. A second generation was deterministic. `packages/core/db/migrations/atlas.sum` was regenerated with Atlas and validated.
+- Module dependency: `packages/core/go.mod` and `packages/core/go.sum` add `github.com/openai/openai-go/v3 v3.50.0`.
+- No files under `packages/sap/**` or `apps/sap-agent/**` changed. No review APIs or approved-suggestion application logic was added.
+- Go 1.26.7 formatting/tests, SQLC v1.30.0 generation, and Atlas hash/validate passed. No live OpenAI call was made.
+
+### Remaining phases and open questions
+
+- Stage 2D review/approval API.
+- Stage 2E approved suggestion application.
+- Deterministic approved aliases/rules.
+- Reviewer UI if required.
+- Production observability/security/hardening.
+- Candidate/taxonomy re-enrichment strategy.
+- Future attributes/families only with an approved schema.
+- Reviewer roles/permissions, auto-apply policy, `finished_good` source rule, candidate/taxonomy re-enrichment policy, normalized attributes/family schema, and production OpenAI region/retention requirements remain open.
+
+### Current Stage 2C Verdict
+
+- Stage 1, Stage 2A, and Stage 2B remain SAFE TO KEEP by static scope review.
+- Stage 2C is SAFE TO KEEP. Go/gofmt, focused adapter/worker tests, core/server tests, deterministic SQLC v1.30.0 generation, and Atlas hash/validation passed. No critical or important source finding is known from this implementation pass.
+- Next Action: separately authorize Stage 2D review/approval API design/implementation. Keep Stage 2E application, aliases/rules, reviewer UI, and production hardening out of Stage 2C.

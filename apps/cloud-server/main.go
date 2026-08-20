@@ -5,9 +5,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/enrichment"
+	"github.com/NasTecSol/nembus-core/enrichment/openaiadapter"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
@@ -258,9 +261,13 @@ func main() {
 	}
 
 	cfg := config.LoadConfig(env)
+	if err := cfg.ValidateEnrichmentConfig(); err != nil {
+		log.Fatalf("Invalid enrichment configuration: %v", err)
+	}
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	masterPool, masterRepo, err := setupDatabase(ctx, cfg)
 	if err != nil {
 		log.Fatalf("Unable to connect to Master DB: %v", err)
@@ -334,6 +341,18 @@ func main() {
 	enrichmentStore := repository.NewProductEnrichmentStore(masterRepo)
 	enrichmentCoordinator := enrichment.NewProductEnrichmentCoordinator(enrichmentStore)
 	sapMigrationUC.SetProductEnrichmentCoordinator(enrichmentCoordinator)
+	if cfg.EnrichmentEnabled {
+		provider, err := openaiadapter.New(cfg.OpenAIAPIKey, cfg.OpenAIEnrichmentModel, cfg.OpenAIEnrichmentTimeout)
+		if err != nil {
+			log.Fatalf("Unable to configure OpenAI enrichment provider: %v", err)
+		}
+		worker := enrichment.NewEnrichmentWorker(enrichmentStore, provider, enrichment.EnrichmentExecutionConfig{
+			Interval: cfg.EnrichmentWorkerInterval, Timeout: cfg.OpenAIEnrichmentTimeout,
+			BatchSize: cfg.EnrichmentBatchSize, MaxAttempts: cfg.EnrichmentMaxRetries,
+		}, log.Default())
+		worker.Start(ctx)
+		log.Printf("Product enrichment worker started (provider=%s model=%s)", cfg.EnrichmentProvider, cfg.OpenAIEnrichmentModel)
+	}
 
 	// Setup Router
 	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, sapMigrationUC, cfg)

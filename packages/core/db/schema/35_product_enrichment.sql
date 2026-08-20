@@ -25,6 +25,9 @@ CREATE TABLE product_enrichment_suggestions (
     reviewer_id              INTEGER REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at              TIMESTAMP,
     applied_at               TIMESTAMP,
+    attempt_count            INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at          TIMESTAMP,
+    last_error_code          VARCHAR(100),
     created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_product_enrichment_suggestions_identity
