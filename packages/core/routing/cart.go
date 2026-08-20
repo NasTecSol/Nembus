@@ -38,6 +38,7 @@ func RegisterCartRoutes(r *gin.RouterGroup, h *handler.CartHandler) {
 		carts.POST("/:id/coupon", h.ApplyCouponToCart)
 		carts.POST("/:id/recalculate", h.RecalculateCartTotals)
 		carts.POST("/:id/checkout", h.ConvertToOrder)
+		carts.POST("/:id/reopen", h.ReopenCart)
 		carts.POST("/:id/merge", h.MergeGuestCartToCustomer)
 
 		// Cart activity log
