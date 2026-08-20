@@ -69,8 +69,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Populate Cloud
             if (cfg.cloud) {
                 document.getElementById('cloud-url').value = cfg.cloud.base_url || 'http://127.0.0.1:8080';
-                document.getElementById('cloud-org-id').value = cfg.cloud.organization_id || 1;
-                document.getElementById('cloud-api-key').value = cfg.cloud.api_key || '';
+                document.getElementById('cloud-tenant-slug').value = cfg.cloud.tenant_slug || '';
+                document.getElementById('cloud-org-id').value = cfg.cloud.organization_id || '';
+                document.getElementById('cloud-m2m-token').value = cfg.cloud.m2m_token || '';
             }
             if (cfg.batch_size) {
                 document.getElementById('agent-batch-size').value = cfg.batch_size;
@@ -114,8 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const payload = {
             cloud: {
                 base_url: document.getElementById('cloud-url').value,
+                tenant_slug: document.getElementById('cloud-tenant-slug').value,
                 organization_id: parseInt(document.getElementById('cloud-org-id').value),
-                api_key: document.getElementById('cloud-api-key').value,
+                m2m_token: document.getElementById('cloud-m2m-token').value,
             },
             batch_size: parseInt(document.getElementById('agent-batch-size').value)
         };
@@ -180,8 +182,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const payload = {
             base_url: document.getElementById('cloud-url').value,
-            organization_id: parseInt(document.getElementById('cloud-org-id').value) || 1,
-            api_key: document.getElementById('cloud-api-key').value,
+            tenant_slug: document.getElementById('cloud-tenant-slug').value,
+            organization_id: parseInt(document.getElementById('cloud-org-id').value),
+            m2m_token: document.getElementById('cloud-m2m-token').value,
         };
 
         try {

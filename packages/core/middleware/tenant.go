@@ -11,12 +11,14 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type contextKey string
 
 const RepoKey contextKey = "tenant_repo"
 const tenantSlugKey contextKey = "tenant_slug"
+const tenantPoolKey contextKey = "tenant_pool"
 
 // validTenantSlug validates the canonical tenant selector without imposing a
 // new taxonomy. Tenant slugs are stored as VARCHAR(100) and are matched
@@ -32,6 +34,10 @@ func validTenantSlug(slug string) bool {
 	}
 	return true
 }
+
+// ValidTenantSlug exposes the same canonical validation to credential
+// issuance and other boundary handlers without exposing tenant persistence.
+func ValidTenantSlug(slug string) bool { return validTenantSlug(slug) }
 
 // TenantSlugFromContext extracts the trusted tenant slug from a request
 // context. It never falls back to client input.
@@ -51,6 +57,22 @@ func withTenantSlug(ctx context.Context, slug string) context.Context {
 	return context.WithValue(ctx, tenantSlugKey, slug)
 }
 
+// RepositoryFromContext returns the repository created for the selected
+// tenant. It is intentionally typed so request handlers cannot fall back to a
+// process-global master repository.
+func RepositoryFromContext(ctx context.Context) (*repository.Queries, bool) {
+	repo, ok := ctx.Value(RepoKey).(*repository.Queries)
+	return repo, ok && repo != nil
+}
+
+// TenantPoolFromContext returns the exact pool used to construct the request
+// repository. Request-scoped use cases use this pool without mutable global
+// repository setters.
+func TenantPoolFromContext(ctx context.Context) (*pgxpool.Pool, bool) {
+	pool, ok := ctx.Value(tenantPoolKey).(*pgxpool.Pool)
+	return pool, ok && pool != nil
+}
+
 // TenantBindingMiddleware validates the signed tenant binding before
 // TenantMiddleware can select a tenant database.
 func TenantBindingMiddleware() gin.HandlerFunc {
@@ -58,7 +80,10 @@ func TenantBindingMiddleware() gin.HandlerFunc {
 		isM2M, _ := c.Get("is_m2m")
 		if m2m, ok := isM2M.(bool); ok && m2m {
 			claims, ok := GetClaimsFromContext(c)
-			signedTenant, signedOK := claims["tenant_id"].(string)
+			signedTenant, signedOK := claims[tenantSlugClaim].(string)
+			if !signedOK {
+				signedTenant, signedOK = claims["tenant_id"].(string)
+			}
 			requestedTenant, requestedExists := c.Get("m2m_requested_tenant")
 			requested, requestedOK := requestedTenant.(string)
 			if !ok || !signedOK || !validTenantSlug(signedTenant) ||
@@ -116,13 +141,10 @@ func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
 
 		pool, err := tm.GetPool(c.Request.Context(), tenantID)
 		if err != nil {
-			// Log the actual error for debugging
-			log.Printf("Failed to get tenant pool for slug '%s': %v", tenantID, err)
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":   "Tenant not found or inactive",
-				"details": err.Error(),
-				"slug":    tenantID,
-			})
+			// Keep infrastructure details, including connection information, out
+			// of the response. The slug is only an identifier and is safe to log.
+			log.Printf("Failed to get tenant pool for slug %q: %v", tenantID, err)
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found or inactive"})
 			c.Abort()
 			return
 		}
@@ -130,6 +152,7 @@ func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
 		// Injects the tenant-specific repository into the request context
 		repo := repository.New(pool)
 		ctx := context.WithValue(c.Request.Context(), RepoKey, repo)
+		ctx = context.WithValue(ctx, tenantPoolKey, pool)
 		ctx = withTenantSlug(ctx, tenantID)
 		c.Request = c.Request.WithContext(ctx)
 

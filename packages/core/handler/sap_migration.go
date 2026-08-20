@@ -6,20 +6,21 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/NasTecSol/nembus-core/enrichment"
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/NasTecSol/nembus-sap/contracts"
 )
 
 type SAPMigrationHandler struct {
-	uc *usecase.SAPMigrationUseCase
 }
 
-func NewSAPMigrationHandler(uc *usecase.SAPMigrationUseCase) *SAPMigrationHandler {
-	return &SAPMigrationHandler{uc: uc}
+func NewSAPMigrationHandler() *SAPMigrationHandler {
+	return &SAPMigrationHandler{}
 }
 
 func (h *SAPMigrationHandler) IngestBatch(c *gin.Context) {
@@ -48,18 +49,41 @@ func (h *SAPMigrationHandler) IngestBatch(c *gin.Context) {
 		return
 	}
 
-	// Extract Org ID from header / context if set
-	orgID := 1
-	if headerOrg := c.GetHeader("x-tenant-id"); headerOrg != "" {
-		if id, err := strconv.Atoi(headerOrg); err == nil && id > 0 {
-			orgID = id
-		}
+	identity, ok := middleware.TrustedMachineIdentityFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Trusted machine identity required"})
+		return
 	}
+	if payload.OrganizationID < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OrganizationID must be positive when supplied"})
+		return
+	}
+	if payload.OrganizationID > 0 && int32(payload.OrganizationID) != identity.OrganizationID {
+		c.JSON(http.StatusConflict, gin.H{"error": "payload OrganizationID does not match the authenticated organization"})
+		return
+	}
+	payload.OrganizationID = int(identity.OrganizationID)
 
-	resp, err := h.uc.IngestBatch(c.Request.Context(), orgID, &payload)
+	pool, ok := middleware.TenantPoolFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Tenant database unavailable"})
+		return
+	}
+	tenantRepo, ok := middleware.RepositoryFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Tenant repository unavailable"})
+		return
+	}
+	// These objects are immutable after construction and are tied to the exact
+	// tenant pool selected by the authenticated request.
+	uc := usecase.NewSAPMigrationUseCase(pool)
+	enrichmentStore := repository.NewProductEnrichmentStore(tenantRepo)
+	uc.SetProductEnrichmentCoordinator(enrichment.NewProductEnrichmentCoordinator(enrichmentStore))
+
+	resp, err := uc.IngestBatch(c.Request.Context(), int(identity.OrganizationID), &payload)
 	if err != nil {
 		log.Printf("[SAPMigrationHandler] IngestBatch ERROR: domain=%s batch_id=%s err=%v", payload.Domain, payload.BatchID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "SAP migration failed"})
 		return
 	}
 

@@ -5,15 +5,18 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
+	"github.com/NasTecSol/nembus-sap/contracts"
 )
 
 const (
@@ -95,6 +98,15 @@ func (c *CloudClient) sendOnce(ctx context.Context, payload *contracts.Migration
 // sendOnceClassified performs a single HTTP POST attempt.
 // Returns (response, isRetryable, error).
 func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts.MigrationBatchPayload, requestID string) (*contracts.MigrationBatchResponse, bool, error) {
+	if strings.TrimSpace(c.cfg.M2MToken) == "" {
+		return nil, false, errors.New("cloud migration requires a tenant/org-bound M2M token")
+	}
+	if strings.TrimSpace(c.cfg.TenantSlug) == "" {
+		return nil, false, errors.New("cloud migration requires an explicit tenant slug")
+	}
+	if c.cfg.OrganizationID <= 0 {
+		return nil, false, errors.New("cloud migration requires an explicit positive organization ID")
+	}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to marshal batch payload: %w", err)
@@ -119,11 +131,9 @@ func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("X-Request-ID", requestID)
-	req.Header.Set("x-tenant-id", fmt.Sprintf("%d", c.cfg.OrganizationID))
-	if c.cfg.APIKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
-		req.Header.Set("x-api-key", c.cfg.APIKey)
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.M2MToken))
+	req.Header.Set("x-tenant-id", c.cfg.TenantSlug)
+	req.Header.Set("x-organization-id", strconv.Itoa(c.cfg.OrganizationID))
 
 	httpResp, err := c.httpClient.Do(req)
 	if err != nil {

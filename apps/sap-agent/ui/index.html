@@ -144,8 +144,12 @@
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group flex-1">
-                                        <label>Organization / Tenant ID</label>
-                                        <input type="number" id="cloud-org-id" value="1" required>
+                                        <label>Tenant Slug</label>
+                                        <input type="text" id="cloud-tenant-slug" placeholder="tenant-a" required>
+                                    </div>
+                                    <div class="form-group flex-1">
+                                        <label>Organization ID</label>
+                                        <input type="number" id="cloud-org-id" min="1" placeholder="1" required>
                                     </div>
                                     <div class="form-group flex-1">
                                         <label>Batch Size</label>
@@ -153,8 +157,8 @@
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label>Migration Ingestion API Key / Bearer Token</label>
-                                    <input type="password" id="cloud-api-key" placeholder="Enter JWT or API Key">
+                                    <label>Migration M2M Bearer Token</label>
+                                    <input type="password" id="cloud-m2m-token" placeholder="Enter tenant/org-bound JWT">
                                 </div>
                                 <div class="form-actions">
                                     <button type="button" class="btn btn-secondary" id="btn-test-cloud">Test Endpoint</button>

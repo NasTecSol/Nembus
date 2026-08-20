@@ -9,8 +9,6 @@ import (
 	"syscall"
 
 	"github.com/NasTecSol/nembus-core/config"
-	"github.com/NasTecSol/nembus-core/enrichment"
-	"github.com/NasTecSol/nembus-core/enrichment/openaiadapter"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
@@ -68,7 +66,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	return pool, queries, nil
 }
 
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, sapMigrationUC *usecase.SAPMigrationUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -78,7 +76,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-organization-id, ngrok-skip-browser-warning")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -226,15 +224,17 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 
-		// [NEW] SAP B1 Migration routes
-		sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
-		router.RegisterSAPMigrationRoutes(api, sapMigrationHandler)
 	}
 
-	// Also support /api/v1/migration directly for migration agents
+	// SAP migration is machine-only and is not mounted under the interactive
+	// user/RBAC group above.
 	apiV1 := r.Group("/api/v1")
+	apiV1.Use(middleware.JWTAuthMiddleware())
+	apiV1.Use(middleware.SAPMigrationAuthMiddleware())
+	apiV1.Use(middleware.TenantMiddleware(tenantManager))
+	apiV1.Use(middleware.SAPMigrationOrganizationMiddleware())
 	{
-		sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
+		sapMigrationHandler := handler.NewSAPMigrationHandler()
 		router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
 	}
 
@@ -262,9 +262,6 @@ func main() {
 	}
 
 	cfg := config.LoadConfig(env)
-	if err := cfg.ValidateEnrichmentConfig(); err != nil {
-		log.Fatalf("Invalid enrichment configuration: %v", err)
-	}
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -337,26 +334,16 @@ func main() {
 		zatcaSvc.StartReportingWorker(ctx)
 	}
 
-	// SAP B1 Migration
-	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
-	enrichmentStore := repository.NewProductEnrichmentStore(masterRepo)
-	enrichmentCoordinator := enrichment.NewProductEnrichmentCoordinator(enrichmentStore)
-	sapMigrationUC.SetProductEnrichmentCoordinator(enrichmentCoordinator)
+	// F1 routes SAP writes and Stage 2A enqueueing to tenant-local pools. The
+	// previous master-bound Stage 2C worker is intentionally disabled until F2
+	// provides tenant-aware worker supervision. Tenant suggestions remain
+	// pending, while legacy master rows remain untouched.
 	if cfg.EnrichmentEnabled {
-		provider, err := openaiadapter.New(cfg.OpenAIAPIKey, cfg.OpenAIEnrichmentModel, cfg.OpenAIEnrichmentTimeout)
-		if err != nil {
-			log.Fatalf("Unable to configure OpenAI enrichment provider: %v", err)
-		}
-		worker := enrichment.NewEnrichmentWorker(enrichmentStore, provider, enrichment.EnrichmentExecutionConfig{
-			Interval: cfg.EnrichmentWorkerInterval, Timeout: cfg.OpenAIEnrichmentTimeout,
-			BatchSize: cfg.EnrichmentBatchSize, MaxAttempts: cfg.EnrichmentMaxRetries,
-		}, log.Default())
-		worker.Start(ctx)
-		log.Printf("Product enrichment worker started (provider=%s model=%s)", cfg.EnrichmentProvider, cfg.OpenAIEnrichmentModel)
+		log.Printf("Product enrichment worker disabled until Foundation F2 tenant-aware supervision")
 	}
 
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, sapMigrationUC, cfg)
+	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 

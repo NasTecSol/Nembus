@@ -43,9 +43,22 @@ func execWithSavepoint(ctx context.Context, tx pgx.Tx, query string, args ...int
 }
 
 func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, payload *contracts.MigrationBatchPayload) (*contracts.MigrationBatchResponse, error) {
-	if payload.OrganizationID <= 0 {
-		payload.OrganizationID = orgID
+	if uc == nil || uc.pool == nil {
+		return nil, fmt.Errorf("SAP migration tenant database is not configured")
 	}
+	if orgID <= 0 {
+		return nil, fmt.Errorf("authenticated organization is required")
+	}
+	if payload == nil {
+		return nil, fmt.Errorf("migration payload is required")
+	}
+	if payload.OrganizationID < 0 {
+		return nil, fmt.Errorf("payload organization ID must be positive when supplied")
+	}
+	if payload.OrganizationID > 0 && payload.OrganizationID != orgID {
+		return nil, fmt.Errorf("payload organization ID conflicts with authenticated organization")
+	}
+	payload.OrganizationID = orgID
 
 	tx, err := uc.pool.Begin(ctx)
 	if err != nil {

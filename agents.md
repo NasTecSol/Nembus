@@ -1775,3 +1775,65 @@ Next Action: Phase F1 only after the tenant-and-organization M2M trust contract 
 ### 26. FINAL VERIFICATION
 
 The final verification for this gate is `git status --short` and `git diff --check`. The intended result is that only `agents.md` is modified; no staging, commit, or push is allowed.
+
+## Foundation F1 â€” Tenant-Local SAP + Stage 2A
+
+Implementation status: F1 implementation completed in the working tree. No commit or push was performed.
+
+The old migration path mounted `/api/v1/migration/batch` without an effective machine-only boundary, used a startup-constructed `SAPMigrationUseCase(masterPool)`, interpreted numeric `x-tenant-id` as an organization ID, and defaulted missing values to organization `1`. The old Stage 2A coordinator also used `masterRepo`.
+
+The corrected path is:
+
+```text
+Bearer machine JWT
+  -> tenant_slug + organization_id claims
+  -> optional x-tenant-id/x-organization-id consistency checks
+  -> active tenant lookup in master registry
+  -> cached selected tenant pool/repository
+  -> tenant-local organization validation
+  -> request-scoped SAPMigrationUseCase(selected tenant pool)
+  -> commit tenant-local staging/products/domains
+  -> coordinator/store from the same tenant repository
+  -> tenant-local product_enrichment_suggestions
+```
+
+- New machine JWTs contain `is_m2m=true`, `token_type=machine`, `tenant_slug`, and positive `organization_id`. No credentials, DSNs, or provider secrets are claims.
+- Existing `tenant_id` registry entries remain readable as legacy tenant-slug values for non-SAP M2M compatibility; the SAP migration route requires the new `tenant_slug` claim and a registry `organization_id` match.
+- `x-tenant-id` is standardized as a tenant slug. It is a consistency assertion, never an organization selector. `x-organization-id` is an optional consistency assertion. A present payload `OrganizationID` must match the trusted claim; a missing value is filled from the trusted claim, never from a default.
+- `SAPMigrationAuthMiddleware` rejects ordinary user JWTs, missing/malformed claims, invalid consistency values, mismatches, and unbound legacy M2M credentials before tenant pool selection.
+- `TenantMiddleware` resolves only the signed tenant slug through the master registry, stores the selected pool and repository in typed request context, and no longer exposes infrastructure/DSN details in errors.
+- `SAPMigrationOrganizationMiddleware` validates the trusted organization ID through `GetOrganization` on the selected tenant repository. Master organizations are not consulted.
+- The migration handler constructs immutable request-local `SAPMigrationUseCase`, `ProductEnrichmentStore`, and coordinator objects from the same selected tenant pool/repository. No global mutable repository setter is used.
+- The entire deterministic transaction, including staging, categories, brands, products, UoM, inventory, pricing, barcodes, suppliers, and other existing domains, remains in the selected tenant pool. Mapping and extraction contracts were not changed.
+- The previous master-bound Stage 2C worker is disabled until F2. New tenant-local suggestions remain pending; no worker processes them in the intermediate state. Existing master products/staging/suggestion rows remain in place and quarantined/inert; F1 does not move, delete, or infer mappings for them.
+- Agent transport now requires `m2m_token`, `tenant_slug`, and positive `organization_id`; it sends the M2M bearer token, slug `x-tenant-id`, and optional `x-organization-id`. API-key-only migration is rejected. Agent UI/config no longer invents organization `1`.
+
+### Security Invariants
+
+- Trusted machine tenant and organization claims are established before any SAP business write.
+- The trusted organization is validated in the selected tenant database.
+- SAP staging, deterministic SAP writes, and Stage 2A suggestion persistence use one physical tenant database and one request-scoped repository/pool selection.
+- Numeric IDs are never used to select a tenant, and equal IDs in two tenants remain isolated.
+- Unknown, disabled, unavailable, or invalid tenants/organizations do not fall back to master business persistence.
+- Stage 2D remains BLOCKED.
+
+### F1 Tests and Verification
+
+- Added focused machine-claim and consistency tests in `packages/core/middleware/sap_migration_test.go` and M2M claim-generation coverage in `packages/core/middleware/auth_test.go`.
+- Updated M2M handler/token tooling tests and SAP-agent transport tests for bearer, slug, organization, and API-key rejection semantics.
+- `git diff --check` passed.
+- Go, gofmt, sqlc, Atlas, and psql are unavailable in this environment, so Go compilation/tests and formatter verification remain unexecuted. No SQL source or schema was changed; SQLC and Atlas generation are not required for F1.
+
+### Files Changed
+
+M2M/auth and tenant boundary: `packages/core/middleware/auth.go`, `packages/core/middleware/tenant.go`, `packages/core/middleware/sap_migration.go`, `packages/core/middleware/manager/manager.go`, and their focused tests.
+
+Migration and Stage 2A wiring: `packages/core/handler/sap_migration.go`, `packages/core/usecase/sap_migration.go`, and `apps/cloud-server/main.go`.
+
+Credential issuance/config: `packages/core/handler/m2m.go`, `packages/core/handler/m2m_test.go`, `apps/cloud-server/cmd/m2m-gen/main.go`, `apps/cloud-server/config/m2m_clients.json.example`.
+
+Agent transport/config/UI: `apps/sap-agent/internal/config/config.go`, `apps/sap-agent/internal/transport/client.go`, `apps/sap-agent/internal/transport/client_test.go`, `apps/sap-agent/ui/app.js`, and `apps/sap-agent/ui/index.html`.
+
+### Current Phase
+
+F1 implementation. Next action, if F1 is accepted, is Foundation F2 â€” tenant-aware Stage 2C worker supervision over active tenant databases. Do not implement Stage 2D review APIs or Stage 2E application yet.

@@ -70,10 +70,11 @@ func TestM2MHandler(t *testing.T) {
 
 	t.Run("Create Token Successful", func(t *testing.T) {
 		reqBody := CreateM2MRequest{
-			ClientID:   "test-billing-app",
-			ClientName: "Billing Service",
-			Scopes:     []string{"products:read", "orders:write"},
-			Years:      2,
+			ClientID:       "test-billing-app",
+			ClientName:     "Billing Service",
+			OrganizationID: 1,
+			Scopes:         []string{"products:read", "orders:write"},
+			Years:          2,
 		}
 		bodyBytes, _ := json.Marshal(reqBody)
 

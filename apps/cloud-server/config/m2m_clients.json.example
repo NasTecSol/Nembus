@@ -3,7 +3,8 @@
     {
       "client_id": "example-billing-service",
       "client_name": "Example Billing Integration",
-      "tenant_id": "example-tenant",
+      "tenant_slug": "example-tenant",
+      "organization_id": 1,
       "scopes": [
         "products:read",
         "orders:write"

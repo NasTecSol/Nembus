@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,12 +23,24 @@ const ClaimsKey contextKey = "jwt_claims"
 const tenantSlugClaim = "tenant_slug"
 
 type M2MClient struct {
-	ClientID   string   `json:"client_id"`
-	ClientName string   `json:"client_name"`
-	TenantID   string   `json:"tenant_id"`
-	Scopes     []string `json:"scopes"`
-	IsActive   bool     `json:"is_active"`
-	Token      string   `json:"token"`
+	ClientID   string `json:"client_id"`
+	ClientName string `json:"client_name"`
+	// TenantSlug is the canonical tenant binding for new machine credentials.
+	TenantSlug string `json:"tenant_slug,omitempty"`
+	// TenantID is retained only to read older registry entries. Its value is
+	// also a tenant slug; it is never an organization ID.
+	TenantID       string   `json:"tenant_id,omitempty"`
+	OrganizationID int32    `json:"organization_id,omitempty"`
+	Scopes         []string `json:"scopes"`
+	IsActive       bool     `json:"is_active"`
+	Token          string   `json:"token"`
+}
+
+func (c M2MClient) BoundTenantSlug() string {
+	if c.TenantSlug != "" {
+		return c.TenantSlug
+	}
+	return c.TenantID
 }
 
 type M2MRegistry struct {
@@ -103,24 +116,32 @@ func SaveM2MClient(client M2MClient) error {
 }
 
 // GenerateM2MToken generates a long-lived JWT token for M2M communication
-func GenerateM2MToken(clientID, clientName, tenantID string, scopes []string, durationYears int) (string, error) {
+func GenerateM2MToken(clientID, clientName, tenantSlug string, organizationID int32, scopes []string, durationYears int) (string, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		return "", errors.New("JWT_SECRET not configured")
+	}
+	if !validTenantSlug(tenantSlug) {
+		return "", errors.New("tenant slug is required")
+	}
+	if organizationID <= 0 {
+		return "", errors.New("organization ID is required")
 	}
 
 	expirationTime := time.Now().AddDate(durationYears, 0, 0)
 
 	claims := jwt.MapClaims{
-		"iss":         "nembus-api",
-		"sub":         clientID,
-		"client_id":   clientID,
-		"client_name": clientName,
-		"tenant_id":   tenantID,
-		"scopes":      scopes,
-		"is_m2m":      true,
-		"exp":         expirationTime.Unix(),
-		"iat":         time.Now().Unix(),
+		"iss":             "nembus-api",
+		"sub":             clientID,
+		"client_id":       clientID,
+		"client_name":     clientName,
+		"tenant_slug":     tenantSlug,
+		"organization_id": organizationID,
+		"token_type":      "machine",
+		"scopes":          scopes,
+		"is_m2m":          true,
+		"exp":             expirationTime.Unix(),
+		"iat":             time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -221,11 +242,25 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 				return
 			}
 
-			signedTenant, ok := claims["tenant_id"].(string)
-			if !ok || !validTenantSlug(signedTenant) || signedTenant != matchedClient.TenantID {
+			signedTenant, ok := claims["tenant_slug"].(string)
+			if !ok {
+				// Preserve authentication for older non-SAP M2M integrations. The
+				// migration-specific middleware requires the new tenant_slug claim.
+				signedTenant, ok = claims["tenant_id"].(string)
+			}
+			boundTenant := matchedClient.BoundTenantSlug()
+			if !ok || !validTenantSlug(signedTenant) || !validTenantSlug(boundTenant) || signedTenant != boundTenant {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized client"})
 				c.Abort()
 				return
+			}
+			if rawOrganization, exists := claims["organization_id"]; exists {
+				organizationID, valid := claimInt32(rawOrganization)
+				if !valid || (matchedClient.OrganizationID > 0 && organizationID != matchedClient.OrganizationID) {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized client"})
+					c.Abort()
+					return
+				}
 			}
 
 			if !matchedClient.IsActive {
@@ -246,6 +281,11 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			c.Set("client_id", matchedClient.ClientID)
 			c.Set("client_name", matchedClient.ClientName)
 			c.Set("scopes", matchedClient.Scopes)
+			c.Set("m2m_tenant_slug", signedTenant)
+			c.Set("m2m_registered_organization_id", matchedClient.OrganizationID)
+			if organizationID, valid := claimInt32(claims["organization_id"]); valid {
+				c.Set("m2m_organization_id", organizationID)
+			}
 
 			// Preserve an explicitly supplied header for TenantBindingMiddleware to
 			// compare before using the registry-bound tenant below.
@@ -253,7 +293,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 
 			// Dynamically set x-tenant-id header so existing M2M callers continue
 			// to work when they omit the header.
-			c.Request.Header.Set("x-tenant-id", matchedClient.TenantID)
+			c.Request.Header.Set("x-tenant-id", boundTenant)
 		} else {
 			// Standard User authentication
 			c.Set("is_m2m", false)
@@ -274,6 +314,114 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 
 		c.Set(string(ClaimsKey), claims)
 
+		c.Next()
+	}
+}
+
+func claimInt32(value interface{}) (int32, bool) {
+	var parsed int64
+	switch v := value.(type) {
+	case float64:
+		parsed = int64(v)
+		if float64(parsed) != v {
+			return 0, false
+		}
+	case float32:
+		parsed = int64(v)
+		if float32(parsed) != v {
+			return 0, false
+		}
+	case int:
+		parsed = int64(v)
+	case int32:
+		parsed = int64(v)
+	case int64:
+		parsed = v
+	case json.Number:
+		var err error
+		parsed, err = v.Int64()
+		if err != nil {
+			return 0, false
+		}
+	case string:
+		var err error
+		parsed, err = strconv.ParseInt(strings.TrimSpace(v), 10, 32)
+		if err != nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+	if parsed <= 0 || parsed > int64(^uint32(0)>>1) {
+		return 0, false
+	}
+	return int32(parsed), true
+}
+
+// TrustedMachineIdentity is the only tenant/organization authority accepted
+// by the SAP migration route.
+type TrustedMachineIdentity struct {
+	ClientID       string
+	TenantSlug     string
+	OrganizationID int32
+}
+
+const trustedMachineIdentityKey contextKey = "trusted_machine_identity"
+
+func TrustedMachineIdentityFromContext(ctx context.Context) (TrustedMachineIdentity, bool) {
+	identity, ok := ctx.Value(trustedMachineIdentityKey).(TrustedMachineIdentity)
+	return identity, ok && validTenantSlug(identity.TenantSlug) && identity.OrganizationID > 0
+}
+
+// SAPMigrationAuthMiddleware narrows the already verified JWT protocol to a
+// migration-capable, tenant/org-bound machine credential. It validates only
+// optional consistency headers; claims remain authoritative.
+func SAPMigrationAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		isM2M, ok := c.Get("is_m2m")
+		if !ok || isM2M != true {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "SAP migration requires machine authentication"})
+			c.Abort()
+			return
+		}
+		claims, ok := GetClaimsFromContext(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid machine authentication"})
+			c.Abort()
+			return
+		}
+		tenantSlug, tenantOK := claims[tenantSlugClaim].(string)
+		organizationID, organizationOK := claimInt32(claims["organization_id"])
+		tokenType, tokenTypeOK := claims["token_type"].(string)
+		registeredOrganizationID, registeredOK := c.Get("m2m_registered_organization_id")
+		registered, registeredValid := claimInt32(registeredOrganizationID)
+		if !tenantOK || !validTenantSlug(tenantSlug) || !organizationOK || !tokenTypeOK || tokenType != "machine" || !registeredOK || !registeredValid || registered != organizationID {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Machine credential is not bound to a tenant and organization"})
+			c.Abort()
+			return
+		}
+
+		if requested := c.GetString("m2m_requested_tenant"); requested != "" && requested != tenantSlug {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Tenant consistency check failed"})
+			c.Abort()
+			return
+		}
+		if requested := c.GetHeader("x-organization-id"); requested != "" {
+			requestedID, valid := claimInt32(requested)
+			if !valid {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "x-organization-id must be a positive integer"})
+				c.Abort()
+				return
+			}
+			if requestedID != organizationID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Organization consistency check failed"})
+				c.Abort()
+				return
+			}
+		}
+
+		identity := TrustedMachineIdentity{ClientID: c.GetString("client_id"), TenantSlug: tenantSlug, OrganizationID: organizationID}
+		c.Request = c.Request.WithContext(context.WithValue(withTenantSlug(c.Request.Context(), tenantSlug), trustedMachineIdentityKey, identity))
 		c.Next()
 	}
 }

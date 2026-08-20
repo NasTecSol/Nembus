@@ -20,29 +20,31 @@ func NewManager(repo *repository.Queries) *Manager {
 }
 
 func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, error) {
-	// Check if pool is already cached
-	if val, ok := m.pools.Load(slug); ok {
-		return val.(*pgxpool.Pool), nil
+	if m == nil || m.masterRepo == nil {
+		return nil, fmt.Errorf("tenant registry unavailable")
 	}
 
-	// This calls the Master DB to get the connection string
-	// GetTenantBySlug only returns active tenants (WHERE is_active = true)
+	// Revalidate the active registry row on every selection. A cached pool must
+	// never keep a disabled tenant eligible for new migration requests.
 	tenant, err := m.masterRepo.GetTenantBySlug(ctx, slug)
 	if err != nil {
-		// Provide a more helpful error message
-		// The error could be: tenant not found, tenant inactive, or database error
-		return nil, fmt.Errorf("tenant '%s' not found or inactive: %w (hint: check if slug matches exactly and is_active = true)", slug, err)
+		return nil, fmt.Errorf("tenant %q not found or inactive", slug)
 	}
 
 	// Verify tenant is active (double check, though query already filters)
 	if !tenant.IsActive.Bool || !tenant.IsActive.Valid {
-		return nil, fmt.Errorf("tenant '%s' is not active (is_active = false or NULL)", slug)
+		return nil, fmt.Errorf("tenant %q is not active", slug)
+	}
+
+	// Reuse an already cached pool only after the active registry check.
+	if val, ok := m.pools.Load(slug); ok {
+		return val.(*pgxpool.Pool), nil
 	}
 
 	// Create connection pool for tenant database
 	pool, err := pgxpool.New(ctx, tenant.DbConnStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to tenant database for '%s' using connection string: %w", slug, err)
+		return nil, fmt.Errorf("tenant %q database unavailable", slug)
 	}
 
 	// Cache the pool for future use
@@ -56,10 +58,10 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 func (m *Manager) GetTenantDSN(ctx context.Context, slug string) (string, error) {
 	tenant, err := m.masterRepo.GetTenantBySlug(ctx, slug)
 	if err != nil {
-		return "", fmt.Errorf("tenant '%s' not found or inactive: %w", slug, err)
+		return "", fmt.Errorf("tenant %q not found or inactive", slug)
 	}
 	if !tenant.IsActive.Bool || !tenant.IsActive.Valid {
-		return "", fmt.Errorf("tenant '%s' is not active", slug)
+		return "", fmt.Errorf("tenant %q is not active", slug)
 	}
 	return tenant.DbConnStr, nil
 }

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NasTecSol/nembus-sap/contracts"
-	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap/mappings"
 )
 
 func makeTestPayload() *contracts.MigrationBatchPayload {
@@ -41,6 +41,15 @@ func TestCloudClientSendBatchGzip(t *testing.T) {
 		}
 		if r.Header.Get("Content-Encoding") != "gzip" {
 			t.Errorf("expected gzip Content-Encoding header")
+		}
+		if r.Header.Get("Authorization") != "Bearer test-m2m-token" {
+			t.Errorf("expected configured M2M bearer authorization")
+		}
+		if r.Header.Get("x-tenant-id") != "tenant-a" {
+			t.Errorf("expected tenant slug consistency header")
+		}
+		if r.Header.Get("x-organization-id") != "1" {
+			t.Errorf("expected organization consistency header")
 		}
 
 		gz, err := gzip.NewReader(r.Body)
@@ -75,7 +84,8 @@ func TestCloudClientSendBatchGzip(t *testing.T) {
 
 	client := transport.NewCloudClient(config.CloudConfig{
 		BaseURL:        server.URL,
-		APIKey:         "test-key",
+		M2MToken:       "test-m2m-token",
+		TenantSlug:     "tenant-a",
 		OrganizationID: 1,
 		TimeoutSeconds: 5,
 	})
@@ -93,6 +103,18 @@ func TestCloudClientSendBatchGzip(t *testing.T) {
 	}
 }
 
+func TestCloudClientRejectsAPIKeyOnlyMigration(t *testing.T) {
+	client := transport.NewCloudClient(config.CloudConfig{
+		BaseURL:        "http://127.0.0.1:1",
+		APIKey:         "legacy-api-key",
+		TenantSlug:     "tenant-a",
+		OrganizationID: 1,
+	})
+	if _, err := client.SendBatch(context.Background(), makeTestPayload()); err == nil {
+		t.Fatal("expected API-key-only migration to be rejected")
+	}
+}
+
 func TestCloudClientRequestIDHeader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Request-ID") == "" {
@@ -105,6 +127,9 @@ func TestCloudClientRequestIDHeader(t *testing.T) {
 
 	client := transport.NewCloudClient(config.CloudConfig{
 		BaseURL:        server.URL,
+		M2MToken:       "test-m2m-token",
+		TenantSlug:     "tenant-a",
+		OrganizationID: 1,
 		TimeoutSeconds: 5,
 	})
 	_, err := client.SendBatch(context.Background(), makeTestPayload())
@@ -135,6 +160,9 @@ func TestSendBatchWithRetry_RetriesOn503(t *testing.T) {
 
 	client := transport.NewCloudClient(config.CloudConfig{
 		BaseURL:        server.URL,
+		M2MToken:       "test-m2m-token",
+		TenantSlug:     "tenant-a",
+		OrganizationID: 1,
 		TimeoutSeconds: 5,
 	})
 
@@ -162,6 +190,9 @@ func TestSendBatchWithRetry_NoRetryOn400(t *testing.T) {
 
 	client := transport.NewCloudClient(config.CloudConfig{
 		BaseURL:        server.URL,
+		M2MToken:       "test-m2m-token",
+		TenantSlug:     "tenant-a",
+		OrganizationID: 1,
 		TimeoutSeconds: 5,
 	})
 

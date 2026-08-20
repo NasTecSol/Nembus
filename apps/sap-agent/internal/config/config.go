@@ -20,22 +20,28 @@ type MSSQLConfig struct {
 }
 
 type CloudConfig struct {
-	BaseURL        string `json:"base_url"`
-	APIKey         string `json:"api_key"`
+	BaseURL string `json:"base_url"`
+	// M2MToken is a tenant/org-bound bearer credential. API keys are not
+	// accepted by the corrected SAP migration endpoint.
+	M2MToken       string `json:"m2m_token"`
+	TenantSlug     string `json:"tenant_slug"`
 	OrganizationID int    `json:"organization_id"`
+	// APIKey remains readable for config compatibility but is intentionally
+	// ignored by migration transport authentication.
+	APIKey         string `json:"api_key,omitempty"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
 }
 
 type AgentConfig struct {
-	Port                 int         `json:"port"`
-	SQLitePath           string      `json:"sqlite_path"`
-	BatchSize            int         `json:"batch_size"`
-	MaxConcurrency       int         `json:"max_concurrency"`
+	Port           int    `json:"port"`
+	SQLitePath     string `json:"sqlite_path"`
+	BatchSize      int    `json:"batch_size"`
+	MaxConcurrency int    `json:"max_concurrency"`
 	// DefaultStoreCode is assigned to imported cashiers when SAP has no store mapping.
 	// Defaults to "01" if empty.
-	DefaultStoreCode     string      `json:"default_store_code"`
+	DefaultStoreCode string `json:"default_store_code"`
 	// CashierDrawerLimit is the default cash drawer limit for imported cashiers. Defaults to 5000.
-	CashierDrawerLimit   float64     `json:"cashier_drawer_limit"`
+	CashierDrawerLimit float64 `json:"cashier_drawer_limit"`
 	// CashierDiscountLimit is the default max discount % for imported cashiers. Defaults to 20.
 	CashierDiscountLimit float64     `json:"cashier_discount_limit"`
 	MSSQL                MSSQLConfig `json:"mssql"`
@@ -66,8 +72,9 @@ func DefaultConfig() *AgentConfig {
 		},
 		Cloud: CloudConfig{
 			BaseURL:        "http://127.0.0.1:8080",
-			APIKey:         "",
-			OrganizationID: 1,
+			M2MToken:       "",
+			TenantSlug:     "",
+			OrganizationID: 0,
 			TimeoutSeconds: 60,
 		},
 	}

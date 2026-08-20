@@ -64,6 +64,33 @@ func TestGenerateJWTTokenIsTenantBound(t *testing.T) {
 	}
 }
 
+func TestGenerateM2MTokenRequiresTenantAndOrganizationBinding(t *testing.T) {
+	originalSecret := os.Getenv("JWT_SECRET")
+	os.Setenv("JWT_SECRET", "m2m-binding-test-secret")
+	defer os.Setenv("JWT_SECRET", originalSecret)
+
+	tokenString, err := GenerateM2MToken("sap-agent", "SAP Agent", "tenant-a", 5, []string{"sap:migration"}, 1)
+	if err != nil {
+		t.Fatalf("GenerateM2MToken returned error: %v", err)
+	}
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte("m2m-binding-test-secret"), nil
+	})
+	if err != nil || !token.Valid {
+		t.Fatalf("generated M2M token could not be parsed: %v", err)
+	}
+	claims := token.Claims.(jwt.MapClaims)
+	if claims["tenant_slug"] != "tenant-a" || claims["organization_id"] != float64(5) || claims["token_type"] != "machine" {
+		t.Fatalf("unexpected M2M claims: %#v", claims)
+	}
+	if _, err := GenerateM2MToken("sap-agent", "SAP Agent", "tenant-a", 0, nil, 1); err == nil {
+		t.Fatal("expected missing organization binding to be rejected")
+	}
+	if _, err := GenerateM2MToken("sap-agent", "SAP Agent", "", 5, nil, 1); err == nil {
+		t.Fatal("expected missing tenant binding to be rejected")
+	}
+}
+
 func TestTenantSlugComesFromTrustedContext(t *testing.T) {
 	ctx := withTenantSlug(context.Background(), "tenant-a")
 	slug, ok := TenantSlugFromContext(ctx)
