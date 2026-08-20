@@ -131,15 +131,21 @@ fresh-migration testing).
 | Validate Checksums | `atlas migrate validate` — ensures `atlas.sum` is consistent |
 | Test Fresh Migration | `atlas migrate apply` against a clean Postgres 16 DB — proves the migration works from scratch |
 | Commit Back | Only after validation passes, the generated migration + `atlas.sum` are committed back to `junction` via `GITHUB_TOKEN` (pushes made with it do **not** re-trigger workflows) |
-| Apply to Master & Tenants | `go run apps/cloud-server/cmd/migrate-tenants/main.go` — applies pending migrations to the master DB, then to every **active** tenant database (reads `tenants.db_conn_str` from the master DB) |
+| Apply on Instance | Builds `migrate-tenants`, scp's the binary + migrations to the EC2 instance, and runs it over SSH (`localhost`) — applies to the master DB, then every **active** tenant database (reads `tenants.db_conn_str` from the master DB) |
 | Verify sqlc Freshness | Re-runs `sqlc generate` and diffs `repository/` — fails if generated code is stale |
 | Run Core & Server Tests | `go test -v ./...` for both `packages/core` and `apps/cloud-server` |
 
-> **Required secret**: `MASTER_DB_URL` — the master database connection URL
-> (e.g. `postgres://user:pass@host:5432/masterDB?sslmode=disable`). The master
-> DB hosts the `tenants` registry; the runner applies migrations to it first,
-> then to each active tenant DB. Point it at staging (`qitaf2`) before
-> production for a safe first rollout.
+> **Required secrets**:
+> - `MASTER_DB_URL` — master DB connection URL **as seen from the instance**
+>   (e.g. `postgres://user:pass@localhost:5432/masterDB?sslmode=disable`),
+>   because the apply step executes on the same host as the Postgres
+>   containers. Adjust the port if your container publishes a different one.
+> - `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` — SSH access to the instance
+>   (already used by `deploy-pos-api.yml`).
+>
+> The apply step also ensures the **pinned Atlas version** (`v1.3.0`) is
+> installed on the instance (`~/bin/atlas`), since older versions compute
+> different migration checksums and would reject `atlas.sum`.
 
 ---
 
