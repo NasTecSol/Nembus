@@ -1,4 +1,4 @@
-# Atlas Configuration for packages/core
+# Atlas Configuration for Nembus Monorepo
 # Docs: https://atlasgo.io/concepts/config-file
 
 variable "master_db_url" {
@@ -9,7 +9,7 @@ variable "master_db_url" {
 
 variable "stg_db_url" {
   type        = string
-  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgres://nembus_admin_user:your-password-here@localhost:5432/qitaf?sslmode=disable"
+  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgres://nembus_admin_user:your-password-here@localhost:5432/qitaf2?sslmode=disable"
   description = "Connection URL for the staging database"
 }
 
@@ -19,12 +19,13 @@ variable "dev_db_url" {
   description = "Connection URL for Atlas dev database used during calculation and linting"
 }
 
+# Environment for Core Database Package
 env "local" {
-  src = "file://db/schema"
+  src = "file://packages/core/db/schema"
   url = var.master_db_url
   dev = var.dev_db_url
   migration {
-    dir    = "file://db/migrations"
+    dir    = "file://packages/core/db/migrations"
     format = atlas
   }
   format {
@@ -34,12 +35,34 @@ env "local" {
   }
 }
 
+# Environment for Cloud Server
+env "cloud" {
+  src = "file://packages/core/db/schema"
+  url = var.master_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://apps/cloud-server/migrations"
+    format = atlas
+  }
+}
+
+# Environment for POS Client
+env "pos" {
+  src = "file://packages/core/db/schema"
+  url = var.master_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://apps/pos-client/migrations"
+    format = atlas
+  }
+}
+
 env "stg" {
-  src = "file://db/schema"
+  src = "file://packages/core/db/schema"
   url = var.stg_db_url
   dev = var.dev_db_url
   migration {
-    dir    = "file://db/migrations"
+    dir    = "file://packages/core/db/migrations"
     format = atlas
   }
 }

@@ -215,8 +215,8 @@ func (a *App) migrate(dbURL string) error {
 	defer sqlDB.Close()
 
 	// If the database was restored from a Cloud backup, the base schema tables (e.g. organizations)
-	// already exist, but goose_db_version may not be initialized. Mark version 1 as applied
-	// so Goose skips 000001_base_schema.sql and proceeds to apply 000002_pos_extensions.sql.
+	// already exist, but goose_db_version may not be initialized. Mark initial baseline as applied
+	// so Goose skips 20260813124500.sql and proceeds to apply POS extensions.
 	var baseSchemaExists bool
 	_ = sqlDB.QueryRow(`
 		SELECT EXISTS (
@@ -234,8 +234,8 @@ func (a *App) migrate(dbURL string) error {
 				tstamp timestamp NULL default now()
 			);
 			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 1, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 1);
+			SELECT 20260813124500, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260813124500);
 		`)
 	}
 

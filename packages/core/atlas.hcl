@@ -9,7 +9,7 @@ variable "master_db_url" {
 
 variable "stg_db_url" {
   type        = string
-  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgresql://nembus_admin_user:your-password-here@localhost:5432/qitaf?sslmode=disable"
+  default     = getenv("STG_DB_URL") != "" ? getenv("STG_DB_URL") : "postgres://nembus_admin_user:your-password-here@127.0.0.1:5432/qitaf2?sslmode=disable"
   description = "Connection URL for the staging database"
 }
 
@@ -31,6 +31,28 @@ env "local" {
     migrate {
       diff = "{{ sql . \"  \" }}"
     }
+  }
+}
+
+# Environment for Cloud Server
+env "cloud" {
+  src = "file://db/schema"
+  url = var.master_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://../../apps/cloud-server/migrations"
+    format = atlas
+  }
+}
+
+# Environment for POS Client
+env "pos" {
+  src = "file://db/schema"
+  url = var.master_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://../../apps/pos-client/migrations"
+    format = atlas
   }
 }
 

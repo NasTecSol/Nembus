@@ -141,6 +141,38 @@ func (h *CartHandler) ConvertToOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// ReopenCart handles POST /api/carts/:id/reopen
+// @Summary      Reopen a converted cart
+// @Description  Reverts a pending order back to an active cart
+// @Tags         carts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id            path      string  true  "Cart ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/carts/{id}/reopen [post]
+func (h *CartHandler) ReopenCart(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cart id", nil))
+		return
+	}
+
+	resp := h.useCase.ReopenCart(c.Request.Context(), id)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // CreateCart handles POST /api/carts
 // @Summary      Create cart (full)
 // @Description  Create a new cart with full payload (detailed fields)

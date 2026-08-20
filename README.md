@@ -111,20 +111,28 @@ The repo's `.gitattributes` enforces **LF line endings** for all `*.sql` files a
 
 ## CI/CD — GitHub Actions
 
-### DB Schema, Migration & sqlc Validation (`db-validate.yml`)
+### DB Schema, Migration & Tenant Apply (`db-validate.yml`)
 
-Triggered on **push to `junction`** branch. Runs on `ubuntu-latest` with a PostgreSQL 16 service container.
+Triggered on **push to `junction`** that touches `packages/core/db/schema/**` or
+`packages/core/db/migrations/**`. Runs on `ubuntu-latest` with two PostgreSQL 16
+service containers (a scratch dev DB for Atlas diffing and a throwaway DB for
+fresh-migration testing).
 
 | Step | What it does |
 |:---|:---|
-| Checkout Code | Full repo checkout |
-| Setup Go | Installs Go 1.25.x with module cache |
-| Install Atlas CLI | Latest Atlas via `ariga/setup-atlas@v0` |
-| Install sqlc | Installs `sqlc` for code generation validation |
-| Validate Atlas Migration Checksums | `atlas migrate validate` — ensures `atlas.sum` is consistent |
-| Test Fresh Migration from Scratch | `atlas migrate apply` against a clean Postgres 16 DB |
-| Verify sqlc Generation Freshness | Re-runs `sqlc generate` and diffs `repository/` — fails if generated code is stale |
+| Generate Migration | If `db/schema` changed, `atlas migrate diff` creates a new versioned migration (`schema_<timestamp>`) — not committed yet |
+| Validate Checksums | `atlas migrate validate` — ensures `atlas.sum` is consistent |
+| Test Fresh Migration | `atlas migrate apply` against a clean Postgres 16 DB — proves the migration works from scratch |
+| Commit Back | Only after validation passes, the generated migration + `atlas.sum` are committed back to `junction` via `GITHUB_TOKEN` (pushes made with it do **not** re-trigger workflows) |
+| Apply to Master & Tenants | `go run apps/cloud-server/cmd/migrate-tenants/main.go` — applies pending migrations to the master DB, then to every **active** tenant database (reads `tenants.db_conn_str` from the master DB) |
+| Verify sqlc Freshness | Re-runs `sqlc generate` and diffs `repository/` — fails if generated code is stale |
 | Run Core & Server Tests | `go test -v ./...` for both `packages/core` and `apps/cloud-server` |
+
+> **Required secret**: `MASTER_DB_URL` — the master database connection URL
+> (e.g. `postgres://user:pass@host:5432/masterDB?sslmode=disable`). The master
+> DB hosts the `tenants` registry; the runner applies migrations to it first,
+> then to each active tenant DB. Point it at staging (`qitaf2`) before
+> production for a safe first rollout.
 
 ---
 

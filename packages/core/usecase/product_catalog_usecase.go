@@ -77,3 +77,71 @@ func (uc *ProductCatalogUseCase) ListProductsWithVariants(
 
 	return utils.NewResponse(utils.CodeOK, "products fetched successfully", products)
 }
+
+// GetMasterProductCatalog returns the detailed master catalog for an organization with pagination.
+func (uc *ProductCatalogUseCase) GetMasterProductCatalog(
+	ctx context.Context,
+	orgIDStr string,
+	limit int32,
+	offset int32,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 32)
+	if err != nil || orgID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
+	}
+
+	if limit <= 0 {
+		limit = 100 // default 100 per page
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// 1. Get total count
+	totalCount, err := uc.repo.GetMasterProductCatalogCount(ctx)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog count", err.Error())
+	}
+
+	// 2. Get catalog products
+	params := repository.GetMasterProductCatalogParams{
+		OrganizationID: int32(orgID),
+		Limit:          limit,
+		Offset:         offset,
+	}
+	catalog, err := uc.repo.GetMasterProductCatalog(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog", err.Error())
+	}
+
+	// 3. Compute total pages
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = int32((totalCount + int64(limit) - 1) / int64(limit))
+	}
+
+	// 4. Return paginated response
+	type PaginatedCatalog struct {
+		TotalCount int64                                   `json:"total_count"`
+		TotalPages int32                                   `json:"total_pages"`
+		Page       int32                                   `json:"page"`
+		Limit      int32                                   `json:"limit"`
+		Data       []repository.GetMasterProductCatalogRow `json:"data"`
+	}
+
+	currentPage := (offset / limit) + 1
+
+	respData := PaginatedCatalog{
+		TotalCount: totalCount,
+		TotalPages: totalPages,
+		Page:       currentPage,
+		Limit:      limit,
+		Data:       catalog,
+	}
+
+	return utils.NewResponse(utils.CodeOK, "master product catalog fetched successfully", respData)
+}
