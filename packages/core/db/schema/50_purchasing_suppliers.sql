@@ -2,26 +2,7 @@
 -- SUPPLIERS & CUSTOMERS
 -- =====================================================
 
-CREATE TABLE suppliers (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    supplier_type VARCHAR(50),
-    credit_limit DECIMAL(15,2) DEFAULT 0,
-    contact_person VARCHAR(100),
-    email VARCHAR(255),
-    phone VARCHAR(50),
-    address TEXT,
-    currency_code VARCHAR(3) DEFAULT 'USD',
-    payment_terms VARCHAR(100),
-    tax_id VARCHAR(50),
-    is_active BOOLEAN DEFAULT true,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(organization_id, code)
-);
+
 
 CREATE TABLE customers (
     id SERIAL PRIMARY KEY,
@@ -51,7 +32,7 @@ CREATE TABLE purchase_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     po_number VARCHAR(50) UNIQUE NOT NULL,
-    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    partners_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     po_date DATE NOT NULL,
     expected_delivery_date DATE,
@@ -129,7 +110,7 @@ CREATE TABLE goods_receipt_notes (
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     grn_number VARCHAR(50) UNIQUE NOT NULL,
     purchase_order_id INTEGER REFERENCES purchase_orders(id) ON DELETE SET NULL,
-    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    partners_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     receipt_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -452,7 +433,7 @@ CREATE TABLE IF NOT EXISTS partner_contacts (
 CREATE TABLE IF NOT EXISTS bp_price_contracts (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    business_partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
     contract_price DECIMAL(15,4) NOT NULL,
@@ -488,9 +469,7 @@ CREATE TABLE IF NOT EXISTS journal_lines (
     memo TEXT
 );
 
--- Foreign Key Alterations
-ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS business_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL;
-ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS business_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL;
+
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_business_partners_organization_id ON business_partners(organization_id);
