@@ -4,19 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NasTecSol/nembus-core/enrichment"
 	"github.com/NasTecSol/nembus-sap/contracts"
 )
 
 type SAPMigrationUseCase struct {
-	pool *pgxpool.Pool
+	pool               *pgxpool.Pool
+	enrichmentEnqueuer enrichment.EnrichmentEnqueuer
 }
 
 func NewSAPMigrationUseCase(pool *pgxpool.Pool) *SAPMigrationUseCase {
 	return &SAPMigrationUseCase{pool: pool}
+}
+
+// SetProductEnrichmentCoordinator enables the optional deterministic
+// post-commit enqueue seam. A nil coordinator preserves the pre-Stage-2A
+// migration behavior.
+func (uc *SAPMigrationUseCase) SetProductEnrichmentCoordinator(enqueuer enrichment.EnrichmentEnqueuer) {
+	uc.enrichmentEnqueuer = enqueuer
 }
 
 func execWithSavepoint(ctx context.Context, tx pgx.Tx, query string, args ...interface{}) error {
@@ -54,6 +64,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 	staged := 0
 	failed := 0
 	var errs []string
+	var committedProductSourceCodes []string
 
 	// 2. Route Domain Ingestion & Canonical Upsert
 	switch payload.Domain {
@@ -303,6 +314,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				errs = append(errs, fmt.Sprintf("product %s error: %v", p.SKU, err))
 			} else {
 				staged++
+				committedProductSourceCodes = append(committedProductSourceCodes, p.SKU)
 				if p.PrimaryBarcode != "" {
 					bq := `
 					INSERT INTO product_barcodes (product_id, barcode, barcode_type, is_primary)
@@ -582,6 +594,17 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
+	}
+
+	// The SAP transaction is authoritative and already durable. Enrichment is
+	// best-effort follow-up work; its failure must never change this migration
+	// result or attempt a rollback after commit.
+	if uc.enrichmentEnqueuer != nil && payload.Domain == contracts.DomainProducts {
+		for _, sourceItemCode := range committedProductSourceCodes {
+			if _, enqueueErr := uc.enrichmentEnqueuer.EnqueueSAPProduct(ctx, int32(payload.OrganizationID), sourceItemCode); enqueueErr != nil {
+				log.Printf("[SAPMigrationUseCase] enrichment enqueue warning | organization_id=%d source_item_code=%q err=%v", payload.OrganizationID, sourceItemCode, enqueueErr)
+			}
+		}
 	}
 
 	return &contracts.MigrationBatchResponse{

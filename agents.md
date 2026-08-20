@@ -551,3 +551,171 @@ retryable -> processing
 - Remaining non-blocking review notes: Atlas is not version-pinned by repository CI, so checksum regeneration is tool-version-sensitive; SQLC revealed separate repository-wide generated drift in `models.go`/`users.sql.go` that should be reviewed independently.
 - Current Stage 1 status: SAFE TO KEEP.
 - Next Action: Stage 2 provider-neutral enrichment implementation planning, starting from the existing read-only design. Do not begin provider implementation without a separately authorized Stage 2 task.
+
+## Stage 2A Pre-implementation Trace - 2026-08-20
+
+- Scope is limited to the deterministic product-enrichment enqueue foundation. The repository trace is complete: the hook belongs after `tx.Commit(ctx)` in `packages/core/usecase/sap_migration.go`; source context and idempotent persistence reuse core repository queries and the existing Stage 1 suggestion table.
+- No schema/migration, SAP-agent, deterministic mapping, product mutation, provider SDK, prompt, credential, worker, or UI work is authorized or planned in this stage.
+- The resulting implementation decisions, exact files, and verification outcome are recorded in the completed Stage 2A section below.
+
+## Stage 2A — Enrichment Enqueue Foundation
+
+### Architecture and contracts
+
+- Stage 2A is implemented on the server/core side. `packages/sap/**` and `apps/sap-agent/**` remain deterministic and unchanged.
+- `packages/core/enrichment/enqueue.go` adds `ProductEnrichmentProvider` as a contract-only interface, `EnrichmentRequest`/`EnrichmentResult`, `EnrichmentSourceSnapshot`, typed product types/gaps/reasons, candidate dictionary types, `EnrichmentStore`, `ProductEnrichmentCoordinator`, and deterministic eligibility, structured-current, and fingerprint functions.
+- `packages/core/repository/product_enrichment_store.go` adapts existing generated product, brand, category, UoM, conversion, and Stage 1 suggestion queries. No duplicate SQL, schema, migration, or SQLC-generated file was added.
+- `packages/core/usecase/sap_migration.go` calls the optional coordinator only after the existing successful `tx.Commit(ctx)`. `apps/cloud-server/main.go` wires the repository adapter and coordinator without provider configuration.
+
+### Eligibility contract
+
+- Eligibility is restricted to the SAP migration path, a resolved organization/product, non-empty SAP ItemCode/source item code, non-empty ItemName/source item name, and one of exactly `standard`, `raw_material`, `fixed_asset`, or `finished_good`.
+- Deterministic gaps are typed as `missing_brand`, `missing_description`, and `missing_category`. A resolved structured brand or category is not a gap; non-empty/trimmed description is not a gap.
+- Invalid product types and missing fundamental source values are rejected/skipped with structured reasons. `fixed_asset` and `raw_material` remain eligible when an MVP gap exists. Active/sellable/purchasable flags are not eligibility inputs.
+
+### Safe source snapshot and exclusions
+
+- The allowlisted snapshot contains SAP source identity/item code/item name, current description, immutable product type, structured brand/category identity and category path, base UoM identity, and existing UoM conversion identities/factors as immutable context.
+- It excludes inventory/stock, warehouse/store quantities, prices, tax, suppliers, barcodes, credentials, arbitrary `products.metadata`, audit/user/customer data, operational status flags, variants/families, and all proposal targets for authoritative fields.
+- `structured_current` is persisted in the Stage 1 JSONB column outside `products.metadata`; no product/category/brand mutation is performed.
+
+### Fingerprint and candidate dictionaries
+
+- Fingerprint contract is `sap-product-enrichment-v1`, SHA-256 hex over canonical JSON containing SAP identity, source item code/name, description, product type, structured brand/category identity, and relevant UoM context. Conversion pairs are sorted before hashing; timestamps, provider/model/version, reviewer state, candidates, inventory, price, tax, supplier, barcode, warehouse, and status flags are excluded.
+- Candidate dictionaries remain globally scoped because the current `brands` and `product_categories` schema is global. The adapter reuses `ListActiveBrands` and `GetCategoryHierarchy`, returns only bounded `id`/`code`/`name` plus category path, and uses a default limit of 100. Large-taxonomy retrieval/ranking is deferred to Stage 2B.
+- Candidate-set fingerprinting/re-enrichment remains OPEN. Adding an unrelated global candidate does not change this product source fingerprint; a future explicit candidate-version or re-enrichment mechanism is required if candidate changes must trigger work.
+
+### Idempotent enqueue and post-commit isolation
+
+- Eligible products create/get a Stage 1 `source = ai`, `status = pending` suggestion keyed by organization, product, source fingerprint, and contract version. Proposed/provider/reviewer/application fields remain null. Existing rows and lifecycle/proposal state are preserved on conflict.
+- Enqueue failures are logged with organization and source-item identifiers after commit and do not change the committed SAP response or attempt rollback. A nil coordinator preserves previous migration behavior.
+- No provider/model execution, worker, retry timer, prompt, API key, remote HTTP call, or application of approved suggestions exists in Stage 2A.
+
+### Current lifecycle
+
+The Stage 1 lifecycle remains unchanged:
+
+```text
+pending -> processing -> in_review -> approved -> applied
+                         |             \\-> rejected
+                         +-> retryable
+                         +-> failed
+retryable -> processing
+```
+
+### Files changed and verification
+
+- Stage 2A business/source files: `packages/core/enrichment/enqueue.go`, `packages/core/enrichment/enqueue_test.go`, `packages/core/enrichment/product_enrichment.go` (description validation), `packages/core/repository/product_enrichment_store.go`, `packages/core/usecase/sap_migration.go`, `apps/cloud-server/main.go`, and this worklog.
+- SQLC generator output: none. No new SQL query or schema/migration was added, so SQLC generation and Atlas checksum regeneration were intentionally not run. Existing pinned SQLC/Atlas history remains unchanged.
+- Pre-existing unrelated generated drift: none changed by Stage 2A; the separate Stage 1 SQLC drift remains historical and outside this patch.
+- Passed: Go 1.26.7 `gofmt`; `cd packages/core && go test ./enrichment`; `go test ./repository`; `go test ./usecase`; `go test ./...`; and `cd apps/cloud-server && go test ./...`. `git diff --check` passed. No live provider calls or database migration were run.
+- The actual transaction-timing integration test was not added because the current SAP migration usecase has no transaction fake seam; focused coordinator tests cover eligibility, fingerprint stability/change, idempotent preservation, ineligible skip, store failure, and description policy. This is a future integration-test item, not a provider or lifecycle redesign.
+
+## AI MVP Boundary
+
+- `product_type` is never AI; only the four architect-approved values are accepted as immutable context.
+- Populated structured category and resolved structured brand remain authoritative. Empty descriptions may receive future review-only proposals.
+- No operational SAP field inference or mutation is allowed; proposals remain separate from `products.metadata` and direct product writes.
+
+## Open Questions
+
+- Candidate/taxonomy fingerprinting and explicit re-enrichment strategy remain OPEN.
+- The source/rule for `finished_good` remains OPEN unless architect-defined elsewhere.
+- Provider/model/region/retention policy is still not selected.
+- Reviewer roles/permissions and auto-apply policy remain unresolved/unapproved.
+- Future product attribute/family schema is not approved.
+- The unrelated pinned-SQLC repository drift recorded in Stage 1 requires separate review if it remains relevant.
+
+## Remaining Phases
+
+- Stage 2B provider adapter and strict structured response parser.
+- Stage 2C processing worker/retry execution.
+- Stage 2D human review APIs.
+- Stage 2E application of approved suggestions.
+- Deterministic approved aliases/rules.
+- UI/reviewer workflow if required.
+- Production security, observability, and hardening.
+
+## Current Stage 2A Verdict
+
+- Stage 1 remains SAFE TO KEEP.
+- Stage 2A is SAFE TO KEEP: it creates only deterministic idempotent pending work after SAP commit, preserves organization scoping and structured precedence, and contains no provider/model execution.
+- Next Action: begin Stage 2B only under a separately authorized task, after selecting provider/model/region/retention and keeping the existing Stage 1 lifecycle unchanged.
+
+## Stage 2B — Strict Model Contract
+
+### Scope and architecture
+
+- Stage 1 and Stage 2A remain SAFE TO KEEP. The existing SAP-agent -> deterministic mappings -> batch -> core migration architecture remains authoritative.
+- Stage 2B stops at a validated provider-neutral enrichment result. It does not select or integrate a provider, call a model/API, run a worker, update suggestion lifecycle status, mutate products, create taxonomy, add routes, add credentials, or change schema/SQL.
+- The provider interface remains `ProductEnrichmentProvider.Enrich(context.Context, EnrichmentRequest) (EnrichmentResult, error)`. A future adapter must extract its structured model content and call the core parser; provider wrapper formats and provider metadata are not accepted by the core parser.
+
+### Provider-neutral request DTO
+
+- `EnrichmentRequest` now carries only internal correlation IDs (excluded from JSON), contract/request versions, `source_item_code`, the allowlisted `EnrichmentSourceSnapshot`, exact deterministic Stage 2A gaps, bounded canonical brand/category candidates, and `EnrichmentRequestPolicy`.
+- The snapshot retains only approved source name/description/product type, structured brand/category identity/path, and safe UoM context. It excludes inventory, warehouse/store quantities, prices, tax, suppliers, barcodes, arbitrary metadata, credentials, audit/user/customer data, operational status flags, and SAP document data.
+- `NewEnrichmentRequest` and `EnrichmentRequest.Validate` enforce SAP source, one of exactly `standard`, `raw_material`, `fixed_asset`, or `finished_good`, source-code correlation, exact deterministic gaps, the strict policy, bounded candidate dictionaries, and candidate identity validity.
+
+### Strict response DTO and parser
+
+- The model response contains only `source_item_code`, `brand`, `category`, `description`, and `unsupported_semantics`. The established Stage 1 `ProposalSet`, proposal types, and action vocabulary are reused; no provider/model/version metadata is accepted as model-authored truth.
+- `ParseEnrichmentResponse` / `ParseEnrichmentResponseString` use the standard-library JSON decoder with `DisallowUnknownFields` at the top level and every defined nested proposal/semantic object. Required fields, one JSON value, malformed JSON, trailing values, action values, finite `[0,1]` confidence, structural proposal rules, and exact correlation are validated.
+- Textual fields are trimmed where domain-safe. No malformed model output is repaired. Canonical candidate names/codes are replaced with the server-owned candidate record after exact ID/code reconciliation; model names are never used for database lookup.
+- Standard-library decoding does not reject duplicate JSON object keys. This is a documented known parser limitation; no parsing dependency was added solely for duplicate-key detection. Future adapters should emit canonical single-key JSON before invoking this boundary.
+- Parser errors are classified as `malformed_response`, `contract_violation`, `candidate_mismatch`, `prohibited_output`, or `correlation_mismatch`. Network/rate-limit/timeout retry classification remains a later provider/worker concern.
+
+### Precedence and field policy
+
+- Resolved structured brand accepts only `KEEP_EXISTING`; `MATCH_EXISTING`, `PROPOSE_NEW`, and `NO_MATCH` are rejected. An unresolved brand may `MATCH_EXISTING` only against an exact supplied candidate, may submit a review-only `PROPOSE_NEW`, or may return `NO_MATCH`.
+- Populated structured category accepts only `KEEP_EXISTING`; it cannot be refined or replaced. An absent category may use exact candidate matching, review-only `PROPOSE_NEW`, or `NO_MATCH`.
+- Description is factual catalog text, source-language preserving by default, review-only, and at most 500 Unicode code points. A populated description accepts only `KEEP_EXISTING`; a missing description accepts `PROPOSE_NEW` or `NO_MATCH`, never `MATCH_EXISTING`.
+- `unsupported_semantics` preserves evidence only for schema-unsupported concepts such as shampoo, anti-dandruff, hair type, size/capacity, dimensions/resolution, model number, packaging, and family hints. It cannot target product type, SKU/ItemCode/source identity, barcodes, inventory, warehouse/store, price, tax, UoM/conversion, suppliers, active/sellable/purchasable flags, or SAP document identity. Case, camelCase/PascalCase, spaces, hyphens, underscores, and documented aliases are normalized fail-closed.
+- Unsupported semantic values remain informational JSON and never mutate product columns. Packaging such as `24*400 مل` may remain evidence (`packaging_text`, `size_text`); it cannot become a conversion factor.
+
+### Model instruction contract
+
+- `StrictInferenceInstructions` / `BuildInferenceInstructions` specify one exact JSON object, no markdown/wrappers/provider metadata, structured SAP precedence, immutable product type, operational-field prohibitions, populated-category/resolved-brand `KEEP_EXISTING`, exact candidate-only matching, review-only new taxonomy, factual source-language descriptions, no invented specifications, and evidence-only unsupported semantics.
+- The instruction contract contains no provider-specific temperature, response format, tool, credential, SDK, endpoint, region, retention, or wrapper setting.
+
+### Real sample contract tests
+
+- `strict_contract_test.go` covers the Arabic Pantene sample `INV00006`, anti-dandruff and packaging/conversion rejection, HIKvision `fixed_asset`, Huawei resolved-brand precedence, and Epson taxonomy non-invention. It also covers malformed/trailing/unknown JSON, nested unknown fields, action/confidence/correlation failures, candidate ambiguity and canonical reconciliation, all brand/category/description precedence cases, Unicode limits, allowed evidence, and prohibited aliases/values.
+- No live model or remote API call exists in the tests.
+
+### Files changed and verification
+
+- Stage 2B files: `packages/core/enrichment/enqueue.go` (request/result contract extension), `packages/core/enrichment/product_enrichment.go` (prohibited-value recursion/aliases), `packages/core/enrichment/strict_contract.go`, `packages/core/enrichment/instructions.go`, `packages/core/enrichment/strict_contract_test.go`, and this worklog.
+- No files under `packages/sap/**` or `apps/sap-agent/**` changed. No schema, migration, Atlas checksum, SQL query, SQLC-generated repository code, credentials, provider HTTP client, worker, post-commit behavior, product mutation, review API, UI, alias/rule persistence, inventory, pricing, barcode, or UoM conversion behavior changed.
+- Passed with Go 1.26.7: `gofmt` on all human-authored Stage 2B Go files; `cd packages/core && go test ./enrichment`; `go test ./repository`; `go test ./usecase`; `go test ./...`; `cd apps/cloud-server && go test ./...`; and `git diff --check`.
+- SQLC remains repository-pinned at v1.30.0. No SQL changed, so `sqlc generate` and Atlas hash/validation were intentionally not run and `atlas.sum` was not modified.
+- No provider is selected and no remote model/API call exists.
+
+## AI MVP Boundary
+
+- All architect contracts remain in force: `product_type` is never AI; only `standard`, `raw_material`, `fixed_asset`, and `finished_good` are valid; structured SAP data, populated category, and resolved brand win; operational SAP fields and document identity are never inferred or mutated; suggestions remain reviewable outside `products.metadata` and direct product mutation; new taxonomy is never silently created.
+- Stage 2B adds only fail-closed request/response validation. It does not change the Stage 1 lifecycle: `pending -> processing -> in_review -> approved -> applied`, with rejection from `in_review`, retryable/failed from processing, and retryable back to processing.
+
+## Remaining Phases
+
+- Stage 2C concrete provider selection/adapter plus provider execution worker.
+- Stage 2D review/approval APIs.
+- Stage 2E approved suggestion application.
+- Deterministic approved aliases/rules.
+- Reviewer UI if required.
+- Production observability, security, and hardening.
+
+## Open Questions
+
+- Provider/model/region/retention policy remains OPEN; no provider was selected in Stage 2B.
+- Reviewer roles/permissions and auto-apply policy remain unapproved.
+- Candidate/taxonomy re-enrichment fingerprint/version strategy remains OPEN.
+- The source/rule for `finished_good` remains OPEN.
+- Attribute/family schema remains unapproved.
+- Large-taxonomy scaling and candidate retrieval strategy remain OPEN.
+
+## Current Stage 2B Verdict
+
+- Stage 1: SAFE TO KEEP.
+- Stage 2A: SAFE TO KEEP.
+- Stage 2B: SAFE TO KEEP. The provider-neutral request, strict parser, candidate security, structured precedence, description policy, unsupported-semantic protection, and model instruction contract are implemented and verified without provider execution.
+- Next Action: make the provider/model/region/retention selection decision before beginning Stage 2C concrete adapter implementation.

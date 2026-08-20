@@ -7,8 +7,7 @@ import (
 	"os"
 
 	"github.com/NasTecSol/nembus-core/config"
-	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
-	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
+	"github.com/NasTecSol/nembus-core/enrichment"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
@@ -17,6 +16,8 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	router "github.com/NasTecSol/nembus-core/routing"
 	"github.com/NasTecSol/nembus-core/usecase"
+	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
+	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
 
 	_ "github.com/NasTecSol/nembus-server/docs/swagger" // Swagger generated docs
 
@@ -69,7 +70,6 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
@@ -90,10 +90,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/health", healthCheck)
 
-	
-		devHandler := handler.NewDevHandler()
-		r.GET("/api/dev/token", devHandler.GetDevToken)
-	
+	devHandler := handler.NewDevHandler()
+	r.GET("/api/dev/token", devHandler.GetDevToken)
 
 	auth := r.Group("/api/auth")
 	auth.Use(middleware.TenantMiddleware(tenantManager))
@@ -239,7 +237,6 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	return r
 }
 
-
 func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
 }
@@ -334,12 +331,14 @@ func main() {
 
 	// SAP B1 Migration
 	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
+	enrichmentStore := repository.NewProductEnrichmentStore(masterRepo)
+	enrichmentCoordinator := enrichment.NewProductEnrichmentCoordinator(enrichmentStore)
+	sapMigrationUC.SetProductEnrichmentCoordinator(enrichmentCoordinator)
 
 	// Setup Router
 	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, sapMigrationUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
-
 
 	// ── gRPC Backup Service ────────────────────────────────────────────────
 	go func() {

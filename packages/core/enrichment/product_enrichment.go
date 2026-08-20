@@ -251,8 +251,8 @@ func (p DescriptionProposal) validate() error {
 
 	switch p.Action {
 	case ActionProposeNew:
-		if strings.TrimSpace(p.Value) == "" {
-			return fmt.Errorf("PROPOSE_NEW requires a description value for review")
+		if _, err := NormalizeProposedDescription(p.Value); err != nil {
+			return fmt.Errorf("PROPOSE_NEW requires a valid catalog description for review: %w", err)
 		}
 	case ActionMatchExisting:
 		return fmt.Errorf("MATCH_EXISTING is not applicable to descriptions")
@@ -277,8 +277,8 @@ func (s UnsupportedSemantic) validate() error {
 	if prohibitedEnrichmentTarget(s.SemanticType) || prohibitedEnrichmentTarget(s.Key) {
 		return fmt.Errorf("unsupported semantic cannot target an SAP-authoritative field: %q/%q", s.SemanticType, s.Key)
 	}
-	if err := rejectJSONKeys(s.Value, map[string]struct{}{"product_type": {}}); err != nil {
-		return err
+	if key, found := findProhibitedJSONKey(s.Value); found {
+		return fmt.Errorf("unsupported semantic value cannot contain SAP-authoritative field %q", key)
 	}
 	return nil
 }
@@ -461,12 +461,12 @@ func hasMeaningfulStructuredValue(raw json.RawMessage) bool {
 }
 
 var prohibitedTargets = map[string]struct{}{
-	"sku": {}, "skucode": {}, "itemcode": {}, "sourceitemcode": {}, "sapitemcode": {},
+	"sku": {}, "skucode": {}, "itemcode": {}, "sourceitemcode": {}, "sapitemcode": {}, "sapdocumentidentity": {}, "sapdocumentid": {}, "sapdocentry": {}, "docentry": {}, "documentid": {}, "documentidentity": {},
 	"barcode": {}, "barcodes": {}, "barcodeownership": {},
-	"inventory": {}, "trackinventory": {}, "inventoryquantity": {}, "stock": {}, "stockquantity": {},
-	"warehouse": {}, "warehouseid": {}, "storeinventory": {},
+	"inventory": {}, "trackinventory": {}, "inventoryquantity": {}, "stock": {}, "stockquantity": {}, "warehousequantity": {}, "warehouseinventory": {}, "inventorywarehouse": {},
+	"warehouse": {}, "warehouseid": {}, "store": {}, "storeid": {}, "storeinventory": {}, "inventorystore": {},
 	"price": {}, "prices": {}, "pricing": {}, "tax": {}, "taxrate": {}, "taxrates": {}, "taxcategory": {},
-	"uom": {}, "uomid": {}, "uomconversion": {}, "uomconversionfactor": {}, "conversionfactor": {}, "conversionfactors": {},
+	"uom": {}, "uomid": {}, "unitofmeasure": {}, "unitofmeasureid": {}, "uomconversion": {}, "uomconversionfactor": {}, "uomconversionfactors": {}, "unitofmeasureconversion": {}, "unitofmeasureconversionfactor": {}, "conversionfactor": {}, "conversionfactors": {}, "conversion": {},
 	"supplier": {}, "supplierid": {}, "suppliercode": {}, "supplieridentity": {}, "active": {}, "isactive": {},
 	"sellable": {}, "issellable": {}, "purchasable": {}, "ispurchasable": {},
 	"producttype": {},
