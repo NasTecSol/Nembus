@@ -1088,3 +1088,196 @@ The current Stage 1 persistence is sufficient for a conservative whole-suggestio
 ## Next Action
 
 Obtain architect approval for the recommended `product_enrichment:review` permission, tenant-binding requirement, whole-suggestion MVP, stale-source blocking, and `PROPOSE_NEW` taxonomy policy. Then separately authorize Stage 2D implementation. Do not begin Stage 2E application or UI work as part of that implementation authorization.
+
+## Stage 2D Implementation Attempt — BLOCKED
+
+- No Stage 2D review routes, handlers, usecase, repository SQL, permission seed, generated SQLC, or main wiring were added.
+- The requested implementation was stopped by the mandatory tenant-security gate before shipping an unsafe endpoint.
+- Actual request path: `JWTAuthMiddleware` validates a user JWT containing `user_id`/`user_login` but no tenant or organization binding; `TenantMiddleware` accepts the arbitrary client `x-tenant-id` header and obtains any active tenant pool through `Manager.GetPool`; the selected tenant repository then loads the user and permissions. `Manager.GetPool` performs no user-membership verification.
+- Consequently, a valid user token can be replayed with another active tenant header and may resolve to a same-ID/authorized user in that tenant. The review API cannot safely derive organization identity from the authenticated user until tenant selection is bound to that user by an existing trusted mechanism.
+- This is a genuine cross-tenant authorization risk under the Stage 2D contract. The feature remains `NEEDS CORRECTION`; no unsafe review endpoint was shipped.
+- Required smallest correction before implementation: architect-approved tenant/user binding for user JWT requests (or an equivalent existing membership check in the tenant-selection path), followed by a fresh Stage 2D implementation review.
+- Permission provisioning, reviewer notes, whole-suggestion approval, stale-source checks, PROPOSE_NEW blocking, atomic audit behavior, and DTO policy remain design-only and were not implemented in this attempt.
+
+## Tenant Authentication Security Gate
+
+Review date: 2026-08-20. This is a read-only security design review; no source, schema, migration, generated code, configuration, dependency, database, Git history, or external system was changed. Only this worklog was updated.
+
+### Current tenancy model
+
+- The master database is opened from `MASTER_DB_URL` in `apps/cloud-server/main.go:55-68` by `setupDatabase`; its SQLC repository is passed to `manager.NewManager` at `main.go:271-277`.
+- The master `tenants` registry is defined in `packages/core/db/schema/10_identity_rbac.sql:19-28` and contains UUID `id`, unique `slug`, `db_conn_str`, active state, and settings. It contains no user, account, membership, or organization-access relation.
+- `x-tenant-id` is not an organization ID on normal `/api` routes. `packages/core/middleware/tenant.go:19-47` passes its raw value to `manager.Manager.GetPool`; `packages/core/middleware/manager/manager.go:22-50` uses it as `tenants.slug`, looks up the active master registry row with `GetTenantBySlug`, opens that row's `db_conn_str`, caches the pool by slug, and injects `repository.New(pool)` into request context.
+- The application therefore uses physically separate PostgreSQL databases for the master database and active tenant databases. `apps/cloud-server/cmd/migrate-tenants/main.go:97-153,213-240` applies migrations to the master and then to each active tenant connection string.
+- Within a tenant database, the schema is also organization-row scoped. `organizations` is a normal table (`10_identity_rbac.sql:5-17`), and `users.organization_id` is a foreign key (`20_stores_terminals.sql:39-52`). The schema permits more than one organization in one tenant database; it does not prove that production deployments use only one.
+- Products, users, roles, permissions, and other business rows are local to the selected database and additionally may carry `organization_id`. Their numeric primary keys are not globally unique across physically separate tenant databases. `users.id` is `SERIAL PRIMARY KEY` and `username`/`email` are individually unique only within each database (`20_stores_terminals.sql:39-52`).
+- The same email or human can consequently exist in different tenant databases, but no repository membership/account model establishes whether that is an intended product policy. The repository does not prove that one human can switch among tenants without a separate login.
+- No `tenant_users`, `user_tenants`, membership, invitation, global-user, account, or session table was found. The master tenant registry is an infrastructure registry, not an authoritative user-membership registry.
+- The `/api/v1/migration` path is a separate inconsistency: `apps/cloud-server/main.go:230-236` registers it without JWT or tenant middleware, and `packages/core/handler/sap_migration.go:45-58` parses `x-tenant-id` as an integer organization ID (default `1`) rather than as a tenant slug. This machine-ingestion boundary requires its own hardening review; it is not evidence of authenticated user membership.
+
+### Current authentication and tenant-selection flow
+
+#### Login
+
+1. `POST /api/auth/login` is registered in `apps/cloud-server/main.go:99-104` under an auth group using only `middleware.TenantMiddleware(tenantManager)`.
+2. The client must send `x-tenant-id`. `TenantMiddleware` selects the tenant pool from the master registry before credentials are checked.
+3. `packages/core/handler/auth.go:49-78` obtains the selected repository from `middleware.RepoKey`, binds `user_login` and `password`, and calls `AuthUseCase.Login`.
+4. `packages/core/usecase/auth_usecase.go:30-67` queries `GetUserByUsername` in the already-selected tenant database, checks active state, compares the bcrypt password, and calls `middleware.GenerateJWTToken` with only the local numeric user ID converted to a string and the login name.
+5. `packages/core/middleware/auth.go:275-302` issues a 24-hour HS256 JWT containing `user_id`, `user_login`, `exp`, and `iat`. It does not contain tenant or organization identity. User tokens also do not set `iss` or `aud`.
+
+#### Authenticated `/api` request
+
+The exact group order in `apps/cloud-server/main.go:114-117` is:
+
+```text
+HTTP request
+-> global CORS middleware
+-> LoggerMiddleware
+-> JWTAuthMiddleware
+-> TenantMiddleware
+-> route handler
+-> usecase/repository using the selected tenant DB
+```
+
+- `JWTAuthMiddleware` (`packages/core/middleware/auth.go:126-253`) parses and verifies the bearer token with `JWT_SECRET`, accepts a valid JWT without requiring a tenant claim, and stores the standard token's `user_id` and claims in Gin context. It does not load the user and does not verify membership.
+- For M2M tokens, the same middleware validates `is_m2m`, client ID, active config entry, and optional exact whitelisted token, then overwrites `x-tenant-id` with the registry client's `TenantID` (`auth.go:184-240`). M2M claims already include `tenant_id`, but the current code does not explicitly compare that claim with the matched registry entry.
+- After JWT parsing, `TenantMiddleware` trusts the client header for standard user requests and selects the database. There is no equality check between a trusted token tenant and the requested header because standard user tokens have no tenant claim.
+- There is no universal authenticated-user lookup in middleware. Individual handlers/usecases use the selected repository; for example, `GET /api/users/:id` is registered without a current-user check (`packages/core/routing/user.go:10-38`) and `UserUseCase.GetUser` calls `GetUser(id)` in whichever database `TenantMiddleware` selected (`packages/core/usecase/user_usecase.go:221-239`).
+- `apps/pos-client/main.go:109-127` duplicates the same login order and authenticated route order, so the shared correction must cover both cloud and POS HTTP routers.
+
+#### Other routes and callers
+
+- `/health`, Swagger, and the cloud `/api/dev/token` route are outside the authenticated tenant group. `packages/core/handler/dev.go:24-58` currently has its environment restriction commented out and emits an unbound development JWT. The POS client only exposes its dev route in development, but `apps/pos-client/app.go:645-652` also creates an unbound token.
+- `/api/tenants` uses `MasterRepositoryMiddleware` and is a master-registry path, not a tenant-business path (`apps/cloud-server/main.go:106-112`).
+- There is no refresh-token endpoint, refresh-token table, session store, or refresh-token parser in the repository. `GenerateJWTToken` is the only standard user issuance path; M2M issuance is separate.
+- SAP ingestion is intentionally not an HTTP-user flow in the current implementation: `SAPMigrationUseCase` is constructed with `masterPool` (`apps/cloud-server/main.go:339-343`), `/api/v1/migration` has no JWT middleware, and `IngestBatch` accepts an organization ID from payload/header. The SAP agent sends an API key as a bearer header but this route does not validate it.
+- Stage 2A/2C enrichment is also an internal flow. `apps/cloud-server/main.go:341-355` constructs `ProductEnrichmentStore` with `masterRepo` and starts `EnrichmentWorker` without HTTP JWT. `packages/core/enrichment/execution.go:83-96` explicitly describes the worker as scanning a master queue while every mutation carries `organization_id` for SQL scoping. JWT tenant binding must not be imposed on this worker; its trusted internal boundary and organization-scoped SQL remain separate.
+- ZATCA reporting is a background worker using `masterRepo` (`apps/cloud-server/internal/zatca/service.go:111-173`). gRPC sync/backup services resolve a tenant slug through `Manager.GetPool`/`GetTenantDSN` without HTTP JWT; their trust and authentication are separate internal protocol concerns. In particular, `BackupServer.validateToken` currently only rejects an empty string (`apps/cloud-server/internal/grpc/backup_server.go:65-70,201-210`) and is not a substitute for HTTP tenant binding.
+
+### Cross-tenant security verdict
+
+`CROSS_TENANT_SWITCH PROVEN POSSIBLE`
+
+Concrete static path:
+
+1. A user logs into Tenant A by sending `x-tenant-id: tenant-a` to `/api/auth/login`; TenantMiddleware selects A before `GetUserByUsername` and bcrypt validation.
+2. The successful token contains the A user's local `user_id` and login, but no tenant or organization claim.
+3. The same bearer token is sent to an authenticated endpoint with `x-tenant-id: tenant-b`.
+4. `JWTAuthMiddleware` accepts the signature and expiry and has no tenant check. It does not query A, B, or a central membership source.
+5. `TenantMiddleware` asks the master registry for slug `tenant-b`, opens B's `db_conn_str`, and places B's repository in context.
+6. The handler executes against B. If B has the same local numeric user ID, path-based user access such as `GET /api/users/1` resolves B's user; broad tenant-scoped list/read/write handlers likewise operate on B. Role and permission queries, when used, are performed in B and therefore do not prove that the token's A principal belongs to B.
+
+No existing check prevents the switch. Equal numeric IDs or equal emails are not a defense: IDs are database-local, and email uniqueness is database-local. A token subject, issuer, or audience check cannot prevent the switch because standard user tokens have no tenant claim and `user_id` is not globally unique.
+
+### Tenant-bound JWT option
+
+This is the smallest repository-compatible correction because login already authenticates inside a selected tenant. Bind each standard user session to the exact tenant selector used by the current architecture: the active `tenants.slug`. The minimum user claim should be `tenant_slug` containing that slug; it must not contain an organization ID, database DSN, secret, or credential. If the project standardizes on the existing M2M field name `tenant_id`, its value must still be explicitly documented and validated as the tenant slug, not `organizations.id`.
+
+- Login must pass the selected slug from `AuthHandler`/request context into `AuthUseCase.Login` and `GenerateJWTToken`; the value is already required for `TenantMiddleware` but is not currently passed to the usecase.
+- A trusted binding middleware must require a well-formed tenant claim and compare it exactly with the requested `x-tenant-id` before any tenant pool is opened. Missing, malformed, or mismatched values fail closed.
+- This works for the current tenant-specific login model: one token/session is for one tenant. Switching tenants requires a fresh login and a new tenant-bound token.
+- It does not support silent multi-tenant switching. That requires a new trusted membership/account authority or an explicitly issued multi-tenant session containing a server-proven allowed-tenant set; neither exists here.
+- The canonical UUID `tenants.id` could be used in a larger design, but the current selector and pool manager use `slug`. Claiming the slug is the smallest safe change; changing a slug should invalidate old bindings naturally and require login again.
+
+### Server-side membership option
+
+Option B is not implementable from current repository evidence. The master `tenants` table can prove that a slug maps to an active database, but it cannot prove that an authenticated user may access it. Tenant-local `users.organization_id`, local user IDs, role names, and repeated emails are not cross-database membership authority. A safe Option B would require new central identity/membership storage and a defined global principal, not simply adding `organization_id` to the current JWT.
+
+### Recommended fix and middleware order
+
+Use a tenant-bound user JWT and enforce it before tenant DB selection for every authenticated HTTP business route:
+
+1. `JWTAuthMiddleware` parses/verifies the bearer token and requires a valid standard-user identity or a separately validated M2M identity.
+2. `TenantBindingMiddleware` reads the trusted `tenant_slug` claim. For standard users it requires a non-empty `x-tenant-id` and exact equality. For M2M, it requires the registry tenant and signed claim to agree, then allows the existing registry-driven header override.
+3. `TenantMiddleware` resolves the already-bound slug through the master registry and opens the selected pool.
+4. The handler/usecase loads the user from that selected database and derives `users.organization_id` server-side.
+5. Authorization/permission checks and all suggestion/product queries run in the bound repository with organization predicates. No request organization ID is trusted.
+
+For compatibility, retaining the header while requiring equality is preferable to silently accepting a changed header. Deriving the tenant only from the trusted claim is also safe, but would be a broader client/API behavior change. Do not trust a user-supplied organization ID, header alone, role name, same numeric user ID, or same email.
+
+### Token and refresh design
+
+- Access token: retain the current user identity and 24-hour expiry, add `tenant_slug`, and reject malformed/missing claims. Adding a fixed issuer/audience policy may be done in the same hardening, but it is not the tenant-binding authority; current standard user tokens have no issuer/audience and current M2M tokens use `iss: nembus-api`.
+- Old standard JWTs without `tenant_slug` must fail closed on protected routes after deployment. The safe operational default is re-login; do not infer a tenant from the old `user_id`, email, header, or organization row.
+- There is no current refresh flow to patch or migrate. If one is added, the refresh credential must carry or server-side-resolve the original tenant context, and refresh must always mint the same tenant-bound access token. It must not accept a requested Tenant B and exchange a Tenant A refresh credential for B.
+- Existing M2M tokens are a distinct protocol. Preserve their registry binding, but make the future validation explicitly compare the signed tenant claim with the matched `M2MClient.TenantID` and reject disagreement. Do not treat M2M configuration as human user membership.
+
+### Exact future patch surface
+
+No implementation is authorized by this gate. The smallest future source patch is:
+
+- Auth token issuance: `packages/core/usecase/auth_usecase.go:30-70`, `packages/core/handler/auth.go:49-78`, and `packages/core/middleware/auth.go:275-308` to pass and sign the selected tenant slug; `packages/core/handler/dev.go` and `apps/pos-client/app.go:645-652` must not issue an unbound protected token.
+- Auth validation: `packages/core/middleware/auth.go:126-253` to require standard identity, validate tenant claim shape, and make M2M claim/registry agreement explicit; add the binding check in `auth.go` or `tenant.go` without modifying generated code.
+- Tenant middleware/router order: `packages/core/middleware/tenant.go:19-47` only if the binding helper is placed there; otherwise keep pool lookup unchanged and add the binding middleware between the existing JWT and tenant middleware in `apps/cloud-server/main.go:114-117` and `apps/pos-client/main.go:124-127`.
+- Refresh flow: no current file exists. Any future refresh handler/service, token store, or endpoint must be added only with the same tenant-bound context; no current refresh file should be invented for this gate.
+- Tests: extend `packages/core/middleware/auth_test.go`; add focused auth-usecase/handler or router tests where the project test harness permits. Include tenant A/B, missing/malformed claims, M2M agreement, same local ID, same email, permission lookup, old-token rejection, and route ordering.
+- Configuration: not required for the minimal claim/equality correction. A token version or issuer/audience rollout setting is optional, not a reason to weaken fail-closed behavior.
+
+### Security test plan
+
+- Login in A emits a signed token bound to A's slug; token contains no DSN, secret, password, or operational database data.
+- A token plus A header succeeds; the same token plus B header is rejected before `Manager.GetPool` connects to B. B token plus B header succeeds.
+- Missing, non-string, empty, or malformed tenant claim is rejected; an unknown tenant slug is rejected by tenant resolution; old tokens without the claim are rejected according to the migration policy.
+- A user ID `5` in A and an unrelated user ID `5` in B cannot cross access with an A token. Equal emails in A/B cannot cross access either.
+- A's role/permission cannot be evaluated against B using an A token; after binding, the selected repository and server-derived `users.organization_id` are the only authorization context.
+- M2M registry tenant, signed claim, and selected header must agree; rotated/inactive clients remain rejected.
+- If refresh is introduced: A refresh yields only an A token, cannot request B, and preserves tenant binding.
+- Future Stage 2D list/detail/approve/reject tests use organization-scoped IDs and prove a foreign suggestion ID is inaccessible without disclosure.
+- SAP migration, enrichment worker, ZATCA worker, and trusted internal gRPC paths continue without HTTP JWT, while their existing explicit tenant/organization boundaries remain separately tested.
+
+### Open policy questions versus necessary correction
+
+Technically necessary now: fail closed for standard protected requests unless the authenticated token is bound to the selected tenant; enforce the check before tenant pool selection; reject old unbound tokens or provide a separately proven migration authority; secure all authenticated business routes, not only enrichment review.
+
+Open product/architecture policy: whether one human must switch among multiple tenants without re-login; whether a central global identity and membership model should be introduced; whether tenant slugs may change operationally; and whether the unauthenticated `/api/v1/migration`/gRPC boundaries need a separate machine-auth redesign. None of these questions justifies trusting the current header alone.
+
+### Stage 2D
+
+Implementation remains BLOCKED until tenant security is corrected and the above tests pass. After correction, the intended authorization chain remains valid in principle:
+
+```text
+authenticated token
+-> tenant binding verified
+-> bound tenant repository selected
+-> selected-database user loaded
+-> users.organization_id derived server-side
+-> explicit review permission checked
+-> organization-scoped suggestion query
+```
+
+Stage 2D cannot proceed unchanged operationally until its repository boundary is reconciled with current Stage 2A/2C wiring: `apps/cloud-server/main.go:341-355` currently stores and scans enrichment suggestions through `masterRepo/masterPool`, while authenticated `/api` routes select a tenant repository. The tenant-binding authorization design must be retained, and the review API must explicitly use the authoritative suggestion storage or move/bridge it through an approved scoped store. No request organization ID may select either store.
+
+Next Action: Read-only Stage 2D repository-boundary analysis: determine where `product_enrichment_suggestions` is stored versus tenant-selected HTTP repositories and define the safe access boundary before review API implementation. Preserve Stage 1, Stage 2A, Stage 2B, and Stage 2C SAFE TO KEEP history; do not begin Stage 2D implementation, Stage 2E application, or UI work as part of this gate.
+
+## Tenant-Bound User Authentication
+
+Review date: 2026-08-20. The standard interactive-user cross-tenant token replay vulnerability was corrected without adding central identity/membership storage, tenant schema changes, migration files, SQLC changes, Stage 2D routes, SAP changes, or enrichment behavior.
+
+- Before this patch, a valid user JWT could be replayed with another active `x-tenant-id` header because the token contained no tenant binding and `TenantMiddleware` trusted the header before selecting a tenant pool. The vulnerability was `CROSS_TENANT_SWITCH PROVEN POSSIBLE`.
+- Standard user JWTs now contain the exact `tenant_slug` claim. The claim is sourced only from the canonical tenant context placed by `TenantMiddleware` after the login request's tenant slug has been verified through the master tenant registry and the tenant pool has been selected. The login credentials are then checked in that selected tenant database before the token is signed.
+- Protected cloud and POS route order is `JWTAuthMiddleware -> TenantBindingMiddleware -> TenantMiddleware -> handler`. `TenantBindingMiddleware` requires a valid signed `tenant_slug`, requires a valid `x-tenant-id`, and requires exact equality before `TenantMiddleware` can call `Manager.GetPool`. `TenantMiddleware` uses the trusted context slug and rejects authenticated requests that arrive without the binding middleware; it cannot use the header to override the signed context.
+- Login remains `TenantMiddleware -> login handler -> tenant-local credential validation -> tenant-bound token issuance`; login does not require a JWT first. Existing `x-tenant-id` client compatibility is preserved as a consistency assertion on authenticated requests.
+- Old standard user tokens without `tenant_slug`, malformed/empty claims, mismatched headers, and malformed headers fail closed with a generic unauthorized response. No tenant is inferred from user ID, login, email, role, organization ID, request body, query, or another tenant database. Users holding old unbound tokens must log in again after deployment.
+- POS authenticated requests continue to send `x-tenant-id`; the POS local development token path now requires configured `DEV_TENANT_SLUG`. Cloud/POS development token scripts require explicit `DEV_TENANT_SLUG`, and the development HTTP token endpoint requires an explicit `x-tenant-id`; no arbitrary production tenant is silently defaulted.
+- M2M tokens remain a separate mechanism. Their existing registry-selected tenant behavior is preserved, while the signed `tenant_id` is checked against the active M2M registry entry and an explicitly supplied header is checked before tenant selection. SAP migration, product enrichment workers, ZATCA/background workers, and internal gRPC jobs do not use this HTTP user-JWT binding.
+- No refresh-token flow exists. Any future refresh/session mechanism must preserve the signed tenant binding and must not accept a client-requested alternate tenant.
+- Focused middleware tests cover same-tenant success, cross-tenant rejection, old-token rejection, malformed/empty claims and headers, trusted context extraction, preserved user claims, empty-tenant token issuance rejection, and rejection before a downstream `TenantMiddleware`/pool-selection path. `go test ./middleware`, `go test ./usecase`, and `go test ./...` from `packages/core` passed; `go test ./...` from `apps/cloud-server` passed; affected POS subpackages passed. The POS root package remains untestable in this checkout because its pre-existing `docs/swagger` package and embedded `frontend/dist` are absent.
+- Files changed for this correction: `packages/core/middleware/auth.go`, `packages/core/middleware/tenant.go`, `packages/core/middleware/auth_test.go`, `packages/core/usecase/auth_usecase.go`, `packages/core/handler/auth.go`, `packages/core/handler/dev.go`, `apps/cloud-server/main.go`, `apps/cloud-server/scripts/generate-dev-token.go`, `apps/pos-client/main.go`, `apps/pos-client/app.go`, `apps/pos-client/internal/config/config.go`, and `apps/pos-client/scripts/scripts/generate-dev-token.go`.
+- Deployment impact: all ordinary user tokens issued before this correction lack `tenant_slug` and are intentionally invalid on tenant-scoped authenticated routes; users must log in again. M2M/system tokens are not converted into standard user tokens.
+
+## Stage 2D
+
+Status: BLOCKED. Do not implement review routes yet.
+
+Next action: Read-only Stage 2D repository-boundary analysis: determine where `product_enrichment_suggestions` is stored versus tenant-selected HTTP repositories and define the safe access boundary before review API implementation.
+
+Open policy questions remain:
+
+- multi-tenant session switching without re-login;
+- possible future global identity/membership;
+- tenant slug mutation policy;
+- separate `/api/v1/migration`/gRPC authentication hardening, if still applicable;
+- reviewer roles/permission provisioning;
+- reviewer notes;
+- field-level review; and
+- `PROPOSE_NEW` canonical resolution.

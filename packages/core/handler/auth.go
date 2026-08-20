@@ -53,6 +53,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return // Error already handled in getRepositoryFromContext
 	}
 	h.useCase.SetRepository(repo)
+	tenantSlug, ok := middleware.AuthenticatedTenantSlug(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant binding unavailable"})
+		return
+	}
 
 	// Bind JSON input
 	var req struct {
@@ -66,7 +71,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Call UseCase
-	response := h.useCase.Login(c.Request.Context(), req.UserLogin, req.Password)
+	response := h.useCase.Login(c.Request.Context(), tenantSlug, req.UserLogin, req.Password)
 	if response.StatusCode != utils.CodeOK {
 		c.JSON(response.StatusCode, response)
 		return

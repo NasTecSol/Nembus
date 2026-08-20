@@ -26,8 +26,9 @@ func (uc *AuthUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
 }
 
-// Login authenticates a user and returns a JWT token
-func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *repository.Response {
+// Login authenticates a user in the already selected tenant and returns a
+// tenant-bound JWT token.
+func (uc *AuthUseCase) Login(ctx context.Context, tenantSlug, userLogin, password string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
@@ -38,6 +39,9 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 
 	if password == "" {
 		return utils.NewResponse(utils.CodeBadReq, "password cannot be empty", nil)
+	}
+	if tenantSlug == "" {
+		return utils.NewResponse(utils.CodeError, "tenant binding unavailable", nil)
 	}
 
 	// Get user by username
@@ -64,7 +68,7 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 
 	// Generate JWT token - convert user ID from int32 to string
 	userIDStr := strconv.FormatInt(int64(user.ID), 10)
-	token, err := middleware.GenerateJWTToken(userIDStr, userLogin)
+	token, err := middleware.GenerateJWTToken(userIDStr, userLogin, tenantSlug)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to generate token", nil)
 	}

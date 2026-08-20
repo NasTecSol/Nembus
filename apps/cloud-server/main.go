@@ -113,6 +113,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuthMiddleware())
+	api.Use(middleware.TenantBindingMiddleware())
 	api.Use(middleware.TenantMiddleware(tenantManager))
 	{
 		userHandler := handler.NewUserHandler(userUC)

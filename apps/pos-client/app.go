@@ -644,7 +644,11 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 
 // GetDevToken generates a valid development JWT token for local testing and Postman/Wails calls.
 func (a *App) GetDevToken() string {
-	token, err := middleware.GenerateJWTToken("1", "admin")
+	if a.cfg == nil || a.cfg.DevTenantSlug == "" {
+		log.Printf("GetDevToken error: DEV_TENANT_SLUG must be configured")
+		return ""
+	}
+	token, err := middleware.GenerateJWTToken("1", "admin", a.cfg.DevTenantSlug)
 	if err != nil {
 		log.Printf("GetDevToken error: %v", err)
 		return ""

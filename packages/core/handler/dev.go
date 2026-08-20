@@ -2,7 +2,7 @@ package handler
 
 import (
 	"net/http"
-	
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/middleware"
 
@@ -37,16 +37,19 @@ func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// }
 
 	// Get dev user ID and login from environment or use defaults
-	
-	
-		devUserID := "Admin"
+
+	devUserID := "Admin"
 
 	devUserLogin := "Admin"
-	
 
+	tenantSlug := c.GetHeader("x-tenant-id")
+	if strings.TrimSpace(tenantSlug) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "x-tenant-id header required for dev token"})
+		return
+	}
 
-	// Generate token
-	token, err := middleware.GenerateJWTToken(devUserID, devUserLogin)
+	// Generate a token only for the explicitly selected development tenant.
+	token, err := middleware.GenerateJWTToken(devUserID, devUserLogin, tenantSlug)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate dev token", "details": err.Error()})
 		return

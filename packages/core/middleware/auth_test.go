@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,9 +9,220 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+func signStandardTestToken(t *testing.T, secret string, claims jwt.MapClaims) string {
+	t.Helper()
+	if _, ok := claims["exp"]; !ok {
+		claims["exp"] = time.Now().Add(time.Hour).Unix()
+	}
+	if _, ok := claims["iat"]; !ok {
+		claims["iat"] = time.Now().Unix()
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("failed to sign test token: %v", err)
+	}
+	return signed
+}
+
+func TestGenerateJWTTokenIsTenantBound(t *testing.T) {
+	originalSecret := os.Getenv("JWT_SECRET")
+	os.Setenv("JWT_SECRET", "tenant-binding-test-secret")
+	defer os.Setenv("JWT_SECRET", originalSecret)
+
+	tokenString, err := GenerateJWTToken("42", "alice", "tenant-a")
+	if err != nil {
+		t.Fatalf("GenerateJWTToken returned error: %v", err)
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte("tenant-binding-test-secret"), nil
+	})
+	if err != nil || !token.Valid {
+		t.Fatalf("generated token could not be parsed: %v", err)
+	}
+	claims := token.Claims.(jwt.MapClaims)
+	if claims["tenant_slug"] != "tenant-a" {
+		t.Fatalf("expected tenant_slug tenant-a, got %v", claims["tenant_slug"])
+	}
+	if claims["user_id"] != "42" || claims["user_login"] != "alice" {
+		t.Fatalf("existing user claims changed: %#v", claims)
+	}
+	if _, err := GenerateJWTToken("42", "alice", ""); err == nil {
+		t.Fatal("expected empty tenant slug to be rejected")
+	}
+	if _, err := GenerateJWTToken("42", "alice", "tenant-a"); err != nil {
+		t.Fatalf("trusted tenant context value should be accepted: %v", err)
+	}
+	if stringClaims, ok := claims["tenant_slug"].(string); !ok || stringClaims == "postgres://secret" {
+		t.Fatal("tenant claim must not contain database configuration")
+	}
+}
+
+func TestTenantSlugComesFromTrustedContext(t *testing.T) {
+	ctx := withTenantSlug(context.Background(), "tenant-a")
+	slug, ok := TenantSlugFromContext(ctx)
+	if !ok || slug != "tenant-a" {
+		t.Fatalf("expected trusted tenant-a context, got %q, %v", slug, ok)
+	}
+
+	originalSecret := os.Getenv("JWT_SECRET")
+	os.Setenv("JWT_SECRET", "trusted-context-secret")
+	defer os.Setenv("JWT_SECRET", originalSecret)
+	tokenString, err := GenerateJWTToken("7", "alice", slug)
+	if err != nil {
+		t.Fatalf("failed to issue token from trusted tenant context: %v", err)
+	}
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte("trusted-context-secret"), nil
+	})
+	if err != nil || !token.Valid || token.Claims.(jwt.MapClaims)["tenant_slug"] != slug {
+		t.Fatalf("token was not bound to trusted context tenant: %v", err)
+	}
+}
+
+func TestTenantBindingMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	secret := "tenant-binding-middleware-secret"
+	originalSecret := os.Getenv("JWT_SECRET")
+	os.Setenv("JWT_SECRET", secret)
+	defer os.Setenv("JWT_SECRET", originalSecret)
+
+	tests := []struct {
+		name          string
+		claims        jwt.MapClaims
+		header        string
+		expectedCode  int
+		expectHandler bool
+	}{
+		{
+			name: "same tenant passes",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice", "tenant_slug": "tenant-a",
+			},
+			header:        "tenant-a",
+			expectedCode:  http.StatusOK,
+			expectHandler: true,
+		},
+		{
+			name: "tenant b token passes only for tenant b",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice", "tenant_slug": "tenant-b",
+			},
+			header:        "tenant-b",
+			expectedCode:  http.StatusOK,
+			expectHandler: true,
+		},
+		{
+			name: "different tenant is rejected",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice", "tenant_slug": "tenant-a",
+			},
+			header:        "tenant-b",
+			expectedCode:  http.StatusUnauthorized,
+			expectHandler: false,
+		},
+		{
+			name: "old unbound token is rejected",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice",
+			},
+			header:        "tenant-a",
+			expectedCode:  http.StatusUnauthorized,
+			expectHandler: false,
+		},
+		{
+			name: "empty tenant claim is rejected",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice", "tenant_slug": "",
+			},
+			header:        "tenant-a",
+			expectedCode:  http.StatusUnauthorized,
+			expectHandler: false,
+		},
+		{
+			name: "malformed tenant claim is rejected",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice", "tenant_slug": 123,
+			},
+			header:        "tenant-a",
+			expectedCode:  http.StatusUnauthorized,
+			expectHandler: false,
+		},
+		{
+			name: "malformed header is rejected",
+			claims: jwt.MapClaims{
+				"user_id": "7", "user_login": "alice", "tenant_slug": "tenant-a",
+			},
+			header:        " tenant-a",
+			expectedCode:  http.StatusUnauthorized,
+			expectHandler: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			r := gin.New()
+			r.Use(JWTAuthMiddleware(), TenantBindingMiddleware())
+			r.GET("/protected", func(c *gin.Context) {
+				called = true
+				c.Status(http.StatusOK)
+			})
+
+			request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			request.Header.Set("Authorization", "Bearer "+signStandardTestToken(t, secret, tt.claims))
+			if tt.header != "" {
+				request.Header.Set("x-tenant-id", tt.header)
+			}
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, request)
+
+			if response.Code != tt.expectedCode {
+				t.Fatalf("expected status %d, got %d: %s", tt.expectedCode, response.Code, response.Body.String())
+			}
+			if called != tt.expectHandler {
+				t.Fatalf("handler called=%v, want %v", called, tt.expectHandler)
+			}
+		})
+	}
+}
+
+func TestTenantBindingRejectsBeforeTenantPoolSelection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	secret := "tenant-pool-order-secret"
+	originalSecret := os.Getenv("JWT_SECRET")
+	os.Setenv("JWT_SECRET", secret)
+	defer os.Setenv("JWT_SECRET", originalSecret)
+
+	called := false
+	r := gin.New()
+	r.Use(JWTAuthMiddleware(), TenantBindingMiddleware(), TenantMiddleware(manager.NewManager(nil)))
+	r.GET("/protected", func(c *gin.Context) {
+		called = true
+		c.Status(http.StatusOK)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer "+signStandardTestToken(t, secret, jwt.MapClaims{
+		"user_id": "7", "user_login": "alice", "tenant_slug": "tenant-a",
+	}))
+	request.Header.Set("x-tenant-id", "tenant-b")
+	response := httptest.NewRecorder()
+	r.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected mismatch to be unauthorized, got %d: %s", response.Code, response.Body.String())
+	}
+	if called {
+		t.Fatal("handler was called after cross-tenant binding mismatch")
+	}
+}
 
 func TestJWTAuthMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)

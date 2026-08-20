@@ -15,6 +15,7 @@ type Config struct {
 	JWTSecret       string
 	DevUserID       string
 	DevUserLogin    string
+	DevTenantSlug   string
 	LogLevel        string
 	IsDesktop       bool
 	CloudURL        string
@@ -79,6 +80,7 @@ func LoadConfig(env string) *Config {
 		JWTSecret:       getEnv("JWT_SECRET", "nembus-desktop-jwt-secret-2024"),
 		DevUserID:       getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
 		DevUserLogin:    getEnv("DEV_USER_LOGIN", "dev_user"),
+		DevTenantSlug:   getEnv("DEV_TENANT_SLUG", ""),
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
 		IsDesktop:       true, // Default to true for this Wails build
 		CloudURL:        getEnv("CLOUD_URL", "https://nembus.nashrms.com"),

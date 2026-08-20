@@ -30,9 +30,14 @@ func main() {
 	if envUserLogin := os.Getenv("DEV_USER_LOGIN"); envUserLogin != "" {
 		userLogin = envUserLogin
 	}
+	tenantSlug := os.Getenv("DEV_TENANT_SLUG")
+	if tenantSlug == "" {
+		fmt.Fprintln(os.Stderr, "Error: DEV_TENANT_SLUG must be set; refusing to create an unbound token")
+		os.Exit(1)
+	}
 
 	// Generate token
-	token, err := middleware.GenerateDevToken(userID, userLogin)
+	token, err := middleware.GenerateDevToken(userID, userLogin, tenantSlug)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating token: %v\n", err)
 		os.Exit(1)
@@ -43,6 +48,7 @@ func main() {
 	fmt.Printf("Token: %s\n", token)
 	fmt.Printf("User ID: %s\n", userID)
 	fmt.Printf("User Login: %s\n", userLogin)
+	fmt.Printf("Tenant Slug: %s\n", tenantSlug)
 	fmt.Println("\nUsage:")
 	fmt.Println("  curl -H \"Authorization: Bearer " + token + "\" -H \"x-tenant-id: <tenant-slug>\" http://localhost:8080/api/employees")
 }

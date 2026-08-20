@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -15,7 +16,10 @@ import (
 )
 
 const UserIDKey contextKey = "user_id"
+const UserLoginKey contextKey = "user_login"
 const ClaimsKey contextKey = "jwt_claims"
+
+const tenantSlugClaim = "tenant_slug"
 
 type M2MClient struct {
 	ClientID   string   `json:"client_id"`
@@ -162,7 +166,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		})
 
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token", "details": err.Error()})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
 			return
 		}
@@ -217,6 +221,13 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 				return
 			}
 
+			signedTenant, ok := claims["tenant_id"].(string)
+			if !ok || !validTenantSlug(signedTenant) || signedTenant != matchedClient.TenantID {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized client"})
+				c.Abort()
+				return
+			}
+
 			if !matchedClient.IsActive {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Client is inactive"})
 				c.Abort()
@@ -236,14 +247,29 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			c.Set("client_name", matchedClient.ClientName)
 			c.Set("scopes", matchedClient.Scopes)
 
-			// Dynamically set x-tenant-id header so TenantMiddleware resolves it
+			// Preserve an explicitly supplied header for TenantBindingMiddleware to
+			// compare before using the registry-bound tenant below.
+			c.Set("m2m_requested_tenant", c.GetHeader("x-tenant-id"))
+
+			// Dynamically set x-tenant-id header so existing M2M callers continue
+			// to work when they omit the header.
 			c.Request.Header.Set("x-tenant-id", matchedClient.TenantID)
 		} else {
 			// Standard User authentication
 			c.Set("is_m2m", false)
-			if userID, ok := claims["user_id"].(string); ok {
-				c.Set(string(UserIDKey), userID)
+			userID, ok := claims["user_id"].(string)
+			if !ok || userID == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+				c.Abort()
+				return
 			}
+			c.Set(string(UserIDKey), userID)
+			requestContext := context.WithValue(c.Request.Context(), UserIDKey, userID)
+			if userLogin, ok := claims["user_login"].(string); ok {
+				c.Set(string(UserLoginKey), userLogin)
+				requestContext = context.WithValue(requestContext, UserLoginKey, userLogin)
+			}
+			c.Request = c.Request.WithContext(requestContext)
 		}
 
 		c.Set(string(ClaimsKey), claims)
@@ -262,6 +288,30 @@ func GetUserIDFromContext(c *gin.Context) (string, bool) {
 	return userIDStr, ok
 }
 
+// GetUserLoginFromContext extracts the authenticated login from Gin context.
+func GetUserLoginFromContext(c *gin.Context) (string, bool) {
+	userLogin, exists := c.Get(string(UserLoginKey))
+	if !exists {
+		return "", false
+	}
+	userLoginStr, ok := userLogin.(string)
+	return userLoginStr, ok && userLoginStr != ""
+}
+
+// AuthenticatedUserID extracts the authenticated standard-user ID from a
+// request context populated by JWTAuthMiddleware.
+func AuthenticatedUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(UserIDKey).(string)
+	return userID, ok && userID != ""
+}
+
+// AuthenticatedUserLogin extracts the authenticated standard-user login from
+// a request context populated by JWTAuthMiddleware.
+func AuthenticatedUserLogin(ctx context.Context) (string, bool) {
+	userLogin, ok := ctx.Value(UserLoginKey).(string)
+	return userLogin, ok && userLogin != ""
+}
+
 // GetClaimsFromContext extracts JWT claims from Gin context
 func GetClaimsFromContext(c *gin.Context) (jwt.MapClaims, bool) {
 	claims, exists := c.Get(string(ClaimsKey))
@@ -272,11 +322,14 @@ func GetClaimsFromContext(c *gin.Context) (jwt.MapClaims, bool) {
 	return claimsMap, ok
 }
 
-// GenerateJWTToken generates a JWT token for a user
-func GenerateJWTToken(userID string, userLogin string) (string, error) {
+// GenerateJWTToken generates a tenant-bound JWT token for a standard user.
+func GenerateJWTToken(userID string, userLogin string, tenantSlug string) (string, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		return "", errors.New("JWT_SECRET not configured")
+	}
+	if !validTenantSlug(tenantSlug) {
+		return "", errors.New("tenant slug is required")
 	}
 
 	// Set token expiration (24 hours)
@@ -284,10 +337,11 @@ func GenerateJWTToken(userID string, userLogin string) (string, error) {
 
 	// Create claims
 	claims := jwt.MapClaims{
-		"user_id":    userID,
-		"user_login": userLogin,
-		"exp":        expirationTime.Unix(),
-		"iat":        time.Now().Unix(),
+		"user_id":       userID,
+		"user_login":    userLogin,
+		tenantSlugClaim: tenantSlug,
+		"exp":           expirationTime.Unix(),
+		"iat":           time.Now().Unix(),
 	}
 
 	// Create token
@@ -302,8 +356,9 @@ func GenerateJWTToken(userID string, userLogin string) (string, error) {
 	return tokenString, nil
 }
 
-// GenerateDevToken generates a development token with custom user ID and login
+// GenerateDevToken generates a development token with custom user ID, login,
+// and an explicitly selected tenant slug.
 // This is a convenience function for testing
-func GenerateDevToken(userID, userLogin string) (string, error) {
-	return GenerateJWTToken(userID, userLogin)
+func GenerateDevToken(userID, userLogin, tenantSlug string) (string, error) {
+	return GenerateJWTToken(userID, userLogin, tenantSlug)
 }
