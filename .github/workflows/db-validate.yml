@@ -1,7 +1,6 @@
 name: DB Schema, Migration & Tenant Apply (Junction)
 
-# Runs on every push to `junction` that touches the canonical schema
-# (packages/core/db/schema) or the Atlas migration directory.
+# Runs on every push to `junction` (and manually via workflow_dispatch).
 #
 # Pipeline:
 #   1. Generate  — if schema files changed, `atlas migrate diff` creates a
@@ -19,12 +18,18 @@ name: DB Schema, Migration & Tenant Apply (Junction)
 #   5. Verify    — sqlc freshness + core/server tests.
 
 on:
+  # Manual trigger — run the pipeline on demand (e.g. right after editing
+  # this workflow, or to apply an existing migration set to tenants).
+  workflow_dispatch:
   push:
     branches:
       - junction
-    paths:
-      - 'packages/core/db/schema/**'
-      - 'packages/core/db/migrations/**'
+    # No `paths` filter on purpose: a paths filter makes GitHub SILENTLY
+    # skip the workflow when a push doesn't touch schema/migrations (e.g.
+    # changes to this file or README), which looks like the action never
+    # ran. The pipeline is idempotent — generation only runs when schema
+    # actually changed, and apply is a no-op when nothing is pending — so
+    # running it on every junction push is safe and predictable.
 
 permissions:
   # Required to commit the auto-generated migration back to `junction`.
