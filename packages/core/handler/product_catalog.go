@@ -97,6 +97,8 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 // @Param        x-tenant-id      header    string  true   "Tenant identifier"
 // @Param        Authorization    header    string  true   "Bearer token"
 // @Param        organization_id  query     int     true   "Organization ID"
+// @Param        limit            query     int     false  "Page size (default 100)"
+// @Param        offset           query     int     false  "Page offset (default 0)"
 // @Success      200  {object}  repository.Response
 // @Failure      400  {object}  repository.Response
 // @Failure      401  {object}  repository.Response
@@ -115,9 +117,23 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 		return
 	}
 
+	limitStr := c.DefaultQuery("limit", "100")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.ParseInt(limitStr, 10, 32)
+	if err != nil || limit <= 0 {
+		limit = 100
+	}
+	offset, err := strconv.ParseInt(offsetStr, 10, 32)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
 	resp := h.useCase.GetMasterProductCatalog(
 		c.Request.Context(),
 		orgIDStr,
+		int32(limit),
+		int32(offset),
 	)
 	c.JSON(resp.StatusCode, resp)
 }

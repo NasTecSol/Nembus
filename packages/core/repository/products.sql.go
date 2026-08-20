@@ -305,7 +305,15 @@ SELECT
     barcodes,
     inventory
 FROM v_master_product_catalog WHERE organization_id = $1
+ORDER BY product_id ASC
+LIMIT $2 OFFSET $3
 `
+
+type GetMasterProductCatalogParams struct {
+	OrganizationID int32 `json:"organization_id"`
+	Limit          int32 `json:"limit"`
+	Offset         int32 `json:"offset"`
+}
 
 type GetMasterProductCatalogRow struct {
 	ProductID            int32            `json:"product_id"`
@@ -343,8 +351,8 @@ type GetMasterProductCatalogRow struct {
 	Inventory            interface{}      `json:"inventory"`
 }
 
-func (q *Queries) GetMasterProductCatalog(ctx context.Context, organizationID int32) ([]GetMasterProductCatalogRow, error) {
-	rows, err := q.db.Query(ctx, getMasterProductCatalog, organizationID)
+func (q *Queries) GetMasterProductCatalog(ctx context.Context, arg GetMasterProductCatalogParams) ([]GetMasterProductCatalogRow, error) {
+	rows, err := q.db.Query(ctx, getMasterProductCatalog, arg.OrganizationID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -395,6 +403,17 @@ func (q *Queries) GetMasterProductCatalog(ctx context.Context, organizationID in
 		return nil, err
 	}
 	return items, nil
+}
+
+const getMasterProductCatalogCount = `-- name: GetMasterProductCatalogCount :one
+SELECT COUNT(*) FROM products
+`
+
+func (q *Queries) GetMasterProductCatalogCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getMasterProductCatalogCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const getProduct = `-- name: GetProduct :one
