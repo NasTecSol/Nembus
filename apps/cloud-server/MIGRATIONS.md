@@ -126,6 +126,21 @@ migration. Also, the baseline must be an existing migration version in
 `packages/core/db/migrations/`, otherwise Atlas errors with
 `baseline version "..." not found`.
 
+### Tenant Connection Strings (Docker Hostnames)
+
+Tenant `db_conn_str` values stored in the master `tenants` table often use the
+Docker **service name** as the host (e.g. `host=postgres user=... dbname=qitaf`),
+which only resolves inside the compose network. Because `migrate-tenants` runs on
+the host, it automatically:
+
+1. Converts any pgx-accepted connection string (keyword DSN **or** URL) into a
+   `postgres://` URL, which the Atlas CLI requires (keyword DSNs are rejected
+   with `missing driver`).
+2. Rewrites the configured host via the `-host-override from=to` flag
+   (default `postgres=localhost`) so `host=postgres` becomes `localhost` — valid
+   because the Postgres container's port is published to the host. Disable with
+   `-host-override ""`.
+
 ---
 
 ## ⚡ Summary of Makefile Commands
