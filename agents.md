@@ -769,3 +769,322 @@ retryable -> processing
 - Stage 1, Stage 2A, and Stage 2B remain SAFE TO KEEP by static scope review.
 - Stage 2C is SAFE TO KEEP. Go/gofmt, focused adapter/worker tests, core/server tests, deterministic SQLC v1.30.0 generation, and Atlas hash/validation passed. No critical or important source finding is known from this implementation pass.
 - Next Action: separately authorize Stage 2D review/approval API design/implementation. Keep Stage 2E application, aliases/rules, reviewer UI, and production hardening out of Stage 2C.
+
+## Stage 2D — Review / Approval API Design
+
+This section records a read-only Stage 2D design trace. No Stage 2D implementation, schema change, SQL change, provider call, UI work, commit, or push was performed. Stage 1, Stage 2A, Stage 2B, and Stage 2C remain SAFE TO KEEP.
+
+### 1. Existing HTTP architecture and evidence
+
+- `apps/cloud-server/main.go:setupRouter` creates the Gin engine, applies `middleware.LoggerMiddleware`, protects the normal `/api` group with `middleware.JWTAuthMiddleware()` followed by `middleware.TenantMiddleware(tenantManager)`, constructs handlers/usecases, and registers routes. The direct `/api/v1/migration` group is intentionally separate and is not a review route.
+- `packages/core/middleware/auth.go:JWTAuthMiddleware` validates the Bearer JWT, stores JWT claims in `middleware.ClaimsKey`, and stores a standard user's string `user_id` claim under `middleware.UserIDKey`. It returns HTTP 401 directly for missing/invalid authentication. M2M tokens carry `client_id`, `tenant_id`, and scopes but do not carry a Nembus `users.id` reviewer identity.
+- `packages/core/middleware/tenant.go:TenantMiddleware` requires `x-tenant-id`, treats it as a tenant slug, asks `middleware/manager.Manager:GetPool` to resolve the tenant database, and places `*repository.Queries` in the request context under `middleware.RepoKey`. It does not resolve or authorize an organization ID.
+- Existing handlers such as `packages/core/handler/brand.go:CreateBrand`, `packages/core/handler/product_catalog.go:ListProductsWithVariants`, and `packages/core/handler/permission.go:ListPermissions` retrieve the tenant repository from context, call `SetRepository` on a request-scoped usecase, parse Gin path/query/body input, and return `repository.Response` through `c.JSON`.
+- Existing routes use resource groups and action subpaths, for example `packages/core/routing/product_catalog.go:RegisterProductCatalogRoutes`, `packages/core/routing/permission.go:RegisterPermissionRoutes`, and `packages/core/routing/sap_migration.go:RegisterSAPMigrationRoutes`. Pagination is normally bounded `limit`/`offset`, not cursor-based. Existing list queries use `LIMIT` and `OFFSET`.
+- Request DTOs are ordinary handler/usecase structs in `packages/core/handler/dto.go` and individual handler files. Validation is primarily Gin `binding` plus explicit `strconv` parsing and usecase validation. There is no shared request-validation package for this feature.
+- The standard response is `repository.Response` from `packages/core/repository/response.model.go`, constructed by `utils.NewResponse` in `packages/core/utils/response.go`. Current utility codes are only 200, 201, 400, 404, and 500. There is no existing shared 403 or 409 code.
+- `packages/core/repository/db.go:DBTX`, `New`, and `Queries.WithTx` provide the repository transaction boundary. Stage 2A/2C repository adapters keep domain interfaces separate from generated SQLC types. The Stage 2D usecase should follow that pattern.
+- No current permission middleware or route guard was found. `packages/core/usecase/permission_usecase.go:CheckUserHasPermission` and repository query `CheckUserHasPermission` exist as callable permission checks, but normal handlers do not invoke them automatically. Existing `/api` routes therefore provide authentication and tenant database selection, not authorization.
+
+### 2. Existing users, roles, permissions, and authorization
+
+Current identity/RBAC schema is in `packages/core/db/schema/10_identity_rbac.sql`:
+
+- `users.id` is the local reviewer-capable identity; each user has `organization_id`, `is_active`, and credentials.
+- `roles`, `user_roles`, `permissions`, and `role_permissions` represent role membership and permission grants. `role_permissions.scope` exists, with values seeded as `all`, `store`, or `own` in the sample data, but the runtime `CheckUserHasPermission` query checks only whether a code is present and does not enforce scope.
+- `module_permissions`, `menu_permissions`, and `submenu_permissions` support UI/navigation visibility. They do not themselves authorize an HTTP action.
+- `packages/core/queries/permissions.sql:CheckUserHasPermission`, `GetUserPermissions`, and `GetUserPermissionsWithScope`, together with `packages/core/usecase/permission_usecase.go`, are the existing permission APIs. `packages/core/routing/permission.go` exposes permission administration/check endpoints, but those endpoints are also only behind JWT and tenant middleware.
+- No runtime special treatment for `admin`, `owner`, `manager`, `is_system_role`, or any named role was found in the API authorization path. `roles.is_system_role` is a data attribute used by role CRUD SQL, not an automatic approval privilege.
+- The sample seed `apps/cloud-server/scripts/init-Data-Dump.sql` contains broad `products:view`, `products:manage`, and `products:delete` permissions, and `settings:audit_logs` for viewing audit logs. `products:manage` is assigned to broad catalog/operator roles such as `store_manager` and `owner`; it is not a narrowly scoped enrichment-review permission. `settings:audit_logs` is not an approval permission.
+
+Answers to the permission questions:
+
+- A. There is no existing permission whose semantics specifically cover product-enrichment review. `products:manage` is the nearest product permission but is materially broader than approving AI suggestions, while `products:view` cannot authorize approval.
+- B. Reusing `products:manage` would couple review access to broad product/catalog mutation access and would not preserve least privilege. It is not recommended as the Stage 2D approval gate. `products:view` may be used only if the product separately decides to make queue reads visible to all product viewers; it must not authorize approve/reject.
+- C. The repository supports a narrowly scoped permission cleanly because `permissions.code` is unique and `user_roles -> role_permissions -> permissions` is already the grant path. No schema redesign is required.
+- D. Adding a permission requires a permission seed/data change and role-to-permission mapping. It does not require a schema migration if deployed through the existing permission tables. A module/menu/submenu mapping is optional for API-only rollout and would be needed only if a later reviewer UI uses the existing navigation model. Frontend changes are not required for API enforcement, but a UI must eventually hide/show the review surface based on the same permission.
+- E. `product_enrichment_suggestions.reviewer_id` must store the authenticated local `users.id` (`int32`), after verifying that user is active and belongs to the current tenant/organization. It must not store JWT `sub`, username, M2M `client_id`, or an arbitrary request-body reviewer ID. M2M review is not supported unless a future trusted mapping to a local user is explicitly designed.
+
+### 3. Recommended reviewer authorization
+
+Recommendation, not architect-approved fact: add the permission code `product_enrichment:review`, following the repository's `resource:action` convention while keeping the resource distinct from broad product mutation. Require it for list, detail, approve, and reject. The usecase should call the existing permission query with the authenticated user ID, but also explicitly validate active-user and current-organization membership because the existing permission query does not do either.
+
+The API must not infer approval rights from a role name. A deployment may map the new permission to a deliberately selected role through `role_permissions`; the architect/product owner must choose that role. The current repository does not prove that `admin`, `owner`, `store_manager`, or `manager` should approve.
+
+There is an additional current authentication limitation: user JWTs generated by `middleware.GenerateJWTToken` contain `user_id` and `user_login`, but not tenant or organization identity. `TenantMiddleware` trusts the request `x-tenant-id` header to select a tenant database. A numeric user ID can theoretically collide across tenant databases. Stage 2D implementation must either establish a trusted tenant binding for user JWTs (for example, include and compare a tenant claim) or obtain an equivalent deployment guarantee before production approval access is enabled. Merely trusting a caller-supplied organization query parameter is not acceptable.
+
+### 4. Organization and tenant scoping
+
+- `product_enrichment_suggestions.organization_id` references `organizations(id)` and `product_id` references `products(id)` with cascade deletes (`packages/core/db/schema/35_product_enrichment.sql`). The Stage 1 query and every Stage 2C mutating query carry `organization_id` predicates.
+- Normal `/api` requests select a tenant database from `x-tenant-id`; the current organization is not carried in the JWT and is not a middleware context value. `users.organization_id` is the available authenticated membership relationship inside that tenant database.
+- Stage 2D routes must be registered only under the authenticated `/api` group. They must not accept `organization_id` as a query/body override. The handler extracts `middleware.UserIDKey`, parses it as a positive `int32`, loads the user from the tenant repository, requires an active user, and uses that user's `organization_id` as the effective organization for every queue/detail/status/audit query.
+- Every suggestion read and transition must include `organization_id = effective_user.organization_id`; every current-product reload must include both organization ID and product ID (or the organization-scoped source SKU plus a product-ID correlation check). A guessed ID from another organization must produce the same not-found behavior as any other missing suggestion.
+- The existing `UserUseCase.getOrganizationID` chooses the first active organization and is suitable only for its current user-management behavior; it must not be copied for Stage 2D because review authorization must use the authenticated user's own `users.organization_id`.
+- M2M requests do not provide a local reviewer identity. They should receive unauthorized/forbidden review access unless a future explicit service-account-to-user audit mapping is approved.
+
+### 5. List review queue API
+
+Recommended routes, following the existing `/api` resource-group style:
+
+- `GET /api/product-enrichment/suggestions`
+- Default `status=in_review`; accept a bounded status filter only from the persisted lifecycle values if history is intentionally exposed. The reviewer queue itself must always support `status=in_review`.
+- Parse `limit` and `offset` using the existing style, with a conservative default of `limit=50`, `offset=0`, a hard maximum of 100, and rejection of negative/non-numeric values for this new security-sensitive endpoint. No cursor protocol is present in the repository and none is needed for the first queue.
+- Do not add provider filtering or free-text SKU/product search in the first API. The current Stage 1 list query has no such filters and the existing queue index is for organization/status/created time.
+
+The response should remain the standard `repository.Response` envelope with a purpose-built review DTO array in `data`, not generated `repository.ProductEnrichmentSuggestion` rows and not raw JSONB. Each list item should contain:
+
+- `id`, `product_id`, `source_item_code`, and `source_item_name`;
+- a sanitized `inference_snapshot` containing only product type, brand/category identity, and description as they existed at inference;
+- a `current_product_state` containing product type, current category, current brand, and current description;
+- `proposals.brand`, `proposals.category`, `proposals.description`, and `proposals.unsupported_semantics`, preserving action, canonical target/name, value, confidence, evidence, and explanation;
+- `provider`, `model`, `model_version`, `created_at`, `updated_at`, `status`, `reviewer_id` when present, and `reviewed_at` when present;
+- `stale`, `approval_blocked`, and a bounded `conflict_fields`/reason representation when current state can be compared.
+
+The DTO must not return `structured_current` wholesale because the Stage 2A/2C snapshot can contain UoM/conversion context that is not required for review. It must not return `products.metadata`, API keys, provider request/response payloads, prompts, raw OpenAI response IDs, inventory, prices, tax, supplier, barcode, warehouse, or operational flags.
+
+The existing `ListProductEnrichmentSuggestions` query in `packages/core/queries/product_enrichment_suggestions.sql` already provides organization/status/limit/offset ordering and the index `idx_product_enrichment_suggestions_organization_status` supports the queue pattern. It does not join current product/category/brand state. Stage 2D should add a purpose-built organization-scoped review-list query joining `products` and active/current taxonomy names, or a bounded equivalent, and generate its SQLC companion. It should not alter the Stage 1 worker query or add speculative indexes.
+
+### 6. Get single suggestion API and DTO boundary
+
+Recommended route: `GET /api/product-enrichment/suggestions/:id`.
+
+The detail response uses the same DTO as the list, with the full safe proposal evidence and a clearly separated shape:
+
+```text
+current_product_state: authoritative database state
+inference_snapshot:   sanitized state captured before model inference
+proposals:             provider-neutral AI suggestions
+review:                status, reviewer_id, reviewed_at, timestamps
+review_safety:         stale, approval_blocked, conflict_fields, blocking_reason
+```
+
+The detail handler/usecase must reload the current product state rather than treating `structured_current` as current truth. The existing `ProductEnrichmentStore.LoadSAPProductEnrichmentSnapshot` is a useful repository boundary because it reloads by organization and source item code and returns structured brand/category/description/product type with a product identity check. A dedicated Stage 2D query that loads by `(organization_id, product_id)` and joins current taxonomy is preferable for a review detail response; it must not reuse unscoped `GetProduct` or unscoped `GetProductWithDetails` for a user-controlled ID.
+
+The response should include `inference_snapshot`, `current_product_state`, `stale`, and `conflict_fields`. The exact full fingerprint comparison is mandatory in approve/reject safety code; list/detail may also expose field-level conflict information for usability. No current Stage 1 column needs to be changed for these indicators because the persisted `source_data_fingerprint` and `structured_current` already provide the inference baseline.
+
+### 7. Stale-source safety policy
+
+Approval must be fail-closed if the current authoritative source differs from the inference fingerprint. The approve usecase should:
+
+1. Load the suggestion under the effective organization.
+2. Reload the current SAP product snapshot and verify organization/product identity.
+3. recompute the existing `enrichment.FingerprintSnapshot` and compare it to `suggestion.source_data_fingerprint`.
+4. Revalidate the stored proposal JSON through the existing `enrichment.ProposalSet.Validate` contract and current structured precedence.
+5. Refuse approval if the fingerprint differs or a current authoritative field has become populated/resolved.
+
+This covers a brand resolved after inference, a description populated after inference, and a category populated after inference. It also safely fails closed for any other source-context change included by the established fingerprint. The response should identify `stale_source` and the safe conflict fields where known, but the current lifecycle has no `stale` status. Leave the row `in_review`; do not silently reject it, add a new status, rerun enrichment, or call OpenAI. A later explicit re-enqueue/rerun workflow can create a new fingerprinted suggestion.
+
+Because Stage 1 has one suggestion-level status, Stage 2D should not approve only the still-safe fields after a fingerprint conflict. The conservative MVP policy is whole-row approval blocked until a fresh enrichment result exists.
+
+### 8. Whole-suggestion versus field-level review
+
+Stage 1 persists brand, category, description, and unsupported semantics in separate JSONB columns, but it has one `status`, one `reviewer_id`, one `reviewed_at`, and one `applied_at` for the whole suggestion. `enrichment.ProposalSet` has no persisted field-decision or reviewer-override structure. Therefore current persistence cannot represent “approve brand, reject category, approve description.”
+
+Recommendation for the first MVP: whole-suggestion review only. A reviewer may approve only when every applyable proposal in the row is acceptable; if one applyable proposal is bad, reject the whole row. `KEEP_EXISTING`, `NO_MATCH`, and unsupported semantics do not create applyable product changes. Description `PROPOSE_NEW` is an applyable description proposal; brand/category `PROPOSE_NEW` are blocked as described below. This makes approval safe without changing Stage 1 schema, at the cost of rejecting otherwise useful mixed-quality rows.
+
+If product requirements demand mixed decisions, the smallest future correction is field-level decision persistence (for example, per-field decision/action plus reviewer/time and canonical target identity) and a corresponding application contract. That is a design gap for field-level review, not a reason to add an unsafe implicit convention to Stage 2D. No schema change is made in this design pass.
+
+### 9. Approve API semantics
+
+Recommended route: `POST /api/product-enrichment/suggestions/:id/approve` with no reviewer ID and no proposal-edit body.
+
+The usecase must require authenticated local user identity, the recommended review permission, active membership in the effective organization, `status = in_review`, a non-stale source fingerprint, valid persisted proposals, and no blocked brand/category `PROPOSE_NEW` action. It then performs only:
+
+- `in_review -> approved`;
+- set `reviewer_id` to the authenticated `users.id`;
+- set `reviewed_at = CURRENT_TIMESTAMP`;
+- keep `applied_at = NULL`;
+- do not mutate products, brands, categories, UoMs, variants, aliases, metadata, or taxonomy.
+
+The status update must retain the existing organization and `status = 'in_review'` SQL predicates. The transition and audit insert should run in one database transaction using `repository.Queries.WithTx`; an audit failure should roll back the approval so an accepted review is never silently unaudited. There is no OpenAI call and no Stage 2E application here.
+
+Approval is not idempotent as a repeated state overwrite: a second request after approval/rejection/applied is a conflict, not a silent success. Concurrent reviewers race on the single guarded SQL update; exactly one receives the returned row. The losing request receives a state conflict and never overwrites `reviewer_id`.
+
+### 10. Reject API semantics
+
+Recommended route: `POST /api/product-enrichment/suggestions/:id/reject`, with no reviewer ID and no editable proposal body.
+
+The same organization, identity, permission, active-user, and `status = in_review` checks apply. The atomic transition is `in_review -> rejected`, with authenticated `reviewer_id`, `reviewed_at = CURRENT_TIMESTAMP`, and `applied_at = NULL`. It must not mutate any product or taxonomy record. Concurrent approve/reject requests are resolved by the same guarded update; only the winner succeeds.
+
+The current `product_enrichment_suggestions` schema has no review reason, rejection reason, reviewer note, or comment field. The repository audit table can preserve the fact of the transition but is not a substitute for a user-facing note. Notes are optional for the conservative MVP; if required, the smallest correction is a nullable bounded `reviewer_note`/`review_reason` field with a migration, DTO validation, SQLC regeneration, and audit coverage. Do not accept and discard a reason in Stage 2D.
+
+### 11. Manual editing of AI proposals
+
+Stage 2D should be approve/reject-only. The current JSONB proposal model has no reviewer-edited value, edit provenance, before/after field audit, or field-level decision. Allowing an API caller to rewrite proposal JSON would also create an unvalidated path around Stage 2B's provider contract and canonical-target checks. A reviewer who disagrees with a proposal should reject the whole suggestion in the MVP. Reviewer editing is a later architect decision requiring explicit provenance and validation design.
+
+### 12. `PROPOSE_NEW` brand/category handling
+
+`enrichment.BrandProposal` and `CategoryProposal` deliberately require no target ID/code for `PROPOSE_NEW`; the action is a review proposal and does not authorize creation. Stage 2D must never create a brand or category.
+
+- `MATCH_EXISTING` with a validated canonical existing target may participate in whole-suggestion approval.
+- Brand/category `PROPOSE_NEW` is visible with its canonical name/evidence but blocks approval in the MVP because current persistence has no reviewer-selected canonical replacement and Stage 2E cannot safely map the concept to an ID.
+- The reviewer may reject the suggestion. A separate future taxonomy-resolution workflow may resolve the proposal to a canonical ID; that workflow must persist the mapping before an approved suggestion can be applied.
+- Description `PROPOSE_NEW` is different: it is the current contract's action for proposing a description value and may be approved as part of an otherwise safe whole suggestion.
+
+The smallest future correction is either a taxonomy-resolution table/field linking `(suggestion_id, field)` to an existing canonical brand/category ID, or a field-level review decision structure that stores that mapping. Automatic taxonomy creation remains out of scope.
+
+### 13. Unsupported semantics
+
+Unsupported semantics such as shampoo, anti-dandruff, 400 ml, model number, dimensions, and family hints are displayed as informational evidence only. They remain inside the proposal DTO for reviewer context, do not create an approval target, do not participate in product mutation, and do not imply that future attribute/family schema work has been approved. Approval means only that the whole current suggestion is accepted for the later Stage 2E contract; unsupported semantics must be ignored by Stage 2E until a separately approved destination exists.
+
+### 14. Audit behavior
+
+`audit_logs` exists in `packages/core/db/schema/80_promotions_loyalty.sql` and the generated `repository.AuditLog` model exists, with `organization_id`, `table_name`, `record_id`, `action`, old/new JSON, changed fields, `performed_by`, IP, user agent, session ID, and timestamp. No reusable audit query/usecase/service or current review-action usage was found. The seed has `settings:audit_logs` for viewing, but no review audit writer or review permission.
+
+Stage 2D approve/reject must add a minimal audit repository query and write one entry in the same transaction as the guarded status update:
+
+- `organization_id`: effective authenticated user's organization;
+- `table_name`: `product_enrichment_suggestions`;
+- `record_id`: suggestion ID as text;
+- `action`: `UPDATE` because the existing check constraint allows only `INSERT`, `UPDATE`, `DELETE`, and `SELECT` (not dotted event names);
+- `old_values`: `{ "status": "in_review" }`;
+- `new_values`: `{ "status": "approved"|"rejected", "event": "product_enrichment.approved"|"product_enrichment.rejected" }`;
+- `changed_fields`: `status`, `reviewer_id`, and `reviewed_at`;
+- `performed_by`: authenticated `users.id`; request IP/user-agent/session may be passed through when safely available.
+
+Do not store API keys, prompts, raw OpenAI request/response data, full provider payloads, inventory/prices/tax/supplier/barcode data, or unnecessary product metadata in the audit event.
+
+### 15. Error and concurrency model
+
+The current middleware/usecase conventions support the following Stage 2D mapping; 403/409 are recommendations because `utils/response.go` currently lacks constants for them:
+
+- 401: missing/invalid JWT, emitted by `JWTAuthMiddleware`; M2M without a local reviewer identity is also not an authenticated human reviewer.
+- 403: authenticated user lacks the recommended review permission or is not an active authorized member of the effective organization. This must not be inferred from a role name.
+- 400: malformed ID, invalid pagination/status, unexpected request body, or unsupported review action.
+- 404: suggestion not found under the effective organization. Cross-organization IDs must resolve to the same generic not-found behavior and must not disclose that a row exists elsewhere.
+- 409: current state is not `in_review`, the source is stale, taxonomy resolution is required for a brand/category `PROPOSE_NEW`, or a guarded concurrent transition returned no row after the suggestion was known to be reviewable. A second concurrent review must never overwrite the first reviewer.
+- 500: repository, transaction, audit, or current-product reload failure. Do not expose SQL details or provider secrets.
+
+For a guarded update that returns no row, a scoped read may distinguish a missing suggestion (404) from a known row whose status changed (409); the update predicate remains the concurrency authority. The usecase must not implement check-then-update without the status predicate.
+
+### 16. Pagination/query requirements
+
+The existing Stage 1 `ListProductEnrichmentSuggestions` query is adequate for organization/status/offset ordering and has an appropriate `(organization_id, status, created_at DESC)` index. It is not sufficient as the final review DTO query because it lacks current product joins and would expose raw generated rows. Stage 2D should add only:
+
+- an organization-scoped review queue query with bounded `status`, `LIMIT`, `OFFSET`, ordered by `created_at DESC, id DESC`;
+- an organization-scoped review detail/current-state query or an adapter method that reloads current product state safely by organization/product;
+- an audit insert query;
+- generated SQLC files regenerated by the repository's pinned workflow.
+
+No provider index, search index, cross-organization list, count endpoint, cursor scheme, or speculative filter is justified by current evidence.
+
+### 17. Future UI contract (without UI implementation)
+
+The DTO should allow a later UI to render two explicit columns/sections:
+
+```text
+CURRENT (authoritative)          PROPOSED (AI, reviewable)
+Brand: None                      Brand: MATCH_EXISTING -> PANTENE
+Category: Personal Care          Category: KEEP_EXISTING
+Description: Empty               Description: <bounded text>
+Product Type: standard           Product Type: LOCKED / absent from proposals
+
+Evidence: proposal evidence/explanation
+Unsupported semantics: informational list only
+Review safety: stale/conflict/approval-blocked indicators
+```
+
+The API must never make an AI proposal look like current product truth and must never include `product_type` in the proposal target. Provider/model metadata is context only; raw provider material is excluded.
+
+### 18. Stage 2E boundary
+
+Stage 2D ends at exactly:
+
+```text
+in_review -> approved
+in_review -> rejected
+```
+
+Stage 2E is a separate phase: `approved -> revalidate current authoritative state -> apply only allowed/canonical proposals -> applied`. Stage 2E must repeat organization/product identity, fingerprint/stale, structured precedence, canonical-target, action, and no-authoritative-field checks. It must handle taxonomy resolution and unsupported semantics explicitly. Stage 2D must never create `applied`, mutate products, create taxonomy, create aliases, or trigger another model run.
+
+### 19. Exact future Stage 2D patch surface
+
+The smallest conceptual implementation surface is:
+
+- `packages/core/enrichment/review.go` or the existing enrichment package: provider-neutral stale/approval eligibility and sanitized proposal review helpers; no provider dependency.
+- `packages/core/usecase/product_enrichment_review_usecase.go`: request-scoped repository boundary, authenticated-user/organization/permission checks, list/detail DTO mapping, stale reload, atomic approve/reject orchestration, and whole-suggestion/`PROPOSE_NEW` policy.
+- `packages/core/handler/product_enrichment_review.go`: Gin handlers, DTOs, path/query parsing, identity extraction, and standard response mapping.
+- `packages/core/routing/product_enrichment.go`: route registration for the list/detail/approve/reject endpoints.
+- `packages/core/queries/product_enrichment_suggestions.sql`: only the new review projection/detail queries if the existing rows cannot supply the safe DTO; the existing worker lifecycle queries must remain unchanged.
+- a new `packages/core/queries/audit_logs.sql` (or equivalent query file) and generated repository companions for the audit insert and review projections; do not hand-edit generated SQLC output.
+- `packages/core/repository/product_enrichment_review_store.go` and/or an audit adapter: narrow interfaces carrying organization IDs on every read/write, using `Queries.WithTx` for status plus audit.
+- `packages/core/utils/response.go`: add explicit 403/409 constants only if the implementation keeps the repository response envelope for those outcomes; otherwise map them in one documented handler boundary. Do not silently reuse 400 for concurrency after choosing 409 semantics.
+- `packages/core/middleware/auth.go`: only if the architect accepts the required tenant-binding hardening for user JWTs; current JWTs do not carry tenant/organization identity.
+- `apps/cloud-server/main.go:setupRouter` and `main`: construct/wire the review usecase/handler and register routes under the authenticated `/api` group. Do not register them under unauthenticated `/api/v1/migration`.
+- `apps/cloud-server/scripts/init-Data-Dump.sql`: seed `product_enrichment:review` and explicit role mappings if that seed remains the deployment source. A UI module/submenu mapping is optional and belongs to a later UI decision.
+- focused handler/usecase/repository tests and server route/auth tests. No SAP, OpenAI adapter, worker, configuration, product mutation, schema, or migration files are required for the conservative whole-suggestion MVP.
+
+### 20. Future Stage 2D test plan
+
+- Authorization: missing/invalid JWT rejected; M2M without local reviewer rejected; missing `product_enrichment:review` rejected; active authorized user allowed; role name alone does not authorize; tenant binding and user organization are checked.
+- Organization isolation: list only returns the authenticated organization; detail/approve/reject with a guessed foreign ID do not disclose it; all repository SQL includes organization predicates; user-supplied organization query/body values are ignored/rejected.
+- List: default `in_review`, explicit valid status filtering, bounded limit/offset, negative/oversized/malformed pagination, deterministic ordering, no raw provider payload/secrets/operational data.
+- Detail: sanitized inference snapshot/current product separation, provider/model metadata, proposal confidence/evidence/explanation, reviewer/audit metadata, no UoM conversion/inventory/price/tax/supplier/barcode leakage, and stale/conflict indicators.
+- Approve: `in_review -> approved`, authenticated reviewer ID persisted, reviewed time persisted, `applied_at` remains NULL, no product/taxonomy mutation, no provider call, and audit row committed atomically.
+- Reject: `in_review -> rejected`, reviewer/time persisted, `applied_at` remains NULL, no product mutation, and audit row committed atomically.
+- Invalid/concurrent transitions: wrong status returns the documented conflict; simultaneous approve/reject has one winner; the losing request cannot overwrite reviewer identity; audit failure rolls back the status transition.
+- Stale source: brand/category/description changes after inference block approval; the row remains `in_review`; no implicit rejection or rerun occurs.
+- `PROPOSE_NEW`: visible, no brand/category creation, no approval while canonical target is absent, and no Stage 2E apply path is implied.
+- Whole-suggestion policy: mixed-quality actionable proposals require rejection; no hidden field-level partial approval exists.
+- Unsupported semantics: informational only and never applied.
+- No live OpenAI call is required for any Stage 2D test.
+
+### 21. Architect decisions still required
+
+Answerable from repository evidence:
+
+- the repository has database-backed roles/permissions and an existing permission check query, but no enforced permission middleware;
+- `users.id` is the correct reviewer foreign-key identity;
+- tenant selection is the `x-tenant-id` header and organization membership is `users.organization_id` inside the tenant database;
+- the Stage 1 lifecycle and fingerprint are sufficient to implement conservative whole-row review without changing Stage 1 schema;
+- audit table exists, but a reusable audit writer does not;
+- no current field-level decision, reviewer note, taxonomy-resolution, or manual-edit persistence exists.
+
+Requires product/architect decision:
+
+- approve the exact permission code `product_enrichment:review` and which roles receive it; do not infer this from role names;
+- require tenant binding in user JWTs before production review access, or explicitly approve an equivalent trusted deployment boundary;
+- approve whole-suggestion MVP review, where mixed-quality actionable proposals are rejected as a row, or authorize a field-level schema correction before Stage 2D implementation;
+- decide whether reviewer notes/rejection reasons are needed in MVP;
+- decide the separate canonical-resolution workflow for brand/category `PROPOSE_NEW`;
+- decide whether reviewer editing is ever allowed; recommendation is no for MVP;
+- decide whether queue history may list statuses other than `in_review`; recommendation is an `in_review`-first queue with optional read-only history later;
+- confirm that unsupported semantics are informational only; this is the current safe recommendation;
+- confirm no auto-apply and no taxonomy creation in Stage 2D.
+
+### 22. Recommended MVP review policy
+
+- Use an explicit narrowly scoped review permission and organization-scoped access.
+- Permit list/detail/approve/reject only for authenticated active users with that permission.
+- Default the queue to `in_review`; use bounded limit/offset and no speculative search.
+- Use approve/reject only; no reviewer proposal editing.
+- Approve/reject only the whole suggestion; reject mixed-quality actionable rows.
+- Allow canonical `MATCH_EXISTING` brand/category and description proposals when the source fingerprint remains current.
+- Display brand/category `PROPOSE_NEW`, but block approval until a future canonical taxonomy-resolution workflow supplies an existing ID/code.
+- Treat unsupported semantics as evidence-only information.
+- Block approval on any authoritative source/fingerprint conflict and require fresh enrichment; keep the row `in_review` because no stale status exists.
+- Record the authenticated `users.id` and review timestamp; keep `applied_at` NULL.
+- Audit approve/reject atomically with the status change using safe status-only old/new values.
+- Do not apply approved suggestions, create brands/categories, create aliases, mutate products, call OpenAI, or rerun enrichment.
+
+## Current Phase
+
+Stage 2D design
+
+## Remaining Phases
+
+- Stage 2D implementation.
+- Stage 2E approved suggestion application.
+- Deterministic aliases/rules.
+- Reviewer UI if required.
+- Production observability, security, and hardening.
+
+## Stage 1/2 Impact
+
+NO FOUNDATION CORRECTION REQUIRED
+
+The current Stage 1 persistence is sufficient for a conservative whole-suggestion Stage 2D review API. Field-level approval, reviewer notes, taxonomy resolution, and tenant-bound user JWTs remain explicit future/implementation decisions; none is silently added here.
+
+## Next Action
+
+Obtain architect approval for the recommended `product_enrichment:review` permission, tenant-binding requirement, whole-suggestion MVP, stale-source blocking, and `PROPOSE_NEW` taxonomy policy. Then separately authorize Stage 2D implementation. Do not begin Stage 2E application or UI work as part of that implementation authorization.
