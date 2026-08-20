@@ -91,7 +91,12 @@ jobs:
       - name: Install Atlas CLI
         uses: ariga/setup-atlas@v0
         with:
-          version: latest
+          # Pinned — do NOT use "latest". Atlas changed its migration checksum
+          # algorithm across versions; if CI and local dev disagree on the
+          # version, `atlas.sum` validation fails with "checksum mismatch".
+          # Keep this in sync with the local Atlas version (README § Database
+          # Migrations) and regenerate atlas.sum after upgrading.
+          version: v1.3.0
 
       - name: Install sqlc
         run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
