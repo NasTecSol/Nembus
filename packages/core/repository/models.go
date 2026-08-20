@@ -2604,3 +2604,31 @@ type ZatcaDocumentChain struct {
 	ClearedAt      pgtype.Timestamptz `json:"cleared_at"`
 	CreatedAt      pgtype.Timestamp   `json:"created_at"`
 }
+
+// ProductEnrichmentSuggestion is the Stage 1 review-queue record. The JSONB
+// proposal columns are nullable because each proposal is independently
+// optional; approval does not itself apply any proposal to master data.
+type ProductEnrichmentSuggestion struct {
+	ID                    int32            `json:"id"`
+	OrganizationID        int32            `json:"organization_id"`
+	ProductID             int32            `json:"product_id"`
+	SourceItemCode        string           `json:"source_item_code"`
+	SourceItemName        string           `json:"source_item_name"`
+	SourceDataFingerprint string           `json:"source_data_fingerprint"`
+	ContractVersion       string           `json:"contract_version"`
+	StructuredCurrent     json.RawMessage  `json:"structured_current"`
+	ProposedBrand         json.RawMessage  `json:"proposed_brand"`
+	ProposedCategory      json.RawMessage  `json:"proposed_category"`
+	ProposedDescription   json.RawMessage  `json:"proposed_description"`
+	UnsupportedSemantics  json.RawMessage  `json:"unsupported_semantics"`
+	Source                string           `json:"source"`
+	Provider              pgtype.Text      `json:"provider"`
+	Model                 pgtype.Text      `json:"model"`
+	ModelVersion          pgtype.Text      `json:"model_version"`
+	Status                string           `json:"status"`
+	ReviewerID            pgtype.Int4      `json:"reviewer_id"`
+	ReviewedAt            pgtype.Timestamp `json:"reviewed_at"`
+	AppliedAt             pgtype.Timestamp `json:"applied_at"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+}
