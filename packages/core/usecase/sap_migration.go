@@ -292,6 +292,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				category_id = excluded.category_id,
 				brand_id = excluded.brand_id,
 				base_uom_id = excluded.base_uom_id,
+				product_type = excluded.product_type,
 				is_active = excluded.is_active,
 				is_sellable = excluded.is_sellable,
 				track_inventory = excluded.track_inventory,

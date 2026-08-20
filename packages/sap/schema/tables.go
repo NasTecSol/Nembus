@@ -257,7 +257,8 @@ SELECT
     ItemCode,
     ISNULL(ItemName, '') AS ItemName,
     ISNULL(UserText, '') AS UserText,
-    ISNULL(ItmsGrpCod, 0) AS ItmsGrpCod,
+    ISNULL(OITM.ItmsGrpCod, 0) AS ItmsGrpCod,
+    ISNULL(g.ItmsGrpNam, '') AS ItmsGrpNam,
     ISNULL(FirmCode, 0) AS FirmCode,
     ISNULL(InvntItem, 'Y') AS InvntItem,
     ISNULL(SellItem, 'Y') AS SellItem,
@@ -277,6 +278,7 @@ SELECT
     ISNULL(ManBtchNum, 'N') AS ManBtchNum,
     ISNULL(VatGourpSa, '') AS VatGourpSa
 FROM OITM
+LEFT JOIN OITB g ON OITM.ItmsGrpCod = g.ItmsGrpCod
 ORDER BY ItemCode;
 `
 

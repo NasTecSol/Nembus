@@ -82,6 +82,9 @@ func TestProductMapping(t *testing.T) {
 	if canonical.CategoryCode != "CAT-105" {
 		t.Errorf("expected CategoryCode 'CAT-105', got %s", canonical.CategoryCode)
 	}
+	if canonical.ProductType != "standard" {
+		t.Errorf("expected ProductType 'standard', got %s", canonical.ProductType)
+	}
 	if canonical.BrandCode != "BRD-12" {
 		t.Errorf("expected BrandCode 'BRD-12', got %s", canonical.BrandCode)
 	}
@@ -96,6 +99,53 @@ func TestProductMapping(t *testing.T) {
 	}
 	if canonical.PrimaryBarcode != "6281000123456" {
 		t.Errorf("expected PrimaryBarcode '6281000123456', got %s", canonical.PrimaryBarcode)
+	}
+}
+
+func TestSAPProductTypeMapping(t *testing.T) {
+	tests := []struct {
+		name         string
+		groupName    string
+		categoryCode string
+		productType  string
+	}{
+		{name: "Fixed Asset", groupName: "Fixed Asset", productType: mappings.ProductTypeFixedAsset},
+		{name: "Fixed Assets with normalization", groupName: "  fIxEd AsSeTs  ", productType: mappings.ProductTypeFixedAsset},
+		{name: "Raw Material", groupName: "Raw Material", productType: mappings.ProductTypeRawMaterial},
+		{name: "Raw Materials", groupName: "RAW MATERIALS", productType: mappings.ProductTypeRawMaterial},
+		{name: "normal category", groupName: " Drinks ", categoryCode: "CAT-201", productType: "standard"},
+		{name: "unknown group", groupName: "Seasonal Specials", categoryCode: "CAT-201", productType: "standard"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			canonical := (&mappings.SAPProduct{
+				ItemCode:   "ITEM-001",
+				ItemName:   "Test item",
+				ItmsGrpCod: 201,
+				ItmsGrpNam: tt.groupName,
+			}).ToCanonical()
+
+			if canonical.ProductType != tt.productType {
+				t.Errorf("ProductType = %q, want %q", canonical.ProductType, tt.productType)
+			}
+			if canonical.CategoryCode != tt.categoryCode {
+				t.Errorf("CategoryCode = %q, want %q", canonical.CategoryCode, tt.categoryCode)
+			}
+		})
+	}
+}
+
+func TestSAPProductTypeGroupClassificationForCategoryFiltering(t *testing.T) {
+	for _, groupName := range []string{"Fixed Asset", "Fixed Assets", "Raw Material", "Raw Materials"} {
+		if mappings.ClassifySAPProductType(groupName) == "" {
+			t.Errorf("expected %q to be classified as a product type group", groupName)
+		}
+	}
+	for _, groupName := range []string{"Drinks", "Unrecognized Group"} {
+		if mappings.ClassifySAPProductType(groupName) != "" {
+			t.Errorf("expected %q to remain a category group", groupName)
+		}
 	}
 }
 
@@ -262,4 +312,3 @@ func TestBarcodeAndPriceWithUOM(t *testing.T) {
 		t.Errorf("expected UOMCode 'BOX', got %s", canonPrice.UOMCode)
 	}
 }
-

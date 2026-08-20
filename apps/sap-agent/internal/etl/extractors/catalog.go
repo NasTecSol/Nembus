@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type CatalogExtractor struct {
@@ -37,6 +37,9 @@ func (e *CatalogExtractor) ExtractCategories(ctx context.Context) ([]mappings.Ca
 			return nil, fmt.Errorf("failed to scan OITB row: %w", err)
 		}
 		cat.ItmsGrpNam = name.String
+		if mappings.ClassifySAPProductType(cat.ItmsGrpNam) != "" {
+			continue
+		}
 		categories = append(categories, cat.ToCanonical())
 	}
 	return categories, nil
@@ -81,12 +84,13 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 	var products []mappings.CanonicalProduct
 	for rows.Next() {
 		var p mappings.SAPProduct
-		var userText, codeBars, buyUnitMsr, salUnitMsr, invntryUom, vatGroup sql.NullString
+		var userText, itmGrpNam, codeBars, buyUnitMsr, salUnitMsr, invntryUom, vatGroup sql.NullString
 		if err := rows.Scan(
 			&p.ItemCode,
 			&p.ItemName,
 			&userText,
 			&p.ItmsGrpCod,
+			&itmGrpNam,
 			&p.FirmCode,
 			&p.InvntItem,
 			&p.SellItem,
@@ -109,6 +113,7 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 			return nil, fmt.Errorf("failed to scan OITM row: %w", err)
 		}
 		p.UserText = userText.String
+		p.ItmsGrpNam = itmGrpNam.String
 		p.CodeBars = codeBars.String
 		p.BuyUnitMsr = buyUnitMsr.String
 		p.SalUnitMsr = salUnitMsr.String

@@ -321,6 +321,24 @@ type SAPCategory struct {
 	ItmsGrpNam string `json:"itms_grp_nam"`
 }
 
+const (
+	ProductTypeFixedAsset  = "fixed_asset"
+	ProductTypeRawMaterial = "raw_material"
+)
+
+// ClassifySAPProductType returns the canonical product type for an accepted
+// SAP item group name, or an empty string for ordinary/unrecognized groups.
+func ClassifySAPProductType(groupName string) string {
+	switch strings.ToLower(strings.TrimSpace(groupName)) {
+	case "fixed asset", "fixed assets":
+		return ProductTypeFixedAsset
+	case "raw material", "raw materials":
+		return ProductTypeRawMaterial
+	default:
+		return ""
+	}
+}
+
 type CanonicalCategory struct {
 	Code          string                 `json:"code"`
 	Name          string                 `json:"name"`
@@ -371,6 +389,7 @@ type SAPProduct struct {
 	ItemName   string  `json:"item_name"`
 	UserText   string  `json:"user_text,omitempty"`
 	ItmsGrpCod int64   `json:"itms_grp_cod"`
+	ItmsGrpNam string  `json:"itms_grp_nam"`
 	FirmCode   int64   `json:"firm_code"`
 	InvntItem  string  `json:"invnt_item"`
 	SellItem   string  `json:"sell_item"`
@@ -417,9 +436,13 @@ type CanonicalProduct struct {
 }
 
 func (p *SAPProduct) ToCanonical() CanonicalProduct {
+	productType := ClassifySAPProductType(p.ItmsGrpNam)
 	categoryCode := ""
-	if p.ItmsGrpCod > 0 {
+	if productType == "" && p.ItmsGrpCod > 0 {
 		categoryCode = fmt.Sprintf("CAT-%d", p.ItmsGrpCod)
+	}
+	if productType == "" {
+		productType = "standard"
 	}
 	brandCode := ""
 	if p.FirmCode > 0 {
@@ -502,7 +525,7 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 		UOMGroupCode:       uomGroupCode,
 		SalesQtyPerBase:    numInSale,
 		PurchaseQtyPerBase: numInBuy,
-		ProductType:        "standard",
+		ProductType:        productType,
 		IsSerialized:       SAPBool(p.ManSerNum, false),
 		IsBatchManaged:     SAPBool(p.ManBtchNum, false),
 		IsActive:           SAPBool(p.ValidFor, true),
