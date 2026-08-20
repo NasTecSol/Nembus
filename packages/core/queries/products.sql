@@ -302,4 +302,9 @@ SELECT
     variants,
     barcodes,
     inventory
-FROM v_master_product_catalog WHERE organization_id = $1;
+FROM v_master_product_catalog WHERE organization_id = $1
+ORDER BY product_id ASC
+LIMIT $2 OFFSET $3;
+
+-- name: GetMasterProductCatalogCount :one
+SELECT COUNT(*) FROM products;

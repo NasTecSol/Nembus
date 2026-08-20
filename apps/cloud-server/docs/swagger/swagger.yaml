@@ -19435,6 +19435,14 @@ paths:
         name: organization_id
         required: true
         type: integer
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
