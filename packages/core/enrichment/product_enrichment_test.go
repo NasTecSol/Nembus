@@ -7,6 +7,59 @@ import (
 	"testing"
 )
 
+func TestSuggestionStatusesAndTransitions(t *testing.T) {
+	valid := []SuggestionStatus{
+		SuggestionStatusPending,
+		SuggestionStatusProcessing,
+		SuggestionStatusInReview,
+		SuggestionStatusApproved,
+		SuggestionStatusRejected,
+		SuggestionStatusRetryable,
+		SuggestionStatusFailed,
+		SuggestionStatusApplied,
+	}
+	for _, status := range valid {
+		if !status.Valid() {
+			t.Errorf("expected status %q to be valid", status)
+		}
+	}
+	if SuggestionStatus("unknown").Valid() {
+		t.Fatal("expected unknown status to be invalid")
+	}
+
+	validTransitions := [][2]SuggestionStatus{
+		{SuggestionStatusPending, SuggestionStatusProcessing},
+		{SuggestionStatusRetryable, SuggestionStatusProcessing},
+		{SuggestionStatusProcessing, SuggestionStatusInReview},
+		{SuggestionStatusProcessing, SuggestionStatusRetryable},
+		{SuggestionStatusProcessing, SuggestionStatusFailed},
+		{SuggestionStatusInReview, SuggestionStatusApproved},
+		{SuggestionStatusInReview, SuggestionStatusRejected},
+		{SuggestionStatusApproved, SuggestionStatusApplied},
+	}
+	for _, transition := range validTransitions {
+		if !CanTransition(transition[0], transition[1]) {
+			t.Errorf("expected %q -> %q to be valid", transition[0], transition[1])
+		}
+	}
+
+	invalidTransitions := [][2]SuggestionStatus{
+		{SuggestionStatusPending, SuggestionStatusInReview},
+		{SuggestionStatusProcessing, SuggestionStatusApproved},
+		{SuggestionStatusInReview, SuggestionStatusProcessing},
+		{SuggestionStatusApproved, SuggestionStatusRejected},
+		{SuggestionStatusRetryable, SuggestionStatusFailed},
+		{SuggestionStatusFailed, SuggestionStatusProcessing},
+		{SuggestionStatusRejected, SuggestionStatusApplied},
+		{SuggestionStatusApplied, SuggestionStatusPending},
+	}
+	for _, transition := range invalidTransitions {
+		if CanTransition(transition[0], transition[1]) {
+			t.Errorf("expected %q -> %q to be invalid", transition[0], transition[1])
+		}
+	}
+}
+
 func TestProposalSetRejectsProductTypeInUnsupportedValue(t *testing.T) {
 	proposals := ProposalSet{UnsupportedSemantics: []UnsupportedSemantic{{
 		SemanticType: "classification",

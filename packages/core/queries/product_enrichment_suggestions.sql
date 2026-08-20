@@ -39,6 +39,37 @@ WHERE organization_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2 OFFSET $3;
 
+-- name: MarkProductEnrichmentSuggestionProcessing :one
+UPDATE product_enrichment_suggestions
+SET status = 'processing',
+    reviewer_id = NULL,
+    reviewed_at = NULL,
+    applied_at = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE organization_id = $1
+  AND id = $2
+  AND status IN ('pending', 'retryable')
+RETURNING *;
+
+-- name: MarkProductEnrichmentSuggestionInReview :one
+UPDATE product_enrichment_suggestions
+SET status = 'in_review',
+    proposed_brand = $3,
+    proposed_category = $4,
+    proposed_description = $5,
+    unsupported_semantics = $6,
+    provider = $7,
+    model = $8,
+    model_version = $9,
+    reviewer_id = NULL,
+    reviewed_at = NULL,
+    applied_at = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE organization_id = $1
+  AND id = $2
+  AND status = 'processing'
+RETURNING *;
+
 -- name: ApproveProductEnrichmentSuggestion :one
 UPDATE product_enrichment_suggestions
 SET status = 'approved',
@@ -48,7 +79,7 @@ SET status = 'approved',
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
-  AND status IN ('pending', 'retryable')
+  AND status = 'in_review'
 RETURNING *;
 
 -- name: RejectProductEnrichmentSuggestion :one
@@ -60,7 +91,7 @@ SET status = 'rejected',
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
-  AND status IN ('pending', 'retryable')
+  AND status = 'in_review'
 RETURNING *;
 
 -- name: MarkProductEnrichmentSuggestionFailed :one
@@ -72,7 +103,7 @@ SET status = 'failed',
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
-  AND status IN ('pending', 'retryable')
+  AND status = 'processing'
 RETURNING *;
 
 -- name: MarkProductEnrichmentSuggestionRetryable :one
@@ -84,7 +115,7 @@ SET status = 'retryable',
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
-  AND status IN ('pending', 'failed')
+  AND status = 'processing'
 RETURNING *;
 
 -- name: MarkProductEnrichmentSuggestionApplied :one

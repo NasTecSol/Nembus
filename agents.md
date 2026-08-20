@@ -179,3 +179,375 @@ The strict-review corrections were implemented without beginning Stage 2 or chan
 ## Next Action
 
 When the repository's existing tools are available, run `gofmt` on the modified Go files, the focused `packages/core/enrichment` tests, `cd packages/core && sqlc generate`, and the established Atlas hash/validate workflow. Keep Stage 1 at NEEDS GENERATOR VERIFICATION until both sqlc generation and Atlas checksum verification succeed; do not mark Stage 2 ready before then.
+
+## Stage 1 Toolchain/Generator Verification — 2026-08-20
+
+### Current Task
+
+Stage 1 generator/toolchain verification
+
+This verification was limited to the existing repository toolchain. No Stage 2 work, new enrichment behavior, SAP changes, source-query changes, provider/API work, application mutation, installation, commit, or push was performed.
+
+### Repository Tooling Discovered
+
+- `packages/core/sqlc.yaml` is the authoritative SQLC configuration. The repository-documented generation command is `cd packages/core && sqlc generate`, also exposed through the root `Makefile` target `generate-core`/`sqlc`.
+- `packages/core/atlas.hcl` and the root `atlas.hcl` define Atlas environments. The repository-documented checksum command is `cd packages/core && atlas migrate hash --dir "file://db/migrations"`; validation is `atlas migrate validate --dir "file://db/migrations"`, also exposed through the root `Makefile` targets `db-hash`/`db-validate`.
+- `.github/workflows/db-validate.yml` is the only complete automated verification path found. It installs Go 1.25.x, Atlas, and sqlc v1.30.0 on a GitHub-hosted runner, then runs Atlas validation/application, `cd packages/core && sqlc generate`, `git diff --exit-code repository/`, and core/server tests. Its installation steps are not an available local toolchain and were not reproduced.
+- `SETUP_GUIDE.md` documents direct host prerequisites and optional SQLC installation; it does not define a local verification container.
+- The root `Dockerfile` has a Go build stage and downloads Atlas into the production image, but does not install SQLC or define a verification target. No devcontainer or repository compose file was found. Docker Compose is installed, but the Docker daemon is not running, so the Dockerfile cannot provide a usable execution path here.
+- Host availability: `docker compose version` succeeded with Docker Compose v5.3.1. `go`, `gofmt`, `sqlc`, `atlas`, and `psql` were not found. `docker images` and `docker info` could not connect to the Docker Desktop Linux engine.
+
+### Exact Verification Commands and Results
+
+- `cd packages/core && sqlc generate` — not executable: `sqlc` was not recognized.
+- `cd packages/core && atlas migrate hash --dir "file://db/migrations"` — not executable: `atlas` was not recognized.
+- `cd packages/core && atlas migrate validate --dir "file://db/migrations"` — not executable: `atlas` was not recognized.
+- `cd packages/core && go test ./enrichment` — not executable: `go` was not recognized.
+- `cd packages/core && gofmt -w enrichment/product_enrichment.go enrichment/product_enrichment_test.go` — not executable: `gofmt` was not recognized; no formatter changes were made.
+- `git status --short`, `git diff --check`, and the pre-update diff/stat checks passed. The corrective implementation files were clean at HEAD before this worklog update; this verification update is the only intended current worktree change.
+- No database was started or contacted, and no migration was applied.
+
+### SQLC Generation Outcome
+
+Real SQLC generation did not run because neither the SQLC CLI nor a usable repository-defined container/script containing SQLC is available. The Dockerfile does not contain SQLC, and the Docker daemon is unavailable. Therefore `packages/core/repository/product_enrichment_suggestions.sql.go` and `packages/core/repository/models.go` were not regenerated, no generated diff exists, and compatibility with the real SQLC v1.30.0 generator remains unverified. The source query remains authoritative and was not edited.
+
+The current source/query review confirms the intended operations are represented for create/upsert-get, organization-scoped get, organization/status list, approve, reject, failed, retryable, and applied. Generated parameter types, JSONB/null/timestamp types, IDs, and scan order cannot be accepted as generator-verified without running SQLC.
+
+### Atlas Checksum Outcome
+
+Real Atlas hashing and validation did not run because Atlas is unavailable and no usable local repository-defined execution path exists. `packages/core/db/migrations/20260820000000.sql` exists but is not represented in the current `packages/core/db/migrations/atlas.sum`. `atlas.sum` was not manually edited. Pre-existing migration-integrity status cannot be determined until the real Atlas hash/validate workflow runs.
+
+### Go / Formatting / Test Outcome
+
+Go, gofmt, and the focused enrichment test/compile command were unavailable through every existing repository-defined path. No compilation success is claimed. SQLC generated type/signature mismatches, duplicate types, unused imports, and DTO/test compilation remain unverified.
+
+Static lifecycle review of `packages/core/queries/product_enrichment_suggestions.sql` found the corrective semantics present: failed/retryable clear reviewer, reviewed, and applied timestamps, refresh `updated_at`, and restrict prior states; approve/reject record reviewer/reviewed state and clear `applied_at`; applied is restricted to approved and sets `applied_at`; the query does not mutate product data. This is source inspection only, not an execution result.
+
+### Latest Verification
+
+- Toolchain discovery and documented-command probes completed on 2026-08-20.
+- `git diff --check`: passed before this update; it must be rerun after this worklog update.
+- No implementation or generated-file changes were made by the verification.
+- No remaining CRITICAL source-correction finding is known from this static pass.
+
+### Stage 1 Status
+
+UNDER REVIEW — NEEDS GENERATOR VERIFICATION
+
+### Remaining Blockers
+
+#### IMPORTANT
+
+- Real SQLC v1.30.0 generation and inspection of all generated diffs, especially `product_enrichment_suggestions.sql.go` and `models.go`, are still required.
+- Real Atlas hash and validation are still required; `atlas.sum` currently omits `20260820000000.sql`.
+- Go formatting, focused enrichment tests, and the smallest practical core compile/test scope remain unverified.
+
+#### MINOR
+
+- The nullable `created_at`/`updated_at` audit columns remain a documented schema convention gap; this verification did not redesign the schema.
+
+### Next Action
+
+Provide an existing usable environment containing the repository-compatible Go, SQLC v1.30.0, and Atlas tools, then run `gofmt` on the two human-authored enrichment files, `cd packages/core && sqlc generate`, inspect generator diffs, `cd packages/core && atlas migrate hash --dir "file://db/migrations"`, `atlas migrate validate --dir "file://db/migrations"`, and the focused/core Go tests. Keep Stage 1 UNDER REVIEW and do not begin Stage 2 until those gates pass.
+
+Final verdict: NEEDS GENERATOR VERIFICATION
+
+## Current Phase
+
+Stage 2 provider-neutral design (read-only design completed; implementation is not authorized).
+
+## Stage 2 Design
+
+### Architectural location and repository patterns
+
+- Stage 2 belongs on the server/core side in `packages/core/enrichment`, with orchestration wired from the core usecase/server layer. It must not change the SAP agent or the deterministic SAP mappings.
+- The existing core pattern is `handler -> usecase -> repository`: see `packages/core/usecase/README.md`, `packages/core/usecase/brand_usecase.go` (`NewBrandUseCase`, `SetRepository`, repository-backed methods), and `packages/core/repository/db.go` (`DBTX`, `New`, `WithTx`). The provider-neutral domain contract should follow this separation and keep provider/database types out of the provider interface.
+- Server bootstrap and dependency injection are explicit in `apps/cloud-server/main.go`: `setupDatabase`, `setupRouter`, `main`, and the `New...UseCase` calls. Future enrichment construction, configuration, and worker startup should imitate this pattern.
+- SAP ingestion is a special master-pool path in `packages/core/usecase/sap_migration.go`: `SAPMigrationUseCase`, `NewSAPMigrationUseCase`, `IngestBatch`, `pgx.Tx`, row savepoints, and the final `tx.Commit`. The `/api/v1/migration` route is registered by `packages/core/routing/sap_migration.go` and handled by `packages/core/handler/sap_migration.go`; it uses `x-tenant-id`/organization ID and does not use the normal tenant repository middleware.
+- Normal tenant scoping is implemented by `packages/core/middleware/tenant.go` (`TenantMiddleware`, `MasterRepositoryMiddleware`) and the per-request `repository.New(pool)` convention. The post-SAP enrichment path must use the committed `organization_id` and product queries scoped by organization; it must not infer tenant identity from model input.
+- Existing outbound HTTP/retry style is in `apps/sap-agent/internal/transport/client.go` (`CloudClient`, `http.Client` timeout, context-aware requests, exponential retry for 429/5xx). Existing server-side asynchronous work is only domain-specific ZATCA reporting in `apps/cloud-server/internal/zatca/service.go` (`StartReportingWorker`, `processPendingReports`), plus the in-memory backup jobs in `packages/core/usecase/backup_usecase.go`. No generic durable queue or enrichment worker exists.
+- Current logging is standard-library logging plus `packages/core/middleware/logger.go`; `SAPMigrationHandler.IngestBatch` logs domain/batch errors. The repository has `audit_logs` in `packages/core/db/schema/80_promotions_loyalty.sql`, but no reusable audit service/query was found. SAP batch staging is the existing migration audit record; Stage 2 must not claim a generic audit framework that is not present.
+- Configuration is environment-driven by `packages/core/config/config.go` (`Config`, `LoadConfig`, `getEnv`) and is currently unaware of AI providers. No provider credential belongs in SAP-agent JSON config, product metadata, or suggestion JSON.
+
+### Post-commit boundary
+
+- The safest future hook is immediately after the successful `tx.Commit(ctx)` in `packages/core/usecase/sap_migration.go`, after the deterministic product/UoM/category/brand writes are durable and before `IngestBatch` returns its response.
+- The hook should only synchronously create an idempotent, pending enrichment request/suggestion for each eligible committed product. It must not call a model, perform network I/O to a provider, or hold the SAP transaction open.
+- A future `ProductEnrichmentCoordinator` may receive the committed organization/product identifiers, reconstruct the snapshot from the database, and call the repository upsert. If this post-commit enqueue fails, the migration response remains successful because SAP synchronization is independent of AI availability; the enqueue failure is logged/observed for reconciliation and must not be converted into a transaction failure.
+- Because no generic durable worker exists, Stage 2 also requires a future core/server worker mechanism to claim pending work, call the provider outside a transaction, validate the result, and persist the result. The existing ZATCA worker is not an appropriate shared queue abstraction.
+
+### First-MVP eligibility
+
+The deterministic eligibility function takes a committed product snapshot, source identity, current structured identities, existing suggestion state for the effective fingerprint, and an enrichment-enabled policy. It returns `Eligible`, a skip reason, and the missing-field capabilities (`brand`, `description`, `category`).
+
+- Source must be SAP, `source_item_code` must be non-empty, the product must exist under the supplied organization, and `source_item_name`/`products.name` must be non-empty. Empty names are not useful model evidence.
+- The product must have a valid architect-approved `product_type`: `standard`, `raw_material`, `fixed_asset`, or `finished_good`. Invalid/missing type is a deterministic data-quality condition, not an AI repair opportunity. A valid `fixed_asset` remains eligible for missing brand or description.
+- Brand is eligible only when the structured product brand is unresolved (`brand_id` is null). A resolved structured SAP brand makes brand enrichment ineligible and forces `KEEP_EXISTING` if a brand proposal is represented.
+- Description is eligible only when `description` is null/empty after trimming. A populated description is authoritative for the MVP.
+- Category is eligible only when `category_id` is null. A populated structured category is never sent for AI refinement; its proposal must be `KEEP_EXISTING`.
+- The request is not eligible merely to extract unsupported semantics. At least one of missing brand, empty description, or absent category must be present.
+- The recommended first rollout policy is active products only (`is_active = true`); inactive products are skipped unless a later explicit backfill mode is introduced. `is_sellable`, `is_purchasable`, and `track_inventory` are never AI decisions and are not used to change eligibility semantics.
+- An existing row for the same effective input fingerprint and contract is not duplicated when it is `pending`, `processing`, `retryable`, `in_review`, `approved`, `rejected`, or `applied`. A `retryable` row is retried only by the worker policy; permanent `failed` rows require explicit operational retry or a changed input/contract.
+- A deterministic approved alias/rule that resolves a field before eligibility makes that field ineligible. Approved aliases are a later phase and are not invented by the model.
+
+### Source snapshot
+
+The coordinator constructs a typed, immutable `EnrichmentRequest` from committed core data. Internal organization/product IDs are correlation-only and are not provider content. The provider-safe snapshot contains:
+
+- source system `SAP`, `source_item_code` as an echo/correlation value, and the exact source item name;
+- current description, when present, and immutable `product_type`;
+- current category ID/code/name plus hierarchy path when resolved;
+- current brand ID/code/name when resolved;
+- base UoM ID/code/name and the relevant structured purchase/sales/base UoM names;
+- relevant product conversion pairs and factors only as immutable context, with an explicit instruction that the model cannot recalculate or propose them;
+- a whitelisted, non-operational SAP provenance subset only when already stored and verified. The full `products.metadata` object is not sent.
+
+The snapshot does not send inventory quantities, warehouse/store/location data, prices, tax rates/categories, supplier identity, barcodes, status flags, variant/family structures, serial/batch data, raw credentials, or unrelated metadata. `product_type`, identifiers, UoM/conversion data, and all structured SAP values are context and validation constraints, never proposal targets.
+
+### Candidate dictionaries
+
+- `brands` and `product_categories` are global in the current schema: neither table has `organization_id`; both use globally unique codes. Products are organization-scoped, but candidate taxonomy is not. Therefore the design must describe candidates as globally active canonical records and must not claim tenant-specific filtering that the schema cannot provide.
+- Existing brand access patterns are `ListActiveBrands`, `SearchActiveBrands`, and their generated methods from `packages/core/queries/brands.sql` / `packages/core/repository/brands.sql.go`. Future enrichment queries should return only `id`, `code`, and `name`, with `is_active = true`.
+- Existing category hierarchy access is `GetCategoryHierarchy` from `packages/core/queries/products.sql` / `packages/core/repository/products.sql.go`; existing category helpers also appear in `packages/core/queries/product_categories.sql`. Future candidate output should include active category `id`, `code`, `name`, `parent_category_id`, level, and canonical full path.
+- The model must receive canonical IDs/codes/names and select from supplied candidates. It must not invent an ID/code. `MATCH_EXISTING` is accepted only after server-side validation that the target ID/code exists, is active, and belongs to the supplied dictionary.
+- Candidate retrieval should be bounded. For small taxonomies, provide the complete active dictionary. For large taxonomies, deterministically pre-filter by exact/case-folded token, code, prefix, and safe name search, then cap the supplied list. No fuzzy or transliteration alias table exists today; Arabic/English/transliterated matching is model-assisted only when the canonical candidate is actually supplied. If no safe candidate is supplied, the result can be `NO_MATCH` or review-only `PROPOSE_NEW`, never automatic creation.
+- A per-request candidate set hash should be calculated from sorted `(id, code, name, parent/path)` records. Do not use a global taxonomy version that would re-enrich every product after an unrelated record is added.
+
+### Provider-neutral interface
+
+The conceptual interfaces belong in `packages/core/enrichment` and expose only standard Go/domain types:
+
+```go
+type ProductEnrichmentProvider interface {
+    Enrich(ctx context.Context, request EnrichmentRequest) (ProviderResult, error)
+}
+
+type ProductEnrichmentService interface {
+    Enrich(ctx context.Context, request EnrichmentRequest) (EnrichmentResult, error)
+}
+
+type ProductEnrichmentCoordinator interface {
+    EnqueueCommittedProduct(ctx context.Context, organizationID, productID int32) error
+    ProcessPending(ctx context.Context, limit int32) error
+}
+```
+
+`EnrichmentRequest` contains correlation identity, `SourceSnapshot`, candidate dictionaries, contract version, effective fingerprint, and field capabilities. `ProviderResult` contains the strict `ProposalSet` plus provider/model metadata. `EnrichmentResult` distinguishes accepted no-match/proposals from validation failure. Provider implementations must not receive `repository.Queries`, write databases, mutate products, or expose OpenAI/Anthropic SDK types.
+
+Provider errors are classified as retryable (`context deadline`, network, 429, 5xx, temporary provider outage) or permanent (`invalid request`, unsupported configuration, malformed/unknown-field output, unknown candidate target, prohibited field, invalid action/confidence, or schema validation failure). Context cancellation and timeout must propagate through the interface; the adapter owns provider-specific timeout and retry policy.
+
+### Strict first-MVP model output contract
+
+The accepted top-level object contains only the correlation echo and `brand`, `category`, `description`, and `unsupported_semantics`. JSON decoding must reject unknown fields and size-limit the response; prohibited fields are rejected, never silently ignored. `source_item_code` must exactly echo the request value.
+
+- Brand and category proposals use only `KEEP_EXISTING`, `MATCH_EXISTING`, `PROPOSE_NEW`, or `NO_MATCH`; each has confidence `[0,1]`, evidence, and a short explanation. `MATCH_EXISTING` requires a supplied canonical `target_id` or `target_code` and server-side candidate validation. `PROPOSE_NEW` has canonical name/value for review but no existing target identity.
+- A populated structured brand or category permits only `KEEP_EXISTING`. An absent category may use `MATCH_EXISTING`; an absent brand may use `MATCH_EXISTING`, `PROPOSE_NEW`, or `NO_MATCH`.
+- Description uses `KEEP_EXISTING`, `PROPOSE_NEW`, or `NO_MATCH`; `MATCH_EXISTING` is invalid for free text. `PROPOSE_NEW` requires proposed text, confidence, evidence, and explanation.
+- `unsupported_semantics` is an array of `semantic_type`, `key`, JSON value, confidence, evidence, and explanation. It is evidence only and is not applied to any product column or `products.metadata`.
+- The output schema contains no `product_type`, SKU/ItemCode proposal, barcode, inventory, warehouse, price, tax, UoM/conversion proposal, supplier, status flag, variant, family, or normalized-attribute field. A response containing any such field, including nested/camelCase variants, is a permanent invalid-output/validation error.
+- The current Stage 1 `UNSUPPORTED_TARGET` constant is not an accepted model field action in this MVP. A provider response attempting to use it or any prohibited target is rejected as invalid output rather than treated as a valid suggestion.
+
+### Description, brand, category, and unsupported-semantic policies
+
+- Descriptions are factual catalog text, not marketing copy. Maximum proposed length is 500 Unicode characters, with whitespace normalized and no invented specifications, benefits, certifications, compatibility, quantities, or claims. Evidence must be traceable to the supplied ItemName/current description; ambiguous names yield `NO_MATCH` rather than a guess.
+- Output should remain in the source language/script. Arabic names remain Arabic; English remains English; mixed names may produce concise mixed-language catalog text. Translation is not an MVP requirement. Mojibake must not be “corrected” into a confident brand/description without reliable evidence.
+- `HIKvision DS 2.8mp (20@208.56)` may yield only an evidence-grounded description such as the visible product identity; it must not invent camera technology, resolution semantics beyond the literal text, or model specifications.
+- Brand normalization is deterministic at the boundary (trim, Unicode normalization, case/separator normalization, controlled token comparison) and model-assisted for Arabic/English/transliterated strings. `Ø¨Ø§Ù†ØªÙŠÙ†` may match a supplied canonical Pantene candidate, but the persisted proposal records the raw evidence, canonical candidate ID/code/name, and explanation. `PROPOSE_NEW` is review-only; confidence never creates a brand. Approved aliases are a later deterministic phase.
+- If a category is populated, category action is always `KEEP_EXISTING`. Semantic words such as Shampoo may be recorded as unsupported evidence, but the model must not refine a populated category into Hair Care. If category is absent, `MATCH_EXISTING` may select only a supplied active hierarchy candidate; `PROPOSE_NEW` is review-only and no category is created automatically.
+- Supported evidence examples include `anti_dandruff`, `size_text = 400 ml`, `capacity = 4TB`, `resolution_text = 2.8mp`, `dimensions`, `model_number`, and `family_hint`. Packaging text such as `24*400 ml` may be preserved as evidence, but SAP conversion factors remain authoritative and are never recalculated.
+
+### Fingerprint and idempotency
+
+- Canonicalize input as deterministic JSON with sorted object keys, explicit null/empty representation, UTF-8 Unicode normalization, normalized line endings, trimmed scalar whitespace, and stable sorted conversion/candidate arrays. Do not lowercase or transliterate source evidence in the source hash; source text changes must remain visible.
+- The source component contains `source_system`, `source_item_code`, `source_item_name`, current description, `product_type`, resolved category identity, resolved brand identity, base/purchase/sales UoM identities, and immutable conversion context. It excludes inventory, warehouse, price, tax, supplier, flags, timestamps, unrelated metadata, and volatile operational quantities.
+- Compute a SHA-256 hex digest for the canonical source component. The contract version is a separate explicit value for the output/prompt/schema contract.
+- Compute a second candidate-set digest from the exact bounded brand/category records supplied to this request. Since the current Stage 1 uniqueness key has only `source_data_fingerprint`, the Stage 2 implementation must either first add a candidate fingerprint column or define/document an effective input fingerprint that combines the source digest and this per-request candidate digest while recording both components in the structured snapshot. A global taxonomy hash must not be used.
+- The uniqueness operation remains organization + product + effective fingerprint + contract. Same relevant ItemName/context and same candidate set is a no-op; changing ItemName, description, structured brand/category identity, product type, or relevant UoM/conversion context creates a new effective input. Inventory/price-only changes do not.
+
+### Error, retry, and review lifecycle
+
+The current six statuses are not sufficient. `pending` currently conflates “not yet inferred” with “inference completed and awaiting human review”; the schema has no `in_review` or `processing` state, no claim/lease fields, and the current SQL has no operation to atomically claim work or persist a completed proposal set.
+
+Recommended future lifecycle correction before Stage 2 implementation:
+
+```text
+pending -> processing -> in_review -> approved -> applied
+             |              |
+             +-> retryable   +-> rejected
+             +-> failed
+retryable -> processing
+```
+
+- `pending` means queued/not yet inferred; `processing` is a worker claim/execution state (or an equivalent durable lease); `in_review` means validated inference completed, including a successful `NO_MATCH`; `approved`/`rejected` are human review states; `applied` is reserved for a later explicit application operation; `failed` is permanent inference/validation failure; `retryable` is transient failure awaiting retry.
+- Approval/rejection must accept only `in_review` (not an un-inferred `pending` row). Applying must accept only `approved`. Retry transitions must clear reviewer/application fields and be organization-scoped. No Stage 2 path mutates products, brands, categories, or `products.metadata`.
+- The minimum semantic schema correction is a distinct `in_review` state. A production-safe asynchronous worker additionally needs `processing` or a durable claim/lease mechanism plus attempt/backoff information. This correction is a prerequisite, not Stage 2 implementation work.
+
+### Human review recommendation
+
+For the first production rollout, require review for every AI result, including `MATCH_EXISTING` brand proposals. Do not auto-apply `PROPOSE_NEW`; do not auto-create brands/categories; require review for descriptions; and allow category changes only when the structured category is absent. This is a rollout recommendation, not an architect-approved auto-apply policy. Stage 2 itself performs no product mutation.
+
+### Security and privacy boundary
+
+- Future provider enablement, provider/model, timeout, retry limit, and server-side credential must be configured in `packages/core/config/config.go` from server environment variables. Suggested future knobs are `ENRICHMENT_ENABLED`, `ENRICHMENT_PROVIDER`, `ENRICHMENT_MODEL`, `ENRICHMENT_TIMEOUT_SECONDS`, and `ENRICHMENT_MAX_RETRIES`; region/base URL is optional and only justified for a selected provider.
+- Provider credentials are server secrets only. They must never be present in SAP-agent `agent_config.json`, UI configuration, product metadata, suggestion JSON, audit payloads, or logs.
+- Send only the whitelisted snapshot needed for catalog enrichment. Do not send prices, inventory, tax, supplier, warehouse, barcode, status, or unrelated metadata. Log only organization/product IDs, suggestion ID, status, provider/model names, latency, attempt, and redacted error class. Never log ItemName, description, evidence, candidate dumps, provider request/response bodies, authorization headers, or secrets.
+- Existing `audit_logs` may later record human review actions with organization/reviewer identity, but no generic audit service was found and no such implementation is assumed by this design.
+
+### Exact future test plan
+
+- Unit tests for eligibility reasons/capabilities, active/inactive policy, fixed assets, structured brand/category precedence, snapshot allowlist/redaction, candidate matching and canonical-target validation, strict action/output validation, prohibited nested/camelCase fields, unsupported semantics, description length/language/safety rules, and source/candidate fingerprint stability/change cases.
+- Provider contract tests for timeout/network/rate-limit classification, malformed JSON, unknown fields/actions, confidence outside `[0,1]`, unknown canonical IDs/codes, prohibited fields, oversized output, and successful `NO_MATCH`; no live model calls in normal tests.
+- Usecase/coordinator tests for post-commit-only behavior, provider unavailable without SAP migration failure, idempotent same-fingerprint enqueue, changed relevant ItemName creating a new request, inventory/price-only changes not re-enriching, and structured brand preventing AI replacement.
+- Repository/integration tests for organization-scoped product reads, global active candidate dictionaries, atomic claim/transition behavior, status-field cleanup, uniqueness, and review isolation. These require the real SQLC/Atlas toolchain before acceptance.
+
+### Exact future patch surface
+
+- First, correct and verify Stage 1 schema/query lifecycle in `packages/core/db/schema/35_product_enrichment.sql`, `packages/core/db/migrations/20260820000000.sql`, `packages/core/queries/product_enrichment_suggestions.sql`, and regenerated SQLC files under `packages/core/repository/`; regenerate/validate Atlas and SQLC before Stage 2 implementation.
+- Add focused provider-neutral modules under `packages/core/enrichment` for request/snapshot, eligibility, candidate types, fingerprinting, service/coordinator interfaces, validation, and tests. Keep provider-specific adapters outside the core contract (likely under `apps/cloud-server/internal/enrichment/` once a provider is selected).
+- Add focused SQLC source queries for product snapshot/conversion lookup, bounded active brand candidates, active category hierarchy candidates, and durable work claim/completion; generated repository output must come from the repository's SQLC workflow.
+- Make only small wiring changes to `packages/core/usecase/sap_migration.go` (inject coordinator and call it after `tx.Commit`), `apps/cloud-server/main.go` (construct/configure coordinator and future worker), and `packages/core/config/config.go` (server-only feature/provider settings). Review endpoints and application of approved proposals are later work.
+- Do not change `packages/sap/**` or `apps/sap-agent/**`; repository evidence does not make those changes necessary.
+
+## Stage 1 Verification Blockers
+
+- Real SQLC v1.30.0 generation is unavailable; the checked-in repository companions remain provisional and are not generator-verified.
+- Atlas checksum generation/validation is unavailable; `packages/core/db/migrations/atlas.sum` still omits `20260820000000.sql`.
+- Go, `gofmt`, and focused/core tests are unavailable in the current environment.
+- Stage 1 remains UNDER REVIEW / NEEDS GENERATOR VERIFICATION and is not SAFE TO KEEP. No Stage 2 implementation or provider selection has been performed.
+
+## Open Questions
+
+- The Stage 1 lifecycle correction must be architect-approved: at minimum add a distinct inference-review state; decide whether the worker uses a durable `processing` status or lease columns, and how candidate fingerprint components are persisted without global re-enrichment.
+- The source/rule for `finished_good` remains unestablished.
+- AI provider/model, region, retention policy, server deployment boundary, reviewer roles/permissions, and final review API are not selected.
+- Active-only enrichment versus an explicit inactive-product backfill remains a rollout choice.
+- Live tenant taxonomies are not guaranteed by seed data; current brand/category tables are global, not organization-scoped.
+- Automatic application policy and future attribute/family schema remain unapproved.
+
+## Next Action
+
+Because Stage 2 design exposes a substantive Stage 1 lifecycle/status defect, correct and architect-review the Stage 1 status/claim/completion model before any Stage 2 implementation. Then complete the existing toolchain gates: `gofmt`, focused/core Go tests, `cd packages/core && sqlc generate` with generated-diff inspection, `atlas migrate hash --dir "file://db/migrations"`, and `atlas migrate validate --dir "file://db/migrations"`. Do not begin provider integration or model calls before those gates pass.
+
+## Stage 1 Lifecycle Correction and Host Verification - 2026-08-20
+
+### Tool version compatibility
+
+- Repository Go expectation is Go `1.25.0` in every module, with `SETUP_GUIDE.md` accepting `1.25.0` or higher; CI uses Go `1.25.x`.
+- Repository SQLC is explicitly pinned to v1.30.0 in `.github/workflows/db-validate.yml`; checked-in generated repository files also identify SQLC v1.30.0. The host has SQLC v1.31.1, so generation was intentionally not run because output compatibility is not established across the pinned version boundary.
+- Repository CI installs Atlas through `ariga/setup-atlas@v0` with `version: latest`; the Dockerfile also downloads the latest Atlas binary. No fixed Atlas version was found. The host Atlas is `v1.3.2-4bf5fb9-canary`.
+- Host Go used was `go1.26.7 windows/amd64`. This is newer than, and compatible with, the module `go 1.25.0` directives. No dependency or tool version files were changed.
+
+### Lifecycle correction
+
+The old six-state lifecycle was `pending -> approved/rejected`, with `pending` also serving as the unclaimed and reviewable state; failed/retryable transitions were not aligned with active provider processing. The corrected eight-state lifecycle is:
+
+```text
+pending -> processing -> in_review -> approved -> applied
+                         |             \\-> rejected
+                         +-> retryable
+                         +-> failed
+retryable -> processing
+```
+
+- `pending -> processing` and `retryable -> processing` are atomic, organization-scoped claims whose `WHERE` clause prevents two concurrent claims from succeeding.
+- `processing -> in_review` persists validated provider output and clears reviewer/reviewed/applied fields.
+- `processing -> retryable` and `processing -> failed` clear reviewer/reviewed/applied fields. Permanent failure is reached from active processing only; retryable work must be claimed again before a terminal failure.
+- `in_review -> approved` and `in_review -> rejected` record reviewer identity/time and leave `applied_at` NULL.
+- `approved -> applied` records `applied_at` and preserves reviewer/reviewed fields.
+- No transition is allowed from `failed`, `rejected`, or `applied`; review cannot bypass `in_review`.
+
+### Files changed by this correction
+
+- `packages/core/db/schema/35_product_enrichment.sql`: status constraint now contains all eight statuses.
+- `packages/core/db/migrations/20260820000000.sql`: semantically matching eight-status constraint.
+- `packages/core/queries/product_enrichment_suggestions.sql`: added processing claim and in-review completion operations; constrained approve/reject/failed/retryable transitions to the corrected lifecycle; preserved idempotent upsert behavior and organization scoping.
+- `packages/core/enrichment/product_enrichment.go`: added the eight `SuggestionStatus` constants, validity check, and provider-neutral transition guard; existing proposal validation and SAP-authoritative-field rules remain intact.
+- `packages/core/enrichment/product_enrichment_test.go`: added all-eight-status, invalid-status, valid-transition, and invalid-transition coverage; existing brand/category precedence, prohibited-target normalization, unsupported-evidence, product_type, and confidence tests remain.
+- `packages/core/db/migrations/atlas.sum`: regenerated by Atlas.
+- `agents.md`: this handoff entry.
+- `packages/core/repository/product_enrichment_suggestions.sql.go` and `packages/core/repository/models.go` were not manually edited or regenerated because the repository requires SQLC v1.30.0 while only v1.31.1 is installed.
+
+### SQLC result
+
+- Repository command: `cd packages/core && sqlc generate`.
+- Result: NOT RUN. The CI workflow explicitly installs v1.30.0, while the only installed binary is v1.31.1. Running it would violate the repository generator-version gate and could create unrelated generated drift.
+- Consequently, no material generated-output comparison is claimed. The prior hand-maintained `product_enrichment_suggestions.sql.go` remains provisional and does not yet contain generated methods for the new processing/in_review source queries. Compatible SQLC v1.30.0 generation and generated-diff inspection remain required.
+
+### Atlas result
+
+- Commands run with the discovered host binary `C:\Users\AnnsMustafa\atlas\atlas.exe`:
+  - `atlas migrate hash --dir "file://packages/core/db/migrations"`
+  - `atlas migrate validate --dir "file://packages/core/db/migrations"`
+- Both succeeded without applying migrations or contacting an external database.
+- Atlas regenerated `packages/core/db/migrations/atlas.sum`; `20260820000000.sql` is included. The installed canary rewrote the existing checksum lines as well as adding the new migration, and validation passed against the regenerated manifest.
+
+### Go and static verification
+
+- `C:\Program Files\Go\bin\gofmt.exe -w packages/core/enrichment/product_enrichment.go packages/core/enrichment/product_enrichment_test.go` succeeded; no files were reported by the subsequent `gofmt -l` check.
+- `cd packages/core && go test ./enrichment` passed.
+- `cd packages/core && go test ./repository` passed compilation; the package has no tests.
+- `cd packages/core && go test ./...` passed for all core packages.
+- Static schema/query assertions passed for matching eight-state constraints, every required transition predicate, and organization scoping. `git diff --check` passed.
+
+### Scope and acceptance state
+
+- No files under `packages/sap/**` or `apps/sap-agent/**` changed.
+- No AI provider, prompt, API route, worker loop, post-ingestion hook, UI, product mutation, or `products.metadata` enrichment write was added. `product_type` remains architect-controlled and structured SAP brand/category precedence remains intact.
+- Candidate/taxonomy fingerprinting remains OPEN for Stage 2. The existing Stage 2 read-only design remains documentation only; Stage 2 implementation did not begin.
+- Remaining IMPORTANT blocker: compatible SQLC v1.30.0 generation and inspection of `product_enrichment_suggestions.sql.go` and `models.go`. Atlas, formatting, compilation, focused tests, full core tests, and diff checks passed.
+- Current Stage 1 status: NEEDS GENERATOR VERIFICATION. It cannot be marked SAFE TO KEEP until the repository-pinned SQLC generation succeeds and the resulting generated repository code is inspected.
+
+## Final Stage 1 Generator Verification and Review - 2026-08-20
+
+### SQLC v1.30.0 generation
+
+- The installed binary was `C:\Users\AnnsMustafa\go\bin\sqlc.exe`; `sqlc version` reported exactly `v1.30.0`, matching the repository CI pin.
+- The exact repository command was run from `packages/core`: `sqlc generate`.
+- Generation succeeded. No generated file was manually edited after generation.
+- Stage 1 generated output is authoritative in `packages/core/repository/product_enrichment_suggestions.sql.go` and `packages/core/repository/models.go`.
+- The real output includes create/upsert-get, scoped get, scoped list, processing claim, in-review completion, approve, reject, retryable, failed, and applied methods. It expands `SELECT *`/inline scans into explicit ordered columns, uses `int32` IDs, `json.RawMessage` JSONB fields, `pgtype.Text` for nullable provider/model/model_version, and `pgtype.Int4`/`pgtype.Timestamp` for nullable reviewer/timestamps. No unused imports or duplicate `ProductEnrichmentSuggestion` type remain.
+- Compared with the provisional hand-maintained companion, the generated file adds the processing/in-review methods, uses the actual v1.30.0 header, expands all returning/scanned columns explicitly, removes the shared scanner, and follows the repository's generated formatting/conventions.
+- SQLC also exposed unrelated pre-existing generated drift: `models.go` added existing `CustomerAddress` and SAP staging model types and regenerated the `User` fields; `users.sql.go` added existing `must_reset_password`/`sap_imported` columns to its query returns/scans. These changes are normal output from the pinned generator against existing source schema/queries, are outside Stage 1 behavior, and were retained rather than suppressed. They should be reviewed separately as repository-wide generated drift.
+- The generated `users.sql.go` initially preserved trailing spaces from the existing `packages/core/queries/users.sql`; those two source spaces and the missing final newline were cleaned in the source query, then SQLC v1.30.0 was rerun. This was the smallest unrelated hygiene correction required for `git diff --check`; generated output was not manually edited.
+
+### Go verification
+
+- `C:\Program Files\Go\bin\gofmt.exe -w packages/core/enrichment/product_enrichment.go packages/core/enrichment/product_enrichment_test.go` succeeded.
+- `gofmt -l` on both human-authored files returned no files.
+- `cd packages/core && go test ./enrichment` passed.
+- `cd packages/core && go test ./repository` passed; the package has no test files.
+- `cd packages/core && go test ./...` passed for all core packages.
+- After the source-query hygiene correction and second SQLC generation, `./enrichment`, `./repository`, and `./...` were rerun and passed again.
+- Go used was `go1.26.7 windows/amd64`, compatible with the repository's Go 1.25 module requirements.
+
+### Atlas checksum investigation
+
+- Atlas used was `v1.3.2-4bf5fb9-canary` at `C:\Users\AnnsMustafa\atlas\atlas.exe`.
+- The exact commands were run from `packages/core`: `atlas migrate hash --dir "file://db/migrations"` and `atlas migrate validate --dir "file://db/migrations"`. Both passed; no migration was applied and no database was contacted.
+- `20260820000000.sql` is present in `atlas.sum` with checksum `h1:KPjere8EtihFYVQ9+OZUiDilOp9DwW+lR9SKUfJVE0k=`.
+- The canary rewrote the root checksum and all four historical file entries, not only the new migration entry. The four historical migration blobs are byte-identical to HEAD, contain LF-only line endings, and `.gitattributes` enforces LF for SQL and sum files. Therefore the churn is not caused by changed historical migration content or Windows line endings.
+- Repository CI uses `ariga/setup-atlas@v0` without a fixed version, and the Dockerfile also downloads Atlas latest. The available repository evidence therefore identifies the old-entry rewrite as Atlas checksum implementation/version behavior relative to the previously recorded manifest; the exact prior Atlas build is not recorded. The current canary-generated manifest validates successfully and is compatible with the project's unpinned latest-Atlas CI convention.
+- Repository history confirms Atlas checksum manifests have previously been regenerated when migration bytes changed for LF/BOM normalization. That historical explanation does not apply to the unchanged files in this run.
+
+### Lifecycle and schema verification
+
+- Final lifecycle: `pending -> processing`, `retryable -> processing`, `processing -> in_review | retryable | failed`, `in_review -> approved | rejected`, and `approved -> applied`.
+- Processing claims are organization-scoped and atomically guarded by `status IN ('pending', 'retryable')`; concurrent workers cannot both update the same row successfully under normal PostgreSQL update semantics.
+- Create/upsert conflict identity is organization + product + source fingerprint + contract version. Its conflict update only preserves the existing row's lifecycle state and timestamps; it does not reset processing, in-review, approved, rejected, or applied state.
+- In-review, retryable, and failed transitions clear reviewer/reviewed/application fields. Approval/rejection record reviewer and review time and leave `applied_at` NULL. Applying is restricted to approved, preserves reviewer fields, and sets `applied_at`.
+- The schema and migration are semantically equal after removing migration-only `IF NOT EXISTS` guards/comments. Both contain the same eight statuses; no new schema fields were added.
+
+### Domain and scope verification
+
+- Focused enrichment tests pass. `product_type` and case/separator variants such as `productType` and `product-type` remain prohibited; ItemCode/source-item-code/SAP-item-code, UoM/conversion, operational status, supplier, pricing, tax, inventory, warehouse, and barcode ownership remain protected.
+- Structured category precedence and resolved-brand `KEEP_EXISTING` precedence remain enforced. Unresolved brands support review-only canonical matching/new proposals. Confidence accepts only `[0,1]`, including finite boundary values; unsupported evidence such as anti-dandruff and capacity remains evidence-only.
+- Changed paths are limited to `agents.md`, Stage 1 SQL/schema/migration/query/domain/test files, the whitespace-only hygiene correction in `packages/core/queries/users.sql`, and SQLC-generated repository files. No `packages/sap/**`, `apps/sap-agent/**`, SAP behavior, provider, prompt, route, worker, post-commit hook, UI, product mutation, `products.metadata`, variant/family, or candidate/taxonomy fingerprint implementation changed.
+- The existing Stage 2 provider-neutral design remains documentation only. Stage 2 implementation did not begin.
+
+### Final Stage 1 acceptance
+
+- `git diff --check` passed after generation and formatting.
+- All requested generator, Go, lifecycle, migration parity, Atlas hash/validate, domain safety, and scope gates passed.
+- Remaining non-blocking review notes: Atlas is not version-pinned by repository CI, so checksum regeneration is tool-version-sensitive; SQLC revealed separate repository-wide generated drift in `models.go`/`users.sql.go` that should be reviewed independently.
+- Current Stage 1 status: SAFE TO KEEP.
+- Next Action: Stage 2 provider-neutral enrichment implementation planning, starting from the existing read-only design. Do not begin provider implementation without a separately authorized Stage 2 task.

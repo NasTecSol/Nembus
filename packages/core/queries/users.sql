@@ -20,8 +20,8 @@ SELECT * FROM users WHERE username = $1 LIMIT 1;
 SELECT * FROM users WHERE email = $1 LIMIT 1;
 
 -- name: GetUserByEmployeeCode :one
-SELECT * FROM users 
-WHERE organization_id = $1 AND employee_code = $2 
+SELECT * FROM users
+WHERE organization_id = $1 AND employee_code = $2
 LIMIT 1;
 
 -- name: ListUsers :many

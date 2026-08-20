@@ -21,7 +21,7 @@ CREATE TABLE product_enrichment_suggestions (
     model                    VARCHAR(255),
     model_version            VARCHAR(100),
     status                   VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'approved', 'rejected', 'failed', 'retryable', 'applied')),
+        CHECK (status IN ('pending', 'processing', 'in_review', 'approved', 'rejected', 'retryable', 'failed', 'applied')),
     reviewer_id              INTEGER REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at              TIMESTAMP,
     applied_at               TIMESTAMP,

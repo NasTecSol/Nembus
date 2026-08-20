@@ -28,6 +28,57 @@ const (
 	maxConfidence = 1.0
 )
 
+// SuggestionStatus is the durable Stage 1 inference/review lifecycle.
+type SuggestionStatus string
+
+const (
+	SuggestionStatusPending    SuggestionStatus = "pending"
+	SuggestionStatusProcessing SuggestionStatus = "processing"
+	SuggestionStatusInReview   SuggestionStatus = "in_review"
+	SuggestionStatusApproved   SuggestionStatus = "approved"
+	SuggestionStatusRejected   SuggestionStatus = "rejected"
+	SuggestionStatusRetryable  SuggestionStatus = "retryable"
+	SuggestionStatusFailed     SuggestionStatus = "failed"
+	SuggestionStatusApplied    SuggestionStatus = "applied"
+)
+
+// Valid reports whether the status is one of the architect-approved lifecycle
+// values persisted by product_enrichment_suggestions.
+func (s SuggestionStatus) Valid() bool {
+	switch s {
+	case SuggestionStatusPending,
+		SuggestionStatusProcessing,
+		SuggestionStatusInReview,
+		SuggestionStatusApproved,
+		SuggestionStatusRejected,
+		SuggestionStatusRetryable,
+		SuggestionStatusFailed,
+		SuggestionStatusApplied:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanTransition mirrors the SQL state predicates for the Stage 1 lifecycle.
+// It is a provider-neutral domain guard; SQL remains the concurrency boundary.
+func CanTransition(from, to SuggestionStatus) bool {
+	switch from {
+	case SuggestionStatusPending:
+		return to == SuggestionStatusProcessing
+	case SuggestionStatusProcessing:
+		return to == SuggestionStatusInReview || to == SuggestionStatusRetryable || to == SuggestionStatusFailed
+	case SuggestionStatusInReview:
+		return to == SuggestionStatusApproved || to == SuggestionStatusRejected
+	case SuggestionStatusApproved:
+		return to == SuggestionStatusApplied
+	case SuggestionStatusRetryable:
+		return to == SuggestionStatusProcessing
+	default:
+		return false
+	}
+}
+
 // BrandProposal is a reviewable brand suggestion. A MATCH_EXISTING proposal
 // must carry a canonical existing brand ID or code. PROPOSE_NEW has no target
 // identifier because it cannot imply automatic brand creation.
@@ -79,9 +130,9 @@ type UnsupportedSemantic struct {
 // ProposalSet is the provider-neutral payload persisted in the proposed JSONB
 // columns. It has no product_type field by design.
 type ProposalSet struct {
-	Brand                *BrandProposal         `json:"brand,omitempty"`
-	Category             *CategoryProposal      `json:"category,omitempty"`
-	Description          *DescriptionProposal   `json:"description,omitempty"`
+	Brand                *BrandProposal        `json:"brand,omitempty"`
+	Category             *CategoryProposal     `json:"category,omitempty"`
+	Description          *DescriptionProposal  `json:"description,omitempty"`
 	UnsupportedSemantics []UnsupportedSemantic `json:"unsupported_semantics,omitempty"`
 }
 
@@ -90,10 +141,6 @@ type ProposalSet struct {
 func (p ProposalSet) Validate(structuredCurrent json.RawMessage) error {
 	if len(bytes.TrimSpace(structuredCurrent)) == 0 || !json.Valid(structuredCurrent) {
 		return fmt.Errorf("structured_current must be valid JSON")
-	}
-
-	if err := rejectProductTypeFields(p); err != nil {
-		return err
 	}
 
 	categoryPresent, err := HasValidStructuredCategory(structuredCurrent)
@@ -125,6 +172,9 @@ func (p ProposalSet) Validate(structuredCurrent json.RawMessage) error {
 		if err := p.UnsupportedSemantics[i].validate(); err != nil {
 			return fmt.Errorf("unsupported semantic %d: %w", i, err)
 		}
+	}
+	if err := rejectProductTypeFields(p); err != nil {
+		return err
 	}
 	return nil
 }

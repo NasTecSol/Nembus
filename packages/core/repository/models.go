@@ -729,6 +729,23 @@ type Customer struct {
 	BusinessPartnerID  pgtype.Int4      `json:"business_partner_id"`
 }
 
+type CustomerAddress struct {
+	ID          int32            `json:"id"`
+	CustomerID  int32            `json:"customer_id"`
+	AddressType string           `json:"address_type"`
+	AddressLine pgtype.Text      `json:"address_line"`
+	Street      pgtype.Text      `json:"street"`
+	City        pgtype.Text      `json:"city"`
+	Country     pgtype.Text      `json:"country"`
+	PostalCode  pgtype.Text      `json:"postal_code"`
+	State       pgtype.Text      `json:"state"`
+	Phone       pgtype.Text      `json:"phone"`
+	IsDefault   pgtype.Bool      `json:"is_default"`
+	Metadata    json.RawMessage  `json:"metadata"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
 type DiscountAnalytic struct {
 	ID                       int32            `json:"id"`
 	OrganizationID           int32            `json:"organization_id"`
@@ -1432,6 +1449,31 @@ type ProductCategory struct {
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
+type ProductEnrichmentSuggestion struct {
+	ID                    int32            `json:"id"`
+	OrganizationID        int32            `json:"organization_id"`
+	ProductID             int32            `json:"product_id"`
+	SourceItemCode        string           `json:"source_item_code"`
+	SourceItemName        string           `json:"source_item_name"`
+	SourceDataFingerprint string           `json:"source_data_fingerprint"`
+	ContractVersion       string           `json:"contract_version"`
+	StructuredCurrent     json.RawMessage  `json:"structured_current"`
+	ProposedBrand         json.RawMessage  `json:"proposed_brand"`
+	ProposedCategory      json.RawMessage  `json:"proposed_category"`
+	ProposedDescription   json.RawMessage  `json:"proposed_description"`
+	UnsupportedSemantics  json.RawMessage  `json:"unsupported_semantics"`
+	Source                string           `json:"source"`
+	Provider              pgtype.Text      `json:"provider"`
+	Model                 pgtype.Text      `json:"model"`
+	ModelVersion          pgtype.Text      `json:"model_version"`
+	Status                string           `json:"status"`
+	ReviewerID            pgtype.Int4      `json:"reviewer_id"`
+	ReviewedAt            pgtype.Timestamp `json:"reviewed_at"`
+	AppliedAt             pgtype.Timestamp `json:"applied_at"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+}
+
 type ProductPrice struct {
 	ID               int32            `json:"id"`
 	ProductID        int32            `json:"product_id"`
@@ -1987,6 +2029,70 @@ type SalesReturnLine struct {
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 }
 
+type StagingSapInventory struct {
+	ID                int32            `json:"id"`
+	BatchID           string           `json:"batch_id"`
+	OrganizationID    int32            `json:"organization_id"`
+	ProductSku        string           `json:"product_sku"`
+	StoreCode         string           `json:"store_code"`
+	QuantityOnHand    pgtype.Numeric   `json:"quantity_on_hand"`
+	QuantityAllocated pgtype.Numeric   `json:"quantity_allocated"`
+	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
+	QuantityOnOrder   pgtype.Numeric   `json:"quantity_on_order"`
+	ReorderLevel      pgtype.Numeric   `json:"reorder_level"`
+	MaxStockLevel     pgtype.Numeric   `json:"max_stock_level"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapMigrationBatch struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	RunID          string           `json:"run_id"`
+	OrganizationID int32            `json:"organization_id"`
+	Domain         string           `json:"domain"`
+	RecordCount    int32            `json:"record_count"`
+	Status         pgtype.Text      `json:"status"`
+	ErrorMessage   pgtype.Text      `json:"error_message"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapProduct struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	OrganizationID int32            `json:"organization_id"`
+	Sku            string           `json:"sku"`
+	Name           string           `json:"name"`
+	Description    pgtype.Text      `json:"description"`
+	CategoryCode   pgtype.Text      `json:"category_code"`
+	BrandCode      pgtype.Text      `json:"brand_code"`
+	UomCode        pgtype.Text      `json:"uom_code"`
+	ProductType    pgtype.Text      `json:"product_type"`
+	IsSerialized   pgtype.Bool      `json:"is_serialized"`
+	IsBatchManaged pgtype.Bool      `json:"is_batch_managed"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	IsSellable     pgtype.Bool      `json:"is_sellable"`
+	IsPurchasable  pgtype.Bool      `json:"is_purchasable"`
+	TrackInventory pgtype.Bool      `json:"track_inventory"`
+	PrimaryBarcode pgtype.Text      `json:"primary_barcode"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapStore struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	OrganizationID int32            `json:"organization_id"`
+	Code           string           `json:"code"`
+	Name           string           `json:"name"`
+	StoreType      pgtype.Text      `json:"store_type"`
+	IsWarehouse    pgtype.Bool      `json:"is_warehouse"`
+	IsPosEnabled   pgtype.Bool      `json:"is_pos_enabled"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
 type StockCount struct {
 	ID                int32            `json:"id"`
 	CountNumber       string           `json:"count_number"`
@@ -2244,18 +2350,20 @@ type UomPackagingTemplateLevel struct {
 }
 
 type User struct {
-	ID             int32            `json:"id"`
-	OrganizationID int32            `json:"organization_id"`
-	Username       string           `json:"username"`
-	Email          string           `json:"email"`
-	PasswordHash   string           `json:"password_hash"`
-	FirstName      pgtype.Text      `json:"first_name"`
-	LastName       pgtype.Text      `json:"last_name"`
-	EmployeeCode   pgtype.Text      `json:"employee_code"`
-	IsActive       pgtype.Bool      `json:"is_active"`
-	Metadata       json.RawMessage  `json:"metadata"`
-	CreatedAt      pgtype.Timestamp `json:"created_at"`
-	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+	ID                int32            `json:"id"`
+	OrganizationID    int32            `json:"organization_id"`
+	Username          string           `json:"username"`
+	Email             string           `json:"email"`
+	PasswordHash      string           `json:"password_hash"`
+	FirstName         pgtype.Text      `json:"first_name"`
+	LastName          pgtype.Text      `json:"last_name"`
+	EmployeeCode      pgtype.Text      `json:"employee_code"`
+	IsActive          pgtype.Bool      `json:"is_active"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+	MustResetPassword bool             `json:"must_reset_password"`
+	SapImported       bool             `json:"sap_imported"`
 }
 
 type UserRole struct {
@@ -2603,32 +2711,4 @@ type ZatcaDocumentChain struct {
 	SubmittedAt    pgtype.Timestamptz `json:"submitted_at"`
 	ClearedAt      pgtype.Timestamptz `json:"cleared_at"`
 	CreatedAt      pgtype.Timestamp   `json:"created_at"`
-}
-
-// ProductEnrichmentSuggestion is the Stage 1 review-queue record. The JSONB
-// proposal columns are nullable because each proposal is independently
-// optional; approval does not itself apply any proposal to master data.
-type ProductEnrichmentSuggestion struct {
-	ID                    int32            `json:"id"`
-	OrganizationID        int32            `json:"organization_id"`
-	ProductID             int32            `json:"product_id"`
-	SourceItemCode        string           `json:"source_item_code"`
-	SourceItemName        string           `json:"source_item_name"`
-	SourceDataFingerprint string           `json:"source_data_fingerprint"`
-	ContractVersion       string           `json:"contract_version"`
-	StructuredCurrent     json.RawMessage  `json:"structured_current"`
-	ProposedBrand         json.RawMessage  `json:"proposed_brand"`
-	ProposedCategory      json.RawMessage  `json:"proposed_category"`
-	ProposedDescription   json.RawMessage  `json:"proposed_description"`
-	UnsupportedSemantics  json.RawMessage  `json:"unsupported_semantics"`
-	Source                string           `json:"source"`
-	Provider              pgtype.Text      `json:"provider"`
-	Model                 pgtype.Text      `json:"model"`
-	ModelVersion          pgtype.Text      `json:"model_version"`
-	Status                string           `json:"status"`
-	ReviewerID            pgtype.Int4      `json:"reviewer_id"`
-	ReviewedAt            pgtype.Timestamp `json:"reviewed_at"`
-	AppliedAt             pgtype.Timestamp `json:"applied_at"`
-	CreatedAt             pgtype.Timestamp `json:"created_at"`
-	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
 }
