@@ -1281,3 +1281,497 @@ Open policy questions remain:
 - reviewer notes;
 - field-level review; and
 - `PROPOSE_NEW` canonical resolution.
+
+## Stage 2D Repository Boundary
+
+Review date: 2026-08-20. This is the authoritative read-only repository-boundary gate for Stage 2D. No source code, schema, migration, SQL, generated code, configuration, dependency, database, Git history, or external system was changed for this analysis. Only this worklog was updated.
+
+### Database topology and repository ownership
+
+- The master/control PostgreSQL connection is `MASTER_DB_URL`. `apps/cloud-server/main.go:setupDatabase` creates `masterPool` and `masterRepo = repository.New(masterPool)`. `masterRepo` is the control-plane repository used by the tenant manager and master endpoints; the `tenants` registry is read from this database by `packages/core/middleware/manager/manager.go:GetPool`/`GetTenantDSN`.
+- Each tenant has a separate PostgreSQL connection in `tenants.db_conn_str`. `Manager.GetPool` caches one `*pgxpool.Pool` per tenant slug, and `packages/core/middleware/tenant.go:TenantMiddleware` wraps that pool in `repository.New(pool)` and stores the `*repository.Queries` under `middleware.RepoKey` in the request context. The repository type is the same as the master repository; the underlying DBTX handle is different.
+- `packages/core/repository/db.go` defines the common `DBTX` interface, `repository.New`, and `Queries.WithTx`. It does not identify a database. Database identity comes from the pool/transaction passed to it.
+- The normal authenticated HTTP order is `JWTAuthMiddleware -> TenantBindingMiddleware -> TenantMiddleware -> handler`, wired in `apps/cloud-server/main.go` and duplicated in `apps/pos-client/main.go`. The trusted tenant slug is checked before `Manager.GetPool`; the resulting HTTP repository is tenant-local.
+- `MasterRepositoryMiddleware` injects `masterRepo` only for master-registry endpoints such as `/api/tenants`. It is not the repository used by normal tenant business routes.
+- SAP migration is a separate global construction: `apps/cloud-server/main.go:341` calls `usecase.NewSAPMigrationUseCase(masterPool)` once at startup. The `/api/v1/migration` route is outside JWT and tenant middleware; `packages/core/handler/sap_migration.go:51-59` parses `x-tenant-id` as an integer organization ID and defaults to `1`. The `/api/migration` route uses the same globally constructed usecase, so the request context repository does not control SAP writes.
+- Stage 2A coordinator construction is `repository.NewProductEnrichmentStore(masterRepo)` at `apps/cloud-server/main.go:342`, followed by `enrichment.NewProductEnrichmentCoordinator(enrichmentStore)`. It is therefore master-bound, not request-bound and not transaction-bound to SAP.
+- Stage 2C construction is also global and master-bound: `enrichment.NewEnrichmentWorker(enrichmentStore, provider, ...)` at `apps/cloud-server/main.go:350-354`. There is one worker per cloud-server process, one store, and one underlying master repository. It does not iterate tenant slugs or create tenant repositories.
+- The OpenAI provider is only called by the worker. `packages/core/enrichment/worker.go` receives no tenant slug or tenant pool; the durable row carries only local `organization_id`, `product_id`, and suggestion ID.
+- `packages/core/usecase/sap_migration.go` owns one `*pgxpool.Pool`, begins its transaction from that pool, performs staging and deterministic product writes, commits, and only then calls the coordinator. The coordinator reloads the product and inserts the suggestion through the separately constructed master repository.
+- Existing tenant handlers commonly read `middleware.RepoKey` and call `SetRepository` on a usecase, for example `packages/core/handler/auth.go:26-34,49-75` and `packages/core/handler/product_catalog.go:25-86`. These usecases are globally constructed but receive a request-selected repository dynamically. No current Stage 2D handler exists.
+
+### Schema and table ownership matrix
+
+The repository's intended migration path applies the same `packages/core/db/migrations` directory to both the master database and every active tenant database. This is explicit in `apps/cloud-server/cmd/migrate-tenants/main.go:104-153`, `apps/cloud-server/MIGRATIONS.md`, and the root `Makefile` `db-migrate` target. Therefore the physical schema copies are as follows; “both” means separate copies in separate PostgreSQL databases, not shared tables.
+
+| Table | Physical schema target | Current operational data path | Evidence / consequence |
+|---|---|---|---|
+| `organizations` | Both master and tenant DBs when the core migrations are applied | Master SAP path writes/reads master; HTTP identity/catalog uses tenant copy | `10_identity_rbac.sql:5-17`; baseline and Atlas migration runner apply it to both |
+| `users` | Both | SAP user ingestion uses master; authenticated HTTP users are loaded from the selected tenant DB | `20_stores_terminals.sql:39-52`; `AuthUseCase.Login` reads the request-selected repository |
+| `roles` | Both | Tenant-local RBAC for HTTP; master copy exists by schema, but is not a cross-tenant identity authority | `10_identity_rbac.sql:165-175` |
+| `permissions` | Both | Tenant-local permission queries for HTTP | `10_identity_rbac.sql:132-139`; `CheckUserHasPermission` is local to its `Queries` handle |
+| `products` | Both | Current SAP migration and enrichment use master; normal catalog APIs use tenant DB | `30_catalog.sql:85-107`; `SAPMigrationUseCase` has `masterPool` |
+| `product_categories` / `brands` | Both | Current SAP and enrichment candidate lookup use master; HTTP catalog uses tenant DB | `30_catalog.sql:5-34`; `ProductEnrichmentStore` uses its bound `Queries` |
+| `product_variants` | Both | Separate local catalog copies | `30_catalog.sql:109-118` |
+| `product_enrichment_suggestions` | Both only after `20260820000000.sql` and `20260820010000.sql` are applied; current Stage 1/2 records are written to master | Master queue is the actual Stage 2A/2C store; tenant copies may exist but are not populated by the current enrichment path | Migration FKs and indexes in `20260820000000.sql`; master wiring in `apps/cloud-server/main.go:341-354` |
+| `audit_logs` | Both | No Stage 2D audit write exists yet; future tenant-local review should write tenant audit rows | `80_promotions_loyalty.sql:111-126` |
+| `staging.sap_migration_batches` | Both after core migration | Current SAP migration writes the master copy because its transaction is from `masterPool` | `95_sap_staging.sql:5-18`; `sap_migration.go:50-63` |
+
+The live database migration version of any particular tenant was not queried in this read-only pass. The code and deployment path prove the intended targets, not that every deployed tenant has already applied every migration.
+
+There are legacy/duplicated baseline files under `apps/cloud-server/migrations` and `apps/pos-client/migrations`, but the current multi-database Atlas runner resolves `packages/core/db/migrations` and applies it to master and active tenant DSNs. `apps/cloud-server/main.go` does not run migrations automatically at startup.
+
+### Product enrichment lifecycle and FK proof
+
+For a product such as SAP `INV00006`, the current path is:
+
+```text
+/api/v1/migration request
+  -> global SAPMigrationUseCase(masterPool)
+  -> master PostgreSQL transaction
+  -> master products / staging.sap_migration_batches
+  -> commit
+  -> coordinator(masterRepo)
+  -> master product reload by (organization_id, source SKU)
+  -> master product_enrichment_suggestions insert
+  -> one global worker(masterRepo)
+  -> master suggestion claim / product reload / candidate lookup
+  -> master suggestion status = in_review
+```
+
+- The SAP handler supplies an integer organization ID from the request header or payload; it does not supply or authenticate a tenant slug. The `SAPMigrationUseCase` uses its startup-injected `masterPool`, not `RepoKey`.
+- The product upsert is in the master transaction. The product ID is allocated in the master database, and the post-commit coordinator receives the same organization ID and source item code.
+- The coordinator's `LoadSAPProductEnrichmentSnapshot` calls `GetProductBySKU`, then brand/category/UoM/conversion queries through the same `masterRepo` object. `CreateOrGetPendingSuggestion` inserts through that same master repository, after the SAP transaction has committed.
+- The suggestion row's `organization_id` and `product_id` therefore refer to rows in the same physical master database in the current path. The suggestion insert is not part of the SAP transaction; enqueue failure is logged after commit and does not roll back SAP.
+- The Stage 1/2C FKs are local PostgreSQL FKs: `organization_id REFERENCES organizations(id)`, `product_id REFERENCES products(id)`, and `reviewer_id REFERENCES users(id) ON DELETE SET NULL`. PostgreSQL cannot enforce these FKs across an independent tenant database. Their presence proves that each deployed copy of the suggestion table must have local `organizations`, `products`, and `users` tables; it does not make master numeric IDs globally meaningful.
+- `packages/core/enrichment/execution.go` and `product_enrichment_execution.sql` pass `organization_id` on claim and every mutation, but `ListDueProductEnrichmentSuggestions` scans the one repository's entire queue without a tenant selector. The worker later reloads the product and candidates through that same master-bound store.
+
+### SAP and worker ownership conclusions
+
+- SAP migration is currently master-only, globally constructed once, and not reconstructed per tenant/request. `organization_id` identifies a row in the master database in this path; it is not a tenant database identity.
+- Stage 2A is master-only and post-commit. The coordinator has no pool, tenant slug, or transaction parameter beyond the master-bound store supplied at construction.
+- Stage 2C is one worker over one master database. It can function for rows and products that genuinely live in that master database. It cannot see tenant-only products or tenant-only suggestion rows, and it cannot recover the tenant database from a suggestion row because no tenant identity is stored.
+- The current worker/reviewer consistency is therefore broken for tenant HTTP review: the worker writes `in_review` in master, while a normal authenticated request naturally receives a tenant repository. A tenant repository query cannot see the master row.
+
+### Identifier collision analysis
+
+`organizations.id`, `products.id`, `users.id`, and `product_enrichment_suggestions.id` are `SERIAL`/integer database-local identifiers. They are not globally unique across tenant databases. `tenants.id` is a UUID in the master registry, and `tenants.slug` is the current trusted database selector, but neither is stored in the enrichment suggestion.
+
+For the concrete case:
+
+```text
+tenant-a: organization_id = 1, product_id = 95, suggestion_id = 1
+tenant-b: organization_id = 1, product_id = 95, suggestion_id = 1
+```
+
+those values are valid and independent when the rows are tenant-local. A master/global suggestion table containing only numeric organization/product IDs cannot distinguish them. Current SAP ingestion also does not carry a trusted tenant slug into the master store, so two tenant feeds can attach to the same master numeric organization or produce an ambiguous master product lineage. The uniqueness key `(organization_id, product_id, source_data_fingerprint, contract_version)` does not repair that ambiguity.
+
+This is a CRITICAL design defect for a global enrichment queue: the current global row has no `tenant_slug`, tenant UUID, tenant database identity, or other globally unique product identity. The defect is not present when the suggestion and referenced records are physically tenant-local and every query uses the selected tenant database plus `organization_id`.
+
+### FK, reviewer, and audit analysis
+
+- In the current master path, the suggestion FK targets `master.organizations`, `master.products`, and `master.users`. A tenant-local authenticated user's numeric `users.id` cannot safely be placed into master `reviewer_id`: the same number can identify another master user or no row at all, and there is no cross-database membership mapping.
+- `audit_logs` has local FKs to `organizations` and `users`. Stage 1 has no audit insertion. A future master-side suggestion update plus master-side audit insert could be one transaction only for a master reviewer identity; the current tenant-local JWT user is not such an identity. A cross-database suggestion update plus tenant audit insert cannot be one PostgreSQL transaction.
+- If the foundation is corrected to tenant-local storage, suggestion, product, organization, reviewer user, permission/RBAC, and audit rows are co-located. Approve/reject can use one tenant pool transaction and `Queries.WithTx`, with `reviewer_id` set only after loading the active tenant-local user and deriving that user's organization.
+
+### Tenant identity and provisioning implications
+
+- `product_enrichment_suggestions` currently stores no `tenant_slug`, `tenant_id`, or database identity. That is unsafe in the actual master/global deployment and is not a reason to add a tenant column if the storage is moved to tenant-local databases.
+- `20260820000000.sql` creates the Stage 1 table and `20260820010000.sql` adds Stage 2C retry metadata. The current `atlas.sum` includes both files.
+- `apps/cloud-server/cmd/migrate-tenants/main.go` migrates master first when `-master` is enabled, queries active tenants from the master registry, and applies the same Atlas directory to each non-empty `db_conn_str`. It is an explicit operator command, not startup provisioning.
+- `TenantUseCase.CreateTenant` only inserts a row into the master `tenants` registry. It does not create a database, run Atlas, apply the enrichment migrations, seed permissions, or warm a pool. A newly registered tenant can therefore lack the enrichment tables until the operator provisions/migrates it.
+- Existing tenants are not automatically migrated by application startup. The deployment must run the tenant migration command and inspect failures; inactive tenants are skipped by the current active-tenant discovery. Stage 2D must not be enabled until every intended review tenant has the Stage 1/2C tables and current Atlas state.
+
+### Physical ownership verdict
+
+`ENRICHMENT_DATA_MASTER_GLOBAL`
+
+This verdict refers to the actual Stage 2A/2C lifecycle, not merely schema presence. The table is defined in the common schema and intended to exist in both database families, but `apps/cloud-server/main.go` binds the coordinator and worker to `masterRepo`, and SAP products are written through `masterPool`. The current enrichment records therefore live in the master database. The prior note calling this “current master-database enrichment storage” was correct; this audit adds the missing qualification that tenant HTTP repositories are separate and cannot safely review those rows.
+
+### Recommended Stage 2D architecture and foundation decision
+
+`ENRICHMENT FOUNDATION CORRECTION REQUIRED`
+
+The smallest safe architecture is a foundation correction to tenant-local enrichment, followed by tenant-local review:
+
+1. Establish a trusted tenant slug for the SAP machine request. The current numeric `x-tenant-id`/default `1` is not a safe database selector.
+2. Resolve the tenant pool for that request and execute SAP deterministic writes, staging, post-commit snapshot reload, and suggestion enqueue against that tenant pool/repository. Do not use the global `masterPool` for tenant business data.
+3. Run the existing Stage 1 and Stage 2C migrations on every intended tenant. No tenant column is needed once physical database tenancy is the isolation boundary.
+4. Replace the single master-bound worker with a tenant-aware deployment model: one worker/store per tenant, or a trusted global worker that enumerates active tenants from the master registry and constructs a tenant repository for each. Each worker iteration must retain the tenant slug/pool context and never fall back to master for product or suggestion data.
+5. Use the tenant-selected repository exclusively for future Stage 2D suggestion, product, user, permission, audit, and transaction operations. Every suggestion query still requires the authenticated user's derived `organization_id`; tenant binding alone is not organization authorization.
+
+Existing master suggestion rows cannot be safely migrated by numeric IDs alone. Any backfill requires an authoritative mapping of master product/source SKU to tenant slug and tenant organization/product. Rows without that mapping must be quarantined or left inaccessible; guessing from equal numeric IDs is forbidden.
+
+### Safe future Stage 2D request flow after correction
+
+```text
+HTTP request
+ -> JWTAuthMiddleware
+ -> TenantBindingMiddleware
+ -> TenantMiddleware / trusted tenant pool
+ -> RepoKey tenant repository
+ -> authenticated tenant-local user lookup
+ -> active-user + users.organization_id derivation
+ -> tenant-local product_enrichment:review permission check
+ -> organization-scoped suggestion query
+ -> organization/product-scoped current product reload
+ -> fingerprint and stale-source validation
+ -> tenant-pool transaction
+      suggestion approve/reject
+      + tenant audit_logs insert
+ -> response
+```
+
+The handler must not accept organization ID, reviewer ID, tenant slug, or database identity from the request body/query as authority. The reviewer ID is the authenticated tenant-local `users.id`. The approve/reject transaction must use the same tenant database handle as the suggestion and audit rows; `Queries.WithTx` is the existing repository primitive, but a future request-scoped review store must also have access to the selected tenant pool/transaction factory.
+
+### Worker/reviewer consistency and multi-tenant assessment
+
+- Current state: CRITICAL mismatch. Stage 2C writes `status = 'in_review'` in master; a tenant-bound HTTP reviewer reads a tenant copy. They are not the same physical record.
+- Corrected target state: the worker and reviewer use the same tenant slug, tenant pool, local suggestion ID, local product ID, and organization predicate. Worker completion and reviewer reads then address the same physical row.
+- Current Stage 2C is functionally single-master, not multi-tenant complete. It does not iterate the tenant registry. If the foundation is moved tenant-local, leaving this worker wiring unchanged would make enrichment silently process no tenant rows. This is a Stage 2C deployment/design defect that must be corrected before enabling the tenant-local review API.
+- Disabled or removed tenants are rejected by `Manager.GetPool` because tenant lookup requires active status. An unavailable tenant must be skipped/retried as an operational error; neither worker nor review API may fall back to master or another tenant. A worker must not process a tenant's rows after that tenant is disabled unless an explicit operational policy says otherwise.
+
+### Organization and permission ownership
+
+Multiple organizations can exist inside one tenant database: `organizations` is a table with `SERIAL id`, and `users`, `products`, staging, suggestions, and audit rows carry organization references. Tenant binding is therefore insufficient. Stage 2D must load the authenticated tenant-local user, verify it is active, derive `users.organization_id`, and apply that value to every suggestion/product/audit query.
+
+The future `product_enrichment:review` permission belongs in the tenant-local `permissions`, `roles`, `role_permissions`, and `user_roles` tables. The existing permission query is `CheckUserHasPermission` in `packages/core/queries/permissions.sql`; it is local to the selected repository and does not itself verify active user or organization membership. Permission seed/mapping must be applied to existing tenants as deployment data; creating a permission in a source seed file does not update already-running tenant databases automatically.
+
+### Deployment prerequisites
+
+Code prerequisites:
+
+- Complete the tenant-local foundation correction before any Stage 2D route or review store is implemented.
+- Define and authenticate the SAP tenant selector; preserve the already SAFE tenant-bound user JWT path for HTTP.
+- Make SAP coordinator/store and Stage 2C worker tenant-aware; remove master fallback for product/suggestion operations.
+- Decide and provision the `product_enrichment:review` permission and role mappings in each intended tenant.
+- Define treatment of existing master rows and require an authoritative tenant mapping before migration/backfill.
+
+Deployment prerequisites:
+
+- Apply and verify `20260820000000.sql` and `20260820010000.sql` in every intended tenant database through the Atlas tenant migration runner; do not rely on startup or tenant creation to do this.
+- Verify tenant migration status and repair failed/inactive-tenant provisioning before enabling review.
+- Deploy tenant-bound JWT correction and require user re-login for old standard tokens without `tenant_slug`.
+- Run a tenant-aware Stage 2C worker for every enabled tenant, or a verified registry-iterating worker.
+- Enable OpenAI configuration only for tenants/environments approved for provider use; enrichment must remain disabled by default elsewhere.
+
+### Exact next patch surface
+
+Because the foundation correction is required, do not implement Stage 2D routes yet. The first source correction is limited to these existing boundaries:
+
+- `packages/core/handler/sap_migration.go` — obtain a trusted machine tenant selector and stop treating the tenant header as an integer-only organization/database authority.
+- `packages/core/usecase/sap_migration.go` — accept/use the request-selected tenant database handle, keeping the SAP transaction and post-commit enqueue in the same tenant database family.
+- `apps/cloud-server/main.go` — remove the globally master-bound SAP/enrichment wiring and construct the tenant-aware coordinator/worker orchestration.
+- `packages/core/repository/product_enrichment_store.go` and `packages/core/repository/product_enrichment_execution_store.go` — retain the provider-neutral interfaces but ensure stores are constructed from the selected tenant repository and expose the transaction-capable boundary required by review.
+- `packages/core/enrichment/worker.go` / `packages/core/enrichment/execution.go` — carry tenant execution context through the worker orchestration if the chosen design is a registry-iterating worker.
+- `apps/cloud-server/cmd/migrate-tenants/main.go` — use the existing runner operationally to apply current enrichment migrations to all intended tenants; no new schema column is justified by this audit.
+
+No safe Stage 2D handler, route, review query, or audit adapter patch surface is authorized until those corrections and the legacy-master-row disposition are resolved.
+
+### Security test plan
+
+- Provision tenant A and tenant B with local `suggestion_id=1`, `product_id=95`, and `organization_id=1`, with different product/source content. Authenticate a tenant-A user and prove only tenant-A data is visible; repeat for tenant B.
+- Send tenant-A JWT with tenant-B header and prove rejection before tenant-B pool selection; prove no master/global repository fallback occurs.
+- Within one tenant, create organizations A and B with local users/products/suggestions and prove a user from organization A cannot list, detail, approve, reject, or audit organization B rows even when numeric suggestion/product IDs are guessed.
+- Prove the worker's `in_review` update and the review API's read use the same tenant pool and physical row, not two copies with equal numeric IDs.
+- Approve/reject in a failure-injected transaction and prove suggestion status and audit insert commit or roll back together in the same tenant DB.
+- Prove `reviewer_id` references the authenticated tenant-local user, rejects inactive/foreign-organization users, and cannot accept a request-body reviewer ID, JWT subject, or M2M client ID.
+- Disable a tenant or make its DB unavailable and prove review returns the existing tenant-not-found/unavailable behavior and worker skips/retries only that tenant without touching another or falling back to master.
+- Verify all enrichment queries have the organization predicate, status transitions remain lifecycle-constrained, and no global queue can collide on `(organization_id, product_id)` across tenant databases.
+
+### Current Stage 2D status
+
+Status: BLOCKED. Preserve `Stage 1 SAFE TO KEEP`, `Stage 2A SAFE TO KEEP`, `Stage 2B SAFE TO KEEP`, `Stage 2C SAFE TO KEEP`, the architect `product_type` contract, the OpenAI provider decision, and the tenant-bound JWT `SAFE TO KEEP` correction.
+
+Next Action: Correct the foundation first by moving the SAP post-commit enrichment lifecycle and Stage 2C execution to tenant-local repositories with a trusted SAP tenant boundary, migrate/verify every intended tenant, and resolve or quarantine existing master rows. Only after that gate passes: implement Stage 2D using the tenant-selected repository exclusively for suggestion/product/audit/reviewer operations.
+
+## Multi-Tenant SAP / Enrichment Foundation Correction
+
+Review date: 2026-08-20. This is a read-only design gate. Only this worklog was updated; no source, schema, SQL, migration, generated file, configuration, dependency, database, Git history, or external system was changed. No commit or push was performed.
+
+### 1. CURRENT SAP REQUEST IDENTITY CONTRACT
+
+The SAP agent currently sends `POST {Cloud.BaseURL}/api/v1/migration/batch` from `apps/sap-agent/internal/transport/client.go:113-125` with:
+
+- `Content-Type: application/json`;
+- `Content-Encoding: gzip`;
+- `X-Request-ID` containing a generated UUID;
+- `x-tenant-id` containing `fmt.Sprintf("%d", Cloud.OrganizationID)`;
+- `Authorization: Bearer <Cloud.APIKey>` and `x-api-key: <Cloud.APIKey>` only when the editable local `Cloud.APIKey` is non-empty; and
+- a payload whose `OrganizationID` is also populated from the same local `Cloud.OrganizationID` (`apps/sap-agent/internal/etl/engine.go:493-500` and the corresponding domain branches).
+
+`CloudConfig` has only `base_url`, `api_key`, `organization_id`, and timeout fields (`apps/sap-agent/internal/config/config.go:22-26`). The embedded agent UI exposes the organization/tenant ID and API key as editable values (`apps/sap-agent/ui/index.html:147-158`, `apps/sap-agent/ui/app.js:114-120`). The default organization is `1` (`config.go:67-71`). There is no SAP-agent tenant slug field, registration/onboarding flow, agent-to-tenant database association, or SAP gRPC/M2M registration path in the repository. The agent stores the configuration locally in `agent_config.json`.
+
+The current request therefore does not carry a proven tenant identity. It carries a client-controlled integer-like value twice, once as a header named `x-tenant-id` and once in the JSON body. The bearer value is called an API key by the agent, but the `/api/v1` route does not currently validate it.
+
+### 2. MIGRATION AUTHENTICATION FLOW
+
+There are two registrations of the same migration handler:
+
+```text
+/api/migration/batch
+  -> JWTAuthMiddleware
+  -> TenantBindingMiddleware
+  -> TenantMiddleware(tenantManager)
+  -> SAPMigrationHandler
+  -> globally constructed SAPMigrationUseCase(masterPool)
+
+/api/v1/migration/batch
+  -> global logger/CORS only
+  -> SAPMigrationHandler
+  -> globally constructed SAPMigrationUseCase(masterPool)
+```
+
+Evidence: `apps/cloud-server/main.go:114-117,229-239`; route registration is `packages/core/routing/sap_migration.go:9-13`.
+
+For `/api/v1/migration/batch`, no `JWTAuthMiddleware`, M2M validation, API-key middleware, `TenantBindingMiddleware`, `TenantMiddleware`, or master tenant-registry lookup runs. The agent's `Authorization` and `x-api-key` headers are ignored by this route. The handler reads `x-tenant-id`, attempts `strconv.Atoi`, and silently uses organization `1` if it is absent, non-numeric, or invalid (`packages/core/handler/sap_migration.go:51-59`). The usecase then preserves a positive `payload.OrganizationID`, so the JSON body can override the parsed header (`packages/core/usecase/sap_migration.go:45-50`). There is no existence, active-state, tenant-local organization, or authorization check.
+
+For `/api/migration/batch`, JWT authentication does run. Standard user tokens must contain the signed `tenant_slug` and match the slug header. M2M tokens must contain `is_m2m`, a client identity, and `tenant_id`; the signed tenant is checked against the file-backed `config/m2m_clients.json` entry, the client must be active, and a whitelisted token must match exactly (`packages/core/middleware/auth.go:24-30,105-126,130-267`). `TenantBindingMiddleware` repeats the M2M/header consistency check and `TenantMiddleware` resolves an active tenant pool (`packages/core/middleware/tenant.go:54-136`). However, the SAP handler still parses the slug as an integer, and the SAP usecase still writes through its startup-injected `masterPool`; the selected request repository is not used by the usecase.
+
+The current M2M system is therefore a usable tenant-binding primitive only on protected `/api` routes, not an authentication mechanism for the actual `/api/v1` SAP route. The M2M registry is a local JSON file, not a master-database agent registration table. No code maps an SAP machine credential to an organization.
+
+### 3. X-TENANT-ID SEMANTICS
+
+`X_TENANT_ID_SEMANTICS_CONFLICT_CONFIRMED`
+
+Interactive protected HTTP uses `x-tenant-id` as the exact tenant registry slug (`packages/core/middleware/tenant.go:90-117`; the Postman documentation also calls it a slug). SAP transport uses the same header name for a decimal `organization_id` (`apps/sap-agent/internal/transport/client.go:122`), and the migration handler confirms that interpretation (`packages/core/handler/sap_migration.go:51-57`). On `/api/migration/batch`, the collision is operationally visible: a valid slug fails integer parsing and leads to the fallback path.
+
+Recommendation: use option C as the primary design. Authenticate the migration as M2M, derive the tenant slug from the verified tenant-bound credential/registry entry, and keep organization identity separate. For explicit consistency/debugging use `x-tenant-id` only for the slug and add `x-organization-id` only as a non-authoritative consistency value. Do not preserve one header with two meanings, and do not use the current numeric header or default `1` as a database selector.
+
+### 4. TRUSTED SAP TENANT SOURCE
+
+The strongest currently available source is the existing M2M combination:
+
+1. JWT signature validation under the server `JWT_SECRET`;
+2. `is_m2m` and `client_id`/`sub` claims;
+3. lookup of the client in `config/m2m_clients.json`;
+4. active-client check and optional exact token-whitelist check; and
+5. exact equality between signed `tenant_id` and the registry entry's `TenantID`.
+
+This is the existing tenant-bound M2M consistency mechanism and should be reused. It is not currently applied to `/api/v1/migration/batch`. No stronger SAP-specific source exists: there is no agent registration table, no signed registration record in the master DB, no tenant association in the SAP payload, and no trusted local agent configuration. A free client-supplied slug is not sufficient.
+
+The current M2M registry binds only a client to a tenant slug. It does not bind a client to an organization. The correction must add an organization binding to the machine credential/registry contract (and issue a token containing the same signed organization claim, or have the server derive it from the server-side registry entry). A tenant-only claim is insufficient because one tenant database can contain multiple organizations.
+
+### 5. ORGANIZATION RESOLUTION
+
+`organizations` is `SERIAL`/integer and has no tenant foreign key because each physical tenant database is separate (`packages/core/db/schema/10_identity_rbac.sql:5-24`). Multiple organization rows are possible in one tenant database. `users`, `products`, staging rows, and enrichment suggestions reference that local integer.
+
+After trusted tenant selection, the server must resolve the organization from the tenant-bound M2M registration/token and validate that the organization exists and is active in the selected tenant database before beginning the SAP transaction. The request body `OrganizationID` and any organization header can be checked for consistency, but neither can be authoritative. If the credential has no organization binding, reject the request or require an explicitly authorized organization claim; never infer from numeric IDs and never default to `1`.
+
+### 6. AGENT CONFIGURATION IMPACT
+
+No current onboarding supplies a tenant slug or organization binding. The secure rollout needs a new server-issued/re-registered M2M credential bound to exactly one tenant slug and one tenant-local organization, while the agent keeps only the bearer credential and endpoint plus optional non-authoritative display/consistency fields. The server must not expose `MASTER_DB_URL`, tenant DSNs, or registry contents to the agent.
+
+An editable `organization_id` can remain temporarily for UI/display and payload consistency, but the server must compare it to the trusted credential and reject mismatches. A freely editable tenant or organization field must not select a database. Existing agents require a coordinated configuration/token update because the current default and numeric header contract are not safe compatibility behavior.
+
+### 7. RECOMMENDED SAP REQUEST CONTRACT
+
+Preferred future contract:
+
+```text
+Authorization: Bearer <tenant-and-organization-bound M2M JWT>
+x-tenant-id: <tenant slug>                 # optional consistency header
+x-organization-id: <positive integer>      # optional consistency header
+```
+
+The M2M JWT must be valid, active, and bound by the server-side registry to `client_id`, `tenant_id=<tenant slug>`, and `organization_id=<local org id>`. The server derives the canonical tenant and organization from the verified credential/registry. If consistency headers or the payload organization value are present, they must exactly match the trusted values; they never select a pool or override the claims. The SAP handler should not accept a numeric `x-tenant-id` as organization authority.
+
+Deprecated and rejected after rollout:
+
+- unauthenticated `/api/v1/migration/batch`;
+- `x-api-key` as an unvalidated credential;
+- numeric `x-tenant-id` as organization authority;
+- body-only `OrganizationID` authority; and
+- defaulting a missing/invalid organization to `1`.
+
+The existing M2M token already provides the tenant claim and registry comparison. The missing part is applying it to the migration route and binding/validating organization identity. Existing old tokens without an organization binding cannot be safely accepted as unrestricted migration credentials; they must be reissued or mapped to an explicit server-side organization during a coordinated rollout.
+
+### 8. TENANT-LOCAL SAP MIGRATION FLOW
+
+The target flow is:
+
+```text
+M2M authentication
+ -> trusted tenant + organization established
+ -> master registry lookup by trusted tenant slug
+ -> active tenant pool/repository
+ -> organization existence/active validation in that tenant DB
+ -> request-scoped tenant-bound SAPMigrationUseCase
+ -> transaction begins on tenant pool
+ -> deterministic SAP staging/product/UoM/etc. writes
+ -> commit
+ -> post-commit Stage 2A coordinator built from the same tenant repository
+```
+
+`manager.NewManager(masterRepo)` and `Manager.GetPool(slug)` are the existing pool-selection primitives (`packages/core/middleware/manager/manager.go:18-52`). The manager's master access is control-plane lookup only. The existing `GetPool` cache is keyed by slug and does not re-check active state or detect a rotated DSN after a cached pool is returned; the correction must add revalidation/invalidation or a bounded refresh policy before relying on it for machine traffic and dynamic tenant changes.
+
+No SAP extraction, mapping, batch contract, or deterministic core write semantics need to change. The selected pool replaces only the current global `masterPool` binding.
+
+### 9. SAPMigrationUseCase LIFETIME
+
+Choose A/C: use a tenant-aware request factory that resolves the trusted tenant, creates a request-scoped `SAPMigrationUseCase` from the selected pool, creates its tenant-local enrichment coordinator, and invokes the existing `IngestBatch` method. This is the smallest safe change because the current usecase already owns a pool (`packages/core/usecase/sap_migration.go:16-30`) and starts its transaction from that pool (`:45-54`).
+
+Passing a pool/store per invocation is also possible, but refactoring the large usecase to become database-neutral is broader and easier to misuse. A global mutable usecase with a request-swapped pool is unsafe under concurrent migration requests. The request factory should reject unresolved/disabled/unavailable tenants before constructing a write-capable usecase and should never substitute `masterPool`.
+
+### 10. STAGE 2A SAME-DB DESIGN
+
+For each migration request, construct:
+
+```text
+selected tenant pool
+ -> repository.New(pool)
+ -> NewProductEnrichmentStore(tenantRepo)
+ -> NewProductEnrichmentCoordinator(tenantStore)
+ -> tenant-scoped SAPMigrationUseCase.SetProductEnrichmentCoordinator
+```
+
+The product upsert and staging transaction use `selected tenant pool`; after commit, the coordinator reloads the product, brand/category/UoM/conversion context, and inserts the suggestion through the tenant repository. The current coordinator/store interfaces already make this composition possible (`packages/core/enrichment/enqueue.go:260-334`; `packages/core/repository/product_enrichment_store.go:19-23`). It is post-commit, not the same transaction, but it must be the same physical tenant database. No global coordinator or master enrichment store may be reachable from this path.
+
+### 11. STAGE 2C MULTI-TENANT WORKER DESIGN
+
+Choose option A: one bounded supervisor, not a permanent goroutine per tenant.
+
+```text
+supervisor tick
+ -> masterRepo.ListActiveTenants()
+ -> for each active tenant, resolve/revalidate pool
+ -> repository.New(tenantPool)
+ -> tenant-local ProductEnrichmentStore
+ -> existing EnrichmentWorker.RunOnce with a bounded batch
+ -> next tenant
+```
+
+The current worker is sequential and store-driven (`packages/core/enrichment/worker.go:11-92`), so its domain logic can be reused by constructing one worker/store per tenant iteration. The current global construction at `apps/cloud-server/main.go:341-355` must be removed. `ListDueProductEnrichmentSuggestions`, product snapshot reloads, candidate brands/categories, claims, and status transitions must all use the same tenant-local repository. The worker must carry the tenant slug as execution context for logging/metrics, but must not use it as a row-level substitute for local IDs.
+
+One tenant outage is logged and retried independently; it must not stop other tenants. Disabled tenants are skipped. There is no master suggestion fallback. Bounded per-tenant batch size and sequential tenant iteration provide predictable connection/model usage.
+
+### 12. TENANT DYNAMIC CHANGES
+
+The supervisor must enumerate active tenants on every polling cycle (or a short bounded registry refresh), so a tenant added after startup is discovered without restart. A disabled tenant must stop being processed even if a pool was previously cached. A rotated `db_conn_str` must invalidate/replace the cached pool before the next iteration. A temporarily unavailable database is an isolated retryable tenant error. The current manager's never-expiring slug cache is insufficient by itself for all four behaviors and must gain revalidation/invalidation or a refreshable cache as part of the foundation correction.
+
+### 13. MASTER DB ROLE AFTER CORRECTION
+
+The master database remains the control plane: tenant registry (`tenants.slug`, `db_conn_str`, `is_active`, settings), active-tenant enumeration, tenant lifecycle administration, and infrastructure/migration coordination. It may retain legacy/control copies required by existing unrelated functions until separately retired.
+
+It must not be the active business store for tenant SAP products, organizations, staging rows, enrichment suggestions, candidate dictionaries, reviewer users, permissions, or review audit rows after the correction. The common schema currently creates many of these tables in both database families; physical presence is not authority. The tenant-local database selected for a request is the authority for that tenant's business rows.
+
+### 14. EXISTING MASTER SAP PRODUCT DATA
+
+Repository searches found no authoritative tenant slug, tenant UUID, source-tenant field, agent registration identity, or organization-to-tenant association in SAP products, SAP staging rows, products metadata, or enrichment suggestions. SAP staging and products contain local organization/SKU values only (`packages/core/db/schema/95_sap_staging.sql:5-18`; `30_catalog.sql`), while tenant identity appears only in routing/M2M/gRPC control paths.
+
+Therefore existing master products cannot be automatically assigned to tenant databases from equal numeric organization/product IDs, SKU alone, or matching timestamps. Backfill requires an authoritative mapping of master SAP source/batch/agent identity to tenant slug and then a validated tenant-local organization/product. Rows without that evidence must remain quarantined/inert or be manually mapped. Do not move data in this foundation phase.
+
+### 15. EXISTING MASTER SUGGESTIONS
+
+Leave existing master `product_enrichment_suggestions` rows in place and mark them operationally quarantined/inert for tenant review. Do not surface them through tenant-local review APIs, do not merge them by numeric IDs, and do not delete them automatically. Only a later, explicitly approved backfill may migrate a row with authoritative tenant and tenant-local organization/product mapping, preserving source fingerprint and lifecycle evidence. Unmapped rows remain available only for controlled audit/manual disposition.
+
+### 16. TENANT DB MIGRATION READINESS
+
+`apps/cloud-server/cmd/migrate-tenants/main.go` requires `MASTER_DB_URL`, resolves the Atlas directory, connects to master, optionally migrates master (`-master`, default `true`), enumerates `tenants WHERE is_active = true`, and applies Atlas migrations to every non-empty active tenant `db_conn_str`. It logs each tenant, continues after per-tenant failures, summarizes successes/failures, and exits nonzero if any tenant fails. `-status` runs Atlas status instead of apply; `-dir` overrides the migration directory; `-baseline` defaults to `20260101000000`. It requires Atlas via `ATLAS_PATH` or PATH and does not run automatically at server startup.
+
+The eventual prerequisite is to run the repository-compatible command from `apps/cloud-server` (for example, `go run cmd/migrate-tenants/main.go -master=false` for tenant-only application, with the required environment and Atlas binary), and verify both `20260820000000.sql` and `20260820010000.sql` in every intended tenant. The current `apps/cloud-server/migrate-tenants.ps1` advertises a `-Down` flag that the Go runner does not define; it is not the authoritative rollback procedure. Tenant creation also does not create/migrate a database automatically.
+
+### 17. REVIEW PERMISSION PROVISIONING
+
+No `product_enrichment:review` permission or role mapping currently exists in the repository. The permission must be provisioned in each tenant database through an approved tenant-local seed/data migration or explicit administration, using the existing `permissions`, `role_permissions`, `user_roles`, and `CheckUserHasPermission` patterns (`packages/core/db/schema/10_identity_rbac.sql:132-175`; `packages/core/queries/permissions.sql`). It must not be granted globally through the master copy and must not be assumed present merely because the schema table exists. Do not grant it in this gate.
+
+### 18. STAGE 2D FINAL REQUEST FLOW
+
+After foundation correction, the review path is:
+
+```text
+browser
+ -> tenant-bound user JWT
+ -> TenantBindingMiddleware
+ -> TenantMiddleware / tenant pool
+ -> tenant-local repository
+ -> authenticated active tenant-local user
+ -> derive users.organization_id server-side
+ -> tenant-local product_enrichment:review permission
+ -> organization-scoped tenant-local suggestion/product reads
+ -> stale fingerprint/source validation
+ -> same tenant-pool transaction
+      approve/reject suggestion
+      + tenant-local audit record
+```
+
+No master business repository participates. Request body/query tenant, organization, reviewer, product, or database identifiers are not authority. `reviewer_id` is the authenticated tenant-local `users.id`; organization is the authenticated user's tenant-local `organization_id`. Keep Stage 2D BLOCKED until the SAP/worker foundation, tenant migrations, legacy-row policy, and permission provisioning are complete.
+
+### 19. SECURITY INVARIANTS
+
+Implementation must enforce all of these:
+
+1. One migration request resolves exactly one trusted tenant before product/staging writes.
+2. The SAP organization ID exists and is valid in that selected tenant database.
+3. SAP staging, product upsert, commit, and Stage 2A suggestion insertion use the same physical tenant database.
+4. Stage 2C builds provider requests only from the same tenant-local product, taxonomy, UoM, and suggestion repository.
+5. Stage 2D reads and writes the same tenant-local suggestion/product/user/audit database.
+6. Master numeric organization/product/user/suggestion IDs are never interpreted as tenant-local identities in another database.
+7. Tenant-resolution failure has no fallback to master product/enrichment persistence.
+8. Disabled or unavailable tenants produce explicit reject/skip/retry outcomes and never fall through to another tenant or master.
+
+### 20. TEST PLAN FOR FOUNDATION CORRECTION
+
+Required tests include:
+
+- M2M tenant A selects only tenant A; tenant B selects only tenant B; signed/header mismatch, unknown, inactive, missing, invalid, and revoked credentials fail before pool/write selection.
+- Organization binding is required and validated inside the selected tenant; invalid organization, body/header mismatch, and no-contract default-to-`1` are rejected.
+- Tenant A and B may both use local `organization_id=1`, `product_id=95`, and `suggestion_id=1`; SAP and Stage 2A writes remain isolated, and each worker/reviewer sees only its own physical row.
+- Tenant migration never writes master products/staging/suggestions; tenant resolution failure never invokes a master fallback.
+- Worker outage isolation, disabled-tenant skip, newly active tenant discovery, DSN rotation refresh, and tenant-local candidate dictionaries are covered.
+- The worker's `in_review` row is the exact row later read by the tenant-bound review path; stale source rejection and organization predicates are tested.
+- Review approval/rejection uses the tenant-local authenticated user and permission, and suggestion plus audit commit/rollback together in the tenant database.
+
+### 21. BACKWARD COMPATIBILITY
+
+There is no safe transparent compatibility mode for the currently deployed unauthenticated/numeric contract. Old agents can send a bearer token, but `/api/v1` currently ignores it, and old tokens/registry entries do not bind organization identity. Do not preserve default-to-master/default-organization behavior to avoid an agent update.
+
+Operational rollout should issue/re-register a tenant-and-organization-bound M2M credential, deploy the server-side authenticated migration route, update the agent to send slug `x-tenant-id` (if retained as consistency) and optional `x-organization-id`, then enable tenant-local migration. A temporary legacy endpoint may be considered only if it has a separately named contract, mandatory M2M authentication, an authoritative server-side client-to-tenant-and-organization mapping, and no database guessing; the current `/api/v1` behavior must not remain open.
+
+### 22. EXACT IMPLEMENTATION PHASES
+
+Phase F1 — trusted SAP tenant boundary and tenant-local SAP/Stage 2A:
+
+- Extend the M2M client/token contract and registration tooling to bind organization as well as the already bound tenant; apply M2M authentication to the machine migration route.
+- Add trusted-claim/header/body consistency validation and remove integer `x-tenant-id`/default `1` authority.
+- Add tenant-pool revalidation/invalidation for active-state and DSN changes.
+- Make migration handler/factory resolve the tenant pool and construct a request-scoped `SAPMigrationUseCase`; construct the coordinator/store from the same tenant repository.
+- Patch surface: `packages/core/middleware/auth.go`, `packages/core/handler/m2m.go` or `apps/cloud-server/cmd/m2m-gen/main.go`, `apps/cloud-server/config/m2m_clients.json.example`, `apps/sap-agent/internal/config/config.go`, `apps/sap-agent/internal/transport/client.go`, `apps/sap-agent/internal/etl/engine.go`/UI, `packages/core/handler/sap_migration.go`, `packages/core/routing/sap_migration.go`, `apps/cloud-server/main.go`, `packages/core/usecase/sap_migration.go`, and `packages/core/middleware/manager/manager.go`, plus focused tests. Do not touch SAP extraction/mapping contracts.
+
+Phase F2 — tenant-aware Stage 2C supervisor:
+
+- Enumerate active tenants from master control data on each bounded cycle; resolve/revalidate each pool; construct a tenant-local store/worker; isolate failures and never fall back to master.
+- Patch surface: `apps/cloud-server/main.go`, `packages/core/enrichment/worker.go` or a new supervisor at that boundary, `packages/core/enrichment/execution.go`, `packages/core/repository/product_enrichment_store.go`, `packages/core/repository/product_enrichment_execution_store.go`, manager/cache support, and worker/isolation tests.
+
+Phase F3 — tenant provisioning and legacy-data disposition:
+
+- Run/verify Atlas migrations in every intended tenant; provision the review permission per tenant; record active/inactive/failed tenant outcomes; quarantine master suggestions; require manual authoritative mapping for any approved backfill.
+- Operational surface: `apps/cloud-server/cmd/migrate-tenants/main.go`, tenant administration/runbooks, and tenant-local RBAC data. No automatic data movement.
+
+Only after F1–F3 pass should Stage 2D review routes, tenant-local audit transaction, stale validation, and UI be implemented. Stage 2D remains BLOCKED now.
+
+### 23. FOUNDATION SCHEMA VERDICT
+
+`NO_FOUNDATION_SCHEMA_CHANGE_REQUIRED`
+
+Physical tenant isolation already provides the required boundary, and `20260820000000.sql` plus `20260820010000.sql` already define the suggestion/retry schema; both are present in `packages/core/db/migrations/atlas.sum`. Moving SAP/enrichment persistence from master to the selected tenant DB does not require adding `tenant_slug` to tenant-local rows. The M2M organization binding is a credential/control-plane contract change, not a required tenant-row schema change. If the file-backed M2M registry is later replaced by a master control-plane table, that would be a separate control-plane schema decision, not a reason to add tenant identity to every tenant-local product/suggestion row.
+
+### 24. REUSABLE STAGE 1/2 COMPONENTS
+
+- Stage 1 suggestion schema/lifecycle: logically reusable unchanged in each tenant DB after migrations; repository generation/verification remains a separate recorded gate.
+- Stage 2A eligibility, fingerprinting, structured-current snapshot, and coordinator interfaces: reusable; build the store from the selected tenant repository.
+- Stage 2B/provider-neutral parser and contract validation: reusable; it has no database identity or tenant authority.
+- Stage 2C OpenAI adapter: reusable; provider calls do not choose a tenant, and the worker must supply tenant-local request data.
+- Stage 2C worker logic: reusable per tenant because its state transitions carry local organization/suggestion IDs; the global master-bound construction and lack of tenant supervisor are the parts to replace.
+
+The conclusion is “reuse domain logic, correct pool/repository wiring,” not a rejection of the architect-approved enrichment contracts.
+
+### 25. agents.md UPDATED
+
+This section records the current SAP identity contract, authentication gap, confirmed `x-tenant-id` collision, M2M trust source, organization resolution, tenant-pool/usecase/coordinator design, tenant-aware worker, master role, master-row quarantine, migration and permission prerequisites, security invariants, compatibility plan, and implementation phases. Stage 2D remains BLOCKED.
+
+Next Action: Phase F1 only after the tenant-and-organization M2M trust contract is explicitly approved and provisioned. No source implementation is authorized by this design gate.
+
+### 26. FINAL VERIFICATION
+
+The final verification for this gate is `git status --short` and `git diff --check`. The intended result is that only `agents.md` is modified; no staging, commit, or push is allowed.
