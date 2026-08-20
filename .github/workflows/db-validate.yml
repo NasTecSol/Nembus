@@ -1,17 +1,66 @@
-name: DB Schema, Migration & sqlc Validation
+name: DB Schema, Migration & Tenant Apply (Junction)
+
+# Runs on every push to `junction` that touches the canonical schema
+# (packages/core/db/schema) or the Atlas migration directory.
+#
+# Pipeline:
+#   1. Generate  — if schema files changed, `atlas migrate diff` creates a
+#                  new versioned migration (no commit yet).
+#   2. Validate  — checksum check + apply to a throwaway Postgres to prove
+#                  the migration works from scratch.
+#   3. Commit    — only after validation passes, the generated migration is
+#                  committed back to `junction` (GITHUB_TOKEN pushes do NOT
+#                  retrigger workflows, so there is no infinite loop).
+#   4. Apply     — applies pending migrations to the master DB and to every
+#                  active tenant DB (via apps/cloud-server/cmd/migrate-tenants).
+#   5. Verify    — sqlc freshness + core/server tests.
 
 on:
   push:
     branches:
       - junction
+    paths:
+      - 'packages/core/db/schema/**'
+      - 'packages/core/db/migrations/**'
+
+permissions:
+  # Required to commit the auto-generated migration back to `junction`.
+  contents: write
+
+concurrency:
+  # One migration run per branch at a time; a newer push cancels the older run
+  # (Atlas apply is resumable via atlas_schema_revisions, so this is safe).
+  group: db-junction-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  validate-db:
-    name: Validate Schema, Migrations & sqlc
+  migrate-and-apply:
+    name: Generate, Validate & Apply Migrations
     runs-on: ubuntu-latest
 
+    env:
+      # Atlas dev database used to compute diffs (clean scratch DB, never the
+      # real one). Read by `dev_db_url` in atlas.hcl via ATLAS_DEV_URL.
+      ATLAS_DEV_URL: postgres://postgres:password@localhost:5433/dev?sslmode=disable
+
     services:
-      postgres:
+      devdb:
+        # Empty scratch database for `atlas migrate diff`.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: dev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      testdb:
+        # Throwaway database used to prove migrations apply from scratch.
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
@@ -28,6 +77,10 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          # Full history so we can diff against the previous commit
+          # (github.event.before) to detect schema changes.
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -43,6 +96,51 @@ jobs:
       - name: Install sqlc
         run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
 
+      # ---------------------------------------------------------------
+      # 1. GENERATE — only when packages/core/db/schema actually changed
+      # ---------------------------------------------------------------
+      - name: Generate Migration from Schema Changes
+        id: gen
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Detect whether the schema directory changed in this push.
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # First push to the branch (or unknown base) — fall back to HEAD~1.
+            BEFORE="$(git rev-parse HEAD~1 2>/dev/null || true)"
+          fi
+
+          SCHEMA_CHANGED=false
+          if [ -n "$BEFORE" ]; then
+            if git diff --name-only "$BEFORE" HEAD -- packages/core/db/schema | grep -q .; then
+              SCHEMA_CHANGED=true
+            fi
+          else
+            # Cannot determine the base commit — be safe and diff anyway.
+            SCHEMA_CHANGED=true
+          fi
+
+          echo "schema_changed=$SCHEMA_CHANGED" >> "$GITHUB_OUTPUT"
+
+          if [ "$SCHEMA_CHANGED" != "true" ]; then
+            echo "No changes under packages/core/db/schema — skipping migration generation."
+            exit 0
+          fi
+
+          MIG_NAME="schema_$(date +%Y%m%d%H%M%S)"
+          echo "migration_name=$MIG_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "Generating migration: $MIG_NAME"
+          # Diff = state(migrations dir) -> state(schema dir).
+          # Env "local" from the root atlas.hcl wires up src + migration dir,
+          # and ATLAS_DEV_URL (job env) is used as the dev database.
+          atlas migrate diff "$MIG_NAME" --env local
+
+      # ---------------------------------------------------------------
+      # 2. VALIDATE — checksums + fresh-DB apply BEFORE committing back
+      # ---------------------------------------------------------------
       - name: Validate Atlas Migration Checksums
         run: atlas migrate validate --dir "file://packages/core/db/migrations"
 
@@ -52,6 +150,48 @@ jobs:
             --url "postgres://postgres:password@localhost:5432/masterDB_test?sslmode=disable" \
             --dir "file://packages/core/db/migrations"
 
+      # ---------------------------------------------------------------
+      # 3. COMMIT — only if the diff actually produced new files
+      # ---------------------------------------------------------------
+      - name: Commit Generated Migration Back to Junction
+        if: steps.gen.outputs.schema_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(git status --porcelain packages/core/db/migrations)" ]; then
+            echo "Diff produced no changes — nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add packages/core/db/migrations   # includes the new file + atlas.sum
+          git commit -m "chore(db): auto-generate migration ${{ steps.gen.outputs.migration_name }}"
+
+          # Pushed with GITHUB_TOKEN, which GitHub does NOT use to trigger
+          # workflow runs — so this push cannot re-trigger this workflow.
+          git push origin HEAD:junction
+          echo "Migration committed and pushed to junction."
+
+      # ---------------------------------------------------------------
+      # 4. APPLY — master DB + every active tenant
+      # ---------------------------------------------------------------
+      - name: Apply Migrations to Master & All Active Tenants
+        shell: bash
+        env:
+          # URL of the master DB (holds the `tenants` registry table).
+          # Point this at staging first if you want a safe rollout.
+          MASTER_DB_URL: ${{ secrets.MASTER_DB_URL }}
+        run: |
+          cd apps/cloud-server
+          go run ./cmd/migrate-tenants/main.go \
+            -dir "${{ github.workspace }}/packages/core/db/migrations"
+
+      # ---------------------------------------------------------------
+      # 5. VERIFY — sqlc freshness + tests (unchanged from before)
+      # ---------------------------------------------------------------
       - name: Verify sqlc Generation Freshness
         run: |
           cd packages/core
