@@ -52,8 +52,7 @@ func (e *CatalogExtractor) ExtractBrands(ctx context.Context) ([]mappings.Canoni
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryBrands)
 	if err != nil {
-		// OMRG table is optional in some SAP B1 installations
-		return []mappings.CanonicalBrand{}, nil
+		return nil, fmt.Errorf("failed to query OMRG: %w", err)
 	}
 	defer rows.Close()
 
@@ -66,6 +65,9 @@ func (e *CatalogExtractor) ExtractBrands(ctx context.Context) ([]mappings.Canoni
 		}
 		b.FirmName = name.String
 		brands = append(brands, b.ToCanonical())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate OMRG rows: %w", err)
 	}
 	return brands, nil
 }
