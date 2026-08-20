@@ -18,7 +18,7 @@ func main() {
 	// Parse command line flags
 	includeMaster := flag.Bool("master", true, "Also run migrations on the master database")
 	migrationsDir := flag.String("dir", "", "Directory containing Atlas migration files (default: auto-detected packages/core/db/migrations)")
-	baselineVer := flag.String("baseline", "20260101000000", "Baseline migration version for existing databases")
+	baselineVer := flag.String("baseline", "", "Baseline migration version. Leave empty (default) to apply pending migrations normally. Set it to the FIRST migration version (e.g. 20260813124500) ONLY for databases that already contain the full schema but lack the atlas_schema_revisions table (e.g. restored from a backup) — with it, Atlas skips every migration <= baseline. A baseline that does not exist in the migration directory is a hard error.")
 	statusOnly := flag.Bool("status", false, "Show migration status without applying")
 	flag.Parse()
 

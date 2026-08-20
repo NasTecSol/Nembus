@@ -108,12 +108,26 @@ go run cmd/migrate-tenants/main.go -master=false
 go run cmd/migrate-tenants/main.go -status=true
 ```
 
-### Baseline Strategy for Existing Databases
-When introducing Atlas to an existing database containing data, Atlas uses the initial baseline version:
-`20260101000000_initial_baseline.sql`.
-* Existing databases are registered at the baseline without dropping schema or losing data.
-* Future migrations are applied incrementally.
-* Fresh databases apply all migrations from scratch seamlessly.
+### Baseline for Existing (Legacy) Databases
+
+`migrate-tenants` applies pending migrations normally by default (no baseline) —
+this is correct for fresh databases (applies everything) and for databases that
+already have an `atlas_schema_revisions` table (applies only pending).
+
+For **legacy** databases that already contain the full schema but have **no**
+`atlas_schema_revisions` table (e.g. created before Atlas was introduced, or
+restored from a backup), pass the **first migration version** as the baseline so
+Atlas skips it instead of failing with "relation already exists":
+
+```bash
+go run cmd/migrate-tenants/main.go -baseline 20260813124500
+```
+
+Migrations with version <= baseline are treated as already applied. ⚠️ Never
+pass a baseline for fresh/empty databases — Atlas would skip the initial schema
+migration. Also, the baseline must be an existing migration version in
+`packages/core/db/migrations/`, otherwise Atlas errors with
+`baseline version "..." not found`.
 
 ---
 
