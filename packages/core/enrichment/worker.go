@@ -44,7 +44,7 @@ func (w *EnrichmentWorker) Start(ctx context.Context) {
 				return
 			case <-ticker.C:
 				if err := w.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-					w.logger.Printf("product enrichment worker batch error: %v", err)
+					w.logger.Printf("product enrichment worker batch error_class=%s", errorCode(err))
 				}
 			}
 		}
@@ -70,7 +70,7 @@ func (w *EnrichmentWorker) RunOnce(ctx context.Context) error {
 			return err
 		}
 		if err := w.processOne(ctx, row); err != nil && !errors.Is(err, context.Canceled) {
-			w.logger.Printf("product enrichment suggestion %d failed to process: %v", row.ID, err)
+			w.logger.Printf("product enrichment suggestion=%d failed error_class=%s", row.ID, errorCode(err))
 		}
 	}
 	return nil

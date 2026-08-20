@@ -1837,3 +1837,92 @@ Agent transport/config/UI: `apps/sap-agent/internal/config/config.go`, `apps/sap
 ### Current Phase
 
 F1 implementation. Next action, if F1 is accepted, is Foundation F2 â€” tenant-aware Stage 2C worker supervision over active tenant databases. Do not implement Stage 2D review APIs or Stage 2E application yet.
+## Foundation F2 — Tenant-Aware Enrichment Worker
+
+F1 remains SAFE TO KEEP. This section records the F2 implementation.
+The supervisor uses the master repository only to enumerate active tenant
+slugs through the existing `ListActiveTenants` control-plane query. It does
+not enumerate or process master products, organizations, or
+`product_enrichment_suggestions`.
+
+Each supervisor cycle re-enumerates active tenants. Tenant processing is
+sequential and bounded: the supervisor resolves the current tenant slug
+through the existing tenant pool manager, constructs `repository.New` from
+that pool, and creates the execution/context/candidate store and worker from
+that repository. The generic `ProductEnrichmentWorker` remains tenant-agnostic
+and retains the existing claim, stale-source, OpenAI, strict Stage 2B
+validation, retry/backoff, and `in_review`/retryable/failed behavior. AI never
+mutates products and no review or application API is included.
+
+One stateless, server-configured OpenAI provider/client is shared by the
+tenant-local workers. Tenant database credentials, registry data, and raw
+provider payloads are not sent to OpenAI. Worker logs use the tenant slug with
+tenant-local numeric IDs and normalized error classes; DSNs and secrets are
+not logged.
+
+Tenant setup, database, schema, and worker/provider failures are isolated to
+that tenant pass. Disabled or unavailable tenants are skipped/fail locally;
+there is no master fallback, no cross-tenant repository reuse, and no dynamic
+schema migration. Tenant databases must already have the enrichment
+migrations; the operational prerequisite is the established tenant migration
+command, for example `go run cmd/migrate-tenants/main.go -master=false` from
+`apps/cloud-server` with the required environment and Atlas binary.
+
+Legacy master suggestions remain quarantined and untouched. Any recovery or
+backfill requires a separate authoritative migration/quarantine decision and
+must not infer tenant identity from colliding numeric IDs.
+
+### Tenant-Local Data Invariant
+
+For active business data:
+
+Product DB = Suggestion DB = Enrichment Worker DB = Future Review DB = Future Application DB = Audit DB.
+
+The master DB remains the control-plane registry only for this worker path.
+
+### F2 Tests and Verification
+
+The supervisor tests cover two active tenants with colliding local
+`organization_id=1`, `product_id=95`, and `suggestion_id=1`; tenant-local brand
+and category candidates and lifecycle updates remain isolated. They also cover
+disabled-tenant skipping, newly active tenant discovery on a later cycle,
+empty active-tenants, setup/pool failure isolation, and tenant worker/schema
+failure isolation. The tests use fakes and never call live OpenAI.
+
+SQLC and Atlas changes are not required: the existing active-tenant SQLC
+query is reused and no schema/query source was changed. Final Go formatting and
+test results are recorded in the task handoff after execution.
+
+### F2 Files Changed
+
+- `packages/core/enrichment/supervisor.go`: tenant enumeration and isolated
+  sequential supervisor.
+- `packages/core/enrichment/worker.go`: normalized safe worker error logging.
+- `packages/core/enrichment/supervisor_test.go`: tenant routing, colliding-ID,
+  dynamic discovery, disabled, and failure-isolation tests.
+- `apps/cloud-server/main.go`: active control-plane registry adapter, tenant
+  pool/repository worker factory, shared OpenAI provider, and lifecycle wiring.
+- `agents.md`: this worklog and invariant update.
+
+### Current Phase
+
+F2 implementation. F1 tenant-local SAP routing and tenant-bound JWT security
+remain intact. Stage 2D and Stage 2E are not implemented and remain blocked.
+
+### Next Action
+
+If F2 is SAFE TO KEEP: Foundation F3 — tenant deployment/migration
+verification, tenant-local `product_enrichment:review` permission provisioning,
+and explicit legacy master suggestion quarantine policy; then Stage 2D
+implementation. Do not mark Stage 2D ready before F3.
+The requested `gofmt`, `go test ./enrichment`, `go test ./repository`, `go
+test ./usecase`, `go test ./...` from `packages/core`, and `go test ./...` from
+`apps/cloud-server` were attempted on 2026-08-20 but could not execute because
+Go/gofmt are unavailable. `git diff --check` passed. SQLC and Atlas are also
+unavailable; because F2 made no SQL/schema changes, neither generation nor
+checksum modification is required.
+
+The existing manager revalidates active state on each `GetPool` call and keeps
+its established slug-keyed pool cache semantics. F2 does not redesign DSN
+rotation/invalidation; any rotation behavior remains the manager's existing
+operational responsibility and must be verified in F3/deployment readiness.

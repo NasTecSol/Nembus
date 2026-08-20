@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"syscall"
 
 	"github.com/NasTecSol/nembus-core/config"
+	"github.com/NasTecSol/nembus-core/enrichment"
+	"github.com/NasTecSol/nembus-core/enrichment/openaiadapter"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
@@ -245,6 +248,49 @@ func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
 }
 
+// masterEnrichmentTenantRegistry exposes only active control-plane tenant
+// identity to the supervisor. It deliberately does not expose master
+// products, organizations, or enrichment suggestions.
+type masterEnrichmentTenantRegistry struct {
+	repo *repository.Queries
+}
+
+func (r masterEnrichmentTenantRegistry) ListActiveTenants(ctx context.Context) ([]enrichment.TenantRegistration, error) {
+	rows, err := r.repo.ListActiveTenants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]enrichment.TenantRegistration, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, enrichment.TenantRegistration{
+			Slug:   row.Slug,
+			Active: row.IsActive.Valid && row.IsActive.Bool,
+		})
+	}
+	return result, nil
+}
+
+func newTenantEnrichmentWorkerFactory(tenantManager *manager.Manager, provider enrichment.ProductEnrichmentProvider, cfg *config.Config) enrichment.TenantWorkerFactory {
+	return func(ctx context.Context, tenant enrichment.TenantRegistration) (*enrichment.EnrichmentWorker, error) {
+		pool, err := tenantManager.GetPool(ctx, tenant.Slug)
+		if err != nil {
+			return nil, err
+		}
+		// Every dependency below is constructed from this pass's pool. No
+		// master repository or previous tenant repository is retained.
+		tenantRepo := repository.New(pool)
+		store := repository.NewProductEnrichmentStore(tenantRepo)
+		workerConfig := enrichment.EnrichmentExecutionConfig{
+			Interval:    cfg.EnrichmentWorkerInterval,
+			Timeout:     cfg.OpenAIEnrichmentTimeout,
+			BatchSize:   cfg.EnrichmentBatchSize,
+			MaxAttempts: cfg.EnrichmentMaxRetries,
+		}
+		workerLogger := log.New(log.Writer(), fmt.Sprintf("product enrichment tenant=%q ", tenant.Slug), log.Flags())
+		return enrichment.NewEnrichmentWorker(store, provider, workerConfig, workerLogger), nil
+	}
+}
+
 func main() {
 	env := "development"
 	if len(os.Args) > 1 {
@@ -334,12 +380,34 @@ func main() {
 		zatcaSvc.StartReportingWorker(ctx)
 	}
 
-	// F1 routes SAP writes and Stage 2A enqueueing to tenant-local pools. The
-	// previous master-bound Stage 2C worker is intentionally disabled until F2
-	// provides tenant-aware worker supervision. Tenant suggestions remain
-	// pending, while legacy master rows remain untouched.
+	// F1 routes SAP writes and Stage 2A enqueueing to tenant-local pools. F2
+	// enumerates only active tenant identities from master, then constructs a
+	// fresh worker/repository from each selected tenant pool. Master business
+	// tables, including legacy master suggestions, are never processed here.
 	if cfg.EnrichmentEnabled {
-		log.Printf("Product enrichment worker disabled until Foundation F2 tenant-aware supervision")
+		if err := cfg.ValidateEnrichmentConfig(); err != nil {
+			log.Printf("product enrichment supervisor disabled: configuration invalid")
+		} else {
+			provider, err := openaiadapter.New(cfg.OpenAIAPIKey, cfg.OpenAIEnrichmentModel, cfg.OpenAIEnrichmentTimeout)
+			if err != nil {
+				log.Printf("product enrichment supervisor disabled: provider not configured")
+			} else {
+				workerConfig := enrichment.EnrichmentExecutionConfig{
+					Interval:    cfg.EnrichmentWorkerInterval,
+					Timeout:     cfg.OpenAIEnrichmentTimeout,
+					BatchSize:   cfg.EnrichmentBatchSize,
+					MaxAttempts: cfg.EnrichmentMaxRetries,
+				}
+				registry := masterEnrichmentTenantRegistry{repo: masterRepo}
+				supervisor := enrichment.NewTenantEnrichmentSupervisor(
+					registry,
+					newTenantEnrichmentWorkerFactory(tenantManager, provider, cfg),
+					workerConfig,
+					log.Default(),
+				)
+				supervisor.Start(ctx)
+			}
+		}
 	}
 
 	// Setup Router
