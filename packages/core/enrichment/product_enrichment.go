@@ -101,8 +101,13 @@ func (p ProposalSet) Validate(structuredCurrent json.RawMessage) error {
 		return err
 	}
 
+	brandPresent, err := HasValidStructuredBrand(structuredCurrent)
+	if err != nil {
+		return err
+	}
+
 	if p.Brand != nil {
-		if err := p.Brand.validate(); err != nil {
+		if err := p.Brand.validate(brandPresent); err != nil {
 			return fmt.Errorf("brand proposal: %w", err)
 		}
 	}
@@ -124,12 +129,15 @@ func (p ProposalSet) Validate(structuredCurrent json.RawMessage) error {
 	return nil
 }
 
-func (p BrandProposal) validate() error {
+func (p BrandProposal) validate(brandPresent bool) error {
 	if err := validateAction(p.Action); err != nil {
 		return err
 	}
 	if err := validateConfidence(p.Confidence); err != nil {
 		return err
+	}
+	if brandPresent && p.Action != ActionKeepExisting {
+		return fmt.Errorf("a populated structured brand may only record KEEP_EXISTING")
 	}
 
 	switch p.Action {
@@ -268,7 +276,7 @@ func findForbiddenKey(value any, forbidden map[string]struct{}) (string, bool) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, child := range typed {
-			if _, found := forbidden[strings.ToLower(key)]; found {
+			if isForbiddenKey(key, forbidden) {
 				return key, true
 			}
 			if key, found := findForbiddenKey(child, forbidden); found {
@@ -283,6 +291,16 @@ func findForbiddenKey(value any, forbidden map[string]struct{}) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func isForbiddenKey(key string, forbidden map[string]struct{}) bool {
+	normalizedKey := normalizeEnrichmentTarget(key)
+	for candidate := range forbidden {
+		if normalizedKey == normalizeEnrichmentTarget(candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 // HasValidStructuredCategory recognizes the structured category forms used by
@@ -304,6 +322,64 @@ func HasValidStructuredCategory(structuredCurrent json.RawMessage) (bool, error)
 		}
 	}
 	return false, nil
+}
+
+// HasValidStructuredBrand recognizes only resolved structured brand identity.
+// A brand name without an existing ID or canonical code remains unresolved.
+func HasValidStructuredBrand(structuredCurrent json.RawMessage) (bool, error) {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(structuredCurrent, &document); err != nil {
+		return false, fmt.Errorf("structured_current must be a JSON object: %w", err)
+	}
+
+	if raw, ok := document["brand_id"]; ok && hasStructuredBrandID(raw) {
+		return true, nil
+	}
+	for _, key := range []string{"brand_code", "canonical_brand_code"} {
+		if raw, ok := document[key]; ok && hasStructuredBrandCode(raw) {
+			return true, nil
+		}
+	}
+	for _, key := range []string{"brand", "structured_brand"} {
+		if raw, ok := document[key]; ok && hasStructuredBrandIdentity(raw) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func hasStructuredBrandIdentity(raw json.RawMessage) bool {
+	var value map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	for _, key := range []string{"id", "brand_id"} {
+		if candidate, ok := value[key]; ok && hasStructuredBrandID(candidate) {
+			return true
+		}
+	}
+	for _, key := range []string{"code", "brand_code", "canonical_brand_code"} {
+		if candidate, ok := value[key]; ok && hasStructuredBrandCode(candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasStructuredBrandID(raw json.RawMessage) bool {
+	var value float64
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	return value > 0
+}
+
+func hasStructuredBrandCode(raw json.RawMessage) bool {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	return strings.TrimSpace(value) != ""
 }
 
 func hasMeaningfulStructuredValue(raw json.RawMessage) bool {
@@ -335,25 +411,31 @@ func hasMeaningfulStructuredValue(raw json.RawMessage) bool {
 }
 
 var prohibitedTargets = map[string]struct{}{
-	"sku": {}, "itemcode": {}, "item_code": {}, "barcode": {},
-	"inventory": {}, "warehouse": {}, "price": {}, "tax": {},
-	"tax_category": {}, "uom": {}, "uom_conversion": {},
-	"supplier": {}, "active": {}, "is_active": {},
-	"sellable": {}, "is_sellable": {}, "purchasable": {}, "is_purchasable": {},
-	"product_type": {},
+	"sku": {}, "skucode": {}, "itemcode": {}, "sourceitemcode": {}, "sapitemcode": {},
+	"barcode": {}, "barcodes": {}, "barcodeownership": {},
+	"inventory": {}, "trackinventory": {}, "inventoryquantity": {}, "stock": {}, "stockquantity": {},
+	"warehouse": {}, "warehouseid": {}, "storeinventory": {},
+	"price": {}, "prices": {}, "pricing": {}, "tax": {}, "taxrate": {}, "taxrates": {}, "taxcategory": {},
+	"uom": {}, "uomid": {}, "uomconversion": {}, "uomconversionfactor": {}, "conversionfactor": {}, "conversionfactors": {},
+	"supplier": {}, "supplierid": {}, "suppliercode": {}, "supplieridentity": {}, "active": {}, "isactive": {},
+	"sellable": {}, "issellable": {}, "purchasable": {}, "ispurchasable": {},
+	"producttype": {},
 }
 
 func prohibitedEnrichmentTarget(value string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	normalized = strings.ReplaceAll(normalized, "-", "_")
-	normalized = strings.ReplaceAll(normalized, " ", "_")
-	if _, found := prohibitedTargets[normalized]; found {
-		return true
-	}
-	for _, token := range strings.Split(normalized, "_") {
-		if _, found := prohibitedTargets[token]; found {
-			return true
+	_, found := prohibitedTargets[normalizeEnrichmentTarget(value)]
+	return found
+}
+
+// normalizeEnrichmentTarget maps casing and common separators to one
+// deterministic semantic key. It intentionally does not perform fuzzy
+// matching or infer unrelated concepts.
+func normalizeEnrichmentTarget(value string) string {
+	var normalized strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			normalized.WriteRune(r)
 		}
 	}
-	return false
+	return normalized.String()
 }

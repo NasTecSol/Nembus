@@ -106,7 +106,7 @@
 - Live tenant taxonomy contents are not guaranteed by seed data.
 - Future product-family model is not approved.
 
-## Latest Verification
+## Pre-correction Verification (historical)
 
 - Review date: 2026-08-20.
 - HEAD is `f8b7ba4` (`AI implemetation stage 1`), tracking `origin/feature-agent`; before this worklog write, `git status --porcelain=v2 --branch` showed a clean worktree with no untracked files. The Stage 1 files are therefore committed, not currently uncommitted.
@@ -143,8 +143,39 @@
 - `packages/core/db/schema/35_product_enrichment.sql:28-29` and `packages/core/db/migrations/20260820000000.sql:27-28` leave created/updated timestamps nullable, matching repository convention but not enforcing non-null audit timestamps.
 - `packages/core/db/schema/35_product_enrichment.sql:5-35` and `packages/core/db/migrations/20260820000000.sql:4-34` differ in comments and idempotence guards only; normalized definitions otherwise match.
 
-## Next Action
+## Pre-correction Next Action
 
 Apply the smallest Stage 1 correction: remove the unused import and regenerate the repository files with the repository's SQLC v1.30.0 workflow; constrain failed/retryable lifecycle transitions and clear stale lifecycle fields; close the authoritative-target normalization loophole and add focused tests; then regenerate and verify `packages/core/db/migrations/atlas.sum`. Re-run Go formatting/tests and SQLC/Atlas validation when those tools are available. Until then, Stage 1 remains UNDER REVIEW.
 
-Final review verdict: NEEDS CORRECTION.
+Pre-correction review verdict: NEEDS CORRECTION.
+
+## Stage 1 Corrective Patch — 2026-08-20
+
+The strict-review corrections were implemented without beginning Stage 2 or changing the completed SAP work. The pre-correction findings above remain historical review evidence; the current acceptance state is recorded here.
+
+### Corrective Findings and Files Changed
+
+- Removed the unused `pgx` import from `packages/core/repository/product_enrichment_suggestions.sql.go`. The file remains provisionally hand-maintained because sqlc was unavailable; generator compatibility is not proven.
+- Corrected failed/retryable lifecycle SQL in `packages/core/queries/product_enrichment_suggestions.sql` and its manual repository companion. Failed transitions now allow only `pending`/`retryable`; retryable transitions allow only `pending`/`failed`; both set `status`, clear `reviewer_id`, `reviewed_at`, and `applied_at`, and refresh `updated_at` with `CURRENT_TIMESTAMP`. Approval/rejection also clear `applied_at` so legacy retryable rows cannot retain stale application state.
+- Added deterministic case/separator normalization and expanded the authoritative target dictionary in `packages/core/enrichment/product_enrichment.go`. It protects product type, SKU/ItemCode variants, barcode ownership, inventory/stock/warehouse, pricing, tax, UoM/conversion factors, supplier, and active/sellable/purchasable variants while preserving unsupported evidence such as anti-dandruff, capacity, dimensions, resolution, size text, and model number.
+- Added structured brand precedence validation in `packages/core/enrichment/product_enrichment.go`. A resolved `brand_id` or canonical `brand_code` permits no replacement action other than `KEEP_EXISTING`; unresolved brands still allow canonical matches, review-only new proposals, and `NO_MATCH`.
+- Added focused tests in `packages/core/enrichment/product_enrichment_test.go` for normalization variants, protected SAP-authoritative fields, allowed unsupported evidence, structured brand precedence, unresolved brand proposals, and confidence boundaries including NaN/Inf.
+
+### Current Verification and Acceptance State
+
+- Changed files: `agents.md`, `packages/core/enrichment/product_enrichment.go`, `packages/core/enrichment/product_enrichment_test.go`, `packages/core/queries/product_enrichment_suggestions.sql`, and `packages/core/repository/product_enrichment_suggestions.sql.go`. No commit or push was performed.
+- `git diff --check`: passed.
+- `go`, `gofmt`, `sqlc`, `atlas`, and `psql`: unavailable. Go tests and gofmt could not run; no tools were installed.
+- sqlc generation: not performed. The source query and manual companion were synchronized by inspection. The repository's established command remains `cd packages/core && sqlc generate`; real generator verification is still required.
+- Atlas checksum regeneration: not performed. `packages/core/db/migrations/atlas.sum` was left unchanged; the established command remains `atlas migrate hash --dir "file://packages/core/db/migrations"`, and checksum validation is still required.
+- Lifecycle review: create/upsert preserves existing lifecycle fields and defaults new rows; get/list are read-only; approve/reject set reviewer state and clear application state; failed/retryable clear all review/application state; applied is restricted to approved and sets `applied_at`.
+
+### Current Stage 1 Status
+
+- Status: NEEDS GENERATOR VERIFICATION.
+- Remaining IMPORTANT acceptance blockers: real sqlc v1.30.0 generation/diff verification and Atlas checksum regeneration/validation. Go formatting/tests also remain unverified because the required tools are unavailable.
+- No remaining CRITICAL source-correction finding is known from static review. The prior manual-SQLC compatibility concern remains an acceptance blocker until generation is run.
+
+## Next Action
+
+When the repository's existing tools are available, run `gofmt` on the modified Go files, the focused `packages/core/enrichment` tests, `cd packages/core && sqlc generate`, and the established Atlas hash/validate workflow. Keep Stage 1 at NEEDS GENERATOR VERIFICATION until both sqlc generation and Atlas checksum verification succeed; do not mark Stage 2 ready before then.

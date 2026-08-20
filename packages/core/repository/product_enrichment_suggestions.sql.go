@@ -12,7 +12,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -135,6 +134,7 @@ UPDATE product_enrichment_suggestions
 SET status = 'approved',
     reviewer_id = $3,
     reviewed_at = CURRENT_TIMESTAMP,
+    applied_at = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
@@ -158,6 +158,7 @@ UPDATE product_enrichment_suggestions
 SET status = 'rejected',
     reviewer_id = $3,
     reviewed_at = CURRENT_TIMESTAMP,
+    applied_at = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
@@ -179,9 +180,13 @@ func (q *Queries) RejectProductEnrichmentSuggestion(ctx context.Context, arg Rej
 const markProductEnrichmentSuggestionFailed = `-- name: MarkProductEnrichmentSuggestionFailed :one
 UPDATE product_enrichment_suggestions
 SET status = 'failed',
+    reviewer_id = NULL,
+    reviewed_at = NULL,
+    applied_at = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
+  AND status IN ('pending', 'retryable')
 RETURNING *;
 `
 
@@ -198,9 +203,13 @@ func (q *Queries) MarkProductEnrichmentSuggestionFailed(ctx context.Context, arg
 const markProductEnrichmentSuggestionRetryable = `-- name: MarkProductEnrichmentSuggestionRetryable :one
 UPDATE product_enrichment_suggestions
 SET status = 'retryable',
+    reviewer_id = NULL,
+    reviewed_at = NULL,
+    applied_at = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $1
   AND id = $2
+  AND status IN ('pending', 'failed')
 RETURNING *;
 `
 
