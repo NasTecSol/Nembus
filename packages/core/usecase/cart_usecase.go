@@ -1097,3 +1097,21 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		"order_number": orderNumber,
 	})
 }
+
+// ReopenCart reopens a converted cart back into an active cart if its order is pending.
+func (uc *CartUseCase) ReopenCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	cart, err := uc.repo.ReopenCart(ctx, cartID)
+	if err != nil {
+		// sqlc returns pgx.ErrNoRows (or sql.ErrNoRows depending on driver) if the UPDATE affects 0 rows
+		if err.Error() == "no rows in result set" || strings.Contains(err.Error(), "no rows") {
+			return utils.NewResponse(utils.CodeBadReq, "cannot reopen cart: order is not pending, already fulfilled, or cart is already active", nil)
+		}
+		return utils.NewResponse(utils.CodeError, "failed to reopen cart: "+err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "cart reopened successfully", cartToOutput(cart))
+}

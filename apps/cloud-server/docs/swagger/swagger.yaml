@@ -7451,6 +7451,45 @@ paths:
       summary: Recalculate cart totals
       tags:
       - carts
+  /api/carts/{id}/reopen:
+    post:
+      consumes:
+      - application/json
+      description: Reverts a pending order back to an active cart
+      parameters:
+      - description: Cart ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reopen a converted cart
+      tags:
+      - carts
   /api/carts/{id}/status:
     put:
       consumes:
