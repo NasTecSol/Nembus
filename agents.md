@@ -2763,3 +2763,400 @@ Next Action: E2 - add the explicit authenticated
 `POST /api/product-enrichment/suggestions/:id/apply` endpoint using tenant-bound
 RepoKey and exact `product_enrichment:apply` permission. Do not implement E2 or
 E3 as part of E1.
+
+## Stage 2E E2 - Explicit Apply Endpoint
+
+E2 adds the explicit authenticated tenant-local application endpoint over the
+verified E1 application service. Approval remains a separate Stage 2D action;
+the approval handler does not call E1.
+
+### Endpoint and security chain
+
+- Exact route: `POST /api/product-enrichment/suggestions/:id/apply`.
+- The route is registered in the same `/api` protected group as Stage 2D:
+  `JWTAuthMiddleware -> TenantBindingMiddleware -> TenantMiddleware -> handler`.
+- The handler obtains the tenant-local repository and pool from middleware
+  context (`middleware.RepoKey` / `TenantPoolFromContext`). It has no
+  `masterRepo` application path or secondary unscoped lookup.
+- The authenticated user ID comes only from trusted JWT auth context. The
+  handler loads that user through the selected tenant repository and derives
+  `organization_id` from the tenant-local `users` row.
+- Authorization requires exactly `product_enrichment:apply`. Review
+  permission, role names, `products:manage`, and administrative labels are not
+  substitutes. Review and apply permissions remain independently provisioned.
+
+### Request, E1 invocation, and response
+
+- The request body is empty; client fields for tenant, organization, product,
+  applier/reviewer, target values, field selection, status, product type, or
+  force/override behavior are rejected.
+- The handler constructs a request-local E1 service from the tenant repository
+  and pool, then invokes exactly:
+  `ApplyApprovedSuggestion(ctx, organizationID, suggestionID, userID)`.
+- The safe response contains only `suggestion_id`, `product_id`, `status`,
+  `applied_at`, `changed_fields`, and `already_applied`. Changed fields are
+  restricted to `brand_id`, `category_id`, and `description`.
+- E1 `AlreadyApplied` results return `200 OK` with `status=applied` and
+  `already_applied=true`; the handler performs no second mutation or audit.
+
+### Error and isolation behavior
+
+- Malformed suggestion IDs return `400`.
+- Missing tenant-local suggestions return `404`.
+- Non-approved, stale, invalid/prohibited, canonical-target, and conditional
+  application conflicts return `409` with sanitized application codes.
+- Persistence, transaction, audit, and unexpected failures return sanitized
+  `500`; raw SQL, provider/OpenAI, JWT, DSN, and database details are omitted.
+- Missing authentication is handled by the existing middleware as `401`;
+  missing tenant-local user rows fail safely as `401`; missing apply permission
+  is `403`.
+- Tenant binding and tenant repository selection remain the first boundary.
+  Organization scope is server-derived and enforced again by E1, so tenant and
+  organization collision/guessing cannot select another business database or
+  organization.
+- There is no force apply, OpenAI call, Stage 2C invocation, review auto-apply,
+  schema change, query change, SQLC regeneration, or direct product mutation in
+  the handler/routing/cloud wiring. E1 remains the only application write
+  layer.
+
+### E2 files changed
+
+- Handler: `packages/core/handler/product_enrichment_application.go`.
+- Routing: `packages/core/routing/product_enrichment_application.go`.
+- Cloud wiring: `apps/cloud-server/main.go`.
+- Tests: `packages/core/handler/product_enrichment_application_test.go` and
+  `packages/core/routing/product_enrichment_application_test.go`.
+- Shared permission constant: `packages/core/enrichment/application.go`.
+- Worklog: `agents.md`.
+
+### Verification and status
+
+- `gofmt` completed on all modified Go files and `git diff --check` passed.
+- Passed focused handler/routing tests, `go test ./enrichment`,
+  `./repository`, `./handler`, `./middleware`, and `./usecase` in
+  `packages/core`.
+- Passed `go test ./...` in `packages/core`, `apps/cloud-server`, and
+  `apps/sap-agent` using `C:\Program Files\Go\bin\go.exe`.
+- No SQL, SQLC-generated file, schema, migration, or Atlas checksum changed;
+  no SQLC or Atlas operation was required. No live/external database was
+  contacted.
+
+Stage 2E status: E2 complete and verified. Stage 2E overall remains
+incomplete pending E3.
+
+Next Action: E3 - final end-to-end Stage 2E / tenant-security /
+deployment-readiness verification and MVP completion gate. Do not mark the
+full MVP complete until E3 passes.
+
+## Stage 2E E3 — Final MVP Verification
+
+Review date: 2026-08-21.
+
+### Scope and final architecture
+
+E3 was a verification-only gate. No source logic, generated artifact, schema,
+migration, deployment, database, OpenAI call, commit, or push was performed.
+The only E3 file modification is this worklog.
+
+The verified active flow is:
+
+`SAP Agent -> tenant/org-bound M2M JWT -> TenantBindingMiddleware ->
+TenantMiddleware -> tenant pool/RepoKey -> tenant-local SAPMigrationUseCase ->
+commit -> tenant-local Stage 2A enqueue -> pending suggestion -> F2 active-tenant
+supervisor -> tenant-local worker -> shared OpenAI adapter -> strict Stage 2B
+validation -> in_review -> tenant-local human review -> approved/rejected ->
+explicit apply permission -> E1 suggestion lock then product lock -> fingerprint
+and structured-SAP revalidation -> narrow product update -> applied audit ->
+commit.`
+
+SAP migration and enrichment are separate after commit. Enqueue failure is
+best-effort and cannot roll back a committed SAP migration. The worker never
+mutates products. Review never invokes OpenAI or E1. Approval never auto-applies.
+
+### Tenant data ownership invariant
+
+- Master DB is used for tenant registry/control-plane discovery, tenant
+  connection metadata, active state, and migration coordination.
+- Each active tenant DB owns organizations, users, roles/permissions, products,
+  brands/categories, SAP staging, product enrichment suggestions, and audit logs.
+- For active tenant business operations, Product DB = Suggestion DB = Worker DB
+  = Review DB = Application DB = Audit DB: all are the same selected tenant
+  pool/repository.
+- `masterEnrichmentTenantRegistry` reads only active tenant identities. The F2
+  factory resolves each slug through the manager, constructs a fresh
+  `repository.New(tenantPool)`, and creates the worker from that repository.
+- Review and application handlers obtain `RepoKey` and `TenantPoolFromContext`;
+  no master fallback or secondary unscoped lookup exists in their stores.
+- Legacy master business rows can exist because the shared migration directory
+  is also usable for the control-plane database, but no enrichment worker,
+  review route, apply route, copy path, or inferred tenant mapping processes
+  them. They are quarantined/inert.
+
+### Authentication and SAP boundary
+
+- Standard user JWTs contain the signed `tenant_slug`; protected routes require
+  `JWTAuthMiddleware -> TenantBindingMiddleware -> TenantMiddleware` and exact
+  `x-tenant-id` equality.
+- SAP migration is machine-only. The JWT and registered client must agree on
+  `tenant_slug` and positive `organization_id`; the token type must be `machine`
+  and the client must be active/whitelisted.
+- `x-tenant-id` is a tenant slug, never an organization ID. Optional
+  `x-organization-id` and payload organization values are consistency checks;
+  the trusted M2M organization claim is authoritative.
+- The selected tenant organization is validated in that tenant DB before the
+  migration handler constructs the tenant-local use case. No default
+  organization `1` remains in this path.
+- The SAP use case begins and commits its transaction using the selected tenant
+  pool. Its post-commit coordinator uses the same request-local tenant repo.
+
+### F2 worker verification
+
+- The supervisor enumerates active tenants from master only, on every cycle.
+  Disabled tenants are not returned/are skipped, and newly active tenants are
+  rediscovered without restart.
+- Each tenant gets an isolated pool, repository, store, worker pass, and logger.
+  Setup and record failures are isolated so one tenant does not stop others.
+- Due suggestions, product snapshots, UoM context, and candidate dictionaries
+  are loaded from the tenant repository. Numeric ID collisions across tenant
+  databases are therefore harmless.
+- OpenAI is the shared provider adapter only; it carries no tenant identity.
+  Strict request/response validation precedes persistence. Outcomes are only
+  tenant-local `in_review`, `retryable`, or `failed`.
+- No master suggestion query or product mutation is reachable from the worker.
+
+### AI safety and strict contract
+
+- Valid immutable product types are exactly `standard`, `raw_material`,
+  `fixed_asset`, and `finished_good`; `product_type` is absent from proposal
+  DTOs and output schema.
+- Structured SAP brand/category/description values remain authoritative.
+  Resolved brand/category require `KEEP_EXISTING`; populated description cannot
+  be replaced.
+- The contract and parser reject authoritative targets including SKU/ItemCode,
+  product name as a mutation target, barcode ownership, inventory/stock,
+  warehouse/store, price, tax, UoM/base UoM/conversions, supplier, active,
+  sellable, purchasable, SAP identity, and product type. Unsupported semantics
+  are informational JSON only and are never applied.
+- Candidate matching is exact ID/code matching against server-supplied active
+  canonical candidates. Model-authored names are not identity and no fuzzy
+  fallback exists.
+- Description proposals are trimmed, valid UTF-8, non-empty, and at most 500
+  Unicode runes.
+
+### Review verification
+
+- Review routes are behind JWT authentication, tenant binding, tenant-local
+  repository selection, tenant-local user lookup, and exact
+  `product_enrichment:review` authorization.
+- Organization is derived from the authenticated tenant-local user; the client
+  cannot provide organization, tenant, reviewer, product, or proposal values.
+- Review is whole-suggestion only. Bodies must be empty; proposals cannot be
+  edited, taxonomy cannot be created, and `PROPOSE_NEW` brand/category actions
+  cannot be approved.
+- Current product context and the canonical Stage 2A fingerprint are checked
+  before approval. Stale approval is blocked. Reject remains available for
+  stale or unresolved/`PROPOSE_NEW` suggestions.
+- Approve/reject use a tenant transaction for the guarded status transition and
+  review audit. Concurrent approve/reject requests have one winning transition.
+
+### Apply verification
+
+- The only application route is authenticated, tenant-bound
+  `POST /api/product-enrichment/suggestions/:id/apply`.
+- The handler accepts an empty body only. It accepts no tenant, organization,
+  product ID, applier ID, brand/category/description, field selection, force,
+  override, ignore-stale, or status input.
+- The handler derives user and organization from the tenant-local user row,
+  checks exactly `product_enrichment:apply`, and invokes only
+  `ApplyApprovedSuggestion(ctx, organizationID, suggestionID, userID)`.
+- E1 locks the suggestion first and product second in one tenant transaction;
+  checks approved state; reloads current context; reuses `FingerprintSnapshot`;
+  revalidates structured precedence and canonical targets; builds an explicit
+  narrow plan; performs the conditional write; transitions approved to applied;
+  inserts audit; and commits. Any failure rolls back.
+- `KEEP_EXISTING`, `NO_MATCH`, and unsupported informational-only proposals are
+  zero-product-change applications that still transition approved to applied
+  and write a zero-change audit.
+- A second committed apply sees `AlreadyApplied`, returns HTTP 200, performs no
+  product update, no second transition, and no duplicate audit.
+- There is no force path and no OpenAI/review invocation during apply.
+
+### Final product write surface
+
+The Stage 2E application SQL is `ApplyProductEnrichmentFields`. Its only
+product assignments are `brand_id`, `category_id`, `description`, and normal
+`updated_at`. It is organization- and product-scoped and uses conditional
+null/blank guards. No broad whole-product update is reachable from E1/E2.
+
+Stage 2E cannot write SKU, name, product type, base UoM, metadata,
+track-inventory, active/sellable/purchasable flags, variants, prices,
+inventory, tax, UoM/conversions, barcodes, or suppliers.
+
+### Staleness and canonical targets
+
+Apply reuses the canonical Stage 2A `FingerprintSnapshot`; there is no second
+application fingerprint. ItemName/source-name, product type, structured brand,
+structured category, description, and fingerprinted UoM/conversion context are
+protected. Inventory/pricing-only state is absent from the fingerprint and does
+not falsely stale a suggestion.
+
+Stale, invalid, missing, inactive, or ID/code-mismatched canonical targets
+leave the product untouched, leave the suggestion approved, emit no application
+audit, and map through E2 to HTTP 409. Brand/category `PROPOSE_NEW` conflicts;
+there is no creation or silent retargeting.
+
+### Atomicity, audit, concurrency, and isolation
+
+- Review status transition plus review audit are one tenant transaction.
+- Application product mutation, applied lifecycle transition, and application
+  audit are one tenant transaction.
+- Application audit records tenant organization, suggestion/product IDs,
+  authenticated applier, approved-to-applied status, changed fields, old/new
+  brand/category IDs where applicable, and `description_changed`. It does not
+  store API keys, JWTs, prompts, raw provider responses, DSNs/passwords, full
+  description text, or provider secrets.
+- Suggestion-first/product-second lock ordering, guarded lifecycle SQL, product
+  conditional guards, and fingerprint revalidation provide the required race
+  behavior. Normal tests cover application concurrency seams and idempotency.
+- Tenant A and tenant B may contain identical organization/product/suggestion/
+  user numeric IDs; each operation remains on its tenant pool. Within one
+  tenant DB, all suggestion/product queries carry the server-derived
+  organization ID, giving scoped-not-found behavior for another organization.
+
+### Permission separation and route inventory
+
+The exact production authorization points are:
+
+- Stage 2D review handler: `product_enrichment:review`.
+- Stage 2E E2 application handler: `product_enrichment:apply`.
+
+The two migrations provision the permission rows separately and grant neither to
+any role/user. Role names, `products:manage`, review permission, and admin
+labels are not substitutes. Any inert master permission copies cannot authorize
+tenant business work because authorization uses the tenant repository.
+
+Verified routes, all under the protected `/api` group:
+
+- `GET /api/product-enrichment/suggestions`
+- `GET /api/product-enrichment/suggestions/:id`
+- `POST /api/product-enrichment/suggestions/:id/approve`
+- `POST /api/product-enrichment/suggestions/:id/reject`
+- `POST /api/product-enrichment/suggestions/:id/apply`
+
+There is no public enrichment route, alias, bulk approve/apply, apply-all,
+force-apply, automatic-apply, or GET apply route.
+
+### Migration chain and tenant migrator
+
+The final chain is present and ordered:
+
+1. `20260820000000.sql` — enrichment foundation.
+2. `20260820010000.sql` — retry durability.
+3. `20260821000000.sql` — `product_enrichment:review`.
+4. `20260821010000.sql` — `product_enrichment:apply`.
+
+`cmd/migrate-tenants` reads the master registry, optionally migrates master,
+then migrates active tenant connection strings independently. `-master=false`
+skips master migration but still reads the registry. Tenant failures are logged,
+isolated, summarized, and produce a non-zero exit; no fallback to master exists.
+The F2 worker never runs migrations.
+
+`CreateTenant` registers metadata only; it does not provision or migrate the new
+database and can register an active tenant before operational migration. The
+required runbook remains: register/provision DB -> run tenant migrations ->
+verify migration state -> configure permissions -> activate/use business
+features.
+
+### SQLC, Atlas, formatting, tests, and secret scan
+
+- SQLC v1.30.0 was located. Read-only `sqlc compile -f packages/core/sqlc.yaml`
+  passed; no regeneration was performed.
+- Atlas `v1.3.2-4bf5fb9-canary` was located. Read-only migration validation and
+  hash checks passed; no migration was applied and `atlas.sum` was not rewritten.
+- `C:\Program Files\Go\bin\gofmt.exe -l` over all E2 human-authored Go files
+  returned no files.
+- Uncached tests passed: core focused enrichment/repository/handler/
+  middleware/usecase packages, core `go test -count=1 ./...`, cloud-server
+  `go test -count=1 ./...`, and SAP-agent `go test -count=1 ./...`.
+- `go test -race -count=1 ./enrichment` was attempted. Windows Go reports
+  `-race requires cgo`; `CGO_ENABLED=0` and no GCC toolchain is present. No
+  extra tooling was installed. This is recorded as a tooling limitation, not
+  an MVP code blocker, because normal concurrency/idempotency tests passed.
+- The uncommitted diff and E2 untracked files were scanned for OpenAI keys,
+  bearer tokens, JWT secrets, M2M tokens, DSNs/passwords, SAP credentials, and
+  private keys. No suspicious credential was found.
+- `git diff --check` passed.
+
+### Complete static flow trace
+
+Tenant A: `M2M A/org1 -> signed tenant-a and org1 -> tenant A registry lookup
+-> tenant A DB -> product 95 -> post-commit suggestion 1 pending -> active
+tenant A worker -> tenant A product/context/candidates -> OpenAI -> strict
+validation -> suggestion 1 in_review -> tenant A reviewer JWT/RepoKey/org1 /
+review permission -> approved -> tenant A applier JWT/RepoKey/org1 / apply
+permission -> suggestion lock -> product 95 lock -> revalidation -> allowed
+narrow update -> applied -> tenant audit -> commit`.
+
+Tenant B may use the same numeric IDs, but every read/write above uses tenant B's
+separate pool. Master performs control-plane discovery only and never owns an
+active product, review, application, or audit transaction.
+
+### Deployment checklist
+
+1. Deploy tenant-bound user JWT changes.
+2. Re-login users so old unbound JWTs disappear.
+3. Reissue SAP M2M credentials with `tenant_slug` and `organization_id`.
+4. Deploy F1 tenant-local SAP routing.
+5. Run approved tenant migrations.
+6. Verify all four enrichment/RBAC migrations per intended tenant.
+7. Deploy the F2 tenant worker supervisor.
+8. Configure/enable OpenAI only where intended.
+9. Assign `product_enrichment:review` explicitly to reviewers.
+10. Assign `product_enrichment:apply` explicitly to appliers.
+11. Deploy the Stage 2D review API.
+12. Deploy E1/E2 application paths.
+13. Verify one tenant-local suggestion reaches `in_review`.
+14. Review it.
+15. Explicitly apply it.
+16. Verify only allowed product fields changed.
+17. Verify tenant-local audit records.
+18. Confirm a second tenant with colliding IDs is unaffected.
+19. Keep legacy master suggestions quarantined.
+20. Monitor worker and application errors after rollout.
+
+No deployment step was executed during E3.
+
+### Production distinction and optional work
+
+`CODE MVP COMPLETE` is supported by the source audit, SQLC/Atlas checks,
+formatting check, and uncached normal Go tests. `PRODUCTION DEPLOYMENT VERIFIED`
+is not claimed. No live tenant DB, external database, migration application,
+OpenAI call, or production smoke test was performed:
+
+`NOT PERFORMED — DEPLOYMENT/ENVIRONMENT VALIDATION`.
+
+Optional follow-up work remains: deterministic alias/rule learning; reviewer and
+application UI; observability/metrics; live OpenAI smoke testing; tenant
+provisioning automation; tenant DSN rotation hardening; stale-approved
+re-enrichment UX; PROPOSE_NEW taxonomy resolution; field-level review; reviewer
+notes/rejection reasons; product attributes/family schema; candidate/taxonomy
+re-enrichment strategy; legacy master recovery if authoritative mapping becomes
+available; and separate migration/gRPC security hardening if still open.
+
+### E3 acceptance result
+
+CRITICAL findings: none.
+
+IMPORTANT findings: none.
+
+MINOR findings: normal Go race instrumentation is unavailable on this host;
+new-tenant provisioning remains an explicit operational prerequisite and is not
+automatic. Neither blocks the code MVP under the approved E3 criteria.
+
+Stage 2E: COMPLETE
+
+Core AI Product Enrichment MVP: CODE COMPLETE
+
+Next Action: deployment/environment validation and optional follow-up
+enhancements. Do not state that production deployment is verified until it is
+actually performed.

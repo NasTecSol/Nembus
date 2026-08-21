@@ -15,6 +15,8 @@ import (
 type ApplicationErrorCode string
 
 const (
+	ApplyPermissionCode = "product_enrichment:apply"
+
 	ApplicationErrorNotFound            ApplicationErrorCode = "not_found"
 	ApplicationErrorNotApproved         ApplicationErrorCode = "not_approved"
 	ApplicationErrorStale               ApplicationErrorCode = "stale"

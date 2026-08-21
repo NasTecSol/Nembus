@@ -219,6 +219,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		// the request tenant repository from RepoKey; it has no master fallback.
 		productEnrichmentReviewHandler := handler.NewProductEnrichmentReviewHandler()
 		router.RegisterProductEnrichmentReviewRoutes(api, productEnrichmentReviewHandler)
+		productEnrichmentApplicationHandler := handler.NewProductEnrichmentApplicationHandler()
+		router.RegisterProductEnrichmentApplicationRoutes(api, productEnrichmentApplicationHandler)
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
