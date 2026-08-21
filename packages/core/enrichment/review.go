@@ -17,10 +17,11 @@ const (
 	ReviewStatusInReview ReviewListStatus = "in_review"
 	ReviewStatusApproved ReviewListStatus = "approved"
 	ReviewStatusRejected ReviewListStatus = "rejected"
+	ReviewStatusApplied  ReviewListStatus = "applied"
 )
 
 func (s ReviewListStatus) Valid() bool {
-	return s == ReviewStatusInReview || s == ReviewStatusApproved || s == ReviewStatusRejected
+	return s == ReviewStatusInReview || s == ReviewStatusApproved || s == ReviewStatusRejected || s == ReviewStatusApplied
 }
 
 type ReviewSuggestionRecord struct {

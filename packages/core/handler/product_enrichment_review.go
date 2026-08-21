@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,18 +18,72 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type ProductEnrichmentReviewHandler struct{}
+type ProductEnrichmentReviewHandler struct {
+	newService      productEnrichmentReviewServiceFactory
+	repoFromContext func(context.Context) (productEnrichmentReviewRepository, bool)
+	poolFromContext func(context.Context) (*pgxpool.Pool, bool)
+}
+
+type productEnrichmentReviewRepository interface {
+	GetUser(context.Context, int32) (repository.User, error)
+	CheckUserHasPermission(context.Context, repository.CheckUserHasPermissionParams) (bool, error)
+	GetProductEnrichmentSuggestionByID(context.Context, repository.GetProductEnrichmentSuggestionByIDParams) (repository.ProductEnrichmentSuggestion, error)
+}
+
+type productEnrichmentReviewService interface {
+	ListSuggestions(context.Context, int32, enrichment.ReviewListStatus, int32, int32) ([]enrichment.ReviewListItem, error)
+	GetSuggestion(context.Context, int32, int32) (enrichment.ReviewDetail, error)
+	ApproveSuggestion(context.Context, int32, int32, int32) (enrichment.ReviewDetail, error)
+	RejectSuggestion(context.Context, int32, int32, int32) (enrichment.ReviewDetail, error)
+}
+
+type productEnrichmentReviewServiceFactory func(productEnrichmentReviewRepository, *pgxpool.Pool) (productEnrichmentReviewService, error)
+
+type productEnrichmentReadAuthorization struct {
+	repo             productEnrichmentReviewRepository
+	pool             *pgxpool.Pool
+	organizationID   int32
+	reviewPermission bool
+	applyPermission  bool
+}
 
 func NewProductEnrichmentReviewHandler() *ProductEnrichmentReviewHandler {
-	return &ProductEnrichmentReviewHandler{}
+	return &ProductEnrichmentReviewHandler{
+		repoFromContext: func(ctx context.Context) (productEnrichmentReviewRepository, bool) {
+			repo, ok := middleware.RepositoryFromContext(ctx)
+			return repo, ok
+		},
+		poolFromContext: middleware.TenantPoolFromContext,
+		newService: func(repo productEnrichmentReviewRepository, pool *pgxpool.Pool) (productEnrichmentReviewService, error) {
+			concreteRepo, ok := repo.(*repository.Queries)
+			if !ok || concreteRepo == nil || pool == nil {
+				return nil, errors.New("tenant review repository unavailable")
+			}
+			return enrichment.NewReviewService(repository.NewProductEnrichmentReviewStore(concreteRepo, pool)), nil
+		},
+	}
 }
 
 func (h *ProductEnrichmentReviewHandler) ListSuggestions(c *gin.Context) {
-	repo, pool, organizationID, _, ok := h.authorize(c)
+	auth, ok := h.authorizeRead(c)
 	if !ok {
 		return
 	}
-	status := enrichment.ReviewListStatus(c.DefaultQuery("status", string(enrichment.ReviewStatusInReview)))
+	statusValue, hasStatus := c.GetQuery("status")
+	if !hasStatus {
+		if auth.reviewPermission {
+			statusValue = string(enrichment.ReviewStatusInReview)
+		} else {
+			statusValue = string(enrichment.ReviewStatusApproved)
+		}
+	}
+	status := enrichment.ReviewListStatus(statusValue)
+	if !auth.reviewPermission && (status != enrichment.ReviewStatusApproved && status != enrichment.ReviewStatusApplied) {
+		c.JSON(http.StatusForbidden, utils.NewResponse(http.StatusForbidden, "product enrichment read scope does not allow requested status", gin.H{
+			"code": "ENRICHMENT_READ_SCOPE_FORBIDDEN",
+		}))
+		return
+	}
 	if !status.Valid() {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(http.StatusBadRequest, "invalid review status", nil))
 		return
@@ -37,8 +92,12 @@ func (h *ProductEnrichmentReviewHandler) ListSuggestions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	service := enrichment.NewReviewService(repository.NewProductEnrichmentReviewStore(repo, pool))
-	items, err := service.ListSuggestions(c.Request.Context(), organizationID, status, limit, offset)
+	service, err := h.reviewService(auth.repo, auth.pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	items, err := service.ListSuggestions(c.Request.Context(), auth.organizationID, status, limit, offset)
 	if err != nil {
 		writeReviewError(c, err)
 		return
@@ -49,7 +108,7 @@ func (h *ProductEnrichmentReviewHandler) ListSuggestions(c *gin.Context) {
 }
 
 func (h *ProductEnrichmentReviewHandler) GetSuggestion(c *gin.Context) {
-	repo, pool, organizationID, _, ok := h.authorize(c)
+	auth, ok := h.authorizeRead(c)
 	if !ok {
 		return
 	}
@@ -57,8 +116,31 @@ func (h *ProductEnrichmentReviewHandler) GetSuggestion(c *gin.Context) {
 	if !ok {
 		return
 	}
-	service := enrichment.NewReviewService(repository.NewProductEnrichmentReviewStore(repo, pool))
-	detail, err := service.GetSuggestion(c.Request.Context(), organizationID, suggestionID)
+	if !auth.reviewPermission {
+		row, err := auth.repo.GetProductEnrichmentSuggestionByID(c.Request.Context(), repository.GetProductEnrichmentSuggestionByIDParams{
+			OrganizationID: auth.organizationID,
+			ID:             suggestionID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				c.JSON(http.StatusNotFound, utils.NewResponse(http.StatusNotFound, "enrichment suggestion not found", nil))
+			} else {
+				c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "enrichment suggestion lookup failed", nil))
+			}
+			return
+		}
+		if enrichment.SuggestionStatus(row.Status) != enrichment.SuggestionStatusApproved && enrichment.SuggestionStatus(row.Status) != enrichment.SuggestionStatusApplied {
+			// Keep forbidden statuses indistinguishable from a missing suggestion.
+			c.JSON(http.StatusNotFound, utils.NewResponse(http.StatusNotFound, "enrichment suggestion not found", nil))
+			return
+		}
+	}
+	service, err := h.reviewService(auth.repo, auth.pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	detail, err := service.GetSuggestion(c.Request.Context(), auth.organizationID, suggestionID)
 	if err != nil {
 		writeReviewError(c, err)
 		return
@@ -78,7 +160,11 @@ func (h *ProductEnrichmentReviewHandler) ApproveSuggestion(c *gin.Context) {
 	if !ok {
 		return
 	}
-	service := enrichment.NewReviewService(repository.NewProductEnrichmentReviewStore(repo, pool))
+	service, err := h.reviewService(repo, pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
 	detail, err := service.ApproveSuggestion(c.Request.Context(), organizationID, suggestionID, reviewerID)
 	if err != nil {
 		writeReviewError(c, err)
@@ -99,7 +185,11 @@ func (h *ProductEnrichmentReviewHandler) RejectSuggestion(c *gin.Context) {
 	if !ok {
 		return
 	}
-	service := enrichment.NewReviewService(repository.NewProductEnrichmentReviewStore(repo, pool))
+	service, err := h.reviewService(repo, pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
 	detail, err := service.RejectSuggestion(c.Request.Context(), organizationID, suggestionID, reviewerID)
 	if err != nil {
 		writeReviewError(c, err)
@@ -108,13 +198,24 @@ func (h *ProductEnrichmentReviewHandler) RejectSuggestion(c *gin.Context) {
 	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestion rejected", detail))
 }
 
-func (h *ProductEnrichmentReviewHandler) authorize(c *gin.Context) (*repository.Queries, *pgxpool.Pool, int32, int32, bool) {
+func (h *ProductEnrichmentReviewHandler) reviewService(repo productEnrichmentReviewRepository, pool *pgxpool.Pool) (productEnrichmentReviewService, error) {
+	if h == nil || h.newService == nil {
+		return nil, errors.New("review service unavailable")
+	}
+	return h.newService(repo, pool)
+}
+
+func (h *ProductEnrichmentReviewHandler) authorize(c *gin.Context) (productEnrichmentReviewRepository, *pgxpool.Pool, int32, int32, bool) {
 	userID, ok := parseAuthenticatedUserID(c)
 	if !ok {
 		return nil, nil, 0, 0, false
 	}
-	repo, ok := middleware.RepositoryFromContext(c.Request.Context())
-	if !ok {
+	if h == nil || h.repoFromContext == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant repository unavailable", nil))
+		return nil, nil, 0, 0, false
+	}
+	repo, ok := h.repoFromContext(c.Request.Context())
+	if !ok || repo == nil {
 		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant repository unavailable", nil))
 		return nil, nil, 0, 0, false
 	}
@@ -146,8 +247,77 @@ func (h *ProductEnrichmentReviewHandler) authorize(c *gin.Context) (*repository.
 		c.JSON(http.StatusForbidden, utils.NewResponse(http.StatusForbidden, "product enrichment review permission required", nil))
 		return nil, nil, 0, 0, false
 	}
-	pool, _ := middleware.TenantPoolFromContext(c.Request.Context())
+	var pool *pgxpool.Pool
+	if h.poolFromContext != nil {
+		pool, _ = h.poolFromContext(c.Request.Context())
+	}
 	return repo, pool, user.OrganizationID, user.ID, true
+}
+
+func (h *ProductEnrichmentReviewHandler) authorizeRead(c *gin.Context) (*productEnrichmentReadAuthorization, bool) {
+	userID, ok := parseAuthenticatedUserID(c)
+	if !ok {
+		return nil, false
+	}
+	if h == nil || h.repoFromContext == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant repository unavailable", nil))
+		return nil, false
+	}
+	repo, ok := h.repoFromContext(c.Request.Context())
+	if !ok || repo == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant repository unavailable", nil))
+		return nil, false
+	}
+	user, err := repo.GetUser(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusUnauthorized, utils.NewResponse(http.StatusUnauthorized, "authenticated user not found", nil))
+		} else {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "authenticated user lookup failed", nil))
+		}
+		return nil, false
+	}
+	if user.OrganizationID <= 0 {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "authenticated user organization is invalid", nil))
+		return nil, false
+	}
+	if user.IsActive.Valid && !user.IsActive.Bool {
+		c.JSON(http.StatusUnauthorized, utils.NewResponse(http.StatusUnauthorized, "authenticated user is inactive", nil))
+		return nil, false
+	}
+	reviewPermission, err := repo.CheckUserHasPermission(c.Request.Context(), repository.CheckUserHasPermissionParams{
+		UserID: user.ID,
+		Code:   enrichment.ReviewPermissionCode,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "review permission check failed", nil))
+		return nil, false
+	}
+	applyPermission, err := repo.CheckUserHasPermission(c.Request.Context(), repository.CheckUserHasPermissionParams{
+		UserID: user.ID,
+		Code:   enrichment.ApplyPermissionCode,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "apply permission check failed", nil))
+		return nil, false
+	}
+	if !reviewPermission && !applyPermission {
+		c.JSON(http.StatusForbidden, utils.NewResponse(http.StatusForbidden, "product enrichment read permission required", gin.H{
+			"code": "ENRICHMENT_READ_PERMISSION_REQUIRED",
+		}))
+		return nil, false
+	}
+	var pool *pgxpool.Pool
+	if h.poolFromContext != nil {
+		pool, _ = h.poolFromContext(c.Request.Context())
+	}
+	return &productEnrichmentReadAuthorization{
+		repo:             repo,
+		pool:             pool,
+		organizationID:   user.OrganizationID,
+		reviewPermission: reviewPermission,
+		applyPermission:  applyPermission,
+	}, true
 }
 
 func parseAuthenticatedUserID(c *gin.Context) (int32, bool) {

@@ -3965,3 +3965,29 @@ code blockers.
 Next Action:
 Inspect architect-referenced localhost Go pages for review/approval/apply
 frontend integration.
+
+## UI0.5 — Enrichment Read Authorization for Apply Workflow
+
+- UI0 discovered that apply-only users could call the apply endpoint only if
+  they already knew a suggestion ID, because list/detail reads required
+  `product_enrichment:review`.
+- Corrected read authorization so `product_enrichment:review` preserves the
+  existing review read scope, while `product_enrichment:apply` without review
+  can list and view only `approved` and `applied` suggestions.
+- Reviewer list requests without `status` still default to `in_review`.
+- Apply-only list requests without `status` default to `approved`.
+- Apply-only detail requests for non-approved/non-applied suggestions return a
+  scoped not-found response.
+- Review/apply write permissions are unchanged: approve/reject require
+  `product_enrichment:review`; apply requires `product_enrichment:apply`.
+- JWT, tenant-local user loading, tenant repository selection, server-derived
+  organization scoping, and no-master-fallback behavior are unchanged.
+- Focused handler and routing tests cover reviewer/apply-only/both/neither
+  read scopes, defaults, approved/applied detail access, scoped denial,
+  write-permission separation, and cross-organization isolation.
+- Swagger generation was not changed; documentation remains a future UI3
+  follow-up.
+
+Next Action:
+UI1 — Angular suggestions list/detail implementation in
+`apps/pos-client/frontend`.
