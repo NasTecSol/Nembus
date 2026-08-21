@@ -152,7 +152,7 @@ ALTER TABLE purchase_analytics
 
 ALTER TABLE purchase_analytics 
     ADD CONSTRAINT fk_purchase_analytics_supplier 
-    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL;
+    FOREIGN KEY (supplier_id) REFERENCES business_partners(id) ON DELETE SET NULL;
 
 ALTER TABLE purchase_analytics 
     ADD CONSTRAINT fk_purchase_analytics_product 
@@ -246,8 +246,8 @@ DROP TRIGGER IF EXISTS update_product_batches_updated_at ON product_batches;
 CREATE TRIGGER update_product_batches_updated_at BEFORE UPDATE ON product_batches FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_inventory_stock_updated_at ON inventory_stock;
 CREATE TRIGGER update_inventory_stock_updated_at BEFORE UPDATE ON inventory_stock FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-DROP TRIGGER IF EXISTS update_suppliers_updated_at ON suppliers;
-CREATE TRIGGER update_suppliers_updated_at BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_business_partners_updated_at ON business_partners;
+CREATE TRIGGER update_business_partners_updated_at BEFORE UPDATE ON business_partners FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
 CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS update_purchase_orders_updated_at ON purchase_orders;
@@ -462,9 +462,7 @@ CREATE INDEX idx_stock_count_lines_stock_count_id ON stock_count_lines(stock_cou
 CREATE INDEX idx_stock_count_lines_product_id ON stock_count_lines(product_id);
 
 -- Suppliers
-CREATE INDEX idx_suppliers_organization_id ON suppliers(organization_id);
-CREATE INDEX idx_suppliers_code ON suppliers(code);
-CREATE INDEX idx_suppliers_is_active ON suppliers(is_active);
+-- Indexes for suppliers table removed (replaced by business_partners in 50_purchasing_suppliers.sql)
 
 -- Customers
 CREATE INDEX idx_customers_organization_id ON customers(organization_id);
@@ -474,7 +472,7 @@ CREATE INDEX idx_customers_customer_type ON customers(customer_type);
 
 -- Purchase Orders
 CREATE INDEX idx_purchase_orders_organization_id ON purchase_orders(organization_id);
-CREATE INDEX idx_purchase_orders_supplier_id ON purchase_orders(supplier_id);
+CREATE INDEX idx_purchase_orders_partners_id ON purchase_orders(partners_id);
 CREATE INDEX idx_purchase_orders_store_id ON purchase_orders(store_id);
 CREATE INDEX idx_purchase_orders_po_number ON purchase_orders(po_number);
 CREATE INDEX idx_purchase_orders_status ON purchase_orders(status);
@@ -1039,8 +1037,8 @@ SELECT
     s.name  AS store_name,
     sup.id  AS supplier_id,
     sup.name AS supplier_name,
-    sup.contact_person,
-    sup.email AS supplier_email,
+    NULL::TEXT AS contact_person,
+    NULL::TEXT AS supplier_email,
     po.subtotal,
     po.discount_amount,
     po.tax_amount,
@@ -1052,7 +1050,7 @@ SELECT
     po.created_at
 FROM purchase_orders po
 JOIN stores s    ON s.id = po.store_id
-JOIN suppliers sup ON sup.id = po.supplier_id
+JOIN business_partners sup ON sup.id = po.partners_id
 LEFT JOIN users u_created  ON u_created.id  = po.created_by
 LEFT JOIN users u_approved ON u_approved.id = po.approved_by
 WHERE po.status NOT IN ('received','cancelled','closed')
@@ -1108,9 +1106,9 @@ SELECT
     org.name                    AS organization_name,
     sup.id                      AS supplier_id,
     sup.name                    AS supplier_name,
-    sup.contact_person,
-    sup.email,
-    sup.payment_terms           AS supplier_payment_terms,
+    NULL::TEXT                  AS contact_person,
+    NULL::TEXT                  AS email,
+    sup.payment_terms_id        AS supplier_payment_terms,
     s.name                      AS store_name,
     po.po_date,
     po.expected_delivery_date,
@@ -1125,7 +1123,7 @@ SELECT
     po.created_at
 FROM purchase_orders po
 JOIN organizations org ON org.id = po.organization_id
-JOIN suppliers     sup ON sup.id = po.supplier_id
+JOIN business_partners sup ON sup.id = po.partners_id
 JOIN stores        s   ON s.id   = po.store_id
 WHERE po.status IN ('partially_received','received','approved')
 ORDER BY po.po_date;
