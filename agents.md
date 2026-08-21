@@ -3966,6 +3966,78 @@ Next Action:
 Inspect architect-referenced localhost Go pages for review/approval/apply
 frontend integration.
 
+## UI1 — Angular Enrichment Suggestions List / Detail
+
+- Review date: 2026-08-21.
+- Frontend submodule: `apps/pos-client/frontend`, kept at the parent-recorded
+  commit `5bb7526d5904a1a4306e2613d1f9dcc5961b2e70`; no submodule commit or
+  parent gitlink update was made.
+- Angular version/architecture: Angular 19.2.x, standalone components with
+  lazy feature routes inside the existing dashboard layout and legacy feature
+  modules retained. No alternate frontend architecture was introduced.
+- Auth/API integration: reused the existing `HttpClient`,
+  `AuthInterceptor`, `TenantInterceptor`, `AuthService`, and
+  `environment.baseUrl`. Existing interceptors attach the stored Bearer token
+  and `x-tenant-id`; no new JWT store, tenant authority, or auth flow was
+  added.
+- Routes: `/backoffice/product-enrichment` in POS mode and
+  `/dashboard/product-enrichment` otherwise; detail route is
+  `/backoffice/product-enrichment/suggestions/:id` in POS mode and
+  `/dashboard/product-enrichment/suggestions/:id` otherwise.
+- Service: `ProductEnrichmentService` provides only typed GET list/detail
+  operations against `/api/product-enrichment/suggestions`, using bounded
+  `status`, `limit`, and `offset` query parameters. No approve, reject, or
+  apply operation exists or is invoked in UI1.
+- List design: responsive existing-shell page with ItemCode, item name,
+  status, brand/category proposal summaries, description indicator,
+  provider/model, updated time, and read-only View navigation. Raw JSON,
+  prompt/provider responses, credentials, and operational product fields are
+  not displayed.
+- Status filter/pagination: read-only `in_review`, `approved`, and `applied`
+  filter; selected status and page offset are kept in URL query parameters.
+  Requests are bounded to 50 rows with previous/next pagination and do not
+  query all statuses together. 403 responses show a safe permission message.
+- Detail design: separate Source Product, current SAP/Nembus authoritative
+  state, brand/category/description AI proposals, lifecycle/provider, and
+  validation sections. Current and proposed values are explicitly presented
+  as distinct states.
+- Stale/blocker display: backend `safety.stale`, stale reasons,
+  `approvable`, and blocking reasons are rendered read-only. Stale data shows
+  the authoritative-data-changed warning; no force/ignore/override action was
+  added.
+- Unsupported semantics: `unsupported_semantics` are rendered in an
+  informational “Detected semantics — informational” section only. No
+  editable attributes, family controls, UoM controls, or automatic apply UX
+  was added.
+- XSS/provider-text safety: evidence, explanations, proposed descriptions,
+  and semantic values use Angular text interpolation; semantic JSON values are
+  compactly stringified. No provider-produced value uses `[innerHTML]`.
+- Navigation: added a normal Product Enrichment sidebar entry using the
+  existing sidebar/menu pattern. Backend authorization remains authoritative;
+  frontend visibility is not inferred from role names.
+- Tests: added focused service, list, and detail specs covering GET URLs and
+  query parameters, no UI1 write methods, list/detail rendering, filtering,
+  pagination, empty/403/safe-error states, stale/blocker rendering,
+  informational semantics, escaping-safe text interpolation, null values, and
+  absence of write controls. Karma execution was blocked by the existing
+  repository Tailwind/PostCSS configuration error before browser tests ran.
+- Build/lint: `npm ci` hit the existing Angular 19 / `@ngxs/storage-plugin`
+  21 peer conflict; `npm ci --legacy-peer-deps` completed without dependency
+  changes. `npx ng build` passed. No lint script is configured. `npx tsc
+  --noEmit` remains blocked by pre-existing missing Angular SSR/Wails modules
+  and an existing `AppComponent.title` spec error.
+- Files changed in submodule: the product-enrichment models/service/routes,
+  list/detail components and styles, focused specs, the dashboard layout route,
+  and the sidebar navigation integration.
+- Parent repository files changed: `agents.md` only; the parent reports the
+  expected modified submodule gitlink because the submodule worktree contains
+  UI1 changes. No backend source changed.
+- `DEPLOYMENT_READY=true` remains unchanged. Production environment and
+  end-to-end behavior remain NOT VERIFIED.
+
+Next Action:
+UI2 — approve/reject/apply actions, permission UX, conflict/stale handling.
+
 ## UI0.5 — Enrichment Read Authorization for Apply Workflow
 
 - UI0 discovered that apply-only users could call the apply endpoint only if
@@ -3991,3 +4063,63 @@ frontend integration.
 Next Action:
 UI1 — Angular suggestions list/detail implementation in
 `apps/pos-client/frontend`.
+
+## UI2 - Enrichment Review / Apply Actions
+
+- Implemented only in `apps/pos-client/frontend`; no backend, SQL, migration,
+  Swagger, authentication, tenant, or RBAC source was changed.
+- Exact write APIs are `POST /api/product-enrichment/suggestions/:id/approve`,
+  `/reject`, and `/apply`. All three send an empty `{}` body; no tenant,
+  organization, product, reviewer/applier, target, description, force,
+  override, ignore-stale, or status fields are client-controlled.
+- Existing `AuthInterceptor` and `TenantInterceptor` remain responsible for
+  Bearer JWT and `x-tenant-id` headers. The frontend has no reliable exact
+  current-user assignment state for `product_enrichment:review` versus
+  `product_enrichment:apply`; buttons are lifecycle-based UX only and backend
+  RBAC remains authoritative.
+- Approve and reject are shown only for `in_review`, require confirmation,
+  disable all mutation buttons while pending, prevent duplicate submissions,
+  refresh detail after success, and never call apply. Apply is shown only for
+  `approved`, requires explicit server-revalidation confirmation, and refreshes
+  detail after success. Rejected/applied states have no mutation actions.
+- Apply handles the backend's `already_applied=true` HTTP 200 as a neutral
+  success and displays safe `changed_fields` plus applied time. No force,
+  override, edit, retry-AI, or selected-field controls were added.
+- 403 responses use separate safe review/apply permission messages. Structured
+  409 codes distinguish stale conflicts from generic conflicts; no automatic
+  retry or force path is offered, and detail is refreshed. 404 uses the safe
+  current-workspace-unavailable state; 400/500 use sanitized messages.
+- Provider evidence, explanations, unsupported semantics, proposed
+  descriptions, and action text remain Angular escaped interpolation; no
+  `[innerHTML]`, bypass, DOM injection, or provider HTML execution was added.
+- Frontend files changed: product-enrichment models/service/service spec,
+  detail component/template/styles/spec, and list detail-link query-param
+  preservation. Parent file changed: `agents.md` only. No commit or push was
+  performed and the submodule HEAD remains `5bb7526d...`.
+- `CORE_MVP_CODE_COMPLETE=true`, `DEPLOYMENT_READY=true`,
+  `DEPLOYMENT_ENVIRONMENT_VERIFIED=false`, and
+  `PRODUCTION_END_TO_END_VERIFIED=false` remain unchanged.
+
+Verification status and the pre-existing Karma limitation are recorded after
+the UI2 verification run below.
+
+Verification:
+
+- `npx ng build` passed after the UI2 changes, including Angular template
+  compilation.
+- `npx tsc --noEmit` remains blocked only by the pre-existing missing
+  `@angular/ssr`, `@angular/platform-server`, and Wails controller modules,
+  plus the existing `AppComponent.title` spec diagnostic; no UI2 TypeScript
+  diagnostic remains.
+- `npm test -- --watch=false --browsers=ChromeHeadless` was attempted but is
+  blocked before browser execution by the same pre-existing Tailwind/PostCSS
+  configuration error documented in UI1.
+- `git diff --check` passed in both parent and frontend worktrees. No backend
+  files changed; no commit, stage, submodule HEAD update, or push was made.
+
+`FRONTEND_TEST_RUNTIME_BLOCKED_BY_PREEXISTING_CONFIG=true`
+
+Next Action:
+UI3 - final frontend integration/security/regression verification, including
+Swagger/documentation gap assessment and frontend test-infrastructure
+disposition.
