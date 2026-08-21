@@ -4123,3 +4123,154 @@ Next Action:
 UI3 - final frontend integration/security/regression verification, including
 Swagger/documentation gap assessment and frontend test-infrastructure
 disposition.
+
+## UI3 - Final Product Enrichment Frontend Verification
+
+UI3 final frontend verification completed on 2026-08-21. No backend source,
+AI behavior, database, deployment, commit, or push was changed.
+
+- Frontend architecture remains Angular 19.2 standalone components with lazy
+  routes. Product enrichment uses `ProductEnrichmentService`, typed models,
+  list/detail components, and the existing backoffice shell/sidebar.
+- Final routes are `/backoffice/product-enrichment` and
+  `/backoffice/product-enrichment/suggestions/:id` in POS mode, and
+  `/dashboard/product-enrichment` and
+  `/dashboard/product-enrichment/suggestions/:id` otherwise.
+- The service contract is GET `/api/product-enrichment/suggestions` with
+  bounded `status`, `limit`, and `offset`, GET `/:id`, and empty-body POST
+  `/:id/approve`, `/:id/reject`, and `/:id/apply`. DTO names, optional values,
+  ISO date strings, confidence numbers, evidence arrays, unsupported JSON
+  values, and apply `changed_fields`/`already_applied` match the backend DTOs.
+- Bearer JWT and `x-tenant-id` headers continue to come only from the
+  existing `AuthInterceptor` and `TenantInterceptor`. Enrichment code does
+  not derive, alter, retry, or override tenant authority.
+- Read flow is sidebar -> filtered list -> detail -> server-backed refresh.
+  Review flow is `in_review` -> approve or reject. Apply flow is
+  `approved` -> apply -> server response -> GET detail refresh. Approval never
+  invokes application: `APPROVAL_AUTO_APPLY=false`.
+- Action visibility is lifecycle-based: approve/reject only for `in_review`,
+  apply only for `approved`, and no mutation action for rejected, applied,
+  pending, processing, retryable, or failed states when displayed. No force,
+  override, retry-AI, taxonomy creation, edit, or per-field controls exist.
+- `CLIENT_VISIBILITY_IS_UX_ONLY`; `BACKEND_RBAC_IS_AUTHORITY`. The client does
+  not infer role names or decode JWT roles as permission substitutes. Backend
+  403 responses remain the permission feedback path, with separate safe review
+  and apply messages.
+- Stale and blocker state is display-only and backend-driven. The frontend
+  never computes fingerprints, applies stale data, offers force/override, or
+  retries mutations. A 409 refreshes detail once and shows safe stale/conflict
+  copy. 404, 400, 401, 403, and 500 handling uses safe frontend messages; raw
+  error bodies, SQL/errors, stacks, and credentials are not rendered.
+- Apply `already_applied=true` remains a successful neutral result. One
+  `actionInProgress` state disables all mutation buttons and prevents normal
+  double submission; no client idempotency key is added.
+- Provider/model content is rendered only through Angular interpolation. No
+  `innerHTML`, sanitizer bypass, DOM HTML insertion, or provider HTML execution
+  exists in the feature. Unsupported object/array values are JSON-formatted
+  and bounded to 2000 display characters.
+- Angular contains no provider URL, provider SDK, provider authorization, or
+  provider API key. Browser traffic is limited to cloud-server enrichment REST
+  endpoints; provider labels in fixtures/context are display text only.
+- List/detail query state preserves status and offset through detail links and
+  the Back link. Loading, disabled, status text, labels, alerts, evidence
+  lists, stale warnings, and responsive feature layout were statically checked;
+  only small scoped accessibility/query-state corrections were made.
+
+Frontend/backend contract matrix:
+
+| UI action | Frontend method | HTTP endpoint | Required permission | Lifecycle | Refresh |
+| --- | --- | --- | --- | --- | --- |
+| List | `listSuggestions` | `GET /api/product-enrichment/suggestions` | review/apply read scope | none | no |
+| View | `getSuggestion` | `GET /api/product-enrichment/suggestions/:id` | status-sensitive read scope | none | no |
+| Approve | `approveSuggestion` | `POST /api/product-enrichment/suggestions/:id/approve` | `product_enrichment:review` | `in_review -> approved` | yes |
+| Reject | `rejectSuggestion` | `POST /api/product-enrichment/suggestions/:id/reject` | `product_enrichment:review` | `in_review -> rejected` | yes |
+| Apply | `applySuggestion` | `POST /api/product-enrichment/suggestions/:id/apply` | `product_enrichment:apply` | `approved -> applied` | yes |
+
+Authorization matrix:
+
+| Assignment | Review list/detail | Approve | Reject | Apply |
+| --- | --- | --- | --- | --- |
+| Review only | allowed for review scope | allowed | allowed | backend 403 |
+| Apply only | approved/applied read scope | backend 403 | backend 403 | allowed |
+| Both | allowed | allowed | allowed | allowed |
+| Neither | backend 403 | backend 403 | backend 403 | backend 403 |
+
+Client lifecycle buttons may appear before a backend 403 because exact current
+enrichment permission state is not reliably exposed to Angular; this is a UX
+limitation, not an authorization boundary.
+
+Test infrastructure and verification:
+
+- Initial Karma failure was reproduced exactly: Angular 19 Karma's automatic
+  `tailwind.config.js` discovery called Tailwind 4.1.5 directly as a PostCSS
+  plugin. Installed configuration is Tailwind 4.1.5 with
+  `@tailwindcss/postcss` 4.1.5, PostCSS 8.5.3, and Angular 19.2.10.
+- The safe configuration fix renamed the explicit Tailwind config to
+  `tailwind.theme.config.js` and updated the existing CSS `@config` reference.
+  This preserves production Tailwind behavior while preventing Angular's
+  legacy auto-injection. No dependency, Angular, architecture, or production
+  stylesheet upgrade was made.
+- Focused Angular Karma execution completed: 29 specs passed across
+  ProductEnrichmentService, ProductEnrichmentListComponent, and
+  ProductEnrichmentDetailComponent using ChromeHeadless.
+- The full default Karma command now reaches browser startup but remains
+  blocked by the unrelated pre-existing `AppComponent.title` diagnostic in
+  `src/app/app.component.spec.ts`; no unrelated app fix was made.
+- `npx ng build` passed. `npx tsc --noEmit` remains affected only by the
+  pre-existing Angular SSR/Wails modules, server callback typing, and
+  `AppComponent.title` diagnostic. No lint script is configured: `NOT_CONFIGURED`.
+- Backend regression passed with `go test -count=1 ./...` in
+  `packages/core`, `apps/cloud-server`, and `apps/sap-agent`. No live database
+  or provider network call was used.
+- Enrichment handlers have no Swagger annotations and enrichment routes are
+  absent from generated `apps/cloud-server/docs/swagger` artifacts.
+  `SWAGGER_ENRICHMENT_DOCS_PENDING=true`; this is documentation follow-up and
+  not a frontend runtime blocker.
+- Secret scan found no JWT, provider API key, database credential, M2M token,
+  production tenant identifier, `DEEPSEEK_API_KEY`, or provider network code in
+  the frontend.
+
+UI3 frontend files changed in the submodule:
+
+- `src/app/features/product-enrichment/product-enrichment-detail.component.ts`
+- `src/app/features/product-enrichment/product-enrichment-detail.component.html`
+- `src/app/features/product-enrichment/product-enrichment-detail.component.spec.ts`
+- `src/app/features/product-enrichment/product-enrichment-list.component.html`
+- `src/app/features/product-enrichment/product-enrichment-list.component.spec.ts`
+- `src/styles.css`
+- `tailwind.config.js` renamed to `tailwind.theme.config.js`
+
+Parent files changed:
+
+- `agents.md` only. No backend file changed.
+
+Submodule status:
+
+- UI3 did not move, commit, stage, or push the submodule. The actual pre-task
+  detached HEAD is `ac11bb660d8a092ec42f59c10972d44a6a2172cb` (`ac11bb6`), and
+  it is the parent gitlink. The requested historical `5bb7526d...` commit is
+  its immediate parent; this pre-existing mismatch was preserved because HEAD
+  movement was explicitly prohibited.
+- Parent and submodule `git diff --check` passed. The submodule worktree is
+  intentionally dirty with the UI3 changes; the parent gitlink itself did not
+  move.
+
+Status:
+
+`CORE_MVP_CODE_COMPLETE=true`
+
+`FRONTEND_CODE_COMPLETE=true`
+
+`FRONTEND_TESTS_EXECUTED=true`
+
+`DEPLOYMENT_READY=true`
+
+`DEPLOYMENT_ENVIRONMENT_VERIFIED=false`
+
+`PRODUCTION_END_TO_END_VERIFIED=false`
+
+Next Action:
+
+Staging/deployment environment validation and end-to-end execution.
+
+Final verdict: `UI3_COMPLETE_FRONTEND_CODE_READY`
