@@ -101,7 +101,9 @@ func main() {
 	}
 	defer pool.Close()
 
-	// 1. Optionally migrate master database
+	// 1. Optionally migrate master database. With -master=false the master is
+	// still read below as the tenant registry; only its Atlas migration is
+	// skipped. Tenant business databases are always migrated independently.
 	if *includeMaster {
 		log.Println("\n==================================================")
 		log.Println("⚡ Running Atlas migration on Master Database...")
@@ -218,11 +220,15 @@ func getAllActiveTenants(ctx context.Context, pool *pgxpool.Pool) ([]repository.
 	}
 	defer conn.Release()
 
-	// Check if tenants table exists
+	// Check if tenants table exists. A metadata-query failure must stop the
+	// command rather than look like an empty registry and report success.
 	var exists bool
 	err = conn.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tenants')").Scan(&exists)
-	if err != nil || !exists {
-		return nil, nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to check tenants table: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("tenants table does not exist in master database")
 	}
 
 	rows, err := conn.Query(ctx, "SELECT id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at FROM tenants WHERE is_active = true")

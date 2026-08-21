@@ -182,9 +182,9 @@ func newSupervisorStore(brandCode, categoryCode string) *supervisorStore {
 	}
 	fingerprint, _ := FingerprintSnapshot(snapshot)
 	return &supervisorStore{
-		rows: []EnrichmentExecutionSuggestion{{ID: 1, OrganizationID: 1, ProductID: 95, SourceItemCode: snapshot.SourceItemCode, SourceDataFingerprint: fingerprint, Status: SuggestionStatusPending}},
-		snapshot: snapshot,
-		brands: []BrandCandidate{{ID: 10, Code: brandCode, Name: brandCode}},
+		rows:       []EnrichmentExecutionSuggestion{{ID: 1, OrganizationID: 1, ProductID: 95, SourceItemCode: snapshot.SourceItemCode, SourceDataFingerprint: fingerprint, Status: SuggestionStatusPending}},
+		snapshot:   snapshot,
+		brands:     []BrandCandidate{{ID: 10, Code: brandCode, Name: brandCode}},
 		categories: []CategoryCandidate{{ID: 20, Code: categoryCode, Name: categoryCode}},
 	}
 }
@@ -213,7 +213,7 @@ func (s *supervisorStore) CompleteEnrichmentSuggestion(_ context.Context, input 
 }
 
 func (*supervisorStore) MarkEnrichmentRetryable(context.Context, EnrichmentRetry) error { return nil }
-func (*supervisorStore) MarkEnrichmentFailed(context.Context, EnrichmentFailure) error   { return nil }
+func (*supervisorStore) MarkEnrichmentFailed(context.Context, EnrichmentFailure) error  { return nil }
 
 func (s *supervisorStore) LoadSAPProductEnrichmentSnapshot(context.Context, int32, string) (EnrichmentSourceSnapshot, error) {
 	return s.snapshot, nil

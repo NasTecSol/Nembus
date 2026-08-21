@@ -1906,23 +1906,196 @@ test results are recorded in the task handoff after execution.
 
 ### Current Phase
 
-F2 implementation. F1 tenant-local SAP routing and tenant-bound JWT security
+F2 SAFE TO KEEP. F1 tenant-local SAP routing and tenant-bound JWT security
 remain intact. Stage 2D and Stage 2E are not implemented and remain blocked.
 
 ### Next Action
 
 If F2 is SAFE TO KEEP: Foundation F3 — tenant deployment/migration
 verification, tenant-local `product_enrichment:review` permission provisioning,
-and explicit legacy master suggestion quarantine policy; then Stage 2D
-implementation. Do not mark Stage 2D ready before F3.
-The requested `gofmt`, `go test ./enrichment`, `go test ./repository`, `go
-test ./usecase`, `go test ./...` from `packages/core`, and `go test ./...` from
-`apps/cloud-server` were attempted on 2026-08-20 but could not execute because
-Go/gofmt are unavailable. `git diff --check` passed. SQLC and Atlas are also
-unavailable; because F2 made no SQL/schema changes, neither generation nor
-checksum modification is required.
+and explicit legacy master suggestion quarantine readiness. Do not mark Stage 2D ready before F3.
 
-The existing manager revalidates active state on each `GetPool` call and keeps
-its established slug-keyed pool cache semantics. F2 does not redesign DSN
-rotation/invalidation; any rotation behavior remains the manager's existing
-operational responsibility and must be verified in F3/deployment readiness.
+### F2 Verification Gate - 2026-08-21
+
+- Go toolchain: `C:\Program Files\Go\bin\go.exe`, exact version `go1.26.7 windows/amd64`. `go` and `gofmt` were not on PATH; the absolute installed executables were used. No installation or upgrade was performed.
+- gofmt: `C:\Program Files\Go\bin\gofmt.exe` applied formatting only to `packages/core/enrichment/supervisor_test.go`. A subsequent `gofmt -l` check over `supervisor.go`, `worker.go`, `supervisor_test.go`, and `apps/cloud-server/main.go` returned no files.
+- F2 focused tests: `cd packages/core && go test ./enrichment` passed, including the colliding-ID, disabled/new-tenant, setup-failure, and worker-failure isolation tests.
+- Packages/core tests: `./repository`, `./usecase`, `./middleware`, `./handler`, and `./...` all passed with the absolute Go executable.
+- Cloud-server regression: `cd apps/cloud-server && go test ./...` passed; the cloud bootstrap and tenant-aware supervisor wiring compile successfully.
+- SAP-agent regression: `cd apps/sap-agent && go test ./...` passed. No unrelated pre-existing failure was observed.
+- Static tenant-isolation review: the master repository is used only by `masterEnrichmentTenantRegistry.ListActiveTenants` for control-plane discovery. Each active tenant resolves its own pool through `tenantManager.GetPool`, constructs `repository.New(pool)`, and builds the local enrichment store/worker from that repository. Disabled tenants are skipped; setup/worker failures continue to later tenants; active tenants are re-enumerated on each cycle; there is no master fallback or master suggestion query. The shared OpenAI provider has no mutable tenant identity. The worker only completes suggestions to `in_review` or marks them `retryable`/`failed`; it does not mutate products.
+- Supervisor lifecycle review: the first pass runs immediately, later passes use the configured ticker interval, `ticker.Stop()` is deferred, cancellation exits the goroutine, empty tenant lists do not busy-loop, processing is sequential, and no active-tenant list is permanently cached. No lifecycle defect was found.
+- Colliding-ID test quality: both fake tenants use `organization_id=1`, `product_id=95`, and `suggestion_id=1`. Their snapshots, candidates, provider requests, and lifecycle completions are distinct per tenant store; both rows reach `in_review`, and no master enrichment fallback is supplied or invoked. The test establishes routing isolation without live OpenAI calls.
+- SQLC / Atlas: `git diff` contains no changes to `packages/core/queries/**`, generated SQLC files, `packages/core/db/schema/**`, `packages/core/db/migrations/**`, or `atlas.sum`; SQLC generation and Atlas hashing/validation were not required for F2.
+- Files changed during verification: formatting-only change to `packages/core/enrichment/supervisor_test.go`, plus this `agents.md` verification record. No business logic, SQL, schema, migration, generated file, commit, or push was performed.
+- Git verification: `git diff --check` passed. The final uncommitted diff contains only the formatting change and this worklog update.
+
+## Foundation F3 - Tenant Review Deployment Readiness
+
+F3 implementation completed on 2026-08-21. No Stage 2D review route, Stage 2E
+application path, product mutation, taxonomy creation, SAP change, commit, or
+push was performed.
+
+### Tenant migration runner findings
+
+- `apps/cloud-server/cmd/migrate-tenants/main.go` reads `MASTER_DB_URL` from
+  the environment after loading the repository's `.env` candidates.
+- It resolves the Atlas migration directory from the explicit `-dir` flag or
+  the existing relative `/app/migrations` and repository candidates. The
+  default repository directory is `packages/core/db/migrations`.
+- The master connection is used only to enumerate the registry. The query is
+  explicitly `WHERE is_active = true`; disabled tenants are excluded.
+- Each selected tenant's `db_conn_str` is passed independently to Atlas. An
+  empty DSN is counted as a failed tenant. A tenant migration failure is
+  logged, processing continues for other tenants, and the command exits with
+  status 1 when any tenant failed.
+- `-master=false` skips applying Atlas to the master database; it does not
+  skip the master registry read required to discover active tenants. There is
+  no tenant-to-master business-data fallback.
+- `-status` invokes Atlas status instead of apply and is the non-mutating
+  operational inspection mode, subject to Atlas/database connectivity.
+- The runner now returns an error when the master tenant-table probe itself
+  fails or when the `tenants` table is absent, instead of silently treating
+  that condition as an empty successful registry.
+- Atlas migration state makes repeated application idempotent through Atlas's
+  migration table. A newly registered tenant still requires this runner or an
+  approved equivalent before business use.
+
+### Enrichment migration chain
+
+The tenant deployment directory contains the required chain:
+
+- `20260820000000.sql`: `product_enrichment_suggestions` foundation,
+  organization/product/reviewer foreign keys, source fingerprint and contract
+  uniqueness, structured/proposed JSONB fields, provider/model metadata,
+  lifecycle status, review/application timestamps, and organization/status
+  indexes.
+- `20260820010000.sql`: non-null `attempt_count` defaulting to zero,
+  `next_attempt_at`, `last_error_code`, and the pending/retryable due index.
+- `20260821000000.sql`: idempotent tenant-local provisioning of the narrow
+  `product_enrichment:review` permission.
+
+The canonical schema at `packages/core/db/schema/35_product_enrichment.sql`
+contains the Stage 1 and Stage 2C fields, constraints, uniqueness, and indexes
+represented by the two enrichment table migrations. No schema redesign was
+needed. Atlas hash and validation passed after adding the F3 migration.
+
+### Existing and new tenant deployment state
+
+Repository evidence establishes CODE READY for the migration chain, permission
+provisioning, tenant-local F1/F2 wiring, and the migration utility. Actual
+tenant database migration versions, permission rows, and reviewer mappings are
+DEPLOYMENT STATE UNVERIFIED because no live tenant database was queried or
+altered in this task.
+
+`CreateTenant` only inserts the tenant registry row; it does not provision a
+database or run Atlas. The current API accepts the requested active flag, so
+the deployment process must register a new tenant inactive (or keep it out of
+business use), provision its database, run the migration process, verify the
+state, configure reviewers, and activate it only after those gates pass.
+Enrichment workers never create schema dynamically.
+
+### Review permission provisioning
+
+- Exact permission code: `product_enrichment:review`.
+- Name: `Product Enrichment Review`.
+- Mechanism: forward data migration `20260821000000.sql`, using the existing
+  unique `permissions.code` constraint and `ON CONFLICT (code) DO NOTHING`.
+- The permission is deliberately not inserted into `role_permissions`.
+- Because the Atlas directory is shared by master and tenant migration runs,
+  the default runner may create an inert permission metadata copy in master.
+  Tenant review authorization must use only the tenant-local repository/RBAC;
+  the master copy is never an authorization source for tenant review.
+- `CheckUserHasPermission` resolves by stable permission code through the
+  local `permissions -> role_permissions -> user_roles` joins. Numeric IDs are
+  not used by the migration or future permission lookup.
+
+Role assignment for `product_enrichment:review` remains an explicit
+deployment/architect decision. No admin, manager, owner, superadmin, product
+manager, or other production role is automatically granted it.
+
+### Legacy master suggestion quarantine
+
+Legacy master `product_enrichment_suggestions` rows remain QUARANTINED / INERT.
+They were not deleted, updated, moved, marked failed, copied, or backfilled.
+No recovery mapping is inferred from organization ID, product ID, SKU,
+suggestion ID, or user ID.
+
+Static review confirms there is no master `ProductEnrichmentWorker`, no master
+`ProductEnrichmentExecutionStore` used for active processing, no Stage 2D route,
+no cleanup/application process for master suggestions, and no automatic tenant
+suggestion copy. F2 uses the master repository only for active tenant registry
+discovery; each worker/store is constructed from the selected tenant pool.
+Existing F2 isolation tests confirm legacy master suggestions are not processed
+and colliding tenant-local IDs remain isolated.
+
+### F3 verification
+
+- Go 1.26.7 was used from `C:\Program Files\Go\bin\go.exe`; no installation
+  or upgrade was performed.
+- `gofmt` passed for the modified Go file; the existing F2 modified test and
+  enrichment/server files were also clean under `gofmt -l`.
+- `cd packages/core && go test ./enrichment`, `./middleware`, `./repository`,
+  `./usecase`, and `./...` passed.
+- `cd apps/cloud-server && go test ./...` passed, including
+  `cmd/migrate-tenants` compilation.
+- `cd apps/sap-agent && go test ./...` passed.
+- Atlas v1.3.2-4bf5fb9-canary was already available at
+  `C:\Users\AnnsMustafa\atlas\atlas.exe`; `atlas migrate hash --dir
+  file://db/migrations` and `atlas migrate validate --dir
+  file://db/migrations` both passed. No migration was applied.
+- SQLC was not required: no query source or generated repository file changed.
+- No live OpenAI call, tenant database connection, or production deployment
+  was performed.
+
+### F3 files changed
+
+- Permission migration: `packages/core/db/migrations/20260821000000.sql`.
+- Atlas manifest: `packages/core/db/migrations/atlas.sum`.
+- Migration tooling: `apps/cloud-server/cmd/migrate-tenants/main.go`.
+- Tests: no new test file; existing F2 tenant-isolation/supervisor tests were
+  rerun and passed.
+- Generated files: none; SQLC was not needed.
+- Worklog: `agents.md`.
+
+### Deployment checklist before enabling Stage 2D
+
+For each intended tenant, operations must verify:
+
+1. The tenant exists and is active in the master registry only after its DB
+   migration gate is complete.
+2. The tenant DB connection is valid without exposing its DSN in logs.
+3. The established runner has been run with the approved migration directory;
+   use `-status` first for non-mutating inspection.
+4. `20260820000000.sql`, `20260820010000.sql`, and `20260821000000.sql` are
+   present in the tenant's Atlas migration state.
+5. The tenant-local `product_enrichment:review` permission exists exactly once.
+6. Approved reviewer role/user mappings are configured explicitly; no default
+   production role assignment is assumed.
+7. F1 tenant-local SAP migration and tenant-bound machine credentials are
+   deployed.
+8. F2 tenant supervisor and tenant pool/repository wiring are deployed.
+9. Tenant-local suggestions can reach `in_review` through F2.
+10. Users re-authenticate after tenant-bound JWT deployment where required.
+11. OpenAI enrichment is enabled only when intentionally configured for the
+   deployment.
+
+## Stage 2D
+
+Status: READY FOR IMPLEMENTATION - DEPLOYMENT PREREQUISITES STILL APPLY.
+
+Next Action: Implement Stage 2D tenant-local human review/approval API.
+
+The approved Stage 2D boundary remains:
+
+`browser -> tenant-bound user JWT -> TenantBindingMiddleware ->
+TenantMiddleware -> tenant repository -> tenant-local authenticated user ->
+server-derived users.organization_id -> CheckUserHasPermission(
+product_enrichment:review) -> tenant-local suggestions/product context ->
+stale validation -> tenant-local approve/reject transaction -> tenant-local
+audit_logs`.
+
+Stage 2D scope remains whole-suggestion MVP, approve/reject only, no editing,
+stale source blocks approval, `brand`/`category` `PROPOSE_NEW` blocks approval,
+unsupported semantics informational, approved is not applied, and Stage 2E is
+separate. Master DB must not participate in review business-data access.
