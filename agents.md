@@ -3294,3 +3294,82 @@ environment validation. No live request or deployment was performed here.
 - Stage 2B remains unchanged. The next live non-thinking contract retest is
   pending; DeepSeek live contract verification is not yet claimed.
 - No live request, commit, or push was performed.
+
+## DeepSeek Evidence Array Contract Correction — 2026-08-21
+
+- DeepSeek connectivity: VERIFIED.
+- DeepSeek thinking-disabled live behavior: VERIFIED.
+- The canonical `description.value` correction was verified by the prior live
+  response.
+- The canonical action rules produced the correct live semantics.
+- Canonical candidate matching produced the correct live brand target.
+- The remaining live failure was identified exactly as a scalar-vs-array type
+  mismatch for `brand.evidence`, `category.evidence`,
+  `description.evidence`, and `unsupported_semantics[*].evidence`.
+- DeepSeek instructions now require every present `evidence` member to be a
+  JSON array of strings, including a one-element array for one fact, and
+  explicitly prohibit scalar evidence strings.
+- Stage 2B remains unchanged and fail-closed; scalar evidence is still
+  rejected, with no adapter-side coercion or response repair.
+- `thinking: {"type":"disabled"}`, `max_tokens: 2048`, and
+  `response_format: {"type":"json_object"}` remain unchanged.
+- Offline adapter tests cover one and multiple evidence strings, permitted
+  omission, and scalar rejection for all four evidence-bearing locations.
+- Final DeepSeek contract retest: PENDING.
+- No live request, commit, or push was performed here.
+
+## DeepSeek D2 — Live Contract Verification
+
+- DeepSeek authentication/connectivity VERIFIED.
+- Model `deepseek-v4-flash` live VERIFIED.
+- Thinking explicitly disabled.
+- `max_tokens=2048`.
+- `response_format=json_object`.
+- HTTP 200.
+- `finish_reason=stop`.
+- No `reasoning_content`.
+- Valid JSON.
+- All canonical Stage 2B top-level object types matched.
+- `TYPE_MISMATCH_COUNT=0`.
+- Strict canonical brand candidate identity matched.
+- The evidence `[]string` contract matched across brand, category, description, and unsupported semantics.
+- Stage 2B strict parser PASS.
+- No parser aliases, coercion, or repair were required.
+- No database, product, or suggestion mutation occurred during the smoke test.
+- No secret was persisted.
+- `DEEPSEEK_API_KEY` remains environment-only.
+
+### Live verification progression
+
+1. Initial `description.text` contract violation.
+2. Corrected to `description.value`.
+3. Default thinking caused excessive reasoning and one length exhaustion.
+4. Thinking explicitly disabled.
+5. Evidence scalar mismatch discovered.
+6. Evidence array-of-strings guidance corrected.
+7. Final live request passed Stage 2B with zero type mismatches.
+
+DeepSeek live connectivity: VERIFIED
+
+DeepSeek live strict-contract compatibility: VERIFIED
+
+DeepSeek provider implementation: COMPLETE
+
+D1: COMPLETE
+
+D2: COMPLETE
+
+Remaining phase: D3 — deployment/environment validation only.
+
+Core AI Product Enrichment MVP: CODE COMPLETE
+
+Production/environment: NOT YET VERIFIED
+
+Future optimization is optional and is not a blocker.
+
+The ignored scratch harness may remain temporarily for deployment diagnostics;
+it is not production code.
+
+No new DeepSeek/OpenAI call, database connection, database alteration,
+deployment, commit, or push was performed for this record. Only this worklog
+file was updated.

@@ -91,6 +91,11 @@ func TestDeepSeekInstructionsStateExactStage2BShapeAndActionRules(t *testing.T) 
 		"description is an object with required action and confidence members",
 		"canonical content member is value",
 		"unsupported_semantics is an array of objects with required semantic_type, key, value, and confidence members",
+		"Evidence is optional. Omit an evidence member when no evidence is available.",
+		"Whenever evidence is present on brand, category, description, or an unsupported_semantics item, it MUST be a JSON array of strings.",
+		`"evidence":["first source fact","second source fact"]`,
+		`"evidence":["single source fact"]`,
+		`NEVER return a scalar string such as "evidence":"single source fact"`,
 		"resolved structured brand requires KEEP_EXISTING",
 		"unresolved brand requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH",
 		"populated structured category requires KEEP_EXISTING",
@@ -110,6 +115,28 @@ func TestDeepSeekInstructionsStateExactStage2BShapeAndActionRules(t *testing.T) 
 	}
 }
 
+func TestProviderAcceptsEvidenceArraysAndOmission(t *testing.T) {
+	request := adapterRequest(t)
+	for _, test := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "single evidence string in arrays", raw: strings.ReplaceAll(validResponse(request.SourceItemCode), `"evidence":[]`, `"evidence":["fact"]`)},
+		{name: "multiple evidence strings in arrays", raw: strings.ReplaceAll(validResponse(request.SourceItemCode), `"evidence":[]`, `"evidence":["first fact","second fact"]`)},
+		{name: "optional evidence omitted", raw: strings.ReplaceAll(validResponse(request.SourceItemCode), `,"evidence":[]`, "")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider, err := newWithClient(fakeHTTPClient{body: `{"id":"ds-test","model":"model","choices":[{"finish_reason":"stop","message":{"content":` + strconvQuote(test.raw) + `}}]}`}, "https://deepseek.test", "test-key", "model", time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provider.Enrich(context.Background(), request); err != nil {
+				t.Fatalf("canonical evidence response rejected: %v", err)
+			}
+		})
+	}
+}
+
 func TestProviderStrictParserAndBusinessRules(t *testing.T) {
 	request := adapterRequest(t)
 	for _, test := range []struct {
@@ -120,6 +147,10 @@ func TestProviderStrictParserAndBusinessRules(t *testing.T) {
 		{name: "malformed", raw: "not-json", class: enrichment.ResponseMalformed},
 		{name: "unknown field", raw: strings.Replace(validResponse(request.SourceItemCode), "}", `,"unknown":true}`, 1), class: enrichment.ResponseContractViolation},
 		{name: "noncanonical description text", raw: strings.Replace(validResponse(request.SourceItemCode), `"value":"Pantene shampoo 400ml"`, `"text":"Pantene shampoo 400ml"`, 1), class: enrichment.ResponseContractViolation},
+		{name: "brand scalar evidence", raw: responseWithScalarEvidence(validResponse(request.SourceItemCode), "brand"), class: enrichment.ResponseContractViolation},
+		{name: "category scalar evidence", raw: responseWithScalarEvidence(validResponse(request.SourceItemCode), "category"), class: enrichment.ResponseContractViolation},
+		{name: "description scalar evidence", raw: responseWithScalarEvidence(validResponse(request.SourceItemCode), "description"), class: enrichment.ResponseContractViolation},
+		{name: "unsupported semantic scalar evidence", raw: responseWithScalarEvidence(validResponse(request.SourceItemCode), "unsupported_semantics"), class: enrichment.ResponseContractViolation},
 		{name: "prohibited product type", raw: strings.Replace(validResponse(request.SourceItemCode), `"unsupported_semantics":[]`, `"unsupported_semantics":[{"semantic_type":"productType","key":"product_type","value":"fixed_asset","confidence":0.9,"evidence":[],"explanation":null}]`, 1), class: enrichment.ResponseProhibitedOutput},
 		{name: "UoM conversion", raw: strings.Replace(validResponse(request.SourceItemCode), `"unsupported_semantics":[]`, `"unsupported_semantics":[{"semantic_type":"packaging","key":"conversion_factor","value":24,"confidence":0.9,"evidence":[],"explanation":null}]`, 1), class: enrichment.ResponseProhibitedOutput},
 		{name: "category override", raw: strings.Replace(validResponse(request.SourceItemCode), `"category":{"action":"NO_MATCH","target_id":null,"target_code":"","canonical_name":"","confidence":0.2`, `"category":{"action":"PROPOSE_NEW","target_id":null,"target_code":"new","canonical_name":"New","confidence":0.9`, 1), class: enrichment.ResponseContractViolation},
@@ -285,6 +316,21 @@ func (f fakeHTTPClient) Do(_ *http.Request) (*http.Response, error) {
 
 func validResponse(sourceItemCode string) string {
 	return `{"source_item_code":` + strconvQuote(sourceItemCode) + `,"brand":{"action":"MATCH_EXISTING","target_id":10,"target_code":"PANTENE","canonical_name":"","confidence":0.9,"evidence":[],"explanation":null},"category":{"action":"NO_MATCH","target_id":null,"target_code":"","canonical_name":"","confidence":0.2,"evidence":[],"explanation":null},"description":{"action":"PROPOSE_NEW","value":"Pantene shampoo 400ml","confidence":0.8,"evidence":[],"explanation":null},"unsupported_semantics":[]}`
+}
+
+func responseWithScalarEvidence(raw, field string) string {
+	switch field {
+	case "brand":
+		return strings.Replace(raw, `"brand":{"action":"MATCH_EXISTING","target_id":10,"target_code":"PANTENE","canonical_name":"","confidence":0.9,"evidence":[]`, `"brand":{"action":"MATCH_EXISTING","target_id":10,"target_code":"PANTENE","canonical_name":"","confidence":0.9,"evidence":"fact"`, 1)
+	case "category":
+		return strings.Replace(raw, `"category":{"action":"NO_MATCH","target_id":null,"target_code":"","canonical_name":"","confidence":0.2,"evidence":[]`, `"category":{"action":"NO_MATCH","target_id":null,"target_code":"","canonical_name":"","confidence":0.2,"evidence":"fact"`, 1)
+	case "description":
+		return strings.Replace(raw, `"description":{"action":"PROPOSE_NEW","value":"Pantene shampoo 400ml","confidence":0.8,"evidence":[]`, `"description":{"action":"PROPOSE_NEW","value":"Pantene shampoo 400ml","confidence":0.8,"evidence":"fact"`, 1)
+	case "unsupported_semantics":
+		return strings.Replace(raw, `"unsupported_semantics":[]`, `"unsupported_semantics":[{"semantic_type":"attribute","key":"size","value":"400 ml","confidence":0.9,"evidence":"fact","explanation":null}]`, 1)
+	default:
+		return raw
+	}
 }
 
 func strconvQuote(value string) string {
