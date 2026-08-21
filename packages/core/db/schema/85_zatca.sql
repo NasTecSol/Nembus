@@ -475,7 +475,7 @@ DECLARE
         'cashiers','pos_terminals','product_categories','brands',
         'price_lists','products','product_variants','product_prices',
         'product_serial_numbers','product_batches','inventory_stock',
-        'stock_reservations','suppliers','customers','purchase_orders',
+        'stock_reservations','business_partners','customers','purchase_orders',
         'pos_transactions','sales_returns','restaurant_tables',
         'menu_categories','recipes','menu_modifier_groups','menu_items',
         'combo_bundles','sales_analytics','purchase_analytics',

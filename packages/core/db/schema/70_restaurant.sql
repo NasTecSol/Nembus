@@ -26,7 +26,8 @@ CREATE TABLE pos_transactions (
     voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     voided_at TIMESTAMP,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE pos_transaction_lines (
