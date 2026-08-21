@@ -3241,3 +3241,35 @@ Architect-requested DeepSeek provider support: COMPLETE.
 Next Action: optional controlled live DeepSeek smoke test using
 `DEEPSEEK_API_KEY` configured locally/server-side, followed by deployment and
 environment validation. No live request or deployment was performed here.
+
+## DeepSeek Live Stage 2B Contract Retest Preparation — 2026-08-21
+
+- DeepSeek first live connectivity: VERIFIED.
+- DeepSeek first live Stage 2B contract: FAILED.
+- Root cause: the model returned the noncanonical description member `text`
+  instead of the strict Stage 2B member `value`; diagnostics also exposed
+  unresolved-brand/missing-category action guidance gaps and a smoke fixture
+  that supplied category candidates without constructing an authoritative
+  `Snapshot.Category`.
+- Stage 2B remains unchanged and fail-closed. No parser alias, response repair,
+  or business-rule relaxation was added.
+- DeepSeek production guidance now states the exact top-level and nested JSON
+  member names, canonical description `value` member, omission rules for
+  action-inapplicable optional members, exact candidate restriction for
+  MATCH_EXISTING, and conditional actions for resolved/missing brand,
+  category, and description. Product type and unsupported semantics remain
+  immutable/informational respectively.
+- Deterministic DeepSeek tests cover the explicit instruction contract, valid
+  canonical output, rejection of `description.text`, invalid KEEP_EXISTING for
+  unresolved brand/missing category, candidate restrictions, unsupported
+  semantics, and product-type immutability.
+- The ignored Pantene smoke fixture now constructs the authoritative category
+  in `EnrichmentSourceSnapshot.Category`; its diagnostics therefore derive
+  `STRUCTURED_CATEGORY_PRESENT=true` from the same request fields Stage 2B
+  validates. Structured brand remains intentionally missing and description
+  remains intentionally empty.
+- DeepSeek live contract after correction: PENDING RETEST.
+- Verification passed: targeted DeepSeek adapter tests, core enrichment tests,
+  core `go test -count=1 ./...`, cloud-server `go test -count=1 ./...`,
+  sap-agent `go test -count=1 ./...`, gofmt, and `git diff --check`.
+- No live request, commit, or push was performed.

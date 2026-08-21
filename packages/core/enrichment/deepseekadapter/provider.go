@@ -269,7 +269,17 @@ func (p *Provider) Enrich(ctx context.Context, request enrichment.EnrichmentRequ
 func buildJSONInstructions() string {
 	return enrichment.StrictInferenceInstructions + `
 
-Return JSON, not markdown. The top-level object must contain exactly these keys: source_item_code, brand, category, description, unsupported_semantics. Each proposal must use only the allowed action vocabulary and include its required fields. Do not add product_type or any operational field.`
+Return JSON, not markdown. The top-level object must contain exactly these keys: source_item_code, brand, category, description, unsupported_semantics.
+
+Use exactly this Stage 2B proposal shape and these JSON member names:
+- brand and category are objects with required action and confidence members. They may also use only target_id, target_code, canonical_name, evidence, and explanation.
+- description is an object with required action and confidence members. Its canonical content member is value; do not invent any alternate member for the description text. It may also use only value, evidence, and explanation.
+- unsupported_semantics is an array of objects with required semantic_type, key, value, and confidence members. It may also use evidence and explanation. These entries are informational evidence only.
+- source_item_code is the exact source correlation value supplied in the request.
+
+Omit optional members that do not apply to the selected action; do not invent aliases. For KEEP_EXISTING and NO_MATCH, omit target_id, target_code, canonical_name, and description value. For MATCH_EXISTING brand/category, use only an exact target_id and/or target_code from the supplied canonical candidate list; never use a model-authored name as identity. For PROPOSE_NEW brand/category, provide canonical_name for review only and omit target_id and target_code. For PROPOSE_NEW description, provide a non-empty string in value. Description does not use MATCH_EXISTING.
+
+Action conditions are strict: resolved structured brand requires KEEP_EXISTING; unresolved brand requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH, and must not use KEEP_EXISTING. populated structured category requires KEEP_EXISTING; missing category requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH, and must not use KEEP_EXISTING. existing description requires KEEP_EXISTING; missing description requires PROPOSE_NEW with value or NO_MATCH. Unsupported semantics are informational only. Product type remains immutable context and must never be proposed.`
 }
 
 func classifyHTTPStatus(status int) error {

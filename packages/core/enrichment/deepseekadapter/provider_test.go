@@ -70,6 +70,32 @@ func TestProviderUsesConfiguredEndpointModelJSONModeAndSafeInput(t *testing.T) {
 	}
 }
 
+func TestDeepSeekInstructionsStateExactStage2BShapeAndActionRules(t *testing.T) {
+	instructions := buildJSONInstructions()
+	for _, expected := range []string{
+		"brand and category are objects with required action and confidence members",
+		"description is an object with required action and confidence members",
+		"canonical content member is value",
+		"unsupported_semantics is an array of objects with required semantic_type, key, value, and confidence members",
+		"resolved structured brand requires KEEP_EXISTING",
+		"unresolved brand requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH",
+		"populated structured category requires KEEP_EXISTING",
+		"missing category requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH",
+		"existing description requires KEEP_EXISTING",
+		"missing description requires PROPOSE_NEW with value or NO_MATCH",
+		"Product type remains immutable context",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Errorf("instructions missing %q:\n%s", expected, instructions)
+		}
+	}
+	for _, forbidden := range []string{"description.text", "description_text"} {
+		if strings.Contains(instructions, forbidden) {
+			t.Errorf("instructions contain noncanonical alias %q", forbidden)
+		}
+	}
+}
+
 func TestProviderStrictParserAndBusinessRules(t *testing.T) {
 	request := adapterRequest(t)
 	for _, test := range []struct {
@@ -79,6 +105,7 @@ func TestProviderStrictParserAndBusinessRules(t *testing.T) {
 	}{
 		{name: "malformed", raw: "not-json", class: enrichment.ResponseMalformed},
 		{name: "unknown field", raw: strings.Replace(validResponse(request.SourceItemCode), "}", `,"unknown":true}`, 1), class: enrichment.ResponseContractViolation},
+		{name: "noncanonical description text", raw: strings.Replace(validResponse(request.SourceItemCode), `"value":"Pantene shampoo 400ml"`, `"text":"Pantene shampoo 400ml"`, 1), class: enrichment.ResponseContractViolation},
 		{name: "prohibited product type", raw: strings.Replace(validResponse(request.SourceItemCode), `"unsupported_semantics":[]`, `"unsupported_semantics":[{"semantic_type":"productType","key":"product_type","value":"fixed_asset","confidence":0.9,"evidence":[],"explanation":null}]`, 1), class: enrichment.ResponseProhibitedOutput},
 		{name: "UoM conversion", raw: strings.Replace(validResponse(request.SourceItemCode), `"unsupported_semantics":[]`, `"unsupported_semantics":[{"semantic_type":"packaging","key":"conversion_factor","value":24,"confidence":0.9,"evidence":[],"explanation":null}]`, 1), class: enrichment.ResponseProhibitedOutput},
 		{name: "category override", raw: strings.Replace(validResponse(request.SourceItemCode), `"category":{"action":"NO_MATCH","target_id":null,"target_code":"","canonical_name":"","confidence":0.2`, `"category":{"action":"PROPOSE_NEW","target_id":null,"target_code":"new","canonical_name":"New","confidence":0.9`, 1), class: enrichment.ResponseContractViolation},
@@ -92,6 +119,33 @@ func TestProviderStrictParserAndBusinessRules(t *testing.T) {
 			_, err = provider.Enrich(context.Background(), request)
 			if got := enrichment.ResponseErrorClassOf(err); got != test.class {
 				t.Fatalf("response class=%s want %s err=%v", got, test.class, err)
+			}
+		})
+	}
+}
+
+func TestProviderRejectsInvalidKeepExistingActionsForUnresolvedFields(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(string) string
+	}{
+		{name: "unresolved brand", mutate: func(raw string) string {
+			return strings.Replace(raw, `"brand":{"action":"MATCH_EXISTING"`, `"brand":{"action":"KEEP_EXISTING"`, 1)
+		}},
+		{name: "missing category", mutate: func(raw string) string {
+			return strings.Replace(raw, `"category":{"action":"NO_MATCH"`, `"category":{"action":"KEEP_EXISTING"`, 1)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := adapterRequest(t)
+			raw := test.mutate(validResponse(request.SourceItemCode))
+			provider, err := newWithClient(fakeHTTPClient{body: `{"id":"ds-test","model":"model","choices":[{"finish_reason":"stop","message":{"content":` + strconvQuote(raw) + `}}]}`}, "https://deepseek.test", "test-key", "model", time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.Enrich(context.Background(), request)
+			if got := enrichment.ResponseErrorClassOf(err); got != enrichment.ResponseContractViolation {
+				t.Fatalf("response class=%s want %s err=%v", got, enrichment.ResponseContractViolation, err)
 			}
 		})
 	}
