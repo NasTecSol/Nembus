@@ -5,7 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/NasTecSol/nembus-core/repository"
 
@@ -34,7 +38,7 @@ func main() {
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, masterDBURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to master DB: %v", err)
+		log.Fatal("Failed to initialize master DB connection")
 	}
 	defer pool.Close()
 
@@ -87,7 +91,7 @@ func main() {
 	} else {
 		fmt.Printf("  Status: ❌ INACTIVE (is_active = false)\n")
 	}
-	fmt.Printf("  DB Connection: %s\n", maskPassword(dbConnStr))
+	fmt.Printf("  DB Connection: %s\n", sanitizeConnectionString(dbConnStr))
 
 	// Try to get using GetTenantBySlug (only returns active)
 	tenant, err := queries.GetTenantBySlug(ctx, *slug)
@@ -104,7 +108,7 @@ func main() {
 		fmt.Printf("\nTesting tenant database connection...\n")
 		tenantPool, err := pgxpool.New(ctx, dbConnStr)
 		if err != nil {
-			fmt.Printf("❌ Failed to connect: %v\n", err)
+			fmt.Printf("Failed to initialize tenant DB connection\n")
 		} else {
 			fmt.Printf("✓ Successfully connected to tenant database\n")
 			tenantPool.Close()
@@ -112,12 +116,48 @@ func main() {
 	}
 }
 
-func maskPassword(connStr string) string {
-	// Simple password masking for display
-	// In a real connection string like: postgres://user:pass@host:port/db
-	// This is a simple approach - you might want to use url.Parse for better handling
-	if len(connStr) > 50 {
-		return connStr[:30] + "..." + connStr[len(connStr)-20:]
+const redactedConnectionString = "<redacted>"
+
+// sanitizeConnectionString returns only non-sensitive, deliberately reconstructed
+// metadata for recognized PostgreSQL URL DSNs. Unsupported or malformed input is
+// redacted in full so a failed sanitization can never fall back to the raw DSN.
+func sanitizeConnectionString(connStr string) string {
+	raw := strings.TrimSpace(connStr)
+	if raw == "" {
+		return redactedConnectionString
 	}
-	return connStr
+
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Host == "" || parsed.Opaque != "" || parsed.Fragment != "" {
+		return redactedConnectionString
+	}
+
+	host := parsed.Hostname()
+	if host == "" || !safeDiagnosticHost(host) {
+		return redactedConnectionString
+	}
+
+	port := parsed.Port()
+	if port != "" {
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber < 1 || portNumber > 65535 {
+			return redactedConnectionString
+		}
+	}
+
+	metadata := "host=" + host
+	if port != "" {
+		metadata += " port=" + port
+	}
+	return metadata + " credentials=" + redactedConnectionString
+}
+
+func safeDiagnosticHost(host string) bool {
+	for _, r := range host {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '-' || r == ':' {
+			continue
+		}
+		return false
+	}
+	return true
 }

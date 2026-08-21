@@ -3373,3 +3373,438 @@ it is not production code.
 No new DeepSeek/OpenAI call, database connection, database alteration,
 deployment, commit, or push was performed for this record. Only this worklog
 file was updated.
+
+## D3 - Deployment / Environment Validation
+
+### D3 scope and result
+
+- Review date: 2026-08-21.
+- D3 was limited to deployment/configuration validation, tenant migration and
+  RBAC readiness, runtime wiring, secret handling, isolation review, and
+  operational runbook evidence. No feature implementation, migration
+  application, live database mutation, provider call, commit, or push was
+  performed.
+- The worktree was clean at the start and remains limited to this worklog
+  update. HEAD was `abc94f1` on `feature-agent` tracking `origin/feature-agent`.
+- Core MVP source and test status remains CODE COMPLETE. The deployment gate is
+  blocked by pre-existing operational secret-output code described below; the
+  exact safe migrator command is documented and does not use that wrapper.
+
+### Final provider configuration
+
+Runtime names are sourced from `packages/core/config/config.go`:
+
+- `ENRICHMENT_ENABLED` defaults to `false`.
+- `ENRICHMENT_PROVIDER` selects `openai` or `deepseek`; unknown values fail
+  configuration validation and provider construction safely.
+- DeepSeek requires `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` only when
+  enrichment is enabled with `ENRICHMENT_PROVIDER=deepseek`.
+- `DEEPSEEK_BASE_URL` defaults to `https://api.deepseek.com`. The adapter
+  accepts only an absolute HTTP(S) URL and rejects embedded credentials, query
+  parameters, and fragments. Production configuration should use HTTPS and a
+  deliberately approved endpoint.
+- The default DeepSeek model is `deepseek-v4-flash`.
+- DeepSeek sends `thinking: {"type":"disabled"}`, `max_tokens: 2048`,
+  `response_format: {"type":"json_object"}`, and `stream: false`.
+- OpenAI remains selectable with `OPENAI_API_KEY` and
+  `OPENAI_ENRICHMENT_MODEL`; the OpenAI key is not required for a DeepSeek
+  deployment.
+- Shared runtime controls use the existing names
+  `OPENAI_ENRICHMENT_TIMEOUT`, `OPENAI_ENRICHMENT_WORKER_INTERVAL`,
+  `OPENAI_ENRICHMENT_BATCH_SIZE`, and `OPENAI_ENRICHMENT_MAX_RETRIES`.
+
+Sanitized DeepSeek deployment example:
+
+```env
+ENRICHMENT_ENABLED=true
+ENRICHMENT_PROVIDER=deepseek
+DEEPSEEK_API_KEY=<secret-manager-or-environment>
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+```
+
+The current process environment reported
+`DEEPSEEK_API_KEY_PRESENT=false`, `OPENAI_API_KEY_PRESENT=false`, and
+`MASTER_DB_URL_PRESENT=false`; values were never printed.
+
+### DeepSeek D2 evidence
+
+The existing D2 evidence is accepted and was not retested in D3: authentication
+and connectivity succeeded; model `deepseek-v4-flash` was accepted; thinking
+was disabled; `max_tokens=2048`; JSON mode was enabled; HTTP was 200;
+`finish_reason=stop`; `reasoning_content` was absent; JSON was valid;
+`TYPE_MISMATCH_COUNT=0`; strict canonical candidate matching succeeded; the
+`evidence []string` contract succeeded; and strict Stage 2B parsing passed.
+No additional external API call was made in D3.
+
+### Database ownership invariant
+
+- The master database is used for tenant registry/control-plane identity,
+  tenant connection metadata, active-tenant enumeration, and migration
+  coordination only.
+- Each selected tenant database owns organizations, users/roles/permissions,
+  SAP staging/business rows, products, brands, categories,
+  `product_enrichment_suggestions`, review lifecycle, application lifecycle,
+  and `audit_logs`.
+- For active tenant business work:
+  `Product DB = Suggestion DB = Worker DB = Review DB = Application DB = Audit DB`.
+- F1, F2, Stage 2D, and Stage 2E construct request/worker repositories from the
+  selected tenant pool. No active path uses a master product or suggestion
+  fallback. Legacy master business rows are quarantined/inert for enrichment.
+
+### Tenant migration chain and readiness
+
+The exact checked-in chain is present and Atlas integrity is valid:
+
+- `20260820000000.sql` - product enrichment suggestion foundation.
+- `20260820010000.sql` - retry durability and worker attempt fields.
+- `20260821000000.sql` - tenant-local `product_enrichment:review` permission
+  metadata, with no role assignment.
+- `20260821010000.sql` - tenant-local `product_enrichment:apply` permission
+  metadata, with no role assignment.
+
+`atlas migrate validate --dir "file://db/migrations"` passed.
+`atlas migrate hash --dir "file://db/migrations"` passed with no worktree
+change, and `atlas.sum` contains all four migration entries. SQLC v1.30.0
+`sqlc compile -f sqlc.yaml` and `sqlc generate` both passed; generation caused
+no repository diff.
+
+The tenant migrator is `apps/cloud-server/cmd/migrate-tenants/main.go`. It:
+
+- requires `MASTER_DB_URL` and reads active tenants from the master registry;
+- uses `WHERE is_active = true` and each tenant's `db_conn_str` independently;
+- with `-master=false`, skips master migration but still reads the master
+  registry and processes tenant databases;
+- runs Atlas against each tenant DSN, never substitutes the master DSN for a
+  failed tenant;
+- logs per-tenant failures, continues to the remaining tenants, and exits 1 if
+  any tenant failed; and
+- has no dependency on or invocation from the enrichment worker.
+
+Safe read-only status command for one deployment revision:
+
+```powershell
+cd apps/cloud-server
+go run cmd/migrate-tenants/main.go -master=false -status=true
+```
+
+Authorized tenant migration command, not executed in D3:
+
+```powershell
+cd apps/cloud-server
+go run cmd/migrate-tenants/main.go -master=false
+```
+
+The legacy `apps/cloud-server/migrate-tenants.ps1` wrapper is not the safe
+deployment command because it prints the full `MASTER_DB_URL`; it must not be
+used until corrected outside D3.
+
+### New-tenant operational limitation
+
+`CreateTenant` registers tenant name, slug, connection metadata, active state,
+and settings in the master registry. It does not create/provision the tenant
+database, run migrations, provision RBAC, or validate enrichment readiness.
+Current activation can therefore precede operational migration; this is an
+explicit deployment limitation, not silently treated as readiness.
+
+Required new-tenant sequence:
+
+1. Provision/register the tenant database.
+2. Run tenant migrations.
+3. Validate migration state.
+4. Provision explicit RBAC role mappings.
+5. Validate tenant connectivity.
+6. Activate/use business features.
+
+### RBAC deployment readiness
+
+- `20260821000000.sql` provisions exactly `product_enrichment:review`.
+- `20260821010000.sql` provisions exactly `product_enrichment:apply`.
+- Both migrations insert capability metadata only; neither assigns a role or
+  user automatically.
+- Review and apply checks are separate tenant-local permission lookups through
+  `role_permissions` and `user_roles`.
+- Review does not imply apply; apply does not require review; `products:manage`
+  is not used as a substitute; there is no admin-name or role-name bypass in
+  the enrichment handlers.
+- Deployment must explicitly assign the two permissions in each intended
+  tenant. No live permission rows were queried:
+  `LIVE_PERMISSION_ROWS=UNVERIFIED`.
+
+### JWT and SAP M2M deployment requirements
+
+- Standard user JWTs contain signed `tenant_slug`.
+- `TenantBindingMiddleware` requires the `x-tenant-id` header to equal that
+  signed claim; the header is only a consistency assertion.
+- JWTs without `tenant_slug` fail closed on protected user routes. Users must
+  re-login after the tenant-bound JWT rollout.
+- No localStorage/header tenant authority is reintroduced.
+- SAP machine JWTs require `tenant_slug`, positive `organization_id`,
+  `token_type=machine`, and `is_m2m=true`.
+- The registered M2M client organization must equal the signed organization;
+  `x-tenant-id` and `x-organization-id` are consistency assertions.
+- There is no organization default of 1 in the SAP auth path, and payload
+  organization data cannot override the trusted claim.
+- Legacy unbound M2M credentials are rejected by the migration-specific
+  middleware. Reissue one tenant/org-bound SAP M2M credential per integration;
+  no M2M secret was displayed.
+
+### F1 runtime trace
+
+`SAP Agent -> tenant/org-bound M2M JWT -> signed tenant_slug and
+organization_id -> master tenant registry lookup -> selected tenant pool ->
+tenant-local organization validation -> tenant-local SAPMigrationUseCase ->
+transaction -> commit -> tenant-local Stage 2A coordinator -> pending
+suggestion`.
+
+The payload organization is checked against the trusted claim. The post-commit
+enqueue is best effort and cannot roll back a committed SAP transaction. No
+master product or suggestion write is present in this path.
+
+### F2 / DeepSeek runtime trace
+
+`master active-tenant enumeration -> selected tenant pool -> fresh tenant
+repository/store -> due suggestion claim -> ProductEnrichmentProvider ->
+configured OpenAI or DeepSeek adapter -> strict Stage 2B -> tenant-local
+lifecycle update`.
+
+The supervisor re-enumerates active tenants every cycle, skips inactive tenants,
+rediscovers newly active tenants, creates a fresh worker per tenant, and
+isolates setup/worker failures. The provider is stateless/shared and contains
+no tenant credentials or tenant identity. The worker never applies product
+mutations. DeepSeek uses disabled thinking, JSON mode, and the strict parser;
+retryable/permanent/provider-contract failures are classified without logging
+credentials.
+
+### Review and apply runtime traces
+
+Review:
+
+`JWT -> TenantBindingMiddleware -> TenantMiddleware -> RepoKey -> tenant-local
+user -> server-derived organization -> product_enrichment:review -> tenant-local
+suggestion/current product -> stale validation -> approve/reject -> tenant-local
+audit`.
+
+Review never auto-applies a suggestion.
+
+Apply:
+
+`POST /api/product-enrichment/suggestions/:id/apply -> JWT -> tenant binding ->
+tenant RepoKey -> tenant-local user -> server-derived organization ->
+product_enrichment:apply -> E1 ApplyApprovedSuggestion -> tenant transaction ->
+suggestion lock -> product lock -> fingerprint/stale check -> precedence and
+canonical-target validation -> narrow update -> applied transition -> audit ->
+commit`.
+
+Tenant, organization, product, applier, brand, category, description, force,
+and override are not client-controlled. Apply locks and revalidates the
+tenant-local suggestion and product and does not auto-create taxonomy records.
+
+### Final product write surface and route inventory
+
+Stage 2E product SQL writes only `products.brand_id`, `products.category_id`,
+`products.description`, and `products.updated_at`, plus suggestion lifecycle
+fields and tenant-local `audit_logs`. It does not write SKU, name, product type,
+metadata, inventory, prices, tax, UoM, barcodes, suppliers,
+`track_inventory`, or active/sellable/purchasable flags.
+
+Authenticated enrichment routes are:
+
+- `GET /api/product-enrichment/suggestions`
+- `GET /api/product-enrichment/suggestions/:id`
+- `POST /api/product-enrichment/suggestions/:id/approve`
+- `POST /api/product-enrichment/suggestions/:id/reject`
+- `POST /api/product-enrichment/suggestions/:id/apply`
+
+No public review, public apply, bulk apply, auto apply, force apply, or GET
+apply route exists.
+
+### Deployment order
+
+1. Build and run the final repository tests/checks.
+2. Provision secrets through the deployment secret manager.
+3. Deploy tenant-bound JWT behavior.
+4. Require user re-login.
+5. Reissue tenant/org-bound SAP M2M credentials.
+6. Deploy F1 tenant-local SAP routing.
+7. Run approved migrations against every intended tenant with
+   `-master=false`.
+8. Validate the four enrichment/RBAC migration states per tenant.
+9. Explicitly assign `product_enrichment:review`.
+10. Explicitly assign `product_enrichment:apply`.
+11. Deploy F2 supervisor and configured provider selection.
+12. Enable Stage 2D review routes.
+13. Enable Stage 2E apply routes.
+14. Set `ENRICHMENT_ENABLED=true` intentionally for the approved scope.
+15. Monitor the first tenant processing cycle and audit events.
+
+### First-tenant staging validation runbook
+
+This is a plan only; D3 did not execute business mutation. Use one safe test
+product in one staging tenant and separate reviewer-only and applier test users.
+
+1. Before processing, record tenant slug, organization, product ID, source
+   item code/name, `product_type`, brand/category/description, SKU, inventory,
+   pricing, tax, UoM/conversions, barcodes, suppliers, status flags, and the
+   product fingerprint.
+2. Confirm the expected enrichment gap is brand, description, and/or missing
+   category; confirm the product is SAP-sourced with an approved product type.
+3. Run the approved staging SAP batch and verify the suggestion is created in
+   the selected tenant DB with `pending`, the expected organization/product,
+   source fingerprint, and no master business write.
+4. With enrichment enabled and provider set to DeepSeek, observe
+   `pending -> processing -> in_review`; verify provider, model metadata, and
+   no protected fields in the suggestion proposal.
+5. Use the reviewer-only account to list/detail and approve. Verify the
+   reviewer has `product_enrichment:review` and cannot apply.
+6. Use the applier account with `product_enrichment:apply` to apply the
+   approved suggestion. Verify `applied`, `applied_at`, changed fields, and a
+   tenant-local audit record.
+7. After processing, compare the recorded snapshot. Only brand/category/
+   description and allowed lifecycle/audit fields may differ; product type,
+   SKU, inventory, pricing, tax, UoM, conversions, barcodes, suppliers, and
+   status flags must be unchanged.
+8. Verify a different tenant has no new suggestion, status change, product
+   mutation, or audit row from this run.
+
+### Colliding-tenant isolation validation
+
+Use two physical tenant databases where Tenant A and Tenant B can contain the
+same organization/product/suggestion numeric IDs (for example org 1/product
+95/suggestion 1), or equivalent intentionally colliding staging fixtures.
+Authenticate each request with its matching signed tenant claim and header.
+Verify list/detail/review/apply requests against A never read B and vice versa;
+an ID that exists only in the other tenant returns the tenant-local not-found
+behavior. Verify the supervisor creates separate pools/repositories and that
+workers process each tenant's same numeric suggestion independently. Confirm
+audits and product changes remain in the physical tenant that owns the request.
+
+### Observability
+
+Current MVP logs expose tenant slug, suggestion ID, normalized error class, and
+worker/supervisor failure boundaries. Provider failures distinguish retryable,
+permanent, timeout, network, and strict response failures; status transitions
+are durable in tenant suggestions; review/apply errors are sanitized and audit
+events are durable. Provider keys, JWTs, M2M tokens, DSNs, and response bodies
+are not intentionally logged by the enrichment runtime. Metrics/alerts and a
+centralized audit/observability service remain optional follow-up work.
+
+### Go, SQLC, Atlas, and diff verification
+
+- `C:\Program Files\Go\bin\go.exe version`: Go 1.26.7.
+- `packages/core`: `go test -count=1 ./...` passed.
+- `apps/cloud-server`: `go test -count=1 ./...` passed.
+- `apps/sap-agent`: `go test -count=1 ./...` passed.
+- `C:\Program Files\Go\bin\gofmt.exe -l` over the D3-relevant human-authored
+  Go files reported no files.
+- `git diff --check` passed before the D3 worklog update and is required again
+  after it.
+- SQLC v1.30.0 compile and generation passed with no generated diff.
+- Atlas validation and hash passed with no migration-history change.
+- No live database was contacted.
+
+### Secret scan
+
+- Current tracked source/diff contains no production-looking DeepSeek API key,
+  OpenAI API key, `sk-` key, JWT signing secret, SAP credential, M2M bearer
+  token, private key, or tenant secret from this D3 work.
+- Example M2M/JWT/DSN values are placeholders or local-development fixtures;
+  no value was printed in this validation.
+- Existing tracked local/dev DSN material was detected in development/example
+  files, including `apps/pos-client/.env` and `apps/pos-client/.env.dev`;
+  production secrets must not be placed there.
+- IMPORTANT operational security finding: `apps/cloud-server/migrate-tenants.ps1:28`
+  prints the full `MASTER_DB_URL`, and
+  `apps/cloud-server/cmd/check-tenant/main.go:90,115-122` uses insufficient
+  length-based masking for a DSN. These files were not changed in D3. Do not
+  use the wrapper/diagnostic output in deployment logs until corrected.
+
+### Live environment status
+
+`LIVE_ENVIRONMENT_READ_ONLY_CHECKS=NOT_PERFORMED`.
+The environment had no `MASTER_DB_URL`, no provider key, and no legitimate
+staging database connection available to this run. Therefore tenant registry,
+tenant migration versions, live permission rows, table readiness, and actual
+SAP/worker/review/apply execution remain unverified. D2's previously recorded
+DeepSeek live contract evidence is not equivalent to target deployment
+verification.
+
+### D3 blocker classification
+
+CRITICAL
+
+- No active enrichment-runtime cross-tenant or product-write CRITICAL defect
+  was found in this static gate.
+
+IMPORTANT
+
+- Correct or retire the legacy migration wrapper's full-DSN output and the
+  check-tenant DSN masking before using either operational tool in deployment
+  or shared logs. This is a code/security correction intentionally not made in
+  D3.
+- Provision DeepSeek secret/configuration in the target environment, or select
+  OpenAI with its own key; neither is present locally.
+- Apply the four tenant migrations and validate each intended tenant.
+- Assign review/apply permissions explicitly per tenant.
+- Reissue SAP M2M credentials and require user re-login for the JWT rollout.
+- Deploy the intended revision and execute the first-tenant staging runbook.
+
+MINOR
+
+- Remove or quarantine tracked local/dev DSN fixtures and replace weak
+  diagnostics with structured DSN redaction during normal security hardening.
+- Add metrics/alerts for supervisor cycles and provider status rates.
+
+### Status matrix and final distinction
+
+`CORE_MVP_CODE_COMPLETE=true`
+
+`DEPLOYMENT_READY=false` (the operational secret-output correction is still
+required; the safe Go migrator path is documented).
+
+`DEPLOYMENT_ENVIRONMENT_VERIFIED=false`
+
+`PRODUCTION_END_TO_END_VERIFIED=false`
+
+`agents.md` was updated by this D3 record only. No other file was intentionally
+changed, no live migration or business mutation was performed, and no commit or
+push was made.
+
+Final verdict: `D3_BLOCKED_CODE_CORRECTION_REQUIRED`
+
+### D3 Deployment Utility Secret Hardening
+
+- Review date: 2026-08-21.
+- Original `apps/cloud-server/migrate-tenants.ps1` output interpolated and
+  printed the raw `MASTER_DB_URL` value.
+- Original `apps/cloud-server/cmd/check-tenant/main.go` used length-based
+  truncation, which could preserve database credentials and query material.
+- The PowerShell wrapper now prints only `MASTER_DB_URL configured.` and still
+  reads the variable for migration behavior.
+- `check-tenant` now uses proper PostgreSQL URL parsing and reconstructs only
+  validated host/port metadata plus `credentials=<redacted>`. Userinfo,
+  passwords, database paths, and all query parameters are omitted.
+- Empty, malformed, unsupported, keyword/value, invalid-host, and invalid-port
+  inputs return `<redacted>`; sanitization never falls back to the original
+  DSN.
+- Connection-construction errors in `check-tenant` no longer include raw error
+  text that could echo a DSN. Existing tenant discovery, status reporting,
+  connection attempts, and migration behavior were otherwise unchanged.
+- Focused `check-tenant` tests cover URL credentials, escaped passwords,
+  query options including credential-like parameters, malformed/empty input,
+  and keyword/value input. The focused package test passed.
+- `packages/core`, `apps/cloud-server`, and `apps/sap-agent` each passed
+  `go test -count=1 ./...` using Go from `C:\Program Files\Go\bin`.
+- `gofmt` was run on the modified Go files and `git diff --check` passed.
+- Static PowerShell review confirms `MASTER_DB_URL` is read but never emitted.
+- No live database was connected, no migration was run, no deployment was
+  performed, no secret value was displayed, and no commit or push was made.
+- Affected files: `apps/cloud-server/migrate-tenants.ps1`,
+  `apps/cloud-server/cmd/check-tenant/main.go`,
+  `apps/cloud-server/cmd/check-tenant/main_test.go`, and `agents.md`.
+- D3 code blocker: `RESOLVED`.
+- Core MVP: `CODE COMPLETE`.
+- Deployment readiness: `READY FOR D3 REVALIDATION`.
+- `DEPLOYMENT_ENVIRONMENT_VERIFIED` and
+  `PRODUCTION_END_TO_END_VERIFIED` remain unclaimed because they require
+  actual environment execution.

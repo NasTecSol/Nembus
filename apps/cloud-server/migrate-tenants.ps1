@@ -25,7 +25,7 @@ if (-not $masterDbUrl) {
 }
 
 Write-Host "Running migrations on all active tenant databases..." -ForegroundColor Green
-Write-Host "Master DB URL: $masterDbUrl" -ForegroundColor Cyan
+Write-Host "MASTER_DB_URL configured." -ForegroundColor Cyan
 
 # Run the Go script
 $downFlag = if ($Down) { "-down" } else { "" }
