@@ -2143,3 +2143,249 @@ func (h *RestaurantHandler) GetKioskSessionByID(c *gin.Context) {
 	resp := h.useCase.GetKioskSessionByID(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
+
+// === Menu Modifier Groups ===
+
+// CreateMenuModifierGroup handles POST /api/restaurant/menu-modifier-groups
+// @Summary      Create a menu modifier group
+// @Description  Creates a new menu modifier group for a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateMenuModifierGroupRequest true "Menu Modifier Group Data"
+// @Success      201          {object}  MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups [post]
+func (h *RestaurantHandler) CreateMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req CreateMenuModifierGroupRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	metaBytes, err := bytesFromMap(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata format", nil))
+		return
+	}
+
+	var maxS pgtype.Int4
+	if req.MaxSelections != nil {
+		maxS = pgtype.Int4{Int32: *req.MaxSelections, Valid: true}
+	}
+
+	var displayOrder pgtype.Int4
+	if req.DisplayOrder != nil {
+		displayOrder = pgtype.Int4{Int32: *req.DisplayOrder, Valid: true}
+	}
+
+	resp := h.useCase.CreateMenuModifierGroup(c.Request.Context(), repository.CreateMenuModifierGroupParams{
+		StoreID:       req.StoreID,
+		Name:          req.Name,
+		Code:          req.Code,
+		SelectionType: pgtype.Text{String: req.SelectionType, Valid: req.SelectionType != ""},
+		MinSelections: pgtype.Int4{Int32: req.MinSelections, Valid: true},
+		MaxSelections: maxS,
+		IsActive:      pgtype.Bool{Bool: req.IsActive, Valid: true},
+		DisplayOrder:  displayOrder,
+		Metadata:      metaBytes,
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMenuModifierGroup handles GET /api/restaurant/menu-modifier-groups/:id
+// @Summary      Get menu modifier group by ID
+// @Description  Returns details of a menu modifier group by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Modifier Group ID"
+// @Success      200          {object}  MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/{id} [get]
+func (h *RestaurantHandler) GetMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.useCase.GetMenuModifierGroup(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListMenuModifierGroupsByStore handles GET /api/restaurant/menu-modifier-groups/store/:store_id
+// @Summary      List menu modifier groups by store ID
+// @Description  Returns a list of all menu modifier groups for a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {array}   MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/store/{store_id} [get]
+func (h *RestaurantHandler) ListMenuModifierGroupsByStore(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.useCase.ListMenuModifierGroupsByStore(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateMenuModifierGroup handles PUT /api/restaurant/menu-modifier-groups/:id
+// @Summary      Update menu modifier group
+// @Description  Updates an existing menu modifier group by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Modifier Group ID"
+// @Param        body         body      UpdateMenuModifierGroupRequest true "Menu Modifier Group Data"
+// @Success      200          {object}  MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/{id} [put]
+func (h *RestaurantHandler) UpdateMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdateMenuModifierGroupRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	metaBytes, err := bytesFromMap(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata format", nil))
+		return
+	}
+
+	// Fetch existing group to check current properties if fields are omitted in PUT payload
+	existingGroupResp := h.useCase.GetMenuModifierGroup(c.Request.Context(), int32(id))
+	if existingGroupResp.StatusCode != 200 {
+		c.JSON(existingGroupResp.StatusCode, existingGroupResp)
+		return
+	}
+	existingGroup := existingGroupResp.Data.(repository.MenuModifierGroup)
+
+	name := existingGroup.Name
+	if req.Name != nil {
+		name = *req.Name
+	}
+	code := existingGroup.Code
+	if req.Code != nil {
+		code = *req.Code
+	}
+	selectionType := existingGroup.SelectionType
+	if req.SelectionType != nil {
+		selectionType = pgtype.Text{String: *req.SelectionType, Valid: true}
+	}
+	minSelections := existingGroup.MinSelections
+	if req.MinSelections != nil {
+		minSelections = pgtype.Int4{Int32: *req.MinSelections, Valid: true}
+	}
+	maxSelections := existingGroup.MaxSelections
+	if req.MaxSelections != nil {
+		maxSelections = pgtype.Int4{Int32: *req.MaxSelections, Valid: true}
+	}
+	isActive := existingGroup.IsActive
+	if req.IsActive != nil {
+		isActive = pgtype.Bool{Bool: *req.IsActive, Valid: true}
+	}
+	displayOrder := existingGroup.DisplayOrder
+	if req.DisplayOrder != nil {
+		displayOrder = pgtype.Int4{Int32: *req.DisplayOrder, Valid: true}
+	}
+
+	resp := h.useCase.UpdateMenuModifierGroup(c.Request.Context(), repository.UpdateMenuModifierGroupParams{
+		ID:            int32(id),
+		Name:          name,
+		Code:          code,
+		SelectionType: selectionType,
+		MinSelections: minSelections,
+		MaxSelections: maxSelections,
+		IsActive:      isActive,
+		DisplayOrder:  displayOrder,
+		Metadata:      metaBytes,
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteMenuModifierGroup handles DELETE /api/restaurant/menu-modifier-groups/:id
+// @Summary      Delete menu modifier group
+// @Description  Deletes a menu modifier group by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Modifier Group ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/{id} [delete]
+func (h *RestaurantHandler) DeleteMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.useCase.DeleteMenuModifierGroup(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
