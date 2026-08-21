@@ -2621,3 +2621,36 @@ Next Action: if the separate apply permission is accepted, provision that
 tenant-local permission first; otherwise separately authorize implementation
 of the explicit tenant-local deterministic application endpoint. Do not
 implement Stage 2E as part of this design gate.
+
+## Stage 2E E0 — Apply Permission
+
+- Exact permission: `product_enrichment:apply`.
+- Semantic scope: may apply an already-human-approved product enrichment
+  suggestion to the tenant-local product using the deterministic Stage 2E
+  application rules. It does not approve/reject suggestions, edit proposal
+  values, create taxonomy, or mutate unrelated product domains.
+- Provisioning uses `packages/core/db/migrations/20260821010000.sql`, the
+  same idempotent `permissions` insert by unique `code` used for
+  `product_enrichment:review` in `20260821000000.sql`.
+- The permission is tenant-local in actual authorization because the future
+  applier will use the physical tenant repository. A shared migration may
+  leave an inert permission row in master; master RBAC must never authorize
+  tenant Stage 2E.
+- No role or user is granted `product_enrichment:apply` by this migration.
+  `product_enrichment:review` does not imply it. Deployment administrators
+  must explicitly map review and apply authority independently.
+- The permission must exist in each intended tenant database before Stage 2E
+  is enabled. Until an approved application role/user is explicitly assigned
+  it, a future Stage 2E endpoint must return `403`.
+- Atlas hash/validation passed with Atlas v1.3.2-4bf5fb9-canary. Regression
+  tests passed with `C:\Program Files\Go\bin\go.exe` for `packages/core`,
+  `apps/cloud-server`, and `apps/sap-agent`. No SQLC query or generated SQLC
+  file is in scope.
+- E0 files changed: this migration, `packages/core/db/migrations/atlas.sum`,
+  and `agents.md`.
+
+Stage 2E status: E0 complete. The migration hash/validation and all requested
+regression checks passed.
+
+Next Action: E1 — implement deterministic tenant-local approved-suggestion
+application domain/store/transaction logic. No HTTP endpoint yet.
