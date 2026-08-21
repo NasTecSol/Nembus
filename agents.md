@@ -2654,3 +2654,112 @@ regression checks passed.
 
 Next Action: E1 — implement deterministic tenant-local approved-suggestion
 application domain/store/transaction logic. No HTTP endpoint yet.
+
+## Stage 2E E1 - Deterministic Tenant-Local Application Engine
+
+E1 is implemented as a domain/store/transaction layer only. Stage 2E is not
+complete; E2 remains the next phase and will add the authenticated HTTP apply
+endpoint.
+
+### Application API and tenant boundary
+
+- Domain entry point:
+  `enrichment.ProductEnrichmentApplicationService.ApplyApprovedSuggestion`.
+- Inputs are explicit trusted domain values: positive `organizationID`,
+  `suggestionID`, and authenticated `applierUserID`. The service accepts no
+  tenant slug, product ID, proposed values, force flag, field selection, or
+  taxonomy override, and performs no HTTP permission check.
+- The application store is constructed from the tenant-local `Queries` and
+  `pgxpool.Pool` selected by the request. E1 never uses `masterRepo` and never
+  queries master users or master business data.
+
+### Transaction and locking
+
+- One tenant-local PostgreSQL transaction contains suggestion lock/load,
+  product lock/load, current-state validation, canonical target revalidation,
+  narrow product update, guarded lifecycle transition, audit insert, and
+  commit.
+- Lock order is deterministic: approved suggestion `FOR UPDATE` first, then
+  product `FOR UPDATE`; canonical target rows are locked only after the
+  product. Any error rolls back the transaction.
+- The product row lock and conditional update prevent an E1 application from
+  overwriting a structured SAP field that changed before the final write. A
+  later SAP write waits for the lock and remains authoritative under the
+  existing deterministic SAP synchronization behavior.
+
+### Apply-time validation and application matrix
+
+- E1 reuses the exact Stage 2A `StructuredCurrent` and
+  `FingerprintSnapshot` implementations. Fingerprint mismatch, source identity
+  change, invalid product type, or changed product context returns stale/conflict
+  and leaves the suggestion approved.
+- Structured SAP precedence is checked again: resolved brand/category blocks
+  replacement, and non-whitespace description blocks `PROPOSE_NEW`.
+- Brand and category `MATCH_EXISTING` apply only to a still-missing field and
+  only after exact ID/code revalidation against an active canonical row.
+  Missing, inactive, mismatched, or ambiguous targets conflict; no taxonomy is
+  created. `KEEP_EXISTING` and `NO_MATCH` do not mutate.
+- Brand/category `PROPOSE_NEW` and unsupported target actions are conflicts.
+  Unsupported semantics remain informational and never create attributes,
+  families, variants, or other schema records.
+- Description `PROPOSE_NEW` applies only to NULL/empty/whitespace current
+  descriptions after UTF-8 and 500-rune validation through the existing
+  `NormalizeProposedDescription` contract. Existing Stage 2B/2C canonical
+  trimming is persisted; no HTML sanitizer or rewriting was added.
+- The explicit `ApplyPlan` contains only `brand_id`, `category_id`,
+  `description`, and `ChangedFields`. No product object or broad product update
+  is passed to persistence.
+
+### Lifecycle, no-op, idempotency, and audit
+
+- Only `approved -> applied` is accepted. `applied` is a successful idempotent
+  result with `AlreadyApplied=true`; it does not rewrite the product, reviewer,
+  applier, or audit state. All other statuses are rejected.
+- Approved no-op suggestions containing only `KEEP_EXISTING`, `NO_MATCH`, or
+  informational unsupported semantics skip the product update, transition to
+  `applied`, set `applied_at`, preserve `reviewer_id`/`reviewed_at`, and write a
+  zero-change audit event.
+- The existing guarded lifecycle query sets `status`, `applied_at`, and
+  `updated_at` only, preserving reviewer and proposal/fingerprint fields.
+- The application audit is inserted in the same transaction with event
+  `product_enrichment.applied`, tenant organization, suggestion/product IDs,
+  applier in `performed_by`, changed fields, old/new brand/category IDs when
+  changed, and `description_changed`. Full description text and provider
+  secrets/payloads are not stored.
+- Product-write, lifecycle, audit, or commit failure cannot leave a committed
+  partial application: the transaction rolls back and the suggestion remains
+  approved.
+
+### E1 files changed
+
+- Domain: `packages/core/enrichment/application.go`.
+- Store/transaction: `packages/core/repository/product_enrichment_application_store.go`.
+- SQL: `packages/core/queries/product_enrichment_application.sql`.
+- Generated SQLC: `packages/core/repository/product_enrichment_application.sql.go`.
+- Tests: `packages/core/enrichment/application_test.go`.
+- Worklog: `agents.md`.
+
+No handler, route, `apps/cloud-server/main.go`, permission behavior, SAP
+mapping, Stage 2D review semantics, product schema, migration, or Atlas
+checksum was changed. E1 writes only the three approved product columns,
+normal `updated_at`, the approved suggestion lifecycle fields, and
+`audit_logs`.
+
+### Verification and status
+
+- SQLC v1.30.0 was located and real generation completed successfully with
+  `cd packages/core && sqlc generate`; the generated companion was not hand
+  edited.
+- `gofmt` completed on all human-authored E1 Go files and `git diff --check`
+  passed.
+- Passed `go test ./...` in `packages/core`, `apps/cloud-server`, and
+  `apps/sap-agent` using `C:\Program Files\Go\bin\go.exe`.
+- No Atlas command or live/external database operation was required because E1
+  has no schema migration. No live database was contacted.
+
+Stage 2E status: E1 complete and verified. Stage 2E overall remains incomplete.
+
+Next Action: E2 - add the explicit authenticated
+`POST /api/product-enrichment/suggestions/:id/apply` endpoint using tenant-bound
+RepoKey and exact `product_enrichment:apply` permission. Do not implement E2 or
+E3 as part of E1.
