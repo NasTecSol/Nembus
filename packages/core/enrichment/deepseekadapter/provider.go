@@ -123,6 +123,7 @@ type chatCompletionRequest struct {
 	Model          string         `json:"model"`
 	Messages       []chatMessage  `json:"messages"`
 	ResponseFormat responseFormat `json:"response_format"`
+	Thinking       thinkingConfig `json:"thinking"`
 	MaxTokens      int            `json:"max_tokens"`
 	Stream         bool           `json:"stream"`
 }
@@ -133,6 +134,10 @@ type chatMessage struct {
 }
 
 type responseFormat struct {
+	Type string `json:"type"`
+}
+
+type thinkingConfig struct {
 	Type string `json:"type"`
 }
 
@@ -187,6 +192,7 @@ func (p *Provider) Enrich(ctx context.Context, request enrichment.EnrichmentRequ
 			{Role: "user", Content: string(payload)},
 		},
 		ResponseFormat: responseFormat{Type: "json_object"},
+		Thinking:       thinkingConfig{Type: "disabled"},
 		MaxTokens:      2048,
 		Stream:         false,
 	})

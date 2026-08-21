@@ -25,6 +25,10 @@ func TestProviderUsesConfiguredEndpointModelJSONModeAndSafeInput(t *testing.T) {
 		ResponseFormat struct {
 			Type string `json:"type"`
 		} `json:"response_format"`
+		Thinking        map[string]json.RawMessage `json:"thinking"`
+		MaxTokens       int                        `json:"max_tokens"`
+		Stream          bool                       `json:"stream"`
+		ReasoningEffort json.RawMessage            `json:"reasoning_effort"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/custom/chat/completions" {
@@ -56,8 +60,18 @@ func TestProviderUsesConfiguredEndpointModelJSONModeAndSafeInput(t *testing.T) {
 	if result.Provider != ProviderName || result.Model != "deepseek-v4-flash" || result.ResponseID != "ds-test" {
 		t.Fatalf("trusted metadata=%+v", result)
 	}
-	if gotRequest.Model != "configured-model" || gotRequest.ResponseFormat.Type != "json_object" {
+	if gotRequest.Model != "configured-model" || gotRequest.ResponseFormat.Type != "json_object" || gotRequest.MaxTokens != 2048 || gotRequest.Stream {
 		t.Fatalf("request configuration=%+v", gotRequest)
+	}
+	if len(gotRequest.Thinking) != 1 {
+		t.Fatalf("thinking configuration=%v, want exactly {type: disabled}", gotRequest.Thinking)
+	}
+	var thinkingType string
+	if err := json.Unmarshal(gotRequest.Thinking["type"], &thinkingType); err != nil || thinkingType != "disabled" {
+		t.Fatalf("thinking.type=%q, want disabled", thinkingType)
+	}
+	if len(gotRequest.ReasoningEffort) != 0 {
+		t.Fatalf("reasoning_effort should not be sent: %s", gotRequest.ReasoningEffort)
 	}
 	if len(gotRequest.Messages) != 2 || gotRequest.Messages[0].Role != "system" || gotRequest.Messages[1].Role != "user" {
 		t.Fatalf("messages=%+v", gotRequest.Messages)

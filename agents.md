@@ -3273,3 +3273,24 @@ environment validation. No live request or deployment was performed here.
   core `go test -count=1 ./...`, cloud-server `go test -count=1 ./...`,
   sap-agent `go test -count=1 ./...`, gofmt, and `git diff --check`.
 - No live request, commit, or push was performed.
+
+## DeepSeek Explicit Non-Thinking Correction — 2026-08-21
+
+- DeepSeek connectivity: VERIFIED.
+- DeepSeek JSON-mode connectivity: VERIFIED.
+- The first contract issue, `description.text`, was corrected in production
+  instructions while Stage 2B remained unchanged.
+- The corrected-contract live request reached semantic/type validation and
+  exposed a separate `WRONG_VALUE_TYPE` finding; that finding remains open.
+- A subsequent default-thinking request exhausted `max_tokens` before final
+  content was emitted, with thousands of reasoning characters and
+  `finish_reason=length`.
+- Product enrichment is bounded structured extraction/classification rather
+  than an open-ended reasoning task. The strict Stage 2B parser remains the
+  deterministic validation boundary; disabling thinking does not weaken it.
+- The DeepSeek adapter now explicitly sends `thinking: {"type":"disabled"}`.
+  `max_tokens` remains `2048`; no `reasoning_effort` or unrelated sampling
+  parameters were added.
+- Stage 2B remains unchanged. The next live non-thinking contract retest is
+  pending; DeepSeek live contract verification is not yet claimed.
+- No live request, commit, or push was performed.
