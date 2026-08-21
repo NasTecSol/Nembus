@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestDSNToURL(t *testing.T) {
@@ -92,5 +96,24 @@ func TestFirstMigrationVersion(t *testing.T) {
 	empty := t.TempDir()
 	if _, err := firstMigrationVersion(empty); err == nil {
 		t.Error("firstMigrationVersion() expected error on empty dir")
+	}
+}
+
+func TestIsMissingDatabase(t *testing.T) {
+	pgErr := &pgconn.PgError{Code: "3D000", Message: `database "qitaf3" does not exist`}
+	if !isMissingDatabase(pgErr) {
+		t.Error("isMissingDatabase() should detect raw PgError 3D000")
+	}
+	if !isMissingDatabase(fmt.Errorf("check atlas_schema_revisions: %w", pgErr)) {
+		t.Error("isMissingDatabase() should detect wrapped PgError")
+	}
+	if !isMissingDatabase(errors.New(`failed to connect: FATAL: database "qitaf3" does not exist (SQLSTATE 3D000)`)) {
+		t.Error("isMissingDatabase() should detect plain string form")
+	}
+	if isMissingDatabase(errors.New("connection refused")) {
+		t.Error("isMissingDatabase() must not match connection refused")
+	}
+	if isMissingDatabase(errors.New(`relation "foo" does not exist`)) {
+		t.Error("isMissingDatabase() must not match relation-not-exists")
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
@@ -157,6 +159,7 @@ func main() {
 	// 3. Migrate each tenant database
 	successCount := 0
 	failedCount := 0
+	skippedCount := 0
 
 	for _, tenant := range tenants {
 		log.Println("\n--------------------------------------------------")
@@ -178,6 +181,12 @@ func main() {
 
 		baseline, err := resolveBaseline(ctx, tenantURL, *baselineVer, firstMig)
 		if err != nil {
+			if isMissingDatabase(err) {
+				log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
+				log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+				skippedCount++
+				continue
+			}
 			log.Printf("❌ Failed to inspect tenant %s: %v\n", tenant.Slug, err)
 			failedCount++
 			continue
@@ -199,6 +208,7 @@ func main() {
 	log.Println("=== Multi-Tenant Atlas Migration Summary ===")
 	log.Println("==================================================")
 	log.Printf("Successful: %d\n", successCount)
+	log.Printf("Skipped:    %d (database missing)\n", skippedCount)
 	log.Printf("Failed:     %d\n", failedCount)
 	log.Printf("Total:      %d\n", len(tenants))
 
@@ -259,7 +269,8 @@ func resolveBaseline(ctx context.Context, dbURL, explicit, firstMig string) (str
 	var hasRevisions bool
 	err = pool.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name = 'atlas_schema_revisions'
+		WHERE table_name = 'atlas_schema_revisions'
+		  AND table_schema NOT IN ('pg_catalog', 'information_schema')
 	)`).Scan(&hasRevisions)
 	if err != nil {
 		return "", fmt.Errorf("check atlas_schema_revisions: %w", err)
@@ -270,10 +281,10 @@ func resolveBaseline(ctx context.Context, dbURL, explicit, firstMig string) (str
 
 	var objectCount int
 	err = pool.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM information_schema.tables    WHERE table_schema = 'public') +
-		(SELECT count(*) FROM information_schema.views     WHERE table_schema = 'public') +
-		(SELECT count(*) FROM information_schema.sequences WHERE sequence_schema = 'public') +
-		(SELECT count(*) FROM information_schema.routines  WHERE routine_schema = 'public')`).Scan(&objectCount)
+		(SELECT count(*) FROM information_schema.tables    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.views     WHERE table_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.sequences WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.routines  WHERE routine_schema NOT IN ('pg_catalog', 'information_schema'))`).Scan(&objectCount)
 	if err != nil {
 		return "", fmt.Errorf("check database emptiness: %w", err)
 	}
@@ -332,6 +343,17 @@ func dsnToURL(connStr, hostOverride string) (string, error) {
 		RawQuery: q.Encode(),
 	}
 	return u.String(), nil
+}
+
+// isMissingDatabase reports whether the error is PostgreSQL's
+// "database ... does not exist" (SQLSTATE 3D000 / invalid_catalog_name).
+func isMissingDatabase(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "3D000" {
+		return true
+	}
+	// Fallback for wrapped/non-pgconn errors.
+	return strings.Contains(err.Error(), `database "`) && strings.Contains(err.Error(), "does not exist")
 }
 
 // resolveAtlasBinary locates the Atlas CLI executable

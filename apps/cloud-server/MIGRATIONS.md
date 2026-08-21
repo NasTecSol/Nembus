@@ -141,6 +141,15 @@ the host, it automatically:
    because the Postgres container's port is published to the host. Disable with
    `-host-override ""`.
 
+Notes:
+- The `atlas_schema_revisions` lookup searches **all** schemas (not only
+  `public`) — revisions tables created in a `$user` schema (search_path quirk)
+  are still detected, so such databases are not wrongly baselined.
+- Tenants whose database **does not exist** on the server (SQLSTATE `3D000`)
+  are skipped with a warning and counted separately in the summary — they do
+  not fail the run. Create the database or set `is_active = false` for the
+  tenant to resolve.
+
 ---
 
 ## ⚡ Summary of Makefile Commands
