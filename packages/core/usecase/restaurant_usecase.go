@@ -722,9 +722,67 @@ func (uc *RestaurantUseCase) GetKioskSession(ctx context.Context, token string) 
 	return utils.NewResponse(utils.CodeOK, "kiosk session fetched successfully", session)
 }
 
+// === Menu Modifier Groups ===
+
+func (uc *RestaurantUseCase) GetMenuModifierGroup(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	group, err := uc.repo.GetMenuModifierGroup(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "menu modifier group not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier group fetched successfully", group)
+}
+
+func (uc *RestaurantUseCase) ListMenuModifierGroupsByStore(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	groups, err := uc.repo.ListMenuModifierGroupsByStore(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier groups fetched successfully", groups)
+}
+
+func (uc *RestaurantUseCase) CreateMenuModifierGroup(ctx context.Context, arg repository.CreateMenuModifierGroupParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	group, err := uc.repo.CreateMenuModifierGroup(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "menu modifier group created successfully", group)
+}
+
+func (uc *RestaurantUseCase) UpdateMenuModifierGroup(ctx context.Context, arg repository.UpdateMenuModifierGroupParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	group, err := uc.repo.UpdateMenuModifierGroup(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier group updated successfully", group)
+}
+
+func (uc *RestaurantUseCase) DeleteMenuModifierGroup(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteMenuModifierGroup(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier group deleted successfully", nil)
+}
+
 // Utility to parse JSON RawMessage
 func bytesToMap(b []byte) map[string]interface{} {
 	var m map[string]interface{}
 	json.Unmarshal(b, &m)
 	return m
 }
+

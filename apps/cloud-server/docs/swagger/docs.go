@@ -2951,6 +2951,474 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/business-partners": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List business partners filtered by role and organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "List business partners",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by role (supplier, vendor, special_customer, corporate_group)",
+                        "name": "partner_role",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.BusinessPartnerResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a business partner record, optionally with addresses and contacts nested",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "Create a new business partner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Business partner data",
+                        "name": "partner",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateBusinessPartnerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BusinessPartnerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/business-partners/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Search business partners by name or code",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "Search business partners",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit (default 10)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.BusinessPartnerResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/business-partners/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieve a business partner with addresses and contacts nested by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "Get business partner by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Business partner ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BusinessPartnerResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update core business partner fields",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "Update a business partner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Business partner ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated partner data",
+                        "name": "partner",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateBusinessPartnerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BusinessPartnerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a business partner by ID (cascades addresses/contacts)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "Delete a business partner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Business partner ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/business-partners/{id}/toggle": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Toggle the is_active status of a business partner",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "business-partners"
+                ],
+                "summary": "Toggle business partner active state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Business partner ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "State data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ToggleBusinessPartnerActiveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BusinessPartnerResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/cart-items/{item_id}": {
             "get": {
                 "security": [
@@ -24777,6 +25245,338 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/restaurant/menu-modifier-groups": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new menu modifier group for a store.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Create a menu modifier group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Menu Modifier Group Data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateMenuModifierGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MenuModifierGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/menu-modifier-groups/store/{store_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a list of all menu modifier groups for a store.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "List menu modifier groups by store ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.MenuModifierGroupResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/menu-modifier-groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns details of a menu modifier group by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Get menu modifier group by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Menu Modifier Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MenuModifierGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates an existing menu modifier group by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Update menu modifier group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Menu Modifier Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Menu Modifier Group Data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateMenuModifierGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MenuModifierGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a menu modifier group by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Delete menu modifier group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Menu Modifier Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/restaurant/modifiers": {
             "post": {
                 "security": [
@@ -35256,6 +36056,82 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.BusinessPartnerResponse": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.PartnerAddressResponse"
+                    }
+                },
+                "code": {
+                    "type": "string",
+                    "example": "BP001"
+                },
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.PartnerContactResponse"
+                    }
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-24T21:43:00Z"
+                },
+                "credit_limit": {
+                    "type": "string",
+                    "example": "50000.00"
+                },
+                "currency_code": {
+                    "type": "string",
+                    "example": "SAR"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Supplier Co"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "outstanding_balance": {
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "partner_role": {
+                    "type": "string",
+                    "example": "supplier"
+                },
+                "payment_terms_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "sales_rep_user_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "tax_id": {
+                    "type": "string",
+                    "example": "1234567890"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-24T21:43:00Z"
+                }
+            }
+        },
         "handler.CashierResponse": {
             "type": "object",
             "properties": {
@@ -35496,6 +36372,73 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Nike"
+                }
+            }
+        },
+        "handler.CreateBusinessPartnerRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name",
+                "organization_id",
+                "partner_role"
+            ],
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.CreatePartnerAddressDTO"
+                    }
+                },
+                "code": {
+                    "type": "string",
+                    "example": "BP001"
+                },
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.CreatePartnerContactDTO"
+                    }
+                },
+                "credit_limit": {
+                    "type": "string",
+                    "example": "50000.00"
+                },
+                "currency_code": {
+                    "type": "string",
+                    "example": "SAR"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Supplier Co"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "partner_role": {
+                    "description": "supplier, vendor, special_customer, corporate_group",
+                    "type": "string",
+                    "example": "supplier"
+                },
+                "payment_terms_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "sales_rep_user_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "tax_id": {
+                    "type": "string",
+                    "example": "1234567890"
                 }
             }
         },
@@ -36127,6 +37070,53 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.CreateMenuModifierGroupRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name",
+                "selection_type",
+                "store_id"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "EXTRA_SAUCE"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "max_selections": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "min_selections": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Extra Sauce"
+                },
+                "selection_type": {
+                    "description": "required, optional, multiple",
+                    "type": "string",
+                    "example": "optional"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.CreateMenuRequest": {
             "type": "object",
             "required": [
@@ -36462,6 +37452,80 @@ const docTemplate = `{
                 },
                 "terminal_name": {
                     "type": "string"
+                }
+            }
+        },
+        "handler.CreatePartnerAddressDTO": {
+            "type": "object",
+            "required": [
+                "address_name",
+                "address_type"
+            ],
+            "properties": {
+                "address_name": {
+                    "type": "string",
+                    "example": "Headquarters"
+                },
+                "address_type": {
+                    "description": "bill_to, ship_to, both",
+                    "type": "string",
+                    "example": "both"
+                },
+                "city": {
+                    "type": "string",
+                    "example": "Riyadh"
+                },
+                "country_code": {
+                    "type": "string",
+                    "example": "SA"
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "state": {
+                    "type": "string",
+                    "example": "Riyadh Province"
+                },
+                "street": {
+                    "type": "string",
+                    "example": "123 Main St"
+                },
+                "zip_code": {
+                    "type": "string",
+                    "example": "12345"
+                }
+            }
+        },
+        "handler.CreatePartnerContactDTO": {
+            "type": "object",
+            "required": [
+                "first_name"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "first_name": {
+                    "type": "string",
+                    "example": "John"
+                },
+                "is_primary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "last_name": {
+                    "type": "string",
+                    "example": "Doe"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+966500000000"
+                },
+                "position": {
+                    "type": "string",
+                    "example": "Purchasing Manager"
                 }
             }
         },
@@ -38002,6 +39066,58 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.MenuModifierGroupResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "EXTRA_TOPPING"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-08-21T09:00:00Z"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "max_selections": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "min_selections": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Extra Toppings"
+                },
+                "selection_type": {
+                    "type": "string",
+                    "example": "multiple"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-08-21T09:00:00Z"
+                }
+            }
+        },
         "handler.MenuResponse": {
             "type": "object",
             "properties": {
@@ -38198,6 +39314,88 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-24T21:43:00Z"
+                }
+            }
+        },
+        "handler.PartnerAddressResponse": {
+            "type": "object",
+            "properties": {
+                "address_name": {
+                    "type": "string",
+                    "example": "Headquarters"
+                },
+                "address_type": {
+                    "type": "string",
+                    "example": "both"
+                },
+                "city": {
+                    "type": "string",
+                    "example": "Riyadh"
+                },
+                "country_code": {
+                    "type": "string",
+                    "example": "SA"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "partner_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "state": {
+                    "type": "string",
+                    "example": "Riyadh Province"
+                },
+                "street": {
+                    "type": "string",
+                    "example": "123 Main St"
+                },
+                "zip_code": {
+                    "type": "string",
+                    "example": "12345"
+                }
+            }
+        },
+        "handler.PartnerContactResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john.doe@example.com"
+                },
+                "first_name": {
+                    "type": "string",
+                    "example": "John"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_primary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "last_name": {
+                    "type": "string",
+                    "example": "Doe"
+                },
+                "partner_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+966500000000"
+                },
+                "position": {
+                    "type": "string",
+                    "example": "Purchasing Manager"
                 }
             }
         },
@@ -38839,6 +40037,18 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.ToggleBusinessPartnerActiveRequest": {
+            "type": "object",
+            "required": [
+                "is_active"
+            ],
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "handler.ToggleCustomerActiveRequest": {
             "type": "object",
             "required": [
@@ -38992,6 +40202,50 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Nike Updated"
+                }
+            }
+        },
+        "handler.UpdateBusinessPartnerRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "BP001"
+                },
+                "credit_limit": {
+                    "type": "string",
+                    "example": "60000.00"
+                },
+                "currency_code": {
+                    "type": "string",
+                    "example": "SAR"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Supplier Co Updated"
+                },
+                "partner_role": {
+                    "type": "string",
+                    "example": "vendor"
+                },
+                "payment_terms_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "sales_rep_user_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "tax_id": {
+                    "type": "string",
+                    "example": "1234567890"
                 }
             }
         },
@@ -39395,6 +40649,42 @@ const docTemplate = `{
                 "valid_to": {
                     "type": "string",
                     "example": "2026-12-31"
+                }
+            }
+        },
+        "handler.UpdateMenuModifierGroupRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "EXTRA_TOPPING"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "max_selections": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "min_selections": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Extra Toppings"
+                },
+                "selection_type": {
+                    "type": "string",
+                    "example": "multiple"
                 }
             }
         },
