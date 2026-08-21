@@ -3160,3 +3160,84 @@ Core AI Product Enrichment MVP: CODE COMPLETE
 Next Action: deployment/environment validation and optional follow-up
 enhancements. Do not state that production deployment is verified until it is
 actually performed.
+
+## DeepSeek Product Enrichment Provider
+
+### Completion
+
+- The provider-neutral architecture remains unchanged:
+  `ProductEnrichmentWorker -> ProductEnrichmentProvider`.
+- Provider selection is configuration-driven in `apps/cloud-server/main.go`.
+  `openai` keeps the existing OpenAI adapter; `deepseek` selects the new
+  `packages/core/enrichment/deepseekadapter` adapter; unknown providers fail
+  safely.
+- The DeepSeek adapter uses a small adapter-local HTTP client for the
+  OpenAI-compatible `POST /chat/completions` endpoint. The configured base URL
+  is normalized and `/chat/completions` is appended. The default is
+  `https://api.deepseek.com`.
+- Configuration names are `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and
+  `DEEPSEEK_MODEL`. The default model is `deepseek-v4-flash`; model selection
+  remains configuration-driven. The key is required only when enrichment is
+  enabled and the selected provider is `deepseek`.
+- DeepSeek requests use `response_format: {"type":"json_object"}` and an
+  explicit JSON-only instruction. JSON mode is not treated as schema or
+  security validation.
+- DeepSeek output is extracted from the Chat Completions envelope and always
+  passes through the existing Stage 2B strict parser, candidate dictionary
+  validation, structured SAP precedence, prohibited-target validation, and
+  provider-neutral result construction. No malformed JSON repair or model
+  supplied provider identity is accepted.
+- Business safety is identical to OpenAI. Product type is never an output
+  target; only `standard`, `raw_material`, `fixed_asset`, and `finished_good`
+  remain valid immutable context. SKU/ItemCode, SAP identity, barcodes,
+  inventory, pricing, tax, UoM conversions, supplier identity, and status
+  flags remain prohibited. Structured brand/category values remain
+  authoritative.
+- DeepSeek failures use provider-neutral classifications: 401 and other
+  configuration/request HTTP failures are permanent; timeout, connection,
+  408, 429, and 5xx failures are retryable; empty/malformed output,
+  candidate mismatch, correlation mismatch, structured precedence violations,
+  and prohibited output fail closed as Stage 2B response errors.
+- Only the allowlisted provider-safe request context is sent. Tenant DSNs,
+  database credentials, JWT/M2M tokens, API keys, inventory, pricing, tax,
+  supplier operational data, barcode ownership, and arbitrary metadata are
+  excluded. API keys are environment-only and are never logged, committed, or
+  stored in suggestion metadata.
+- Tests use fake HTTP transport or `httptest.Server`; no live DeepSeek or
+  OpenAI request was made. Verified cases include endpoint/model/auth header,
+  JSON mode/instructions, strict parser failures, unknown fields,
+  product_type/UoM conversion/prohibited output, structured category/brand
+  overrides, correlation mismatch, Pantene-style enrichment, HIKvision,
+  Huawei, Epson, fixed-asset immutability, 401/429/500, timeout, connection
+  failure, configuration gating, and provider factory selection.
+
+### Verification
+
+- `go test -count=1 ./...` passed in `packages/core`.
+- `go test -count=1 ./...` passed in `apps/cloud-server`.
+- `go test -count=1 ./...` passed in `apps/sap-agent`.
+- Focused core enrichment, OpenAI adapter, DeepSeek adapter, and config tests
+  passed uncached.
+- `gofmt` completed for all changed Go files and `git diff --check` passed.
+- Static diff secret scan found no real API keys, bearer tokens, JWT/M2M
+  tokens, DSNs/passwords, SAP credentials, or private keys.
+- No schema, SQLC, Atlas, migration, SAP/F1, Stage 2D/E1/E2, review/apply,
+  audit, lifecycle, or product schema changes were made.
+
+### Files changed
+
+- `packages/core/enrichment/deepseekadapter/provider.go`
+- `packages/core/enrichment/deepseekadapter/provider_test.go`
+- `packages/core/config/config.go`
+- `packages/core/config/config_test.go`
+- `apps/cloud-server/main.go`
+- `apps/cloud-server/main_test.go`
+- `agents.md`
+
+Core enrichment architecture remains CODE COMPLETE.
+
+Architect-requested DeepSeek provider support: COMPLETE.
+
+Next Action: optional controlled live DeepSeek smoke test using
+`DEEPSEEK_API_KEY` configured locally/server-side, followed by deployment and
+environment validation. No live request or deployment was performed here.

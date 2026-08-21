@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -33,6 +34,9 @@ type Config struct {
 	EnrichmentProvider       string
 	OpenAIAPIKey             string
 	OpenAIEnrichmentModel    string
+	DeepSeekAPIKey           string
+	DeepSeekBaseURL          string
+	DeepSeekEnrichmentModel  string
 	OpenAIEnrichmentTimeout  time.Duration
 	EnrichmentWorkerInterval time.Duration
 	EnrichmentBatchSize      int
@@ -96,6 +100,9 @@ func LoadConfig(env string) *Config {
 		EnrichmentProvider:       getEnv("ENRICHMENT_PROVIDER", "openai"),
 		OpenAIAPIKey:             getEnv("OPENAI_API_KEY", ""),
 		OpenAIEnrichmentModel:    getEnv("OPENAI_ENRICHMENT_MODEL", "gpt-5.6-terra"),
+		DeepSeekAPIKey:           getEnv("DEEPSEEK_API_KEY", ""),
+		DeepSeekBaseURL:          getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+		DeepSeekEnrichmentModel:  getEnv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
 		OpenAIEnrichmentTimeout:  parseDurationEnv("OPENAI_ENRICHMENT_TIMEOUT", 45*time.Second),
 		EnrichmentWorkerInterval: parseDurationEnv("OPENAI_ENRICHMENT_WORKER_INTERVAL", 30*time.Second),
 		EnrichmentBatchSize:      parseIntEnv("OPENAI_ENRICHMENT_BATCH_SIZE", 5),
@@ -109,14 +116,23 @@ func (c *Config) ValidateEnrichmentConfig() error {
 	if c == nil || !c.EnrichmentEnabled {
 		return nil
 	}
-	if c.EnrichmentProvider != "openai" {
+	switch strings.ToLower(strings.TrimSpace(c.EnrichmentProvider)) {
+	case "openai":
+		if c.OpenAIAPIKey == "" {
+			return fmt.Errorf("OPENAI_API_KEY is required when enrichment is enabled")
+		}
+		if c.OpenAIEnrichmentModel == "" {
+			return fmt.Errorf("OPENAI_ENRICHMENT_MODEL is required when enrichment is enabled")
+		}
+	case "deepseek":
+		if c.DeepSeekAPIKey == "" {
+			return fmt.Errorf("DEEPSEEK_API_KEY is required when enrichment provider is deepseek")
+		}
+		if c.DeepSeekEnrichmentModel == "" {
+			return fmt.Errorf("DEEPSEEK_MODEL is required when enrichment provider is deepseek")
+		}
+	default:
 		return fmt.Errorf("unsupported enrichment provider %q", c.EnrichmentProvider)
-	}
-	if c.OpenAIAPIKey == "" {
-		return fmt.Errorf("OPENAI_API_KEY is required when enrichment is enabled")
-	}
-	if c.OpenAIEnrichmentModel == "" {
-		return fmt.Errorf("OPENAI_ENRICHMENT_MODEL is required when enrichment is enabled")
 	}
 	if c.OpenAIEnrichmentTimeout <= 0 || c.EnrichmentWorkerInterval <= 0 || c.EnrichmentBatchSize <= 0 || c.EnrichmentMaxRetries <= 0 {
 		return fmt.Errorf("enrichment timeout, interval, batch size, and max retries must be positive")

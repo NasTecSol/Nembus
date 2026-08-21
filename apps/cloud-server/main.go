@@ -7,10 +7,12 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/enrichment"
+	"github.com/NasTecSol/nembus-core/enrichment/deepseekadapter"
 	"github.com/NasTecSol/nembus-core/enrichment/openaiadapter"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -298,6 +300,20 @@ func newTenantEnrichmentWorkerFactory(tenantManager *manager.Manager, provider e
 	}
 }
 
+func newProductEnrichmentProvider(cfg *config.Config) (enrichment.ProductEnrichmentProvider, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("product enrichment configuration is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.EnrichmentProvider)) {
+	case "openai":
+		return openaiadapter.New(cfg.OpenAIAPIKey, cfg.OpenAIEnrichmentModel, cfg.OpenAIEnrichmentTimeout)
+	case "deepseek":
+		return deepseekadapter.New(cfg.DeepSeekAPIKey, cfg.DeepSeekBaseURL, cfg.DeepSeekEnrichmentModel, cfg.OpenAIEnrichmentTimeout)
+	default:
+		return nil, fmt.Errorf("unsupported enrichment provider %q", cfg.EnrichmentProvider)
+	}
+}
+
 func main() {
 	env := "development"
 	if len(os.Args) > 1 {
@@ -395,7 +411,7 @@ func main() {
 		if err := cfg.ValidateEnrichmentConfig(); err != nil {
 			log.Printf("product enrichment supervisor disabled: configuration invalid")
 		} else {
-			provider, err := openaiadapter.New(cfg.OpenAIAPIKey, cfg.OpenAIEnrichmentModel, cfg.OpenAIEnrichmentTimeout)
+			provider, err := newProductEnrichmentProvider(cfg)
 			if err != nil {
 				log.Printf("product enrichment supervisor disabled: provider not configured")
 			} else {
