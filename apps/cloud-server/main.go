@@ -215,6 +215,11 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		goodsReceiptNotesHandler := handler.NewGoodsReceiptNotesHandler(goodsReceiptNotesUC)
 		router.RegisterGoodsReceiptNoteRoutes(api, goodsReceiptNotesHandler)
 
+		// Stage 2D tenant-local product enrichment review. The handler resolves
+		// the request tenant repository from RepoKey; it has no master fallback.
+		productEnrichmentReviewHandler := handler.NewProductEnrichmentReviewHandler()
+		router.RegisterProductEnrichmentReviewRoutes(api, productEnrichmentReviewHandler)
+
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
 			Enabled:  cfg.ZatcaEnabled,

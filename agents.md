@@ -2099,3 +2099,525 @@ Stage 2D scope remains whole-suggestion MVP, approve/reject only, no editing,
 stale source blocks approval, `brand`/`category` `PROPOSE_NEW` blocks approval,
 unsupported semantics informational, approved is not applied, and Stage 2E is
 separate. Master DB must not participate in review business-data access.
+
+## Stage 2D - Tenant-Local Human Review API
+
+Stage 2D implementation completed on 2026-08-21. No Stage 2E application,
+product mutation, taxonomy creation, OpenAI invocation, role auto-assignment,
+commit, or push was performed.
+
+### Routes and security boundary
+
+- `GET /api/product-enrichment/suggestions`
+- `GET /api/product-enrichment/suggestions/:id`
+- `POST /api/product-enrichment/suggestions/:id/approve`
+- `POST /api/product-enrichment/suggestions/:id/reject`
+
+Routes are registered in the existing `/api` group after
+`JWTAuthMiddleware -> TenantBindingMiddleware -> TenantMiddleware`. The
+handler obtains the request-local repository from `middleware.RepoKey` and the
+same tenant pool from `TenantPoolFromContext`; it never constructs a pool from
+client input and has no master-repository fallback.
+
+The authenticated JWT user ID is read from the trusted middleware context,
+loaded from the selected tenant database, and its `users.organization_id` is
+the only organization scope used by review queries. The exact tenant-local
+permission `product_enrichment:review` is checked through the existing
+database-backed `CheckUserHasPermission` query. Role names, `products:manage`,
+headers, query values, and request bodies cannot grant or broaden review
+authority. Review mutations accept an empty body only.
+
+### Review behavior
+
+The MVP is whole-suggestion review only: approve or reject, no field-level
+decisions, editing, reviewer notes, rejection reasons, or taxonomy creation.
+List defaults to `status=in_review` and permits only `in_review`, `approved`,
+or `rejected`, with bounded limit/offset pagination. List and detail responses
+are explicit reviewer DTOs; they do not serialize repository models, raw
+`structured_current`, provider payloads, prompts, secrets, operational
+inventory, prices, tax, suppliers, or arbitrary metadata.
+
+Detail reloads the current tenant-local product/enrichment context and
+separates source identity, a safe inference snapshot projection, current
+authoritative state, proposals, unsupported informational semantics, provider
+context, review state, and computed safety analysis. Stage 2A's existing
+`FingerprintSnapshot` and `StructuredCurrent` implementation is reused; no
+second fingerprint algorithm was introduced. Stale source blocks approval and
+leaves the row `in_review`, without rerunning OpenAI or updating the persisted
+snapshot/fingerprint. Detail reports stale state without mutation.
+
+Approval performs explicit precedence and safety checks in addition to the
+fingerprint comparison: structured SAP brand/category remain authoritative,
+`KEEP_EXISTING` requires current support, active canonical brand/category
+targets are revalidated by ID/code, description proposals cannot replace a
+populated description, product type is never a proposal target, and invalid
+or prohibited Stage 2B proposal content blocks approval. Brand/category
+`PROPOSE_NEW` block approval. Description `PROPOSE_NEW` is allowed only when
+the current description remains empty. Unsupported semantics are returned as
+informational evidence only and are never applied.
+
+Approve and reject use guarded `in_review` transitions in the same tenant
+transaction as a minimal `audit_logs` update event. The audit records the
+tenant organization, suggestion/product/reviewer identifiers, old/new status,
+and event name. Audit failure rolls back the lifecycle update. The SQL guard
+ensures concurrent reviewers have one winner; the second receives conflict.
+Approved rows retain `applied_at = NULL` and products remain unchanged.
+Rejected stale or `PROPOSE_NEW` suggestions remain rejectable.
+
+Legacy master suggestions remain quarantined/inert and are not surfaced or
+used by Stage 2D.
+
+### Stage 2D files changed
+
+- Enrichment/domain: `packages/core/enrichment/review.go`.
+- Usecase: review orchestration is provider-neutral in the enrichment domain;
+  no shared mutable `SetRepository` usecase was introduced.
+- Handler/routes: `packages/core/handler/product_enrichment_review.go`,
+  `packages/core/routing/product_enrichment_review.go`, and
+  `apps/cloud-server/main.go`.
+- Repository/SQL: `packages/core/repository/product_enrichment_review_store.go`,
+  `packages/core/repository/product_enrichment_store.go`, and
+  `packages/core/queries/product_enrichment_review.sql`.
+- Generated SQLC: `packages/core/repository/product_enrichment_review.sql.go`.
+- Tests: `packages/core/enrichment/review_test.go`.
+- Worklog: `agents.md`.
+
+### Verification and deployment findings
+
+- SQLC `v1.30.0` generation completed successfully. Only the new review
+  companion was generated; no existing generated SQLC files required changes.
+- No Atlas/schema migration was added; `atlas.sum` was not modified.
+- `gofmt` completed for all human-authored Stage 2D Go files.
+- `cd packages/core && go test ./...` passed.
+- `cd apps/cloud-server && go test ./...` passed.
+- No live tenant database, role mapping, or OpenAI request was used. F3
+  deployment prerequisites remain operational: tenant migrations must be
+  applied, reviewer role mappings configured, tenant-bound auth/F1/F2
+  deployed, and OpenAI enabled only where intended.
+
+### Current Phase
+
+Stage 2D complete - SAFE TO KEEP.
+
+Next Action: Stage 2E DESIGN GATE - approved tenant-local suggestion
+application with current-state revalidation, explicit allowed-field
+application rules, atomic product/audit updates, and no changes to protected
+SAP fields. Do not implement Stage 2E now.
+
+## Stage 2E Design — Approved Suggestion Application
+
+### Design gate and repository evidence
+
+Stage 2E is a design gate only. No application endpoint, product mutation,
+background application worker, permission, SQL, schema, generated file, or
+configuration change is implemented here. The current Stage 2D worktree is
+review-only: its routes are mounted under
+`JWTAuthMiddleware -> TenantBindingMiddleware -> TenantMiddleware`, its
+repository is obtained from `middleware.RepoKey`, its organization is derived
+from the authenticated tenant-local `users.organization_id`, and approval
+updates only the suggestion plus a tenant-local audit row. Products remain
+unchanged and `applied_at` remains NULL after approval.
+
+The Stage 2E invariant is:
+
+`approved -> same-tenant current-state revalidation -> allowed narrow product
+write(s) -> audit -> applied`,
+
+with `approved != applied`. Master DB access is not part of this flow. The
+master database may continue to provide control-plane tenant discovery for
+other workers, but it must never provide Stage 2E product, suggestion,
+taxonomy, user, permission, or audit data.
+
+### Exact approved proposal shapes
+
+Stage 1 persists the following JSONB columns separately:
+`proposed_brand`, `proposed_category`, `proposed_description`, and
+`unsupported_semantics`. The proposal DTOs are in
+`packages/core/enrichment/product_enrichment.go`; there is one whole-row
+status/reviewer lifecycle and no field-level approval state.
+
+- Brand `KEEP_EXISTING`: action, confidence, and optional evidence/explanation;
+  no target ID/code. Stage 2D requires the current structured brand to be
+  resolved. Stage 2E is a no-op.
+- Brand `MATCH_EXISTING`: action, confidence, optional evidence/explanation,
+  and at least one canonical `target_id` or `target_code`; `canonical_name` is
+  descriptive context. Stage 2D revalidates that the target exists, is active,
+  and matches every stored ID/code supplied. Stage 2E may set only
+  `products.brand_id` when the current brand is still unresolved.
+- Brand `PROPOSE_NEW`: action, required `canonical_name`, confidence, and
+  optional evidence/explanation, with no existing target. Current Stage 2D
+  blocks approval, so it must not reach application. It never creates a brand.
+- Brand `NO_MATCH`: action, confidence, and optional evidence/explanation;
+  no target ID/code. Stage 2E is a no-op.
+
+Category has the same four action shapes and target rules. A category
+`MATCH_EXISTING` target is validated against the active global
+`product_categories` dictionary in the selected tenant database; categories
+are not organization-owned in the current schema. Category `PROPOSE_NEW` is
+blocked by Stage 2D and is never created by Stage 2E.
+
+- Description `KEEP_EXISTING`: action, confidence, and optional
+  evidence/explanation; no value. Stage 2E is a no-op.
+- Description `PROPOSE_NEW`: action, `value`, confidence, and optional
+  evidence/explanation. Stage 2B `NormalizeProposedDescription` trims outer
+  whitespace, requires valid UTF-8, and caps the value at 500 Unicode runes.
+  Stage 2D permits it only while the current description is empty by the same
+  trimmed-whitespace rule. Stage 2E re-runs this validation and may set only
+  `products.description`.
+- Description `NO_MATCH`: action, confidence, and optional
+  evidence/explanation; no value. Stage 2E is a no-op.
+- `UNSUPPORTED_TARGET` is accepted by the generic DTO contract for defensive
+  representation, but Stage 2D blocks it for brand, category, and description.
+  Unsupported semantic records are informational JSON evidence only and never
+  imply a product destination.
+
+No proposal contains or authorizes `product_type`; no proposal field may be
+interpreted as a product name, SKU, metadata, variant, inventory, price, tax,
+UoM, barcode, supplier, or operational-flag update.
+
+### Exact application matrix
+
+| Target | Approved action | Stage 2E result |
+|---|---|---|
+| brand | `KEEP_EXISTING` | no product mutation; mark the safe suggestion applied |
+| brand | `MATCH_EXISTING` | set only `products.brand_id` when current brand is unresolved and the exact active canonical target still validates |
+| brand | `PROPOSE_NEW` | defense-in-depth conflict; remain approved; never create taxonomy |
+| brand | `NO_MATCH` | no product mutation; mark applied |
+| category | `KEEP_EXISTING` | no product mutation; mark applied |
+| category | `MATCH_EXISTING` | set only `products.category_id` when current category is missing and the exact active canonical target still validates |
+| category | `PROPOSE_NEW` | defense-in-depth conflict; remain approved; never create taxonomy |
+| category | `NO_MATCH` | no product mutation; mark applied |
+| description | `KEEP_EXISTING` | no product mutation; mark applied |
+| description | `PROPOSE_NEW` | set only `products.description` when current description is NULL, empty, or whitespace-only and the value remains valid under the 500-rune contract |
+| description | `NO_MATCH` | no product mutation; mark applied |
+| any | unsupported semantics | informational only; no product mutation; mark applied if the rest of the persisted proposal is safe |
+
+The matrix is whole-suggestion safe application. A malformed proposal,
+unexpected action, prohibited target, invalid product type, stale source, or
+canonical-target conflict is not a no-op success: it remains `approved` and
+returns a conflict without mutation.
+
+### Category application policy
+
+`CATEGORY_MATCH_EXISTING_APPLICATION_SUPPORTED`
+
+This is supported by the current contracts, not inferred from the SQL schema
+alone. Stage 2A eligibility explicitly creates a `missing_category` gap;
+`CategoryProposal.validate` permits `MATCH_EXISTING` when no structured
+category is present; Stage 2D blocks replacement only when the current
+structured category is populated and revalidates an active canonical target.
+Therefore a missing-category exact canonical match may be applied. A populated
+SAP category remains authoritative forever for this MVP and can never be
+replaced or refined by AI.
+
+### Brand policy
+
+Structured SAP FirmCode/brand remains authoritative. An approved brand
+`MATCH_EXISTING` is only a fallback while the current product still has no
+resolved `brand_id`/canonical brand identity. Stage 2E must reload the current
+product and refuse to write if a later SAP sync resolved any brand. It must
+never overwrite that later brand with the approved AI target. Brand and
+category IDs are nullable foreign-key columns; the current repository treats
+NULL/invalid non-positive IDs as missing and uses positive ID or canonical code
+identity as resolved state.
+
+### Description policy
+
+The only destination is `products.description`, whose database type is
+unbounded `TEXT`; the current product update query uses a nullable text
+parameter and does not normalize the value. Stage 2A eligibility, Stage 2D
+stale/precedence logic, and Stage 2E must all use
+`strings.TrimSpace(description) == ""` for missing. A non-whitespace
+description is authoritative and must not be overwritten. Stage 2E must
+re-run `NormalizeProposedDescription`, storing its trimmed valid UTF-8 result
+and never a value over 500 runes.
+
+The repository has no HTML/Markdown allowlist, sanitizer, or formatter. The
+current code therefore does not enforce a separate plain-text syntax policy;
+it accepts any valid UTF-8 string within the rune limit. Stage 2E must not
+invent HTML/Markdown transformation or rendering semantics and must treat the
+value as catalog text. A future strict plain-text requirement would be a
+separate contract gate.
+
+### Apply trigger and API contract
+
+`EXPLICIT_APPLY_ENDPOINT_RECOMMENDED`
+
+Keep human review and product execution visibly separate. The smallest safe
+MVP is an authenticated tenant-bound endpoint:
+
+`POST /api/product-enrichment/suggestions/:id/apply`
+
+with an empty body only. The server derives suggestion, product,
+organization, and applier identity; the client may not supply tenant,
+organization, product ID, applier ID, field selection, proposed values,
+overrides, `force`, or `ignore_stale`. A successful response should expose a
+small result containing suggestion ID, product ID, `status: applied`,
+`applied_at`, changed field names, and a safe current product summary. It must
+not serialize raw provider payloads, prompts, secrets, or arbitrary product
+metadata.
+
+An approval-triggered write would blur the hard `approved != applied`
+boundary and make human control/retry semantics less visible. A background
+worker is possible later but adds a new durable execution path for a small,
+operator-triggered deterministic operation.
+
+### Application permission verdict
+
+`SEPARATE_APPLY_PERMISSION_RECOMMENDED`
+
+The existing `product_enrichment:review` permission is checked through
+`CheckUserHasPermission` in the tenant repository and is appropriate for
+listing, inspection, approve, and reject. Approval authority does not
+automatically imply authority to mutate product master data. The apply
+endpoint should require a new narrower `product_enrichment:apply` capability;
+role names and `products:manage` must not substitute for it. This requires a
+tenant-local RBAC data migration that inserts the permission only, with no
+automatic role grants. Deployment must explicitly map it to the intended
+role/user. The master copy is inert for Stage 2E business access.
+
+### Tenant boundary and apply-time revalidation
+
+Stage 2D's security boundary can be reused unchanged:
+
+`tenant-bound JWT -> TenantBindingMiddleware -> TenantMiddleware -> RepoKey
+tenant repository -> tenant-local authenticated user -> users.organization_id`
+
+Every suggestion, product, taxonomy, user, permission, and audit query must
+use the server-derived organization and selected tenant pool. There is no
+tenant or organization route/body authority, no master fallback, and no
+cross-tenant lookup. Brand/category taxonomy is globally keyed in the current
+tenant schema, so target validation is tenant-database-local and exact by ID
+and/or code, not organization-filtered or selected by name.
+
+Apply-time validation is mandatory even after approval:
+
+1. Begin one transaction on the selected tenant pool and lock/load the
+   organization-scoped suggestion by ID.
+2. Require `status = approved`; load its persisted proposal JSON and original
+   `source_data_fingerprint`.
+3. Lock/load the organization-scoped current product and reconstruct the same
+   Stage 2A `EnrichmentSourceSnapshot`.
+4. Recompute the existing `FingerprintSnapshot` and require equality with the
+   approved row's original fingerprint and contract context.
+5. Recheck SAP source/product identity, valid immutable product type, brand and
+   category precedence, and description emptiness.
+6. Revalidate exact active canonical brand/category targets by stored ID/code;
+   never select a replacement by name.
+7. Validate the action matrix and description contract.
+8. Execute only the eligible narrow product update, guarded by the current
+   missing-field predicates.
+9. Transition `approved -> applied`, write tenant audit records, and commit.
+
+The current source fingerprint is sufficient for the approved-state design:
+Stage 2D can reach `approved` only after the current snapshot equals the
+persisted inference fingerprint, and Stage 2E compares the current snapshot
+to that same original fingerprint again. A separate review-time fingerprint
+column is not required for the invariant “current apply state equals the
+approved/inference source state.” This cannot detect an unobservable
+F1->F2->F1 history, but no current schema field can provide that history and
+it does not change the current-state equality guarantee. No application
+foundation schema change is required.
+
+If source changes after approval—brand resolves to Y, category becomes
+populated, description becomes non-empty, ItemName changes, product type
+changes, or another fingerprinted source/UoM value changes—Stage 2E must not
+mutate, must leave the suggestion `approved`, and must return/report a
+conflict. It must not silently reject, mark failed, rerun AI, or force apply.
+Inventory/price-only changes are intentionally outside the fingerprint and do
+not create a false enrichment-staleness conflict; they are never written by
+Stage 2E.
+
+### Canonical target validation
+
+For a brand/category `MATCH_EXISTING`, apply-time lookup must confirm the
+record still exists, is active under current active-state semantics, and
+matches every canonical identity stored in the approved proposal. If the
+proposal has both ID and code, both must match. If it has code only, the exact
+code lookup supplies the ID; no name-based substitution is allowed. The
+current schema has global `brands` and `product_categories` tables, so
+“tenant-local” means the selected tenant database's active canonical records,
+not an organization column that does not exist. A missing, inactive, changed,
+or ambiguous target is a conflict with no product mutation and the suggestion
+remaining approved.
+
+### Product update and transaction strategy
+
+Do not reuse the broad `UpdateProduct` query or round-trip a whole `Product`
+struct: it exposes name, UoM, product type, tax, flags, and metadata and could
+overwrite unrelated concurrent changes. Add a focused application query/store
+that updates only `brand_id`, `category_id`, and/or `description`, with the
+organization/product predicates and expected missing-state predicates. Use a
+single tenant transaction with row locks:
+
+`BEGIN -> SELECT approved suggestion FOR UPDATE -> SELECT product FOR UPDATE
+-> load/revalidate current context and exact taxonomy targets -> narrow
+conditional product UPDATE -> guarded approved-to-applied UPDATE -> product
+and lifecycle audit INSERT(s) -> COMMIT`.
+
+The product lock removes the validation/write TOCTOU window. Conditional
+missing-field predicates are defense in depth: if a concurrent SAP/process
+write wins the lock first, reload/revalidation reports conflict; if it waits,
+the later writer observes the committed result and structured SAP precedence
+remains authoritative. Target rows should be read with a lock mode that
+prevents an active/code change or deletion between validation and the foreign
+key write.
+
+The existing `MarkProductEnrichmentSuggestionApplied` query already guards
+`organization_id`, `id`, and `status = 'approved'`, and sets `status = applied`,
+`applied_at = CURRENT_TIMESTAMP`, and `updated_at = CURRENT_TIMESTAMP`. It may
+be reused inside the same transaction after the product update. It must never
+be called outside that transaction. `reviewer_id` and `reviewed_at` remain
+unchanged; there is no application-user column.
+
+Only `approved -> applied` is legal. `in_review`, `rejected`, `retryable`, and
+`failed` must not apply. A guarded transition returning no row rolls back any
+product write. An already-applied row should return the current applied result
+idempotently without another product write or reviewer-state change; the
+first successful application remains the only mutation.
+
+### Audit and no-op policy
+
+`EXISTING_SCHEMA_SUFFICIENT_FOR_APPLIER_AUDIT`
+
+The tenant-local `audit_logs` table already has organization, table/record,
+action, old/new JSONB, changed fields, and `performed_by` referencing the
+tenant-local user. No `applied_by` column is required when the authenticated
+applier is recorded in the application audit row. Product update, suggestion
+transition, and all audit inserts must commit or roll back together.
+
+Use minimal tenant-local audit payloads, preferably two records in the same
+transaction: one product `UPDATE` event and one suggestion application/status
+event. Include suggestion ID, product ID, organization ID, authenticated
+applier ID, old/new status, changed field names, and old/new brand/category
+IDs when changed. For description, record only `description_changed` and
+bounded presence/length or a non-reversible digest if operational evidence is
+needed; do not store full old/new description content by default. Never store
+raw AI/provider payloads, prompts, API keys, JWTs, or database credentials.
+
+An approved safe suggestion containing only `KEEP_EXISTING`, `NO_MATCH`, or
+unsupported informational semantics has completed its approved work even if
+the mutation set is empty. Mark it `applied` with an auditable zero-change
+application event. Invalid, stale, prohibited, or target-invalid rows are
+conflicts and remain approved.
+
+### Errors, force policy, retry, and stale recovery
+
+For the explicit endpoint, use repository-compatible safe semantics: 401 for
+missing/invalid authentication, 403 for missing `product_enrichment:apply`,
+404 for an organization-scoped missing suggestion, 409 for non-approved or
+already-invalid/stale/target-conflict application (with already-applied
+retries treated as idempotent success), and 500 for transaction/audit failure
+without exposing raw SQL/provider errors. The request has no force flag.
+
+`NO FORCE APPLY` is mandatory. No client option may bypass stale validation,
+structured SAP precedence, canonical-target validation, product type
+protection, or the allowed-field matrix.
+
+If an approved row becomes stale, leave it approved and historical. A future
+operator/reviewer workflow may enqueue a new suggestion from the new F2
+fingerprint; the existing uniqueness key
+`(organization_id, product_id, source_data_fingerprint, contract_version)`
+supports a distinct row. Do not silently convert the old approved row to
+rejected/failed and do not rerun AI from Stage 2E.
+
+### Schema verdict
+
+`NO_APPLICATION_SCHEMA_CHANGE_REQUIRED`
+
+The existing original source fingerprint is sufficient for current-state
+apply revalidation; `applied_at`, reviewer fields, and tenant audit
+`performed_by` provide lifecycle and applier accountability; and the existing
+DBTX/`Queries.WithTx` boundary can support atomic narrow writes. A separate
+RBAC permission migration is still required because least privilege recommends
+`product_enrichment:apply`; that is deployment data provisioning, not an
+application-foundation schema correction.
+
+### Exact future Stage 2E patch surface
+
+Only after this gate is separately authorized, the expected narrow surface is:
+
+- `packages/core/enrichment/application.go` and focused application tests for
+  matrix, revalidation, conflicts, no-op, and lifecycle behavior;
+- `packages/core/repository/product_enrichment_application_store.go`;
+- `packages/core/queries/product_enrichment_application.sql` with locked
+  suggestion/product/target reads, field-specific conditional updates, and
+  audit inserts;
+- SQLC-generated application companion(s), with the existing guarded
+  `MarkProductEnrichmentSuggestionApplied` reused or regenerated only as
+  required by the source query set;
+- `packages/core/handler/product_enrichment_application.go` and
+  `packages/core/routing/product_enrichment_application.go` for the empty-body
+  authenticated endpoint;
+- `apps/cloud-server/main.go` for route wiring only;
+- a tenant-local RBAC migration provisioning
+  `product_enrichment:apply` if that permission recommendation is accepted;
+- application/repository/handler tests and `agents.md`.
+
+Do not change SAP mappings/extraction, F1 routing, F2 supervision, Stage 2A
+eligibility/fingerprint semantics, Stage 2B output policy, Stage 2D review
+semantics, the provider adapter, product-type classification, or unrelated
+product/inventory/taxonomy systems.
+
+### Implementation phases
+
+- E0: provision `product_enrichment:apply` in each intended tenant database;
+  map it explicitly to the deployment role; do not auto-grant it.
+- E1: implement the tenant-local deterministic application domain/store,
+  locked current-state queries, narrow product writes, guarded lifecycle
+  transition, and atomic audit support.
+- E2: add the explicit apply endpoint, authenticated applier/permission
+  boundary, response DTO, conflict mapping, and cloud wiring.
+- E3: run SQLC generation, formatting, focused/core/server tests, migration
+  validation, concurrency/atomicity tests, and tenant deployment checks before
+  enabling the route.
+
+### Stage 2E test plan
+
+- Auth/permission: no auth is 401; missing apply permission is 403; role name
+  alone is insufficient; request cannot supply tenant, organization, applier,
+  product, values, field selection, or force flags.
+- Tenant/org: tenant A cannot see/apply tenant B; organization A cannot apply
+  organization B; master suggestion collisions are invisible; every query is
+  organization-scoped.
+- Lifecycle: approved applies; in_review/rejected/retryable/failed do not;
+  concurrent apply has one effective mutation; an already-applied retry is
+  idempotent and does not rewrite product/reviewer state.
+- Brand: exact canonical ID/code is applied only while missing; later
+  structured brand causes conflict/no mutation; deleted/inactive/changed target
+  causes conflict; KEEP_EXISTING and NO_MATCH are zero-change applied; a
+  defense-in-depth PROPOSE_NEW cannot apply.
+- Category: missing-category MATCH_EXISTING follows the supported policy;
+  populated category is never replaced; target identity/active checks match
+  brand behavior.
+- Description: NULL/empty/whitespace-only accepts a valid normalized proposal;
+  populated description conflicts; exact trimmed text and 500-rune/UTF-8
+  boundaries are enforced; no HTML/Markdown transformation is introduced.
+- Protected fields: SKU, name, product type, flags, metadata, UoM,
+  inventory, pricing, barcode, supplier, variants, and unrelated columns stay
+  unchanged.
+- Stale/concurrency: ItemName, product type, brand, category, description,
+  UoM, or other fingerprinted source change blocks apply; inventory/price-only
+  change does not falsely stale; concurrent SAP update cannot be overwritten.
+- Atomicity/audit: product failure leaves suggestion approved; lifecycle
+  failure rolls back product; audit failure rolls back both; audit identifies
+  authenticated applier and changed fields without raw AI secrets/content.
+- No-op: safe zero-change approved suggestions reach applied with an explicit
+  zero-change audit event; invalid or stale zero-change-looking rows remain
+  approved with conflict.
+
+### Deployment prerequisites and status
+
+Before enabling Stage 2E, all intended tenant databases must have the Stage 1,
+Stage 2C, Stage 2D, and any E0 RBAC migrations applied; tenant-bound JWT and
+F1/F2 routing/supervision must be deployed; Stage 2D review permission and
+role mappings must be configured; the separate apply permission must be
+explicitly mapped if provisioned; and at least one approved tenant-local
+suggestion must exist. No master business-data fallback is permitted.
+
+Stage 2E status: DESIGN GATE.
+
+Next Action: if the separate apply permission is accepted, provision that
+tenant-local permission first; otherwise separately authorize implementation
+of the explicit tenant-local deterministic application endpoint. Do not
+implement Stage 2E as part of this design gate.

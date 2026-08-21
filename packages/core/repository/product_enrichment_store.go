@@ -31,6 +31,28 @@ func (s *ProductEnrichmentStore) LoadSAPProductEnrichmentSnapshot(ctx context.Co
 	if err != nil {
 		return enrichment.EnrichmentSourceSnapshot{}, fmt.Errorf("get committed product: %w", err)
 	}
+	return s.loadSnapshotFromProduct(ctx, product)
+}
+
+// LoadProductEnrichmentSnapshotByID reloads the authoritative product using
+// both the server-derived organization and product ID. It is used by review
+// operations so a tenant database containing multiple organizations remains
+// organization-scoped at the SQL boundary.
+func (s *ProductEnrichmentStore) LoadProductEnrichmentSnapshotByID(ctx context.Context, organizationID, productID int32) (enrichment.EnrichmentSourceSnapshot, error) {
+	if s == nil || s.queries == nil {
+		return enrichment.EnrichmentSourceSnapshot{}, fmt.Errorf("product enrichment repository is not configured")
+	}
+	product, err := s.queries.GetProductForEnrichmentReview(ctx, GetProductForEnrichmentReviewParams{
+		OrganizationID: organizationID,
+		ID:             productID,
+	})
+	if err != nil {
+		return enrichment.EnrichmentSourceSnapshot{}, fmt.Errorf("get current review product: %w", err)
+	}
+	return s.loadSnapshotFromProduct(ctx, product)
+}
+
+func (s *ProductEnrichmentStore) loadSnapshotFromProduct(ctx context.Context, product Product) (enrichment.EnrichmentSourceSnapshot, error) {
 
 	snapshot := enrichment.EnrichmentSourceSnapshot{
 		OrganizationID: product.OrganizationID,
