@@ -14,6 +14,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/enrichment"
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -37,7 +38,7 @@ func main() {
 	defer pool.Close()
 
 	queries := repository.New(pool)
-	rows, err := queries.GetCategoryHierarchy(ctx, true)
+	rows, err := queries.GetCategoryHierarchy(ctx, pgtype.Bool{Bool: true, Valid: true})
 	if err != nil {
 		fmt.Printf("SQLC_GET_CATEGORY_HIERARCHY=FAILED\nSQLC_ERROR=%s\n", sanitizeError(err))
 		printCategoryRowTypes()
