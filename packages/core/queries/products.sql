@@ -35,7 +35,7 @@ WITH RECURSIVE category_tree AS (
         category_level, is_active, metadata,
         1 as level,
         ARRAY[id] as path,
-        name as full_path
+        name::text as full_path
     FROM product_categories
     WHERE parent_category_id IS NULL
     

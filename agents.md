@@ -4604,3 +4604,31 @@ This cleanup does not change business behavior, SAP runtime logic, AI
 behavior, master/tenant ownership, the canonical schema, or migration SQL.
 No database was accessed, no migration was applied, and no commit or push is
 created by the cleanup itself.
+
+## Category Hierarchy Recursive CTE Runtime Repair
+
+The local full E2E reached Stage 2A successfully, then the enrichment worker
+failed before the provider with `category_candidates_failed`. The E2E fixture
+was valid and the category query remained correctly tenant-database-local;
+the provider was not reached.
+
+The root cause was a PostgreSQL recursive CTE type mismatch: the seed
+`product_categories.name` expression was `varchar(255)`, while the recursive
+path concatenation is `text`. The repair is `name::text AS full_path` in
+`packages/core/queries/products.sql`. It changes no schema, migration,
+category ownership/scoping, or enrichment-worker logic.
+
+SQLC v1.30.0 was regenerated, updating only
+`packages/core/repository/products.sql.go` for the corrected query. Uncached
+`go test -count=1 ./...` passed in `packages/core`, `apps/cloud-server`, and
+`apps/sap-agent`; no database, provider, or local E2E run was used.
+
+`CATEGORY_CANDIDATE_QUERY_DEFECT=RESOLVED`
+
+`PRODUCTION_END_TO_END_VERIFIED=false`
+
+Next Action:
+
+Rerun local-e2e-run.ps1 and verify the current-run incomplete product advances
+from Stage 2A through category candidate loading to the real DeepSeek/Stage2B
+path.
