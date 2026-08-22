@@ -4408,3 +4408,67 @@ Next Action:
 
 Repair/create isolated local PostgreSQL E2E environment and rerun the complete
 SAP-migration -> Stage 2A -> DeepSeek -> review -> apply smoke test.
+
+## SAP Staging Atlas Migration Omission Repair
+
+The E2E architecture discovery classified the missing provisioning path as
+`ATLAS_MIGRATION_OMISSION`. Fresh master and tenant databases use the common
+Atlas history in `packages/core/db/migrations`; the canonical target remains
+`packages/core/db/schema/95_sap_staging.sql`, and no alternate bootstrap path
+was found. The runtime requires `staging.sap_migration_batches`, while
+`staging.sap_stores`, `staging.sap_products`, and `staging.sap_inventory` are
+current schema-reserved objects.
+
+Added forward migration:
+
+- `packages/core/db/migrations/20260822000000_add_sap_staging.sql`
+
+It provisions the staging schema and all four canonical tables with the
+canonical columns, types, nullability, defaults, primary keys, the batch
+unique constraint, and the batch organization foreign key. Existing objects
+are not dropped, truncated, recreated, deleted, or overwritten. `IF NOT
+EXISTS` is followed by proportional catalog checks; a materially incompatible
+existing required shape fails the migration clearly instead of being silently
+accepted. No data reconciliation is attempted.
+
+The same migration history continues to apply to master and tenants. Physical
+staging tables in master remain inert under current control-plane usage; tenant
+staging tables remain the active SAP migration storage. No ownership, routing,
+runtime, product, AI, or frontend behavior changed.
+
+Migration-history regression protection is in
+`packages/core/db/migrations/20260822000000_add_sap_staging_test.go` and checks
+that the new history entry provisions the schema and all four SAP staging
+objects. Atlas updated and validated `packages/core/db/migrations/atlas.sum`.
+SQLC v1.30.0 generation produced no generated Go changes.
+
+Verification completed:
+
+- `C:\\Program Files\\Go\\bin\\gofmt.exe` formatted the new Go test.
+- Focused migration, SAP usecase, handler, and enrichment tests passed.
+- Uncached `go test -count=1 ./...` passed in `packages/core`,
+  `apps/cloud-server`, and `apps/sap-agent`.
+- Existing polling/merge regressions passed:
+  `SAP_EMPTY_RESETS_AI_BRAND=false`,
+  `SAP_EMPTY_RESETS_AI_DESCRIPTION=false`, and
+  `FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK=false`.
+- Existing kill-switch regressions passed:
+  `ENRICHMENT_DISABLED_SAP_SYNC_WORKS=true`,
+  `ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS=0`,
+  `ENRICHMENT_DISABLED_PROVIDER_CALLS=0`, and
+  `DISABLED_QUEUE_GROWTH_RISK=false`.
+- No PostgreSQL was accessed and no migration was applied. The local E2E
+  migration application is the next action and was not performed.
+
+`SAP_STAGING_MIGRATION_SCHEMA_DEFECT=RESOLVED`
+
+`DEPLOYMENT_ENVIRONMENT_VERIFIED=false`
+
+`PRODUCTION_END_TO_END_VERIFIED=false`
+
+`PRODUCTION_STAGING_TABLE_STATE=UNVERIFIED`
+
+Before production application, inspect the existing staging object state. A
+canonical existing shape should pass the defensive checks; an incompatible
+shape requires explicit reconciliation and stops deployment. No commit or
+push was performed.
