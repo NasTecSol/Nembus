@@ -252,6 +252,18 @@ Provide an existing usable environment containing the repository-compatible Go, 
 
 Final verdict: NEEDS GENERATOR VERIFICATION
 
+## Category Hierarchy Bind Parameter Runtime Repair
+
+- Raw PostgreSQL diagnostic with the same logical category-hierarchy query and a literal `true` passed (`E2E_ACTIVE_CATEGORY_COUNT=1`, `CATEGORY_QUERY_RESULT=PASS`, `CATEGORY_ROWS_RETURNED=1`).
+- The generated SQLC call `Queries.GetCategoryHierarchy(ctx, true)` instead failed with `SQLSTATE 42P08`: PostgreSQL could not determine the type of `$1`. This occurred during bind-parameter resolution, before row scanning or provider invocation.
+- The active-filter parameter appeared in both `WHEN $1 IS NULL THEN true` and `ELSE ct.is_active = $1`; explicit `::boolean` casts were added to both occurrences in the SQLC source query.
+- The prior recursive-CTE correction `name::text AS full_path` is preserved.
+- SQLC v1.30.0 regenerated `packages/core/repository/products.sql.go`. Its optional active filter is now `pgtype.Bool`; the existing core callers pass an equivalent valid boolean or invalid (no-filter) value, preserving behavior.
+- No schema, migration, category ownership/scoping, hierarchy recursion, root selection, ordering, candidate limit, enrichment-worker, provider, or SAP-migration behavior changed.
+- Verification passed without accessing PostgreSQL or calling a provider: focused repository/enrichment/usecase tests, `go test -count=1 ./...` in `packages/core`, `apps/cloud-server`, and `apps/sap-agent`, and `git diff --check`.
+- `CATEGORY_ACTIVE_PARAMETER_TYPE_DEFECT=RESOLVED`.
+- Next action: run the targeted local category-store diagnostic only; do not treat this repair as Stage 2B/provider E2E approval.
+
 ## Current Phase
 
 Stage 2 provider-neutral design (read-only design completed; implementation is not authorized).

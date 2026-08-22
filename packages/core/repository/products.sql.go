@@ -217,8 +217,8 @@ WITH RECURSIVE category_tree AS (
 )
 SELECT id, parent_category_id, name, code, description, category_level, is_active, metadata, level, path, full_path FROM category_tree ct
 WHERE CASE 
-    WHEN $1 IS NULL THEN true
-    ELSE ct.is_active = $1
+    WHEN $1::boolean IS NULL THEN true
+    ELSE ct.is_active = $1::boolean
 END
 ORDER BY ct.path
 `
@@ -237,7 +237,7 @@ type GetCategoryHierarchyRow struct {
 	FullPath         string          `json:"full_path"`
 }
 
-func (q *Queries) GetCategoryHierarchy(ctx context.Context, filterIsActive interface{}) ([]GetCategoryHierarchyRow, error) {
+func (q *Queries) GetCategoryHierarchy(ctx context.Context, filterIsActive pgtype.Bool) ([]GetCategoryHierarchyRow, error) {
 	rows, err := q.db.Query(ctx, getCategoryHierarchy, filterIsActive)
 	if err != nil {
 		return nil, err

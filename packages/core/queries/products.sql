@@ -52,8 +52,8 @@ WITH RECURSIVE category_tree AS (
 )
 SELECT * FROM category_tree ct
 WHERE CASE 
-    WHEN sqlc.narg(filter_is_active) IS NULL THEN true
-    ELSE ct.is_active = sqlc.narg(filter_is_active)
+    WHEN sqlc.narg(filter_is_active)::boolean IS NULL THEN true
+    ELSE ct.is_active = sqlc.narg(filter_is_active)::boolean
 END
 ORDER BY ct.path;
 

@@ -170,7 +170,7 @@ func (s *ProductEnrichmentStore) ListCategoryCandidates(ctx context.Context, lim
 	if s == nil || s.queries == nil {
 		return nil, fmt.Errorf("product enrichment repository is not configured")
 	}
-	categories, err := s.queries.GetCategoryHierarchy(ctx, true)
+	categories, err := s.queries.GetCategoryHierarchy(ctx, pgtype.Bool{Bool: true, Valid: true})
 	if err != nil {
 		return nil, err
 	}

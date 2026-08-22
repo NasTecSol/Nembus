@@ -212,7 +212,7 @@ func (uc *ProductCategoryUseCase) UpdateProductCategory(
 	// First get the current category to use for COALESCE replacements
 	// Although the SQL uses COALESCE, sqlc.narg works best with pointers or pgtype
 	// Our UpdateProductCategory in SQL uses sqlc.narg
-	
+
 	arg := repository.UpdateProductCategoryParams{
 		ID: int32(id),
 	}
@@ -281,9 +281,9 @@ func (uc *ProductCategoryUseCase) GetCategoryHierarchy(ctx context.Context, isAc
 		return resp
 	}
 
-	var activeParam interface{}
+	var activeParam pgtype.Bool
 	if isActive != nil {
-		activeParam = *isActive
+		activeParam = pgtype.Bool{Bool: *isActive, Valid: true}
 	}
 
 	hierarchy, err := uc.repo.GetCategoryHierarchy(ctx, activeParam)
