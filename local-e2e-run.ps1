@@ -99,6 +99,8 @@ $httpPort = $null
 $grpcPort = $null
 $psqlExe = $null
 $goExe = $null
+$m2mGeneratorBinary = $null
+$script:cloudServerBinary = $null
 $organizationID = 0
 $categoryID = 0
 $brandID = 0
@@ -303,9 +305,12 @@ function Get-ApiResponse {
         [hashtable]$Headers = @{},
         [AllowNull()][string]$Body = $null
     )
-    $client = New-Object System.Net.Http.HttpClient
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.UseProxy = $false
+    $client = New-Object System.Net.Http.HttpClient($handler)
     $client.Timeout = [TimeSpan]::FromSeconds(20)
-    $request = New-Object -TypeName System.Net.Http.HttpRequestMessage -ArgumentList @([System.Net.Http.HttpMethod]::new($Method), "http://127.0.0.1:$httpPort$Path")
+    $requestUri = "http://127.0.0.1:${httpPort}${Path}"
+    $request = New-Object -TypeName System.Net.Http.HttpRequestMessage -ArgumentList @([System.Net.Http.HttpMethod]::new($Method), $requestUri)
     try {
         foreach ($key in $Headers.Keys) { [void]$request.Headers.TryAddWithoutValidation($key, [string]$Headers[$key]) }
         if ($null -ne $Body) {
@@ -339,6 +344,19 @@ function New-LocalJwtSecret {
     return [Convert]::ToBase64String($bytes)
 }
 
+function Get-M2MTokenFromGeneratorOutput {
+    param([Parameter(Mandatory = $true)][object[]]$Output)
+    $text = (($Output | ForEach-Object { $_.ToString() }) -join "`n")
+    $matches = [regex]::Matches($text, '(?m)^JWT ACCESS TOKEN \(Bearer Token\):\r?\n(?<token>[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\r?$')
+    if ($matches.Count -ne 1) { throw 'Repository-supported M2M generator did not emit exactly one JWT access token.' }
+    $token = $matches[0].Groups['token'].Value
+    $segments = $token.Split('.')
+    if ($segments.Count -ne 3 -or (@($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -ne 0)) {
+        throw 'Repository-supported M2M generator emitted an invalid JWT structure.'
+    }
+    return $token
+}
+
 function Find-FreeLocalPort {
     param([int]$PreferredPort, [int]$MaximumPort)
     for ($candidate = $PreferredPort; $candidate -le $MaximumPort; $candidate++) {
@@ -353,17 +371,167 @@ function Find-FreeLocalPort {
     throw "No safe localhost port was available in the requested range."
 }
 
+function Get-LastCloudLogLine {
+    foreach ($path in @($stderrLog, $stdoutLog)) {
+        if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) { continue }
+        try {
+            $line = @(Get-Content -LiteralPath $path -Tail 40 -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1)
+            if ($line.Count -gt 0) { return [string]$line[0] }
+        }
+        catch { }
+    }
+    return $null
+}
+
+function Get-CloudProcessTreePids {
+    param([Parameter(Mandatory = $true)][int]$RootProcessId)
+
+    $allProcessIds = New-Object 'System.Collections.Generic.List[int]'
+    $pendingProcessIds = New-Object 'System.Collections.Generic.Queue[int]'
+    [void]$allProcessIds.Add($RootProcessId)
+    $pendingProcessIds.Enqueue($RootProcessId)
+
+    while ($pendingProcessIds.Count -gt 0) {
+        $parentProcessId = $pendingProcessIds.Dequeue()
+        try {
+            $children = @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $parentProcessId" -ErrorAction Stop)
+            foreach ($child in $children) {
+                $childProcessId = [int]$child.ProcessId
+                if (-not $allProcessIds.Contains($childProcessId)) {
+                    [void]$allProcessIds.Add($childProcessId)
+                    $pendingProcessIds.Enqueue($childProcessId)
+                }
+            }
+        }
+        catch { }
+    }
+
+    return @($allProcessIds)
+}
+
+function Write-CloudLogTail {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [AllowEmptyString()][string]$Path
+    )
+
+    Write-Host ("CLOUD_{0}_TAIL_BEGIN" -f $Name) -ForegroundColor Red
+    if (-not [string]::IsNullOrWhiteSpace($Path) -and (Test-Path -LiteralPath $Path)) {
+        try {
+            $lines = @(Get-Content -LiteralPath $Path -Tail 80 -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 20)
+            foreach ($line in $lines) {
+                Write-Host (Get-SanitizedFailureMessage -Message ([string]$line) -Secrets @($jwtSecret, $deepSeekKeyPlain, $m2mToken, $userToken, $fixturePassword)) -ForegroundColor Red
+            }
+        }
+        catch {
+            Write-Host 'cloud log tail unavailable' -ForegroundColor Red
+        }
+    }
+    else {
+        Write-Host 'cloud log unavailable' -ForegroundColor Red
+    }
+    Write-Host ("CLOUD_{0}_TAIL_END" -f $Name) -ForegroundColor Red
+}
+
+function Write-CloudTimeoutDiagnostic {
+    Write-Host ("CLOUD_REQUESTED_HTTP_PORT={0}" -f $httpPort) -ForegroundColor Red
+
+    if ($null -eq $script:serverProcess) {
+        Write-Host 'CLOUD_ROOT_PID=NONE' -ForegroundColor Red
+        Write-Host 'CLOUD_CHILD_PIDS=NONE' -ForegroundColor Red
+        Write-Host 'CLOUD_LISTENING_PORTS=NONE' -ForegroundColor Red
+    }
+    else {
+        $rootProcessId = [int]$script:serverProcess.Id
+        $treeProcessIds = @(Get-CloudProcessTreePids -RootProcessId $rootProcessId)
+        $childProcessIds = @($treeProcessIds | Where-Object { $_ -ne $rootProcessId } | Sort-Object -Unique)
+        $listeningPorts = New-Object 'System.Collections.Generic.List[int]'
+
+        foreach ($processId in $treeProcessIds) {
+            try {
+                $connections = @(Get-NetTCPConnection -State Listen -OwningProcess $processId -ErrorAction Stop)
+                foreach ($connection in $connections) {
+                    $port = [int]$connection.LocalPort
+                    if (-not $listeningPorts.Contains($port)) { [void]$listeningPorts.Add($port) }
+                }
+            }
+            catch { }
+        }
+
+        $sortedPorts = @($listeningPorts | Sort-Object -Unique)
+        Write-Host ("CLOUD_ROOT_PID={0}" -f $rootProcessId) -ForegroundColor Red
+        Write-Host ("CLOUD_CHILD_PIDS={0}" -f $(if ($childProcessIds.Count -gt 0) { $childProcessIds -join ',' } else { 'NONE' })) -ForegroundColor Red
+        Write-Host ("CLOUD_LISTENING_PORTS={0}" -f $(if ($sortedPorts.Count -gt 0) { $sortedPorts -join ',' } else { 'NONE' })) -ForegroundColor Red
+        if ($sortedPorts.Count -gt 0) {
+            Write-Host ("CLOUD_ACTUAL_LISTENING_PORTS={0}" -f ($sortedPorts -join ',')) -ForegroundColor Red
+        }
+    }
+
+    Write-CloudLogTail -Name 'STDOUT' -Path $stdoutLog
+    Write-CloudLogTail -Name 'STDERR' -Path $stderrLog
+}
+
+function Write-CloudStartupFailureDiagnostic {
+    param(
+        [AllowNull()]$LastHttpStatus = $null,
+        [AllowEmptyString()][string]$LastHealthBody = ''
+    )
+    $exited = $false
+    $exitCode = 'unknown'
+    if ($null -ne $script:serverProcess) {
+        try {
+            $script:serverProcess.Refresh()
+            $exited = $script:serverProcess.HasExited
+            if ($exited) { $exitCode = [string]$script:serverProcess.ExitCode }
+        }
+        catch { }
+    }
+
+    Write-Host ("CLOUD_PROCESS_EXITED={0}" -f $exited.ToString().ToLowerInvariant()) -ForegroundColor Red
+    if ($exited) {
+        Write-Host ("CLOUD_EXIT_CODE={0}" -f $exitCode) -ForegroundColor Red
+        $line = Get-LastCloudLogLine
+        if ([string]::IsNullOrWhiteSpace($line)) { $line = 'cloud startup log line unavailable' }
+        Write-Host ("CLOUD_STARTUP_ERROR={0}" -f (Get-SanitizedFailureMessage -Message $line -Secrets @($jwtSecret, $deepSeekKeyPlain, $m2mToken, $userToken, $fixturePassword))) -ForegroundColor Red
+        return $true
+    }
+
+    if ($null -ne $LastHttpStatus) {
+        Write-Host ("HEALTH_HTTP_STATUS={0}" -f $LastHttpStatus) -ForegroundColor Red
+        if (-not [string]::IsNullOrWhiteSpace($LastHealthBody)) {
+            Write-Host ("HEALTH_HTTP_RESPONSE={0}" -f (Get-SanitizedFailureMessage -Message $LastHealthBody -Secrets @($jwtSecret, $deepSeekKeyPlain, $m2mToken, $userToken, $fixturePassword))) -ForegroundColor Red
+        }
+        else {
+            Write-Host 'HEALTH_RESPONSE_INVALID=true' -ForegroundColor Red
+        }
+        return $false
+    }
+
+    Write-Host 'HEALTH_TIMEOUT=true' -ForegroundColor Red
+    Write-CloudTimeoutDiagnostic
+    return $false
+}
+
 function Wait-Health {
+    $lastHttpStatus = $null
+    $lastHealthBody = ''
     for ($attempt = 1; $attempt -le 60; $attempt++) {
-        if ($null -ne $script:serverProcess -and $script:serverProcess.HasExited) { throw 'cloud-server exited before health became ready.' }
+        if ($null -ne $script:serverProcess -and $script:serverProcess.HasExited) {
+            [void](Write-CloudStartupFailureDiagnostic -LastHttpStatus $lastHttpStatus -LastHealthBody $lastHealthBody)
+            throw 'cloud-server exited before health became ready.'
+        }
         try {
             $response = Get-ApiResponse -Method 'GET' -Path '/health'
+            $lastHttpStatus = [int]$response.StatusCode
+            $lastHealthBody = [string]$response.Body
             if ($response.StatusCode -eq 200 -and $null -ne $response.Json -and $response.Json.status -eq 'OK') { return }
         }
         catch { }
         Start-Sleep -Seconds 1
     }
-    throw "cloud-server health did not pass on localhost port ${httpPort}."
+    [void](Write-CloudStartupFailureDiagnostic -LastHttpStatus $lastHttpStatus -LastHealthBody $lastHealthBody)
+    if ($null -ne $lastHttpStatus) { throw "cloud-server health endpoint returned HTTP ${lastHttpStatus}." }
+    throw "cloud-server health timed out on localhost port ${httpPort}."
 }
 
 function Stop-CloudServer {
@@ -407,6 +575,18 @@ function Start-CloudServer {
     $envNames = @('MASTER_DB_URL', 'JWT_SECRET', 'ENV', 'PORT', 'GRPC_PORT', 'ZATCA_ENABLED', 'ENRICHMENT_ENABLED', 'ENRICHMENT_PROVIDER', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'DEEPSEEK_BASE_URL', 'OPENAI_ENRICHMENT_TIMEOUT', 'OPENAI_ENRICHMENT_WORKER_INTERVAL', 'OPENAI_ENRICHMENT_BATCH_SIZE', 'OPENAI_ENRICHMENT_MAX_RETRIES')
     Save-ProcessEnvironment $envNames
     try {
+        if ([string]::IsNullOrWhiteSpace($script:cloudServerBinary) -or -not (Test-Path -LiteralPath $script:cloudServerBinary)) {
+            $script:cloudServerBinary = Join-Path $runtimeRoot 'cloud-server.exe'
+            Push-Location -LiteralPath $repoRoot
+            try {
+                $buildOutput = & $goExe build -o $script:cloudServerBinary (Join-Path $repoRoot 'apps/cloud-server/main.go') 2>&1
+                if ($LASTEXITCODE -ne 0) { throw 'Unable to build the repository cloud-server binary for the temporary local E2E runtime.' }
+            }
+            finally {
+                $buildOutput = $null
+                Pop-Location
+            }
+        }
         [Environment]::SetEnvironmentVariable('MASTER_DB_URL', $serverDsn, 'Process')
         [Environment]::SetEnvironmentVariable('JWT_SECRET', $jwtSecret, 'Process')
         [Environment]::SetEnvironmentVariable('ENV', 'development', 'Process')
@@ -425,8 +605,7 @@ function Start-CloudServer {
         else { [Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', $null, 'Process') }
         $stdoutLog = Join-Path $logDirectory ("cloud-${httpPort}.stdout.log")
         $stderrLog = Join-Path $logDirectory ("cloud-${httpPort}.stderr.log")
-        $mainFile = Join-Path $repoRoot 'apps/cloud-server/main.go'
-        $script:serverProcess = Start-Process -FilePath $goExe -WorkingDirectory $runtimeRoot -ArgumentList @('run', $mainFile, 'dev') -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
+        $script:serverProcess = Start-Process -FilePath $script:cloudServerBinary -WorkingDirectory $runtimeRoot -ArgumentList @('dev') -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
     }
     finally {
         Restore-ProcessEnvironment $envNames
@@ -545,10 +724,19 @@ function Assert-DetailContract {
 }
 
 function Get-SanitizedFailureMessage {
-    param([Parameter(Mandatory = $true)][string]$Message)
+    param(
+        [Parameter(Mandatory = $true)][string]$Message,
+        [string[]]$Secrets = @()
+    )
     $sanitized = $Message -replace '(?i)Bearer\s+\S+', 'Bearer [redacted]'
     $sanitized = $sanitized -replace '(?i)postgres(?:ql)?://\S+', 'postgres://[redacted]'
-    $sanitized = $sanitized -replace '(?i)api[_ -]?key\s*[:=]\s*\S+', 'api_key=[redacted]'
+    $sanitized = $sanitized -replace '(?i)\b(master[_ -]?db[_ -]?(?:url|dsn)|db[_ -]?conn[_ -]?str|tenant[_ -]?db[_ -]?(?:url|dsn))\s*[:=]\s*("[^"]*"|''[^'']*''|\S+)', '$1=[redacted]'
+    $sanitized = $sanitized -replace '(?i)\b(password|passwd|pwd|jwt[_ -]?secret|api[_ -]?key|authorization)\s*[:=]\s*("[^"]*"|''[^'']*''|\S+)', '$1=[redacted]'
+    $sanitized = $sanitized -replace '(?i)("(?:master[_ -]?db[_ -]?(?:url|dsn)|db[_ -]?conn[_ -]?str|tenant[_ -]?db[_ -]?(?:url|dsn)|password|passwd|pwd|jwt[_ -]?secret|api[_ -]?key|authorization)"\s*:\s*)"[^"]*"', '$1"[redacted]"'
+    $sanitized = $sanitized -replace '(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])', '[redacted-jwt]'
+    foreach ($secret in $Secrets) {
+        if (-not [string]::IsNullOrWhiteSpace($secret)) { $sanitized = $sanitized.Replace($secret, '[redacted]') }
+    }
     if ($sanitized.Length -gt 300) { $sanitized = $sanitized.Substring(0, 300) }
     return $sanitized
 }
@@ -667,20 +855,43 @@ try {
     $grpcPort = Find-FreeLocalPort 19051 19090
     $jwtSecret = New-LocalJwtSecret
     $m2mGenerator = Join-Path $repoRoot 'apps/cloud-server/cmd/m2m-gen/main.go'
+    $m2mGeneratorBinary = Join-Path $runtimeRoot 'm2m-gen.exe'
     $m2mClientID = "local-e2e-$runID"
     $m2mEnvNames = @('JWT_SECRET')
     Save-ProcessEnvironment $m2mEnvNames
     try {
         [Environment]::SetEnvironmentVariable('JWT_SECRET', $jwtSecret, 'Process')
-        & $goExe run $m2mGenerator -client-id $m2mClientID -client-name 'Nembus Local E2E SAP Agent' -tenant-slug $tenantSlug -organization-id $organizationID -scopes 'sap:migration' -years 1 *> (Join-Path $logDirectory 'm2m-generator.log')
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtimeConfig)) { throw 'Repository-supported M2M generator did not create the temporary registry.' }
+        Push-Location -LiteralPath $repoRoot
+        try {
+            $buildOutput = & $goExe build -o $m2mGeneratorBinary $m2mGenerator 2>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to build the repository M2M generator for the temporary local E2E runtime.' }
+        }
+        finally {
+            $buildOutput = $null
+            Pop-Location
+        }
+        Push-Location -LiteralPath $runtimeRoot
+        try {
+            $generatorOutput = & $m2mGeneratorBinary -client-id $m2mClientID -client-name 'Nembus Local E2E SAP Agent' -tenant-slug $tenantSlug -organization-id $organizationID -scopes 'sap:migration' -years 1 2>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Repository-supported M2M generator failed for the temporary local E2E runtime.' }
+        }
+        finally {
+            Pop-Location
+        }
+        if (-not (Test-Path -LiteralPath $runtimeConfig)) { throw 'Repository-supported M2M generator did not create the temporary registry.' }
+        $m2mToken = Get-M2MTokenFromGeneratorOutput $generatorOutput
     }
-    finally { Restore-ProcessEnvironment $m2mEnvNames }
+    finally {
+        $generatorOutput = $null
+        Restore-ProcessEnvironment $m2mEnvNames
+    }
     $registry = Get-Content -Raw -LiteralPath $runtimeConfig | ConvertFrom-Json
     $m2mClient = @($registry.clients | Where-Object { $_.client_id -eq $m2mClientID })[0]
-    if ($null -eq $m2mClient -or [string]::IsNullOrWhiteSpace($m2mClient.token)) { throw 'Temporary M2M registry did not contain the generated client.' }
-    $m2mToken = [string]$m2mClient.token
-    Set-ReportValue 'M2M_TOKEN_CREATED' 'true'
+    if ($null -eq $m2mClient -or [string]::IsNullOrWhiteSpace($m2mClient.token) -or ([string]$m2mClient.token) -cne $m2mToken) { throw 'Temporary M2M registry did not contain the generated client token.' }
+    if ([string]$m2mClient.tenant_slug -cne $tenantSlug -or [int]$m2mClient.organization_id -ne $organizationID -or $m2mClient.is_active -ne $true -or -not (@($m2mClient.scopes) -contains 'sap:migration')) {
+        throw 'Temporary M2M registry did not preserve the required tenant, organization, active, and migration-scope binding.'
+    }
+    Set-ReportValue 'M2M_TOKEN_CREATED' 'PASSED'
     $dbPasswordPlainForServer = Convert-SecureStringToPlainText $dbPasswordSecure
     $deepSeekKeyPlain = Convert-SecureStringToPlainText $deepSeekKeySecure
     Start-CloudServer $true
