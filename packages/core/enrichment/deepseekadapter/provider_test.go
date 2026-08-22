@@ -27,7 +27,9 @@ func TestProviderUsesConfiguredEndpointModelJSONModeAndSafeInput(t *testing.T) {
 		} `json:"response_format"`
 		Thinking        map[string]json.RawMessage `json:"thinking"`
 		MaxTokens       int                        `json:"max_tokens"`
+		Temperature     *float64                   `json:"temperature"`
 		Stream          bool                       `json:"stream"`
+		TopP            json.RawMessage            `json:"top_p"`
 		ReasoningEffort json.RawMessage            `json:"reasoning_effort"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +64,12 @@ func TestProviderUsesConfiguredEndpointModelJSONModeAndSafeInput(t *testing.T) {
 	}
 	if gotRequest.Model != "configured-model" || gotRequest.ResponseFormat.Type != "json_object" || gotRequest.MaxTokens != 2048 || gotRequest.Stream {
 		t.Fatalf("request configuration=%+v", gotRequest)
+	}
+	if gotRequest.Temperature == nil || *gotRequest.Temperature != 0 {
+		t.Fatalf("temperature=%v, want explicitly serialized 0", gotRequest.Temperature)
+	}
+	if len(gotRequest.TopP) != 0 {
+		t.Fatalf("top_p should not be sent: %s", gotRequest.TopP)
 	}
 	if len(gotRequest.Thinking) != 1 {
 		t.Fatalf("thinking configuration=%v, want exactly {type: disabled}", gotRequest.Thinking)

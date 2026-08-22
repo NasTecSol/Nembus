@@ -125,6 +125,7 @@ type chatCompletionRequest struct {
 	ResponseFormat responseFormat `json:"response_format"`
 	Thinking       thinkingConfig `json:"thinking"`
 	MaxTokens      int            `json:"max_tokens"`
+	Temperature    float64        `json:"temperature"`
 	Stream         bool           `json:"stream"`
 }
 
@@ -194,6 +195,7 @@ func (p *Provider) Enrich(ctx context.Context, request enrichment.EnrichmentRequ
 		ResponseFormat: responseFormat{Type: "json_object"},
 		Thinking:       thinkingConfig{Type: "disabled"},
 		MaxTokens:      2048,
+		Temperature:    0,
 		Stream:         false,
 	})
 	if err != nil {

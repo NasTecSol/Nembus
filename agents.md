@@ -4644,3 +4644,19 @@ Next Action:
 Rerun local-e2e-run.ps1 and verify the current-run incomplete product advances
 from Stage 2A through category candidate loading to the real DeepSeek/Stage2B
 path.
+
+## DeepSeek Stage 2B Contract Reliability Hardening
+
+Two real full E2E executions reached DeepSeek and then failed strict parsing
+with `contract_violation`, while a targeted single-suggestion DeepSeek call
+passed the same strict Stage 2B parser. The failure is therefore nondeterministic
+provider contract adherence rather than a deterministic prompt/parser mismatch.
+
+JSON mode guarantees JSON syntax, but the strict application contract remains
+enforced by Stage 2B. DeepSeek `temperature` is explicitly set to `0` to reduce
+generation variability. The strict parser remains unchanged and fail-closed;
+no provider retry was added, and there was no architecture, schema, or migration
+change.
+
+Next action: run one full `local-e2e-run.ps1` execution. Do not claim that full
+E2E has passed.
