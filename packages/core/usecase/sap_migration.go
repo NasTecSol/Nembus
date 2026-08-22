@@ -42,6 +42,41 @@ func execWithSavepoint(ctx context.Context, tx pgx.Tx, query string, args ...int
 	return nil
 }
 
+// sapProductUpsertQuery keeps SAP's deterministic product sync authoritative
+// when it provides a value, while treating absent brand/description values as
+// no assertion during an update. The INSERT side intentionally retains the
+// existing behavior for new products.
+const sapProductUpsertQuery = `
+			INSERT INTO products (
+				organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type,
+				is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, track_inventory, metadata
+			)
+			VALUES (
+				$1, $2, $3, $4,
+				(SELECT id FROM product_categories WHERE code = $5),
+				(SELECT id FROM brands WHERE code = $6),
+				(SELECT id FROM units_of_measure WHERE code = $7 LIMIT 1),
+				$8, $9, $10, $11, $12, $13, $14, $15
+			)
+			ON CONFLICT(organization_id, sku) DO UPDATE SET
+				name = excluded.name,
+				description = CASE
+					WHEN NULLIF(BTRIM(excluded.description), '') IS NOT NULL THEN excluded.description
+					ELSE products.description
+				END,
+				category_id = excluded.category_id,
+				brand_id = CASE
+					WHEN excluded.brand_id IS NOT NULL THEN excluded.brand_id
+					ELSE products.brand_id
+				END,
+				base_uom_id = excluded.base_uom_id,
+				product_type = excluded.product_type,
+				is_active = excluded.is_active,
+				is_sellable = excluded.is_sellable,
+				track_inventory = excluded.track_inventory,
+				metadata = excluded.metadata;
+			`
+
 func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, payload *contracts.MigrationBatchPayload) (*contracts.MigrationBatchResponse, error) {
 	if uc == nil || uc.pool == nil {
 		return nil, fmt.Errorf("SAP migration tenant database is not configured")
@@ -298,30 +333,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				`, p.BaseUOMCode)
 			}
 
-			q := `
-			INSERT INTO products (
-				organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type,
-				is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, track_inventory, metadata
-			)
-			VALUES (
-				$1, $2, $3, $4,
-				(SELECT id FROM product_categories WHERE code = $5),
-				(SELECT id FROM brands WHERE code = $6),
-				(SELECT id FROM units_of_measure WHERE code = $7 LIMIT 1),
-				$8, $9, $10, $11, $12, $13, $14, $15
-			)
-			ON CONFLICT(organization_id, sku) DO UPDATE SET
-				name = excluded.name,
-				description = excluded.description,
-				category_id = excluded.category_id,
-				brand_id = excluded.brand_id,
-				base_uom_id = excluded.base_uom_id,
-				product_type = excluded.product_type,
-				is_active = excluded.is_active,
-				is_sellable = excluded.is_sellable,
-				track_inventory = excluded.track_inventory,
-				metadata = excluded.metadata;
-			`
+			q := sapProductUpsertQuery
 			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, metaBytes); err != nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("product %s error: %v", p.SKU, err))

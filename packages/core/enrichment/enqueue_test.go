@@ -180,6 +180,28 @@ func TestCoordinatorSkipsIneligibleAndSurfacesStoreFailure(t *testing.T) {
 	}
 }
 
+func TestCoordinatorRepeatPollWithPreservedAcceptedValuesCreatesNoGap(t *testing.T) {
+	store := &fakeEnrichmentStore{snapshot: testSnapshot()}
+	store.snapshot.Description = "Accepted description"
+	coordinator := NewProductEnrichmentCoordinator(store)
+
+	first, err := coordinator.EnqueueSAPProduct(context.Background(), 1, "SAP-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Decision.Eligible || len(first.Decision.Gaps) != 0 || store.createCalls != 0 {
+		t.Fatalf("accepted brand/description should have no enrichment gap: %+v calls=%d", first.Decision, store.createCalls)
+	}
+
+	second, err := coordinator.EnqueueSAPProduct(context.Background(), 1, "SAP-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Decision.Eligible || len(second.Decision.Gaps) != 0 || store.createCalls != 0 {
+		t.Fatalf("repeat poll should remain ineligible without creating a suggestion: %+v calls=%d", second.Decision, store.createCalls)
+	}
+}
+
 func TestNormalizeProposedDescription(t *testing.T) {
 	normalized, err := NormalizeProposedDescription("  وصف catalog  ")
 	if err != nil || normalized != "وصف catalog" {

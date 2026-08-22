@@ -4274,3 +4274,69 @@ Next Action:
 Staging/deployment environment validation and end-to-end execution.
 
 Final verdict: `UI3_COMPLETE_FRONTEND_CODE_READY`
+
+## Five-Minute SAP Polling — Empty-Value Enrichment Preservation
+
+The five-minute SAP product poll previously treated an absent/unresolved
+brand and an empty description as overwrites. After enrichment approval and
+application, a later blank SAP poll could therefore clear those values,
+recreate Stage 2A gaps, and cause repeated suggestion/provider work.
+
+The current MVP precedence contract is:
+
+- A populated SAP brand that resolves through the existing canonical brand
+  mapping replaces the existing product brand.
+- An absent, zero, or unresolved SAP brand is no assertion and preserves the
+  existing product brand on update.
+- A non-empty SAP description replaces the existing product description.
+- NULL, empty, or whitespace-only SAP description is no assertion and
+  preserves the existing product description on update.
+- New products still receive no synthesized brand or description when SAP is
+  incomplete, so they remain incomplete and Stage 2A-eligible under its
+  existing rules.
+- Category behavior is intentionally unchanged. In particular, deterministic
+  Fixed Asset/Raw Material product-type mapping and ordinary OITB category
+  mapping are not covered by this preservation rule.
+
+The payload has no distinct intentional-clear operation. Therefore this MVP
+cannot deliberately clear an existing brand or description by sending NULL or
+empty SAP values; absence is treated as no assertion. A populated SAP value
+still wins. No ItemName inference, fuzzy matching, or automatic brand creation
+was added.
+
+Regression coverage includes missing/whitespace SAP brand and description,
+populated SAP override behavior, the actual product-upsert SQL contract,
+category/product_type mapping regressions, and repeated Stage 2A eligibility
+checks after accepted brand/description values are preserved. The correction
+makes no provider call, uses no live database, adds no schema or migration,
+and leaves suggestion lifecycle, tenant/organization scoping, and unrelated
+SAP fields unchanged.
+
+Changed files:
+
+- `packages/core/usecase/sap_migration.go`
+- `packages/core/usecase/sap_migration_test.go`
+- `packages/core/enrichment/enqueue_test.go`
+- `packages/sap/mappings/models_test.go`
+- `agents.md`
+
+Verification completed with `C:\Program Files\Go\bin\gofmt.exe` and
+`C:\Program Files\Go\bin\go.exe`:
+
+- Focused `packages/core/usecase` and `packages/core/enrichment` tests passed.
+- All `packages/sap` tests passed.
+- Uncached `go test -count=1 ./...` passed in `packages/core`,
+  `apps/cloud-server`, and `apps/sap-agent`.
+- `git diff --check` passed.
+- No SQLC query source, generated SQLC output, schema, or migration changed;
+  SQLC/database verification was not needed for this Go-only query-string
+  correction.
+- No live database or provider call was used. Production deployment and
+  production end-to-end behavior remain unverified.
+
+`FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK=RESOLVED`
+
+Next Action:
+
+Gate Stage 2A enqueueing when `ENRICHMENT_ENABLED=false` so disabling AI does
+not accumulate a pending backlog.

@@ -102,6 +102,42 @@ func TestProductMapping(t *testing.T) {
 	}
 }
 
+func TestSAPProductMappingLeavesMissingBrandAndDescriptionMissing(t *testing.T) {
+	canonical := (&mappings.SAPProduct{
+		ItemCode:   "E2E-PANTENE-001",
+		ItemName:   "Pantene shampoo",
+		UserText:   "   ",
+		ItmsGrpCod: 201,
+		ItmsGrpNam: "Finished Goods",
+		FirmCode:   0,
+	}).ToCanonical()
+
+	if canonical.BrandCode != "" {
+		t.Fatalf("missing SAP FirmCode produced brand %q", canonical.BrandCode)
+	}
+	if canonical.Description != "" {
+		t.Fatalf("whitespace-only SAP description was not treated as empty: %q", canonical.Description)
+	}
+}
+
+func TestSAPProductMappingUsesPopulatedSAPBrandAndDescription(t *testing.T) {
+	canonical := (&mappings.SAPProduct{
+		ItemCode:   "E2E-PANTENE-001",
+		ItemName:   "Pantene shampoo",
+		UserText:   "Authoritative SAP description",
+		ItmsGrpCod: 201,
+		ItmsGrpNam: "Finished Goods",
+		FirmCode:   42,
+	}).ToCanonical()
+
+	if canonical.BrandCode != "BRD-42" {
+		t.Fatalf("SAP FirmCode mapping = %q, want BRD-42", canonical.BrandCode)
+	}
+	if canonical.Description != "Authoritative SAP description" {
+		t.Fatalf("SAP description = %q, want populated source value", canonical.Description)
+	}
+}
+
 func TestSAPProductTypeMapping(t *testing.T) {
 	tests := []struct {
 		name         string
