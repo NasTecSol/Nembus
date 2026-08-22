@@ -246,7 +246,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	apiV1.Use(middleware.TenantMiddleware(tenantManager))
 	apiV1.Use(middleware.SAPMigrationOrganizationMiddleware())
 	{
-		sapMigrationHandler := handler.NewSAPMigrationHandler()
+		sapMigrationHandler := handler.NewSAPMigrationHandler(cfg.EnrichmentEnabled)
 		router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
 	}
 

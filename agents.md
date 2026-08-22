@@ -4340,3 +4340,71 @@ Next Action:
 
 Gate Stage 2A enqueueing when `ENRICHMENT_ENABLED=false` so disabling AI does
 not accumulate a pending backlog.
+
+## Enrichment Kill Switch — Stage 2A + F2 Gating
+
+The local E2E smoke-test review found that F2/provider processing was already
+disabled when `ENRICHMENT_ENABLED=false`, but the SAP post-commit handler still
+constructed the Stage 2A coordinator and could create new pending suggestions.
+That created a dormant backlog during five-minute SAP polling and an
+unexpected provider-cost/load spike after re-enablement.
+
+The corrected single-flag contract is:
+
+- `ENRICHMENT_ENABLED=true` keeps the existing flow: deterministic SAP
+  migration commits, eligible products enter Stage 2A idempotently, F2 starts,
+  and the configured provider can process due pending/retryable suggestions.
+- `ENRICHMENT_ENABLED=false` keeps SAP synchronization fully active but skips
+  Stage 2A coordinator construction/invocation at the SAP application wiring
+  boundary. F2/provider startup is also skipped.
+- Existing suggestion rows are preserved exactly as persisted. The kill switch
+  does not delete, reject, fail, reset, reschedule, or otherwise mutate pending,
+  processing, in_review, approved, rejected, applied, retryable, or failed rows.
+- Existing review and deterministic apply routes remain available because
+  human suggestion workflow is separate from AI generation/provider execution.
+  `AI_GENERATION_DISABLED` does not mean `EXISTING_SUGGESTION_WORKFLOW_DELETED`.
+- Provider credentials are not required solely while disabled: config
+  validation and provider construction are both inside the enabled startup
+  branch. An unknown provider is therefore harmless while disabled, but still
+  fails validation when enabled.
+- Configuration is loaded once at server startup. A flag change requires a
+  process restart; no hot-reload path exists:
+  `KILL_SWITCH_ACTIVATION_REQUIRES_RESTART=true`.
+- After restart with enrichment enabled, pre-existing pending/retryable rows
+  are available to F2 again. Products synchronized while disabled do not gain
+  suggestions retroactively; the next full SAP catalog sync touches them and
+  re-evaluates Stage 2A. Complete products remain ineligible, while eligible
+  incomplete products enqueue idempotently.
+
+The disabled-state guarantees are:
+
+`ENRICHMENT_DISABLED_SAP_SYNC_WORKS=true`
+
+`ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS=0`
+
+`ENRICHMENT_DISABLED_PROVIDER_CALLS=0`
+
+`DISABLED_QUEUE_GROWTH_RISK=false`
+
+`FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK=false`
+
+Regression coverage verifies the disabled/enabled SAP handler wiring boundary,
+eligible/complete eligibility behavior, disabled provider-secret validation,
+provider validation when enabled, existing suggestion lifecycle preservation in
+the worker/query contracts, and the five-minute blank-value SAP preservation
+tests. No frontend, SAP-agent, provider contract, SQL, SQLC, schema,
+migration, permission, live database, or provider-call change was made.
+
+Files changed for this correction:
+
+- `apps/cloud-server/main.go`
+- `packages/core/handler/sap_migration.go`
+- `packages/core/handler/sap_migration_test.go`
+- `agents.md`
+
+No commit, push, deployment, or deployment-environment verification was done.
+
+Next Action:
+
+Repair/create isolated local PostgreSQL E2E environment and rerun the complete
+SAP-migration -> Stage 2A -> DeepSeek -> review -> apply smoke test.

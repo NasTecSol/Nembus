@@ -17,10 +17,28 @@ import (
 )
 
 type SAPMigrationHandler struct {
+	enrichmentEnabled        bool
+	newEnrichmentCoordinator func(*repository.Queries) enrichment.EnrichmentEnqueuer
 }
 
-func NewSAPMigrationHandler() *SAPMigrationHandler {
-	return &SAPMigrationHandler{}
+func NewSAPMigrationHandler(enrichmentEnabled bool) *SAPMigrationHandler {
+	return &SAPMigrationHandler{
+		enrichmentEnabled: enrichmentEnabled,
+		newEnrichmentCoordinator: func(tenantRepo *repository.Queries) enrichment.EnrichmentEnqueuer {
+			return enrichment.NewProductEnrichmentCoordinator(repository.NewProductEnrichmentStore(tenantRepo))
+		},
+	}
+}
+
+// configureEnrichment wires the optional post-commit Stage 2A seam for this
+// request's tenant. The application-level flag is intentionally checked here,
+// before the coordinator can load a snapshot or create a suggestion. A
+// disabled enrichment feature leaves SAP migration fully independent.
+func (h *SAPMigrationHandler) configureEnrichment(uc *usecase.SAPMigrationUseCase, tenantRepo *repository.Queries) {
+	if h == nil || !h.enrichmentEnabled || uc == nil || h.newEnrichmentCoordinator == nil {
+		return
+	}
+	uc.SetProductEnrichmentCoordinator(h.newEnrichmentCoordinator(tenantRepo))
 }
 
 func (h *SAPMigrationHandler) IngestBatch(c *gin.Context) {
@@ -77,8 +95,7 @@ func (h *SAPMigrationHandler) IngestBatch(c *gin.Context) {
 	// These objects are immutable after construction and are tied to the exact
 	// tenant pool selected by the authenticated request.
 	uc := usecase.NewSAPMigrationUseCase(pool)
-	enrichmentStore := repository.NewProductEnrichmentStore(tenantRepo)
-	uc.SetProductEnrichmentCoordinator(enrichment.NewProductEnrichmentCoordinator(enrichmentStore))
+	h.configureEnrichment(uc, tenantRepo)
 
 	resp, err := uc.IngestBatch(c.Request.Context(), int(identity.OrganizationID), &payload)
 	if err != nil {
