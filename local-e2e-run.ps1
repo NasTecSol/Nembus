@@ -1121,7 +1121,7 @@ SELECT jsonb_build_object(
     $repeatState = Get-SuggestionByCurrentRunIdentity -SuggestionID $suggestionID -ProductID $incompleteProductID -SourceItemCode $incompleteSku
     $repeatProduct = Get-ProductMutableState $incompleteSku
     if ($suggestionsAfterRepeat -ne $suggestionsBeforeRepeat -or [string]$repeatState.status -ne 'applied' -or [int]$repeatState.attempt_count -ne $attemptsBeforeRepeat) { throw 'Repeat SAP sync reset or duplicated the accepted enrichment lifecycle.' }
-    if ([int]$repeatProduct.brand_id -ne [int]$productAfterApproval.brand_id -or [string]$repeatProduct.description -ne [string]$productAfterApproval.description) { throw 'Repeat SAP sync cleared an explicitly applied brand or description.' }
+    if ([int]$repeatProduct.brand_id -ne [int]$productAfterApproval.product.brand_id -or [string]$repeatProduct.description -ne [string]$productAfterApproval.product.description) { throw 'Repeat SAP sync cleared an explicitly applied brand or description.' }
     Set-ReportValue 'REPEAT_SAP_SYNC' 'PASS'
     Set-ReportValue 'SAP_EMPTY_RESETS_AI_BRAND' 'false'
     Set-ReportValue 'SAP_EMPTY_RESETS_AI_DESCRIPTION' 'false'

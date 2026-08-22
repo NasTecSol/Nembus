@@ -4660,3 +4660,23 @@ change.
 
 Next action: run one full `local-e2e-run.ps1` execution. Do not claim that full
 E2E has passed.
+
+## Stage 2E Product Update Bind Parameter Runtime Repair
+
+The full E2E reached `in_review`; review APIs and approval completed
+successfully. Approval correctly caused no product mutation. Explicit apply
+returned HTTP 500, and the direct real application-service diagnostic exposed
+SQLSTATE 42P08 during `ApplyProductEnrichmentFields` in `PRODUCT_UPDATE`:
+PostgreSQL could not determine the type of bind parameter `$1`.
+
+Explicit `INTEGER`/`TEXT` parameter typing was added to the narrow
+product-update source query for all nullable brand, category, and description
+bind occurrences. SQLC v1.30.0 regeneration passed, and all bind parameters
+were statically checked for PostgreSQL type resolution. Stage 2E narrow
+mutation and NULL/keep-existing semantics are unchanged. No
+schema/migration/architecture change was made.
+
+`APPLY_PRODUCT_UPDATE_PARAMETER_TYPE_DEFECT=RESOLVED`
+
+Apply runtime PASS remains unclaimed until the user reruns the diagnostic.
+Next action is the direct apply-service diagnostic only, not a full E2E.

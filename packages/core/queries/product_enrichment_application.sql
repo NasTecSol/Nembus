@@ -34,12 +34,12 @@ FOR UPDATE;
 
 -- name: ApplyProductEnrichmentFields :execrows
 UPDATE products
-SET brand_id = COALESCE(sqlc.narg(brand_id), brand_id),
-    category_id = COALESCE(sqlc.narg(category_id), category_id),
-    description = COALESCE(sqlc.narg(description), description),
+SET brand_id = COALESCE(sqlc.narg(brand_id)::INTEGER, brand_id),
+    category_id = COALESCE(sqlc.narg(category_id)::INTEGER, category_id),
+    description = COALESCE(sqlc.narg(description)::TEXT, description),
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = sqlc.arg(organization_id)
   AND id = sqlc.arg(id)
-  AND (sqlc.narg(brand_id) IS NULL OR brand_id IS NULL)
-  AND (sqlc.narg(category_id) IS NULL OR category_id IS NULL)
-  AND (sqlc.narg(description) IS NULL OR description IS NULL OR btrim(description) = '');
+  AND (sqlc.narg(brand_id)::INTEGER IS NULL OR brand_id IS NULL)
+  AND (sqlc.narg(category_id)::INTEGER IS NULL OR category_id IS NULL)
+  AND (sqlc.narg(description)::TEXT IS NULL OR description IS NULL OR btrim(description) = '');

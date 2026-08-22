@@ -13,15 +13,15 @@ import (
 
 const applyProductEnrichmentFields = `-- name: ApplyProductEnrichmentFields :execrows
 UPDATE products
-SET brand_id = COALESCE($1, brand_id),
-    category_id = COALESCE($2, category_id),
-    description = COALESCE($3, description),
+SET brand_id = COALESCE($1::INTEGER, brand_id),
+    category_id = COALESCE($2::INTEGER, category_id),
+    description = COALESCE($3::TEXT, description),
     updated_at = CURRENT_TIMESTAMP
 WHERE organization_id = $4
   AND id = $5
-  AND ($1 IS NULL OR brand_id IS NULL)
-  AND ($2 IS NULL OR category_id IS NULL)
-  AND ($3 IS NULL OR description IS NULL OR btrim(description) = '')
+  AND ($1::INTEGER IS NULL OR brand_id IS NULL)
+  AND ($2::INTEGER IS NULL OR category_id IS NULL)
+  AND ($3::TEXT IS NULL OR description IS NULL OR btrim(description) = '')
 `
 
 type ApplyProductEnrichmentFieldsParams struct {
