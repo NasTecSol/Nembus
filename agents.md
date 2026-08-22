@@ -4471,4 +4471,89 @@ Verification completed:
 Before production application, inspect the existing staging object state. A
 canonical existing shape should pass the defensive checks; an incompatible
 shape requires explicit reconciliation and stops deployment. No commit or
-push was performed.
+push was performed during this follow-up; the initial migration repair is
+committed as `bc3f28c`, and the follow-up validation work below remains
+uncommitted and was not pushed.
+
+## SAP Staging Architect-Safety Follow-up
+
+The final read-only architect review found that commit `bc3f28c` preserved the
+canonical staging objects without destructive DDL or data mutation, but its
+compatibility checks were not fully fail-closed for exact defaults, FK
+`ON UPDATE`, and all required catalog constraint semantics. The committed
+`packages/core/db/migrations/20260822000000_add_sap_staging.sql` was not
+rewritten, amended, reset, rebased, or cherry-picked.
+
+Added one non-destructive forward validation migration:
+
+- `packages/core/db/migrations/20260822010000_validate_sap_staging_contract.sql`
+
+The validator checks all four canonical staging tables for required columns,
+PostgreSQL catalog types, nullability, defaults, primary keys, the batch unique
+constraint, and the organizations foreign key. Defaults are compared from
+`pg_get_expr(pg_attrdef.adbin, pg_attrdef.adrelid)` using exact normalized
+catalog expressions; serial defaults are checked through the catalog's serial
+sequence association and exact `nextval(...::regclass)` expression. The FK
+check uses catalog semantics for local/reference columns, `public.organizations(id)`,
+`ON DELETE CASCADE`, and `ON UPDATE NO ACTION`. Harmless extra columns,
+indexes, and non-conflicting constraints are not rejected. No generated
+constraint or sequence name is required.
+
+The existing colocated migration test was strengthened in
+`packages/core/db/migrations/20260822000000_add_sap_staging_test.go`. It parses
+the canonical table definitions with a small source-level seam and verifies
+that all canonical columns, types, nullability, defaults, constraint catalog
+dimensions, FK actions, and non-destructive validation requirements remain
+covered. No live database test seam exists in the repository, so the location
+remains `SAFE_BUT_UNCONVENTIONAL`; the test's limitation is explicitly
+source-level rather than runtime catalog execution.
+
+Verification completed without database access or migration application:
+
+- Atlas hash and validation passed. The existing checksum for
+  `20260822000000_add_sap_staging.sql` is unchanged; only the new migration
+  entry and directory hash changed.
+- SQLC v1.30.0 generation produced no generated Go changes.
+- Focused migration, SAP usecase, handler, enrichment, configuration, and SAP
+  mapping tests passed.
+- Uncached `go test -count=1 ./...` passed in `packages/core`,
+  `apps/cloud-server`, and `apps/sap-agent`.
+- Polling regressions passed:
+  `SAP_EMPTY_RESETS_AI_BRAND=false`,
+  `SAP_EMPTY_RESETS_AI_DESCRIPTION=false`, and
+  `FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK=false`.
+- Kill-switch regressions passed:
+  `ENRICHMENT_DISABLED_SAP_SYNC_WORKS=true`,
+  `ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS=0`,
+  `ENRICHMENT_DISABLED_PROVIDER_CALLS=0`, and
+  `DISABLED_QUEUE_GROWTH_RISK=false`.
+- `git diff --check` passed. No application, runtime, AI, tenant-ownership,
+  SQLC-generated, canonical-schema, deployment, or production-state change
+  was made. No E2E application, commit, or push was performed.
+
+`ORIGINAL_STAGING_MIGRATION_MODIFIED=false`
+
+`REQUIRED_CANONICAL_SEMANTICS_VALIDATED=true`
+
+`INCOMPATIBLE_SCHEMA_FAILS_CLOSED=true`
+
+`DESTRUCTIVE_DDL=false`
+
+`EXISTING_DATA_MUTATION=false`
+
+`CANONICAL_SCHEMA_CHANGED=false`
+
+`SAP_STAGING_MIGRATION_SCHEMA_DEFECT=RESOLVED`
+
+`DATABASE_ACCESSED=false`
+
+`PRODUCTION_STAGING_TABLE_STATE=UNVERIFIED`
+
+`DEPLOYMENT_ENVIRONMENT_VERIFIED=false`
+
+`PRODUCTION_END_TO_END_VERIFIED=false`
+
+Next Action:
+
+Review the uncommitted follow-up diff before any commit or database migration
+application.
