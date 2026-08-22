@@ -6,7 +6,8 @@ $ErrorActionPreference = 'Stop'
 # database password and provider key at runtime, keeps them in process memory,
 # and removes its temporary runtime directory during cleanup.
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+if ([string]::IsNullOrWhiteSpace($repoRoot)) { throw 'Could not resolve the local E2E runner repository root.' }
 Set-Location -LiteralPath $repoRoot
 
 $localHost = '127.0.0.1'
@@ -600,6 +601,8 @@ try {
     }
 
     $phase = 'FIXTURE_CREATION'
+    $runtimeRoot = Join-Path ([IO.Path]::GetTempPath()) ("nembus-local-e2e-$runID")
+    New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
     $baselineMasterCounts = Get-MasterBusinessCounts
     $baselineTenantCounts = Get-TenantCounts
     $organizationCodeLiteral = ConvertTo-PgSqlLiteral $organizationCode
@@ -656,7 +659,6 @@ try {
     Set-ReportValue 'E2E_FIXTURES_READY' 'PASSED'
 
     $phase = 'AUTHENTICATION_AND_SERVER_BOOT'
-    $runtimeRoot = Join-Path ([IO.Path]::GetTempPath()) ("nembus-local-e2e-$runID")
     $logDirectory = Join-Path $runtimeRoot 'logs'
     New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'config') -Force | Out-Null
     New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null

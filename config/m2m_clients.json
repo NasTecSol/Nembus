@@ -1,0 +1,15 @@
+{
+  "clients": [
+    {
+      "client_id": "local-e2e-c0ca540a91ea4cf5ad9ce571f676a205",
+      "client_name": "Nembus Local E2E SAP Agent",
+      "tenant_slug": "e2e-enrichment",
+      "organization_id": 1,
+      "scopes": [
+        "sap:migration"
+      ],
+      "is_active": true,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbGllbnRfaWQiOiJsb2NhbC1lMmUtYzBjYTU0MGE5MWVhNGNmNWFkOWNlNTcxZjY3NmEyMDUiLCJjbGllbnRfbmFtZSI6Ik5lbWJ1cyBMb2NhbCBFMkUgU0FQIEFnZW50IiwiZXhwIjoxODE4OTQ3MDI4LCJpYXQiOjE3ODc0MTEwMjgsImlzX20ybSI6dHJ1ZSwiaXNzIjoibmVtYnVzLWFwaSIsIm9yZ2FuaXphdGlvbl9pZCI6MSwic2NvcGVzIjpbInNhcDptaWdyYXRpb24iXSwic3ViIjoibG9jYWwtZTJlLWMwY2E1NDBhOTFlYTRjZjVhZDljZTU3MWY2NzZhMjA1IiwidGVuYW50X3NsdWciOiJlMmUtZW5yaWNobWVudCIsInRva2VuX3R5cGUiOiJtYWNoaW5lIn0.IDfUGBU7avfXMIV4OGIzcSMVF_TILcLx-UTj4p2Tl08"
+    }
+  ]
+}
