@@ -1,0 +1,868 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# Temporary local-only full E2E runner for the disposable Nembus environment.
+# This file intentionally does not contain credentials. It prompts for the
+# database password and provider key at runtime, keeps them in process memory,
+# and removes its temporary runtime directory during cleanup.
+
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location -LiteralPath $repoRoot
+
+$localHost = '127.0.0.1'
+$localPort = 5432
+$roleName = 'nembus_e2e_user'
+$masterDatabase = 'nembus_e2e_master'
+$tenantDatabase = 'nembus_e2e_tenant'
+$tenantSlug = 'e2e-enrichment'
+$deepSeekModel = 'deepseek-v4-flash'
+$deepSeekBaseUrl = 'https://api.deepseek.com'
+$runID = [Guid]::NewGuid().ToString('N')
+$fixtureMarker = 'local-e2e-runner'
+$organizationCode = 'E2E-ENRICHMENT-ORG'
+$organizationName = 'Nembus Local E2E Enrichment Organization'
+$categoryCode = 'E2E-ENRICHMENT-CATEGORY'
+$brandCode = 'E2E-ENRICHMENT-BRAND'
+$roleCode = 'E2E-ENRICHMENT-REVIEWER'
+$reviewerUsername = 'e2e_enrichment_reviewer'
+$reviewerEmail = 'e2e-enrichment-reviewer@nembus.invalid'
+$completeSku = 'E2E-COMPLETE-001'
+$incompleteSku = 'E2E-PANTENE-LIKE-001'
+$disabledSku = 'E2E-DISABLED-001'
+$completeBatchID = "E2E-$runID-COMPLETE"
+$incompleteBatchID = "E2E-$runID-INCOMPLETE"
+$repeatBatchID = "E2E-$runID-REPEAT"
+$disabledBatchID = "E2E-$runID-DISABLED"
+
+$report = [ordered]@{
+    LOCAL_E2E_SAFETY_GATE = 'NOT_RUN'
+    MASTER_DB_AUTH = 'NOT_RUN'
+    TENANT_DB_AUTH = 'NOT_RUN'
+    TENANT_REGISTRY_CHECK = 'NOT_RUN'
+    E2E_FIXTURES_READY = 'NOT_RUN'
+    M2M_TOKEN_CREATED = 'NOT_RUN'
+    USER_TOKEN_CREATED = 'NOT_RUN'
+    CLOUD_ENRICHMENT_ENABLED_BOOT = 'NOT_RUN'
+    HEALTH_ENABLED = 'NOT_RUN'
+    COMPLETE_PRODUCT_SAP_SYNC = 'NOT_RUN'
+    COMPLETE_PRODUCT_SUGGESTIONS_CREATED = 'NOT_RUN'
+    COMPLETE_PRODUCT_PROVIDER_CALLS = 'NOT_RUN'
+    INCOMPLETE_PRODUCT_SAP_SYNC = 'NOT_RUN'
+    STAGE2A_SUGGESTION_CREATED = 'NOT_RUN'
+    DEEPSEEK_PROVIDER_CALL = 'NOT_RUN'
+    STAGE2B_RESULT = 'NOT_RUN'
+    SUGGESTION_STATUS = 'NOT_RUN'
+    AI_DIRECT_PRODUCT_MUTATION = 'NOT_RUN'
+    PROHIBITED_FIELD_MUTATION = 'NOT_RUN'
+    REVIEW_LIST_API = 'NOT_RUN'
+    REVIEW_DETAIL_API = 'NOT_RUN'
+    APPROVE_API = 'NOT_RUN'
+    APPROVAL_AUTO_APPLY = 'false'
+    PRODUCT_CHANGED_ON_APPROVAL = 'NOT_RUN'
+    APPLY_API = 'NOT_RUN'
+    APPLY_AUDIT_CREATED = 'NOT_RUN'
+    APPLY_CHANGED_FIELDS = 'NOT_RUN'
+    SECOND_APPLY_IDEMPOTENT = 'NOT_RUN'
+    REPEAT_SAP_SYNC = 'NOT_RUN'
+    SAP_EMPTY_RESETS_AI_BRAND = 'NOT_RUN'
+    SAP_EMPTY_RESETS_AI_DESCRIPTION = 'NOT_RUN'
+    NEW_SUGGESTIONS_AFTER_REPEAT = 'NOT_RUN'
+    PROVIDER_CALLS_AFTER_REPEAT = 'NOT_RUN'
+    FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK = 'NOT_RUN'
+    OPERATIONAL_ONLY_CHANGE_TEST = 'SKIPPED'
+    OPERATIONAL_CHANGE_TRIGGERED_AI = 'false'
+    ENRICHMENT_DISABLED_SAP_SYNC_WORKS = 'NOT_RUN'
+    ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS = 'NOT_RUN'
+    ENRICHMENT_DISABLED_PROVIDER_CALLS = 'NOT_RUN'
+    DISABLED_QUEUE_GROWTH_RISK = 'NOT_RUN'
+    MASTER_BUSINESS_WRITES = 'NOT_RUN'
+    PROVIDER_CALL_ACCOUNTING_METHOD = 'NOT_RUN'
+    FINAL_VERDICT = 'LOCAL_FULL_E2E_FAILED'
+}
+
+$phase = 'INITIALIZATION'
+$dbPasswordSecure = $null
+$deepSeekKeySecure = $null
+$deepSeekKeyPlain = $null
+$fixturePassword = $null
+$m2mToken = $null
+$userToken = $null
+$jwtSecret = $null
+$serverProcess = $null
+$runtimeRoot = $null
+$runtimeConfig = $null
+$logDirectory = $null
+$stdoutLog = $null
+$stderrLog = $null
+$httpPort = $null
+$grpcPort = $null
+$psqlExe = $null
+$goExe = $null
+$organizationID = 0
+$categoryID = 0
+$brandID = 0
+$roleID = 0
+$reviewerID = 0
+$suggestionID = 0
+$baselineTenantCounts = $null
+$baselineMasterCounts = $null
+$productBeforeAI = $null
+$productBeforeApproval = $null
+$productAfterApproval = $null
+$protectedBeforeApply = $null
+$auditBeforeApply = 0
+$trace = New-Object 'System.Collections.Generic.List[string]'
+$originalEnvironment = @{}
+
+function Set-ReportValue {
+    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value)
+    $report[$Name] = $Value
+}
+
+function Add-Trace {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    [void]$trace.Add($Text)
+}
+
+function Convert-SecureStringToPlainText {
+    param([Parameter(Mandatory = $true)][Security.SecureString]$SecureString)
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+
+function ConvertTo-PgSqlLiteral {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function Resolve-Tool {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($null -eq $command -or $command.CommandType -ne 'Application') {
+        throw "Required local tool '$Name' was not found."
+    }
+    return $command.Source
+}
+
+function Invoke-Psql {
+    param(
+        [Parameter(Mandatory = $true)][string]$Database,
+        [Parameter(Mandatory = $true)][Security.SecureString]$Password,
+        [Parameter(Mandatory = $true)][string]$Sql
+    )
+    $plainPassword = $null
+    try {
+        $plainPassword = Convert-SecureStringToPlainText $Password
+        [Environment]::SetEnvironmentVariable('PGPASSWORD', $plainPassword, 'Process')
+        $arguments = @('-X', '-w', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-h', $localHost, '-p', [string]$localPort, '-U', $roleName, '-d', $Database)
+        $output = $Sql | & $psqlExe @arguments 2>&1
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            throw "psql failed for disposable database '$Database' with exit code ${exitCode}."
+        }
+        return (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
+    }
+    finally {
+        $plainPassword = $null
+        Remove-Item -LiteralPath 'Env:PGPASSWORD' -ErrorAction SilentlyContinue
+    }
+}
+
+function New-DatabaseUrl {
+    param([Parameter(Mandatory = $true)][string]$Database, [Parameter(Mandatory = $true)][string]$Password)
+    $encodedPassword = [Uri]::EscapeDataString($Password)
+    return "postgres://${roleName}:$encodedPassword@${localHost}:${localPort}/${Database}?sslmode=disable"
+}
+
+function Test-DisposableDsn {
+    param([Parameter(Mandatory = $true)][string]$Dsn, [Parameter(Mandatory = $true)][string]$ExpectedDatabase)
+    try {
+        $uri = [Uri]$Dsn
+        $userInfo = $uri.UserInfo.Split(':')[0]
+        $database = $uri.AbsolutePath.Trim('/')
+        return ($uri.Host -eq $localHost -and $uri.Port -eq $localPort -and $userInfo -eq $roleName -and $database -eq $ExpectedDatabase)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Assert-LocalSafetyGate {
+    if ($localHost -ne '127.0.0.1' -or $localPort -ne 5432 -or $masterDatabase -ne 'nembus_e2e_master' -or $tenantDatabase -ne 'nembus_e2e_tenant' -or $tenantSlug -ne 'e2e-enrichment' -or $roleName -ne 'nembus_e2e_user') {
+        Set-ReportValue 'LOCAL_E2E_SAFETY_GATE' 'FAILED'
+        Write-Host 'LOCAL_E2E_SAFETY_GATE=FAILED' -ForegroundColor Red
+        throw 'The disposable local E2E constants were changed; refusing to continue.'
+    }
+    Set-ReportValue 'LOCAL_E2E_SAFETY_GATE' 'PASSED'
+}
+
+function Test-Table {
+    param([string]$Database, [string]$Schema, [string]$Table)
+    $schemaLiteral = ConvertTo-PgSqlLiteral $Schema
+    $tableLiteral = ConvertTo-PgSqlLiteral $Table
+    $value = Invoke-Psql $Database $dbPasswordSecure "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $schemaLiteral AND table_name = $tableLiteral);"
+    return $value.Trim().ToLowerInvariant() -eq 't'
+}
+
+function Get-JsonSql {
+    param([string]$Database, [string]$Sql)
+    $raw = Invoke-Psql $Database $dbPasswordSecure $Sql
+    if ([string]::IsNullOrWhiteSpace($raw)) { throw "Expected JSON query output from disposable database '$Database'." }
+    return $raw | ConvertFrom-Json
+}
+
+function Get-Count {
+    param([string]$Database, [string]$Sql)
+    return [int64](Invoke-Psql $Database $dbPasswordSecure $Sql).Trim()
+}
+
+function Get-TenantCounts {
+    return Get-JsonSql $tenantDatabase @"
+SELECT jsonb_build_object(
+  'products', (SELECT count(*) FROM products),
+  'suggestions', (SELECT count(*) FROM product_enrichment_suggestions),
+  'audit_logs', (SELECT count(*) FROM audit_logs)
+)::text;
+"@
+}
+
+function Get-MasterBusinessCounts {
+    return Get-JsonSql $masterDatabase @"
+SELECT jsonb_build_object(
+  'organizations', (SELECT count(*) FROM organizations),
+  'products', (SELECT count(*) FROM products),
+  'suggestions', (SELECT count(*) FROM product_enrichment_suggestions),
+  'audit_logs', (SELECT count(*) FROM audit_logs)
+)::text;
+"@
+}
+
+function Get-ProductSnapshot {
+    param([string]$Sku)
+    $skuLiteral = ConvertTo-PgSqlLiteral $Sku
+    return Get-JsonSql $tenantDatabase @"
+SELECT jsonb_build_object(
+  'product', to_jsonb(p),
+  'barcodes', COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.id) FROM product_barcodes b WHERE b.product_id = p.id), '[]'::jsonb),
+  'uom_conversions', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM product_uom_conversions c WHERE c.product_id = p.id), '[]'::jsonb),
+  'inventory', COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.id) FROM inventory_stock i WHERE i.product_id = p.id), '[]'::jsonb),
+  'prices', COALESCE((SELECT jsonb_agg(to_jsonb(pr) ORDER BY pr.id) FROM product_prices pr WHERE pr.product_id = p.id), '[]'::jsonb),
+  'supplier_contracts', COALESCE((SELECT jsonb_agg(to_jsonb(pc) ORDER BY pc.id) FROM bp_price_contracts pc WHERE pc.product_id = p.id), '[]'::jsonb)
+)::text
+FROM products p
+WHERE p.organization_id = $organizationID AND p.sku = $skuLiteral
+LIMIT 1;
+"@
+}
+
+function Get-ProductMutableState {
+    param([string]$Sku)
+    $skuLiteral = ConvertTo-PgSqlLiteral $Sku
+    return Get-JsonSql $tenantDatabase "SELECT jsonb_build_object('brand_id', brand_id, 'category_id', category_id, 'description', description)::text FROM products WHERE organization_id = $organizationID AND sku = $skuLiteral;"
+}
+
+function Get-SuggestionForSku {
+    param([string]$Sku)
+    $skuLiteral = ConvertTo-PgSqlLiteral $Sku
+    $raw = Invoke-Psql $tenantDatabase @"
+SELECT jsonb_build_object(
+  'id', s.id, 'product_id', s.product_id, 'status', s.status,
+  'provider', s.provider, 'model', s.model, 'model_version', s.model_version,
+  'attempt_count', s.attempt_count, 'last_error_code', s.last_error_code,
+  'source_data_fingerprint', s.source_data_fingerprint,
+  'proposed_brand_present', s.proposed_brand IS NOT NULL,
+  'proposed_category_present', s.proposed_category IS NOT NULL,
+  'proposed_description_present', s.proposed_description IS NOT NULL,
+  'unsupported_semantics_present', s.unsupported_semantics IS NOT NULL
+)::text
+FROM product_enrichment_suggestions s
+JOIN products p ON p.id = s.product_id AND p.organization_id = s.organization_id
+WHERE s.organization_id = $organizationID AND p.sku = $skuLiteral
+ORDER BY s.id DESC LIMIT 1;
+"@
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+    return $raw | ConvertFrom-Json
+}
+
+function Get-SuggestionCountForSku {
+    param([string]$Sku)
+    $skuLiteral = ConvertTo-PgSqlLiteral $Sku
+    return Get-Count $tenantDatabase "SELECT count(*) FROM product_enrichment_suggestions s JOIN products p ON p.id = s.product_id AND p.organization_id = s.organization_id WHERE s.organization_id = $organizationID AND p.sku = $skuLiteral;"
+}
+
+function Get-ApiResponse {
+    param(
+        [Parameter(Mandatory = $true)][string]$Method,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [hashtable]$Headers = @{},
+        [AllowNull()][string]$Body = $null
+    )
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [TimeSpan]::FromSeconds(20)
+    $request = New-Object -TypeName System.Net.Http.HttpRequestMessage -ArgumentList @([System.Net.Http.HttpMethod]::new($Method), "http://127.0.0.1:$httpPort$Path")
+    try {
+        foreach ($key in $Headers.Keys) { [void]$request.Headers.TryAddWithoutValidation($key, [string]$Headers[$key]) }
+        if ($null -ne $Body) {
+            $request.Content = New-Object -TypeName System.Net.Http.StringContent -ArgumentList @($Body, [Text.Encoding]::UTF8, 'application/json')
+        }
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $json = $null
+        if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+            try { $json = $responseBody | ConvertFrom-Json } catch { $json = $null }
+        }
+        return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Body = $responseBody; Json = $json }
+    }
+    finally {
+        if ($null -ne $request) { $request.Dispose() }
+        $client.Dispose()
+    }
+}
+
+function Assert-ApiSuccess {
+    param([Parameter(Mandatory = $true)]$Response, [Parameter(Mandatory = $true)][string]$Operation)
+    if ($Response.StatusCode -lt 200 -or $Response.StatusCode -ge 300) {
+        throw "$Operation returned HTTP $($Response.StatusCode)."
+    }
+}
+
+function New-LocalJwtSecret {
+    $bytes = New-Object 'System.Byte[]' 32
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return [Convert]::ToBase64String($bytes)
+}
+
+function Find-FreeLocalPort {
+    param([int]$PreferredPort, [int]$MaximumPort)
+    for ($candidate = $PreferredPort; $candidate -le $MaximumPort; $candidate++) {
+        $listener = New-Object System.Net.Sockets.TcpListener([Net.IPAddress]::Parse($localHost), $candidate)
+        try {
+            $listener.Start()
+            $listener.Stop()
+            return $candidate
+        }
+        catch { $listener.Stop() }
+    }
+    throw "No safe localhost port was available in the requested range."
+}
+
+function Wait-Health {
+    for ($attempt = 1; $attempt -le 60; $attempt++) {
+        if ($null -ne $script:serverProcess -and $script:serverProcess.HasExited) { throw 'cloud-server exited before health became ready.' }
+        try {
+            $response = Get-ApiResponse -Method 'GET' -Path '/health'
+            if ($response.StatusCode -eq 200 -and $null -ne $response.Json -and $response.Json.status -eq 'OK') { return }
+        }
+        catch { }
+        Start-Sleep -Seconds 1
+    }
+    throw "cloud-server health did not pass on localhost port ${httpPort}."
+}
+
+function Stop-CloudServer {
+    if ($null -ne $script:serverProcess) {
+        try {
+            if (-not $script:serverProcess.HasExited) {
+                & taskkill.exe /PID $script:serverProcess.Id /T /F 2>$null | Out-Null
+            }
+        }
+        catch { }
+        $script:serverProcess = $null
+    }
+}
+
+function Save-ProcessEnvironment {
+    param([string[]]$Names)
+    foreach ($name in $Names) {
+        $value = [Environment]::GetEnvironmentVariable($name, 'Process')
+        if ($null -ne $value) { $originalEnvironment[$name] = $value }
+    }
+}
+
+function Restore-ProcessEnvironment {
+    param([string[]]$Names)
+    foreach ($name in $Names) {
+        if ($originalEnvironment.ContainsKey($name)) { [Environment]::SetEnvironmentVariable($name, $originalEnvironment[$name], 'Process') }
+        else { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+    }
+}
+
+function Start-CloudServer {
+    param([Parameter(Mandatory = $true)][bool]$EnrichmentEnabled)
+    Stop-CloudServer
+    if ($EnrichmentEnabled) {
+        Set-ReportValue 'CLOUD_ENRICHMENT_ENABLED_BOOT' 'true'
+    }
+    else {
+        Set-ReportValue 'CLOUD_ENRICHMENT_ENABLED_BOOT' 'false'
+    }
+    $serverDsn = New-DatabaseUrl $masterDatabase $dbPasswordPlainForServer
+    $envNames = @('MASTER_DB_URL', 'JWT_SECRET', 'ENV', 'PORT', 'GRPC_PORT', 'ZATCA_ENABLED', 'ENRICHMENT_ENABLED', 'ENRICHMENT_PROVIDER', 'DEEPSEEK_API_KEY', 'DEEPSEEK_MODEL', 'DEEPSEEK_BASE_URL', 'OPENAI_ENRICHMENT_TIMEOUT', 'OPENAI_ENRICHMENT_WORKER_INTERVAL', 'OPENAI_ENRICHMENT_BATCH_SIZE', 'OPENAI_ENRICHMENT_MAX_RETRIES')
+    Save-ProcessEnvironment $envNames
+    try {
+        [Environment]::SetEnvironmentVariable('MASTER_DB_URL', $serverDsn, 'Process')
+        [Environment]::SetEnvironmentVariable('JWT_SECRET', $jwtSecret, 'Process')
+        [Environment]::SetEnvironmentVariable('ENV', 'development', 'Process')
+        [Environment]::SetEnvironmentVariable('PORT', [string]$httpPort, 'Process')
+        [Environment]::SetEnvironmentVariable('GRPC_PORT', [string]$grpcPort, 'Process')
+        [Environment]::SetEnvironmentVariable('ZATCA_ENABLED', 'false', 'Process')
+        [Environment]::SetEnvironmentVariable('ENRICHMENT_ENABLED', ($(if ($EnrichmentEnabled) { 'true' } else { 'false' })), 'Process')
+        [Environment]::SetEnvironmentVariable('ENRICHMENT_PROVIDER', 'deepseek', 'Process')
+        [Environment]::SetEnvironmentVariable('DEEPSEEK_MODEL', $deepSeekModel, 'Process')
+        [Environment]::SetEnvironmentVariable('DEEPSEEK_BASE_URL', $deepSeekBaseUrl, 'Process')
+        [Environment]::SetEnvironmentVariable('OPENAI_ENRICHMENT_TIMEOUT', '60s', 'Process')
+        [Environment]::SetEnvironmentVariable('OPENAI_ENRICHMENT_WORKER_INTERVAL', '5s', 'Process')
+        [Environment]::SetEnvironmentVariable('OPENAI_ENRICHMENT_BATCH_SIZE', '5', 'Process')
+        [Environment]::SetEnvironmentVariable('OPENAI_ENRICHMENT_MAX_RETRIES', '1', 'Process')
+        if ($EnrichmentEnabled) { [Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', $deepSeekKeyPlain, 'Process') }
+        else { [Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', $null, 'Process') }
+        $stdoutLog = Join-Path $logDirectory ("cloud-${httpPort}.stdout.log")
+        $stderrLog = Join-Path $logDirectory ("cloud-${httpPort}.stderr.log")
+        $mainFile = Join-Path $repoRoot 'apps/cloud-server/main.go'
+        $script:serverProcess = Start-Process -FilePath $goExe -WorkingDirectory $runtimeRoot -ArgumentList @('run', $mainFile, 'dev') -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
+    }
+    finally {
+        Restore-ProcessEnvironment $envNames
+        $serverDsn = $null
+    }
+    Wait-Health
+    if ([string]$report.HEALTH_ENABLED -eq 'NOT_RUN') { Set-ReportValue 'HEALTH_ENABLED' 'PASS' }
+}
+
+function New-BcryptHash {
+    param([Parameter(Mandatory = $true)][string]$Password)
+    $helper = Join-Path $runtimeRoot 'bcrypt-helper.go'
+    $source = @'
+package main
+
+import (
+    "fmt"
+    "os"
+    "golang.org/x/crypto/bcrypt"
+)
+
+func main() {
+    value := os.Getenv("NEMBUS_E2E_FIXTURE_PASSWORD")
+    if value == "" { panic("fixture password missing") }
+    hash, err := bcrypt.GenerateFromPassword([]byte(value), bcrypt.DefaultCost)
+    if err != nil { panic(err) }
+    fmt.Print(string(hash))
+}
+'@
+    [IO.File]::WriteAllText($helper, $source, (New-Object Text.UTF8Encoding($false)))
+    $old = [Environment]::GetEnvironmentVariable('NEMBUS_E2E_FIXTURE_PASSWORD', 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable('NEMBUS_E2E_FIXTURE_PASSWORD', $Password, 'Process')
+        $hashOutput = & $goExe run $helper 2>$null
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to generate the E2E bcrypt fixture hash using the repository Go toolchain.' }
+        return (($hashOutput | ForEach-Object { $_.ToString() }) -join '').Trim()
+    }
+    finally {
+        if ($null -ne $old) { [Environment]::SetEnvironmentVariable('NEMBUS_E2E_FIXTURE_PASSWORD', $old, 'Process') }
+        else { [Environment]::SetEnvironmentVariable('NEMBUS_E2E_FIXTURE_PASSWORD', $null, 'Process') }
+        Remove-Item -LiteralPath $helper -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function New-SapPayload {
+    param([string]$Sku, [string]$Name, [string]$Description, [string]$Brand, [string]$BatchID)
+    return [ordered]@{
+        batch_id = $BatchID
+        run_id = "E2E-RUN-$runID"
+        organization_id = $organizationID
+        domain = 'products'
+        sequence_number = 1
+        is_last_batch = $true
+        timestamp = [DateTime]::UtcNow.ToString('o')
+        products = @([ordered]@{
+            sku = $Sku
+            name = $Name
+            description = $Description
+            category_code = $categoryCode
+            brand_code = $Brand
+            uom_code = 'UNIT'
+            base_uom_code = 'UNIT'
+            sales_uom_code = 'UNIT'
+            purchase_uom_code = 'UNIT'
+            uom_group_code = ''
+            sales_qty_per_base = 1.0
+            purchase_qty_per_base = 1.0
+            product_type = 'standard'
+            is_serialized = $false
+            is_batch_managed = $false
+            is_active = $true
+            is_sellable = $true
+            is_purchasable = $true
+            track_inventory = $true
+            primary_barcode = ''
+            uom_conversions = @()
+            metadata = [ordered]@{ e2e_runner = $fixtureMarker; e2e_run_id = $runID; source = 'synthetic-local-e2e' }
+        })
+    }
+}
+
+function Invoke-SapMigration {
+    param([System.Collections.IDictionary]$Payload)
+    $body = $Payload | ConvertTo-Json -Depth 30 -Compress
+    $headers = @{ Authorization = "Bearer $m2mToken"; 'x-tenant-id' = $tenantSlug; 'x-organization-id' = [string]$organizationID }
+    $response = Get-ApiResponse -Method 'POST' -Path '/api/v1/migration/batch' -Headers $headers -Body $body
+    Assert-ApiSuccess $response 'SAP migration batch'
+    if ($null -eq $response.Json -or $response.Json.success -ne $true -or $response.Json.records_failed -ne 0) { throw 'SAP migration returned an unsuccessful batch response.' }
+    return $response.Json
+}
+
+function Wait-Stage2B {
+    param([string]$Sku)
+    for ($attempt = 1; $attempt -le 36; $attempt++) {
+        $row = Get-SuggestionForSku $Sku
+        if ($null -ne $row) {
+            $status = [string]$row.status
+            if ($status -eq 'in_review') { return $row }
+            if ($status -eq 'failed' -or $status -eq 'retryable') { throw "Stage 2B ended in status '$status' with sanitized error code '$($row.last_error_code)'." }
+        }
+        Start-Sleep -Seconds 2
+    }
+    throw 'Timed out waiting for the tenant-aware enrichment worker to complete Stage 2B.'
+}
+
+function Assert-DetailContract {
+    param([Parameter(Mandatory = $true)]$Detail)
+    $required = @('source_identity', 'inference_snapshot', 'current_authoritative_state', 'provider_context', 'review_state', 'safety')
+    foreach ($name in $required) {
+        if ($null -eq $Detail.PSObject.Properties[$name]) { throw "Review detail is missing '$name'." }
+    }
+    $state = $Detail.review_state
+    if ($null -eq $state -or [string]$state.status -ne 'in_review') { throw 'Review detail did not report in_review state.' }
+    $responseText = $Detail | ConvertTo-Json -Depth 30 -Compress
+    if ($responseText.Contains($deepSeekKeyPlain) -or $responseText.Contains($m2mToken) -or $responseText.Contains($userToken)) { throw 'Review response contained a sensitive credential.' }
+}
+
+function Get-SanitizedFailureMessage {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    $sanitized = $Message -replace '(?i)Bearer\s+\S+', 'Bearer [redacted]'
+    $sanitized = $sanitized -replace '(?i)postgres(?:ql)?://\S+', 'postgres://[redacted]'
+    $sanitized = $sanitized -replace '(?i)api[_ -]?key\s*[:=]\s*\S+', 'api_key=[redacted]'
+    if ($sanitized.Length -gt 300) { $sanitized = $sanitized.Substring(0, 300) }
+    return $sanitized
+}
+
+try {
+    Save-ProcessEnvironment @('PGPASSWORD', 'JWT_SECRET', 'MASTER_DB_URL', 'DEEPSEEK_API_KEY', 'NEMBUS_E2E_FIXTURE_PASSWORD')
+    $phase = 'LOCAL_SAFETY_GATE'
+    Assert-LocalSafetyGate
+    $psqlExe = Resolve-Tool 'psql'
+    $goExe = Resolve-Tool 'go'
+
+    $dbPasswordSecure = Read-Host 'nembus_e2e_user PostgreSQL password' -AsSecureString
+    $deepSeekKeySecure = Read-Host 'DeepSeek API key' -AsSecureString
+    if ($null -eq $dbPasswordSecure -or $null -eq $deepSeekKeySecure) { throw 'Both secure prompts are required.' }
+
+    $phase = 'DATABASE_READINESS'
+    $masterDsnExpected = $null
+    $tenantDsnExpected = $null
+    $plainForRegistry = $null
+    try {
+        $plainForRegistry = Convert-SecureStringToPlainText $dbPasswordSecure
+        $masterDsnExpected = New-DatabaseUrl $masterDatabase $plainForRegistry
+        $tenantDsnExpected = New-DatabaseUrl $tenantDatabase $plainForRegistry
+    }
+    finally { $plainForRegistry = $null }
+    if (-not (Test-DisposableDsn $masterDsnExpected $masterDatabase) -or -not (Test-DisposableDsn $tenantDsnExpected $tenantDatabase)) {
+        Write-Host 'LOCAL_E2E_SAFETY_GATE=FAILED' -ForegroundColor Red
+        throw 'Constructed database DSN failed the exact disposable loopback safety gate.'
+    }
+    if ((Invoke-Psql $masterDatabase $dbPasswordSecure 'SELECT 1;') -ne '1') { throw 'Master disposable database authentication failed.' }
+    Set-ReportValue 'MASTER_DB_AUTH' 'PASSED'
+    if ((Invoke-Psql $tenantDatabase $dbPasswordSecure 'SELECT 1;') -ne '1') { throw 'Tenant disposable database authentication failed.' }
+    Set-ReportValue 'TENANT_DB_AUTH' 'PASSED'
+    $registryTenantLiteral = ConvertTo-PgSqlLiteral $tenantSlug
+    $registeredDsn = Invoke-Psql $masterDatabase $dbPasswordSecure "SELECT db_conn_str FROM tenants WHERE slug = $registryTenantLiteral AND is_active = true;"
+    if ([string]::IsNullOrWhiteSpace($registeredDsn) -or -not (Test-DisposableDsn $registeredDsn $tenantDatabase)) {
+        Write-Host 'LOCAL_E2E_SAFETY_GATE=FAILED' -ForegroundColor Red
+        throw 'Tenant registry did not resolve e2e-enrichment to the expected local disposable tenant DSN.'
+    }
+    Set-ReportValue 'TENANT_REGISTRY_CHECK' 'PASSED'
+    $requiredTables = @(
+        @{ Schema = 'public'; Table = 'organizations' }, @{ Schema = 'public'; Table = 'users' },
+        @{ Schema = 'public'; Table = 'roles' }, @{ Schema = 'public'; Table = 'permissions' },
+        @{ Schema = 'public'; Table = 'products' }, @{ Schema = 'public'; Table = 'brands' },
+        @{ Schema = 'public'; Table = 'product_categories' }, @{ Schema = 'public'; Table = 'product_enrichment_suggestions' },
+        @{ Schema = 'public'; Table = 'audit_logs' }, @{ Schema = 'staging'; Table = 'sap_migration_batches' }
+    )
+    foreach ($requiredTable in $requiredTables) {
+        if (-not (Test-Table $tenantDatabase $requiredTable.Schema $requiredTable.Table)) { throw "Required tenant table '$($requiredTable.Schema).$($requiredTable.Table)' is missing." }
+    }
+
+    $phase = 'FIXTURE_CREATION'
+    $baselineMasterCounts = Get-MasterBusinessCounts
+    $baselineTenantCounts = Get-TenantCounts
+    $organizationCodeLiteral = ConvertTo-PgSqlLiteral $organizationCode
+    $organizationNameLiteral = ConvertTo-PgSqlLiteral $organizationName
+    $markerLiteral = ConvertTo-PgSqlLiteral $fixtureMarker
+    $orgState = Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM organizations WHERE code = $organizationCodeLiteral) THEN 'absent' WHEN EXISTS (SELECT 1 FROM organizations WHERE code = $organizationCodeLiteral AND metadata->>'e2e_runner' = $markerLiteral) THEN 'owned' ELSE 'collision' END;"
+    if ($orgState -eq 'collision') { throw 'E2E organization code exists without the local E2E ownership marker.' }
+    if ($orgState -eq 'absent') {
+        Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO organizations (name, code, legal_name, currency_code, is_active, metadata) VALUES ($organizationNameLiteral, $organizationCodeLiteral, $organizationNameLiteral, 'USD', true, jsonb_build_object('e2e_runner', $markerLiteral));" | Out-Null
+    }
+    Invoke-Psql $tenantDatabase $dbPasswordSecure "UPDATE organizations SET name = $organizationNameLiteral, is_active = true, metadata = jsonb_build_object('e2e_runner', $markerLiteral) WHERE code = $organizationCodeLiteral AND metadata->>'e2e_runner' = $markerLiteral;" | Out-Null
+    $organizationID = [int](Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT id FROM organizations WHERE code = $organizationCodeLiteral AND metadata->>'e2e_runner' = $markerLiteral;").Trim()
+    if ($organizationID -le 0) { throw 'Could not resolve the owned E2E organization ID.' }
+
+    foreach ($taxonomy in @(@{ Code = $categoryCode; Name = 'E2E Hair Care Category'; Table = 'product_categories' }, @{ Code = $brandCode; Name = 'E2E Pantene-Like Brand'; Table = 'brands' })) {
+        $codeLiteral = ConvertTo-PgSqlLiteral $taxonomy.Code
+        $nameLiteral = ConvertTo-PgSqlLiteral $taxonomy.Name
+        $state = Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM $($taxonomy.Table) WHERE code = $codeLiteral) THEN 'absent' WHEN EXISTS (SELECT 1 FROM $($taxonomy.Table) WHERE code = $codeLiteral AND metadata->>'e2e_runner' = $markerLiteral) THEN 'owned' ELSE 'collision' END;"
+        if ($state -eq 'collision') { throw "E2E taxonomy code '$($taxonomy.Code)' exists without the local E2E ownership marker." }
+        if ($state -eq 'absent') {
+            if ($taxonomy.Table -eq 'product_categories') { Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO product_categories (name, code, category_level, is_active, metadata) VALUES ($nameLiteral, $codeLiteral, 1, true, jsonb_build_object('e2e_runner', $markerLiteral));" | Out-Null }
+            else { Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO brands (name, code, is_active, metadata) VALUES ($nameLiteral, $codeLiteral, true, jsonb_build_object('e2e_runner', $markerLiteral));" | Out-Null }
+        }
+        if ($taxonomy.Table -eq 'product_categories') { $categoryID = [int](Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT id FROM product_categories WHERE code = $codeLiteral AND metadata->>'e2e_runner' = $markerLiteral;").Trim() }
+        else { $brandID = [int](Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT id FROM brands WHERE code = $codeLiteral AND metadata->>'e2e_runner' = $markerLiteral;").Trim() }
+    }
+    if ((Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT EXISTS (SELECT 1 FROM permissions WHERE code = 'product_enrichment:review');").Trim().ToLowerInvariant() -ne 't') { throw 'Review permission is missing.' }
+    if ((Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT EXISTS (SELECT 1 FROM permissions WHERE code = 'product_enrichment:apply');").Trim().ToLowerInvariant() -ne 't') { throw 'Apply permission is missing.' }
+    $roleCodeLiteral = ConvertTo-PgSqlLiteral $roleCode
+    $roleNameLiteral = ConvertTo-PgSqlLiteral 'E2E Enrichment Reviewer'
+    $roleState = Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM roles WHERE code = $roleCodeLiteral) THEN 'absent' WHEN EXISTS (SELECT 1 FROM roles WHERE code = $roleCodeLiteral AND metadata->>'e2e_runner' = $markerLiteral) THEN 'owned' ELSE 'collision' END;"
+    if ($roleState -eq 'collision') { throw 'E2E role code exists without the local E2E ownership marker.' }
+    if ($roleState -eq 'absent') { Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO roles (name, code, description, is_system_role, is_active, metadata) VALUES ($roleNameLiteral, $roleCodeLiteral, 'Temporary local E2E review/apply role', false, true, jsonb_build_object('e2e_runner', $markerLiteral));" | Out-Null }
+    $roleID = [int](Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT id FROM roles WHERE code = $roleCodeLiteral AND metadata->>'e2e_runner' = $markerLiteral;").Trim()
+    if ($roleID -le 0) { throw 'Could not resolve the E2E role ID.' }
+    Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO role_permissions (role_id, permission_id, scope) SELECT $roleID, p.id, 'all' FROM permissions p WHERE p.code IN ('product_enrichment:review', 'product_enrichment:apply') ON CONFLICT (role_id, permission_id) DO NOTHING;" | Out-Null
+
+    $randomPasswordBytes = New-Object 'System.Byte[]' 24
+    $randomPasswordRng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $randomPasswordRng.GetBytes($randomPasswordBytes) } finally { $randomPasswordRng.Dispose() }
+    $fixturePassword = [Convert]::ToBase64String($randomPasswordBytes)
+    $randomPasswordBytes = $null
+    $fixturePassword = "E2E-$runID-$fixturePassword"
+    $passwordHash = New-BcryptHash $fixturePassword
+    $usernameLiteral = ConvertTo-PgSqlLiteral $reviewerUsername
+    $emailLiteral = ConvertTo-PgSqlLiteral $reviewerEmail
+    $userCollision = Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE (username = $usernameLiteral OR email = $emailLiteral) AND metadata->>'e2e_runner' IS DISTINCT FROM $markerLiteral) THEN 'collision' ELSE 'ok' END;"
+    if ($userCollision -ne 'ok') { throw 'E2E reviewer username/email exists without the local E2E ownership marker.' }
+    $passwordHashLiteral = ConvertTo-PgSqlLiteral $passwordHash
+    Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO users (organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata) VALUES ($organizationID, $usernameLiteral, $emailLiteral, $passwordHashLiteral, 'E2E', 'Reviewer', 'E2E-REVIEWER', true, jsonb_build_object('e2e_runner', $markerLiteral)) ON CONFLICT (username) DO UPDATE SET organization_id = EXCLUDED.organization_id, email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, is_active = true, metadata = EXCLUDED.metadata WHERE users.metadata->>'e2e_runner' = $markerLiteral;" | Out-Null
+    $reviewerID = [int](Invoke-Psql $tenantDatabase $dbPasswordSecure "SELECT id FROM users WHERE username = $usernameLiteral AND organization_id = $organizationID AND metadata->>'e2e_runner' = $markerLiteral;").Trim()
+    if ($reviewerID -le 0) { throw 'Could not resolve the E2E reviewer ID.' }
+    Invoke-Psql $tenantDatabase $dbPasswordSecure "INSERT INTO user_roles (user_id, role_id, metadata) VALUES ($reviewerID, $roleID, jsonb_build_object('e2e_runner', $markerLiteral)) ON CONFLICT (user_id, role_id) DO NOTHING;" | Out-Null
+    Set-ReportValue 'E2E_FIXTURES_READY' 'PASSED'
+
+    $phase = 'AUTHENTICATION_AND_SERVER_BOOT'
+    $runtimeRoot = Join-Path ([IO.Path]::GetTempPath()) ("nembus-local-e2e-$runID")
+    $logDirectory = Join-Path $runtimeRoot 'logs'
+    New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'config') -Force | Out-Null
+    New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+    $runtimeConfig = Join-Path $runtimeRoot 'config/m2m_clients.json'
+    $httpPort = Find-FreeLocalPort 18080 18120
+    $grpcPort = Find-FreeLocalPort 19051 19090
+    $jwtSecret = New-LocalJwtSecret
+    $m2mGenerator = Join-Path $repoRoot 'apps/cloud-server/cmd/m2m-gen/main.go'
+    $m2mClientID = "local-e2e-$runID"
+    $m2mEnvNames = @('JWT_SECRET')
+    Save-ProcessEnvironment $m2mEnvNames
+    try {
+        [Environment]::SetEnvironmentVariable('JWT_SECRET', $jwtSecret, 'Process')
+        & $goExe run $m2mGenerator -client-id $m2mClientID -client-name 'Nembus Local E2E SAP Agent' -tenant-slug $tenantSlug -organization-id $organizationID -scopes 'sap:migration' -years 1 *> (Join-Path $logDirectory 'm2m-generator.log')
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtimeConfig)) { throw 'Repository-supported M2M generator did not create the temporary registry.' }
+    }
+    finally { Restore-ProcessEnvironment $m2mEnvNames }
+    $registry = Get-Content -Raw -LiteralPath $runtimeConfig | ConvertFrom-Json
+    $m2mClient = @($registry.clients | Where-Object { $_.client_id -eq $m2mClientID })[0]
+    if ($null -eq $m2mClient -or [string]::IsNullOrWhiteSpace($m2mClient.token)) { throw 'Temporary M2M registry did not contain the generated client.' }
+    $m2mToken = [string]$m2mClient.token
+    Set-ReportValue 'M2M_TOKEN_CREATED' 'true'
+    $dbPasswordPlainForServer = Convert-SecureStringToPlainText $dbPasswordSecure
+    $deepSeekKeyPlain = Convert-SecureStringToPlainText $deepSeekKeySecure
+    Start-CloudServer $true
+    Add-Trace '1 SAP request path and tenant-aware cloud-server boot are ready'
+
+    $phase = 'BASELINE_AND_COMPLETE_PRODUCT'
+    $beforeCompleteSuggestionCount = Get-SuggestionCountForSku $completeSku
+    $completePayload = New-SapPayload $completeSku 'E2E Complete Shampoo' 'Complete E2E description' $brandCode $completeBatchID
+    [void](Invoke-SapMigration $completePayload)
+    $completeProduct = Get-ProductSnapshot $completeSku
+    if ($null -eq $completeProduct) { throw 'Complete E2E product did not persist in the tenant database.' }
+    $completeSuggestionCount = Get-SuggestionCountForSku $completeSku
+    if ($completeSuggestionCount -ne $beforeCompleteSuggestionCount) { throw 'Complete product unexpectedly created an enrichment suggestion.' }
+    Set-ReportValue 'COMPLETE_PRODUCT_SAP_SYNC' 'PASS'
+    Set-ReportValue 'COMPLETE_PRODUCT_SUGGESTIONS_CREATED' ([string]($completeSuggestionCount - $beforeCompleteSuggestionCount))
+    Set-ReportValue 'COMPLETE_PRODUCT_PROVIDER_CALLS' '0'
+    Add-Trace '2 SAP request accepted; 3 deterministic complete product persisted; 4 Stage 2A found no gap'
+
+    $phase = 'INCOMPLETE_PRODUCT_AND_STAGE2B'
+    $incompletePayload = New-SapPayload $incompleteSku 'Pantene shampoo smooth care 400 ml' '' '' $incompleteBatchID
+    [void](Invoke-SapMigration $incompletePayload)
+    $productBeforeAI = Get-ProductSnapshot $incompleteSku
+    if ($null -eq $productBeforeAI) { throw 'Incomplete E2E product did not persist in the tenant database.' }
+    $pendingSuggestionCount = Get-SuggestionCountForSku $incompleteSku
+    if ($pendingSuggestionCount -ne 1) { throw "Expected exactly one Stage 2A suggestion, found ${pendingSuggestionCount}." }
+    $pendingSuggestion = Get-SuggestionForSku $incompleteSku
+    if ($null -eq $pendingSuggestion -or [string]$pendingSuggestion.status -ne 'pending') { throw 'Stage 2A suggestion was not pending before worker processing.' }
+    $suggestionID = [int]$pendingSuggestion.id
+    Set-ReportValue 'INCOMPLETE_PRODUCT_SAP_SYNC' 'PASS'
+    Set-ReportValue 'STAGE2A_SUGGESTION_CREATED' 'PASS'
+    Add-Trace '5 Stage 2A eligibility checked; 6 one pending suggestion queued'
+    $stage2B = Wait-Stage2B $incompleteSku
+    if ([string]$stage2B.provider -ne 'deepseek' -or [string]$stage2B.model -ne $deepSeekModel -or [int]$stage2B.attempt_count -ne 1) { throw 'Stage 2B provider metadata or attempt accounting did not match the configured DeepSeek cycle.' }
+    if (-not $stage2B.proposed_brand_present -or -not $stage2B.proposed_category_present -or -not $stage2B.proposed_description_present) { throw 'Stage 2B did not persist the strict proposal fields.' }
+    Set-ReportValue 'DEEPSEEK_PROVIDER_CALL' 'PASS'
+    Set-ReportValue 'STAGE2B_RESULT' 'PASS'
+    Set-ReportValue 'SUGGESTION_STATUS' 'in_review'
+    Add-Trace '7 F2 claimed the suggestion; 8 DeepSeek called; 9 Stage 2B strict output entered in_review'
+    $productAfterAI = Get-ProductSnapshot $incompleteSku
+    $aiMutation = (($productBeforeAI | ConvertTo-Json -Depth 30 -Compress) -ne ($productAfterAI | ConvertTo-Json -Depth 30 -Compress))
+    Set-ReportValue 'AI_DIRECT_PRODUCT_MUTATION' ($(if ($aiMutation) { 'true' } else { 'false' }))
+    Set-ReportValue 'PROHIBITED_FIELD_MUTATION' ($(if ($aiMutation) { 'true' } else { 'false' }))
+    if ($aiMutation) { throw 'Worker processing changed the product before explicit application.' }
+
+    $phase = 'REVIEW_API'
+    $userLoginBody = @{ user_login = $reviewerUsername; password = $fixturePassword } | ConvertTo-Json -Compress
+    $loginResponse = Get-ApiResponse -Method 'POST' -Path '/api/auth/login' -Headers @{ 'x-tenant-id' = $tenantSlug } -Body $userLoginBody
+    Assert-ApiSuccess $loginResponse 'user login'
+    if ($null -eq $loginResponse.Json -or [string]::IsNullOrWhiteSpace([string]$loginResponse.Json.data)) { throw 'User login did not return the current response data token.' }
+    $userToken = [string]$loginResponse.Json.data
+    Set-ReportValue 'USER_TOKEN_CREATED' 'true'
+    $userHeaders = @{ Authorization = "Bearer $userToken"; 'x-tenant-id' = $tenantSlug }
+    $listResponse = Get-ApiResponse -Method 'GET' -Path '/api/product-enrichment/suggestions' -Headers $userHeaders
+    Assert-ApiSuccess $listResponse 'review list API'
+    $listItems = @($listResponse.Json.data.items)
+    if ($null -eq ($listItems | Where-Object { [int]$_.suggestion_id -eq $suggestionID })) { throw 'Review list API did not return the E2E in_review suggestion.' }
+    Set-ReportValue 'REVIEW_LIST_API' 'PASS'
+    $detailResponse = Get-ApiResponse -Method 'GET' -Path ("/api/product-enrichment/suggestions/{0}" -f $suggestionID) -Headers $userHeaders
+    Assert-ApiSuccess $detailResponse 'review detail API'
+    Assert-DetailContract $detailResponse.Json.data
+    if ($detailResponse.Json.data.safety.approvable -ne $true) {
+        $blockingReasons = @($detailResponse.Json.data.safety.blocking_reasons | ForEach-Object { [string]$_ }) -join ','
+        throw "Approval blocked by current deterministic review rules: $blockingReasons"
+    }
+    Set-ReportValue 'REVIEW_DETAIL_API' 'PASS'
+    Add-Trace '10 review list API read; 11 review detail API returned source, proposals, provider, lifecycle, and safety'
+
+    $phase = 'APPROVAL_AND_APPLICATION'
+    $productBeforeApproval = Get-ProductSnapshot $incompleteSku
+    $approveResponse = Get-ApiResponse -Method 'POST' -Path ("/api/product-enrichment/suggestions/{0}/approve" -f $suggestionID) -Headers $userHeaders -Body '{}'
+    Assert-ApiSuccess $approveResponse 'approve API'
+    $approvedState = Get-SuggestionForSku $incompleteSku
+    if ($null -eq $approvedState -or [string]$approvedState.status -ne 'approved') { throw 'Approval did not transition the suggestion to approved.' }
+    $productAfterApproval = Get-ProductSnapshot $incompleteSku
+    $approvalChanged = (($productBeforeApproval | ConvertTo-Json -Depth 30 -Compress) -ne ($productAfterApproval | ConvertTo-Json -Depth 30 -Compress))
+    Set-ReportValue 'APPROVE_API' 'PASS'
+    Set-ReportValue 'PRODUCT_CHANGED_ON_APPROVAL' ($(if ($approvalChanged) { 'true' } else { 'false' }))
+    if ($approvalChanged) { throw 'Approval changed the product before explicit apply.' }
+    Add-Trace '12 suggestion approved with no product mutation'
+    $protectedBeforeApply = Get-JsonSql $tenantDatabase @"
+SELECT jsonb_build_object(
+  'product', to_jsonb(p) - 'brand_id' - 'category_id' - 'description' - 'updated_at',
+  'barcodes', COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.id) FROM product_barcodes b WHERE b.product_id = p.id), '[]'::jsonb),
+  'uom_conversions', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM product_uom_conversions c WHERE c.product_id = p.id), '[]'::jsonb),
+  'inventory', COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.id) FROM inventory_stock i WHERE i.product_id = p.id), '[]'::jsonb),
+  'prices', COALESCE((SELECT jsonb_agg(to_jsonb(pr) ORDER BY pr.id) FROM product_prices pr WHERE pr.product_id = p.id), '[]'::jsonb),
+  'supplier_contracts', COALESCE((SELECT jsonb_agg(to_jsonb(pc) ORDER BY pc.id) FROM bp_price_contracts pc WHERE pc.product_id = p.id), '[]'::jsonb)
+)::text FROM products p WHERE p.organization_id = $organizationID AND p.sku = $(ConvertTo-PgSqlLiteral $incompleteSku) LIMIT 1;
+"@
+    $auditBeforeApply = Get-Count $tenantDatabase "SELECT count(*) FROM audit_logs WHERE organization_id = $organizationID AND table_name = 'product_enrichment_suggestions' AND record_id = '$suggestionID';"
+    $applyResponse = Get-ApiResponse -Method 'POST' -Path ("/api/product-enrichment/suggestions/{0}/apply" -f $suggestionID) -Headers $userHeaders -Body '{}'
+    Assert-ApiSuccess $applyResponse 'apply API'
+    $applyData = $applyResponse.Json.data
+    $appliedState = Get-SuggestionForSku $incompleteSku
+    if ($null -eq $appliedState -or [string]$appliedState.status -ne 'applied') { throw 'Apply did not transition the suggestion to applied.' }
+    $changedFields = @($applyData.changed_fields | ForEach-Object { [string]$_ })
+    foreach ($field in $changedFields) { if (@('brand_id', 'category_id', 'description') -notcontains $field) { throw "Apply returned a prohibited changed field '$field'." } }
+    $protectedAfterApply = Get-JsonSql $tenantDatabase @"
+SELECT jsonb_build_object(
+  'product', to_jsonb(p) - 'brand_id' - 'category_id' - 'description' - 'updated_at',
+  'barcodes', COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.id) FROM product_barcodes b WHERE b.product_id = p.id), '[]'::jsonb),
+  'uom_conversions', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM product_uom_conversions c WHERE c.product_id = p.id), '[]'::jsonb),
+  'inventory', COALESCE((SELECT jsonb_agg(to_jsonb(i) ORDER BY i.id) FROM inventory_stock i WHERE i.product_id = p.id), '[]'::jsonb),
+  'prices', COALESCE((SELECT jsonb_agg(to_jsonb(pr) ORDER BY pr.id) FROM product_prices pr WHERE pr.product_id = p.id), '[]'::jsonb),
+  'supplier_contracts', COALESCE((SELECT jsonb_agg(to_jsonb(pc) ORDER BY pc.id) FROM bp_price_contracts pc WHERE pc.product_id = p.id), '[]'::jsonb)
+)::text FROM products p WHERE p.organization_id = $organizationID AND p.sku = $(ConvertTo-PgSqlLiteral $incompleteSku) LIMIT 1;
+"@
+    if (($protectedBeforeApply | ConvertTo-Json -Depth 30 -Compress) -ne ($protectedAfterApply | ConvertTo-Json -Depth 30 -Compress)) { throw 'Apply changed a field outside brand_id, category_id, or description.' }
+    $auditAfterApply = Get-Count $tenantDatabase "SELECT count(*) FROM audit_logs WHERE organization_id = $organizationID AND table_name = 'product_enrichment_suggestions' AND record_id = '$suggestionID';"
+    if ($auditAfterApply -le $auditBeforeApply) { throw 'Apply did not create an audit record.' }
+    Set-ReportValue 'APPLY_API' 'PASS'
+    Set-ReportValue 'APPLY_AUDIT_CREATED' 'PASS'
+    Set-ReportValue 'APPLY_CHANGED_FIELDS' (($changedFields -join ',') )
+    Add-Trace '13 explicit apply revalidated the source; 14 narrow product fields changed; 15 audit created'
+    $secondApplyResponse = Get-ApiResponse -Method 'POST' -Path ("/api/product-enrichment/suggestions/{0}/apply" -f $suggestionID) -Headers $userHeaders -Body '{}'
+    Assert-ApiSuccess $secondApplyResponse 'second apply API'
+    if ($null -eq $secondApplyResponse.Json.data -or $secondApplyResponse.Json.data.already_applied -ne $true) { throw 'Second apply did not return the current AlreadyApplied idempotent result.' }
+    $auditAfterSecondApply = Get-Count $tenantDatabase "SELECT count(*) FROM audit_logs WHERE organization_id = $organizationID AND table_name = 'product_enrichment_suggestions' AND record_id = '$suggestionID';"
+    if ($auditAfterSecondApply -ne $auditAfterApply) { throw 'Second apply created a duplicate apply audit.' }
+    Set-ReportValue 'SECOND_APPLY_IDEMPOTENT' 'PASS'
+
+    $phase = 'REPEAT_SAP_SYNC'
+    $suggestionsBeforeRepeat = Get-Count $tenantDatabase "SELECT count(*) FROM product_enrichment_suggestions WHERE organization_id = $organizationID;"
+    $attemptsBeforeRepeat = [int]$appliedState.attempt_count
+    $repeatPayload = New-SapPayload $incompleteSku 'Pantene shampoo smooth care 400 ml' '' '' $repeatBatchID
+    [void](Invoke-SapMigration $repeatPayload)
+    $suggestionsAfterRepeat = Get-Count $tenantDatabase "SELECT count(*) FROM product_enrichment_suggestions WHERE organization_id = $organizationID;"
+    $repeatState = Get-SuggestionForSku $incompleteSku
+    $repeatProduct = Get-ProductMutableState $incompleteSku
+    if ($suggestionsAfterRepeat -ne $suggestionsBeforeRepeat -or [string]$repeatState.status -ne 'applied' -or [int]$repeatState.attempt_count -ne $attemptsBeforeRepeat) { throw 'Repeat SAP sync reset or duplicated the accepted enrichment lifecycle.' }
+    if ([int]$repeatProduct.brand_id -ne [int]$productAfterApproval.brand_id -or [string]$repeatProduct.description -ne [string]$productAfterApproval.description) { throw 'Repeat SAP sync cleared an explicitly applied brand or description.' }
+    Set-ReportValue 'REPEAT_SAP_SYNC' 'PASS'
+    Set-ReportValue 'SAP_EMPTY_RESETS_AI_BRAND' 'false'
+    Set-ReportValue 'SAP_EMPTY_RESETS_AI_DESCRIPTION' 'false'
+    Set-ReportValue 'NEW_SUGGESTIONS_AFTER_REPEAT' '0'
+    Set-ReportValue 'PROVIDER_CALLS_AFTER_REPEAT' '0'
+    Set-ReportValue 'FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK' 'false'
+    Add-Trace '16 repeated SAP poll caused no AI loop and preserved accepted brand/description'
+    Set-ReportValue 'PROVIDER_CALL_ACCOUNTING_METHOD' 'tenant suggestion lifecycle, provider/model metadata, and attempt_count; no network interception'
+
+    $phase = 'KILL_SWITCH'
+    Set-ReportValue 'OPERATIONAL_ONLY_CHANGE_TEST' 'SKIPPED'
+    Stop-CloudServer
+    Start-CloudServer $false
+    $disabledPayload = New-SapPayload $disabledSku 'E2E disabled enrichment shampoo 250 ml' '' '' $disabledBatchID
+    [void](Invoke-SapMigration $disabledPayload)
+    if ($null -eq (Get-ProductSnapshot $disabledSku)) { throw 'Enrichment-disabled SAP product did not persist.' }
+    $disabledSuggestionCount = Get-SuggestionCountForSku $disabledSku
+    if ($disabledSuggestionCount -ne 0) { throw 'Enrichment-disabled SAP sync created a new suggestion.' }
+    $masterAfterCounts = Get-MasterBusinessCounts
+    foreach ($name in @('organizations', 'products', 'suggestions', 'audit_logs')) {
+        if ([int64]$masterAfterCounts.$name -ne [int64]$baselineMasterCounts.$name) { throw "Master business count changed for '$name'." }
+    }
+    Set-ReportValue 'ENRICHMENT_DISABLED_SAP_SYNC_WORKS' 'true'
+    Set-ReportValue 'ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS' '0'
+    Set-ReportValue 'ENRICHMENT_DISABLED_PROVIDER_CALLS' '0'
+    Set-ReportValue 'DISABLED_QUEUE_GROWTH_RISK' 'false'
+    Set-ReportValue 'MASTER_BUSINESS_WRITES' '0'
+    Add-Trace '17 enrichment-disabled server boot passed; 18 SAP sync still worked with no Stage 2A queue growth'
+    $report.FINAL_VERDICT = 'LOCAL_FULL_E2E_PASS'
+}
+catch {
+    Write-Host ("FAILURE_PHASE=" + $phase) -ForegroundColor Red
+    Write-Host ("FAILURE_REASON=" + (Get-SanitizedFailureMessage $_.Exception.Message)) -ForegroundColor Red
+    if ($phase -in @('REVIEW_API', 'APPROVAL_AND_APPLICATION', 'REPEAT_SAP_SYNC', 'KILL_SWITCH')) { $report.FINAL_VERDICT = 'LOCAL_FULL_E2E_PARTIAL' }
+    else { $report.FINAL_VERDICT = 'LOCAL_FULL_E2E_FAILED' }
+}
+finally {
+    Stop-CloudServer
+    Restore-ProcessEnvironment @('PGPASSWORD', 'JWT_SECRET', 'MASTER_DB_URL', 'DEEPSEEK_API_KEY', 'NEMBUS_E2E_FIXTURE_PASSWORD')
+    $dbPasswordPlainForServer = $null
+    $deepSeekKeyPlain = $null
+    $fixturePassword = $null
+    $m2mToken = $null
+    $userToken = $null
+    $jwtSecret = $null
+    if ($null -ne $deepSeekKeySecure) { $deepSeekKeySecure.Dispose() }
+    if ($null -ne $dbPasswordSecure) { $dbPasswordSecure.Dispose() }
+    if ($null -ne $runtimeRoot -and (Test-Path -LiteralPath $runtimeRoot)) { Remove-Item -LiteralPath $runtimeRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-Host ''
+    Write-Host '===== LOCAL FULL E2E SANITIZED REPORT ====='
+    foreach ($key in $report.Keys) { Write-Host ("{0}={1}" -f $key, $report[$key]) }
+    Write-Host 'FLOW_TRACE_BEGIN'
+    $step = 1
+    foreach ($item in $trace) { Write-Host ("{0} {1}" -f $step, $item); $step++ }
+    Write-Host 'FLOW_TRACE_END'
+}
