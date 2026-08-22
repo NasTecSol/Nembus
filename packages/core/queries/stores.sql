@@ -128,7 +128,7 @@ FROM (
     SELECT * FROM location_tree
 ) AS tree_data
 WHERE CASE 
-    WHEN sqlc.narg(filter_is_active) IS NULL THEN true
-    ELSE tree_data.is_active = sqlc.narg(filter_is_active)
+    WHEN sqlc.narg(filter_is_active)::boolean IS NULL THEN true
+    ELSE tree_data.is_active = sqlc.narg(filter_is_active)::boolean
 END
 ORDER BY tree_data.path;

@@ -115,6 +115,7 @@ $baselineMasterCounts = $null
 $productBeforeAI = $null
 $productBeforeApproval = $null
 $productAfterApproval = $null
+$productAfterApply = $null
 $protectedBeforeApply = $null
 $auditBeforeApply = 0
 $trace = New-Object 'System.Collections.Generic.List[string]'
@@ -243,7 +244,8 @@ SELECT jsonb_build_object(
   'organizations', (SELECT count(*) FROM organizations),
   'products', (SELECT count(*) FROM products),
   'suggestions', (SELECT count(*) FROM product_enrichment_suggestions),
-  'audit_logs', (SELECT count(*) FROM audit_logs)
+  'audit_logs', (SELECT count(*) FROM audit_logs),
+  'sap_migration_batches', (SELECT count(*) FROM staging.sap_migration_batches)
 )::text;
 "@
 }
@@ -266,10 +268,51 @@ LIMIT 1;
 "@
 }
 
-function Get-ProductMutableState {
-    param([string]$Sku)
-    $skuLiteral = ConvertTo-PgSqlLiteral $Sku
-    return Get-JsonSql -Database $tenantDatabase -Sql "SELECT jsonb_build_object('brand_id', brand_id, 'category_id', category_id, 'description', description)::text FROM products WHERE organization_id = $organizationID AND sku = $skuLiteral;"
+function Assert-ProductSnapshotShape {
+    param(
+        [Parameter(Mandatory = $true)]$Snapshot,
+        [Parameter(Mandatory = $true)][string]$Context
+    )
+    if ($null -eq $Snapshot -or $null -eq $Snapshot.PSObject.Properties['product']) {
+        throw "$Context did not return the expected outer product snapshot object."
+    }
+    foreach ($field in @('id', 'sku', 'organization_id', 'brand_id', 'category_id', 'description')) {
+        if ($null -eq $Snapshot.product.PSObject.Properties[$field]) {
+            throw "$Context product snapshot is missing '$field'."
+        }
+    }
+    return $Snapshot
+}
+
+function Test-NullableIntEqual {
+    param($Left, $Right)
+    if ($null -eq $Left -or $null -eq $Right) { return ($null -eq $Left -and $null -eq $Right) }
+    $numericTypes = @([byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64], [uint64])
+    if ($numericTypes -notcontains $Left.GetType() -or $numericTypes -notcontains $Right.GetType()) {
+        throw 'Expected an integer or null product snapshot field.'
+    }
+    return ([int64]$Left -eq [int64]$Right)
+}
+
+function Test-NullableStringEqual {
+    param($Left, $Right)
+    if ($null -eq $Left -or $null -eq $Right) { return ($null -eq $Left -and $null -eq $Right) }
+    if ($Left -isnot [string] -or $Right -isnot [string]) { throw 'Expected a string or null product snapshot field.' }
+    return ([string]$Left -ceq [string]$Right)
+}
+
+function Get-ProductSnapshotComparisonJson {
+    param(
+        [Parameter(Mandatory = $true)]$Snapshot,
+        [string[]]$ExcludedProductFields = @()
+    )
+    $copy = ($Snapshot | ConvertTo-Json -Depth 30 -Compress) | ConvertFrom-Json
+    foreach ($field in $ExcludedProductFields) {
+        if ($null -ne $copy.product.PSObject.Properties[$field]) {
+            $copy.product.PSObject.Properties.Remove($field)
+        }
+    }
+    return ($copy | ConvertTo-Json -Depth 30 -Compress)
 }
 
 function Get-SuggestionCountForSourceIdentity {
@@ -1029,10 +1072,11 @@ try {
     Set-ReportValue 'STAGE2B_RESULT' 'PASS'
     Set-ReportValue 'SUGGESTION_STATUS' 'in_review'
     Add-Trace '7 F2 claimed the suggestion; 8 DeepSeek called; 9 Stage 2B strict output entered in_review'
-    $productAfterAI = Get-ProductSnapshot $incompleteSku
+    $productAfterAI = Assert-ProductSnapshotShape -Snapshot (Get-ProductSnapshot $incompleteSku) -Context 'Product snapshot after AI processing'
     $aiMutation = (($productBeforeAI | ConvertTo-Json -Depth 30 -Compress) -ne ($productAfterAI | ConvertTo-Json -Depth 30 -Compress))
+    $prohibitedFieldMutation = (Get-ProductSnapshotComparisonJson -Snapshot $productBeforeAI -ExcludedProductFields @('brand_id', 'category_id', 'description', 'updated_at')) -ne (Get-ProductSnapshotComparisonJson -Snapshot $productAfterAI -ExcludedProductFields @('brand_id', 'category_id', 'description', 'updated_at'))
     Set-ReportValue 'AI_DIRECT_PRODUCT_MUTATION' ($(if ($aiMutation) { 'true' } else { 'false' }))
-    Set-ReportValue 'PROHIBITED_FIELD_MUTATION' ($(if ($aiMutation) { 'true' } else { 'false' }))
+    Set-ReportValue 'PROHIBITED_FIELD_MUTATION' ($(if ($prohibitedFieldMutation) { 'true' } else { 'false' }))
     if ($aiMutation) { throw 'Worker processing changed the product before explicit application.' }
 
     $phase = 'REVIEW_API'
@@ -1081,13 +1125,20 @@ SELECT jsonb_build_object(
 )::text FROM products p WHERE p.organization_id = $organizationID AND p.sku = $(ConvertTo-PgSqlLiteral $incompleteSku) LIMIT 1;
 "@
     $auditBeforeApply = Get-Count -Database $tenantDatabase -Sql "SELECT count(*) FROM audit_logs WHERE organization_id = $organizationID AND table_name = 'product_enrichment_suggestions' AND record_id = '$suggestionID';"
-    $applyResponse = Get-ApiResponse -Method 'POST' -Path ("/api/product-enrichment/suggestions/{0}/apply" -f $suggestionID) -Headers $userHeaders -Body '{}'
-    Assert-ApiSuccess $applyResponse 'apply API'
-    $applyData = $applyResponse.Json.data
-    $appliedState = Get-SuggestionByCurrentRunIdentity -SuggestionID $suggestionID -ProductID $incompleteProductID -SourceItemCode $incompleteSku
-    if ($null -eq $appliedState -or [string]$appliedState.status -ne 'applied') { throw 'Apply did not transition the suggestion to applied.' }
-    $changedFields = @($applyData.changed_fields | ForEach-Object { [string]$_ })
-    foreach ($field in $changedFields) { if (@('brand_id', 'category_id', 'description') -notcontains $field) { throw "Apply returned a prohibited changed field '$field'." } }
+    try {
+        $applyResponse = Get-ApiResponse -Method 'POST' -Path ("/api/product-enrichment/suggestions/{0}/apply" -f $suggestionID) -Headers $userHeaders -Body '{}'
+        Assert-ApiSuccess $applyResponse 'apply API'
+        $applyData = $applyResponse.Json.data
+        $appliedState = Get-SuggestionByCurrentRunIdentity -SuggestionID $suggestionID -ProductID $incompleteProductID -SourceItemCode $incompleteSku
+        if ($null -eq $appliedState -or [string]$appliedState.status -ne 'applied') { throw 'Apply did not transition the suggestion to applied.' }
+        $changedFields = @($applyData.changed_fields | ForEach-Object { [string]$_ })
+        foreach ($field in $changedFields) { if (@('brand_id', 'category_id', 'description') -notcontains $field) { throw "Apply returned a prohibited changed field '$field'." } }
+        Set-ReportValue 'APPLY_API' 'PASS'
+    }
+    catch {
+        Set-ReportValue 'APPLY_API' 'FAILED'
+        throw
+    }
     $protectedAfterApply = Get-JsonSql -Database $tenantDatabase -Sql @"
 SELECT jsonb_build_object(
   'product', to_jsonb(p) - 'brand_id' - 'category_id' - 'description' - 'updated_at',
@@ -1101,7 +1152,7 @@ SELECT jsonb_build_object(
     if (($protectedBeforeApply | ConvertTo-Json -Depth 30 -Compress) -ne ($protectedAfterApply | ConvertTo-Json -Depth 30 -Compress)) { throw 'Apply changed a field outside brand_id, category_id, or description.' }
     $auditAfterApply = Get-Count -Database $tenantDatabase -Sql "SELECT count(*) FROM audit_logs WHERE organization_id = $organizationID AND table_name = 'product_enrichment_suggestions' AND record_id = '$suggestionID';"
     if ($auditAfterApply -le $auditBeforeApply) { throw 'Apply did not create an audit record.' }
-    Set-ReportValue 'APPLY_API' 'PASS'
+    $productAfterApply = Assert-ProductSnapshotShape -Snapshot (Get-ProductSnapshot $incompleteSku) -Context 'Product snapshot after explicit apply'
     Set-ReportValue 'APPLY_AUDIT_CREATED' 'PASS'
     Set-ReportValue 'APPLY_CHANGED_FIELDS' (($changedFields -join ',') )
     Add-Trace '13 explicit apply revalidated the source; 14 narrow product fields changed; 15 audit created'
@@ -1116,18 +1167,31 @@ SELECT jsonb_build_object(
     $suggestionsBeforeRepeat = Get-SuggestionCountForProductIdentity -ProductID $incompleteProductID -SourceItemCode $incompleteSku
     $attemptsBeforeRepeat = [int]$appliedState.attempt_count
     $repeatPayload = New-SapPayload $incompleteSku 'Pantene shampoo smooth care 400 ml' '' '' $repeatBatchID
-    [void](Invoke-SapMigration $repeatPayload)
+    try {
+        [void](Invoke-SapMigration $repeatPayload)
+        Set-ReportValue 'REPEAT_SAP_SYNC' 'PASS'
+    }
+    catch {
+        Set-ReportValue 'REPEAT_SAP_SYNC' 'FAILED'
+        throw
+    }
     $suggestionsAfterRepeat = Get-SuggestionCountForProductIdentity -ProductID $incompleteProductID -SourceItemCode $incompleteSku
     $repeatState = Get-SuggestionByCurrentRunIdentity -SuggestionID $suggestionID -ProductID $incompleteProductID -SourceItemCode $incompleteSku
-    $repeatProduct = Get-ProductMutableState $incompleteSku
+    $repeatProduct = Assert-ProductSnapshotShape -Snapshot (Get-ProductSnapshot $incompleteSku) -Context 'Product snapshot after repeat SAP sync'
+    if ($null -eq $repeatState) { throw 'Repeat SAP sync could not resolve the current-run suggestion lifecycle row.' }
     if ($suggestionsAfterRepeat -ne $suggestionsBeforeRepeat -or [string]$repeatState.status -ne 'applied' -or [int]$repeatState.attempt_count -ne $attemptsBeforeRepeat) { throw 'Repeat SAP sync reset or duplicated the accepted enrichment lifecycle.' }
-    if ([int]$repeatProduct.brand_id -ne [int]$productAfterApproval.product.brand_id -or [string]$repeatProduct.description -ne [string]$productAfterApproval.product.description) { throw 'Repeat SAP sync cleared an explicitly applied brand or description.' }
-    Set-ReportValue 'REPEAT_SAP_SYNC' 'PASS'
-    Set-ReportValue 'SAP_EMPTY_RESETS_AI_BRAND' 'false'
-    Set-ReportValue 'SAP_EMPTY_RESETS_AI_DESCRIPTION' 'false'
-    Set-ReportValue 'NEW_SUGGESTIONS_AFTER_REPEAT' '0'
-    Set-ReportValue 'PROVIDER_CALLS_AFTER_REPEAT' '0'
-    Set-ReportValue 'FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK' 'false'
+    $brandPreserved = Test-NullableIntEqual $repeatProduct.product.brand_id $productAfterApply.product.brand_id
+    $descriptionPreserved = Test-NullableStringEqual $repeatProduct.product.description $productAfterApply.product.description
+    $categoryPreserved = Test-NullableIntEqual $repeatProduct.product.category_id $productAfterApply.product.category_id
+    Set-ReportValue 'SAP_EMPTY_RESETS_AI_BRAND' ($(if ($brandPreserved) { 'false' } else { 'true' }))
+    Set-ReportValue 'SAP_EMPTY_RESETS_AI_DESCRIPTION' ($(if ($descriptionPreserved) { 'false' } else { 'true' }))
+    if (-not $brandPreserved -or -not $descriptionPreserved -or -not $categoryPreserved) { throw 'Repeat SAP sync changed an explicitly applied brand, description, or category.' }
+    $newSuggestionsAfterRepeat = [int64]$suggestionsAfterRepeat - [int64]$suggestionsBeforeRepeat
+    $providerCallsAfterRepeat = [int64]$repeatState.attempt_count - [int64]$attemptsBeforeRepeat
+    if ($newSuggestionsAfterRepeat -ne 0 -or $providerCallsAfterRepeat -ne 0) { throw 'Repeat SAP sync created or reprocessed a current-run enrichment suggestion.' }
+    Set-ReportValue 'NEW_SUGGESTIONS_AFTER_REPEAT' ([string]$newSuggestionsAfterRepeat)
+    Set-ReportValue 'PROVIDER_CALLS_AFTER_REPEAT' ([string]$providerCallsAfterRepeat)
+    Set-ReportValue 'FIVE_MINUTE_SYNC_ENRICHMENT_LOOP_RISK' ($(if ($newSuggestionsAfterRepeat -eq 0 -and $providerCallsAfterRepeat -eq 0) { 'false' } else { 'true' }))
     Add-Trace '16 repeated SAP poll caused no AI loop and preserved accepted brand/description'
     Set-ReportValue 'PROVIDER_CALL_ACCOUNTING_METHOD' 'tenant suggestion lifecycle, provider/model metadata, and attempt_count; no network interception'
 
@@ -1136,16 +1200,18 @@ SELECT jsonb_build_object(
     Stop-CloudServer
     Start-CloudServer $false
     $disabledPayload = New-SapPayload $disabledSku 'E2E disabled enrichment shampoo 250 ml' '' '' $disabledBatchID
+    $disabledSuggestionsBefore = Get-SuggestionCountForSourceIdentity $disabledSku
     [void](Invoke-SapMigration $disabledPayload)
-    if ($null -eq (Get-ProductSnapshot $disabledSku)) { throw 'Enrichment-disabled SAP product did not persist.' }
+    [void](Assert-ProductSnapshotShape -Snapshot (Get-ProductSnapshot $disabledSku) -Context 'Enrichment-disabled SAP product snapshot')
     $disabledSuggestionCount = Get-SuggestionCountForSourceIdentity $disabledSku
-    if ($disabledSuggestionCount -ne 0) { throw 'Enrichment-disabled SAP sync created a new suggestion.' }
+    $disabledSuggestionDelta = [int64]$disabledSuggestionCount - [int64]$disabledSuggestionsBefore
+    if ($disabledSuggestionDelta -ne 0) { throw 'Enrichment-disabled SAP sync created a new suggestion.' }
     $masterAfterCounts = Get-MasterBusinessCounts
-    foreach ($name in @('organizations', 'products', 'suggestions', 'audit_logs')) {
+    foreach ($name in @('organizations', 'products', 'suggestions', 'audit_logs', 'sap_migration_batches')) {
         if ([int64]$masterAfterCounts.$name -ne [int64]$baselineMasterCounts.$name) { throw "Master business count changed for '$name'." }
     }
     Set-ReportValue 'ENRICHMENT_DISABLED_SAP_SYNC_WORKS' 'true'
-    Set-ReportValue 'ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS' '0'
+    Set-ReportValue 'ENRICHMENT_DISABLED_NEW_PENDING_SUGGESTIONS' ([string]$disabledSuggestionDelta)
     Set-ReportValue 'ENRICHMENT_DISABLED_PROVIDER_CALLS' '0'
     Set-ReportValue 'DISABLED_QUEUE_GROWTH_RISK' 'false'
     Set-ReportValue 'MASTER_BUSINESS_WRITES' '0'

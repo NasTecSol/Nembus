@@ -128,15 +128,15 @@ FROM (
     SELECT id, store_id, code, name, location_type, parent_location_id, is_active, metadata, level, path FROM location_tree
 ) AS tree_data
 WHERE CASE 
-    WHEN $2 IS NULL THEN true
-    ELSE tree_data.is_active = $2
+    WHEN $2::boolean IS NULL THEN true
+    ELSE tree_data.is_active = $2::boolean
 END
 ORDER BY tree_data.path
 `
 
 type GetStorageLocationHierarchyParams struct {
 	StoreID        int32       `json:"store_id"`
-	FilterIsActive interface{} `json:"filter_is_active"`
+	FilterIsActive pgtype.Bool `json:"filter_is_active"`
 }
 
 type GetStorageLocationHierarchyRow struct {

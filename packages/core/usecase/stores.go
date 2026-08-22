@@ -415,11 +415,9 @@ func (uc *StoreUseCase) GetStorageLocationHierarchy(ctx context.Context, storeID
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	var filter interface{}
+	var filter pgtype.Bool
 	if filterIsActive != nil {
-		filter = *filterIsActive
-	} else {
-		filter = nil
+		filter = pgtype.Bool{Bool: *filterIsActive, Valid: true}
 	}
 
 	hierarchy, err := uc.repo.GetStorageLocationHierarchy(ctx, repository.GetStorageLocationHierarchyParams{

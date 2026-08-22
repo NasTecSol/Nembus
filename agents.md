@@ -4680,3 +4680,19 @@ schema/migration/architecture change was made.
 
 Apply runtime PASS remains unclaimed until the user reruns the diagnostic.
 Next action is the direct apply-service diagnostic only, not a full E2E.
+
+## Pre-E2E SQLC Caller Type Hardening
+
+The repository-wide static parameter audit found the same PostgreSQL nullable
+boolean inference defect in `GetStorageLocationHierarchy` that had previously
+affected the category hierarchy query. Explicit `::boolean` casts were added
+to both `sqlc.narg(filter_is_active)` occurrences in
+`packages/core/queries/stores.sql`. SQLC v1.30.0 regeneration changed the
+generated argument from `interface{}` to `pgtype.Bool`, and
+`packages/core/usecase/stores.go` now supplies the generated typed value.
+Query semantics and storage-location behavior are unchanged.
+
+`STORAGE_LOCATION_HIERARCHY_ACTIVE_PARAMETER_TYPE_DEFECT=RESOLVED`
+
+This was a static application repair; no database, provider, or E2E execution
+was used.
