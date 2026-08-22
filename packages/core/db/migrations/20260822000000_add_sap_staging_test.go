@@ -23,24 +23,32 @@ var canonicalStagingTables = []string{
 
 func TestSAPStagingMigrationHistoryProvisionsCanonicalObjects(t *testing.T) {
 	canonical := readMigrationFixture(t, canonicalSchemaPath)
-	provisioning := strings.ToLower(readMigrationFixture(t, provisioningMigration))
+	provisioning := readMigrationFixture(t, provisioningMigration)
+
+	canonical = normalizeSQL(canonical)
+	provisioning = normalizeSQL(provisioning)
+	if !strings.Contains(provisioning, normalizeSQL("CREATE SCHEMA IF NOT EXISTS staging")) {
+		t.Fatal("provisioning migration is missing the staging schema")
+	}
 
 	for _, table := range canonicalStagingTables {
-		if !strings.Contains(strings.ToLower(canonical), "create table if not exists staging."+table) {
-			t.Errorf("canonical schema is missing staging.%s", table)
-		}
-		if !strings.Contains(provisioning, "create table if not exists staging."+table) {
-			t.Errorf("provisioning migration is missing staging.%s", table)
-		}
+		canonicalBody := canonicalCreateTableBody(t, canonical, table)
+		provisioningBody := canonicalCreateTableBody(t, provisioning, table)
+		assertCanonicalTableColumns(t, table, canonicalBody, provisioningBody)
 	}
+
+	batch := canonicalCreateTableBody(t, provisioning, "sap_migration_batches")
+	assertSQLContains(t, batch, "batch_id VARCHAR(100) UNIQUE NOT NULL", "batch_id unique semantics")
+	assertSQLContains(t, batch, "organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE", "batch organization foreign key")
 }
 
 func TestSAPStagingValidationCoversCanonicalContract(t *testing.T) {
 	canonical := readMigrationFixture(t, canonicalSchemaPath)
-	validation := strings.ToLower(readMigrationFixture(t, validationMigration))
+	validation := normalizeSQL(readMigrationFixture(t, validationMigration))
 
 	for _, table := range canonicalStagingTables {
-		block := canonicalCreateTableBody(t, canonical, table)
+		block := canonicalCreateTableBody(t, normalizeSQL(canonical), table)
+		validationTable := jsonArraySection(t, validation, table)
 		for _, column := range splitTopLevelDefinitions(block) {
 			name, typ, notNull, defaultKind := canonicalColumnContract(t, column)
 			for _, fragment := range []string{
@@ -49,29 +57,143 @@ func TestSAPStagingValidationCoversCanonicalContract(t *testing.T) {
 				fmt.Sprintf(`"not_null":%t`, notNull),
 				fmt.Sprintf(`"default":"%s"`, defaultKind),
 			} {
-				if !strings.Contains(validation, strings.ToLower(fragment)) {
-					t.Errorf("validation migration does not cover staging.%s column %s with %s", table, name, fragment)
-				}
+				assertSQLContains(t, validationTable, fragment, fmt.Sprintf("validation coverage for staging.%s column %s", table, name))
 			}
 		}
+	}
+
+	for _, table := range canonicalStagingTables {
+		if !strings.Contains(validation, normalizeSQL(`"`+table+`": [`)) {
+			t.Errorf("validation migration does not reference staging.%s", table)
+		}
+	}
+
+	batchUnique := validationConstraintSection(t, validation, "sap_migration_batches", "u")
+	assertSQLContains(t, batchUnique, "c.conkey = ARRAY[(SELECT a.attnum FROM pg_attribute a WHERE a.attrelid = c.conrelid AND a.attname = 'batch_id')]::SMALLINT[]", "batch_id unique validation")
+
+	batchForeignKey := validationConstraintSection(t, validation, "sap_migration_batches", "f")
+	for _, fragment := range []string{
+		"c.conkey = ARRAY[(SELECT a.attnum FROM pg_attribute a WHERE a.attrelid = c.conrelid AND a.attname = 'organization_id')]::SMALLINT[]",
+		"referenced_schema.nspname = 'public'",
+		"referenced_table.relname = 'organizations'",
+		"c.confkey = ARRAY[(SELECT a.attnum FROM pg_attribute a WHERE a.attrelid = c.confrelid AND a.attname = 'id')]::SMALLINT[]",
+		"c.confdeltype = 'c'",
+		"c.confupdtype = 'a'",
+	} {
+		assertSQLContains(t, batchForeignKey, fragment, "organizations FK validation")
 	}
 
 	for _, fragment := range []string{
 		`pg_attribute`, `format_type`, `attnotnull`, `pg_attrdef`, `pg_get_expr`,
 		`pg_constraint`, `conkey`, `confkey`, `confrelid`, `confdeltype`, `confupdtype`,
-		`c.contype = 'p'`, `c.contype = 'u'`, `c.contype = 'f'`,
-		`referenced_schema.nspname = 'public'`, `referenced_table.relname = 'organizations'`,
-		`c.confdeltype = 'c'`, `c.confupdtype = 'a'`,
 	} {
-		if !strings.Contains(validation, strings.ToLower(fragment)) {
-			t.Errorf("validation migration is missing required contract check %q", fragment)
-		}
+		assertSQLContains(t, validation, fragment, "catalog contract validation")
 	}
 
 	destructive := regexp.MustCompile(`(?im)^\s*(drop|alter|update|delete|truncate|create\s+(table|schema))\b`)
-	if destructive.MatchString(validation) {
+	if destructive.MatchString(stripSQLComments(readMigrationFixture(t, validationMigration))) {
 		t.Fatal("validation migration must not contain destructive or mutating SQL")
 	}
+}
+
+func assertCanonicalTableColumns(t *testing.T, table, canonicalBody, provisioningBody string) {
+	t.Helper()
+	for _, canonicalColumn := range splitTopLevelDefinitions(canonicalBody) {
+		name, wantType, wantNotNull, wantDefault := canonicalColumnContract(t, canonicalColumn)
+		provisioningColumn := findColumnDefinition(t, provisioningBody, table, name)
+		gotName, gotType, gotNotNull, gotDefault := canonicalColumnContract(t, provisioningColumn)
+		if gotName != name || gotType != wantType || gotNotNull != wantNotNull || gotDefault != wantDefault {
+			t.Errorf("staging.%s column %s differs from canonical contract: got (%s, %s, %t, %s), want (%s, %s, %t, %s)", table, name, gotName, gotType, gotNotNull, gotDefault, name, wantType, wantNotNull, wantDefault)
+		}
+	}
+}
+
+func findColumnDefinition(t *testing.T, body, table, name string) string {
+	t.Helper()
+	for _, definition := range splitTopLevelDefinitions(body) {
+		fields := strings.Fields(definition)
+		if len(fields) > 0 && strings.Trim(fields[0], `"`) == name {
+			return definition
+		}
+	}
+	t.Fatalf("staging.%s is missing canonical column %s", table, name)
+	return ""
+}
+
+func assertSQLContains(t *testing.T, section, fragment, description string) {
+	t.Helper()
+	if !strings.Contains(normalizeSQL(section), normalizeSQL(fragment)) {
+		t.Errorf("missing %s: %q", description, fragment)
+	}
+}
+
+func normalizeSQL(sql string) string {
+	sql = stripSQLComments(sql)
+	sql = strings.Join(strings.Fields(strings.ToLower(sql)), " ")
+	return regexp.MustCompile(`\s*([(),\[\]])\s*`).ReplaceAllString(sql, "$1")
+}
+
+func stripSQLComments(sql string) string {
+	sql = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(sql, "")
+	return regexp.MustCompile(`(?m)--.*$`).ReplaceAllString(sql, "")
+}
+
+func jsonArraySection(t *testing.T, source, table string) string {
+	t.Helper()
+	marker := normalizeSQL(fmt.Sprintf(`"%s":`, table))
+	start := strings.Index(source, marker)
+	if start < 0 {
+		t.Fatalf("validation migration is missing the staging.%s contract section", table)
+	}
+	open := strings.Index(source[start+len(marker):], "[")
+	if open < 0 {
+		t.Fatalf("validation migration has no array for staging.%s", table)
+	}
+	open += start + len(marker)
+	return balancedSQLSection(t, source, open, '[', ']', "staging."+table+" validation array")
+}
+
+func validationConstraintSection(t *testing.T, source, table, constraintType string) string {
+	t.Helper()
+	marker := normalizeSQL(fmt.Sprintf("WHERE c.conrelid = 'staging.%s'::regclass AND c.contype = '%s'", table, constraintType))
+	start := strings.Index(source, marker)
+	if start < 0 {
+		t.Fatalf("validation migration is missing staging.%s constraint type %s", table, constraintType)
+	}
+	end := strings.Index(source[start:], normalizeSQL(") THEN"))
+	if end < 0 {
+		t.Fatalf("validation migration has an incomplete staging.%s constraint type %s section", table, constraintType)
+	}
+	return source[start : start+end]
+}
+
+func balancedSQLSection(t *testing.T, source string, open int, opening, closing byte, description string) string {
+	t.Helper()
+	depth := 0
+	inString := false
+	for i := open; i < len(source); i++ {
+		switch source[i] {
+		case '\'':
+			if inString && i+1 < len(source) && source[i+1] == '\'' {
+				i++
+				continue
+			}
+			inString = !inString
+		case opening:
+			if !inString {
+				depth++
+			}
+		case closing:
+			if !inString {
+				depth--
+				if depth == 0 {
+					return source[open : i+1]
+				}
+			}
+		}
+	}
+	t.Fatalf("%s has no closing delimiter", description)
+	return ""
 }
 
 func readMigrationFixture(t *testing.T, path string) string {

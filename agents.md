@@ -4557,3 +4557,50 @@ Next Action:
 
 Review the uncommitted follow-up diff before any commit or database migration
 application.
+
+## Architect-Safe Cleanup Before Disposable Local E2E — 2026-08-22
+
+The SAP staging migration history is now treated as immutable. The initial
+staging repair was committed in `bc3f28c`; the follow-up validation migration
+was committed and pushed in `08a5b88`. The reviewed branch state is
+`HEAD=08a5b88` and `origin/feature-agent=08a5b88`.
+
+Both committed SQL files are historical and must not be modified:
+
+- `packages/core/db/migrations/20260822000000_add_sap_staging.sql`
+- `packages/core/db/migrations/20260822010000_validate_sap_staging_contract.sql`
+
+The colocated regression test remains
+`SAFE_BUT_UNCONVENTIONAL`; Atlas ignores the `.go` file and Go test discovery
+works. Its source-level assertions are now classified
+`MIGRATION_REGRESSION_TEST=STRONG`: each of the four staging tables is checked
+against the canonical columns, nullability, defaults, JSONB fields/defaults,
+the batch unique contract, the organizations foreign key, and the validation
+migration's table-specific catalog checks. This is not a replacement for
+PostgreSQL execution or an exhaustive SQL parser.
+
+The fresh canonical migration path is expected to pass. Required canonical
+columns/defaults and the required foreign-key actions are validated. The
+validation migration is not an exhaustive detector of arbitrary additional
+historical CHECK, foreign-key, or UNIQUE constraints outside the canonical
+contract; that compatibility limitation is a production deployment-preflight
+concern, not a defect in the fresh disposable local E2E path.
+
+Production/live staging schema compatibility remains unverified. Before any
+production application, inspect and preflight the existing staging objects.
+No production, staging, dev, or qitaf database was inspected by this cleanup.
+
+`SAP_STAGING_MIGRATION_SCHEMA_DEFECT=RESOLVED`
+
+`PRODUCTION_STAGING_SCHEMA_COMPATIBILITY=UNVERIFIED`
+
+`PRODUCTION_STAGING_TABLE_STATE=UNVERIFIED`
+
+`DEPLOYMENT_ENVIRONMENT_VERIFIED=false`
+
+`PRODUCTION_END_TO_END_VERIFIED=false`
+
+This cleanup does not change business behavior, SAP runtime logic, AI
+behavior, master/tenant ownership, the canonical schema, or migration SQL.
+No database was accessed, no migration was applied, and no commit or push is
+created by the cleanup itself.
