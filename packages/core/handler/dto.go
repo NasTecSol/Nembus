@@ -1777,4 +1777,42 @@ type MenuModifierGroupResponse struct {
 	UpdatedAt     string          `json:"updated_at" example:"2026-08-21T09:00:00Z"`
 }
 
+// CreatePaymentTermRequest represents a request to create a payment term.
+type CreatePaymentTermRequest struct {
+	OrganizationID     int32    `json:"organization_id" binding:"required"`
+	Code               string   `json:"code" binding:"required" example:"NET30"`
+	Name               string   `json:"name" binding:"required" example:"Net 30 Days"`
+	DueDays            int32    `json:"due_days" binding:"required" example:"30"`
+	DiscountDays       *int32   `json:"discount_days,omitempty" example:"10"`
+	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"2.00"`
+	LateFeePercentage  *float64 `json:"late_fee_percentage,omitempty" example:"1.50"`
+	IsActive           bool     `json:"is_active" example:"true"`
+}
+
+// UpdatePaymentTermRequest represents a request to update a payment term.
+type UpdatePaymentTermRequest struct {
+	Code               *string  `json:"code,omitempty" example:"NET30"`
+	Name               *string  `json:"name,omitempty" example:"Net 30 Days"`
+	DueDays            *int32   `json:"due_days,omitempty" example:"30"`
+	DiscountDays       *int32   `json:"discount_days,omitempty" example:"10"`
+	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"2.00"`
+	LateFeePercentage  *float64 `json:"late_fee_percentage,omitempty" example:"1.50"`
+	IsActive           *bool    `json:"is_active,omitempty" example:"true"`
+}
+
+// PaymentTermResponse represents the API response body for a payment term.
+type PaymentTermResponse struct {
+	ID                 int32   `json:"id" example:"1"`
+	OrganizationID     int32   `json:"organization_id" example:"1"`
+	Code               string  `json:"code" example:"NET30"`
+	Name               string  `json:"name" example:"Net 30 Days"`
+	DueDays            int32   `json:"due_days" example:"30"`
+	DiscountDays       *int32  `json:"discount_days,omitempty" example:"10"`
+	DiscountPercentage *string `json:"discount_percentage,omitempty" example:"2.00"`
+	LateFeePercentage  *string `json:"late_fee_percentage,omitempty" example:"1.50"`
+	IsActive           bool    `json:"is_active" example:"true"`
+	CreatedAt          string  `json:"created_at" example:"2026-08-21T09:00:00Z"`
+}
+
+
 
