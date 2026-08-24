@@ -6108,6 +6108,93 @@ func (q *Queries) ReconcilePayment(ctx context.Context, arg ReconcilePaymentPara
 	return i, err
 }
 
+const reopenCart = `-- name: ReopenCart :one
+WITH order_to_delete AS (
+    SELECT id, store_id FROM sales_orders_v2 
+    WHERE source_cart_id = $1 
+      AND order_status IN ('draft', 'pending')
+),
+lines_to_delete AS (
+    SELECT id, product_id, product_variant_id, quantity_ordered
+    FROM sales_order_lines_v2
+    WHERE sales_order_id IN (SELECT id FROM order_to_delete)
+),
+deallocate_stock AS (
+    UPDATE inventory_stock
+    SET quantity_allocated = GREATEST(0, quantity_allocated - l.quantity_ordered),
+        quantity_available = quantity_on_hand - GREATEST(0, quantity_allocated - l.quantity_ordered),
+        updated_at = NOW()
+    FROM lines_to_delete l
+    CROSS JOIN order_to_delete o
+    WHERE inventory_stock.product_id = l.product_id
+      AND COALESCE(inventory_stock.product_variant_id, 0) = COALESCE(l.product_variant_id, 0)
+      AND inventory_stock.store_id = o.store_id
+    RETURNING inventory_stock.id
+),
+deleted_lines AS (
+    DELETE FROM sales_order_lines_v2 
+    WHERE sales_order_id IN (SELECT id FROM order_to_delete)
+    RETURNING id
+),
+deleted_order AS (
+    DELETE FROM sales_orders_v2 
+    WHERE id IN (SELECT id FROM order_to_delete)
+    RETURNING id
+)
+UPDATE carts
+SET cart_status = 'active',
+    converted_to_order_id = NULL,
+    converted_at = NULL,
+    updated_at = NOW()
+WHERE carts.id = $1
+  AND EXISTS (SELECT 1 FROM deleted_order)
+RETURNING id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes
+`
+
+func (q *Queries) ReopenCart(ctx context.Context, id uuid.UUID) (Cart, error) {
+	row := q.db.QueryRow(ctx, reopenCart, id)
+	var i Cart
+	err := row.Scan(
+		&i.ID,
+		&i.CartNumber,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.CustomerID,
+		&i.GuestIdentifier,
+		&i.GuestEmail,
+		&i.GuestPhone,
+		&i.CartStatus,
+		&i.CartType,
+		&i.Channel,
+		&i.PaymentMethod,
+		&i.PaymentGateway,
+		&i.DeviceInfo,
+		&i.CreatedByUserID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.ShippingAmount,
+		&i.TotalAmount,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.PromotionalCredits,
+		&i.ShippingAddress,
+		&i.BillingAddress,
+		&i.ShippingMethod,
+		&i.ConvertedToOrderID,
+		&i.ConvertedAt,
+		&i.LastActivityAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Metadata,
+		&i.Notes,
+	)
+	return i, err
+}
+
 const updateCart = `-- name: UpdateCart :one
 UPDATE carts
 SET subtotal = $2,

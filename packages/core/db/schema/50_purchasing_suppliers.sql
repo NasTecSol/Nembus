@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS business_partners (
     currency_code VARCHAR(3) REFERENCES currencies(code) DEFAULT 'SAR',
     credit_limit DECIMAL(15,2) DEFAULT 0.00,
     outstanding_balance DECIMAL(15,2) DEFAULT 0.00,
-    payment_terms_id INTEGER REFERENCES payment_terms(id) ON DELETE SET NULL,
+    payment_terms_id INTEGER,
     sales_rep_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
