@@ -54,6 +54,7 @@ SET name = $2,
     is_stackable = $15,
     is_active = $16,
     store_ids = $17,
+    metadata = $18,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;

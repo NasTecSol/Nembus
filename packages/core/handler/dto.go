@@ -1637,3 +1637,182 @@ type CategoryHierarchyResponse struct {
 	Path             interface{}     `json:"path"`
 	FullPath         string          `json:"full_path" example:"Electronics > Smartphones"`
 }
+
+// =====================================================
+// Business Partner Module
+// =====================================================
+
+type CreatePartnerAddressDTO struct {
+	AddressName string  `json:"address_name" binding:"required" example:"Headquarters"`
+	AddressType string  `json:"address_type" binding:"required" example:"both"` // bill_to, ship_to, both
+	Street      *string `json:"street,omitempty" example:"123 Main St"`
+	City        *string `json:"city,omitempty" example:"Riyadh"`
+	State       *string `json:"state,omitempty" example:"Riyadh Province"`
+	ZipCode     *string `json:"zip_code,omitempty" example:"12345"`
+	CountryCode *string `json:"country_code,omitempty" example:"SA"`
+	IsDefault   bool    `json:"is_default" example:"true"`
+}
+
+type CreatePartnerContactDTO struct {
+	FirstName string  `json:"first_name" binding:"required" example:"John"`
+	LastName  *string `json:"last_name,omitempty" example:"Doe"`
+	Email     *string `json:"email,omitempty" example:"john.doe@example.com"`
+	Phone     *string `json:"phone,omitempty" example:"+966500000000"`
+	Position  *string `json:"position,omitempty" example:"Purchasing Manager"`
+	IsPrimary bool    `json:"is_primary" example:"true"`
+}
+
+type CreateBusinessPartnerRequest struct {
+	OrganizationID int32                     `json:"organization_id" binding:"required" example:"1"`
+	Code           string                    `json:"code" binding:"required" example:"BP001"`
+	Name           string                    `json:"name" binding:"required" example:"Supplier Co"`
+	PartnerRole    string                    `json:"partner_role" binding:"required" example:"supplier"` // supplier, vendor, special_customer, corporate_group
+	TaxID          *string                   `json:"tax_id,omitempty" example:"1234567890"`
+	CurrencyCode   *string                   `json:"currency_code,omitempty" example:"SAR"`
+	CreditLimit    *string                   `json:"credit_limit,omitempty" example:"50000.00"`
+	PaymentTermsID *int32                    `json:"payment_terms_id,omitempty" example:"1"`
+	SalesRepUserID *int32                    `json:"sales_rep_user_id,omitempty" example:"2"`
+	IsActive       bool                      `json:"is_active" example:"true"`
+	Metadata       map[string]interface{}    `json:"metadata,omitempty" swaggertype:"object"`
+	Addresses      []CreatePartnerAddressDTO `json:"addresses,omitempty"`
+	Contacts       []CreatePartnerContactDTO `json:"contacts,omitempty"`
+}
+
+type UpdateBusinessPartnerRequest struct {
+	Code           *string                `json:"code,omitempty" example:"BP001"`
+	Name           *string                `json:"name,omitempty" example:"Supplier Co Updated"`
+	PartnerRole    *string                `json:"partner_role,omitempty" example:"vendor"`
+	TaxID          *string                `json:"tax_id,omitempty" example:"1234567890"`
+	CurrencyCode   *string                `json:"currency_code,omitempty" example:"SAR"`
+	CreditLimit    *string                `json:"credit_limit,omitempty" example:"60000.00"`
+	PaymentTermsID *int32                 `json:"payment_terms_id,omitempty" example:"1"`
+	SalesRepUserID *int32                 `json:"sales_rep_user_id,omitempty" example:"2"`
+	IsActive       *bool                  `json:"is_active,omitempty" example:"true"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type ToggleBusinessPartnerActiveRequest struct {
+	IsActive bool `json:"is_active" binding:"required" example:"true"`
+}
+
+type PartnerAddressResponse struct {
+	ID          int32  `json:"id" example:"1"`
+	PartnerID   int32  `json:"partner_id" example:"1"`
+	AddressName string `json:"address_name" example:"Headquarters"`
+	AddressType string `json:"address_type" example:"both"`
+	Street      string `json:"street,omitempty" example:"123 Main St"`
+	City        string `json:"city,omitempty" example:"Riyadh"`
+	State       string `json:"state,omitempty" example:"Riyadh Province"`
+	ZipCode     string `json:"zip_code,omitempty" example:"12345"`
+	CountryCode string `json:"country_code,omitempty" example:"SA"`
+	IsDefault   bool   `json:"is_default" example:"true"`
+}
+
+type PartnerContactResponse struct {
+	ID        int32  `json:"id" example:"1"`
+	PartnerID int32  `json:"partner_id" example:"1"`
+	FirstName string `json:"first_name" example:"John"`
+	LastName  string `json:"last_name,omitempty" example:"Doe"`
+	Email     string `json:"email,omitempty" example:"john.doe@example.com"`
+	Phone     string `json:"phone,omitempty" example:"+966500000000"`
+	Position  string `json:"position,omitempty" example:"Purchasing Manager"`
+	IsPrimary bool   `json:"is_primary" example:"true"`
+}
+
+type BusinessPartnerResponse struct {
+	ID                 int32                    `json:"id" example:"1"`
+	OrganizationID     int32                    `json:"organization_id" example:"1"`
+	Code               string                   `json:"code" example:"BP001"`
+	Name               string                   `json:"name" example:"Supplier Co"`
+	PartnerRole        string                   `json:"partner_role" example:"supplier"`
+	TaxID              string                   `json:"tax_id,omitempty" example:"1234567890"`
+	CurrencyCode       string                   `json:"currency_code,omitempty" example:"SAR"`
+	CreditLimit        string                   `json:"credit_limit,omitempty" example:"50000.00"`
+	OutstandingBalance string                   `json:"outstanding_balance,omitempty" example:"0.00"`
+	PaymentTermsID     *int32                   `json:"payment_terms_id,omitempty" example:"1"`
+	SalesRepUserID     *int32                   `json:"sales_rep_user_id,omitempty" example:"2"`
+	IsActive           bool                     `json:"is_active" example:"true"`
+	Metadata           json.RawMessage          `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt          string                   `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt          string                   `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+	Addresses          []PartnerAddressResponse `json:"addresses,omitempty"`
+	Contacts           []PartnerContactResponse `json:"contacts,omitempty"`
+}
+
+type CreateMenuModifierGroupRequest struct {
+	StoreID         int32                  `json:"store_id" binding:"required" example:"1"`
+	Name            string                 `json:"name" binding:"required" example:"Extra Sauce"`
+	Code            string                 `json:"code" binding:"required" example:"EXTRA_SAUCE"`
+	SelectionType   string                 `json:"selection_type" binding:"required" example:"optional"` // required, optional, multiple
+	MinSelections   int32                  `json:"min_selections" example:"0"`
+	MaxSelections   *int32                 `json:"max_selections,omitempty" example:"3"`
+	IsActive        bool                   `json:"is_active" example:"true"`
+	DisplayOrder    *int32                 `json:"display_order,omitempty" example:"1"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type UpdateMenuModifierGroupRequest struct {
+	Name            *string                `json:"name,omitempty" example:"Extra Toppings"`
+	Code            *string                `json:"code,omitempty" example:"EXTRA_TOPPING"`
+	SelectionType   *string                `json:"selection_type,omitempty" example:"multiple"`
+	MinSelections   *int32                 `json:"min_selections,omitempty" example:"1"`
+	MaxSelections   *int32                 `json:"max_selections,omitempty" example:"5"`
+	IsActive        *bool                  `json:"is_active,omitempty" example:"true"`
+	DisplayOrder    *int32                 `json:"display_order,omitempty" example:"2"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type MenuModifierGroupResponse struct {
+	ID            int32           `json:"id" example:"1"`
+	StoreID       int32           `json:"store_id" example:"1"`
+	Name          string          `json:"name" example:"Extra Toppings"`
+	Code          string          `json:"code" example:"EXTRA_TOPPING"`
+	SelectionType string          `json:"selection_type" example:"multiple"`
+	MinSelections int32           `json:"min_selections" example:"1"`
+	MaxSelections *int32          `json:"max_selections,omitempty" example:"5"`
+	IsActive      bool            `json:"is_active" example:"true"`
+	DisplayOrder  *int32          `json:"display_order,omitempty" example:"2"`
+	Metadata      json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt     string          `json:"created_at" example:"2026-08-21T09:00:00Z"`
+	UpdatedAt     string          `json:"updated_at" example:"2026-08-21T09:00:00Z"`
+}
+
+// CreatePaymentTermRequest represents a request to create a payment term.
+type CreatePaymentTermRequest struct {
+	OrganizationID     int32    `json:"organization_id" binding:"required"`
+	Code               string   `json:"code" binding:"required" example:"NET30"`
+	Name               string   `json:"name" binding:"required" example:"Net 30 Days"`
+	DueDays            int32    `json:"due_days" binding:"required" example:"30"`
+	DiscountDays       *int32   `json:"discount_days,omitempty" example:"10"`
+	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"2.00"`
+	LateFeePercentage  *float64 `json:"late_fee_percentage,omitempty" example:"1.50"`
+	IsActive           bool     `json:"is_active" example:"true"`
+}
+
+// UpdatePaymentTermRequest represents a request to update a payment term.
+type UpdatePaymentTermRequest struct {
+	Code               *string  `json:"code,omitempty" example:"NET30"`
+	Name               *string  `json:"name,omitempty" example:"Net 30 Days"`
+	DueDays            *int32   `json:"due_days,omitempty" example:"30"`
+	DiscountDays       *int32   `json:"discount_days,omitempty" example:"10"`
+	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"2.00"`
+	LateFeePercentage  *float64 `json:"late_fee_percentage,omitempty" example:"1.50"`
+	IsActive           *bool    `json:"is_active,omitempty" example:"true"`
+}
+
+// PaymentTermResponse represents the API response body for a payment term.
+type PaymentTermResponse struct {
+	ID                 int32   `json:"id" example:"1"`
+	OrganizationID     int32   `json:"organization_id" example:"1"`
+	Code               string  `json:"code" example:"NET30"`
+	Name               string  `json:"name" example:"Net 30 Days"`
+	DueDays            int32   `json:"due_days" example:"30"`
+	DiscountDays       *int32  `json:"discount_days,omitempty" example:"10"`
+	DiscountPercentage *string `json:"discount_percentage,omitempty" example:"2.00"`
+	LateFeePercentage  *string `json:"late_fee_percentage,omitempty" example:"1.50"`
+	IsActive           bool    `json:"is_active" example:"true"`
+	CreatedAt          string  `json:"created_at" example:"2026-08-21T09:00:00Z"`
+}
+
+
+

@@ -372,7 +372,7 @@ INSERT INTO pos_transactions (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
     jsonb_build_object('source_cart_id', $18)
 )
-RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
 `
 
 type CreatePosTransactionFromCartParams struct {
@@ -447,6 +447,7 @@ func (q *Queries) CreatePosTransactionFromCart(ctx context.Context, arg CreatePo
 		&i.VoidedAt,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1385,7 +1386,7 @@ func (q *Queries) GetTopPerformingCashiers(ctx context.Context, arg GetTopPerfor
 
 const getVoidedTransactionsByDate = `-- name: GetVoidedTransactionsByDate :many
 SELECT 
-    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at,
+    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at, pt.updated_at,
     c.cashier_code,
     u.username as voided_by_username
 FROM pos_transactions pt
@@ -1428,6 +1429,7 @@ type GetVoidedTransactionsByDateRow struct {
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
 	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	CashierCode       string           `json:"cashier_code"`
 	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
 }
@@ -1467,6 +1469,7 @@ func (q *Queries) GetVoidedTransactionsByDate(ctx context.Context, arg GetVoided
 			&i.VoidedAt,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.CashierCode,
 			&i.VoidedByUsername,
 		); err != nil {
@@ -1482,7 +1485,7 @@ func (q *Queries) GetVoidedTransactionsByDate(ctx context.Context, arg GetVoided
 
 const getVoidedTransactionsBySession = `-- name: GetVoidedTransactionsBySession :many
 SELECT 
-    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at,
+    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at, pt.updated_at,
     u.username as voided_by_username,
     u.first_name || ' ' || u.last_name as voided_by_name
 FROM pos_transactions pt
@@ -1517,6 +1520,7 @@ type GetVoidedTransactionsBySessionRow struct {
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
 	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
 	VoidedByName      interface{}      `json:"voided_by_name"`
 }
@@ -1556,6 +1560,7 @@ func (q *Queries) GetVoidedTransactionsBySession(ctx context.Context, cashierSes
 			&i.VoidedAt,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.VoidedByUsername,
 			&i.VoidedByName,
 		); err != nil {
@@ -2202,7 +2207,7 @@ SET
     voided_by = $2,
     voided_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
 `
 
 type VoidTransactionParams struct {
@@ -2242,6 +2247,7 @@ func (q *Queries) VoidTransaction(ctx context.Context, arg VoidTransactionParams
 		&i.VoidedAt,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
