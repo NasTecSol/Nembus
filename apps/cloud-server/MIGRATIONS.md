@@ -108,12 +108,47 @@ go run cmd/migrate-tenants/main.go -master=false
 go run cmd/migrate-tenants/main.go -status=true
 ```
 
-### Baseline Strategy for Existing Databases
-When introducing Atlas to an existing database containing data, Atlas uses the initial baseline version:
-`20260101000000_initial_baseline.sql`.
-* Existing databases are registered at the baseline without dropping schema or losing data.
-* Future migrations are applied incrementally.
-* Fresh databases apply all migrations from scratch seamlessly.
+### Baseline for Existing (Legacy) Databases
+
+`migrate-tenants` **auto-detects the baseline per database** — no flags needed:
+
+| Database state | Baseline used |
+|---|---|
+| Fresh / empty | none — all migrations applied from scratch |
+| Has `atlas_schema_revisions` table | none — only pending migrations applied |
+| Has schema but **no** revisions table (legacy / restored) | first migration version (currently `20260813124500`) — the existing schema is treated as already applied |
+
+The `-baseline` flag exists only to force a fixed baseline for every database,
+e.g. `go run cmd/migrate-tenants/main.go -baseline 20260813124500`. Migrations
+with version <= baseline are treated as already applied. ⚠️ Never pass a
+baseline for fresh/empty databases — Atlas would skip the initial schema
+migration. Also, the baseline must be an existing migration version in
+`packages/core/db/migrations/`, otherwise Atlas errors with
+`baseline version "..." not found`.
+
+### Tenant Connection Strings (Docker Hostnames)
+
+Tenant `db_conn_str` values stored in the master `tenants` table often use the
+Docker **service name** as the host (e.g. `host=postgres user=... dbname=qitaf`),
+which only resolves inside the compose network. Because `migrate-tenants` runs on
+the host, it automatically:
+
+1. Converts any pgx-accepted connection string (keyword DSN **or** URL) into a
+   `postgres://` URL, which the Atlas CLI requires (keyword DSNs are rejected
+   with `missing driver`).
+2. Rewrites the configured host via the `-host-override from=to` flag
+   (default `postgres=localhost`) so `host=postgres` becomes `localhost` — valid
+   because the Postgres container's port is published to the host. Disable with
+   `-host-override ""`.
+
+Notes:
+- The `atlas_schema_revisions` lookup searches **all** schemas (not only
+  `public`) — revisions tables created in a `$user` schema (search_path quirk)
+  are still detected, so such databases are not wrongly baselined.
+- Tenants whose database **does not exist** on the server (SQLSTATE `3D000`)
+  are skipped with a warning and counted separately in the summary — they do
+  not fail the run. Create the database or set `is_active = false` for the
+  tenant to resolve.
 
 ---
 

@@ -2,14 +2,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
@@ -18,8 +26,9 @@ func main() {
 	// Parse command line flags
 	includeMaster := flag.Bool("master", true, "Also run migrations on the master database")
 	migrationsDir := flag.String("dir", "", "Directory containing Atlas migration files (default: auto-detected packages/core/db/migrations)")
-	baselineVer := flag.String("baseline", "20260101000000", "Baseline migration version for existing databases")
+	baselineVer := flag.String("baseline", "", "Baseline migration version. Leave empty (default) to AUTO-DETECT per database: empty DBs and DBs already tracked by Atlas (atlas_schema_revisions) get no baseline; DBs that have schema but no revisions table get the first migration version. Set it explicitly to force the same baseline for every database (e.g. -baseline 20260813124500) — a baseline that does not exist in the migration directory is a hard error.")
 	statusOnly := flag.Bool("status", false, "Show migration status without applying")
+	hostOverride := flag.String("host-override", "postgres=localhost", "Rewrite the host in database connection strings before connecting (from=to). Set to empty to disable. Use when databases are Docker services (e.g. host=postgres) that only resolve inside the compose network while this runner executes on the host.")
 	flag.Parse()
 
 	// Get current working directory for debugging
@@ -62,6 +71,13 @@ func main() {
 
 	log.Printf("✓ MASTER_DB_URL found (length: %d characters)\n", len(masterDBURL))
 
+	// Normalize to a URL Atlas can consume (pgx keyword DSNs are not
+	// accepted by Atlas) and apply the docker-service host override.
+	masterURL, err := dsnToURL(masterDBURL, *hostOverride)
+	if err != nil {
+		log.Fatalf("❌ Invalid MASTER_DB_URL: %v", err)
+	}
+
 	// Resolve migrations directory
 	migPath := *migrationsDir
 	if migPath == "" {
@@ -89,13 +105,21 @@ func main() {
 	}
 	log.Printf("✓ Using migrations directory: %s\n", absMigPath)
 
+	// First (oldest) migration version — used as the baseline for databases
+	// that have schema but no atlas_schema_revisions table.
+	firstMig, err := firstMigrationVersion(absMigPath)
+	if err != nil {
+		log.Fatalf("Failed to determine first migration version: %v", err)
+	}
+	log.Printf("✓ First migration version (baseline for legacy DBs): %s\n", firstMig)
+
 	atlasBin := resolveAtlasBinary()
 	log.Printf("✓ Using Atlas binary: %s\n", atlasBin)
 
 	ctx := context.Background()
 
 	// Connect to master database
-	pool, err := pgxpool.New(ctx, masterDBURL)
+	pool, err := pgxpool.New(ctx, masterURL)
 	if err != nil {
 		log.Fatalf("Unable to connect to master database: %v", err)
 	}
@@ -107,7 +131,13 @@ func main() {
 		log.Println("⚡ Running Atlas migration on Master Database...")
 		log.Println("==================================================")
 
-		if err := executeAtlas(atlasBin, masterDBURL, absMigPath, *baselineVer, *statusOnly); err != nil {
+		baseline, err := resolveBaseline(ctx, masterURL, *baselineVer, firstMig)
+		if err != nil {
+			log.Fatalf("❌ Failed to inspect master database: %v", err)
+		}
+		logBaseline(baseline)
+
+		if err := executeAtlas(atlasBin, masterURL, absMigPath, baseline, *statusOnly); err != nil {
 			log.Fatalf("❌ Master database migration failed: %v", err)
 		}
 		log.Println("✅ Master database migration completed successfully!")
@@ -129,6 +159,7 @@ func main() {
 	// 3. Migrate each tenant database
 	successCount := 0
 	failedCount := 0
+	skippedCount := 0
 
 	for _, tenant := range tenants {
 		log.Println("\n--------------------------------------------------")
@@ -141,7 +172,28 @@ func main() {
 			continue
 		}
 
-		err := executeAtlas(atlasBin, tenant.DbConnStr, absMigPath, *baselineVer, *statusOnly)
+		tenantURL, err := dsnToURL(tenant.DbConnStr, *hostOverride)
+		if err != nil {
+			log.Printf("❌ Failed to parse connection string for tenant %s: %v\n", tenant.Slug, err)
+			failedCount++
+			continue
+		}
+
+		baseline, err := resolveBaseline(ctx, tenantURL, *baselineVer, firstMig)
+		if err != nil {
+			if isMissingDatabase(err) {
+				log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
+				log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+				skippedCount++
+				continue
+			}
+			log.Printf("❌ Failed to inspect tenant %s: %v\n", tenant.Slug, err)
+			failedCount++
+			continue
+		}
+		logBaseline(baseline)
+
+		err = executeAtlas(atlasBin, tenantURL, absMigPath, baseline, *statusOnly)
 		if err != nil {
 			log.Printf("❌ Failed to migrate tenant %s: %v\n", tenant.Slug, err)
 			failedCount++
@@ -156,12 +208,152 @@ func main() {
 	log.Println("=== Multi-Tenant Atlas Migration Summary ===")
 	log.Println("==================================================")
 	log.Printf("Successful: %d\n", successCount)
+	log.Printf("Skipped:    %d (database missing)\n", skippedCount)
 	log.Printf("Failed:     %d\n", failedCount)
 	log.Printf("Total:      %d\n", len(tenants))
 
 	if failedCount > 0 {
 		os.Exit(1)
 	}
+}
+
+// firstMigrationVersion returns the oldest versioned migration file
+// (YYYYMMDDHHMMSS_*.sql) in dir — used as the baseline for legacy databases.
+func firstMigrationVersion(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("read migrations dir: %w", err)
+	}
+	var first string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		name := e.Name()
+		if len(name) < 14 {
+			continue
+		}
+		ver := name[:14]
+		if _, err := strconv.ParseInt(ver, 10, 64); err != nil {
+			continue
+		}
+		if first == "" || ver < first {
+			first = ver
+		}
+	}
+	if first == "" {
+		return "", fmt.Errorf("no versioned migration files found in %s", dir)
+	}
+	return first, nil
+}
+
+// resolveBaseline decides the Atlas --baseline for one database:
+//   - an explicit -baseline flag always wins;
+//   - a database already tracked by Atlas (atlas_schema_revisions table)
+//     needs no baseline (apply pending only);
+//   - a fresh/empty database needs no baseline (apply everything);
+//   - a database that has schema objects but no revisions table (legacy /
+//     restored) needs the first migration version as baseline, otherwise
+//     Atlas refuses with "connected database is not clean".
+func resolveBaseline(ctx context.Context, dbURL, explicit, firstMig string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return "", fmt.Errorf("connect to database: %w", err)
+	}
+	defer pool.Close()
+
+	var hasRevisions bool
+	err = pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables
+		WHERE table_name = 'atlas_schema_revisions'
+		  AND table_schema NOT IN ('pg_catalog', 'information_schema')
+	)`).Scan(&hasRevisions)
+	if err != nil {
+		return "", fmt.Errorf("check atlas_schema_revisions: %w", err)
+	}
+	if hasRevisions {
+		return "", nil
+	}
+
+	var objectCount int
+	err = pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM information_schema.tables    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.views     WHERE table_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.sequences WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.routines  WHERE routine_schema NOT IN ('pg_catalog', 'information_schema'))`).Scan(&objectCount)
+	if err != nil {
+		return "", fmt.Errorf("check database emptiness: %w", err)
+	}
+	if objectCount == 0 {
+		return "", nil
+	}
+	return firstMig, nil
+}
+
+// logBaseline prints which baseline strategy is used for the current database.
+func logBaseline(baseline string) {
+	switch baseline {
+	case "":
+		log.Println("  ℹ baseline: none (fresh or Atlas-tracked database)")
+	default:
+		log.Printf("  ℹ baseline: %s (schema present, no revisions table)\n", baseline)
+	}
+}
+
+var sslModeRe = regexp.MustCompile(`(?i)\bsslmode=([a-z]+)`)
+
+// dsnToURL converts any pgx-accepted connection string (URL or keyword DSN
+// like "host=postgres user=x dbname=y") into a postgres:// URL that the Atlas
+// CLI can consume, applying the docker-service host override (from=to).
+func dsnToURL(connStr, hostOverride string) (string, error) {
+	cfg, err := pgx.ParseConfig(connStr)
+	if err != nil {
+		return "", fmt.Errorf("parse connection string: %w", err)
+	}
+
+	host := cfg.Host
+	overridden := false
+	if hostOverride != "" {
+		if from, to, ok := strings.Cut(hostOverride, "="); ok && strings.EqualFold(host, from) {
+			host = to
+			overridden = true
+		}
+	}
+	if strings.HasPrefix(host, "/") {
+		return "", fmt.Errorf("unix-socket hosts are not supported by Atlas URLs (host=%q)", host)
+	}
+
+	q := url.Values{}
+	if m := sslModeRe.FindStringSubmatch(connStr); len(m) == 2 {
+		q.Set("sslmode", m[1])
+	} else if overridden {
+		// Docker-local connections default to no TLS.
+		q.Set("sslmode", "disable")
+	}
+
+	u := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(cfg.User, cfg.Password),
+		Host:     net.JoinHostPort(host, strconv.Itoa(int(cfg.Port))),
+		Path:     "/" + cfg.Database,
+		RawQuery: q.Encode(),
+	}
+	return u.String(), nil
+}
+
+// isMissingDatabase reports whether the error is PostgreSQL's
+// "database ... does not exist" (SQLSTATE 3D000 / invalid_catalog_name).
+func isMissingDatabase(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "3D000" {
+		return true
+	}
+	// Fallback for wrapped/non-pgconn errors.
+	return strings.Contains(err.Error(), `database "`) && strings.Contains(err.Error(), "does not exist")
 }
 
 // resolveAtlasBinary locates the Atlas CLI executable
