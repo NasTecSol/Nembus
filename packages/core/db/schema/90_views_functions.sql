@@ -911,8 +911,7 @@ BEGIN
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
-               AND (pp.product_variant_id = cat.product_variant_id
-                    OR (cat.product_variant_id IS NULL AND pp.product_variant_id IS NULL))
+               AND (pp.product_variant_id = cat.product_variant_id OR pp.product_variant_id IS NULL)
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to   IS NULL OR pp.valid_to   >= CURRENT_DATE)
@@ -958,6 +957,25 @@ BEGIN
               pr.applies_to = 'all'
               OR (pr.applies_to = 'product' AND cat.product_id = ANY(pr.target_product_ids))
               OR (pr.applies_to = 'category' AND cat.category_id = ANY(pr.target_category_ids))
+          )
+          AND (
+              NOT (pr.metadata ? 'target_uoms')
+              OR NOT (pr.metadata->'target_uoms' ? cat.product_id::text)
+              OR (
+                  jsonb_typeof(pr.metadata->'target_uoms'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_uoms'->(cat.product_id::text)) @> cat.uom_id::text::jsonb
+              )
+              OR (pr.metadata->'target_uoms'->>(cat.product_id::text)) = cat.uom_id::text
+          )
+          AND (
+              NOT (pr.metadata ? 'target_variants')
+              OR NOT (pr.metadata->'target_variants' ? cat.product_id::text)
+              OR cat.product_variant_id IS NULL
+              OR (
+                  jsonb_typeof(pr.metadata->'target_variants'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_variants'->(cat.product_id::text)) @> cat.product_variant_id::text::jsonb
+              )
+              OR (pr.metadata->'target_variants'->>(cat.product_id::text)) = cat.product_variant_id::text
           )
         ORDER BY pr.created_at DESC
         LIMIT 1
@@ -1333,6 +1351,25 @@ BEGIN
               pr.applies_to = 'all'
               OR (pr.applies_to = 'product' AND cat.product_id = ANY(pr.target_product_ids))
               OR (pr.applies_to = 'category' AND cat.category_id = ANY(pr.target_category_ids))
+          )
+          AND (
+              NOT (pr.metadata ? 'target_uoms')
+              OR NOT (pr.metadata->'target_uoms' ? cat.product_id::text)
+              OR (
+                  jsonb_typeof(pr.metadata->'target_uoms'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_uoms'->(cat.product_id::text)) @> cat.uom_id::text::jsonb
+              )
+              OR (pr.metadata->'target_uoms'->>(cat.product_id::text)) = cat.uom_id::text
+          )
+          AND (
+              NOT (pr.metadata ? 'target_variants')
+              OR NOT (pr.metadata->'target_variants' ? cat.product_id::text)
+              OR cat.product_variant_id IS NULL
+              OR (
+                  jsonb_typeof(pr.metadata->'target_variants'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_variants'->(cat.product_id::text)) @> cat.product_variant_id::text::jsonb
+              )
+              OR (pr.metadata->'target_variants'->>(cat.product_id::text)) = cat.product_variant_id::text
           )
         ORDER BY pr.created_at DESC
         LIMIT 1
@@ -2984,6 +3021,7 @@ DECLARE
     v_retail_pp RECORD;
     v_calculated_price NUMERIC(15,2);
     v_discount_percent_str VARCHAR;
+    v_variant_id INTEGER;
 BEGIN
     -- Locate existing PROMO price list
     SELECT id INTO v_promo_pl_id
@@ -3021,6 +3059,13 @@ BEGIN
 
     -- If INSERTING or UPDATING active promotion, generate promotional package prices
     IF NEW.is_active = true AND v_promo_pl_id IS NOT NULL THEN
+        -- Clean up existing promotional prices for this promotion on UPDATE to ensure non-matching UOMs are purged
+        IF TG_OP = 'UPDATE' THEN
+            DELETE FROM product_prices
+            WHERE price_list_id = v_promo_pl_id
+              AND metadata->>'promotion_id' = NEW.id::text;
+        END IF;
+
         -- Format discount percent string for metadata
         IF NEW.promotion_type = 'percentage_discount' AND NEW.discount_value IS NOT NULL THEN
             v_discount_percent_str := CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM NEW.discount_value::text)), '%');
@@ -3048,6 +3093,25 @@ BEGIN
                 WHERE pp.product_id = v_target_product_id
                   AND pl.price_list_type = 'retail'
                   AND pp.is_active = true
+                  AND (
+                      NOT (NEW.metadata ? 'target_uoms')
+                      OR NOT (NEW.metadata->'target_uoms' ? v_target_product_id::text)
+                      OR (
+                          jsonb_typeof(NEW.metadata->'target_uoms'->(v_target_product_id::text)) = 'array'
+                          AND (NEW.metadata->'target_uoms'->(v_target_product_id::text)) @> pp.uom_id::text::jsonb
+                      )
+                      OR (NEW.metadata->'target_uoms'->>(v_target_product_id::text)) = pp.uom_id::text
+                  )
+                  AND (
+                      NOT (NEW.metadata ? 'target_variants')
+                      OR NOT (NEW.metadata->'target_variants' ? v_target_product_id::text)
+                      OR pp.product_variant_id IS NULL
+                      OR (
+                          jsonb_typeof(NEW.metadata->'target_variants'->(v_target_product_id::text)) = 'array'
+                          AND (NEW.metadata->'target_variants'->(v_target_product_id::text)) @> pp.product_variant_id::text::jsonb
+                      )
+                      OR (NEW.metadata->'target_variants'->>(v_target_product_id::text)) = pp.product_variant_id::text
+                  )
             ) LOOP
                 -- Calculate promo price
                 IF NEW.promotion_type = 'percentage_discount' AND NEW.discount_value IS NOT NULL THEN
@@ -3058,43 +3122,94 @@ BEGIN
                     v_calculated_price := v_retail_pp.price;
                 END IF;
 
-                -- Remove previous promo price entry for this product + UOM + PROMO price list if it exists
-                DELETE FROM product_prices
-                WHERE product_id = v_target_product_id
-                  AND price_list_id = v_promo_pl_id
-                  AND (product_variant_id = v_retail_pp.product_variant_id OR (product_variant_id IS NULL AND v_retail_pp.product_variant_id IS NULL))
-                  AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
+                -- If retail price was at base product level (product_variant_id IS NULL), but promotion targets specific variants, loop over those variants
+                IF v_retail_pp.product_variant_id IS NULL 
+                   AND (NEW.metadata ? 'target_variants') 
+                   AND (NEW.metadata->'target_variants' ? v_target_product_id::text) THEN
+                    FOR v_variant_id IN (
+                        SELECT (jsonb_array_elements_text(
+                            CASE 
+                                WHEN jsonb_typeof(NEW.metadata->'target_variants'->(v_target_product_id::text)) = 'array'
+                                THEN NEW.metadata->'target_variants'->(v_target_product_id::text)
+                                ELSE jsonb_build_array(NEW.metadata->'target_variants'->>(v_target_product_id::text))
+                            END
+                        ))::integer
+                    ) LOOP
+                        DELETE FROM product_prices
+                        WHERE product_id = v_target_product_id
+                          AND price_list_id = v_promo_pl_id
+                          AND product_variant_id = v_variant_id
+                          AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
 
-                -- Insert new promotional package price into product_prices
-                INSERT INTO product_prices (
-                    product_id,
-                    product_variant_id,
-                    price_list_id,
-                    uom_id,
-                    price,
-                    min_quantity,
-                    max_quantity,
-                    valid_from,
-                    valid_to,
-                    is_active,
-                    metadata
-                ) VALUES (
-                    v_target_product_id,
-                    v_retail_pp.product_variant_id,
-                    v_promo_pl_id,
-                    v_retail_pp.uom_id,
-                    v_calculated_price,
-                    v_retail_pp.min_quantity,
-                    v_retail_pp.max_quantity,
-                    NEW.valid_from,
-                    NEW.valid_to,
-                    true,
-                    jsonb_build_object(
-                        'promotion_id', NEW.id,
-                        'promotion_name', NEW.name,
-                        'discount_percent', v_discount_percent_str
-                    )
-                );
+                        INSERT INTO product_prices (
+                            product_id,
+                            product_variant_id,
+                            price_list_id,
+                            uom_id,
+                            price,
+                            min_quantity,
+                            max_quantity,
+                            valid_from,
+                            valid_to,
+                            is_active,
+                            metadata
+                        ) VALUES (
+                            v_target_product_id,
+                            v_variant_id,
+                            v_promo_pl_id,
+                            v_retail_pp.uom_id,
+                            v_calculated_price,
+                            v_retail_pp.min_quantity,
+                            v_retail_pp.max_quantity,
+                            NEW.valid_from,
+                            NEW.valid_to,
+                            true,
+                            jsonb_build_object(
+                                'promotion_id', NEW.id,
+                                'promotion_name', NEW.name,
+                                'discount_percent', v_discount_percent_str
+                            )
+                        );
+                    END LOOP;
+                ELSE
+                    -- Remove previous promo price entry for this product + UOM + PROMO price list if it exists
+                    DELETE FROM product_prices
+                    WHERE product_id = v_target_product_id
+                      AND price_list_id = v_promo_pl_id
+                      AND (product_variant_id = v_retail_pp.product_variant_id OR (product_variant_id IS NULL AND v_retail_pp.product_variant_id IS NULL))
+                      AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
+
+                    -- Insert new promotional package price into product_prices
+                    INSERT INTO product_prices (
+                        product_id,
+                        product_variant_id,
+                        price_list_id,
+                        uom_id,
+                        price,
+                        min_quantity,
+                        max_quantity,
+                        valid_from,
+                        valid_to,
+                        is_active,
+                        metadata
+                    ) VALUES (
+                        v_target_product_id,
+                        v_retail_pp.product_variant_id,
+                        v_promo_pl_id,
+                        v_retail_pp.uom_id,
+                        v_calculated_price,
+                        v_retail_pp.min_quantity,
+                        v_retail_pp.max_quantity,
+                        NEW.valid_from,
+                        NEW.valid_to,
+                        true,
+                        jsonb_build_object(
+                            'promotion_id', NEW.id,
+                            'promotion_name', NEW.name,
+                            'discount_percent', v_discount_percent_str
+                        )
+                    );
+                END IF;
             END LOOP;
         END LOOP;
     END IF;
