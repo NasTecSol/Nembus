@@ -18897,6 +18897,133 @@
                 }
             }
         },
+        "/api/pos/terminals/{id}/assign-cashiers": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assigns one or more cashier IDs to a POS terminal's metadata",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pos-terminals"
+                ],
+                "summary": "Assign cashiers to POS terminal",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Terminal ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cashier IDs payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.AssignCashiersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pos/terminals/{id}/cashiers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all cashiers assigned to a POS terminal via metadata",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pos-terminals"
+                ],
+                "summary": "Get cashiers assigned to POS terminal",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Terminal ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pos/terminals/{id}/cashiers/{cashier_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a cashier ID from a POS terminal's metadata",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pos-terminals"
+                ],
+                "summary": "Unassign a cashier from POS terminal",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Terminal ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Cashier ID",
+                        "name": "cashier_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pos/transactions": {
             "post": {
                 "security": [
@@ -40072,6 +40199,20 @@
             "properties": {
                 "is_active": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handler.AssignCashiersRequest": {
+            "type": "object",
+            "required": [
+                "cashier_ids"
+            ],
+            "properties": {
+                "cashier_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
