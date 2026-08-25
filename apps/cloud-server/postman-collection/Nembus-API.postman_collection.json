@@ -932,6 +932,57 @@
           }
         },
         {
+          "name": "Assign Cashiers to Terminal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/pos/terminals/1/assign-cashiers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cashier_ids\": [1, 2, 3]\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Cashiers for Terminal",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/pos/terminals/1/cashiers"
+          }
+        },
+        {
+          "name": "Unassign Cashier from Terminal",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/pos/terminals/1/cashiers/1"
+          }
+        },
+        {
           "name": "List Store Terminals",
           "request": {
             "method": "GET",
