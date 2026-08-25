@@ -500,14 +500,17 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			if pt.PartnerType == "customer" {
 				custQ := `
 				INSERT INTO customers (organization_id, customer_code, name, is_active, business_partner_id, metadata)
-				VALUES ($1, $2, $3, $4, (SELECT id FROM business_partners WHERE code = $2 LIMIT 1), $5)
+				VALUES ($1, $2::varchar(50), $3, $4, (SELECT id FROM business_partners WHERE code = $2::varchar(50) LIMIT 1), $5)
 				ON CONFLICT(organization_id, customer_code) DO UPDATE SET
 					name = excluded.name,
 					is_active = excluded.is_active,
 					business_partner_id = excluded.business_partner_id,
 					metadata = excluded.metadata;
 				`
-				_ = execWithSavepoint(ctx, tx, custQ, payload.OrganizationID, pt.Code, pt.Name, pt.IsActive, metaBytes)
+				if custErr := execWithSavepoint(ctx, tx, custQ, payload.OrganizationID, pt.Code, pt.Name, pt.IsActive, metaBytes); custErr != nil {
+					failed++
+					errs = append(errs, fmt.Sprintf("customer %s error: %v", pt.Code, custErr))
+				}
 			}
 		}
 
