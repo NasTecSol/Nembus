@@ -242,7 +242,7 @@ func (c *SAPCashier) ToCanonical(defaults CashierDefaults) CanonicalCashier {
 }
 
 // ----------------------------------------------------
-// Domain 3: Catalog (OUOM, OUGP, UGP1, OITB, OMRG, OITM, OBCD)
+// Domain 3: Catalog (OUOM, OUGP, UGP1, OITB, OMRC, OITM, OBCD)
 // ----------------------------------------------------
 
 type SAPUOM struct {

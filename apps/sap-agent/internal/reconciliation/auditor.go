@@ -58,7 +58,7 @@ func (a *AuditEngine) Reconcile(ctx context.Context, runID string, orgID int) (*
 		{contracts.DomainUOM, schema.TableOUOM, "UomEntry"},
 		{contracts.DomainUOMGroups, schema.TableOUGP, "UgpEntry"},
 		{contracts.DomainCategories, schema.TableOITB, "ItmsGrpCod"},
-		{contracts.DomainBrands, schema.TableOMRG, "FirmCode"},
+		{contracts.DomainBrands, schema.TableOMRC, "FirmCode"},
 		{contracts.DomainProducts, schema.TableOITM, "ItemCode"},
 		{contracts.DomainBarcodes, schema.TableOBCD, "BcdEntry"},
 		{contracts.DomainPartners, schema.TableOCRD, "CardCode"},

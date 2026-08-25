@@ -10,7 +10,7 @@ const (
 	TableOUGP = "OUGP" // UoM Groups
 	TableUGP1 = "UGP1" // UoM Group Definitions
 	TableOITB = "OITB" // Item Groups / Categories
-	TableOMRG = "OMRG" // Manufacturers / Brands
+	TableOMRC = "OMRC" // Manufacturers / Brands
 	TableOITM = "OITM" // Item Master Data / Products
 	TableOBCD = "OBCD" // Bar Codes
 	TableITM1 = "ITM1" // Item Price Lists
@@ -59,7 +59,7 @@ SELECT
     'OITB' AS TableName, COUNT(1) AS TotalCount FROM OITB
 UNION ALL
 SELECT 
-    'OMRG' AS TableName, COUNT(1) AS TotalCount FROM OMRG
+    'OMRC' AS TableName, COUNT(1) AS TotalCount FROM OMRC
 UNION ALL
 SELECT 
     'OITM' AS TableName, COUNT(1) AS TotalCount FROM OITM
@@ -248,7 +248,7 @@ const QueryBrands = `
 SELECT 
     FirmCode,
     ISNULL(FirmName, '') AS FirmName
-FROM OMRG
+FROM OMRC
 ORDER BY FirmCode;
 `
 
@@ -271,9 +271,9 @@ SELECT
     ISNULL(NumInSale, 1.0) AS NumInSale,
     ISNULL(NumInBuy, 1.0) AS NumInBuy,
     ISNULL(UgpEntry, -1) AS UgpEntry,
-    ISNULL(IUoMEntry, -1) AS IUoMEntry,
-    ISNULL(SUoMEntry, -1) AS SUoMEntry,
-    ISNULL(PUoMEntry, -1) AS PUoMEntry,
+    ISNULL(OITM.IUoMEntry, -1) AS IUoMEntry,
+    ISNULL(OITM.SUoMEntry, -1) AS SUoMEntry,
+    ISNULL(OITM.PUoMEntry, -1) AS PUoMEntry,
     ISNULL(ManSerNum, 'N') AS ManSerNum,
     ISNULL(ManBtchNum, 'N') AS ManBtchNum,
     ISNULL(VatGourpSa, '') AS VatGourpSa

@@ -52,7 +52,7 @@ func (e *CatalogExtractor) ExtractBrands(ctx context.Context) ([]mappings.Canoni
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryBrands)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query OMRG: %w", err)
+		return nil, fmt.Errorf("failed to query OMRC: %w", err)
 	}
 	defer rows.Close()
 
@@ -61,13 +61,13 @@ func (e *CatalogExtractor) ExtractBrands(ctx context.Context) ([]mappings.Canoni
 		var b mappings.SAPBrand
 		var name sql.NullString
 		if err := rows.Scan(&b.FirmCode, &name); err != nil {
-			return nil, fmt.Errorf("failed to scan OMRG row: %w", err)
+			return nil, fmt.Errorf("failed to scan OMRC row: %w", err)
 		}
 		b.FirmName = name.String
 		brands = append(brands, b.ToCanonical())
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate OMRG rows: %w", err)
+		return nil, fmt.Errorf("failed to iterate OMRC rows: %w", err)
 	}
 	return brands, nil
 }
