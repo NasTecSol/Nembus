@@ -270,7 +270,7 @@ SELECT
     ISNULL(InvntryUom, 'UNIT') AS InvntryUom,
     ISNULL(NumInSale, 1.0) AS NumInSale,
     ISNULL(NumInBuy, 1.0) AS NumInBuy,
-    ISNULL(UgpEntry, -1) AS UgpEntry,
+    ISNULL(OITM.UgpEntry, -1) AS UgpEntry,
     ISNULL(OITM.IUoMEntry, -1) AS IUoMEntry,
     ISNULL(OITM.SUoMEntry, -1) AS SUoMEntry,
     ISNULL(OITM.PUoMEntry, -1) AS PUoMEntry,
