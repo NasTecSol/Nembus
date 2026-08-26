@@ -120,6 +120,39 @@ func TestStrictBrandValidation(t *testing.T) {
 	}
 }
 
+func TestStrictBrandProposeNewUsesVerbatimSourceLabel(t *testing.T) {
+	const sourceItemName = "شامبو بانتين صحي ونظيف 24*400 مل"
+	request := unresolvedRequest(t)
+	request.Snapshot.SourceItemName = sourceItemName
+
+	valid := responseJSON(t, request.SourceItemCode, BrandProposal{
+		Action:        ActionProposeNew,
+		CanonicalName: "  بانتين  ",
+		Confidence:    0.8,
+	}, validCategoryMatch(), validDescription(), []UnsupportedSemantic{})
+	parsed, err := ParseEnrichmentResponse(valid, request)
+	if err != nil {
+		t.Fatalf("verbatim source-language brand proposal rejected: %v", err)
+	}
+	if parsed.Proposals.Brand.CanonicalName != "بانتين" {
+		t.Fatalf("canonical source label=%q, want %q", parsed.Proposals.Brand.CanonicalName, "بانتين")
+	}
+	if parsed.Proposals.Brand.TargetID != nil || parsed.Proposals.Brand.TargetCode != "" {
+		t.Fatalf("PROPOSE_NEW brand gained a target identity: %+v", parsed.Proposals.Brand)
+	}
+
+	translated := responseJSON(t, request.SourceItemCode, BrandProposal{
+		Action:        ActionProposeNew,
+		CanonicalName: "Pantene",
+		Confidence:    0.8,
+	}, validCategoryMatch(), validDescription(), []UnsupportedSemantic{})
+	_, err = ParseEnrichmentResponse(translated, request)
+	requireResponseClass(t, err, ResponseContractViolation)
+	if !strings.Contains(err.Error(), "extracted verbatim from source_item_name") {
+		t.Fatalf("unexpected source-label validation error: %v", err)
+	}
+}
+
 func TestStrictCategoryValidationAndPrecedence(t *testing.T) {
 	request := unresolvedRequest(t)
 	for _, test := range []struct {
@@ -322,7 +355,7 @@ func TestStrictRealSampleContracts(t *testing.T) {
 
 func TestBuildInferenceInstructionsIsProviderNeutral(t *testing.T) {
 	text := BuildInferenceInstructions(unresolvedRequest(t))
-	for _, expected := range []string{"exactly one JSON object", "KEEP_EXISTING", "product_type", "conversion factor", "unsupported_semantics", "source language"} {
+	for _, expected := range []string{"exactly one JSON object", "KEEP_EXISTING", "product_type", "conversion factor", "unsupported_semantics", "source language", "verbatim", "never translate", "transliterate", "MATCH_EXISTING instead"} {
 		if !strings.Contains(strings.ToLower(text), strings.ToLower(expected)) {
 			t.Errorf("instruction contract missing %q", expected)
 		}

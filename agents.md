@@ -4766,3 +4766,18 @@ Remaining operational limitation: a deployed SAP Agent M2M client must be
 tenant/org-bound and registered with `product_enrichment:review` or the
 existing `sap:migration` scope; live deployment/database smoke validation is
 still environment-specific.
+
+## SAP Product Enrichment Contract v2 Source-Language Brand Rule — 2026-08-26
+
+- `EnrichmentContractVersion` is now `sap-product-enrichment-v2`; the request
+  version remains unchanged.
+- `PROPOSE_NEW` brand `canonical_name` must be a trimmed, exact substring of
+  `source_item_name`, preserving the source language/script. Translations,
+  transliterations, case-folding, rewrites, and alternate spellings are
+  rejected by the strict response validator.
+- `MATCH_EXISTING` is unchanged: an exact supplied candidate is validated and
+  the server-side canonical candidate remains authoritative.
+- `PROPOSE_NEW` remains review-only and unbound; no target identity or
+  automatic brand creation was added.
+- Focused enrichment and DeepSeek adapter regression tests were added and
+  passed with `go test ./enrichment/...` from `packages/core`.

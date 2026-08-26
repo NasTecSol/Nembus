@@ -106,6 +106,10 @@ func TestDeepSeekInstructionsStateExactStage2BShapeAndActionRules(t *testing.T) 
 		`NEVER return a scalar string such as "evidence":"single source fact"`,
 		"resolved structured brand requires KEEP_EXISTING",
 		"unresolved brand requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH",
+		"PROPOSE_NEW brand canonical_name must be copied or extracted verbatim as a substring from source_item_name",
+		"preserving the source language and script",
+		"never translate, transliterate, case-fold, rewrite, or substitute an alternate spelling",
+		"If an existing supplied canonical brand candidate matches, use MATCH_EXISTING instead of PROPOSE_NEW",
 		"populated structured category requires KEEP_EXISTING",
 		"missing category requires MATCH_EXISTING against a supplied exact candidate, PROPOSE_NEW, or NO_MATCH",
 		"existing description requires KEEP_EXISTING",
@@ -120,6 +124,40 @@ func TestDeepSeekInstructionsStateExactStage2BShapeAndActionRules(t *testing.T) 
 		if strings.Contains(instructions, forbidden) {
 			t.Errorf("instructions contain noncanonical alias %q", forbidden)
 		}
+	}
+}
+
+func TestProviderEnforcesVerbatimSourceLanguageBrandProposal(t *testing.T) {
+	const sourceItemName = "شامبو بانتين صحي ونظيف 24*400 مل"
+	request := adapterRequest(t)
+	request.Snapshot.SourceItemName = sourceItemName
+
+	for _, test := range []struct {
+		name          string
+		canonicalName string
+		wantClass     enrichment.ResponseErrorClass
+	}{
+		{name: "source label", canonicalName: "بانتين"},
+		{name: "translated spelling", canonicalName: "Pantene", wantClass: enrichment.ResponseContractViolation},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw := strings.Replace(validResponse(request.SourceItemCode),
+				`"brand":{"action":"MATCH_EXISTING","target_id":10,"target_code":"PANTENE","canonical_name":"","confidence":0.9`,
+				`"brand":{"action":"PROPOSE_NEW","target_id":null,"target_code":"","canonical_name":`+strconvQuote(test.canonicalName)+`,"confidence":0.9`, 1)
+			provider, err := newWithClient(fakeHTTPClient{body: `{"id":"ds-test","model":"model","choices":[{"finish_reason":"stop","message":{"content":` + strconvQuote(raw) + `}}]}`}, "https://deepseek.test", "test-key", "model", time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := provider.Enrich(context.Background(), request)
+			if got := enrichment.ResponseErrorClassOf(err); got != test.wantClass {
+				t.Fatalf("response class=%s want %s err=%v", got, test.wantClass, err)
+			}
+			if test.wantClass == "" {
+				if result.Proposals.Brand.CanonicalName != test.canonicalName || result.Proposals.Brand.TargetID != nil || result.Proposals.Brand.TargetCode != "" {
+					t.Fatalf("validated PROPOSE_NEW brand=%+v", result.Proposals.Brand)
+				}
+			}
+		})
 	}
 }
 

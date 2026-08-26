@@ -260,7 +260,7 @@ func validateResponseAgainstRequest(proposals *ProposalSet, request EnrichmentRe
 	if err != nil {
 		return responseError(ResponseCandidateMismatch, "%v", err)
 	}
-	if err := validateBrandResponse(proposals.Brand, request.Snapshot.Brand, index); err != nil {
+	if err := validateBrandResponse(proposals.Brand, request.Snapshot.Brand, request.Snapshot.SourceItemName, index); err != nil {
 		return err
 	}
 	if err := validateCategoryResponse(proposals.Category, request.Snapshot.Category, index); err != nil {
@@ -272,7 +272,7 @@ func validateResponseAgainstRequest(proposals *ProposalSet, request EnrichmentRe
 	return nil
 }
 
-func validateBrandResponse(proposal *BrandProposal, current *BrandIdentity, index *CandidateIndex) error {
+func validateBrandResponse(proposal *BrandProposal, current *BrandIdentity, sourceItemName string, index *CandidateIndex) error {
 	if current != nil && current.Resolved() {
 		if proposal.Action != ActionKeepExisting {
 			return responseError(ResponseContractViolation, "resolved structured brand requires KEEP_EXISTING")
@@ -292,9 +292,14 @@ func validateBrandResponse(proposal *BrandProposal, current *BrandIdentity, inde
 		proposal.TargetCode = candidate.Code
 		proposal.CanonicalName = candidate.Name
 	case ActionProposeNew:
-		if strings.TrimSpace(proposal.CanonicalName) == "" {
+		canonicalName := strings.TrimSpace(proposal.CanonicalName)
+		if canonicalName == "" {
 			return responseError(ResponseContractViolation, "PROPOSE_NEW brand requires a proposed canonical_name")
 		}
+		if !strings.Contains(strings.TrimSpace(sourceItemName), canonicalName) {
+			return responseError(ResponseContractViolation, "PROPOSE_NEW brand canonical_name must be extracted verbatim from source_item_name")
+		}
+		proposal.CanonicalName = canonicalName
 	case ActionNoMatch:
 		if err := rejectIdentityText(proposal.CanonicalName, "NO_MATCH brand"); err != nil {
 			return err

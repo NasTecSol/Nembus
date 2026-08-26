@@ -13,7 +13,7 @@ import (
 
 const (
 	SourceSystemSAP           = "SAP"
-	EnrichmentContractVersion = "sap-product-enrichment-v1"
+	EnrichmentContractVersion = "sap-product-enrichment-v2"
 	EnrichmentRequestVersion  = "sap-product-enrichment-request-v1"
 	MaxDescriptionRunes       = 500
 	DefaultCandidateLimit     = 100
