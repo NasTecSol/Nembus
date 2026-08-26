@@ -90,5 +90,7 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 		stores.GET("/waste-report", h.GetWasteReport)
 		stores.GET("/recipes", h.ListRecipes)
 		stores.GET("/menu-modifier-groups", h.ListMenuModifierGroupsByStore)
+		stores.GET("/modifiers", h.ListStoreModifiers)
 	}
+
 }

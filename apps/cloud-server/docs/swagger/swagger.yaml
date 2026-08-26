@@ -22909,6 +22909,46 @@ paths:
       summary: List menu categories
       tags:
       - restaurant
+  /api/restaurant/stores/{store_id}/modifiers:
+    get:
+      consumes:
+      - application/json
+      description: Returns all modifiers for all menu items of a given store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: path
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List store modifiers
+      tags:
+      - restaurant
   /api/restaurant/stores/{store_id}/recipes:
     get:
       consumes:
