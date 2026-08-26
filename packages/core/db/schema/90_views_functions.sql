@@ -2228,6 +2228,13 @@ DECLARE
     v_all_po_received BOOLEAN := true;
     v_any_po_received BOOLEAN := false;
     v_po_line RECORD;
+    v_org_metadata JSONB;
+    v_strategy VARCHAR(50);
+    v_current_price NUMERIC;
+    v_old_qty NUMERIC;
+    v_new_price NUMERIC;
+    v_incoming_price NUMERIC;
+    v_total_qty NUMERIC;
 BEGIN
     SELECT * INTO v_grn FROM goods_receipt_notes WHERE id = p_grn_id FOR UPDATE;
     IF v_grn IS NULL THEN
@@ -2304,6 +2311,58 @@ BEGIN
             v_grn.received_by, 'completed', COALESCE(v_item.unit_cost, 0), (COALESCE(v_item.unit_cost, 0) * v_item.quantity_received),
             jsonb_build_object('grn_number', v_grn.grn_number, 'delivery_note_number', COALESCE(v_grn.delivery_note_number, ''))
         );
+
+        -- Load organization metadata and strategy
+        SELECT metadata INTO v_org_metadata FROM organizations WHERE id = v_grn.organization_id;
+        
+        IF jsonb_typeof(v_org_metadata) = 'array' THEN
+            v_strategy := COALESCE((v_org_metadata->0)->>'inventory_strategy', 'WEIGHTED_AVERAGE');
+        ELSE
+            v_strategy := COALESCE(v_org_metadata->>'inventory_strategy', 'WEIGHTED_AVERAGE');
+        END IF;
+
+        -- If strategy is WEIGHTED_AVERAGE, calculate and update average price
+        IF v_strategy = 'WEIGHTED_AVERAGE' THEN
+            -- Get total quantity on hand AFTER the update
+            SELECT quantity_on_hand INTO v_total_qty
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_grn.store_id;
+
+            -- Calculate quantity on hand BEFORE this GRN item
+            v_old_qty := COALESCE(v_total_qty, 0) - v_item.quantity_received;
+            IF v_old_qty < 0 THEN
+                v_old_qty := 0;
+            END IF;
+
+            -- Fetch current retail price from price lists ('RETAIL' or 'RETAIL_SAR')
+            SELECT price INTO v_current_price 
+            FROM product_prices 
+            WHERE product_id = v_item.product_id 
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true)
+              AND is_active = true
+            LIMIT 1;
+
+            v_incoming_price := COALESCE(v_item.unit_cost, 0);
+
+            IF v_old_qty = 0 OR v_current_price IS NULL THEN
+                v_new_price := v_incoming_price;
+            ELSE
+                v_new_price := ROUND(((v_old_qty * v_current_price) + (v_item.quantity_received * v_incoming_price)) / (v_old_qty + v_item.quantity_received), 2);
+            END IF;
+
+            -- Update product prices for both RETAIL and RETAIL_SAR price lists
+            IF v_new_price > 0 THEN
+                UPDATE product_prices
+                SET price = v_new_price,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE product_id = v_item.product_id
+                  AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+                  AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true);
+            END IF;
+        END IF;
     END LOOP;
 
     -- Update GRN status
