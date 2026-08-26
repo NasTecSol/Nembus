@@ -667,6 +667,38 @@ func (h *RestaurantHandler) ListModifiers(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// ListStoreModifiers handles GET /api/restaurant/stores/:store_id/modifiers
+// @Summary      List store modifiers
+// @Description  Returns all modifiers for all menu items of a given store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/modifiers [get]
+func (h *RestaurantHandler) ListStoreModifiers(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.useCase.ListModifiersByStore(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+
 // GetModifier handles GET /api/restaurant/modifiers/:modifier_id
 // @Summary      Get item modifier
 // @Description  Returns a single item modifier by ID.

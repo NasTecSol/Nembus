@@ -32,3 +32,21 @@ RETURNING *;
 -- name: DeleteMenuItemModifier :exec
 DELETE FROM menu_item_modifiers
 WHERE id = $1;
+
+-- name: ListModifiersByStore :many
+SELECT 
+    mim.id, 
+    mim.menu_item_id, 
+    mim.modifier_name, 
+    mim.modifier_type, 
+    mim.price_adjustment, 
+    mim.is_active, 
+    mim.display_order, 
+    mim.metadata, 
+    mim.created_at,
+    mi.name AS menu_item_name
+FROM menu_item_modifiers mim
+JOIN menu_items mi ON mim.menu_item_id = mi.id
+WHERE mi.store_id = $1
+ORDER BY mim.display_order, mim.modifier_name;
+

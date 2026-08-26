@@ -232,6 +232,18 @@ func (uc *RestaurantUseCase) ListModifiers(ctx context.Context, itemID int32) *r
 	return utils.NewResponse(utils.CodeOK, "modifiers fetched successfully", modifiers)
 }
 
+func (uc *RestaurantUseCase) ListModifiersByStore(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	modifiers, err := uc.repo.ListModifiersByStore(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "store modifiers fetched successfully", modifiers)
+}
+
+
 func (uc *RestaurantUseCase) GetModifier(ctx context.Context, id int32) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
