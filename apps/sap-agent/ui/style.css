@@ -701,6 +701,29 @@ input:focus {
     justify-content: space-between;
 }
 
+.detail-header-actions {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.detail-close {
+    align-items: center;
+    display: inline-flex;
+    font-size: 1rem;
+    height: 28px;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    width: 28px;
+}
+
+.detail-close:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    outline: none;
+}
+
 .comparison-grid {
     display: grid;
     gap: 1rem;

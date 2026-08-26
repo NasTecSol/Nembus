@@ -4781,3 +4781,17 @@ still environment-specific.
   automatic brand creation was added.
 - Focused enrichment and DeepSeek adapter regression tests were added and
   passed with `go test ./enrichment/...` from `packages/core`.
+
+## SAP Agent Product Enrichment Review Dismissible Detail — 2026-08-26
+
+- Product Enrichment Review detail is now dismissible with a compact accessible
+  close control in the detail header.
+- Close clears the selected suggestion and hides the detail without resetting
+  the review list, active filter, or fetched rows.
+- Navigation away from Product Enrichment Review clears the selected review;
+  returning shows the list without reopening the prior detail.
+- Successful decisions retain the refreshed detail only when its returned
+  status still matches the active filter; stale details close automatically.
+- Checks: `node --check apps/sap-agent/ui/app.js`, `go test ./...` from
+  `apps/sap-agent`, and `git diff --check` passed. No frontend test runner is
+  configured for this embedded UI. No backend or enrichment behavior changed.
