@@ -30,6 +30,47 @@ type CloudClient struct {
 	httpClient *http.Client
 }
 
+// ProxyReview forwards only the review API payload/status. Authentication,
+// tenant binding, and organization binding are added here from private agent
+// configuration; callers never receive the bearer token.
+func (c *CloudClient) ProxyReview(ctx context.Context, method, path, rawQuery string, body []byte) (int, []byte, error) {
+	if strings.TrimSpace(c.cfg.M2MToken) == "" || strings.TrimSpace(c.cfg.TenantSlug) == "" || c.cfg.OrganizationID <= 0 {
+		return 0, nil, errors.New("cloud review requires a tenant/org-bound M2M token")
+	}
+	if method != http.MethodGet && method != http.MethodPost {
+		return 0, nil, errors.New("unsupported cloud review method")
+	}
+	const reviewPrefix = "/api/v1/product-enrichment/suggestions"
+	if path != reviewPrefix && !strings.HasPrefix(path, reviewPrefix+"/") {
+		return 0, nil, errors.New("unsupported cloud review path")
+	}
+	url := strings.TrimRight(c.cfg.BaseURL, "/") + path
+	if rawQuery != "" {
+		url += "?" + rawQuery
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to create review request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.cfg.M2MToken)
+	req.Header.Set("x-tenant-id", c.cfg.TenantSlug)
+	req.Header.Set("x-organization-id", strconv.Itoa(c.cfg.OrganizationID))
+	req.Header.Set("X-Request-ID", uuid.New().String())
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to dispatch review request: %w", err)
+	}
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to read review response: %w", err)
+	}
+	return resp.StatusCode, responseBody, nil
+}
+
 func NewCloudClient(cfg config.CloudConfig) *CloudClient {
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout <= 0 {

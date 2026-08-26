@@ -138,6 +138,19 @@ func (t *productEnrichmentApplicationTransaction) MarkProductEnrichmentSuggestio
 	return reviewSuggestionRecord(row), nil
 }
 
+func (t *productEnrichmentApplicationTransaction) ApproveAndApplyProductEnrichmentSuggestion(ctx context.Context, organizationID, suggestionID int32, reviewerID *int32) (enrichment.ReviewSuggestionRecord, error) {
+	row, err := t.queries.ApproveAndApplyProductEnrichmentSuggestion(ctx, ApproveAndApplyProductEnrichmentSuggestionParams{
+		OrganizationID: organizationID, ID: suggestionID, ReviewerID: nullableInt4(reviewerID),
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return enrichment.ReviewSuggestionRecord{}, enrichment.ErrApplicationTransitionConflict
+		}
+		return enrichment.ReviewSuggestionRecord{}, err
+	}
+	return reviewSuggestionRecord(row), nil
+}
+
 func (t *productEnrichmentApplicationTransaction) InsertProductEnrichmentApplicationAudit(ctx context.Context, audit enrichment.ApplicationAudit) error {
 	oldValues := map[string]any{"status": audit.OldStatus}
 	newValues := map[string]any{
@@ -173,7 +186,7 @@ func (t *productEnrichmentApplicationTransaction) InsertProductEnrichmentApplica
 		OldValues:      oldJSON,
 		NewValues:      newJSON,
 		ChangedFields:  append([]string(nil), audit.ChangedFields...),
-		PerformedBy:    pgtype.Int4{Int32: audit.ApplierUserID, Valid: true},
+		PerformedBy:    nullableInt4(reviewIDPtr(audit.ApplierUserID)),
 	})
 }
 

@@ -44,6 +44,10 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                     <span>Reconciliation</span>
                 </button>
+                <button class="nav-item" data-tab="tab-enrichment" id="nav-enrichment">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                    <span>Enrichment Review</span>
+                </button>
                 <button class="nav-item" data-tab="tab-history" id="nav-history">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                     <span>Run History</span>
@@ -156,10 +160,7 @@
                                         <input type="number" id="agent-batch-size" value="500" required>
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label>Migration M2M Bearer Token</label>
-                                    <input type="password" id="cloud-m2m-token" placeholder="Enter tenant/org-bound JWT">
-                                </div>
+                                <p class="security-note">The tenant-bound Cloud credential stays in the SAP Agent configuration and is never sent to this browser.</p>
                                 <div class="form-actions">
                                     <button type="button" class="btn btn-secondary" id="btn-test-cloud">Test Endpoint</button>
                                     <button type="submit" class="btn btn-primary">Save Config</button>
@@ -377,7 +378,49 @@
                 </div>
             </section>
 
-            <!-- Tab 5: Run History -->
+            <!-- Tab 5: Product Enrichment Review -->
+            <section id="tab-enrichment" class="tab-pane">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Product Enrichment Review</h3>
+                            <p class="subtitle">Review AI proposals before they become canonical Nembus product content.</p>
+                        </div>
+                        <div class="review-toolbar">
+                            <select id="enrichment-status-filter" aria-label="Suggestion status">
+                                <option value="in_review">Pending review</option>
+                                <option value="approved">Approved</option>
+                                <option value="applied">Applied</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <button class="btn btn-primary" id="btn-refresh-enrichment">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="review-error" id="enrichment-error" hidden></div>
+                        <table class="data-table" id="enrichment-table">
+                            <thead>
+                                <tr><th>ItemCode / Product</th><th>Current database value</th><th>Proposed value</th><th>Provider</th><th>Status</th><th>Decision</th></tr>
+                            </thead>
+                            <tbody id="enrichment-table-body"><tr><td colspan="6" class="text-center text-muted">Select Refresh to load suggestions.</td></tr></tbody>
+                        </table>
+                        <div class="enrichment-detail" id="enrichment-detail" hidden>
+                            <div class="detail-header"><h4 id="enrichment-detail-title">Suggestion detail</h4><span class="badge" id="enrichment-detail-status"></span></div>
+                            <div class="comparison-grid">
+                                <div><h5>Current Nembus database value</h5><pre id="enrichment-current"></pre></div>
+                                <div><h5>Proposed enrichment value</h5><pre id="enrichment-proposed"></pre></div>
+                            </div>
+                            <div class="detail-meta" id="enrichment-detail-meta"></div>
+                            <div class="form-actions" id="enrichment-detail-actions">
+                                <button class="btn btn-primary" id="btn-approve-enrichment">Approve & Apply</button>
+                                <button class="btn btn-danger" id="btn-reject-enrichment">Reject</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 6: Run History -->
             <section id="tab-history" class="tab-pane">
                 <div class="card glass-card">
                     <div class="card-header">

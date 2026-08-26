@@ -29,6 +29,25 @@ func TestApplyApprovedSuggestionBrandAndCategoryUseExactTargets(t *testing.T) {
 	}
 }
 
+func TestApproveAndApplySuggestionTransitionsAndMutatesInOneApplicationTransaction(t *testing.T) {
+	current := applicationTestSnapshot()
+	brandID := int32(7)
+	tx := newApplicationTestTx(t, current, &BrandProposal{Action: ActionMatchExisting, TargetID: &brandID, Confidence: 0.9}, nil, nil)
+	tx.suggestion.Status = SuggestionStatusInReview
+	tx.brandTarget = &ReviewCanonicalTarget{ID: brandID, Code: "BRAND-7", Name: "Brand 7"}
+
+	result, err := NewProductEnrichmentApplicationService(&applicationTestStore{tx: tx}).ApproveAndApplySuggestion(context.Background(), 1, 1, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != SuggestionStatusApplied || !tx.committed || tx.audit.OldStatus != SuggestionStatusInReview {
+		t.Fatalf("expected atomic approval/application, result=%+v tx=%+v", result, tx)
+	}
+	if tx.plan.BrandID == nil || *tx.plan.BrandID != brandID || !equalStrings(tx.plan.ChangedFields, []string{"brand_id"}) {
+		t.Fatalf("expected canonical brand product mutation plan, %+v", tx.plan)
+	}
+}
+
 func TestApplyApprovedSuggestionDescriptionUsesCanonicalValidation(t *testing.T) {
 	for _, currentDescription := range []string{"", "   ", "\t\n"} {
 		t.Run("missing/"+currentDescription, func(t *testing.T) {
@@ -278,6 +297,17 @@ func (tx *applicationTestTx) MarkProductEnrichmentSuggestionApplied(context.Cont
 	}
 	tx.suggestion.Status = SuggestionStatusApplied
 	now := time.Now()
+	tx.suggestion.AppliedAt = &now
+	return tx.suggestion, nil
+}
+func (tx *applicationTestTx) ApproveAndApplyProductEnrichmentSuggestion(_ context.Context, _ int32, _ int32, reviewerID *int32) (ReviewSuggestionRecord, error) {
+	if tx.applyErr != nil {
+		return ReviewSuggestionRecord{}, tx.applyErr
+	}
+	tx.suggestion.Status = SuggestionStatusApplied
+	tx.suggestion.ReviewerID = reviewerID
+	now := time.Now()
+	tx.suggestion.ReviewedAt = &now
 	tx.suggestion.AppliedAt = &now
 	return tx.suggestion, nil
 }

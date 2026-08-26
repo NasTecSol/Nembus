@@ -82,6 +82,16 @@ type ReviewStore interface {
 	BeginReviewTransaction(context.Context) (ReviewTransaction, error)
 }
 
+// ReviewApplicationStore is implemented by the tenant-local repository when
+// review approval is allowed to immediately apply the approved fields. The
+// embedded application store keeps the review domain independent from
+// repository and SQL types while allowing the production workflow to reuse
+// the existing transactional application service.
+type ReviewApplicationStore interface {
+	ReviewStore
+	ProductEnrichmentApplicationStore
+}
+
 type ReviewError struct {
 	Code    string
 	Message string
@@ -191,6 +201,25 @@ func (s *ReviewService) ApproveSuggestion(ctx context.Context, organizationID, s
 		}
 		return ReviewDetail{}, reviewNotReviewable("enrichment suggestion is not approvable", nil)
 	}
+	if applicationStore, ok := s.store.(ReviewApplicationStore); ok {
+		var applicationResult ApplicationResult
+		var applicationErr error
+		if reviewerID > 0 {
+			applicationResult, applicationErr = NewProductEnrichmentApplicationService(applicationStore).ApproveAndApplySuggestion(ctx, organizationID, suggestionID, reviewerID)
+		} else {
+			applicationResult, applicationErr = NewProductEnrichmentApplicationService(applicationStore).ApproveAndApplySuggestionAsMachine(ctx, organizationID, suggestionID)
+		}
+		if applicationErr != nil {
+			return ReviewDetail{}, reviewConflict("enrichment suggestion could not be approved and applied", applicationErr)
+		}
+		updated, err := s.store.GetReviewSuggestion(ctx, organizationID, suggestionID)
+		if err != nil {
+			return ReviewDetail{}, reviewInternal("reload applied enrichment suggestion", err)
+		}
+		updated.Status = applicationResult.Status
+		updated.AppliedAt = applicationResult.AppliedAt
+		return detailFromRecord(updated, current, analysis), nil
+	}
 
 	tx, err := s.store.BeginReviewTransaction(ctx)
 	if err != nil {
@@ -211,6 +240,7 @@ func (s *ReviewService) ApproveSuggestion(ctx context.Context, organizationID, s
 	if err := tx.Commit(ctx); err != nil {
 		return ReviewDetail{}, reviewInternal("commit review transaction", err)
 	}
+
 	return detailFromRecord(updated, current, analysis), nil
 }
 

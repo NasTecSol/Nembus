@@ -4,19 +4,19 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-
-	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/discovery"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
 	"github.com/NasTecSol/nembus-sap-agent/internal/reconciliation"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap/contracts"
 )
 
 type Server struct {
@@ -67,7 +67,6 @@ func (s *Server) setupRoutes() {
 		c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
 	})
 
-
 	// 2. WebSocket Route
 	s.router.GET("/ws", s.handleWebSocket)
 
@@ -96,6 +95,14 @@ func (s *Server) setupRoutes() {
 		// History
 		api.GET("/history", s.handleGetHistory)
 		api.GET("/logs", s.handleGetLogs)
+
+		// Product enrichment review proxy. The local browser talks only to this
+		// agent; CloudClient adds the server-side machine credential.
+		review := api.Group("/product-enrichment/suggestions")
+		review.GET("", s.handleReviewList)
+		review.GET("/:id", s.handleReviewDetail)
+		review.POST("/:id/approve", s.handleReviewApprove)
+		review.POST("/:id/reject", s.handleReviewReject)
 	}
 }
 
@@ -107,7 +114,23 @@ func (s *Server) Start(port int) error {
 // Handlers
 
 func (s *Server) handleGetConfig(c *gin.Context) {
-	c.JSON(http.StatusOK, config.Get())
+	current := config.Get()
+	// Never serialize the tenant/org-bound bearer token to the browser. It is
+	// retained in the agent process and used only by CloudClient.
+	c.JSON(http.StatusOK, gin.H{
+		"port": current.Port, "sqlite_path": current.SQLitePath,
+		"batch_size": current.BatchSize, "max_concurrency": current.MaxConcurrency,
+		"default_store_code":     current.DefaultStoreCode,
+		"cashier_drawer_limit":   current.CashierDrawerLimit,
+		"cashier_discount_limit": current.CashierDiscountLimit,
+		"mssql":                  current.MSSQL,
+		"cloud": gin.H{
+			"base_url":        current.Cloud.BaseURL,
+			"tenant_slug":     current.Cloud.TenantSlug,
+			"organization_id": current.Cloud.OrganizationID,
+			"timeout_seconds": current.Cloud.TimeoutSeconds,
+		},
+	})
 }
 
 func (s *Server) handleSaveConfig(c *gin.Context) {
@@ -122,7 +145,16 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 		current.MSSQL = req.MSSQL
 	}
 	if req.Cloud.BaseURL != "" {
-		current.Cloud = req.Cloud
+		current.Cloud.BaseURL = req.Cloud.BaseURL
+	}
+	if req.Cloud.TenantSlug != "" {
+		current.Cloud.TenantSlug = req.Cloud.TenantSlug
+	}
+	if req.Cloud.OrganizationID > 0 {
+		current.Cloud.OrganizationID = req.Cloud.OrganizationID
+	}
+	if req.Cloud.TimeoutSeconds > 0 {
+		current.Cloud.TimeoutSeconds = req.Cloud.TimeoutSeconds
 	}
 	if req.BatchSize > 0 {
 		current.BatchSize = req.BatchSize
@@ -181,7 +213,6 @@ func (s *Server) handleTestCloud(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": ok, "message": msg})
 }
-
 
 func (s *Server) handleDiscovery(c *gin.Context) {
 	cfg := config.Get().MSSQL
@@ -296,4 +327,39 @@ func (s *Server) handleGetLogs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
+func (s *Server) proxyReview(c *gin.Context, method, path string) {
+	if s == nil || s.cloudClient == nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "cloud review service unavailable"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 64*1024))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid review request"})
+		return
+	}
+	status, responseBody, err := s.cloudClient.ProxyReview(c.Request.Context(), method, path, c.Request.URL.RawQuery, body)
+	if err != nil {
+		// Do not return transport details or the configured credential.
+		c.JSON(http.StatusBadGateway, gin.H{"error": "cloud review request failed"})
+		return
+	}
+	c.Data(status, "application/json; charset=utf-8", responseBody)
+}
+
+func (s *Server) handleReviewList(c *gin.Context) {
+	s.proxyReview(c, http.MethodGet, "/api/v1/product-enrichment/suggestions")
+}
+
+func (s *Server) handleReviewDetail(c *gin.Context) {
+	s.proxyReview(c, http.MethodGet, "/api/v1/product-enrichment/suggestions/"+c.Param("id"))
+}
+
+func (s *Server) handleReviewApprove(c *gin.Context) {
+	s.proxyReview(c, http.MethodPost, "/api/v1/product-enrichment/suggestions/"+c.Param("id")+"/approve")
+}
+
+func (s *Server) handleReviewReject(c *gin.Context) {
+	s.proxyReview(c, http.MethodPost, "/api/v1/product-enrichment/suggestions/"+c.Param("id")+"/reject")
 }

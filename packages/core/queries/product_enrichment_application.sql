@@ -43,3 +43,15 @@ WHERE organization_id = sqlc.arg(organization_id)
   AND (sqlc.narg(brand_id)::INTEGER IS NULL OR brand_id IS NULL)
   AND (sqlc.narg(category_id)::INTEGER IS NULL OR category_id IS NULL)
   AND (sqlc.narg(description)::TEXT IS NULL OR description IS NULL OR btrim(description) = '');
+
+-- name: ApproveAndApplyProductEnrichmentSuggestion :one
+UPDATE product_enrichment_suggestions
+SET status = 'applied',
+    reviewer_id = sqlc.narg(reviewer_id)::INTEGER,
+    reviewed_at = CURRENT_TIMESTAMP,
+    applied_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE organization_id = sqlc.arg(organization_id)
+  AND id = sqlc.arg(id)
+  AND status = 'in_review'
+RETURNING *;

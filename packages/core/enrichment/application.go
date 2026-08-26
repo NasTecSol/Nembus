@@ -102,6 +102,7 @@ type ProductEnrichmentApplicationTransaction interface {
 	ResolveCategoryApplicationTarget(context.Context, *int32, string) (*ReviewCanonicalTarget, error)
 	ApplyProductEnrichmentFields(context.Context, int32, int32, ApplyPlan) (int64, error)
 	MarkProductEnrichmentSuggestionApplied(context.Context, int32, int32) (ReviewSuggestionRecord, error)
+	ApproveAndApplyProductEnrichmentSuggestion(context.Context, int32, int32, *int32) (ReviewSuggestionRecord, error)
 	InsertProductEnrichmentApplicationAudit(context.Context, ApplicationAudit) error
 	Commit(context.Context) error
 	Rollback(context.Context) error
@@ -119,10 +120,38 @@ func NewProductEnrichmentApplicationService(store ProductEnrichmentApplicationSt
 // inside one tenant-local transaction. It performs no permission check; E2
 // owns authenticated endpoint authorization.
 func (s *ProductEnrichmentApplicationService) ApplyApprovedSuggestion(ctx context.Context, organizationID, suggestionID, applierUserID int32) (ApplicationResult, error) {
+	return s.applyApprovedSuggestion(ctx, organizationID, suggestionID, applierUserID, true)
+}
+
+// ApplyApprovedSuggestionAsMachine applies an approved suggestion for a
+// tenant-bound machine workflow. Machine credentials do not identify a
+// tenant user, so the audit actor remains NULL while the trusted tenant
+// identity is still enforced by the HTTP boundary.
+func (s *ProductEnrichmentApplicationService) ApplyApprovedSuggestionAsMachine(ctx context.Context, organizationID, suggestionID int32) (ApplicationResult, error) {
+	return s.applyApprovedSuggestion(ctx, organizationID, suggestionID, 0, false)
+}
+
+// ApproveAndApplySuggestion performs the reviewer decision and the narrow
+// tenant-product update in one transaction.
+func (s *ProductEnrichmentApplicationService) ApproveAndApplySuggestion(ctx context.Context, organizationID, suggestionID, reviewerID int32) (ApplicationResult, error) {
+	return s.applySuggestion(ctx, organizationID, suggestionID, reviewerID, reviewerID > 0, true)
+}
+
+// ApproveAndApplySuggestionAsMachine is the same atomic operation for the
+// tenant-bound SAP Agent, whose machine credential has no tenant user ID.
+func (s *ProductEnrichmentApplicationService) ApproveAndApplySuggestionAsMachine(ctx context.Context, organizationID, suggestionID int32) (ApplicationResult, error) {
+	return s.applySuggestion(ctx, organizationID, suggestionID, 0, false, true)
+}
+
+func (s *ProductEnrichmentApplicationService) applyApprovedSuggestion(ctx context.Context, organizationID, suggestionID, applierUserID int32, requireApplier bool) (ApplicationResult, error) {
+	return s.applySuggestion(ctx, organizationID, suggestionID, applierUserID, requireApplier, false)
+}
+
+func (s *ProductEnrichmentApplicationService) applySuggestion(ctx context.Context, organizationID, suggestionID, applierUserID int32, requireApplier, allowInReview bool) (ApplicationResult, error) {
 	if s == nil || s.store == nil {
 		return ApplicationResult{}, applicationPersistence("application store is not configured", nil)
 	}
-	if organizationID <= 0 || suggestionID <= 0 || applierUserID <= 0 {
+	if organizationID <= 0 || suggestionID <= 0 || (requireApplier && applierUserID <= 0) {
 		return ApplicationResult{}, applicationError(ApplicationErrorInvalidProposal, "organization, suggestion, and applier IDs must be positive", nil)
 	}
 
@@ -151,7 +180,7 @@ func (s *ProductEnrichmentApplicationService) ApplyApprovedSuggestion(ctx contex
 		committed = true
 		return applicationResultFromRecord(suggestion, nil, true), nil
 	}
-	if suggestion.Status != SuggestionStatusApproved {
+	if suggestion.Status != SuggestionStatusApproved && !(allowInReview && suggestion.Status == SuggestionStatusInReview) {
 		return ApplicationResult{}, applicationError(ApplicationErrorNotApproved, "enrichment suggestion is not approved", nil)
 	}
 	if suggestion.OrganizationID != organizationID || suggestion.ProductID <= 0 {
@@ -204,7 +233,12 @@ func (s *ProductEnrichmentApplicationService) ApplyApprovedSuggestion(ctx contex
 		}
 	}
 
-	updated, err := tx.MarkProductEnrichmentSuggestionApplied(ctx, organizationID, suggestionID)
+	var updated ReviewSuggestionRecord
+	if suggestion.Status == SuggestionStatusInReview {
+		updated, err = tx.ApproveAndApplyProductEnrichmentSuggestion(ctx, organizationID, suggestionID, optionalReviewerID(applierUserID))
+	} else {
+		updated, err = tx.MarkProductEnrichmentSuggestionApplied(ctx, organizationID, suggestionID)
+	}
 	if err != nil {
 		if errors.Is(err, ErrApplicationTransitionConflict) {
 			return ApplicationResult{}, applicationError(ApplicationErrorConditionalConflict, "enrichment suggestion changed during application", err)
@@ -219,7 +253,7 @@ func (s *ProductEnrichmentApplicationService) ApplyApprovedSuggestion(ctx contex
 		SuggestionID:       suggestionID,
 		ProductID:          suggestion.ProductID,
 		ApplierUserID:      applierUserID,
-		OldStatus:          SuggestionStatusApproved,
+		OldStatus:          suggestion.Status,
 		NewStatus:          SuggestionStatusApplied,
 		ChangedFields:      append([]string(nil), plan.ChangedFields...),
 		OldBrandID:         identityID(current.Brand),
@@ -368,4 +402,11 @@ func applicationError(code ApplicationErrorCode, message string, err error) erro
 
 func applicationPersistence(message string, err error) error {
 	return applicationError(ApplicationErrorPersistence, message, err)
+}
+
+func optionalReviewerID(value int32) *int32 {
+	if value <= 0 {
+		return nil
+	}
+	return &value
 }

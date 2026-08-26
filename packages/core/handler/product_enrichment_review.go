@@ -170,7 +170,7 @@ func (h *ProductEnrichmentReviewHandler) ApproveSuggestion(c *gin.Context) {
 		writeReviewError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestion approved", detail))
+	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestion approved and applied", detail))
 }
 
 func (h *ProductEnrichmentReviewHandler) RejectSuggestion(c *gin.Context) {
@@ -191,6 +191,110 @@ func (h *ProductEnrichmentReviewHandler) RejectSuggestion(c *gin.Context) {
 		return
 	}
 	detail, err := service.RejectSuggestion(c.Request.Context(), organizationID, suggestionID, reviewerID)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestion rejected", detail))
+}
+
+// ListMachineSuggestions is the SAP Agent-facing review read path. It is
+// mounted only behind tenant-bound SAP machine authentication; the browser
+// never receives the machine token.
+func (h *ProductEnrichmentReviewHandler) ListMachineSuggestions(c *gin.Context) {
+	repo, pool, organizationID, ok := h.authorizeMachine(c, enrichment.ReviewPermissionCode)
+	if !ok {
+		return
+	}
+	status := enrichment.ReviewListStatus(c.DefaultQuery("status", string(enrichment.ReviewStatusInReview)))
+	if !status.Valid() {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(http.StatusBadRequest, "invalid review status", nil))
+		return
+	}
+	limit, offset, ok := parseReviewPagination(c)
+	if !ok {
+		return
+	}
+	service, err := h.reviewService(repo, pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	items, err := service.ListSuggestions(c.Request.Context(), organizationID, status, limit, offset)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestions fetched successfully", gin.H{
+		"items": items, "status": status, "limit": limit, "offset": offset,
+	}))
+}
+
+func (h *ProductEnrichmentReviewHandler) GetMachineSuggestion(c *gin.Context) {
+	repo, pool, organizationID, ok := h.authorizeMachine(c, enrichment.ReviewPermissionCode)
+	if !ok {
+		return
+	}
+	suggestionID, ok := parseReviewID(c)
+	if !ok {
+		return
+	}
+	service, err := h.reviewService(repo, pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	detail, err := service.GetSuggestion(c.Request.Context(), organizationID, suggestionID)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestion fetched successfully", detail))
+}
+
+func (h *ProductEnrichmentReviewHandler) ApproveMachineSuggestion(c *gin.Context) {
+	if !requireEmptyReviewBody(c) {
+		return
+	}
+	repo, pool, organizationID, ok := h.authorizeMachine(c, enrichment.ReviewPermissionCode)
+	if !ok {
+		return
+	}
+	suggestionID, ok := parseReviewID(c)
+	if !ok {
+		return
+	}
+	service, err := h.reviewService(repo, pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	detail, err := service.ApproveSuggestion(c.Request.Context(), organizationID, suggestionID, 0)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, utils.NewResponse(http.StatusOK, "enrichment suggestion approved and applied", detail))
+}
+
+func (h *ProductEnrichmentReviewHandler) RejectMachineSuggestion(c *gin.Context) {
+	if !requireEmptyReviewBody(c) {
+		return
+	}
+	repo, pool, organizationID, ok := h.authorizeMachine(c, enrichment.ReviewPermissionCode)
+	if !ok {
+		return
+	}
+	suggestionID, ok := parseReviewID(c)
+	if !ok {
+		return
+	}
+	service, err := h.reviewService(repo, pool)
+	if err != nil {
+		writeReviewError(c, err)
+		return
+	}
+	detail, err := service.RejectSuggestion(c.Request.Context(), organizationID, suggestionID, 0)
 	if err != nil {
 		writeReviewError(c, err)
 		return
@@ -318,6 +422,55 @@ func (h *ProductEnrichmentReviewHandler) authorizeRead(c *gin.Context) (*product
 		reviewPermission: reviewPermission,
 		applyPermission:  applyPermission,
 	}, true
+}
+
+func (h *ProductEnrichmentReviewHandler) authorizeMachine(c *gin.Context, requiredScope string) (productEnrichmentReviewRepository, *pgxpool.Pool, int32, bool) {
+	identity, ok := middleware.TrustedMachineIdentityFromContext(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusUnauthorized, utils.NewResponse(http.StatusUnauthorized, "machine authentication required", nil))
+		return nil, nil, 0, false
+	}
+	if !machineHasScope(c, requiredScope) {
+		c.JSON(http.StatusForbidden, utils.NewResponse(http.StatusForbidden, "machine scope required", gin.H{"code": "ENRICHMENT_MACHINE_SCOPE_REQUIRED"}))
+		return nil, nil, 0, false
+	}
+	if h == nil || h.repoFromContext == nil || h.poolFromContext == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant review repository unavailable", nil))
+		return nil, nil, 0, false
+	}
+	repo, ok := h.repoFromContext(c.Request.Context())
+	if !ok || repo == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant review repository unavailable", nil))
+		return nil, nil, 0, false
+	}
+	pool, ok := h.poolFromContext(c.Request.Context())
+	if !ok || pool == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(http.StatusInternalServerError, "tenant review database unavailable", nil))
+		return nil, nil, 0, false
+	}
+	return repo, pool, identity.OrganizationID, true
+}
+
+func machineHasScope(c *gin.Context, required string) bool {
+	raw, ok := c.Get("scopes")
+	if !ok {
+		return false
+	}
+	scopes, ok := raw.([]string)
+	if !ok {
+		return false
+	}
+	for _, scope := range scopes {
+		// The SAP Agent's existing tenant-bound machine credential is the
+		// trusted transport for both migration and its local review UI. A
+		// dedicated enrichment scope remains supported for least-privilege
+		// deployments; sap:migration is accepted for backward-compatible agent
+		// credentials without changing tenant/org binding.
+		if scope == required || (required == enrichment.ReviewPermissionCode && scope == "sap:migration") || scope == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseAuthenticatedUserID(c *gin.Context) (int32, bool) {

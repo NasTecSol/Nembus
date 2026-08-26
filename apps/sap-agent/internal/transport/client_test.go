@@ -204,3 +204,36 @@ func TestSendBatchWithRetry_NoRetryOn400(t *testing.T) {
 		t.Errorf("expected exactly 1 HTTP call on 400 (no retry), got %d", callCount.Load())
 	}
 }
+
+func TestCloudClientProxyReviewKeepsBearerServerSide(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/product-enrichment/suggestions/7/approve" {
+			t.Fatalf("unexpected review path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer review-token" {
+			t.Fatalf("expected server-side review bearer")
+		}
+		if r.Header.Get("x-tenant-id") != "tenant-a" || r.Header.Get("x-organization-id") != "1" {
+			t.Fatalf("expected tenant/org binding headers")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"status":"applied"}}`))
+	}))
+	defer server.Close()
+
+	client := transport.NewCloudClient(config.CloudConfig{
+		BaseURL: server.URL, M2MToken: "review-token", TenantSlug: "tenant-a", OrganizationID: 1, TimeoutSeconds: 5,
+	})
+	status, body, err := client.ProxyReview(context.Background(), http.MethodPost, "/api/v1/product-enrichment/suggestions/7/approve", "", []byte(`{}`))
+	if err != nil || status != http.StatusOK || string(body) != `{"data":{"status":"applied"}}` {
+		t.Fatalf("unexpected proxy response: status=%d body=%s err=%v", status, body, err)
+	}
+}
+
+func TestCloudClientProxyReviewRejectsUntrustedPath(t *testing.T) {
+	client := transport.NewCloudClient(config.CloudConfig{BaseURL: "http://127.0.0.1:1", M2MToken: "token", TenantSlug: "tenant-a", OrganizationID: 1})
+	if _, _, err := client.ProxyReview(context.Background(), http.MethodGet, "/api/v1/products", "", nil); err == nil {
+		t.Fatal("expected unsupported review path to be rejected")
+	}
+}

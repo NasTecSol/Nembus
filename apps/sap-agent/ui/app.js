@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'tab-migration': { title: 'Migration Pipeline', sub: 'Execute entity extractions, transforms and cloud batch ingestion' },
         'tab-logs': { title: 'Live Console', sub: 'Real-time WebSocket event logs and SQLite execution checkpoints' },
         'tab-reconciliation': { title: 'Audit & Reconciliation', sub: 'Post-migration parity reports and numeric ledger verifications' },
+        'tab-enrichment': { title: 'Product Enrichment Review', sub: 'Review and apply AI proposals to the Nembus tenant database' },
         'tab-history': { title: 'Run History', sub: 'Persistent SQLite log history across migration checkpoints' }
     };
 
@@ -34,6 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (targetTab === 'tab-history') {
                 loadRunHistory();
+            }
+            if (targetTab === 'tab-enrichment') {
+                loadEnrichmentSuggestions();
             }
         });
     });
@@ -71,7 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('cloud-url').value = cfg.cloud.base_url || 'http://127.0.0.1:8080';
                 document.getElementById('cloud-tenant-slug').value = cfg.cloud.tenant_slug || '';
                 document.getElementById('cloud-org-id').value = cfg.cloud.organization_id || '';
-                document.getElementById('cloud-m2m-token').value = cfg.cloud.m2m_token || '';
             }
             if (cfg.batch_size) {
                 document.getElementById('agent-batch-size').value = cfg.batch_size;
@@ -117,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 base_url: document.getElementById('cloud-url').value,
                 tenant_slug: document.getElementById('cloud-tenant-slug').value,
                 organization_id: parseInt(document.getElementById('cloud-org-id').value),
-                m2m_token: document.getElementById('cloud-m2m-token').value,
             },
             batch_size: parseInt(document.getElementById('agent-batch-size').value)
         };
@@ -184,7 +186,6 @@ document.addEventListener('DOMContentLoaded', () => {
             base_url: document.getElementById('cloud-url').value,
             tenant_slug: document.getElementById('cloud-tenant-slug').value,
             organization_id: parseInt(document.getElementById('cloud-org-id').value),
-            m2m_token: document.getElementById('cloud-m2m-token').value,
         };
 
         try {
@@ -446,7 +447,125 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-refresh-all').addEventListener('click', () => {
         loadConfig();
         runDiscovery();
+        if (document.getElementById('tab-enrichment').classList.contains('active')) {
+            loadEnrichmentSuggestions();
+        }
     });
+
+    let selectedEnrichmentID = null;
+    const enrichmentError = document.getElementById('enrichment-error');
+
+    function setEnrichmentError(message) {
+        enrichmentError.textContent = message || '';
+        enrichmentError.hidden = !message;
+    }
+
+    function proposalText(proposal) {
+        if (!proposal) return '—';
+        if (proposal.canonical_name) return `${proposal.canonical_name} (${proposal.action})`;
+        if (proposal.value) return `${proposal.value} (${proposal.action})`;
+        return proposal.action || '—';
+    }
+
+    function renderEnrichmentRows(items) {
+        const tbody = document.getElementById('enrichment-table-body');
+        tbody.textContent = '';
+        if (!items || items.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 6;
+            cell.className = 'text-center text-muted';
+            cell.textContent = 'No suggestions for this status.';
+            row.appendChild(cell);
+            tbody.appendChild(row);
+            return;
+        }
+        items.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = 'review-row';
+            row.dataset.suggestionId = item.suggestion_id;
+            const values = [
+                `${item.source_item_code || '—'} / ${item.source_item_name || '—'}`,
+                'Open detail to compare',
+                [proposalText(item.proposed_brand), proposalText(item.proposed_category), proposalText(item.proposed_description)].filter(Boolean).join(' · ') || '—',
+                [item.provider, item.model].filter(Boolean).join(' / ') || '—',
+                item.status || '—'
+            ];
+            values.forEach(value => {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+            });
+            const actionCell = document.createElement('td');
+            const open = document.createElement('button');
+            open.className = 'btn btn-xs btn-outline';
+            open.textContent = 'View';
+            open.addEventListener('click', () => loadEnrichmentDetail(item.suggestion_id));
+            actionCell.appendChild(open);
+            row.appendChild(actionCell);
+            tbody.appendChild(row);
+        });
+    }
+
+    async function loadEnrichmentSuggestions() {
+        setEnrichmentError('');
+        const status = document.getElementById('enrichment-status-filter').value;
+        try {
+            const res = await fetch(`/api/v1/product-enrichment/suggestions?status=${encodeURIComponent(status)}&limit=50&offset=0`);
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.message || 'Could not load enrichment suggestions.');
+            renderEnrichmentRows(payload.data?.items || []);
+        } catch (err) {
+            renderEnrichmentRows([]);
+            setEnrichmentError(err.message || 'Could not load enrichment suggestions.');
+        }
+    }
+
+    async function loadEnrichmentDetail(id) {
+        setEnrichmentError('');
+        try {
+            const res = await fetch(`/api/v1/product-enrichment/suggestions/${encodeURIComponent(id)}`);
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.message || 'Could not load suggestion detail.');
+            const detail = payload.data || {};
+            selectedEnrichmentID = id;
+            document.getElementById('enrichment-detail').hidden = false;
+            document.getElementById('enrichment-detail-title').textContent = `${detail.source_identity?.source_item_code || 'Suggestion'} — ${detail.source_identity?.source_item_name || ''}`;
+            document.getElementById('enrichment-detail-status').textContent = detail.review_state?.status || '—';
+            document.getElementById('enrichment-current').textContent = JSON.stringify(detail.current_authoritative_state || {}, null, 2);
+            document.getElementById('enrichment-proposed').textContent = JSON.stringify({
+                brand: detail.proposed_brand || null,
+                category: detail.proposed_category || null,
+                description: detail.proposed_description || null,
+                unsupported_semantics: detail.unsupported_semantics || []
+            }, null, 2);
+            document.getElementById('enrichment-detail-meta').textContent = `Provider: ${detail.provider_context?.provider || '—'} · Model: ${detail.provider_context?.model || '—'} · Confidence is shown per proposal.`;
+            const actionable = detail.review_state?.status === 'in_review';
+            document.getElementById('enrichment-detail-actions').hidden = !actionable;
+        } catch (err) {
+            setEnrichmentError(err.message || 'Could not load suggestion detail.');
+        }
+    }
+
+    async function decideEnrichment(action) {
+        if (!selectedEnrichmentID) return;
+        try {
+            const res = await fetch(`/api/v1/product-enrichment/suggestions/${encodeURIComponent(selectedEnrichmentID)}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.message || `Could not ${action} suggestion.`);
+            showToast(action === 'approve' ? 'Suggestion approved and applied to Nembus.' : 'Suggestion rejected.', 'success');
+            document.getElementById('enrichment-detail').hidden = true;
+            selectedEnrichmentID = null;
+            loadEnrichmentSuggestions();
+        } catch (err) {
+            setEnrichmentError(err.message || `Could not ${action} suggestion.`);
+        }
+    }
+
+    document.getElementById('btn-refresh-enrichment').addEventListener('click', loadEnrichmentSuggestions);
+    document.getElementById('enrichment-status-filter').addEventListener('change', loadEnrichmentSuggestions);
+    document.getElementById('btn-approve-enrichment').addEventListener('click', () => decideEnrichment('approve'));
+    document.getElementById('btn-reject-enrichment').addEventListener('click', () => decideEnrichment('reject'));
 
     // Init
     loadConfig();

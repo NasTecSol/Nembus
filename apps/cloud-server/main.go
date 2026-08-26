@@ -248,6 +248,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		sapMigrationHandler := handler.NewSAPMigrationHandler(cfg.EnrichmentEnabled)
 		router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
+		// The SAP Agent review UI uses this tenant/org-bound machine contract.
+		// It never exposes the machine bearer token to the browser.
+		router.RegisterProductEnrichmentMachineReviewRoutes(apiV1, handler.NewProductEnrichmentReviewHandler())
 	}
 
 	return r

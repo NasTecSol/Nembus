@@ -4696,3 +4696,73 @@ Query semantics and storage-location behavior are unchanged.
 
 This was a static application repair; no database, provider, or E2E execution
 was used.
+
+## SAP Agent Product Enrichment Review Workflow — 2026-08-25
+
+The architect-approved review workflow is now implemented in the Nembus SAP
+Agent, not Angular. A sibling/current Angular implementation was found in the
+workspace and was used only as a reference for review business rules and API
+shape; the review UI remains in `apps/sap-agent` as required.
+
+### Implemented architecture
+
+`SAP Agent browser UI -> local SAP Agent HTTP backend -> tenant/org-bound
+Cloud/Core machine API -> tenant PostgreSQL`.
+
+- The SAP Agent has an `Enrichment Review` navigation section with pending,
+  approved, applied, and rejected filters; detail comparison of current
+  Nembus values versus proposed values; provider/model context; and approve /
+  reject actions.
+- Local agent routes proxy review list/detail/approve/reject calls through the
+  existing `CloudClient`. The browser has no database access and never
+  receives the Cloud M2M bearer token.
+- Cloud/Core now exposes the SAP Agent contract under the existing
+  tenant-bound `/api/v1/product-enrichment/suggestions` machine route. JWT,
+  tenant binding, organization binding, and machine scopes remain required.
+- Approval uses the existing strict proposal/application service and now
+  performs the reviewer transition and narrow product update in one tenant
+  transaction. The existing explicit `/apply` route remains as an idempotent
+  compatibility/retry path.
+- Rejection only changes review state and audit metadata; it does not mutate
+  the product.
+
+### Canonical tenant writes and ownership boundary
+
+Approval can update only existing canonical `products.brand_id`,
+`products.category_id`, and `products.description` values. It also updates
+the suggestion lifecycle and `audit_logs`. Structured SAP category/brand,
+product type, SKU/ItemCode, barcode ownership, inventory, warehouse, price,
+tax, UoM/conversions, supplier, SAP identity, and deterministic flags remain
+protected. No SAP UPDATE/INSERT, Service Layer mutation, OData update, or SQL
+write against SAP was added.
+
+### Files changed
+
+- `packages/core/enrichment/application.go`, `review.go`, and focused tests.
+- `packages/core/queries/product_enrichment_application.sql` and generated
+  `repository/product_enrichment_application.sql.go`.
+- `packages/core/handler/product_enrichment_review.go` and
+  `packages/core/routing/product_enrichment_machine_review.go`.
+- `packages/core/repository/product_enrichment_review_store.go` and
+  `product_enrichment_application_store.go`.
+- `apps/cloud-server/main.go`.
+- `apps/sap-agent/internal/server/server.go` and new server proxy tests.
+- `apps/sap-agent/internal/transport/client.go` and proxy tests.
+- `apps/sap-agent/ui/index.html`, `app.js`, and `style.css`.
+
+### Verification
+
+- `gofmt` completed for all changed Go files.
+- `sqlc generate` completed in `packages/core`.
+- `go test ./...` passed in `packages/core`, `apps/cloud-server`, and
+  `apps/sap-agent`.
+- `node --check apps/sap-agent/ui/app.js` passed.
+- `git diff --check` passed.
+- Focused proxy tests verify tenant/org headers, server-side bearer use, and
+  config redaction. No live tenant database or real AI provider was required
+  for the review/application tests.
+
+Remaining operational limitation: a deployed SAP Agent M2M client must be
+tenant/org-bound and registered with `product_enrichment:review` or the
+existing `sap:migration` scope; live deployment/database smoke validation is
+still environment-specific.

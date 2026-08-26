@@ -46,6 +46,58 @@ func (q *Queries) ApplyProductEnrichmentFields(ctx context.Context, arg ApplyPro
 	return result.RowsAffected(), nil
 }
 
+const approveAndApplyProductEnrichmentSuggestion = `-- name: ApproveAndApplyProductEnrichmentSuggestion :one
+UPDATE product_enrichment_suggestions
+SET status = 'applied',
+    reviewer_id = $1::INTEGER,
+    reviewed_at = CURRENT_TIMESTAMP,
+    applied_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE organization_id = $2
+  AND id = $3
+  AND status = 'in_review'
+RETURNING id, organization_id, product_id, source_item_code, source_item_name, source_data_fingerprint, contract_version, structured_current, proposed_brand, proposed_category, proposed_description, unsupported_semantics, source, provider, model, model_version, status, reviewer_id, reviewed_at, applied_at, attempt_count, next_attempt_at, last_error_code, created_at, updated_at
+`
+
+type ApproveAndApplyProductEnrichmentSuggestionParams struct {
+	ReviewerID     pgtype.Int4 `json:"reviewer_id"`
+	OrganizationID int32       `json:"organization_id"`
+	ID             int32       `json:"id"`
+}
+
+func (q *Queries) ApproveAndApplyProductEnrichmentSuggestion(ctx context.Context, arg ApproveAndApplyProductEnrichmentSuggestionParams) (ProductEnrichmentSuggestion, error) {
+	row := q.db.QueryRow(ctx, approveAndApplyProductEnrichmentSuggestion, arg.ReviewerID, arg.OrganizationID, arg.ID)
+	var i ProductEnrichmentSuggestion
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ProductID,
+		&i.SourceItemCode,
+		&i.SourceItemName,
+		&i.SourceDataFingerprint,
+		&i.ContractVersion,
+		&i.StructuredCurrent,
+		&i.ProposedBrand,
+		&i.ProposedCategory,
+		&i.ProposedDescription,
+		&i.UnsupportedSemantics,
+		&i.Source,
+		&i.Provider,
+		&i.Model,
+		&i.ModelVersion,
+		&i.Status,
+		&i.ReviewerID,
+		&i.ReviewedAt,
+		&i.AppliedAt,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastErrorCode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const lockBrandForEnrichmentApplicationByCode = `-- name: LockBrandForEnrichmentApplicationByCode :one
 SELECT id, name, code, is_active, metadata, created_at, updated_at FROM brands
 WHERE code = $1

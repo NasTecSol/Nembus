@@ -138,6 +138,19 @@ func (s *ProductEnrichmentReviewStore) BeginReviewTransaction(ctx context.Contex
 	return &productEnrichmentReviewTransaction{queries: s.queries.WithTx(tx), tx: tx}, nil
 }
 
+// BeginProductEnrichmentApplication allows the review service to hand the
+// same tenant-local repository to the existing application transaction.
+func (s *ProductEnrichmentReviewStore) BeginProductEnrichmentApplication(ctx context.Context) (enrichment.ProductEnrichmentApplicationTransaction, error) {
+	if s == nil || s.queries == nil || s.pool == nil {
+		return nil, fmt.Errorf("tenant application repository is not configured")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &productEnrichmentApplicationTransaction{queries: s.queries.WithTx(tx), tx: tx}, nil
+}
+
 type productEnrichmentReviewTransaction struct {
 	queries *Queries
 	tx      pgx.Tx
@@ -145,7 +158,7 @@ type productEnrichmentReviewTransaction struct {
 
 func (t *productEnrichmentReviewTransaction) Approve(ctx context.Context, organizationID, suggestionID, reviewerID int32) (enrichment.ReviewSuggestionRecord, error) {
 	row, err := t.queries.ApproveProductEnrichmentSuggestion(ctx, ApproveProductEnrichmentSuggestionParams{
-		OrganizationID: organizationID, ID: suggestionID, ReviewerID: pgtype.Int4{Int32: reviewerID, Valid: true},
+		OrganizationID: organizationID, ID: suggestionID, ReviewerID: nullableInt4(reviewIDPtr(reviewerID)),
 	})
 	if err != nil {
 		return enrichment.ReviewSuggestionRecord{}, err
@@ -155,7 +168,7 @@ func (t *productEnrichmentReviewTransaction) Approve(ctx context.Context, organi
 
 func (t *productEnrichmentReviewTransaction) Reject(ctx context.Context, organizationID, suggestionID, reviewerID int32) (enrichment.ReviewSuggestionRecord, error) {
 	row, err := t.queries.RejectProductEnrichmentSuggestion(ctx, RejectProductEnrichmentSuggestionParams{
-		OrganizationID: organizationID, ID: suggestionID, ReviewerID: pgtype.Int4{Int32: reviewerID, Valid: true},
+		OrganizationID: organizationID, ID: suggestionID, ReviewerID: nullableInt4(reviewIDPtr(reviewerID)),
 	})
 	if err != nil {
 		return enrichment.ReviewSuggestionRecord{}, err
@@ -183,7 +196,7 @@ func (t *productEnrichmentReviewTransaction) InsertAudit(ctx context.Context, au
 		OldValues:      oldValues,
 		NewValues:      newValues,
 		ChangedFields:  []string{"status", "reviewer_id", "reviewed_at"},
-		PerformedBy:    pgtype.Int4{Int32: audit.ReviewerID, Valid: true},
+		PerformedBy:    nullableInt4(reviewIDPtr(audit.ReviewerID)),
 	})
 }
 
@@ -224,3 +237,12 @@ func pgTimestampPtr(value pgtype.Timestamp) *time.Time {
 	result := value.Time
 	return &result
 }
+
+func reviewIDPtr(value int32) *int32 {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+var _ enrichment.ReviewApplicationStore = (*ProductEnrichmentReviewStore)(nil)
