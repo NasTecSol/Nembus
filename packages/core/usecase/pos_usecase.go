@@ -375,7 +375,7 @@ func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *r
 		}
 	}
 	if in.RetailPrice != nil && *in.RetailPrice != "" {
-		pl, err := uc.repo.GetPriceListByCode(ctx, "RETAIL")
+		pl, err := uc.repo.GetPriceListByCode(ctx, "RETAIL_SAR")
 		if err == nil {
 			price, err := uc.repo.ParseNumeric(ctx, strings.TrimSpace(*in.RetailPrice))
 			if err == nil {
