@@ -125,6 +125,15 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.AssignCashiersRequest:
+    properties:
+      cashier_ids:
+        items:
+          type: integer
+        type: array
+    required:
+    - cashier_ids
+    type: object
   handler.AssignOrderRequest:
     properties:
       assigned_to_user_id:
@@ -8556,6 +8565,64 @@ paths:
       security:
       - BearerAuth: []
       summary: Get cart by cart number
+      tags:
+      - carts
+  /api/carts/drafts/by-cashier/{cashier_id}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all carts with draft status for a given cashier, optionally
+        filtered by store_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Cashier ID
+        in: path
+        name: cashier_id
+        required: true
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get draft carts by cashier ID
       tags:
       - carts
   /api/carts/expire:
@@ -17464,6 +17531,86 @@ paths:
       security:
       - BearerAuth: []
       summary: Toggle POS terminal active state
+      tags:
+      - pos-terminals
+  /api/pos/terminals/{id}/assign-cashiers:
+    post:
+      consumes:
+      - application/json
+      description: Assigns one or more cashier IDs to a POS terminal's metadata
+      parameters:
+      - description: Terminal ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Cashier IDs payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.AssignCashiersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Assign cashiers to POS terminal
+      tags:
+      - pos-terminals
+  /api/pos/terminals/{id}/cashiers:
+    get:
+      consumes:
+      - application/json
+      description: Returns all cashiers assigned to a POS terminal via metadata
+      parameters:
+      - description: Terminal ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Get cashiers assigned to POS terminal
+      tags:
+      - pos-terminals
+  /api/pos/terminals/{id}/cashiers/{cashier_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes a cashier ID from a POS terminal's metadata
+      parameters:
+      - description: Terminal ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Cashier ID
+        in: path
+        name: cashier_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Unassign a cashier from POS terminal
       tags:
       - pos-terminals
   /api/pos/transactions:

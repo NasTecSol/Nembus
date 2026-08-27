@@ -4417,6 +4417,84 @@ func (q *Queries) ListDraftCartTemplates(ctx context.Context, arg ListDraftCartT
 	return items, nil
 }
 
+const listDraftCartsByCashier = `-- name: ListDraftCartsByCashier :many
+SELECT id, cart_number, organization_id, store_id, customer_id, guest_identifier, guest_email, guest_phone, cart_status, cart_type, channel, payment_method, payment_gateway, device_info, created_by_user_id, cashier_id, pos_terminal_id, subtotal, discount_amount, tax_amount, shipping_amount, total_amount, coupon_code, discount_code, promotional_credits, shipping_address, billing_address, shipping_method, converted_to_order_id, converted_at, last_activity_at, expires_at, created_at, updated_at, metadata, notes FROM carts
+WHERE cashier_id = $1
+  AND cart_status = 'draft'
+  AND ($4::int IS NULL OR store_id = $4::int)
+ORDER BY last_activity_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListDraftCartsByCashierParams struct {
+	CashierID pgtype.Int4 `json:"cashier_id"`
+	Limit     int32       `json:"limit"`
+	Offset    int32       `json:"offset"`
+	StoreID   pgtype.Int4 `json:"store_id"`
+}
+
+func (q *Queries) ListDraftCartsByCashier(ctx context.Context, arg ListDraftCartsByCashierParams) ([]Cart, error) {
+	rows, err := q.db.Query(ctx, listDraftCartsByCashier,
+		arg.CashierID,
+		arg.Limit,
+		arg.Offset,
+		arg.StoreID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Cart
+	for rows.Next() {
+		var i Cart
+		if err := rows.Scan(
+			&i.ID,
+			&i.CartNumber,
+			&i.OrganizationID,
+			&i.StoreID,
+			&i.CustomerID,
+			&i.GuestIdentifier,
+			&i.GuestEmail,
+			&i.GuestPhone,
+			&i.CartStatus,
+			&i.CartType,
+			&i.Channel,
+			&i.PaymentMethod,
+			&i.PaymentGateway,
+			&i.DeviceInfo,
+			&i.CreatedByUserID,
+			&i.CashierID,
+			&i.PosTerminalID,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.ShippingAmount,
+			&i.TotalAmount,
+			&i.CouponCode,
+			&i.DiscountCode,
+			&i.PromotionalCredits,
+			&i.ShippingAddress,
+			&i.BillingAddress,
+			&i.ShippingMethod,
+			&i.ConvertedToOrderID,
+			&i.ConvertedAt,
+			&i.LastActivityAt,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Metadata,
+			&i.Notes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExpiredQuotes = `-- name: ListExpiredQuotes :many
 SELECT id, quote_number, organization_id, store_id, customer_id, customer_name, customer_email, customer_phone, quote_status, quote_date, valid_until, sent_date, accepted_date, converted_date, subtotal, discount_amount, tax_amount, total_amount, converted_to_order_id, payment_terms, delivery_terms, terms_and_conditions, notes, internal_notes, created_by_user_id, metadata, created_at, updated_at FROM quotes
 WHERE organization_id = $1
