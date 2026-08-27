@@ -708,7 +708,8 @@ SELECT
     CASE
         WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
              AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
-             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL
+                  OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE)
              AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
                   OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN COALESCE(pp_promo_v.price, pp_promo.price)
@@ -718,7 +719,8 @@ SELECT
     CASE
         WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
              AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
-             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL
+                  OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE)
              AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
                   OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN true
