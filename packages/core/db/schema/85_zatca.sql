@@ -211,7 +211,8 @@ CREATE TABLE invoice_status_history (
     notes TEXT,
     
     changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =====================================================
@@ -334,7 +335,8 @@ CREATE TABLE sales_return_lines (
     condition          VARCHAR(50) DEFAULT 'good' CHECK (condition IN ('good','damaged','defective','opened')),
     line_number        INTEGER,
     metadata           JSONB     DEFAULT '{}',
-    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 -- =====================================================
 -- INDEXES FOR CART SYSTEM
@@ -638,6 +640,7 @@ CREATE TABLE zatca_document_chain (
     cleared_at       TIMESTAMPTZ,
 
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     -- Ensure sequential ICV per device (no gaps allowed by ZATCA)
     UNIQUE(device_config_id, icv)

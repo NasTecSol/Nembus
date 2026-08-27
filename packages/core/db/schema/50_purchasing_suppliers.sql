@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS currencies (
     name VARCHAR(50) NOT NULL,
     symbol VARCHAR(10) NOT NULL,
     decimal_places INTEGER DEFAULT 2,
-    is_active BOOLEAN DEFAULT true
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS exchange_rates (
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     rate_date DATE NOT NULL,
     rate DECIMAL(18,6) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(organization_id, from_currency, to_currency, rate_date)
 );
 
