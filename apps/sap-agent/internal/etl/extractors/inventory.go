@@ -2,6 +2,7 @@ package extractors
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
@@ -31,6 +32,7 @@ func (e *InventoryExtractor) ExtractInventory(ctx context.Context) ([]mappings.C
 	var stockList []mappings.CanonicalInventoryStock
 	for rows.Next() {
 		var inv mappings.SAPInventoryStock
+		var inventoryUom, baseUomCode sql.NullString
 		if err := rows.Scan(
 			&inv.ItemCode,
 			&inv.WhsCode,
@@ -39,11 +41,24 @@ func (e *InventoryExtractor) ExtractInventory(ctx context.Context) ([]mappings.C
 			&inv.OnOrder,
 			&inv.MinStock,
 			&inv.MaxStock,
+			&inv.UgpEntry,
+			&inv.IUoMEntry,
+			&inventoryUom,
+			&inv.BaseUomEntry,
+			&baseUomCode,
+			&inv.InventoryUomAltQty,
+			&inv.InventoryUomBaseQty,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OITW row: %w", err)
 		}
+		inv.InventoryUom = inventoryUom.String
+		inv.BaseUomCode = baseUomCode.String
 
-		stockList = append(stockList, inv.ToCanonical())
+		canonical, err := inv.ToCanonicalChecked()
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize OITW row %s@%s: %w", inv.ItemCode, inv.WhsCode, err)
+		}
+		stockList = append(stockList, canonical)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate OITW rows: %w", err)

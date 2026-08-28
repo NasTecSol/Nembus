@@ -43,13 +43,20 @@ type inventoryIterationErrorRows struct {
 }
 
 func (*inventoryIterationErrorRows) Columns() []string {
-	return []string{"ItemCode", "WhsCode", "OnHand", "IsCommited", "OnOrder", "MinStock", "MaxStock"}
+	return []string{
+		"ItemCode", "WhsCode", "OnHand", "IsCommited", "OnOrder", "MinStock", "MaxStock",
+		"UgpEntry", "IUoMEntry", "InventoryUom", "BaseUomEntry", "BaseUomCode",
+		"InventoryUomAltQty", "InventoryUomBaseQty",
+	}
 }
 func (r *inventoryIterationErrorRows) Close() error { return nil }
 func (r *inventoryIterationErrorRows) Next(dest []driver.Value) error {
 	if !r.returned {
 		r.returned = true
-		copy(dest, []driver.Value{"SKU-1", "WH-1", 10.0, 2.0, 3.0, 1.0, 20.0})
+		copy(dest, []driver.Value{
+			"SKU-1", "WH-1", 10.0, 2.0, 3.0, 1.0, 20.0,
+			-1, -1, "UNIT", -1, "", 0.0, 0.0,
+		})
 		return nil
 	}
 	return errors.New("OITW iteration failed")

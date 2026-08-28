@@ -212,6 +212,104 @@ func TestInventoryStockCalculation(t *testing.T) {
 	if canonical.Metadata["sap_is_commited"] != 25.0 || canonical.Metadata["sap_on_order"] != 50.0 {
 		t.Errorf("expected committed/on-order values to remain reference metadata, got %#v", canonical.Metadata)
 	}
+	if canonical.Metadata["inventory_uom_to_base_factor"] != 1.0 {
+		t.Errorf("expected unmanaged factor 1, got %#v", canonical.Metadata["inventory_uom_to_base_factor"])
+	}
+}
+
+func TestInventoryNormalizationUsesAuthoritativeSAPFactor(t *testing.T) {
+	tests := []struct {
+		name       string
+		onHand     float64
+		baseQty    float64
+		altQty     float64
+		wantOnHand float64
+	}{
+		{name: "factor one", onHand: 10, baseQty: 1, altQty: 1, wantOnHand: 10},
+		{name: "factor greater than one", onHand: 10, baseQty: 24, altQty: 1, wantOnHand: 240},
+		{name: "fractional factor", onHand: 10, baseQty: 1, altQty: 2, wantOnHand: 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stock := mappings.SAPInventoryStock{
+				ItemCode:            "ITEM-001",
+				WhsCode:             "01",
+				OnHand:              tt.onHand,
+				UgpEntry:            10,
+				IUoMEntry:           20,
+				InventoryUom:        "BOX",
+				BaseUomEntry:        1,
+				BaseUomCode:         "PCS",
+				InventoryUomBaseQty: tt.baseQty,
+				InventoryUomAltQty:  tt.altQty,
+			}
+			canonical, err := stock.ToCanonicalChecked()
+			if err != nil {
+				t.Fatalf("ToCanonicalChecked() error = %v", err)
+			}
+			if canonical.QuantityOnHand != tt.wantOnHand || canonical.QuantityAvailable != tt.wantOnHand {
+				t.Fatalf("normalized quantities = (%v, %v), want (%v, %v)", canonical.QuantityOnHand, canonical.QuantityAvailable, tt.wantOnHand, tt.wantOnHand)
+			}
+			if canonical.QuantityAllocated != 0 || canonical.QuantityOnOrder != 0 {
+				t.Fatalf("PHYSICAL_ONLY operational quantities = allocated %v/on-order %v, want zeroes", canonical.QuantityAllocated, canonical.QuantityOnOrder)
+			}
+			if canonical.Metadata["source_on_hand"] != tt.onHand || canonical.Metadata["inventory_uom_to_base_factor"] != tt.wantOnHand/tt.onHand {
+				t.Fatalf("raw/factor lineage = %#v, want source_on_hand %v and factor %v", canonical.Metadata, tt.onHand, tt.wantOnHand/tt.onHand)
+			}
+		})
+	}
+}
+
+func TestInventoryNormalizationResolvesBaseUOMAsOne(t *testing.T) {
+	stock := mappings.SAPInventoryStock{
+		ItemCode:     "ITEM-BASE",
+		UgpEntry:     10,
+		IUoMEntry:    7,
+		InventoryUom: "PCS",
+		BaseUomEntry: 7,
+		BaseUomCode:  "PCS",
+		OnHand:       12,
+	}
+
+	canonical, err := stock.ToCanonicalChecked()
+	if err != nil {
+		t.Fatalf("base-UoM normalization error = %v", err)
+	}
+	if canonical.QuantityOnHand != 12 || canonical.Metadata["inventory_uom_to_base_factor"] != 1.0 {
+		t.Fatalf("base-UoM result = quantity %v, factor %#v; want 12 and 1", canonical.QuantityOnHand, canonical.Metadata["inventory_uom_to_base_factor"])
+	}
+}
+
+func TestInventoryNormalizationFailsClosedForManagedMissingOrInvalidFactor(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseQty float64
+		altQty  float64
+	}{
+		{name: "missing conversion", baseQty: 0, altQty: 0},
+		{name: "zero base quantity", baseQty: 0, altQty: 1},
+		{name: "zero alternate quantity", baseQty: 1, altQty: 0},
+		{name: "negative factor input", baseQty: -1, altQty: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stock := mappings.SAPInventoryStock{
+				ItemCode:            "ITEM-INVALID",
+				UgpEntry:            10,
+				IUoMEntry:           20,
+				InventoryUom:        "BOX",
+				BaseUomEntry:        1,
+				BaseUomCode:         "PCS",
+				InventoryUomBaseQty: tt.baseQty,
+				InventoryUomAltQty:  tt.altQty,
+			}
+			if _, err := stock.ToCanonicalChecked(); err == nil {
+				t.Fatal("managed inventory with invalid conversion was accepted")
+			}
+		})
+	}
 }
 
 func TestInvoiceMapping(t *testing.T) {
@@ -325,6 +423,21 @@ func TestProductMappingWithUOMConversions(t *testing.T) {
 	}
 	if canonical.UOMConversions[1].FromUOMCode != "PALLET" || canonical.UOMConversions[1].ConversionFactor != 480.0 {
 		t.Errorf("expected conversion PALLET -> PCS with factor 480.0, got %+v", canonical.UOMConversions[1])
+	}
+}
+
+func TestProductMappingUsesUOMGroupBaseWhenAvailable(t *testing.T) {
+	canonical := (&mappings.SAPProduct{
+		ItemCode:     "ITEM-UOM-GROUP",
+		ItemName:     "Boxed item",
+		InvntryUom:   "BOX",
+		BaseUomEntry: 1,
+		BaseUomCode:  "PCS",
+		UgpEntry:     10,
+	}).ToCanonical()
+
+	if canonical.BaseUOMCode != "PCS" || canonical.UOMCode != "PCS" {
+		t.Fatalf("product base UoM = (%q, %q), want PCS", canonical.BaseUOMCode, canonical.UOMCode)
 	}
 }
 

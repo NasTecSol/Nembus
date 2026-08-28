@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type UOMExtractor struct {
@@ -104,10 +104,11 @@ func (e *UOMExtractor) ExtractUOMGroups(ctx context.Context) ([]mappings.Canonic
 			groupMap[detail.UgpEntry] = grp
 		}
 
-		// Calculate conversion factor: BaseQty / AltQty (how many base units in 1 alternate unit)
-		conversionFactor := 1.0
-		if detail.AltQty > 0 {
-			conversionFactor = detail.BaseQty / detail.AltQty
+		// Keep the one authoritative SAP direction used by inventory
+		// normalization: BaseQty / AltQty (alternate UoM -> group base UoM).
+		conversionFactor, err := mappings.SAPUOMConversionFactor(detail.BaseQty, detail.AltQty)
+		if err != nil {
+			return nil, fmt.Errorf("invalid UGP1 conversion for group %d and UoM %q: %w", detail.UgpEntry, detail.AltUomCode, err)
 		}
 
 		level := mappings.CanonicalUOMGroupLevel{

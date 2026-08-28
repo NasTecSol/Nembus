@@ -272,6 +272,8 @@ SELECT
     ISNULL(NumInBuy, 1.0) AS NumInBuy,
     ISNULL(OITM.UgpEntry, -1) AS UgpEntry,
     ISNULL(OITM.IUoMEntry, -1) AS IUoMEntry,
+    ISNULL(ug.BaseUom, -1) AS BaseUomEntry,
+    ISNULL(bu.UomCode, '') AS BaseUomCode,
     ISNULL(OITM.SUoMEntry, -1) AS SUoMEntry,
     ISNULL(OITM.PUoMEntry, -1) AS PUoMEntry,
     ISNULL(ManSerNum, 'N') AS ManSerNum,
@@ -279,6 +281,8 @@ SELECT
     ISNULL(VatGourpSa, '') AS VatGourpSa
 FROM OITM
 LEFT JOIN OITB g ON OITM.ItmsGrpCod = g.ItmsGrpCod
+LEFT JOIN OUGP ug ON ug.UgpEntry = OITM.UgpEntry
+LEFT JOIN OUOM bu ON bu.UomEntry = ug.BaseUom
 ORDER BY ItemCode;
 `
 
@@ -296,16 +300,27 @@ ORDER BY b.BcdEntry;
 
 const QueryInventoryStock = `
 SELECT 
-    ItemCode,
-    WhsCode,
-    ISNULL(OnHand, 0.0) AS OnHand,
-    ISNULL(IsCommited, 0.0) AS IsCommited,
-    ISNULL(OnOrder, 0.0) AS OnOrder,
-    ISNULL(MinStock, 0.0) AS MinStock,
-    ISNULL(MaxStock, 0.0) AS MaxStock
-FROM OITW
-WHERE OnHand <> 0 OR IsCommited <> 0 OR OnOrder <> 0
-ORDER BY ItemCode, WhsCode;
+    w.ItemCode,
+    w.WhsCode,
+    ISNULL(w.OnHand, 0.0) AS OnHand,
+    ISNULL(w.IsCommited, 0.0) AS IsCommited,
+    ISNULL(w.OnOrder, 0.0) AS OnOrder,
+    ISNULL(w.MinStock, 0.0) AS MinStock,
+    ISNULL(w.MaxStock, 0.0) AS MaxStock,
+    ISNULL(i.UgpEntry, -1) AS UgpEntry,
+    ISNULL(i.IUoMEntry, -1) AS IUoMEntry,
+    ISNULL(i.InvntryUom, '') AS InventoryUom,
+    ISNULL(g.BaseUom, -1) AS BaseUomEntry,
+    ISNULL(bu.UomCode, '') AS BaseUomCode,
+    ISNULL(d.AltQty, 0.0) AS InventoryUomAltQty,
+    ISNULL(d.BaseQty, 0.0) AS InventoryUomBaseQty
+FROM OITW w
+INNER JOIN OITM i ON i.ItemCode = w.ItemCode
+LEFT JOIN OUGP g ON g.UgpEntry = i.UgpEntry
+LEFT JOIN OUOM bu ON bu.UomEntry = g.BaseUom
+LEFT JOIN UGP1 d ON d.UgpEntry = i.UgpEntry AND d.UomEntry = i.IUoMEntry
+WHERE w.OnHand <> 0 OR w.IsCommited <> 0 OR w.OnOrder <> 0
+ORDER BY w.ItemCode, w.WhsCode;
 `
 
 const QueryBusinessPartners = `

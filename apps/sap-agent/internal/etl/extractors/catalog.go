@@ -86,7 +86,7 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 	var products []mappings.CanonicalProduct
 	for rows.Next() {
 		var p mappings.SAPProduct
-		var userText, itmGrpNam, codeBars, buyUnitMsr, salUnitMsr, invntryUom, vatGroup sql.NullString
+		var userText, itmGrpNam, codeBars, buyUnitMsr, salUnitMsr, invntryUom, baseUomCode, vatGroup sql.NullString
 		if err := rows.Scan(
 			&p.ItemCode,
 			&p.ItemName,
@@ -106,6 +106,8 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 			&p.NumInBuy,
 			&p.UgpEntry,
 			&p.IUoMEntry,
+			&p.BaseUomEntry,
+			&baseUomCode,
 			&p.SUoMEntry,
 			&p.PUoMEntry,
 			&p.ManSerNum,
@@ -120,6 +122,7 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 		p.BuyUnitMsr = buyUnitMsr.String
 		p.SalUnitMsr = salUnitMsr.String
 		p.InvntryUom = invntryUom.String
+		p.BaseUomCode = baseUomCode.String
 		p.VatGourpSa = vatGroup.String
 
 		products = append(products, p.ToCanonical())

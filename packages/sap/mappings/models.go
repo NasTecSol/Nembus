@@ -298,6 +298,23 @@ type CanonicalUOMGroupLevel struct {
 	ConversionFactor float64 `json:"conversion_factor"` // BaseQty / AltQty
 }
 
+// SAPUOMConversionFactor converts one alternate UoM into the UoM-group base
+// UoM. SAP stores the relationship as BaseQty units per AltQty units.
+func SAPUOMConversionFactor(baseQty, altQty float64) (float64, error) {
+	if math.IsNaN(baseQty) || math.IsInf(baseQty, 0) || baseQty <= 0 {
+		return 0, fmt.Errorf("SAP UoM BaseQty must be finite and greater than zero, got %v", baseQty)
+	}
+	if math.IsNaN(altQty) || math.IsInf(altQty, 0) || altQty <= 0 {
+		return 0, fmt.Errorf("SAP UoM AltQty must be finite and greater than zero, got %v", altQty)
+	}
+
+	factor := baseQty / altQty
+	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor <= 0 {
+		return 0, fmt.Errorf("SAP UoM conversion factor must be finite and greater than zero, got %v", factor)
+	}
+	return factor, nil
+}
+
 type CanonicalUOMGroup struct {
 	Code        string                   `json:"code"`
 	Name        string                   `json:"name"`
@@ -385,29 +402,31 @@ func (b *SAPBrand) ToCanonical() CanonicalBrand {
 }
 
 type SAPProduct struct {
-	ItemCode   string  `json:"item_code"`
-	ItemName   string  `json:"item_name"`
-	UserText   string  `json:"user_text,omitempty"`
-	ItmsGrpCod int64   `json:"itms_grp_cod"`
-	ItmsGrpNam string  `json:"itms_grp_nam"`
-	FirmCode   int64   `json:"firm_code"`
-	InvntItem  string  `json:"invnt_item"`
-	SellItem   string  `json:"sell_item"`
-	PrchseItem string  `json:"prchse_item"`
-	ValidFor   string  `json:"valid_for"`
-	CodeBars   string  `json:"code_bars,omitempty"`
-	BuyUnitMsr string  `json:"buy_unit_msr,omitempty"`
-	SalUnitMsr string  `json:"sal_unit_msr,omitempty"`
-	InvntryUom string  `json:"invntry_uom,omitempty"`
-	NumInSale  float64 `json:"num_in_sale"`
-	NumInBuy   float64 `json:"num_in_buy"`
-	UgpEntry   int64   `json:"ugp_entry"`
-	IUoMEntry  int64   `json:"i_uom_entry"`
-	SUoMEntry  int64   `json:"s_uom_entry"`
-	PUoMEntry  int64   `json:"p_uom_entry"`
-	ManSerNum  string  `json:"man_ser_num"`
-	ManBtchNum string  `json:"man_btch_num"`
-	VatGourpSa string  `json:"vat_group_sa,omitempty"`
+	ItemCode     string  `json:"item_code"`
+	ItemName     string  `json:"item_name"`
+	UserText     string  `json:"user_text,omitempty"`
+	ItmsGrpCod   int64   `json:"itms_grp_cod"`
+	ItmsGrpNam   string  `json:"itms_grp_nam"`
+	FirmCode     int64   `json:"firm_code"`
+	InvntItem    string  `json:"invnt_item"`
+	SellItem     string  `json:"sell_item"`
+	PrchseItem   string  `json:"prchse_item"`
+	ValidFor     string  `json:"valid_for"`
+	CodeBars     string  `json:"code_bars,omitempty"`
+	BuyUnitMsr   string  `json:"buy_unit_msr,omitempty"`
+	SalUnitMsr   string  `json:"sal_unit_msr,omitempty"`
+	InvntryUom   string  `json:"invntry_uom,omitempty"`
+	NumInSale    float64 `json:"num_in_sale"`
+	NumInBuy     float64 `json:"num_in_buy"`
+	UgpEntry     int64   `json:"ugp_entry"`
+	IUoMEntry    int64   `json:"i_uom_entry"`
+	BaseUomEntry int64   `json:"base_uom_entry"`
+	BaseUomCode  string  `json:"base_uom_code,omitempty"`
+	SUoMEntry    int64   `json:"s_uom_entry"`
+	PUoMEntry    int64   `json:"p_uom_entry"`
+	ManSerNum    string  `json:"man_ser_num"`
+	ManBtchNum   string  `json:"man_btch_num"`
+	VatGourpSa   string  `json:"vat_group_sa,omitempty"`
 }
 
 type CanonicalProduct struct {
@@ -449,7 +468,10 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 		brandCode = fmt.Sprintf("BRD-%d", p.FirmCode)
 	}
 
-	baseUom := strings.TrimSpace(p.InvntryUom)
+	baseUom := strings.TrimSpace(p.BaseUomCode)
+	if baseUom == "" {
+		baseUom = strings.TrimSpace(p.InvntryUom)
+	}
 	if baseUom == "" {
 		baseUom = strings.TrimSpace(p.SalUnitMsr)
 	}
@@ -535,17 +557,19 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 		PrimaryBarcode:     strings.TrimSpace(p.CodeBars),
 		UOMConversions:     conversions,
 		Metadata: map[string]interface{}{
-			"sap_item_code":    p.ItemCode,
-			"sap_vat_group":    p.VatGourpSa,
-			"sap_num_in_sale":  p.NumInSale,
-			"sap_num_in_buy":   p.NumInBuy,
-			"sap_buy_unit_msr": p.BuyUnitMsr,
-			"sap_sal_unit_msr": p.SalUnitMsr,
-			"sap_invntry_uom":  p.InvntryUom,
-			"sap_ugp_entry":    p.UgpEntry,
-			"sap_i_uom_entry":  p.IUoMEntry,
-			"sap_s_uom_entry":  p.SUoMEntry,
-			"sap_p_uom_entry":  p.PUoMEntry,
+			"sap_item_code":      p.ItemCode,
+			"sap_vat_group":      p.VatGourpSa,
+			"sap_num_in_sale":    p.NumInSale,
+			"sap_num_in_buy":     p.NumInBuy,
+			"sap_buy_unit_msr":   p.BuyUnitMsr,
+			"sap_sal_unit_msr":   p.SalUnitMsr,
+			"sap_invntry_uom":    p.InvntryUom,
+			"sap_ugp_entry":      p.UgpEntry,
+			"sap_i_uom_entry":    p.IUoMEntry,
+			"sap_base_uom_entry": p.BaseUomEntry,
+			"sap_base_uom_code":  p.BaseUomCode,
+			"sap_s_uom_entry":    p.SUoMEntry,
+			"sap_p_uom_entry":    p.PUoMEntry,
 		},
 	}
 }
@@ -586,13 +610,20 @@ func (b *SAPBarcode) ToCanonical(isPrimary bool) CanonicalBarcode {
 // ----------------------------------------------------
 
 type SAPInventoryStock struct {
-	ItemCode   string  `json:"item_code"`
-	WhsCode    string  `json:"whs_code"`
-	OnHand     float64 `json:"on_hand"`
-	IsCommited float64 `json:"is_commited"`
-	OnOrder    float64 `json:"on_order"`
-	MinStock   float64 `json:"min_stock"`
-	MaxStock   float64 `json:"max_stock"`
+	ItemCode            string  `json:"item_code"`
+	WhsCode             string  `json:"whs_code"`
+	OnHand              float64 `json:"on_hand"`
+	IsCommited          float64 `json:"is_commited"`
+	OnOrder             float64 `json:"on_order"`
+	MinStock            float64 `json:"min_stock"`
+	MaxStock            float64 `json:"max_stock"`
+	UgpEntry            int64   `json:"ugp_entry"`
+	IUoMEntry           int64   `json:"i_uom_entry"`
+	InventoryUom        string  `json:"inventory_uom,omitempty"`
+	BaseUomEntry        int64   `json:"base_uom_entry"`
+	BaseUomCode         string  `json:"base_uom_code,omitempty"`
+	InventoryUomAltQty  float64 `json:"inventory_uom_alt_qty"`
+	InventoryUomBaseQty float64 `json:"inventory_uom_base_qty"`
 }
 
 type CanonicalInventoryStock struct {
@@ -607,26 +638,95 @@ type CanonicalInventoryStock struct {
 	Metadata          map[string]interface{} `json:"metadata"`
 }
 
+// InventoryUOMToBaseFactor resolves the authoritative SAP inventory-UoM to
+// UoM-group-base factor. A managed item must have either the group base UoM
+// itself or a matching, valid UGP1 relationship. Items without a UoM group
+// retain the existing approved unmanaged/manual factor of one.
+func (inv *SAPInventoryStock) InventoryUOMToBaseFactor() (float64, error) {
+	if inv.UgpEntry <= 0 {
+		return 1, nil
+	}
+
+	inventoryUOM := strings.TrimSpace(inv.InventoryUom)
+	baseUOM := strings.TrimSpace(inv.BaseUomCode)
+	if (inv.BaseUomEntry > 0 && inv.IUoMEntry == inv.BaseUomEntry) ||
+		(inventoryUOM != "" && baseUOM != "" && strings.EqualFold(inventoryUOM, baseUOM)) {
+		return 1, nil
+	}
+
+	if inv.IUoMEntry <= 0 && inventoryUOM == "" {
+		return 0, fmt.Errorf("managed SAP UoM group %d has no inventory UoM identity", inv.UgpEntry)
+	}
+	factor, err := SAPUOMConversionFactor(inv.InventoryUomBaseQty, inv.InventoryUomAltQty)
+	if err != nil {
+		return 0, fmt.Errorf("managed SAP UoM group %d inventory UoM %q (entry %d) has no valid inventory-to-base conversion: %w", inv.UgpEntry, inventoryUOM, inv.IUoMEntry, err)
+	}
+	return factor, nil
+}
+
+// ToCanonical keeps the historical no-error mapper API for callers that
+// already operate on validated/unmanaged rows. The extractor uses
+// ToCanonicalChecked so an unresolved managed relationship is never staged.
 func (inv *SAPInventoryStock) ToCanonical() CanonicalInventoryStock {
+	canonical, err := inv.ToCanonicalChecked()
+	if err == nil {
+		return canonical
+	}
+
 	return CanonicalInventoryStock{
-		ProductSKU:     strings.TrimSpace(inv.ItemCode),
-		StoreCode:      strings.TrimSpace(inv.WhsCode),
-		QuantityOnHand: inv.OnHand,
-		// OITW is an absolute stock snapshot.  The first approved SAP
-		// inventory mode is PHYSICAL_ONLY, so committed/on-order values remain
-		// reference data and never become operational target quantities.
+		ProductSKU: strings.TrimSpace(inv.ItemCode),
+		StoreCode:  strings.TrimSpace(inv.WhsCode),
+		Metadata: map[string]interface{}{
+			"sap_item_code":                     inv.ItemCode,
+			"sap_whs_code":                      inv.WhsCode,
+			"sap_is_commited":                   inv.IsCommited,
+			"sap_on_order":                      inv.OnOrder,
+			"sap_inventory_normalization_error": err.Error(),
+		},
+	}
+}
+
+// ToCanonicalChecked normalizes OITW.OnHand before it enters the migration
+// payload. SAP committed/on-order values remain lineage metadata only.
+func (inv *SAPInventoryStock) ToCanonicalChecked() (CanonicalInventoryStock, error) {
+	factor, err := inv.InventoryUOMToBaseFactor()
+	if err != nil {
+		return CanonicalInventoryStock{}, err
+	}
+	normalizedOnHand := inv.OnHand * factor
+	if math.IsNaN(normalizedOnHand) || math.IsInf(normalizedOnHand, 0) {
+		return CanonicalInventoryStock{}, fmt.Errorf("normalized SAP on-hand quantity is not finite: %v * %v", inv.OnHand, factor)
+	}
+
+	metadata := map[string]interface{}{
+		"sap_item_code":                 inv.ItemCode,
+		"sap_whs_code":                  inv.WhsCode,
+		"sap_is_commited":               inv.IsCommited,
+		"sap_on_order":                  inv.OnOrder,
+		"source_on_hand":                inv.OnHand,
+		"source_committed":              inv.IsCommited,
+		"source_on_order":               inv.OnOrder,
+		"inventory_uom_to_base_factor":  factor,
+		"source_inventory_uom":          strings.TrimSpace(inv.InventoryUom),
+		"source_inventory_uom_entry":    inv.IUoMEntry,
+		"source_uom_group_entry":        inv.UgpEntry,
+		"source_base_uom_entry":         inv.BaseUomEntry,
+		"source_base_uom":               strings.TrimSpace(inv.BaseUomCode),
+		"source_inventory_uom_alt_qty":  inv.InventoryUomAltQty,
+		"source_inventory_uom_base_qty": inv.InventoryUomBaseQty,
+	}
+
+	return CanonicalInventoryStock{
+		ProductSKU:        strings.TrimSpace(inv.ItemCode),
+		StoreCode:         strings.TrimSpace(inv.WhsCode),
+		QuantityOnHand:    normalizedOnHand,
 		QuantityAllocated: 0,
-		QuantityAvailable: inv.OnHand,
+		QuantityAvailable: normalizedOnHand,
 		QuantityOnOrder:   0,
 		ReorderLevel:      inv.MinStock,
 		MaxStockLevel:     inv.MaxStock,
-		Metadata: map[string]interface{}{
-			"sap_item_code":   inv.ItemCode,
-			"sap_whs_code":    inv.WhsCode,
-			"sap_is_commited": inv.IsCommited,
-			"sap_on_order":    inv.OnOrder,
-		},
-	}
+		Metadata:          metadata,
+	}, nil
 }
 
 // ----------------------------------------------------
