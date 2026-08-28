@@ -81,7 +81,7 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 	var products []mappings.CanonicalProduct
 	for rows.Next() {
 		var p mappings.SAPProduct
-		var userText, codeBars, buyUnitMsr, salUnitMsr, invntryUom, vatGroup sql.NullString
+		var userText, codeBars, buyUnitMsr, salUnitMsr, invntryUom, vatGroup, assetItem, itemType sql.NullString
 		if err := rows.Scan(
 			&p.ItemCode,
 			&p.ItemName,
@@ -105,6 +105,8 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 			&p.ManSerNum,
 			&p.ManBtchNum,
 			&vatGroup,
+			&assetItem,
+			&itemType,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OITM row: %w", err)
 		}
@@ -114,6 +116,8 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 		p.SalUnitMsr = salUnitMsr.String
 		p.InvntryUom = invntryUom.String
 		p.VatGourpSa = vatGroup.String
+		p.AssetItem = assetItem.String
+		p.ItemType = itemType.String
 
 		products = append(products, p.ToCanonical())
 	}
@@ -153,7 +157,12 @@ func (e *CatalogExtractor) ExtractPriceLists(ctx context.Context) ([]mappings.Ca
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryPriceLists)
 	if err != nil {
-		return []mappings.CanonicalPriceList{}, nil // OPLN optional in some SAP installs
+		// Attempt fallback without specialized columns
+		var fbErr error
+		rows, fbErr = e.mssql.DB.QueryContext(ctx, schema.QueryPriceListsFallback)
+		if fbErr != nil {
+			return []mappings.CanonicalPriceList{}, nil // OPLN table might not exist
+		}
 	}
 	defer rows.Close()
 
@@ -179,7 +188,12 @@ func (e *CatalogExtractor) ExtractPriceListItems(ctx context.Context) ([]mapping
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryPriceListItems)
 	if err != nil {
-		return []mappings.CanonicalPriceListItem{}, nil
+		// Attempt fallback without OUOM join
+		var fbErr error
+		rows, fbErr = e.mssql.DB.QueryContext(ctx, schema.QueryPriceListItemsFallback)
+		if fbErr != nil {
+			return []mappings.CanonicalPriceListItem{}, nil
+		}
 	}
 	defer rows.Close()
 

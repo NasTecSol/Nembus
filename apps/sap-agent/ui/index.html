@@ -193,6 +193,8 @@
                     <!-- Entity Count Grid -->
                     <div class="entity-grid" id="entity-count-grid">
                         <div class="entity-card"><span class="entity-name">Products (OITM)</span><span class="entity-count" id="count-oitm">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Price Lists (OPLN)</span><span class="entity-count" id="count-opln">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Item Prices (ITM1)</span><span class="entity-count" id="count-itm1">0</span></div>
                         <div class="entity-card"><span class="entity-name">Warehouses (OWHS)</span><span class="entity-count" id="count-owhs">0</span></div>
                         <div class="entity-card"><span class="entity-name">Stock Balances (OITW)</span><span class="entity-count" id="count-oitw">0</span></div>
                         <div class="entity-card"><span class="entity-name">Customers (OCRD)</span><span class="entity-count" id="count-ocrd-c">0</span></div>
@@ -250,6 +252,22 @@
                                 <span class="step-indicator" id="step-status-users">Pending</span>
                             </div>
                         </label>
+                        <label class="domain-card" id="card-domain-uom">
+                            <input type="checkbox" name="domain" value="uom" checked>
+                            <div class="domain-content">
+                                <h4>Units of Measure</h4>
+                                <p>OUOM & Item UoMs</p>
+                                <span class="step-indicator" id="step-status-uom">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-uom_groups">
+                            <input type="checkbox" name="domain" value="uom_groups" checked>
+                            <div class="domain-content">
+                                <h4>UoM Packaging Groups</h4>
+                                <p>OUGP & UGP1 conversions</p>
+                                <span class="step-indicator" id="step-status-uom_groups">Pending</span>
+                            </div>
+                        </label>
                         <label class="domain-card" id="card-domain-categories">
                             <input type="checkbox" name="domain" value="categories" checked>
                             <div class="domain-content">
@@ -282,6 +300,14 @@
                                 <span class="step-indicator" id="step-status-barcodes">Pending</span>
                             </div>
                         </label>
+                        <label class="domain-card" id="card-domain-price_lists">
+                            <input type="checkbox" name="domain" value="price_lists" checked>
+                            <div class="domain-content">
+                                <h4>Price Lists & Prices</h4>
+                                <p>OPLN & ITM1 catalog prices</p>
+                                <span class="step-indicator" id="step-status-price_lists">Pending</span>
+                            </div>
+                        </label>
                         <label class="domain-card" id="card-domain-inventory">
                             <input type="checkbox" name="domain" value="inventory" checked>
                             <div class="domain-content">
@@ -296,6 +322,14 @@
                                 <h4>Customers & Suppliers</h4>
                                 <p>OCRD business partners</p>
                                 <span class="step-indicator" id="step-status-partners">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-bp_addresses">
+                            <input type="checkbox" name="domain" value="bp_addresses" checked>
+                            <div class="domain-content">
+                                <h4>Partner Addresses</h4>
+                                <p>CRD1 bill-to & ship-to</p>
+                                <span class="step-indicator" id="step-status-bp_addresses">Pending</span>
                             </div>
                         </label>
                         <label class="domain-card" id="card-domain-sales_orders">

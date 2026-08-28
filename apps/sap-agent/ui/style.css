@@ -512,6 +512,11 @@ input:focus {
     background: rgba(16, 185, 129, 0.08);
 }
 
+.domain-card.failed {
+    border-color: var(--danger);
+    background: rgba(239, 68, 68, 0.08);
+}
+
 .domain-content h4 {
     font-size: 0.95rem;
     font-weight: 600;

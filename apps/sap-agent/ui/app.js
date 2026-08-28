@@ -224,6 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const counts = data.table_counts || {};
             document.getElementById('count-oitm').textContent = (counts['OITM'] || 0).toLocaleString();
+            document.getElementById('count-opln').textContent = (counts['OPLN'] || 0).toLocaleString();
+            document.getElementById('count-itm1').textContent = (counts['ITM1'] || 0).toLocaleString();
             document.getElementById('count-owhs').textContent = (counts['OWHS'] || 0).toLocaleString();
             document.getElementById('count-oitw').textContent = (counts['OITW'] || 0).toLocaleString();
             document.getElementById('count-ocrd-c').textContent = (counts['OCRD_C'] || 0).toLocaleString();
@@ -300,6 +302,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 indicator.className = 'step-indicator completed';
             }
             if (card) card.className = 'domain-card completed';
+        } else if (ev.type === 'step_failed' && ev.domain) {
+            const indicator = document.getElementById(`step-status-${ev.domain}`);
+            const card = document.getElementById(`card-domain-${ev.domain}`);
+            if (indicator) {
+                indicator.textContent = 'Failed';
+                indicator.className = 'step-indicator failed';
+            }
+            if (card) card.className = 'domain-card failed';
         } else if (ev.type === 'run_completed') {
             document.getElementById('overall-status-text').textContent = 'Status: Finished';
             document.getElementById('btn-start-migration').disabled = false;

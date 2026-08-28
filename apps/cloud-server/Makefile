@@ -124,6 +124,15 @@ deps:
 	@go mod tidy
 	@echo "Dependencies installed"
 
+# Refresh & Sync Migrated Domains to Target DB
+sync-target:
+	@echo "Syncing migrated domains from STG to Target database..."
+	@go run cmd/sync-target-db/main.go
+
+sync-target-dryrun:
+	@echo "Simulating sync from STG to Target database (dry-run)..."
+	@go run cmd/sync-target-db/main.go -dry-run=true
+
 # Install Swagger CLI tool
 install-swagger:
 	@echo "Installing Swagger CLI..."

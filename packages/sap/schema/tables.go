@@ -71,6 +71,12 @@ SELECT
     'OITW' AS TableName, COUNT(1) AS TotalCount FROM OITW
 UNION ALL
 SELECT 
+    'OPLN' AS TableName, COUNT(1) AS TotalCount FROM OPLN
+UNION ALL
+SELECT 
+    'ITM1' AS TableName, COUNT(1) AS TotalCount FROM ITM1 WHERE Price > 0
+UNION ALL
+SELECT 
     'OCRD_C' AS TableName, COUNT(1) AS TotalCount FROM OCRD WHERE CardType = 'C'
 UNION ALL
 SELECT 
@@ -275,7 +281,9 @@ SELECT
     ISNULL(PUoMEntry, -1) AS PUoMEntry,
     ISNULL(ManSerNum, 'N') AS ManSerNum,
     ISNULL(ManBtchNum, 'N') AS ManBtchNum,
-    ISNULL(VatGourpSa, '') AS VatGourpSa
+    ISNULL(VatGourpSa, '') AS VatGourpSa,
+    ISNULL(AssetItem, 'N') AS AssetItem,
+    ISNULL(ItemType, 'I') AS ItemType
 FROM OITM
 ORDER BY ItemCode;
 `
@@ -435,10 +443,22 @@ const QueryPriceLists = `
 SELECT
     ListNum,
     ISNULL(ListName, '') AS ListName,
-    ISNULL(Currency, 'USD') AS Currency,
+    ISNULL(PrimCurr, 'USD') AS Currency,
     ISNULL(Factor, 1.0) AS Factor,
-    ISNULL(BasedOn, 0) AS BasedOn,
+    ISNULL(BASE_NUM, 0) AS BasedOn,
     ISNULL(validFor, 'Y') AS validFor
+FROM OPLN
+ORDER BY ListNum;
+`
+
+const QueryPriceListsFallback = `
+SELECT
+    ListNum,
+    ISNULL(ListName, '') AS ListName,
+    'USD' AS Currency,
+    ISNULL(Factor, 1.0) AS Factor,
+    0 AS BasedOn,
+    'Y' AS validFor
 FROM OPLN
 ORDER BY ListNum;
 `
@@ -453,6 +473,19 @@ SELECT
     ISNULL(u.UomCode, '') AS UomCode
 FROM ITM1 i
 LEFT JOIN OUOM u ON i.UomEntry = u.UomEntry
+WHERE i.Price > 0
+ORDER BY i.ItemCode, i.PriceList;
+`
+
+const QueryPriceListItemsFallback = `
+SELECT
+    i.ItemCode,
+    i.PriceList,
+    ISNULL(i.Price, 0.0) AS Price,
+    ISNULL(i.Currency, '') AS Currency,
+    -1 AS UomEntry,
+    '' AS UomCode
+FROM ITM1 i
 WHERE i.Price > 0
 ORDER BY i.ItemCode, i.PriceList;
 `

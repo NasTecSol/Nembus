@@ -292,6 +292,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				category_id = excluded.category_id,
 				brand_id = excluded.brand_id,
 				base_uom_id = excluded.base_uom_id,
+				product_type = excluded.product_type,
 				is_active = excluded.is_active,
 				is_sellable = excluded.is_sellable,
 				track_inventory = excluded.track_inventory,
@@ -542,6 +543,22 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				errs = append(errs, fmt.Sprintf("sales order %s error: %v", so.OrderNumber, err))
 			} else {
 				staged++
+				for _, line := range so.Lines {
+					lq := `
+					INSERT INTO sales_order_lines_v2 (
+						sales_order_id, organization_id, line_number, product_id, product_name, product_sku,
+						quantity_ordered, unit_price, tax_amount, line_total
+					)
+					SELECT 
+						so.id, $2, $3, COALESCE(p.id, (SELECT id FROM products WHERE organization_id = $2 LIMIT 1)), $4, $5,
+						$6, $7, $8, $9
+					FROM sales_orders_v2 so
+					LEFT JOIN products p ON p.organization_id = $2 AND p.sku = $5
+					WHERE so.order_number = $1 AND so.organization_id = $2
+					ON CONFLICT DO NOTHING;
+					`
+					_ = execWithSavepoint(ctx, tx, lq, so.OrderNumber, payload.OrganizationID, line.LineNumber, line.ProductName, line.ProductSKU, line.Quantity, line.UnitPrice, line.TaxAmount, line.LineTotal)
+				}
 			}
 		}
 
@@ -564,6 +581,28 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				errs = append(errs, fmt.Sprintf("invoice %s error: %v", inv.InvoiceNumber, err))
 			} else {
 				staged++
+				for _, line := range inv.Lines {
+					lineMeta, _ := json.Marshal(line.Metadata)
+					lq := `
+					INSERT INTO invoice_lines (
+						invoice_id, organization_id, line_number, description, item_type, product_id, product_sku,
+						quantity, unit_price, tax_amount, line_total, metadata
+					)
+					SELECT 
+						inv.id, $2, $3, $4, 'product', p.id, $5,
+						$6, $7, $8, $9, $10
+					FROM invoices inv
+					LEFT JOIN products p ON p.organization_id = $2 AND p.sku = $5
+					WHERE inv.invoice_number = $1 AND inv.organization_id = $2
+					ON CONFLICT(invoice_id, line_number) DO UPDATE SET
+						quantity = excluded.quantity,
+						unit_price = excluded.unit_price,
+						tax_amount = excluded.tax_amount,
+						line_total = excluded.line_total,
+						metadata = excluded.metadata;
+					`
+					_ = execWithSavepoint(ctx, tx, lq, inv.InvoiceNumber, payload.OrganizationID, line.LineNumber, line.ProductName, line.ProductSKU, line.Quantity, line.UnitPrice, line.TaxAmount, line.LineTotal, lineMeta)
+				}
 			}
 		}
 

@@ -1,0 +1,25 @@
+{
+  "port": 17890,
+  "sqlite_path": "agent.db",
+  "batch_size": 500,
+  "max_concurrency": 4,
+  "default_store_code": "",
+  "cashier_drawer_limit": 0,
+  "cashier_discount_limit": 0,
+  "mssql": {
+    "host": "192.168.18.77",
+    "port": 1433,
+    "user": "admin",
+    "password": "nastecsol",
+    "database": "Qadsiya",
+    "encrypt": false,
+    "trust_server_certificate": true,
+    "connection_timeout_seconds": 15
+  },
+  "cloud": {
+    "base_url": "http://127.0.0.1:8080",
+    "api_key": "",
+    "organization_id": 1,
+    "timeout_seconds": 60
+  }
+}

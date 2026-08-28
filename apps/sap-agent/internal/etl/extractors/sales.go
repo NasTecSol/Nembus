@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-sap/mappings"
@@ -42,7 +43,6 @@ func (e *SalesExtractor) ExtractSalesOrders(ctx context.Context, fromDate, toDat
 	defer rows.Close()
 
 	var orders []mappings.SAPSalesOrder
-	docEntries := make([]int64, 0)
 	for rows.Next() {
 		var o mappings.SAPSalesOrder
 		var comments sql.NullString
@@ -64,41 +64,53 @@ func (e *SalesExtractor) ExtractSalesOrders(ctx context.Context, fromDate, toDat
 		}
 		o.Comments = comments.String
 		orders = append(orders, o)
-		docEntries = append(docEntries, o.DocEntry)
 	}
 
 	if len(orders) == 0 {
 		return []mappings.CanonicalSalesOrder{}, nil
 	}
 
-	// 2. Extract Lines (RDR1) in a single fast JOIN query
-	linesMap := make(map[int64][]mappings.SAPSalesOrderLine)
-	lineRows, err := e.mssql.DB.QueryContext(ctx, schema.QuerySalesOrderLinesByDate,
-		sql.Named("FromDate", fromDate),
-		sql.Named("ToDate", toDate),
-	)
-	if err == nil {
-		for lineRows.Next() {
-			var l mappings.SAPSalesOrderLine
-			var whsCode, unitMsr sql.NullString
-			if err := lineRows.Scan(
-				&l.DocEntry,
-				&l.LineNum,
-				&l.ItemCode,
-				&l.Dscription,
-				&l.Quantity,
-				&l.Price,
-				&l.LineTotal,
-				&l.VatSum,
-				&whsCode,
-				&unitMsr,
-			); err == nil {
-				l.WhsCode = whsCode.String
-				l.UnitMsr = unitMsr.String
-				linesMap[l.DocEntry] = append(linesMap[l.DocEntry], l)
-			}
+	// 2. Extract Lines (RDR1) in chunked batches by DocEntry for fast indexed lookups
+	linesMap := make(map[int64][]mappings.SAPSalesOrderLine, len(orders))
+	const docEntryBatchSize = 500
+	for i := 0; i < len(orders); i += docEntryBatchSize {
+		end := i + docEntryBatchSize
+		if end > len(orders) {
+			end = len(orders)
 		}
-		lineRows.Close()
+		chunk := orders[i:end]
+		var idStrs []string
+		for _, o := range chunk {
+			idStrs = append(idStrs, fmt.Sprintf("%d", o.DocEntry))
+		}
+		if len(idStrs) == 0 {
+			continue
+		}
+		query := fmt.Sprintf(schema.QuerySalesOrderLines, strings.Join(idStrs, ","))
+		lineRows, err := e.mssql.DB.QueryContext(ctx, query)
+		if err == nil {
+			for lineRows.Next() {
+				var l mappings.SAPSalesOrderLine
+				var whsCode, unitMsr sql.NullString
+				if err := lineRows.Scan(
+					&l.DocEntry,
+					&l.LineNum,
+					&l.ItemCode,
+					&l.Dscription,
+					&l.Quantity,
+					&l.Price,
+					&l.LineTotal,
+					&l.VatSum,
+					&whsCode,
+					&unitMsr,
+				); err == nil {
+					l.WhsCode = whsCode.String
+					l.UnitMsr = unitMsr.String
+					linesMap[l.DocEntry] = append(linesMap[l.DocEntry], l)
+				}
+			}
+			lineRows.Close()
+		}
 	}
 
 	// 3. Transform to Canonical
@@ -162,34 +174,47 @@ func (e *SalesExtractor) ExtractInvoices(ctx context.Context, fromDate, toDate t
 		return []mappings.CanonicalInvoice{}, nil
 	}
 
-	// 2. Extract Lines (INV1) in a single fast JOIN query
-	linesMap := make(map[int64][]mappings.SAPInvoiceLine)
-	lineRows, err := e.mssql.DB.QueryContext(ctx, schema.QueryInvoiceLinesByDate,
-		sql.Named("FromDate", fromDate),
-		sql.Named("ToDate", toDate),
-	)
-	if err == nil {
-		for lineRows.Next() {
-			var l mappings.SAPInvoiceLine
-			var whsCode, unitMsr sql.NullString
-			if err := lineRows.Scan(
-				&l.DocEntry,
-				&l.LineNum,
-				&l.ItemCode,
-				&l.Dscription,
-				&l.Quantity,
-				&l.Price,
-				&l.LineTotal,
-				&l.VatSum,
-				&whsCode,
-				&unitMsr,
-			); err == nil {
-				l.WhsCode = whsCode.String
-				l.UnitMsr = unitMsr.String
-				linesMap[l.DocEntry] = append(linesMap[l.DocEntry], l)
-			}
+	// 2. Extract Lines (INV1) in chunked batches by DocEntry (clustered index seek)
+	linesMap := make(map[int64][]mappings.SAPInvoiceLine, len(invoices))
+	const docEntryBatchSize = 500
+	for i := 0; i < len(invoices); i += docEntryBatchSize {
+		end := i + docEntryBatchSize
+		if end > len(invoices) {
+			end = len(invoices)
 		}
-		lineRows.Close()
+		chunk := invoices[i:end]
+		var idStrs []string
+		for _, inv := range chunk {
+			idStrs = append(idStrs, fmt.Sprintf("%d", inv.DocEntry))
+		}
+		if len(idStrs) == 0 {
+			continue
+		}
+		query := fmt.Sprintf(schema.QueryInvoiceLines, strings.Join(idStrs, ","))
+		lineRows, err := e.mssql.DB.QueryContext(ctx, query)
+		if err == nil {
+			for lineRows.Next() {
+				var l mappings.SAPInvoiceLine
+				var whsCode, unitMsr sql.NullString
+				if err := lineRows.Scan(
+					&l.DocEntry,
+					&l.LineNum,
+					&l.ItemCode,
+					&l.Dscription,
+					&l.Quantity,
+					&l.Price,
+					&l.LineTotal,
+					&l.VatSum,
+					&whsCode,
+					&unitMsr,
+				); err == nil {
+					l.WhsCode = whsCode.String
+					l.UnitMsr = unitMsr.String
+					linesMap[l.DocEntry] = append(linesMap[l.DocEntry], l)
+				}
+			}
+			lineRows.Close()
+		}
 	}
 
 	// 3. Transform to Canonical

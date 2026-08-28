@@ -389,6 +389,8 @@ type SAPProduct struct {
 	ManSerNum  string  `json:"man_ser_num"`
 	ManBtchNum string  `json:"man_btch_num"`
 	VatGourpSa string  `json:"vat_group_sa,omitempty"`
+	AssetItem  string  `json:"asset_item,omitempty"`
+	ItemType   string  `json:"item_type,omitempty"`
 }
 
 type CanonicalProduct struct {
@@ -502,7 +504,12 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 		UOMGroupCode:       uomGroupCode,
 		SalesQtyPerBase:    numInSale,
 		PurchaseQtyPerBase: numInBuy,
-		ProductType:        "standard",
+		ProductType: func() string {
+			if SAPBool(p.AssetItem, false) || strings.ToUpper(strings.TrimSpace(p.ItemType)) == "F" {
+				return "fixed_asset"
+			}
+			return "standard"
+		}(),
 		IsSerialized:       SAPBool(p.ManSerNum, false),
 		IsBatchManaged:     SAPBool(p.ManBtchNum, false),
 		IsActive:           SAPBool(p.ValidFor, true),
@@ -514,6 +521,8 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 		Metadata: map[string]interface{}{
 			"sap_item_code":    p.ItemCode,
 			"sap_vat_group":    p.VatGourpSa,
+			"sap_asset_item":   p.AssetItem,
+			"sap_item_type":    p.ItemType,
 			"sap_num_in_sale":  p.NumInSale,
 			"sap_num_in_buy":   p.NumInBuy,
 			"sap_buy_unit_msr": p.BuyUnitMsr,
