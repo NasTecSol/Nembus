@@ -467,7 +467,7 @@ func executeAtlasDeclarative(atlasBin, dbURL, schemaDir, devURL string, dryRun b
 		"schema", "apply",
 		"--url", dbURL,
 		"--to", schemaURI,
-		"--dev", devURL,
+		"--dev-url", devURL,
 	}
 	if dryRun {
 		args = append(args, "--dry-run")

@@ -91,7 +91,7 @@ jobs:
           atlas schema apply \
             --url "$TEST_DB_URL" \
             --to "file://packages/core/db/schema" \
-            --dev "$ATLAS_DEV_URL" \
+            --dev-url "$ATLAS_DEV_URL" \
             --dry-run
 
       - name: Test Fresh Database Declarative Apply
@@ -99,7 +99,7 @@ jobs:
           atlas schema apply \
             --url "$TEST_DB_URL" \
             --to "file://packages/core/db/schema" \
-            --dev "$ATLAS_DEV_URL" \
+            --dev-url "$ATLAS_DEV_URL" \
             --auto-approve
 
       # ---------------------------------------------------------------
