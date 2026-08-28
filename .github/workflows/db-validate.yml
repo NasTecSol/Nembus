@@ -1,59 +1,43 @@
-name: DB Schema, Migration & Tenant Apply (Junction)
+name: DB Declarative Schema, Lint & Tenant Apply (Junction)
 
-# Runs on every push to `junction` (and manually via workflow_dispatch).
-#
 # Pipeline:
-#   1. Generate  — if schema files changed, `atlas migrate diff` creates a
-#                  new versioned migration (no commit yet).
-#   2. Validate  — checksum check + apply to a throwaway Postgres to prove
-#                  the migration works from scratch.
-#   3. Commit    — only after validation passes, the generated migration is
-#                  committed back to `junction` (GITHUB_TOKEN pushes do NOT
-#                  retrigger workflows, so there is no infinite loop).
-#   4. Apply     — ships the built migrate-tenants runner + migrations to
-#                  the EC2 instance (scp) and executes it there over SSH,
-#                  applying pending migrations to the master DB and every
-#                  active tenant DB via localhost (DBs are containers on
-#                  that same host).
-#   5. Verify    — sqlc freshness + core/server tests.
+#   1. PR Checks (target: junction):
+#      - Schema validation / linting (dry-run & apply to a throwaway Postgres container).
+#      - sqlc generation freshness check.
+#      - Unit & integration test suites.
+#   2. Push / Merge to junction:
+#      - Runs all validation checks.
+#      - Builds the migrate-tenants runner.
+#      - Ships the runner + schema directory to EC2 (scp).
+#      - Declaratively applies schema changes to the Master DB and all active
+#        tenant DBs with --auto-approve over SSH.
 
 on:
-  # Manual trigger — run the pipeline on demand (e.g. right after editing
-  # this workflow, or to apply an existing migration set to tenants).
-  workflow_dispatch:
+  pull_request:
+    branches:
+      - junction
   push:
     branches:
       - junction
-    # No `paths` filter on purpose: a paths filter makes GitHub SILENTLY
-    # skip the workflow when a push doesn't touch schema/migrations (e.g.
-    # changes to this file or README), which looks like the action never
-    # ran. The pipeline is idempotent — generation only runs when schema
-    # actually changed, and apply is a no-op when nothing is pending — so
-    # running it on every junction push is safe and predictable.
-
-permissions:
-  # Required to commit the auto-generated migration back to `junction`.
-  contents: write
+  workflow_dispatch:
 
 concurrency:
-  # One migration run per branch at a time; a newer push cancels the older run
-  # (Atlas apply is resumable via atlas_schema_revisions, so this is safe).
   group: db-junction-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  migrate-and-apply:
-    name: Generate, Validate & Apply Migrations
+  validate:
+    name: Schema Validation, sqlc & Tests
     runs-on: ubuntu-latest
 
     env:
-      # Atlas dev database used to compute diffs (clean scratch DB, never the
-      # real one). Read by `dev_db_url` in atlas.hcl via ATLAS_DEV_URL.
+      # Atlas dev database used for schema calculation/diffing
       ATLAS_DEV_URL: postgres://postgres:password@localhost:5433/dev?sslmode=disable
+      # Test database to verify schema applies cleanly from scratch
+      TEST_DB_URL: postgres://postgres:password@localhost:5432/masterDB_test?sslmode=disable
 
     services:
       devdb:
-        # Empty scratch database for `atlas migrate diff`.
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
@@ -68,7 +52,6 @@ jobs:
           --health-retries 5
 
       testdb:
-        # Throwaway database used to prove migrations apply from scratch.
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
@@ -85,10 +68,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          # Full history so we can diff against the previous commit
-          # (github.event.before) to detect schema changes.
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -99,160 +78,32 @@ jobs:
       - name: Install Atlas CLI
         uses: ariga/setup-atlas@v0
         with:
-          # Pinned — do NOT use "latest". Atlas changed its migration checksum
-          # algorithm across versions; if CI and local dev disagree on the
-          # version, `atlas.sum` validation fails with "checksum mismatch".
-          # Keep this in sync with the local Atlas version (README § Database
-          # Migrations) and regenerate atlas.sum after upgrading.
           version: v1.3.0
 
       - name: Install sqlc
         run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
 
       # ---------------------------------------------------------------
-      # 1. GENERATE — only when packages/core/db/schema actually changed
+      # 1. VALIDATE SCHEMA — Dry-run and full apply against clean test DB
       # ---------------------------------------------------------------
-      - name: Generate Migration from Schema Changes
-        id: gen
-        shell: bash
+      - name: Validate Schema (Atlas Dry-Run)
         run: |
-          set -euo pipefail
+          atlas schema apply \
+            --url "$TEST_DB_URL" \
+            --to "file://packages/core/db/schema" \
+            --dev "$ATLAS_DEV_URL" \
+            --dry-run
 
-          # Detect whether the schema directory changed in this push.
-          BEFORE="${{ github.event.before }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            # First push to the branch (or unknown base) — fall back to HEAD~1.
-            BEFORE="$(git rev-parse HEAD~1 2>/dev/null || true)"
-          fi
-
-          SCHEMA_CHANGED=false
-          if [ -n "$BEFORE" ]; then
-            if git diff --name-only "$BEFORE" HEAD -- packages/core/db/schema | grep -q .; then
-              SCHEMA_CHANGED=true
-            fi
-          else
-            # Cannot determine the base commit — be safe and diff anyway.
-            SCHEMA_CHANGED=true
-          fi
-
-          echo "schema_changed=$SCHEMA_CHANGED" >> "$GITHUB_OUTPUT"
-
-          if [ "$SCHEMA_CHANGED" != "true" ]; then
-            echo "No changes under packages/core/db/schema — skipping migration generation."
-            exit 0
-          fi
-
-          MIG_NAME="schema_$(date +%Y%m%d%H%M%S)"
-          echo "migration_name=$MIG_NAME" >> "$GITHUB_OUTPUT"
-
-          echo "Generating migration: $MIG_NAME"
-          # Diff = state(migrations dir) -> state(schema dir).
-          # Env "local" from the root atlas.hcl wires up src + migration dir,
-          # and ATLAS_DEV_URL (job env) is used as the dev database.
-          atlas migrate diff "$MIG_NAME" --env local
-
-      # ---------------------------------------------------------------
-      # 2. VALIDATE — checksums + fresh-DB apply BEFORE committing back
-      # ---------------------------------------------------------------
-      - name: Validate Atlas Migration Checksums
-        run: atlas migrate validate --dir "file://packages/core/db/migrations"
-
-      - name: Test Fresh Database Migration from Scratch
+      - name: Test Fresh Database Declarative Apply
         run: |
-          atlas migrate apply \
-            --url "postgres://postgres:password@localhost:5432/masterDB_test?sslmode=disable" \
-            --dir "file://packages/core/db/migrations"
+          atlas schema apply \
+            --url "$TEST_DB_URL" \
+            --to "file://packages/core/db/schema" \
+            --dev "$ATLAS_DEV_URL" \
+            --auto-approve
 
       # ---------------------------------------------------------------
-      # 3. COMMIT — only if the diff actually produced new files
-      # ---------------------------------------------------------------
-      - name: Commit Generated Migration Back to Junction
-        if: steps.gen.outputs.schema_changed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "$(git status --porcelain packages/core/db/migrations)" ]; then
-            echo "Diff produced no changes — nothing to commit."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add packages/core/db/migrations   # includes the new file + atlas.sum
-          git commit -m "chore(db): auto-generate migration ${{ steps.gen.outputs.migration_name }}"
-
-          # Pushed with GITHUB_TOKEN, which GitHub does NOT use to trigger
-          # workflow runs — so this push cannot re-trigger this workflow.
-          git push origin HEAD:junction
-          echo "Migration committed and pushed to junction."
-
-      # ---------------------------------------------------------------
-      # 4. APPLY — run ON the instance. The Postgres containers (master +
-      # tenant DBs) live on the same EC2 host, so migrate-tenants must
-      # execute there and connect via localhost. This also makes the
-      # tenant db_conn_str values stored in the master DB (localhost /
-      # docker-network names) work as-is.
-      # ---------------------------------------------------------------
-      - name: Build migrate-tenants Runner
-        run: |
-          cd apps/cloud-server
-          go build -o "${{ github.workspace }}/migrate-tenants-bin" ./cmd/migrate-tenants
-
-      - name: Package Runner + Migrations
-        run: |
-          mkdir -p nembus-db-migrate
-          cp migrate-tenants-bin nembus-db-migrate/
-          cp -r packages/core/db/migrations nembus-db-migrate/migrations
-          tar -czf nembus-db-migrate.tar.gz nembus-db-migrate
-
-      - name: Copy Runner + Migrations to Instance
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          source: "nembus-db-migrate.tar.gz"
-          target: /opt/apps
-
-      - name: Apply Migrations on Instance (Master + All Active Tenants)
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            set -e
-
-            # Ensure the pinned Atlas version is present on the host — the
-            # checksum algorithm must match CI + local dev, or `migrate
-            # apply` will reject atlas.sum. Installs to ~/bin (no sudo).
-            mkdir -p "$HOME/bin"
-            if ! "$HOME/bin/atlas" version 2>/dev/null | grep -q "v1.3.0"; then
-              curl -sL -o "$HOME/bin/atlas" "https://atlasbinaries.com/atlas/atlas-linux-amd64-v1.3.0"
-              chmod +x "$HOME/bin/atlas"
-            fi
-            export PATH="$HOME/bin:$PATH"
-            atlas version
-
-            # MASTER_DB_URL is the LOCAL url (localhost) — the runner
-            # executes on the same host as the Postgres containers.
-            # Adjust the port if your container publishes a different one.
-            # (Single quotes: keeps the shell from expanding special
-            # characters inside the URL.)
-            export MASTER_DB_URL='${{ secrets.MASTER_DB_URL }}'
-
-            cd /opt/apps
-            rm -rf nembus-db-migrate
-            tar -xzf nembus-db-migrate.tar.gz
-            cd nembus-db-migrate
-            ./migrate-tenants-bin -dir "$PWD/migrations"
-
-      # ---------------------------------------------------------------
-      # 5. VERIFY — sqlc freshness + tests (unchanged from before)
+      # 2. VERIFY — sqlc freshness + test suites
       # ---------------------------------------------------------------
       - name: Verify sqlc Generation Freshness
         run: |
@@ -264,3 +115,75 @@ jobs:
         run: |
           cd packages/core && go test -v ./...
           cd ../../apps/cloud-server && go test -v ./...
+
+  apply-tenants:
+    name: Apply Declarative Schema (Master & All Active Tenants)
+    # Only executes on push/merge to junction or manual trigger (not on PR checks)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      # ---------------------------------------------------------------
+      # Build & Package Declarative Runner + Schema
+      # ---------------------------------------------------------------
+      - name: Build migrate-tenants Runner
+        run: |
+          cd apps/cloud-server
+          go build -o "${{ github.workspace }}/migrate-tenants-bin" ./cmd/migrate-tenants
+
+      - name: Package Runner + Schema
+        run: |
+          mkdir -p nembus-db-migrate
+          cp migrate-tenants-bin nembus-db-migrate/
+          cp -r packages/core/db/schema nembus-db-migrate/schema
+          tar -czf nembus-db-migrate.tar.gz nembus-db-migrate
+
+      - name: Copy Runner + Schema to EC2 Host
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          source: "nembus-db-migrate.tar.gz"
+          target: /opt/apps
+
+      - name: Apply Declarative Schema on EC2 (Master + All Active Tenants)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            # Ensure the pinned Atlas version is present on the host
+            mkdir -p "$HOME/bin"
+            if ! "$HOME/bin/atlas" version 2>/dev/null | grep -q "v1.3.0"; then
+              curl -sL -o "$HOME/bin/atlas" "https://atlasbinaries.com/atlas/atlas-linux-amd64-v1.3.0"
+              chmod +x "$HOME/bin/atlas"
+            fi
+            export PATH="$HOME/bin:$PATH"
+            atlas version
+
+            # MASTER_DB_URL is the local URL on the EC2 host (localhost)
+            export MASTER_DB_URL='${{ secrets.MASTER_DB_URL }}'
+
+            cd /opt/apps
+            rm -rf nembus-db-migrate
+            tar -xzf nembus-db-migrate.tar.gz
+            cd nembus-db-migrate
+
+            # Run in declarative mode across Master DB and all active tenants
+            ./migrate-tenants-bin -declarative -schema "$PWD/schema"

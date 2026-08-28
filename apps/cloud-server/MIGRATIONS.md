@@ -98,7 +98,13 @@ Runs migration checksum validation, `sqlc generate`, and unit/integration test s
 Tenant migration is managed by `apps/cloud-server/cmd/migrate-tenants/main.go`:
 
 ```bash
-# Migrate Master DB and all active Tenant DBs
+# Declarative Schema Sync (Staging / Dev — Auto-Approve across Master + All Tenants)
+go run cmd/migrate-tenants/main.go -declarative
+
+# Declarative Dry-Run across Master + All Tenants
+go run cmd/migrate-tenants/main.go -declarative -status
+
+# Versioned Migrations: Migrate Master DB and all active Tenant DBs
 go run cmd/migrate-tenants/main.go
 
 # Migrate only active Tenant DBs
