@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # Atlas Cloud authentication token
+      ATLAS_TOKEN: ${{ secrets.ATLAS_TOKEN }}
       # Atlas dev database used for schema calculation/diffing
       ATLAS_DEV_URL: postgres://postgres:password@localhost:5433/dev?sslmode=disable
       # Test database to verify schema applies cleanly from scratch
@@ -79,6 +81,7 @@ jobs:
         uses: ariga/setup-atlas@v0
         with:
           version: v1.3.0
+          cloud-token: ${{ secrets.ATLAS_TOKEN }}
 
       - name: Install sqlc
         run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
@@ -177,6 +180,8 @@ jobs:
             export PATH="$HOME/bin:$PATH"
             atlas version
 
+            # Export ATLAS_TOKEN for declarative features (functions, views, procedures)
+            export ATLAS_TOKEN='${{ secrets.ATLAS_TOKEN }}'
             # MASTER_DB_URL is the local URL on the EC2 host (localhost)
             export MASTER_DB_URL='${{ secrets.MASTER_DB_URL }}'
 
