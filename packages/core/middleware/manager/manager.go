@@ -63,3 +63,13 @@ func (m *Manager) GetTenantDSN(ctx context.Context, slug string) (string, error)
 	}
 	return tenant.DbConnStr, nil
 }
+
+// EvictPool removes and closes a cached connection pool for a tenant slug.
+func (m *Manager) EvictPool(slug string) {
+	if val, ok := m.pools.LoadAndDelete(slug); ok {
+		if pool, ok := val.(*pgxpool.Pool); ok && pool != nil {
+			pool.Close()
+		}
+	}
+}
+

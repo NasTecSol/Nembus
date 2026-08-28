@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	clientbackup "github.com/NasTecSol/nembus-client/client"
@@ -33,15 +34,16 @@ var migrations embed.FS
 
 // App struct
 type App struct {
-	ctx         context.Context
-	dbManager   *db.DBManager
-	masterRepo  *repository.Queries
-	masterPool  *pgxpool.Pool
-	syncService *sync.SyncService
-	cfg         *config.Config
-	version     string
-	ghToken     string
-	ghRepo      string
+	ctx           context.Context
+	dbManager     *db.DBManager
+	masterRepo    *repository.Queries
+	masterPool    *pgxpool.Pool
+	tenantManager *manager.Manager
+	syncService   *sync.SyncService
+	cfg           *config.Config
+	version       string
+	ghToken       string
+	ghRepo        string
 }
 
 // NewApp creates a new App application struct
@@ -234,8 +236,8 @@ func (a *App) migrate(dbURL string) error {
 				tstamp timestamp NULL default now()
 			);
 			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260813124500, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260813124500);
+			SELECT 20260821060910, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260821060910);
 		`)
 	}
 
@@ -413,13 +415,18 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error finalizing local tenant record: %v", err)
 	}
 
-	// 6. Initialize sync (will use the newly created tenant)
-	a.InitializeSync()
+	// Invalidate cached pool so subsequent requests (like GET /api/stores) reconnect to the newly restored DB
+	if a.tenantManager != nil {
+		a.tenantManager.EvictPool(tenant.Slug)
+	}
 
-	// 7. Finalize setup
+	// 6. Finalize setup
 	markerPath := filepath.Join(home, ".nembus", ".setup_done")
 	_ = os.MkdirAll(filepath.Dir(markerPath), 0755)
 	_ = os.WriteFile(markerPath, []byte("done"), 0644)
+
+	// 7. Start sync service for this tenant
+	a.StartSyncService(tenant.Slug)
 
 	return "Success"
 }
@@ -433,9 +440,11 @@ func (a *App) StartSyncService(slug string) {
 
 	bgCtx := context.Background()
 	tenantPool := a.masterPool
-	if a.masterRepo != nil {
-		tenantManager := manager.NewManager(a.masterRepo)
-		pool, err := tenantManager.GetPool(bgCtx, slug)
+	if a.tenantManager == nil && a.masterRepo != nil {
+		a.tenantManager = manager.NewManager(a.masterRepo)
+	}
+	if a.tenantManager != nil {
+		pool, err := a.tenantManager.GetPool(bgCtx, slug)
 		if err == nil && pool != nil {
 			tenantPool = pool
 		} else {
@@ -443,7 +452,14 @@ func (a *App) StartSyncService(slug string) {
 		}
 	}
 
-	a.syncService = sync.NewSyncService(bgCtx, tenantPool, a.cfg.CloudURL, slug)
+	grpcAddr := ""
+	if a.cfg != nil {
+		grpcAddr = a.cfg.GRPCAddr
+		if grpcAddr == "" {
+			grpcAddr = a.cfg.CloudURL
+		}
+	}
+	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
 	a.syncService.Start()
 }
 
@@ -468,7 +484,8 @@ func (a *App) InitializeSync() {
 
 func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	// reuse the pool
-	tenantManager := manager.NewManager(a.masterRepo)
+	a.tenantManager = manager.NewManager(a.masterRepo)
+	tenantManager := a.tenantManager
 
 	// Initialize Use Cases
 	userUC := usecase.NewUserUseCase()
@@ -626,7 +643,7 @@ func (a *App) LoadDeviceConfig() string {
 }
 
 // SaveDeviceConfig writes the device configuration to disk so it persists
-// across Wails restarts and clean builds.
+// across Wails restarts and clean builds, and updates local_device_config in the tenant DB.
 func (a *App) SaveDeviceConfig(configJSON string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -641,6 +658,43 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 		return fmt.Sprintf("Error: cannot write config: %v", err)
 	}
 	log.Printf("SaveDeviceConfig: config saved to %s", path)
+
+	// Also persist store_id and pos_terminal_id into tenant DB local_device_config table
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &parsed); err == nil {
+		var storeID, terminalID int
+		if s, ok := parsed["store_id"].(string); ok {
+			storeID, _ = strconv.Atoi(s)
+		} else if s, ok := parsed["store_id"].(float64); ok {
+			storeID = int(s)
+		}
+		if t, ok := parsed["terminal_id"].(string); ok {
+			terminalID, _ = strconv.Atoi(t)
+		} else if t, ok := parsed["terminal_id"].(float64); ok {
+			terminalID = int(t)
+		}
+		termName, _ := parsed["terminal_name"].(string)
+		if termName == "" {
+			termName = "POS Terminal"
+		}
+
+		if a.tenantManager != nil && a.masterRepo != nil {
+			ctx := context.Background()
+			tenants, err := a.masterRepo.ListActiveTenants(ctx)
+			if err == nil && len(tenants) > 0 {
+				pool, err := a.tenantManager.GetPool(ctx, tenants[0].Slug)
+				if err == nil && pool != nil {
+					_, _ = pool.Exec(ctx, `
+						DELETE FROM local_device_config;
+						INSERT INTO local_device_config (device_name, store_id, pos_terminal_id)
+						VALUES ($1, $2, $3);
+					`, termName, storeID, terminalID)
+					log.Printf("SaveDeviceConfig: updated local_device_config (store_id=%d, terminal_id=%d)", storeID, terminalID)
+				}
+			}
+		}
+	}
+
 	return "OK"
 }
 
