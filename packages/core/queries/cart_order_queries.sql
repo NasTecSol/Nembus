@@ -70,6 +70,14 @@ WHERE store_id = $1
 ORDER BY last_activity_at DESC
 LIMIT $2 OFFSET $3;
 
+-- name: ListDraftCartsByCashier :many
+SELECT * FROM carts
+WHERE cashier_id = $1
+  AND cart_status = 'draft'
+  AND (sqlc.narg(store_id)::int IS NULL OR store_id = sqlc.narg(store_id)::int)
+ORDER BY last_activity_at DESC
+LIMIT $2 OFFSET $3;
+
 -- name: ListAbandonedCarts :many
 SELECT c.*, COUNT(ci.id) as item_count, COALESCE(SUM(ci.line_total), 0)::numeric as cart_value
 FROM carts c

@@ -345,3 +345,103 @@ func (h *PosTerminalsHandler) TogglePOSTerminalActive(c *gin.Context) {
 	resp := h.useCase.TogglePOSTerminalActive(c.Request.Context(), int32(id), req.IsActive)
 	c.JSON(resp.StatusCode, resp)
 }
+
+// AssignCashiersRequest defines the payload for assigning cashiers to a POS terminal.
+type AssignCashiersRequest struct {
+	CashierIDs []int32 `json:"cashier_ids" binding:"required"`
+}
+
+// AssignCashiersToPOSTerminal handles POST /api/pos/terminals/:id/assign-cashiers
+// @Summary      Assign cashiers to POS terminal
+// @Description  Assigns one or more cashier IDs to a POS terminal's metadata
+// @Tags         pos-terminals
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path   int                    true  "Terminal ID"
+// @Param        body body   AssignCashiersRequest true  "Cashier IDs payload"
+// @Success      200  {object} SuccessResponse
+// @Router       /api/pos/terminals/{id}/assign-cashiers [post]
+func (h *PosTerminalsHandler) AssignCashiersToPOSTerminal(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid terminal id", nil))
+		return
+	}
+
+	var req AssignCashiersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	resp := h.useCase.AssignCashiersToPOSTerminal(c.Request.Context(), int32(id), req.CashierIDs)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetCashiersForPOSTerminal handles GET /api/pos/terminals/:id/cashiers
+// @Summary      Get cashiers assigned to POS terminal
+// @Description  Returns all cashiers assigned to a POS terminal via metadata
+// @Tags         pos-terminals
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path   int  true  "Terminal ID"
+// @Success      200  {object} SuccessResponse
+// @Router       /api/pos/terminals/{id}/cashiers [get]
+func (h *PosTerminalsHandler) GetCashiersForPOSTerminal(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid terminal id", nil))
+		return
+	}
+
+	resp := h.useCase.GetCashiersForPOSTerminal(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// RemoveCashierFromPOSTerminal handles DELETE /api/pos/terminals/:id/cashiers/:cashier_id
+// @Summary      Unassign a cashier from POS terminal
+// @Description  Removes a cashier ID from a POS terminal's metadata
+// @Tags         pos-terminals
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id          path   int  true  "Terminal ID"
+// @Param        cashier_id  path   int  true  "Cashier ID"
+// @Success      200         {object} SuccessResponse
+// @Router       /api/pos/terminals/{id}/cashiers/{cashier_id} [delete]
+func (h *PosTerminalsHandler) RemoveCashierFromPOSTerminal(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid terminal id", nil))
+		return
+	}
+
+	cashierID, err := strconv.ParseInt(c.Param("cashier_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier id", nil))
+		return
+	}
+
+	resp := h.useCase.RemoveCashierFromPOSTerminal(c.Request.Context(), int32(id), int32(cashierID))
+	c.JSON(resp.StatusCode, resp)
+}

@@ -18,6 +18,7 @@ func RegisterCartRoutes(r *gin.RouterGroup, h *handler.CartHandler) {
 		carts.GET("/by-number/:cart_number", h.GetCartByNumber)
 		carts.GET("/by-customer", h.GetActiveCartByCustomer)
 		carts.GET("/by-guest", h.GetActiveCartByGuestIdentifier)
+		carts.GET("/drafts/by-cashier/:cashier_id", h.GetDraftCartsByCashier)
 		carts.GET("/:id", h.GetCart)
 		carts.PUT("/:id", h.UpdateCart)
 		carts.PUT("/:id/status", h.UpdateCartStatus)

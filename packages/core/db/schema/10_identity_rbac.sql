@@ -181,6 +181,7 @@ CREATE TABLE role_permissions (
     scope VARCHAR(50) DEFAULT 'all',
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(role_id, permission_id)
 );
 

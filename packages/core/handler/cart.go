@@ -495,6 +495,59 @@ func (h *CartHandler) ListActiveCarts(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// GetDraftCartsByCashier handles GET /api/carts/drafts/by-cashier/:cashier_id?store_id=&limit=&offset=
+// @Summary      Get draft carts by cashier ID
+// @Description  Retrieve all carts with draft status for a given cashier, optionally filtered by store_id
+// @Tags         carts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        cashier_id    path      int     true  "Cashier ID"
+// @Param        store_id      query     int     false "Store ID"
+// @Param        limit         query     int     false "Limit"
+// @Param        offset        query     int     false "Offset"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/carts/drafts/by-cashier/{cashier_id} [get]
+func (h *CartHandler) GetDraftCartsByCashier(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	cashierIDStr := c.Param("cashier_id")
+	cashierID64, err := strconv.ParseInt(cashierIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid cashier_id", nil))
+		return
+	}
+
+	var storeID pgtype.Int4
+	if storeIDStr := c.Query("store_id"); storeIDStr != "" {
+		if storeID64, err := strconv.ParseInt(storeIDStr, 10, 32); err == nil {
+			storeID = pgtype.Int4{Int32: int32(storeID64), Valid: true}
+		}
+	}
+
+	limit64, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
+	offset64, _ := strconv.ParseInt(c.DefaultQuery("offset", "0"), 10, 32)
+
+	arg := repository.ListDraftCartsByCashierParams{
+		CashierID: pgtype.Int4{Int32: int32(cashierID64), Valid: true},
+		StoreID:   storeID,
+		Limit:     int32(limit64),
+		Offset:    int32(offset64),
+	}
+
+	resp := h.useCase.ListDraftCartsByCashier(c.Request.Context(), arg)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // ListAbandonedCarts handles GET /api/carts/abandoned?store_id=&min_value=&limit=&offset=
 // @Summary      List abandoned carts
 // @Description  List abandoned carts filtered by store and minimum value

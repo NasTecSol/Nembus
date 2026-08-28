@@ -708,7 +708,8 @@ SELECT
     CASE
         WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
              AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
-             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL
+                  OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE)
              AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
                   OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN COALESCE(pp_promo_v.price, pp_promo.price)
@@ -718,7 +719,8 @@ SELECT
     CASE
         WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
              AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
-             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL
+                  OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE)
              AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
                   OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN true
@@ -1254,7 +1256,21 @@ RETURNS TABLE (
     package_n_price JSONB,
     product_uom_conversions JSONB
 ) AS $$
+DECLARE
+    v_product_id INT;
+    v_variant_id INT;
 BEGIN
+    -- 1. Find product / variant by matching barcode
+    SELECT pb.product_id, pb.product_variant_id INTO v_product_id, v_variant_id
+    FROM product_barcodes pb
+    WHERE pb.barcode = p_barcode
+    LIMIT 1;
+
+    IF v_product_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- 2. Return catalog query matching product ID and variant ID
     RETURN QUERY
     SELECT 
         cat.product_id,
@@ -1263,7 +1279,7 @@ BEGIN
         cat.description,
         cat.category_name::VARCHAR,
         cat.brand_name::VARCHAR,
-        cat.barcode::VARCHAR,
+        p_barcode::VARCHAR AS barcode, -- Return scanned barcode
         cat.uom_code::VARCHAR,
         (cat.decimal_places)::INTEGER,
         cat.retail_price,
@@ -1319,9 +1335,9 @@ BEGIN
          FROM (
              SELECT fu.code AS fu_code, tu.code AS tu_code,
                     jsonb_build_object(
-                        'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
-                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
-                        'conversion_factor', puc.conversion_factor
+                         'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
+                         'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                         'conversion_factor', puc.conversion_factor
                     ) AS cv
              FROM product_uom_conversions puc
              JOIN units_of_measure fu ON puc.from_uom_id = fu.id
@@ -1375,7 +1391,8 @@ BEGIN
         LIMIT 1
     ) promo_rule ON true
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
-    WHERE cat.barcode = p_barcode
+    WHERE cat.product_id = v_product_id
+      AND (cat.product_variant_id = v_variant_id OR (cat.product_variant_id IS NULL AND v_variant_id IS NULL))
     LIMIT 1;
 END;
 $$ LANGUAGE plpgsql;
@@ -2213,6 +2230,13 @@ DECLARE
     v_all_po_received BOOLEAN := true;
     v_any_po_received BOOLEAN := false;
     v_po_line RECORD;
+    v_org_metadata JSONB;
+    v_strategy VARCHAR(50);
+    v_current_price NUMERIC;
+    v_old_qty NUMERIC;
+    v_new_price NUMERIC;
+    v_incoming_price NUMERIC;
+    v_total_qty NUMERIC;
 BEGIN
     SELECT * INTO v_grn FROM goods_receipt_notes WHERE id = p_grn_id FOR UPDATE;
     IF v_grn IS NULL THEN
@@ -2256,6 +2280,28 @@ BEGIN
             );
         END IF;
 
+        -- Update/Insert product batch if batch number is present
+        IF v_item.batch_number IS NOT NULL AND v_item.batch_number <> '' THEN
+            UPDATE product_batches
+            SET quantity_available = quantity_available + v_item.quantity_received,
+                expiry_date = COALESCE(v_item.expiry_date, expiry_date),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_grn.store_id
+              AND batch_number = v_item.batch_number;
+
+            IF NOT FOUND THEN
+                INSERT INTO product_batches (
+                    product_id, product_variant_id, batch_number,
+                    expiry_date, store_id, quantity_available, status
+                ) VALUES (
+                    v_item.product_id, v_item.product_variant_id, v_item.batch_number,
+                    v_item.expiry_date, v_grn.store_id, v_item.quantity_received, 'active'
+                );
+            END IF;
+        END IF;
+
         -- Insert stock movement (purchase_receipt)
         INSERT INTO stock_movements (
             movement_type, reference_type, reference_id, product_id, product_variant_id,
@@ -2267,6 +2313,58 @@ BEGIN
             v_grn.received_by, 'completed', COALESCE(v_item.unit_cost, 0), (COALESCE(v_item.unit_cost, 0) * v_item.quantity_received),
             jsonb_build_object('grn_number', v_grn.grn_number, 'delivery_note_number', COALESCE(v_grn.delivery_note_number, ''))
         );
+
+        -- Load organization metadata and strategy
+        SELECT metadata INTO v_org_metadata FROM organizations WHERE id = v_grn.organization_id;
+        
+        IF jsonb_typeof(v_org_metadata) = 'array' THEN
+            v_strategy := COALESCE((v_org_metadata->0)->>'inventory_strategy', 'WEIGHTED_AVERAGE');
+        ELSE
+            v_strategy := COALESCE(v_org_metadata->>'inventory_strategy', 'WEIGHTED_AVERAGE');
+        END IF;
+
+        -- If strategy is WEIGHTED_AVERAGE, calculate and update average price
+        IF v_strategy = 'WEIGHTED_AVERAGE' THEN
+            -- Get total quantity on hand AFTER the update
+            SELECT quantity_on_hand INTO v_total_qty
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_grn.store_id;
+
+            -- Calculate quantity on hand BEFORE this GRN item
+            v_old_qty := COALESCE(v_total_qty, 0) - v_item.quantity_received;
+            IF v_old_qty < 0 THEN
+                v_old_qty := 0;
+            END IF;
+
+            -- Fetch current retail price from price lists ('RETAIL' or 'RETAIL_SAR')
+            SELECT price INTO v_current_price 
+            FROM product_prices 
+            WHERE product_id = v_item.product_id 
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true)
+              AND is_active = true
+            LIMIT 1;
+
+            v_incoming_price := COALESCE(v_item.unit_cost, 0);
+
+            IF v_old_qty = 0 OR v_current_price IS NULL THEN
+                v_new_price := v_incoming_price;
+            ELSE
+                v_new_price := ROUND(((v_old_qty * v_current_price) + (v_item.quantity_received * v_incoming_price)) / (v_old_qty + v_item.quantity_received), 2);
+            END IF;
+
+            -- Update product prices for both RETAIL and RETAIL_SAR price lists
+            IF v_new_price > 0 THEN
+                UPDATE product_prices
+                SET price = v_new_price,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE product_id = v_item.product_id
+                  AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+                  AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true);
+            END IF;
+        END IF;
     END LOOP;
 
     -- Update GRN status
@@ -2424,6 +2522,18 @@ BEGIN
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
+        -- Update product batch if batch number is present
+        IF v_order_line.batch_number IS NOT NULL AND v_order_line.batch_number <> '' THEN
+            UPDATE product_batches
+            SET quantity_available = GREATEST(0, quantity_available - v_fulfilled_qty),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id 
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND store_id = NEW.store_id
+              AND batch_number = v_order_line.batch_number;
+        END IF;
+
         -- Record the stock movement for auditing
         INSERT INTO stock_movements (
             movement_type,
@@ -2486,6 +2596,64 @@ CREATE TRIGGER trg_deduct_inventory_on_fulfillment
     FOR EACH ROW
     WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
     EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
+
+-- =====================================================
+-- Trigger for POS Transaction Line insertion: deduct stock automatically
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION fn_trigger_deduct_inventory_on_pos_transaction()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_store_id INTEGER;
+    v_status VARCHAR(50);
+BEGIN
+    -- Get the store ID and status from the parent transaction
+    SELECT store_id, status INTO v_store_id, v_status FROM pos_transactions WHERE id = NEW.transaction_id;
+
+    IF v_store_id IS NULL OR v_status = 'voided' THEN
+        RETURN NEW;
+    END IF;
+
+    -- 1. Deduct from general inventory stock
+    UPDATE inventory_stock
+    SET quantity_on_hand = quantity_on_hand - NEW.quantity,
+        quantity_available = GREATEST(0, quantity_available - NEW.quantity),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = NEW.product_id
+      AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+      AND store_id = v_store_id;
+
+    -- 2. Deduct from product batch if batch number is present
+    IF NEW.batch_number IS NOT NULL AND NEW.batch_number <> '' THEN
+        UPDATE product_batches
+        SET quantity_available = GREATEST(0, quantity_available - NEW.quantity),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = NEW.product_id
+          AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+          AND store_id = v_store_id
+          AND batch_number = NEW.batch_number;
+    END IF;
+
+    -- 3. Record a stock movement for POS transaction line
+    INSERT INTO stock_movements (
+        movement_type, reference_type, reference_id, product_id, product_variant_id,
+        from_store_id, quantity, uom_id, status, metadata
+    )
+    VALUES (
+        'sale', 'pos_transaction', NEW.transaction_id, NEW.product_id, NEW.product_variant_id,
+        v_store_id, NEW.quantity, NEW.uom_id, 'completed',
+        jsonb_build_object('pos_line_id', NEW.id, 'batch_number', COALESCE(NEW.batch_number, ''))
+    );
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;
+CREATE TRIGGER trg_deduct_inventory_on_pos_transaction
+    AFTER INSERT ON pos_transaction_lines
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_pos_transaction();
 
 -- =====================================================
 -- Trigger for order line insertion: allocate stock when order is pending/confirmed

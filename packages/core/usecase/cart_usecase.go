@@ -499,6 +499,17 @@ func (uc *CartUseCase) ListActiveCarts(ctx context.Context, arg repository.ListA
 	return utils.NewResponse(utils.CodeOK, "active carts listed", cartsToOutput(carts))
 }
 
+func (uc *CartUseCase) ListDraftCartsByCashier(ctx context.Context, arg repository.ListDraftCartsByCashierParams) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	carts, err := uc.repo.ListDraftCartsByCashier(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to list draft carts by cashier", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "draft carts listed successfully", cartsToOutput(carts))
+}
+
 func (uc *CartUseCase) ListAbandonedCarts(ctx context.Context, arg repository.ListAbandonedCartsParams) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
