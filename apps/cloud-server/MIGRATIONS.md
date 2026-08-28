@@ -21,7 +21,6 @@ PostgreSQL (Master & Tenants)
 ```
 
 1. **Modular Desired Schema** (`packages/core/db/schema/`):
-   * `00_extensions.sql` (PostgreSQL extensions)
    * `10_identity_rbac.sql` (Organizations, tenants, modules, menus, permissions, roles, UI settings)
    * `20_stores_terminals.sql` (Stores, storage locations, users, cashiers, terminals, sessions)
    * `30_catalog.sql` (Categories, brands, UOM, packaging templates, price lists, taxes, products, variants, barcodes, pricing, batches)

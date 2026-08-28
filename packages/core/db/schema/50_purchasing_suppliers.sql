@@ -307,7 +307,7 @@ CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist', 'retail
 
 -- Main carts table - supports both guest and registered customers
 CREATE TABLE carts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cart_number VARCHAR(50) UNIQUE NOT NULL, -- Human-readable cart reference
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
@@ -372,7 +372,7 @@ CREATE TABLE carts (
 
 -- Cart line items
 CREATE TABLE cart_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
