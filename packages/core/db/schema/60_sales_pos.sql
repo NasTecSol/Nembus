@@ -219,7 +219,8 @@ CREATE TABLE order_status_history (
     notes TEXT,
     
     changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Order fulfillment tracking
@@ -273,7 +274,8 @@ CREATE TABLE order_fulfillment_items (
     batch_number VARCHAR(100),
     serial_numbers TEXT[],
     
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 

@@ -43,7 +43,8 @@ CREATE TABLE stock_movements (
     cost_per_unit DECIMAL(15,4),
     total_value DECIMAL(15,2),
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE stock_counts (
@@ -59,7 +60,8 @@ CREATE TABLE stock_counts (
     counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE stock_count_lines (
@@ -78,6 +80,7 @@ CREATE TABLE stock_count_lines (
     batch_number VARCHAR(100),
     serial_number VARCHAR(100),
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

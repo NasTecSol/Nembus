@@ -32,7 +32,9 @@ CREATE TABLE units_of_measure (
     uom_type VARCHAR(20),
     decimal_places INTEGER DEFAULT 2,
     is_active BOOLEAN DEFAULT true,
-    metadata JSONB DEFAULT '{}'
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE uom_packaging_templates (
@@ -53,6 +55,8 @@ CREATE TABLE uom_packaging_template_levels (
     level_order INTEGER NOT NULL, -- 1=Base, 2=Middle, 3=Top
     uom_id INTEGER NOT NULL REFERENCES units_of_measure(id),
     multiplier DECIMAL(15,6) NOT NULL DEFAULT 1, -- Multiplier relative to the level below it
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(template_id, level_order)
 );
 
@@ -79,7 +83,8 @@ CREATE TABLE tax_categories (
     is_inclusive BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE products (
@@ -126,7 +131,8 @@ CREATE TABLE product_barcodes (
     barcode_type VARCHAR(50),
     is_primary BOOLEAN DEFAULT false,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE product_prices (
@@ -155,6 +161,7 @@ CREATE TABLE product_uom_conversions (
     is_default BOOLEAN DEFAULT false,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(product_id, from_uom_id, to_uom_id)
 );
 
