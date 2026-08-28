@@ -24,6 +24,12 @@ env "local" {
   src = "file://packages/core/db/schema"
   url = var.master_db_url
   dev = var.dev_db_url
+  schema {
+    src = "file://packages/core/db/schema"
+    repo {
+      name = "nembus"
+    }
+  }
   migration {
     dir    = "file://packages/core/db/migrations"
     format = atlas

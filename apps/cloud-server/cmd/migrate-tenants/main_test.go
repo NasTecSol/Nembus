@@ -117,3 +117,31 @@ func TestIsMissingDatabase(t *testing.T) {
 		t.Error("isMissingDatabase() must not match relation-not-exists")
 	}
 }
+
+func TestResolveSchemaDir(t *testing.T) {
+	dir := t.TempDir()
+	got, err := resolveSchemaDir(dir)
+	if err != nil {
+		t.Fatalf("resolveSchemaDir() error: %v", err)
+	}
+	abs, _ := filepath.Abs(dir)
+	if got != abs {
+		t.Errorf("resolveSchemaDir(%q) = %q, want %q", dir, got, abs)
+	}
+}
+
+func TestResolveDevURL(t *testing.T) {
+	if got := resolveDevURL("postgres://custom:pass@localhost:5432/dev"); got != "postgres://custom:pass@localhost:5432/dev" {
+		t.Errorf("resolveDevURL(custom) = %q, want custom URL", got)
+	}
+
+	t.Setenv("ATLAS_DEV_URL", "postgres://env:pass@localhost:5432/dev")
+	if got := resolveDevURL(""); got != "postgres://env:pass@localhost:5432/dev" {
+		t.Errorf("resolveDevURL(\"\") with env set = %q, want env URL", got)
+	}
+
+	t.Setenv("ATLAS_DEV_URL", "")
+	if got := resolveDevURL(""); got != "docker://postgres/16/dev" {
+		t.Errorf("resolveDevURL(\"\") default = %q, want docker fallback", got)
+	}
+}
