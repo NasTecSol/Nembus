@@ -442,7 +442,7 @@ CREATE INDEX idx_inventory_stock_product_id ON inventory_stock(product_id);
 CREATE INDEX idx_inventory_stock_product_variant_id ON inventory_stock(product_variant_id);
 CREATE INDEX idx_inventory_stock_store_id ON inventory_stock(store_id);
 CREATE INDEX idx_inventory_stock_storage_location_id ON inventory_stock(storage_location_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_stock_unique_product_variant_store ON inventory_stock(product_id, COALESCE(product_variant_id, -1), store_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_product_variant_store ON inventory_stock(product_id, COALESCE(product_variant_id, -1), store_id);
 
 -- Stock Movements
 CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id);
