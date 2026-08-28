@@ -4,7 +4,7 @@
 
 -- Draft cart templates for quick reordering
 CREATE TABLE draft_cart_templates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     
@@ -35,7 +35,7 @@ CREATE TABLE draft_cart_templates (
 
 -- Items in draft cart templates
 CREATE TABLE draft_cart_template_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES draft_cart_templates(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
@@ -59,7 +59,7 @@ CREATE TABLE draft_cart_template_items (
 );
 -- Enhanced sales orders table
 CREATE TABLE sales_orders_v2 (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_number VARCHAR(50) UNIQUE NOT NULL,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
@@ -153,7 +153,7 @@ CREATE TABLE sales_orders_v2 (
 
 -- Enhanced order line items
 CREATE TABLE sales_order_lines_v2 (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
@@ -225,7 +225,7 @@ CREATE TABLE order_status_history (
 
 -- Order fulfillment tracking
 CREATE TABLE order_fulfillments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sales_order_id UUID NOT NULL REFERENCES sales_orders_v2(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
@@ -264,7 +264,7 @@ CREATE TABLE order_fulfillments (
 
 -- Items in each fulfillment
 CREATE TABLE order_fulfillment_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     fulfillment_id UUID NOT NULL REFERENCES order_fulfillments(id) ON DELETE CASCADE,
     order_line_id UUID NOT NULL REFERENCES sales_order_lines_v2(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

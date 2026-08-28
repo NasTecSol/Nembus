@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS organizations(
 );
 
 CREATE TABLE tenants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_name VARCHAR(255) NOT NULL,
     slug VARCHAR(100) UNIQUE NOT NULL,
     db_conn_str TEXT NOT NULL,
