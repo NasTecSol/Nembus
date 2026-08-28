@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type InventoryExtractor struct {
@@ -44,6 +44,9 @@ func (e *InventoryExtractor) ExtractInventory(ctx context.Context) ([]mappings.C
 		}
 
 		stockList = append(stockList, inv.ToCanonical())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate OITW rows: %w", err)
 	}
 
 	return stockList, nil

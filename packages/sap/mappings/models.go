@@ -608,20 +608,23 @@ type CanonicalInventoryStock struct {
 }
 
 func (inv *SAPInventoryStock) ToCanonical() CanonicalInventoryStock {
-	available := math.Max(0, inv.OnHand-inv.IsCommited)
-
 	return CanonicalInventoryStock{
-		ProductSKU:        strings.TrimSpace(inv.ItemCode),
-		StoreCode:         strings.TrimSpace(inv.WhsCode),
-		QuantityOnHand:    inv.OnHand,
-		QuantityAllocated: inv.IsCommited,
-		QuantityAvailable: available,
-		QuantityOnOrder:   inv.OnOrder,
+		ProductSKU:     strings.TrimSpace(inv.ItemCode),
+		StoreCode:      strings.TrimSpace(inv.WhsCode),
+		QuantityOnHand: inv.OnHand,
+		// OITW is an absolute stock snapshot.  The first approved SAP
+		// inventory mode is PHYSICAL_ONLY, so committed/on-order values remain
+		// reference data and never become operational target quantities.
+		QuantityAllocated: 0,
+		QuantityAvailable: inv.OnHand,
+		QuantityOnOrder:   0,
 		ReorderLevel:      inv.MinStock,
 		MaxStockLevel:     inv.MaxStock,
 		Metadata: map[string]interface{}{
-			"sap_item_code": inv.ItemCode,
-			"sap_whs_code":  inv.WhsCode,
+			"sap_item_code":   inv.ItemCode,
+			"sap_whs_code":    inv.WhsCode,
+			"sap_is_commited": inv.IsCommited,
+			"sap_on_order":    inv.OnOrder,
 		},
 	}
 }
@@ -974,15 +977,19 @@ type CanonicalPriceListItem struct {
 }
 
 func (item *SAPPriceListItem) ToCanonical() CanonicalPriceListItem {
+	metadata := map[string]interface{}{
+		"sap_uom_entry": item.UomEntry,
+	}
+	if currency := strings.TrimSpace(item.Currency); currency != "" {
+		metadata["sap_item_currency"] = currency
+	}
 	return CanonicalPriceListItem{
 		PriceListCode: fmt.Sprintf("PL-%d", item.PriceList),
 		ProductSKU:    strings.TrimSpace(item.ItemCode),
 		UOMCode:       strings.TrimSpace(item.UomCode),
 		Price:         item.Price,
 		CurrencyCode:  strings.TrimSpace(item.Currency),
-		Metadata: map[string]interface{}{
-			"sap_uom_entry": item.UomEntry,
-		},
+		Metadata:      metadata,
 	}
 }
 

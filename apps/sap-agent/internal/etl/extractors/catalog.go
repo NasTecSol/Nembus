@@ -189,7 +189,7 @@ func (e *CatalogExtractor) ExtractPriceListItems(ctx context.Context) ([]mapping
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryPriceListItems)
 	if err != nil {
-		return []mappings.CanonicalPriceListItem{}, nil
+		return nil, fmt.Errorf("failed to query ITM1: %w", err)
 	}
 	defer rows.Close()
 
@@ -198,11 +198,14 @@ func (e *CatalogExtractor) ExtractPriceListItems(ctx context.Context) ([]mapping
 		var item mappings.SAPPriceListItem
 		var currency, uomCode sql.NullString
 		if err := rows.Scan(&item.ItemCode, &item.PriceList, &item.Price, &currency, &item.UomEntry, &uomCode); err != nil {
-			continue // Skip malformed rows
+			return nil, fmt.Errorf("failed to scan ITM1 row: %w", err)
 		}
 		item.Currency = currency.String
 		item.UomCode = uomCode.String
 		items = append(items, item.ToCanonical())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate ITM1 rows: %w", err)
 	}
 	return items, nil
 }

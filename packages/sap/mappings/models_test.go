@@ -200,11 +200,17 @@ func TestInventoryStockCalculation(t *testing.T) {
 	if canonical.QuantityOnHand != 100.0 {
 		t.Errorf("expected on_hand 100, got %f", canonical.QuantityOnHand)
 	}
-	if canonical.QuantityAllocated != 25.0 {
-		t.Errorf("expected allocated 25, got %f", canonical.QuantityAllocated)
+	if canonical.QuantityAllocated != 0 {
+		t.Errorf("expected physical-only allocated 0, got %f", canonical.QuantityAllocated)
 	}
-	if canonical.QuantityAvailable != 75.0 {
-		t.Errorf("expected available 75, got %f", canonical.QuantityAvailable)
+	if canonical.QuantityAvailable != 100.0 {
+		t.Errorf("expected physical-only available 100, got %f", canonical.QuantityAvailable)
+	}
+	if canonical.QuantityOnOrder != 0 {
+		t.Errorf("expected physical-only on-order 0, got %f", canonical.QuantityOnOrder)
+	}
+	if canonical.Metadata["sap_is_commited"] != 25.0 || canonical.Metadata["sap_on_order"] != 50.0 {
+		t.Errorf("expected committed/on-order values to remain reference metadata, got %#v", canonical.Metadata)
 	}
 }
 
@@ -346,6 +352,21 @@ func TestBarcodeAndPriceWithUOM(t *testing.T) {
 	canonPrice := price.ToCanonical()
 	if canonPrice.UOMCode != "BOX" {
 		t.Errorf("expected UOMCode 'BOX', got %s", canonPrice.UOMCode)
+	}
+}
+
+func TestPriceListHeaderAndItemCanonicalCodesMatch(t *testing.T) {
+	header := (&mappings.SAPPriceList{ListNum: 10}).ToCanonical()
+	item := (&mappings.SAPPriceListItem{PriceList: 10}).ToCanonical()
+	if header.Code != item.PriceListCode {
+		t.Fatalf("price-list identities differ: header=%q item=%q", header.Code, item.PriceListCode)
+	}
+}
+
+func TestPriceListItemPreservesSourceCurrencyMetadata(t *testing.T) {
+	item := (&mappings.SAPPriceListItem{PriceList: 10, Currency: " SAR "}).ToCanonical()
+	if got := item.Metadata["sap_item_currency"]; got != "SAR" {
+		t.Fatalf("sap_item_currency metadata = %#v, want SAR", got)
 	}
 }
 

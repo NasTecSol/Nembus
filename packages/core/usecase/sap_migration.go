@@ -13,6 +13,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/enrichment"
 	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap/mappings"
 )
 
 type SAPMigrationUseCase struct {
@@ -139,6 +140,245 @@ const sapProductUpsertQuery = `
 				track_inventory = excluded.track_inventory,
 				metadata = excluded.metadata;
 			`
+
+const sapPriceProductLookupQuery = `
+		SELECT id
+		FROM products
+		WHERE organization_id = $1 AND sku = $2
+		LIMIT 1;
+		`
+
+const sapPriceListLookupQuery = `
+		SELECT id
+		FROM price_lists
+		WHERE code = $1
+		LIMIT 1;
+		`
+
+const sapPriceUOMLookupQuery = `
+		SELECT id
+		FROM units_of_measure
+		WHERE code = $1
+		LIMIT 1;
+		`
+
+const sapPriceItemUpdateQuery = `
+		UPDATE product_prices
+		SET uom_id = $3,
+			price = $4,
+			is_active = true,
+			metadata = $5
+		WHERE product_id = $1
+		  AND price_list_id = $2
+		  AND uom_id IS NOT DISTINCT FROM $3;
+		`
+
+const sapPriceItemInsertQuery = `
+		INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, metadata)
+		VALUES ($1, $2, $3, $4, true, $5);
+		`
+
+func resolveSAPPriceTargetID(ctx context.Context, tx pgx.Tx, query, target, identity string, args ...interface{}) (int, error) {
+	var id int
+	if err := tx.QueryRow(ctx, query, args...).Scan(&id); err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, fmt.Errorf("target %s %q was not found", target, identity)
+		}
+		return 0, fmt.Errorf("failed to resolve target %s %q: %w", target, identity, err)
+	}
+	return id, nil
+}
+
+// persistSAPPriceItem resolves every relationship before writing. This avoids
+// INSERT ... SELECT silently reporting success when a source relationship is
+// absent, and keeps the SAP price-list/UoM identity in the target key.
+func persistSAPPriceItem(ctx context.Context, tx pgx.Tx, organizationID int, item mappings.CanonicalPriceListItem) error {
+	priceIdentity := fmt.Sprintf("price item %s@%s UoM %q", item.ProductSKU, item.PriceListCode, item.UOMCode)
+	productID, err := resolveSAPPriceTargetID(ctx, tx, sapPriceProductLookupQuery, "product", item.ProductSKU, organizationID, item.ProductSKU)
+	if err != nil {
+		return fmt.Errorf("%s: %w", priceIdentity, err)
+	}
+	priceListID, err := resolveSAPPriceTargetID(ctx, tx, sapPriceListLookupQuery, "price list", item.PriceListCode, item.PriceListCode)
+	if err != nil {
+		return fmt.Errorf("%s: %w", priceIdentity, err)
+	}
+
+	var uomID interface{}
+	if item.UOMCode != "" {
+		resolvedUOMID, resolveErr := resolveSAPPriceTargetID(ctx, tx, sapPriceUOMLookupQuery, "UoM", item.UOMCode, item.UOMCode)
+		if resolveErr != nil {
+			return fmt.Errorf("%s: %w", priceIdentity, resolveErr)
+		}
+		uomID = resolvedUOMID
+	}
+
+	metadata := item.Metadata
+	if item.CurrencyCode != "" {
+		metadata = make(map[string]interface{}, len(item.Metadata)+1)
+		for key, value := range item.Metadata {
+			metadata[key] = value
+		}
+		if _, exists := metadata["sap_item_currency"]; !exists {
+			metadata["sap_item_currency"] = item.CurrencyCode
+		}
+	}
+	metaBytes, marshalErr := json.Marshal(metadata)
+	if marshalErr != nil {
+		return fmt.Errorf("%s: failed to encode metadata: %w", priceIdentity, marshalErr)
+	}
+
+	// UPDATE first so a replay reuses the existing target row. The current
+	// schema has no product_prices unique constraint, so this remains the
+	// repository's sequential business-key behavior until that contract is
+	// formally approved and added by a separate schema change.
+	updated, err := execWithSavepointTag(ctx, tx, sapPriceItemUpdateQuery, productID, priceListID, uomID, item.Price, metaBytes)
+	if err != nil {
+		return fmt.Errorf("%s: failed to update: %w", priceIdentity, err)
+	}
+	if updated.RowsAffected() > 0 {
+		return nil
+	}
+
+	inserted, err := execWithSavepointTag(ctx, tx, sapPriceItemInsertQuery, productID, priceListID, uomID, item.Price, metaBytes)
+	if err != nil {
+		return fmt.Errorf("%s: failed to insert: %w", priceIdentity, err)
+	}
+	if inserted.RowsAffected() == 0 {
+		return fmt.Errorf("%s was not persisted: write affected zero rows", priceIdentity)
+	}
+	return nil
+}
+
+const sapInventoryLocationCode = "MAIN"
+
+const sapInventoryProductLookupQuery = `
+		SELECT id
+		FROM products
+		WHERE organization_id = $1 AND sku = $2
+		LIMIT 1;
+		`
+
+const sapInventoryStoreLookupQuery = `
+		SELECT id
+		FROM stores
+		WHERE organization_id = $1 AND code = $2
+		LIMIT 1;
+		`
+
+const sapInventoryLocationLookupQuery = `
+		SELECT sl.id
+		FROM storage_locations sl
+		JOIN stores s ON s.id = sl.store_id
+		WHERE s.organization_id = $1 AND s.id = $2 AND sl.code = $3
+		LIMIT 1;
+		`
+
+const sapInventoryExistingRowQuery = `
+		SELECT COALESCE(MIN(id), 0), COUNT(*)
+		FROM inventory_stock
+		WHERE product_id = $1
+		  AND product_variant_id IS NULL
+		  AND store_id = $2
+		  AND storage_location_id = $3;
+		`
+
+const sapInventoryUpdateQuery = `
+		UPDATE inventory_stock
+		SET quantity_on_hand = $5,
+			quantity_allocated = $6,
+			quantity_available = $7,
+			quantity_on_order = $8,
+			quantity_in_transit = $9,
+			reorder_level = $10,
+			max_stock_level = $11,
+			metadata = $12
+		WHERE id = $1
+		  AND product_id = $2
+		  AND product_variant_id IS NULL
+		  AND store_id = $3
+		  AND storage_location_id = $4;
+		`
+
+const sapInventoryInsertQuery = `
+		INSERT INTO inventory_stock (
+			product_id, product_variant_id, store_id, storage_location_id,
+			quantity_on_hand, quantity_allocated, quantity_available,
+			quantity_on_order, quantity_in_transit, reorder_level, max_stock_level, metadata
+		)
+		VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+		`
+
+// persistSAPInventory applies an absolute PHYSICAL_ONLY SAP snapshot to the
+// exact product/store/MAIN-location business key. The schema currently has no
+// matching unique constraint, so the existing-row check and update-before-
+// insert sequence are intentionally serialized by the caller's transaction.
+func persistSAPInventory(ctx context.Context, tx pgx.Tx, organizationID int, inv mappings.CanonicalInventoryStock) error {
+	identity := fmt.Sprintf("stock %s@%s", inv.ProductSKU, inv.StoreCode)
+
+	var productID int
+	if err := tx.QueryRow(ctx, sapInventoryProductLookupQuery, organizationID, inv.ProductSKU).Scan(&productID); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("%s: target product %q was not found in organization %d", identity, inv.ProductSKU, organizationID)
+		}
+		return fmt.Errorf("%s: failed to resolve product %q in organization %d: %w", identity, inv.ProductSKU, organizationID, err)
+	}
+
+	var storeID int
+	if err := tx.QueryRow(ctx, sapInventoryStoreLookupQuery, organizationID, inv.StoreCode).Scan(&storeID); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("%s: target store %q was not found in organization %d", identity, inv.StoreCode, organizationID)
+		}
+		return fmt.Errorf("%s: failed to resolve store %q in organization %d: %w", identity, inv.StoreCode, organizationID, err)
+	}
+
+	var locationID int
+	if err := tx.QueryRow(ctx, sapInventoryLocationLookupQuery, organizationID, storeID, sapInventoryLocationCode).Scan(&locationID); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("%s: storage location %q was not found under store %q in organization %d", identity, sapInventoryLocationCode, inv.StoreCode, organizationID)
+		}
+		return fmt.Errorf("%s: failed to resolve storage location %q under store %q: %w", identity, sapInventoryLocationCode, inv.StoreCode, err)
+	}
+
+	var existingID int
+	var existingCount int64
+	if err := tx.QueryRow(ctx, sapInventoryExistingRowQuery, productID, storeID, locationID).Scan(&existingID, &existingCount); err != nil {
+		return fmt.Errorf("%s: failed to inspect logical inventory ownership: %w", identity, err)
+	}
+	if existingCount > 1 {
+		return fmt.Errorf("%s: %d existing rows own logical inventory key product_id=%d, product_variant_id=NULL, store_id=%d, storage_location_id=%d", identity, existingCount, productID, storeID, locationID)
+	}
+
+	metaBytes, err := json.Marshal(inv.Metadata)
+	if err != nil {
+		return fmt.Errorf("%s: failed to encode metadata: %w", identity, err)
+	}
+
+	if existingCount == 1 {
+		updated, updateErr := execWithSavepointTag(ctx, tx, sapInventoryUpdateQuery,
+			existingID, productID, storeID, locationID,
+			inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable,
+			inv.QuantityOnOrder, 0, inv.ReorderLevel, inv.MaxStockLevel, metaBytes)
+		if updateErr != nil {
+			return fmt.Errorf("%s: failed to update absolute snapshot: %w", identity, updateErr)
+		}
+		if updated.RowsAffected() != 1 {
+			return fmt.Errorf("%s was not persisted: update affected %d rows", identity, updated.RowsAffected())
+		}
+		return nil
+	}
+
+	inserted, insertErr := execWithSavepointTag(ctx, tx, sapInventoryInsertQuery,
+		productID, storeID, locationID,
+		inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable,
+		inv.QuantityOnOrder, 0, inv.ReorderLevel, inv.MaxStockLevel, metaBytes)
+	if insertErr != nil {
+		return fmt.Errorf("%s: failed to insert absolute snapshot: %w", identity, insertErr)
+	}
+	if inserted.RowsAffected() != 1 {
+		return fmt.Errorf("%s was not persisted: insert affected %d rows", identity, inserted.RowsAffected())
+	}
+	return nil
+}
 
 func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, payload *contracts.MigrationBatchPayload) (*contracts.MigrationBatchResponse, error) {
 	if uc == nil || uc.pool == nil {
@@ -477,24 +717,9 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 		}
 
 		for _, item := range payload.PriceItems {
-			metaBytes, _ := json.Marshal(item.Metadata)
-			_ = execWithSavepoint(ctx, tx, `
-				DELETE FROM product_prices 
-				WHERE product_id = (SELECT id FROM products WHERE organization_id = $1 AND sku = $2)
-				  AND price_list_id = (SELECT id FROM price_lists WHERE code = $3);
-			`, payload.OrganizationID, item.ProductSKU, item.PriceListCode)
-
-			q := `
-			INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, metadata)
-			SELECT p.id, pl.id, (SELECT id FROM units_of_measure WHERE code = $6 LIMIT 1), $3, true, $4
-			FROM products p
-			CROSS JOIN price_lists pl
-			WHERE p.organization_id = $1 AND p.sku = $2 AND pl.code = $5
-			LIMIT 1;
-			`
-			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, item.ProductSKU, item.Price, metaBytes, item.PriceListCode, item.UOMCode); err != nil {
+			if err := persistSAPPriceItem(ctx, tx, payload.OrganizationID, item); err != nil {
 				failed++
-				errs = append(errs, fmt.Sprintf("price_item %s@%s error: %v", item.ProductSKU, item.PriceListCode, err))
+				errs = append(errs, fmt.Sprintf("price_item %s@%s UoM %q error: %v", item.ProductSKU, item.PriceListCode, item.UOMCode, err))
 			} else {
 				staged++
 			}
@@ -502,16 +727,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 	case contracts.DomainInventory:
 		for _, inv := range payload.Inventory {
-			metaBytes, _ := json.Marshal(inv.Metadata)
-			q := `
-			INSERT INTO inventory_stock (product_id, store_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, reorder_level, max_stock_level, metadata)
-			SELECT p.id, s.id, $3, $4, $5, $6, $7, $8, $9
-			FROM products p
-			CROSS JOIN stores s
-			WHERE p.organization_id = $1 AND p.sku = $2 AND s.organization_id = $1 AND s.code = $10
-			LIMIT 1;
-			`
-			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, inv.ProductSKU, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes, inv.StoreCode); err != nil {
+			if err := persistSAPInventory(ctx, tx, payload.OrganizationID, inv); err != nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("stock %s@%s error: %v", inv.ProductSKU, inv.StoreCode, err))
 			} else {
