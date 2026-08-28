@@ -50,6 +50,7 @@ jobs:
       # Atlas dev database used to compute diffs (clean scratch DB, never the
       # real one). Read by `dev_db_url` in atlas.hcl via ATLAS_DEV_URL.
       ATLAS_DEV_URL: postgres://postgres:password@localhost:5433/dev?sslmode=disable
+      ATLAS_TOKEN: ${{ secrets.ATLAS_TOKEN }}
 
     services:
       devdb:
@@ -114,6 +115,8 @@ jobs:
       # ---------------------------------------------------------------
       - name: Generate Migration from Schema Changes
         id: gen
+        env:
+          ATLAS_TOKEN: ${{ secrets.ATLAS_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
