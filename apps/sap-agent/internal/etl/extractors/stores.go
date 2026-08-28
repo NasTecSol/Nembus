@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type StoresExtractor struct {
@@ -49,20 +49,45 @@ func (e *StoresExtractor) ExtractStores(ctx context.Context) ([]mappings.Canonic
 
 		stores = append(stores, s.ToCanonical())
 	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to iterate OWHS rows: %w", err)
+	}
 
-	// 2. Extract Bins (OBIN) if table exists
+	// 2. Extract Bins (OBIN)
 	var locations []mappings.CanonicalStorageLocation
 	binRows, err := e.mssql.DB.QueryContext(ctx, schema.QueryStorageLocations)
-	if err == nil {
-		defer binRows.Close()
-		for binRows.Next() {
-			var b mappings.SAPStorageLocation
-			var descr sql.NullString
-			if err := binRows.Scan(&b.AbsEntry, &b.BinCode, &b.WhsCode, &descr, &b.Disabled); err == nil {
-				b.Descr = descr.String
-				locations = append(locations, b.ToCanonical())
-			}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query OBIN: %w", err)
+	}
+	defer binRows.Close()
+	for binRows.Next() {
+		var b mappings.SAPStorageLocation
+		var descr sql.NullString
+		if err := binRows.Scan(&b.AbsEntry, &b.BinCode, &b.WhsCode, &descr, &b.Disabled); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan OBIN row: %w", err)
 		}
+		b.Descr = descr.String
+		locations = append(locations, b.ToCanonical())
+	}
+	if err := binRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to iterate OBIN rows: %w", err)
+	}
+
+	mainByStore := make(map[string]bool, len(stores))
+	for _, location := range locations {
+		if location.Code == "MAIN" {
+			mainByStore[location.StoreCode] = true
+		}
+	}
+	for _, store := range stores {
+		if mainByStore[store.Code] {
+			continue
+		}
+		locations = append(locations, (&mappings.SAPStorageLocation{
+			BinCode:  "MAIN",
+			WhsCode:  store.Code,
+			Disabled: "N",
+		}).ToCanonical())
 	}
 
 	return stores, locations, nil
