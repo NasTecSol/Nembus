@@ -160,7 +160,7 @@ func (e *CatalogExtractor) ExtractPriceLists(ctx context.Context) ([]mappings.Ca
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryPriceLists)
 	if err != nil {
-		return []mappings.CanonicalPriceList{}, nil // OPLN optional in some SAP installs
+		return nil, fmt.Errorf("failed to query OPLN: %w", err)
 	}
 	defer rows.Close()
 
@@ -174,6 +174,9 @@ func (e *CatalogExtractor) ExtractPriceLists(ctx context.Context) ([]mappings.Ca
 		pl.ListName = name.String
 		pl.Currency = currency.String
 		lists = append(lists, pl.ToCanonical())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate OPLN rows: %w", err)
 	}
 	return lists, nil
 }

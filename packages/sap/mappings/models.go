@@ -88,12 +88,12 @@ func (s *SAPStore) ToCanonical() CanonicalStore {
 }
 
 type SAPStorageLocation struct {
-	AbsEntry  int64                  `json:"abs_entry"`
-	BinCode   string                 `json:"bin_code"`
-	WhsCode   string                 `json:"whs_code"`
-	Descr     string                 `json:"descr,omitempty"`
-	Disabled  string                 `json:"disabled"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	AbsEntry int64                  `json:"abs_entry"`
+	BinCode  string                 `json:"bin_code"`
+	WhsCode  string                 `json:"whs_code"`
+	Descr    string                 `json:"descr,omitempty"`
+	Disabled string                 `json:"disabled"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type CanonicalStorageLocation struct {
@@ -596,15 +596,15 @@ type SAPInventoryStock struct {
 }
 
 type CanonicalInventoryStock struct {
-	ProductSKU         string                 `json:"product_sku"`
-	StoreCode          string                 `json:"store_code"`
-	QuantityOnHand     float64                `json:"quantity_on_hand"`
-	QuantityAllocated  float64                `json:"quantity_allocated"`
-	QuantityAvailable  float64                `json:"quantity_available"`
-	QuantityOnOrder    float64                `json:"quantity_on_order"`
-	ReorderLevel       float64                `json:"reorder_level"`
-	MaxStockLevel      float64                `json:"max_stock_level"`
-	Metadata           map[string]interface{} `json:"metadata"`
+	ProductSKU        string                 `json:"product_sku"`
+	StoreCode         string                 `json:"store_code"`
+	QuantityOnHand    float64                `json:"quantity_on_hand"`
+	QuantityAllocated float64                `json:"quantity_allocated"`
+	QuantityAvailable float64                `json:"quantity_available"`
+	QuantityOnOrder   float64                `json:"quantity_on_order"`
+	ReorderLevel      float64                `json:"reorder_level"`
+	MaxStockLevel     float64                `json:"max_stock_level"`
+	Metadata          map[string]interface{} `json:"metadata"`
 }
 
 func (inv *SAPInventoryStock) ToCanonical() CanonicalInventoryStock {
@@ -639,6 +639,7 @@ type SAPBusinessPartner struct {
 	EMail      string  `json:"e_mail,omitempty"`
 	Currency   string  `json:"currency,omitempty"`
 	ValidFor   string  `json:"valid_for"`
+	FrozenFor  string  `json:"frozen_for"`
 	Balance    float64 `json:"balance"`
 }
 
@@ -669,7 +670,7 @@ func (bp *SAPBusinessPartner) ToCanonical() CanonicalPartner {
 		Phone:        strings.TrimSpace(bp.Phone1),
 		TaxID:        strings.TrimSpace(bp.LicTradNum),
 		CurrencyCode: strings.TrimSpace(bp.Currency),
-		IsActive:     SAPBool(bp.ValidFor, true),
+		IsActive:     SAPBool(bp.ValidFor, true) && !SAPBool(bp.FrozenFor, false),
 		Balance:      bp.Balance,
 		Metadata: map[string]interface{}{
 			"sap_card_code": bp.CardCode,
@@ -683,16 +684,16 @@ func (bp *SAPBusinessPartner) ToCanonical() CanonicalPartner {
 // ----------------------------------------------------
 
 type SAPSalesOrderLine struct {
-	DocEntry  int64   `json:"doc_entry"`
-	LineNum   int     `json:"line_num"`
-	ItemCode  string  `json:"item_code"`
+	DocEntry   int64   `json:"doc_entry"`
+	LineNum    int     `json:"line_num"`
+	ItemCode   string  `json:"item_code"`
 	Dscription string  `json:"dscription"`
-	Quantity  float64 `json:"quantity"`
-	Price     float64 `json:"price"`
-	LineTotal float64 `json:"line_total"`
-	VatSum    float64 `json:"vat_sum"`
-	WhsCode   string  `json:"whs_code"`
-	UnitMsr   string  `json:"unit_msr"`
+	Quantity   float64 `json:"quantity"`
+	Price      float64 `json:"price"`
+	LineTotal  float64 `json:"line_total"`
+	VatSum     float64 `json:"vat_sum"`
+	WhsCode    string  `json:"whs_code"`
+	UnitMsr    string  `json:"unit_msr"`
 }
 
 type SAPSalesOrder struct {

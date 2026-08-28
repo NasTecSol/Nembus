@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NasTecSol/nembus-core/enrichment"
@@ -30,16 +32,77 @@ func (uc *SAPMigrationUseCase) SetProductEnrichmentCoordinator(enqueuer enrichme
 }
 
 func execWithSavepoint(ctx context.Context, tx pgx.Tx, query string, args ...interface{}) error {
+	_, err := execWithSavepointTag(ctx, tx, query, args...)
+	return err
+}
+
+func execWithSavepointTag(ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (pgconn.CommandTag, error) {
 	spName := "sp_row"
 	if _, err := tx.Exec(ctx, "SAVEPOINT "+spName); err != nil {
-		return err
+		return pgconn.CommandTag{}, err
 	}
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	result, err := tx.Exec(ctx, query, args...)
+	if err != nil {
 		_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT "+spName)
-		return err
+		return pgconn.CommandTag{}, err
 	}
 	_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT "+spName)
-	return nil
+	return result, nil
+}
+
+const sapBarcodeProductLookupQuery = `
+		SELECT id
+		FROM products
+		WHERE organization_id = $1 AND sku = $2
+		LIMIT 1;
+		`
+
+const sapBarcodeOwnerLookupQuery = `
+		SELECT pb.product_id, p.organization_id, p.sku
+		FROM product_barcodes pb
+		JOIN products p ON p.id = pb.product_id
+		WHERE pb.barcode = $1;
+		`
+
+const sapBarcodeUpsertQuery = `
+		INSERT INTO product_barcodes (product_id, barcode, barcode_type, is_primary)
+		SELECT id, $2, $3, $4
+		FROM products
+		WHERE organization_id = $1 AND sku = $5
+		ON CONFLICT (barcode) DO UPDATE SET
+			is_primary = excluded.is_primary
+		WHERE product_barcodes.product_id = excluded.product_id;
+		`
+
+// persistSAPBarcode keeps barcode ownership immutable while retaining the
+// existing is_primary update behavior for an idempotent same-product replay.
+func persistSAPBarcode(ctx context.Context, tx pgx.Tx, organizationID int, barcode, barcodeType string, isPrimary bool, productSKU string) error {
+	var productID int
+	if err := tx.QueryRow(ctx, sapBarcodeProductLookupQuery, organizationID, productSKU).Scan(&productID); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("target product %q was not found in organization %d", productSKU, organizationID)
+		}
+		return fmt.Errorf("failed to resolve target product %q in organization %d: %w", productSKU, organizationID, err)
+	}
+
+	affected, err := execWithSavepointTag(ctx, tx, sapBarcodeUpsertQuery, organizationID, barcode, barcodeType, isPrimary, productSKU)
+	if err != nil {
+		return fmt.Errorf("failed to persist barcode %q for product %q: %w", barcode, productSKU, err)
+	}
+	if affected.RowsAffected() > 0 {
+		return nil
+	}
+
+	var ownerProductID, ownerOrganizationID int
+	var ownerSKU string
+	if err := tx.QueryRow(ctx, sapBarcodeOwnerLookupQuery, barcode).Scan(&ownerProductID, &ownerOrganizationID, &ownerSKU); err != nil {
+		return fmt.Errorf("barcode %q was not persisted for product %q: unable to verify barcode ownership: %w", barcode, productSKU, err)
+	}
+	if ownerProductID != productID {
+		return fmt.Errorf("barcode %q ownership conflict: already assigned to organization %d product %q (product_id=%d), cannot assign to organization %d product %q (product_id=%d)", barcode, ownerOrganizationID, ownerSKU, ownerProductID, organizationID, productSKU, productID)
+	}
+
+	return fmt.Errorf("barcode %q was not persisted for product %q: existing owner product_id=%d", barcode, productSKU, productID)
 }
 
 // sapProductUpsertQuery keeps SAP's deterministic product sync authoritative
@@ -341,13 +404,10 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				staged++
 				committedProductSourceCodes = append(committedProductSourceCodes, p.SKU)
 				if p.PrimaryBarcode != "" {
-					bq := `
-					INSERT INTO product_barcodes (product_id, barcode, barcode_type, is_primary)
-					SELECT id, $2, 'EAN13', true
-					FROM products WHERE organization_id = $1 AND sku = $3
-					ON CONFLICT(barcode) DO UPDATE SET is_primary = true;
-					`
-					_ = execWithSavepoint(ctx, tx, bq, payload.OrganizationID, p.PrimaryBarcode, p.SKU)
+					if err := persistSAPBarcode(ctx, tx, payload.OrganizationID, p.PrimaryBarcode, "EAN13", true, p.SKU); err != nil {
+						failed++
+						errs = append(errs, fmt.Sprintf("primary barcode %s error: %v", p.PrimaryBarcode, err))
+					}
 				}
 
 				// Insert product UOM conversions
@@ -388,13 +448,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 	case contracts.DomainBarcodes:
 		for _, b := range payload.Barcodes {
-			bq := `
-			INSERT INTO product_barcodes (product_id, barcode, barcode_type, is_primary)
-			SELECT id, $2, $3, $4
-			FROM products WHERE organization_id = $1 AND sku = $5
-			ON CONFLICT(barcode) DO UPDATE SET is_primary = excluded.is_primary;
-			`
-			if err := execWithSavepoint(ctx, tx, bq, payload.OrganizationID, b.Barcode, b.BarcodeType, b.IsPrimary, b.ProductSKU); err != nil {
+			if err := persistSAPBarcode(ctx, tx, payload.OrganizationID, b.Barcode, b.BarcodeType, b.IsPrimary, b.ProductSKU); err != nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("barcode %s error: %v", b.Barcode, err))
 			} else {
@@ -510,6 +564,27 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				if custErr := execWithSavepoint(ctx, tx, custQ, payload.OrganizationID, pt.Code, pt.Name, pt.IsActive, metaBytes); custErr != nil {
 					failed++
 					errs = append(errs, fmt.Sprintf("customer %s error: %v", pt.Code, custErr))
+				}
+			}
+
+			if strings.EqualFold(pt.PartnerType, "supplier") || strings.EqualFold(pt.PartnerType, "vendor") {
+				supplierQ := `
+				INSERT INTO suppliers (
+					organization_id, code, name, supplier_type, email, phone, currency_code, tax_id, is_active, metadata
+				) VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9, $10)
+				ON CONFLICT (organization_id, code) DO UPDATE SET
+					name = COALESCE(NULLIF(excluded.name, ''), suppliers.name),
+					supplier_type = excluded.supplier_type,
+					email = COALESCE(excluded.email, suppliers.email),
+					phone = COALESCE(excluded.phone, suppliers.phone),
+					currency_code = COALESCE(excluded.currency_code, suppliers.currency_code),
+					tax_id = COALESCE(excluded.tax_id, suppliers.tax_id),
+					is_active = excluded.is_active,
+					metadata = excluded.metadata;
+				`
+				if supplierErr := execWithSavepoint(ctx, tx, supplierQ, payload.OrganizationID, pt.Code, pt.Name, "vendor", pt.Email, pt.Phone, pt.CurrencyCode, pt.TaxID, pt.IsActive, metaBytes); supplierErr != nil {
+					failed++
+					errs = append(errs, fmt.Sprintf("supplier %s error: %v", pt.Code, supplierErr))
 				}
 			}
 		}

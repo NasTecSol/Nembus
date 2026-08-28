@@ -348,3 +348,38 @@ func TestBarcodeAndPriceWithUOM(t *testing.T) {
 		t.Errorf("expected UOMCode 'BOX', got %s", canonPrice.UOMCode)
 	}
 }
+
+func TestSAPBusinessPartnerCanonicalMapping(t *testing.T) {
+	tests := []struct {
+		name       string
+		cardType   string
+		validFor   string
+		frozenFor  string
+		wantType   string
+		wantActive bool
+	}{
+		{name: "supplier", cardType: "S", validFor: "Y", frozenFor: "N", wantType: "supplier", wantActive: true},
+		{name: "supplier frozen", cardType: "S", validFor: "Y", frozenFor: "Y", wantType: "supplier", wantActive: false},
+		{name: "customer frozen", cardType: "C", validFor: "Y", frozenFor: "Y", wantType: "customer", wantActive: false},
+		{name: "valid for inactive", cardType: "C", validFor: "N", frozenFor: "N", wantType: "customer", wantActive: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			canonical := (&mappings.SAPBusinessPartner{
+				CardCode:  "BP-001",
+				CardName:  "Partner",
+				CardType:  tt.cardType,
+				ValidFor:  tt.validFor,
+				FrozenFor: tt.frozenFor,
+			}).ToCanonical()
+
+			if canonical.PartnerType != tt.wantType {
+				t.Fatalf("PartnerType = %q, want %q", canonical.PartnerType, tt.wantType)
+			}
+			if canonical.IsActive != tt.wantActive {
+				t.Fatalf("IsActive = %t, want %t", canonical.IsActive, tt.wantActive)
+			}
+		})
+	}
+}

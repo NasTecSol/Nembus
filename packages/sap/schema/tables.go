@@ -318,6 +318,7 @@ SELECT
     ISNULL(E_Mail, '') AS E_Mail,
     ISNULL(Currency, 'USD') AS Currency,
     ISNULL(validFor, 'Y') AS validFor,
+    ISNULL(frozenFor, 'N') AS frozenFor,
     ISNULL(Balance, 0.0) AS Balance
 FROM OCRD
 ORDER BY CardCode;
@@ -432,14 +433,13 @@ WHERE h.DocDate >= @FromDate AND h.DocDate <= @ToDate
 ORDER BY l.DocEntry, l.LineNum;
 `
 
-
 const QueryPriceLists = `
 SELECT
     ListNum,
     ISNULL(ListName, '') AS ListName,
-    ISNULL(Currency, 'USD') AS Currency,
+    ISNULL(PrimCurr, 'USD') AS Currency,
     ISNULL(Factor, 1.0) AS Factor,
-    ISNULL(BasedOn, 0) AS BasedOn,
+    ISNULL(BASE_NUM, 0) AS BasedOn,
     ISNULL(validFor, 'Y') AS validFor
 FROM OPLN
 ORDER BY ListNum;

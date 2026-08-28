@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type PartnersExtractor struct {
@@ -42,6 +42,7 @@ func (e *PartnersExtractor) ExtractPartners(ctx context.Context) ([]mappings.Can
 			&email,
 			&currency,
 			&bp.ValidFor,
+			&bp.FrozenFor,
 			&bp.Balance,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OCRD row: %w", err)
