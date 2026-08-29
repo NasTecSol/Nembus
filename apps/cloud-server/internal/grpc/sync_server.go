@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -150,20 +152,45 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	return nil
 }
 
-// upsertEntityJSON executes PostgreSQL json_populate_record upsert inside a database transaction
+var tableColumnsCache sync.Map
+
+func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) string {
+	if val, ok := tableColumnsCache.Load(table); ok {
+		return val.(string)
+	}
+
+	rows, err := pool.Query(ctx, `
+		SELECT column_name 
+		FROM information_schema.columns 
+		WHERE table_name = $1 AND column_name NOT IN ('id', 'created_at')
+		ORDER BY ordinal_position;
+	`, table)
+	if err != nil {
+		return "id = EXCLUDED.id"
+	}
+	defer rows.Close()
+
+	var sets []string
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err == nil {
+			sets = append(sets, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
+		}
+	}
+
+	clause := strings.Join(sets, ", ")
+	if clause == "" {
+		clause = "id = EXCLUDED.id"
+	}
+	tableColumnsCache.Store(table, clause)
+	return clause
+}
+
+// upsertEntityJSON executes PostgreSQL json_populate_record upsert
 func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, entityType string, payload []byte) error {
 	if len(payload) == 0 {
 		return nil
 	}
-
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	// Disable foreign key constraint checks during sync ingestion so entities can be inserted out of order
-	_, _ = tx.Exec(ctx, "SET LOCAL session_replication_role = 'replica';")
 
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
@@ -176,30 +203,27 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
 	}
 
-	_, _ = tx.Exec(ctx, "SAVEPOINT sp_upsert;")
+	updateClause := getTableUpdateClause(ctx, pool, entityType)
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
-		ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
-	`, entityType, entityType)
+		ON CONFLICT (id) DO UPDATE SET %s;
+	`, entityType, entityType, updateClause)
 
-	_, err = tx.Exec(ctx, query, string(payload))
+	_, err := pool.Exec(ctx, query, string(payload))
 	if err != nil {
-		_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT sp_upsert;")
 		fallbackQuery := fmt.Sprintf(`
 			INSERT INTO %s
 			SELECT * FROM json_populate_record(NULL::%s, $1::json)
 			ON CONFLICT (id) DO NOTHING;
 		`, entityType, entityType)
-		if _, err2 := tx.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
+		if _, err2 := pool.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
 			return fmt.Errorf("failed to upsert %s: %w (fallback: %v)", entityType, err, err2)
 		}
-	} else {
-		_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT sp_upsert;")
 	}
 
-	return tx.Commit(ctx)
+	return nil
 }
 
 // StreamPull handles Cloud -> Local Terminal delta updates based on sync watermarks.
