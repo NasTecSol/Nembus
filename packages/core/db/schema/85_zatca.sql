@@ -19,7 +19,7 @@ CREATE TYPE invoice_status AS ENUM ('draft', 'sent', 'viewed', 'partially_paid',
 
 -- Invoices table
 CREATE TABLE invoices (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     invoice_number VARCHAR(50) UNIQUE NOT NULL,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
@@ -122,7 +122,7 @@ CREATE TABLE sales_returns (
 );
 -- Invoice line items
 CREATE TABLE invoice_lines (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
@@ -164,7 +164,7 @@ CREATE TABLE invoice_lines (
 
 -- Invoice payments
 CREATE TABLE invoice_payments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
@@ -211,7 +211,8 @@ CREATE TABLE invoice_status_history (
     notes TEXT,
     
     changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =====================================================
@@ -221,7 +222,7 @@ CREATE TABLE invoice_status_history (
 CREATE TYPE quote_status AS ENUM ('draft', 'sent', 'viewed', 'accepted', 'declined', 'expired', 'converted');
 
 CREATE TABLE quotes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     quote_number VARCHAR(50) UNIQUE NOT NULL,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
@@ -288,7 +289,7 @@ CREATE TABLE combo_bundle_items (
 
 -- Quote line items
 CREATE TABLE quote_lines (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
@@ -334,7 +335,8 @@ CREATE TABLE sales_return_lines (
     condition          VARCHAR(50) DEFAULT 'good' CHECK (condition IN ('good','damaged','defective','opened')),
     line_number        INTEGER,
     metadata           JSONB     DEFAULT '{}',
-    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 -- =====================================================
 -- INDEXES FOR CART SYSTEM
@@ -622,7 +624,7 @@ CREATE TABLE zatca_document_chain (
     organization_id  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
 
     -- ZATCA sequential fields
-    zatca_uuid       UUID NOT NULL DEFAULT uuid_generate_v4(),
+    zatca_uuid       UUID NOT NULL DEFAULT gen_random_uuid(),
     icv              BIGINT NOT NULL,                -- Invoice Counter Value (sequential per device)
     pih              TEXT NOT NULL,                   -- Previous Invoice Hash (Base64 SHA-256)
     xml_hash         TEXT NOT NULL,                   -- This document's XML hash (Base64 SHA-256)
@@ -638,6 +640,7 @@ CREATE TABLE zatca_document_chain (
     cleared_at       TIMESTAMPTZ,
 
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     -- Ensure sequential ICV per device (no gaps allowed by ZATCA)
     UNIQUE(device_config_id, icv)

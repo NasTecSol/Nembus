@@ -708,7 +708,8 @@ SELECT
     CASE
         WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
              AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
-             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL
+                  OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE)
              AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
                   OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN COALESCE(pp_promo_v.price, pp_promo.price)
@@ -718,7 +719,8 @@ SELECT
     CASE
         WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL
              AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true
-             AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE
+             AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL
+                  OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE)
              AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL
                   OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE)
         THEN true
@@ -1050,7 +1052,7 @@ SELECT
     po.expected_delivery_date,
     po.status,
     CURRENT_DATE - po.expected_delivery_date AS days_overdue,
-    (po.expected_delivery_date < CURRENT_DATE AND po.status NOT IN ('received','cancelled','closed')) AS is_overdue,
+    (po.expected_delivery_date < CURRENT_DATE AND (po.status <> 'received' AND po.status <> 'cancelled' AND po.status <> 'closed')) AS is_overdue,
     s.id    AS store_id,
     s.name  AS store_name,
     sup.id  AS supplier_id,
@@ -1071,7 +1073,7 @@ JOIN stores s    ON s.id = po.store_id
 JOIN business_partners sup ON sup.id = po.partners_id
 LEFT JOIN users u_created  ON u_created.id  = po.created_by
 LEFT JOIN users u_approved ON u_approved.id = po.approved_by
-WHERE po.status NOT IN ('received','cancelled','closed')
+WHERE po.status <> 'received' AND po.status <> 'cancelled' AND po.status <> 'closed'
 ORDER BY is_overdue DESC, days_overdue DESC NULLS LAST, po.expected_delivery_date;
 
 -- =====================================================
@@ -1101,7 +1103,7 @@ SELECT
 FROM customers c
 LEFT JOIN invoices i
     ON i.customer_id = c.id
-    AND i.invoice_status NOT IN ('cancelled','draft')
+    AND i.invoice_status <> 'cancelled' AND i.invoice_status <> 'draft'
     AND i.balance_due > 0
 LEFT JOIN organizations o 
     ON o.id = i.organization_id
@@ -1143,7 +1145,7 @@ FROM purchase_orders po
 JOIN organizations org ON org.id = po.organization_id
 JOIN business_partners sup ON sup.id = po.partners_id
 JOIN stores        s   ON s.id   = po.store_id
-WHERE po.status IN ('partially_received','received','approved')
+WHERE po.status = 'partially_received' OR po.status = 'received' OR po.status = 'approved'
 ORDER BY po.po_date;
 
 -- =====================================================
@@ -1727,7 +1729,7 @@ LEFT JOIN restaurant_tables rt  ON ro.table_id = rt.id
 LEFT JOIN cashiers c            ON ro.cashier_id = c.id
 LEFT JOIN users u               ON c.user_id = u.id
 LEFT JOIN customers cust        ON ro.customer_id = cust.id
-WHERE ro.status NOT IN ('paid', 'voided');
+WHERE ro.status <> 'paid' AND ro.status <> 'voided';
 
 CREATE OR REPLACE VIEW vw_waste_daily_summary AS
 SELECT
@@ -2520,7 +2522,7 @@ BEGIN
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
-        -- Update product batch if batch number is present
+        -- Update product batch if batch number is present (product_batches table uses quantity_available)
         IF v_order_line.batch_number IS NOT NULL AND v_order_line.batch_number <> '' THEN
             UPDATE product_batches
             SET quantity_available = GREATEST(0, quantity_available - v_fulfilled_qty),
@@ -2529,7 +2531,11 @@ BEGIN
               AND (product_variant_id = v_order_line.product_variant_id 
                    OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
               AND store_id = NEW.store_id
-              AND batch_number = v_order_line.batch_number;
+              AND (
+                  batch_number = v_order_line.batch_number
+                  OR LOWER(REPLACE(batch_number, ' ', '-')) = LOWER(REPLACE(v_order_line.batch_number, ' ', '-'))
+                  OR LOWER(REPLACE(batch_number, '-', ' ')) = LOWER(REPLACE(v_order_line.batch_number, '-', ' '))
+              );
         END IF;
 
         -- Record the stock movement for auditing
@@ -2542,6 +2548,7 @@ BEGIN
             from_store_id,
             quantity,
             uom_id,
+            batch_number,
             status,
             metadata
         )
@@ -2554,12 +2561,14 @@ BEGIN
             NEW.store_id,
             v_fulfilled_qty,
             v_order_line.uom_id,
+            v_order_line.batch_number,
             'completed',
             jsonb_build_object(
                 'sales_order_id', NEW.id::TEXT,
                 'sales_order_number', NEW.order_number,
                 'order_line_id', v_order_line.id::TEXT,
-                'order_status', NEW.order_status
+                'fulfillment_status', NEW.fulfillment_status,
+                'batch_number', v_order_line.batch_number
             )
         );
 

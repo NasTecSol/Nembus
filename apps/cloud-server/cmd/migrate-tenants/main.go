@@ -25,9 +25,12 @@ import (
 func main() {
 	// Parse command line flags
 	includeMaster := flag.Bool("master", true, "Also run migrations on the master database")
+	declarativeMode := flag.Bool("declarative", false, "Use declarative schema sync (atlas schema apply) instead of versioned migrations")
+	schemaDir := flag.String("schema", "", "Directory containing Atlas SQL schema files (for declarative mode; default: auto-detected packages/core/db/schema)")
+	devDBURL := flag.String("dev-url", "", "Dev database URL for Atlas schema calculation (default: ATLAS_DEV_URL env var or docker://postgres/16/dev)")
 	migrationsDir := flag.String("dir", "", "Directory containing Atlas migration files (default: auto-detected packages/core/db/migrations)")
 	baselineVer := flag.String("baseline", "", "Baseline migration version. Leave empty (default) to AUTO-DETECT per database: empty DBs and DBs already tracked by Atlas (atlas_schema_revisions) get no baseline; DBs that have schema but no revisions table get the first migration version. Set it explicitly to force the same baseline for every database (e.g. -baseline 20260813124500) — a baseline that does not exist in the migration directory is a hard error.")
-	statusOnly := flag.Bool("status", false, "Show migration status without applying")
+	statusOnly := flag.Bool("status", false, "Show status / dry-run without applying")
 	hostOverride := flag.String("host-override", "postgres=localhost", "Rewrite the host in database connection strings before connecting (from=to). Set to empty to disable. Use when databases are Docker services (e.g. host=postgres) that only resolve inside the compose network while this runner executes on the host.")
 	flag.Parse()
 
@@ -78,40 +81,53 @@ func main() {
 		log.Fatalf("❌ Invalid MASTER_DB_URL: %v", err)
 	}
 
-	// Resolve migrations directory
-	migPath := *migrationsDir
-	if migPath == "" {
-		candidates := []string{
-			"../../packages/core/db/migrations",
-			"../packages/core/db/migrations",
-			"packages/core/db/migrations",
-			"./migrations",
-			"/app/migrations",
+	var absSchemaPath, devURL string
+	var absMigPath, firstMig string
+
+	if *declarativeMode {
+		absSchemaPath, err = resolveSchemaDir(*schemaDir)
+		if err != nil {
+			log.Fatalf("Failed to resolve schema directory: %v", err)
 		}
-		for _, c := range candidates {
-			if info, err := os.Stat(c); err == nil && info.IsDir() {
-				migPath = c
-				break
+		log.Printf("✓ Declarative mode active. Using schema directory: %s\n", absSchemaPath)
+		devURL = resolveDevURL(*devDBURL)
+		log.Printf("✓ Using dev database: %s\n", devURL)
+	} else {
+		// Resolve migrations directory
+		migPath := *migrationsDir
+		if migPath == "" {
+			candidates := []string{
+				"../../packages/core/db/migrations",
+				"../packages/core/db/migrations",
+				"packages/core/db/migrations",
+				"./migrations",
+				"/app/migrations",
+			}
+			for _, c := range candidates {
+				if info, err := os.Stat(c); err == nil && info.IsDir() {
+					migPath = c
+					break
+				}
+			}
+			if migPath == "" {
+				migPath = "packages/core/db/migrations"
 			}
 		}
-		if migPath == "" {
-			migPath = "packages/core/db/migrations"
+
+		absMigPath, err = filepath.Abs(migPath)
+		if err != nil {
+			log.Fatalf("Failed to resolve absolute path for migrations dir: %v", err)
 		}
-	}
+		log.Printf("✓ Using migrations directory: %s\n", absMigPath)
 
-	absMigPath, err := filepath.Abs(migPath)
-	if err != nil {
-		log.Fatalf("Failed to resolve absolute path for migrations dir: %v", err)
+		// First (oldest) migration version — used as the baseline for databases
+		// that have schema but no atlas_schema_revisions table.
+		firstMig, err = firstMigrationVersion(absMigPath)
+		if err != nil {
+			log.Fatalf("Failed to determine first migration version: %v", err)
+		}
+		log.Printf("✓ First migration version (baseline for legacy DBs): %s\n", firstMig)
 	}
-	log.Printf("✓ Using migrations directory: %s\n", absMigPath)
-
-	// First (oldest) migration version — used as the baseline for databases
-	// that have schema but no atlas_schema_revisions table.
-	firstMig, err := firstMigrationVersion(absMigPath)
-	if err != nil {
-		log.Fatalf("Failed to determine first migration version: %v", err)
-	}
-	log.Printf("✓ First migration version (baseline for legacy DBs): %s\n", firstMig)
 
 	atlasBin := resolveAtlasBinary()
 	log.Printf("✓ Using Atlas binary: %s\n", atlasBin)
@@ -125,22 +141,32 @@ func main() {
 	}
 	defer pool.Close()
 
-	// 1. Optionally migrate master database
+	// 1. Optionally migrate/sync master database
 	if *includeMaster {
 		log.Println("\n==================================================")
-		log.Println("⚡ Running Atlas migration on Master Database...")
+		if *declarativeMode {
+			log.Println("⚡ Running Atlas declarative schema sync on Master Database...")
+		} else {
+			log.Println("⚡ Running Atlas migration on Master Database...")
+		}
 		log.Println("==================================================")
 
-		baseline, err := resolveBaseline(ctx, masterURL, *baselineVer, firstMig)
-		if err != nil {
-			log.Fatalf("❌ Failed to inspect master database: %v", err)
-		}
-		logBaseline(baseline)
+		if *declarativeMode {
+			if err := executeAtlasDeclarative(atlasBin, masterURL, absSchemaPath, devURL, *statusOnly); err != nil {
+				log.Fatalf("❌ Master database declarative schema sync failed: %v", err)
+			}
+		} else {
+			baseline, err := resolveBaseline(ctx, masterURL, *baselineVer, firstMig)
+			if err != nil {
+				log.Fatalf("❌ Failed to inspect master database: %v", err)
+			}
+			logBaseline(baseline)
 
-		if err := executeAtlas(atlasBin, masterURL, absMigPath, baseline, *statusOnly); err != nil {
-			log.Fatalf("❌ Master database migration failed: %v", err)
+			if err := executeAtlas(atlasBin, masterURL, absMigPath, baseline, *statusOnly); err != nil {
+				log.Fatalf("❌ Master database migration failed: %v", err)
+			}
 		}
-		log.Println("✅ Master database migration completed successfully!")
+		log.Println("✅ Master database schema update completed successfully!")
 	}
 
 	// 2. Discover all active tenants
@@ -154,16 +180,16 @@ func main() {
 		return
 	}
 
-	log.Printf("\nFound %d active tenant(s) to migrate.\n", len(tenants))
+	log.Printf("\nFound %d active tenant(s) to process.\n", len(tenants))
 
-	// 3. Migrate each tenant database
+	// 3. Migrate/sync each tenant database
 	successCount := 0
 	failedCount := 0
 	skippedCount := 0
 
 	for _, tenant := range tenants {
 		log.Println("\n--------------------------------------------------")
-		log.Printf("🚀 Migrating tenant: %s (slug: %s)\n", tenant.TenantName, tenant.Slug)
+		log.Printf("🚀 Processing tenant: %s (slug: %s)\n", tenant.TenantName, tenant.Slug)
 		log.Println("--------------------------------------------------")
 
 		if tenant.DbConnStr == "" {
@@ -179,33 +205,54 @@ func main() {
 			continue
 		}
 
-		baseline, err := resolveBaseline(ctx, tenantURL, *baselineVer, firstMig)
-		if err != nil {
-			if isMissingDatabase(err) {
-				log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
-				log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
-				skippedCount++
+		if *declarativeMode {
+			err = executeAtlasDeclarative(atlasBin, tenantURL, absSchemaPath, devURL, *statusOnly)
+			if err != nil {
+				if isMissingDatabase(err) {
+					log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
+					log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				log.Printf("❌ Failed to apply declarative schema to tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
 				continue
 			}
-			log.Printf("❌ Failed to inspect tenant %s: %v\n", tenant.Slug, err)
-			failedCount++
-			continue
-		}
-		logBaseline(baseline)
+			log.Printf("✅ Successfully synced declarative schema for tenant: %s\n", tenant.Slug)
+			successCount++
+		} else {
+			baseline, err := resolveBaseline(ctx, tenantURL, *baselineVer, firstMig)
+			if err != nil {
+				if isMissingDatabase(err) {
+					log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
+					log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				log.Printf("❌ Failed to inspect tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
+			logBaseline(baseline)
 
-		err = executeAtlas(atlasBin, tenantURL, absMigPath, baseline, *statusOnly)
-		if err != nil {
-			log.Printf("❌ Failed to migrate tenant %s: %v\n", tenant.Slug, err)
-			failedCount++
-			continue
-		}
+			err = executeAtlas(atlasBin, tenantURL, absMigPath, baseline, *statusOnly)
+			if err != nil {
+				log.Printf("❌ Failed to migrate tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
 
-		log.Printf("✅ Successfully migrated tenant: %s\n", tenant.Slug)
-		successCount++
+			log.Printf("✅ Successfully migrated tenant: %s\n", tenant.Slug)
+			successCount++
+		}
 	}
 
 	log.Println("\n==================================================")
-	log.Println("=== Multi-Tenant Atlas Migration Summary ===")
+	if *declarativeMode {
+		log.Println("=== Multi-Tenant Declarative Schema Sync Summary ===")
+	} else {
+		log.Println("=== Multi-Tenant Atlas Migration Summary ===")
+	}
 	log.Println("==================================================")
 	log.Printf("Successful: %d\n", successCount)
 	log.Printf("Skipped:    %d (database missing)\n", skippedCount)
@@ -379,6 +426,60 @@ func resolveAtlasBinary() string {
 		}
 	}
 	return "atlas"
+}
+
+// resolveSchemaDir determines the absolute path to the directory containing Atlas SQL schema files.
+func resolveSchemaDir(customPath string) (string, error) {
+	if customPath != "" {
+		return filepath.Abs(customPath)
+	}
+	candidates := []string{
+		"../../packages/core/db/schema",
+		"../packages/core/db/schema",
+		"packages/core/db/schema",
+		"./schema",
+		"/app/schema",
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			return filepath.Abs(c)
+		}
+	}
+	return filepath.Abs("packages/core/db/schema")
+}
+
+// resolveDevURL resolves the Atlas dev database URL used for calculating declarative diffs.
+func resolveDevURL(customURL string) string {
+	if customURL != "" {
+		return customURL
+	}
+	if env := os.Getenv("ATLAS_DEV_URL"); env != "" {
+		return env
+	}
+	return "docker://postgres/16/dev"
+}
+
+// executeAtlasDeclarative invokes Atlas CLI to declaratively sync a database to the schema directory.
+func executeAtlasDeclarative(atlasBin, dbURL, schemaDir, devURL string, dryRun bool) error {
+	schemaURI := "file://" + filepath.ToSlash(schemaDir)
+
+	args := []string{
+		"schema", "apply",
+		"--url", dbURL,
+		"--to", schemaURI,
+		"--dev-url", devURL,
+	}
+	if dryRun {
+		args = append(args, "--dry-run")
+	} else {
+		args = append(args, "--auto-approve")
+	}
+
+	cmd := exec.Command(atlasBin, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
 }
 
 // executeAtlas invokes the Atlas CLI to apply or inspect migrations
