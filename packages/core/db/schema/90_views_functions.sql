@@ -2522,7 +2522,7 @@ BEGIN
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
-        -- Update product batch if batch number is present
+        -- Update product batch if batch number is present (product_batches table uses quantity_available)
         IF v_order_line.batch_number IS NOT NULL AND v_order_line.batch_number <> '' THEN
             UPDATE product_batches
             SET quantity_available = GREATEST(0, quantity_available - v_fulfilled_qty),
@@ -2531,7 +2531,11 @@ BEGIN
               AND (product_variant_id = v_order_line.product_variant_id 
                    OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
               AND store_id = NEW.store_id
-              AND batch_number = v_order_line.batch_number;
+              AND (
+                  batch_number = v_order_line.batch_number
+                  OR LOWER(REPLACE(batch_number, ' ', '-')) = LOWER(REPLACE(v_order_line.batch_number, ' ', '-'))
+                  OR LOWER(REPLACE(batch_number, '-', ' ')) = LOWER(REPLACE(v_order_line.batch_number, '-', ' '))
+              );
         END IF;
 
         -- Record the stock movement for auditing
@@ -2544,6 +2548,7 @@ BEGIN
             from_store_id,
             quantity,
             uom_id,
+            batch_number,
             status,
             metadata
         )
@@ -2556,12 +2561,14 @@ BEGIN
             NEW.store_id,
             v_fulfilled_qty,
             v_order_line.uom_id,
+            v_order_line.batch_number,
             'completed',
             jsonb_build_object(
                 'sales_order_id', NEW.id::TEXT,
                 'sales_order_number', NEW.order_number,
                 'order_line_id', v_order_line.id::TEXT,
-                'order_status', NEW.order_status
+                'fulfillment_status', NEW.fulfillment_status,
+                'batch_number', v_order_line.batch_number
             )
         );
 
