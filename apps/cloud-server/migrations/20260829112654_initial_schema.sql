@@ -1,5 +1,3 @@
--- Create extension "uuid-ossp"
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "public" VERSION "1.1";
 -- Create enum type "order_type"
 CREATE TYPE "public"."order_type" AS ENUM ('standard', 'quote', 'subscription', 'return', 'exchange');
 -- Create enum type "order_status_v2"
@@ -83,23 +81,9 @@ CREATE TABLE "public"."currencies" (
   "symbol" character varying(10) NOT NULL,
   "decimal_places" integer NULL DEFAULT 2,
   "is_active" boolean NULL DEFAULT true,
-  PRIMARY KEY ("code")
-);
--- Create "payment_terms" table
-CREATE TABLE "public"."payment_terms" (
-  "id" serial NOT NULL,
-  "organization_id" integer NOT NULL,
-  "code" character varying(50) NOT NULL,
-  "name" character varying(100) NOT NULL,
-  "due_days" integer NOT NULL DEFAULT 0,
-  "discount_days" integer NULL DEFAULT 0,
-  "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
-  "late_fee_percentage" numeric(5,2) NULL DEFAULT 0.00,
-  "is_active" boolean NULL DEFAULT true,
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "payment_terms_code_key" UNIQUE ("code"),
-  CONSTRAINT "payment_terms_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("code")
 );
 -- Create "business_partners" table
 CREATE TABLE "public"."business_partners" (
@@ -122,7 +106,6 @@ CREATE TABLE "public"."business_partners" (
   CONSTRAINT "business_partners_code_key" UNIQUE ("code"),
   CONSTRAINT "business_partners_currency_code_fkey" FOREIGN KEY ("currency_code") REFERENCES "public"."currencies" ("code") ON UPDATE NO ACTION ON DELETE NO ACTION,
   CONSTRAINT "business_partners_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "business_partners_payment_terms_id_fkey" FOREIGN KEY ("payment_terms_id") REFERENCES "public"."payment_terms" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "business_partners_sales_rep_user_id_fkey" FOREIGN KEY ("sales_rep_user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "business_partners_partner_role_check" CHECK ((partner_role)::text = ANY ((ARRAY['supplier'::character varying, 'vendor'::character varying, 'special_customer'::character varying, 'corporate_group'::character varying])::text[]))
 );
@@ -143,6 +126,8 @@ CREATE TABLE "public"."units_of_measure" (
   "decimal_places" integer NULL DEFAULT 2,
   "is_active" boolean NULL DEFAULT true,
   "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "units_of_measure_code_key" UNIQUE ("code")
 );
@@ -198,6 +183,7 @@ CREATE TABLE "public"."tax_categories" (
   "is_active" boolean NULL DEFAULT true,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "tax_categories_code_key" UNIQUE ("code")
 );
@@ -443,7 +429,7 @@ CREATE INDEX "idx_pos_terminals_is_active" ON "public"."pos_terminals" ("is_acti
 CREATE INDEX "idx_pos_terminals_store_id" ON "public"."pos_terminals" ("store_id");
 -- Create "carts" table
 CREATE TABLE "public"."carts" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "cart_number" character varying(50) NOT NULL,
   "organization_id" integer NOT NULL,
   "store_id" integer NULL,
@@ -524,7 +510,7 @@ END;
 $$;
 -- Create "cart_items" table
 CREATE TABLE "public"."cart_items" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "cart_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "product_id" integer NOT NULL,
@@ -726,7 +712,7 @@ CREATE TRIGGER "trg_discount_analytics_updated_at" BEFORE UPDATE ON "public"."di
 CREATE TRIGGER "update_discount_analytics_updated_at" BEFORE UPDATE ON "public"."discount_analytics" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "draft_cart_templates" table
 CREATE TABLE "public"."draft_cart_templates" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "organization_id" integer NOT NULL,
   "customer_id" integer NOT NULL,
   "template_name" character varying(255) NOT NULL,
@@ -763,7 +749,7 @@ CREATE INDEX "idx_draft_cart_templates_template_type" ON "public"."draft_cart_te
 COMMENT ON TABLE "public"."draft_cart_templates" IS 'Saved carts and wishlists for quick reordering';
 -- Create "draft_cart_template_items" table
 CREATE TABLE "public"."draft_cart_template_items" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "template_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "product_id" integer NOT NULL,
@@ -971,7 +957,7 @@ CREATE TRIGGER "trg_inventory_stock_updated_at" BEFORE UPDATE ON "public"."inven
 CREATE TRIGGER "update_inventory_stock_updated_at" BEFORE UPDATE ON "public"."inventory_stock" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "sales_orders_v2" table
 CREATE TABLE "public"."sales_orders_v2" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "order_number" character varying(50) NOT NULL,
   "organization_id" integer NOT NULL,
   "store_id" integer NULL,
@@ -1066,7 +1052,7 @@ CREATE INDEX "idx_sales_orders_v2_store_id" ON "public"."sales_orders_v2" ("stor
 COMMENT ON TABLE "public"."sales_orders_v2" IS 'Enhanced order management with comprehensive tracking across all sales channels';
 -- Create "invoices" table
 CREATE TABLE "public"."invoices" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "invoice_number" character varying(50) NOT NULL,
   "organization_id" integer NOT NULL,
   "store_id" integer NULL,
@@ -1147,7 +1133,7 @@ CREATE INDEX "idx_invoices_store_id" ON "public"."invoices" ("store_id");
 COMMENT ON TABLE "public"."invoices" IS 'Customer invoices with payment tracking and recurring billing support';
 -- Create "sales_order_lines_v2" table
 CREATE TABLE "public"."sales_order_lines_v2" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "sales_order_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "line_number" integer NOT NULL,
@@ -1199,7 +1185,7 @@ CREATE INDEX "idx_sales_order_lines_v2_sales_order_id" ON "public"."sales_order_
 COMMENT ON TABLE "public"."sales_order_lines_v2" IS 'Order line items with fulfillment tracking';
 -- Create "invoice_lines" table
 CREATE TABLE "public"."invoice_lines" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "invoice_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "line_number" integer NOT NULL,
@@ -1268,7 +1254,7 @@ CREATE TRIGGER "calculate_invoice_totals_trigger" AFTER DELETE OR INSERT OR UPDA
 CREATE TRIGGER "trg_invoice_lines_updated_at" BEFORE UPDATE ON "public"."invoice_lines" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "invoice_payments" table
 CREATE TABLE "public"."invoice_payments" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "invoice_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "payment_number" character varying(50) NOT NULL,
@@ -1550,7 +1536,7 @@ CREATE TRIGGER "trg_modules_updated_at" BEFORE UPDATE ON "public"."modules" FOR 
 CREATE TRIGGER "update_modules_updated_at" BEFORE UPDATE ON "public"."modules" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "order_fulfillments" table
 CREATE TABLE "public"."order_fulfillments" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "sales_order_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "fulfillment_number" character varying(50) NOT NULL,
@@ -1653,12 +1639,6 @@ CREATE INDEX "idx_pos_transactions_store_id" ON "public"."pos_transactions" ("st
 CREATE INDEX "idx_pos_transactions_transaction_date" ON "public"."pos_transactions" ("transaction_date");
 -- Create index "idx_pos_transactions_transaction_number" to table: "pos_transactions"
 CREATE INDEX "idx_pos_transactions_transaction_number" ON "public"."pos_transactions" ("transaction_number");
--- Create trigger "trg_pos_transactions_updated_at"
-CREATE TRIGGER "trg_pos_transactions_updated_at" BEFORE UPDATE ON "public"."pos_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
--- Create trigger "trg_price_lists_updated_at"
-CREATE TRIGGER "trg_price_lists_updated_at" BEFORE UPDATE ON "public"."price_lists" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
--- Create trigger "update_price_lists_updated_at"
-CREATE TRIGGER "update_price_lists_updated_at" BEFORE UPDATE ON "public"."price_lists" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "product_batches" table
 CREATE TABLE "public"."product_batches" (
   "id" serial NOT NULL,
@@ -1689,6 +1669,137 @@ CREATE INDEX "idx_product_batches_product_id" ON "public"."product_batches" ("pr
 CREATE INDEX "idx_product_batches_status" ON "public"."product_batches" ("status");
 -- Create index "idx_product_batches_store_id" to table: "product_batches"
 CREATE INDEX "idx_product_batches_store_id" ON "public"."product_batches" ("store_id");
+-- Create "stock_movements" table
+CREATE TABLE "public"."stock_movements" (
+  "id" serial NOT NULL,
+  "movement_type" character varying(50) NOT NULL,
+  "reference_type" character varying(50) NULL,
+  "reference_id" integer NULL,
+  "product_id" integer NOT NULL,
+  "product_variant_id" integer NULL,
+  "from_store_id" integer NULL,
+  "to_store_id" integer NULL,
+  "from_location_id" integer NULL,
+  "to_location_id" integer NULL,
+  "quantity" numeric(15,3) NOT NULL,
+  "uom_id" integer NULL,
+  "batch_number" character varying(100) NULL,
+  "serial_number" character varying(100) NULL,
+  "movement_date" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "posted_by" integer NULL,
+  "status" character varying(50) NULL DEFAULT 'completed',
+  "cost_per_unit" numeric(15,4) NULL,
+  "total_value" numeric(15,2) NULL,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "stock_movements_from_location_id_fkey" FOREIGN KEY ("from_location_id") REFERENCES "public"."storage_locations" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "stock_movements_from_store_id_fkey" FOREIGN KEY ("from_store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "stock_movements_posted_by_fkey" FOREIGN KEY ("posted_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "stock_movements_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "stock_movements_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "stock_movements_to_location_id_fkey" FOREIGN KEY ("to_location_id") REFERENCES "public"."storage_locations" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "stock_movements_to_store_id_fkey" FOREIGN KEY ("to_store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "stock_movements_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
+);
+-- Create index "idx_stock_movements_from_store_id" to table: "stock_movements"
+CREATE INDEX "idx_stock_movements_from_store_id" ON "public"."stock_movements" ("from_store_id");
+-- Create index "idx_stock_movements_movement_date" to table: "stock_movements"
+CREATE INDEX "idx_stock_movements_movement_date" ON "public"."stock_movements" ("movement_date");
+-- Create index "idx_stock_movements_movement_type" to table: "stock_movements"
+CREATE INDEX "idx_stock_movements_movement_type" ON "public"."stock_movements" ("movement_type");
+-- Create index "idx_stock_movements_product_id" to table: "stock_movements"
+CREATE INDEX "idx_stock_movements_product_id" ON "public"."stock_movements" ("product_id");
+-- Create index "idx_stock_movements_reference_type_id" to table: "stock_movements"
+CREATE INDEX "idx_stock_movements_reference_type_id" ON "public"."stock_movements" ("reference_type", "reference_id");
+-- Create index "idx_stock_movements_to_store_id" to table: "stock_movements"
+CREATE INDEX "idx_stock_movements_to_store_id" ON "public"."stock_movements" ("to_store_id");
+-- Create "fn_trigger_deduct_inventory_on_pos_transaction" function
+CREATE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_store_id INTEGER;
+    v_status VARCHAR(50);
+BEGIN
+    -- Get the store ID and status from the parent transaction
+    SELECT store_id, status INTO v_store_id, v_status FROM pos_transactions WHERE id = NEW.transaction_id;
+
+    IF v_store_id IS NULL OR v_status = 'voided' THEN
+        RETURN NEW;
+    END IF;
+
+    -- 1. Deduct from general inventory stock
+    UPDATE inventory_stock
+    SET quantity_on_hand = quantity_on_hand - NEW.quantity,
+        quantity_available = GREATEST(0, quantity_available - NEW.quantity),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = NEW.product_id
+      AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+      AND store_id = v_store_id;
+
+    -- 2. Deduct from product batch if batch number is present
+    IF NEW.batch_number IS NOT NULL AND NEW.batch_number <> '' THEN
+        UPDATE product_batches
+        SET quantity_available = GREATEST(0, quantity_available - NEW.quantity),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = NEW.product_id
+          AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+          AND store_id = v_store_id
+          AND batch_number = NEW.batch_number;
+    END IF;
+
+    -- 3. Record a stock movement for POS transaction line
+    INSERT INTO stock_movements (
+        movement_type, reference_type, reference_id, product_id, product_variant_id,
+        from_store_id, quantity, uom_id, status, metadata
+    )
+    VALUES (
+        'sale', 'pos_transaction', NEW.transaction_id, NEW.product_id, NEW.product_variant_id,
+        v_store_id, NEW.quantity, NEW.uom_id, 'completed',
+        jsonb_build_object('pos_line_id', NEW.id, 'batch_number', COALESCE(NEW.batch_number, ''))
+    );
+
+    RETURN NEW;
+END;
+$$;
+-- Create "pos_transaction_lines" table
+CREATE TABLE "public"."pos_transaction_lines" (
+  "id" serial NOT NULL,
+  "transaction_id" integer NOT NULL,
+  "product_id" integer NOT NULL,
+  "product_variant_id" integer NULL,
+  "quantity" numeric(15,3) NOT NULL,
+  "uom_id" integer NULL,
+  "unit_price" numeric(15,4) NOT NULL,
+  "discount_amount" numeric(15,2) NULL DEFAULT 0,
+  "tax_amount" numeric(15,2) NULL DEFAULT 0,
+  "subtotal" numeric(15,2) NOT NULL,
+  "line_total" numeric(15,2) NULL DEFAULT 0,
+  "cost_price" numeric(15,2) NULL DEFAULT 0,
+  "line_number" integer NULL,
+  "serial_number" character varying(100) NULL,
+  "batch_number" character varying(100) NULL,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "pos_transaction_lines_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "pos_transaction_lines_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "pos_transaction_lines_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."pos_transactions" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "pos_transaction_lines_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
+);
+-- Create index "idx_pos_transaction_lines_product_id" to table: "pos_transaction_lines"
+CREATE INDEX "idx_pos_transaction_lines_product_id" ON "public"."pos_transaction_lines" ("product_id");
+-- Create index "idx_pos_transaction_lines_transaction_id" to table: "pos_transaction_lines"
+CREATE INDEX "idx_pos_transaction_lines_transaction_id" ON "public"."pos_transaction_lines" ("transaction_id");
+-- Create trigger "trg_deduct_inventory_on_pos_transaction"
+CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
+-- Create trigger "trg_pos_transactions_updated_at"
+CREATE TRIGGER "trg_pos_transactions_updated_at" BEFORE UPDATE ON "public"."pos_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create trigger "trg_price_lists_updated_at"
+CREATE TRIGGER "trg_price_lists_updated_at" BEFORE UPDATE ON "public"."price_lists" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create trigger "update_price_lists_updated_at"
+CREATE TRIGGER "update_price_lists_updated_at" BEFORE UPDATE ON "public"."price_lists" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "trg_product_batches_updated_at"
 CREATE TRIGGER "trg_product_batches_updated_at" BEFORE UPDATE ON "public"."product_batches" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "update_product_batches_updated_at"
@@ -1820,6 +1931,7 @@ DECLARE
     v_retail_pp RECORD;
     v_calculated_price NUMERIC(15,2);
     v_discount_percent_str VARCHAR;
+    v_variant_id INTEGER;
 BEGIN
     -- Locate existing PROMO price list
     SELECT id INTO v_promo_pl_id
@@ -1855,8 +1967,20 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    -- If applies_to is 'order' (bill/invoice-level discount), skip generating item-level promotional prices
+    IF NEW.applies_to = 'order' THEN
+        RETURN NEW;
+    END IF;
+
     -- If INSERTING or UPDATING active promotion, generate promotional package prices
     IF NEW.is_active = true AND v_promo_pl_id IS NOT NULL THEN
+        -- Clean up existing promotional prices for this promotion on UPDATE to ensure non-matching UOMs are purged
+        IF TG_OP = 'UPDATE' THEN
+            DELETE FROM product_prices
+            WHERE price_list_id = v_promo_pl_id
+              AND metadata->>'promotion_id' = NEW.id::text;
+        END IF;
+
         -- Format discount percent string for metadata
         IF NEW.promotion_type = 'percentage_discount' AND NEW.discount_value IS NOT NULL THEN
             v_discount_percent_str := CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM NEW.discount_value::text)), '%');
@@ -1884,6 +2008,25 @@ BEGIN
                 WHERE pp.product_id = v_target_product_id
                   AND pl.price_list_type = 'retail'
                   AND pp.is_active = true
+                  AND (
+                      NOT (NEW.metadata ? 'target_uoms')
+                      OR NOT (NEW.metadata->'target_uoms' ? v_target_product_id::text)
+                      OR (
+                          jsonb_typeof(NEW.metadata->'target_uoms'->(v_target_product_id::text)) = 'array'
+                          AND (NEW.metadata->'target_uoms'->(v_target_product_id::text)) @> pp.uom_id::text::jsonb
+                      )
+                      OR (NEW.metadata->'target_uoms'->>(v_target_product_id::text)) = pp.uom_id::text
+                  )
+                  AND (
+                      NOT (NEW.metadata ? 'target_variants')
+                      OR NOT (NEW.metadata->'target_variants' ? v_target_product_id::text)
+                      OR pp.product_variant_id IS NULL
+                      OR (
+                          jsonb_typeof(NEW.metadata->'target_variants'->(v_target_product_id::text)) = 'array'
+                          AND (NEW.metadata->'target_variants'->(v_target_product_id::text)) @> pp.product_variant_id::text::jsonb
+                      )
+                      OR (NEW.metadata->'target_variants'->>(v_target_product_id::text)) = pp.product_variant_id::text
+                  )
             ) LOOP
                 -- Calculate promo price
                 IF NEW.promotion_type = 'percentage_discount' AND NEW.discount_value IS NOT NULL THEN
@@ -1894,43 +2037,94 @@ BEGIN
                     v_calculated_price := v_retail_pp.price;
                 END IF;
 
-                -- Remove previous promo price entry for this product + UOM + PROMO price list if it exists
-                DELETE FROM product_prices
-                WHERE product_id = v_target_product_id
-                  AND price_list_id = v_promo_pl_id
-                  AND (product_variant_id = v_retail_pp.product_variant_id OR (product_variant_id IS NULL AND v_retail_pp.product_variant_id IS NULL))
-                  AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
+                -- If retail price was at base product level (product_variant_id IS NULL), but promotion targets specific variants, loop over those variants
+                IF v_retail_pp.product_variant_id IS NULL 
+                   AND (NEW.metadata ? 'target_variants') 
+                   AND (NEW.metadata->'target_variants' ? v_target_product_id::text) THEN
+                    FOR v_variant_id IN (
+                        SELECT (jsonb_array_elements_text(
+                            CASE 
+                                WHEN jsonb_typeof(NEW.metadata->'target_variants'->(v_target_product_id::text)) = 'array'
+                                THEN NEW.metadata->'target_variants'->(v_target_product_id::text)
+                                ELSE jsonb_build_array(NEW.metadata->'target_variants'->>(v_target_product_id::text))
+                            END
+                        ))::integer
+                    ) LOOP
+                        DELETE FROM product_prices
+                        WHERE product_id = v_target_product_id
+                          AND price_list_id = v_promo_pl_id
+                          AND product_variant_id = v_variant_id
+                          AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
 
-                -- Insert new promotional package price into product_prices
-                INSERT INTO product_prices (
-                    product_id,
-                    product_variant_id,
-                    price_list_id,
-                    uom_id,
-                    price,
-                    min_quantity,
-                    max_quantity,
-                    valid_from,
-                    valid_to,
-                    is_active,
-                    metadata
-                ) VALUES (
-                    v_target_product_id,
-                    v_retail_pp.product_variant_id,
-                    v_promo_pl_id,
-                    v_retail_pp.uom_id,
-                    v_calculated_price,
-                    v_retail_pp.min_quantity,
-                    v_retail_pp.max_quantity,
-                    NEW.valid_from,
-                    NEW.valid_to,
-                    true,
-                    jsonb_build_object(
-                        'promotion_id', NEW.id,
-                        'promotion_name', NEW.name,
-                        'discount_percent', v_discount_percent_str
-                    )
-                );
+                        INSERT INTO product_prices (
+                            product_id,
+                            product_variant_id,
+                            price_list_id,
+                            uom_id,
+                            price,
+                            min_quantity,
+                            max_quantity,
+                            valid_from,
+                            valid_to,
+                            is_active,
+                            metadata
+                        ) VALUES (
+                            v_target_product_id,
+                            v_variant_id,
+                            v_promo_pl_id,
+                            v_retail_pp.uom_id,
+                            v_calculated_price,
+                            v_retail_pp.min_quantity,
+                            v_retail_pp.max_quantity,
+                            NEW.valid_from,
+                            NEW.valid_to,
+                            true,
+                            jsonb_build_object(
+                                'promotion_id', NEW.id,
+                                'promotion_name', NEW.name,
+                                'discount_percent', v_discount_percent_str
+                            )
+                        );
+                    END LOOP;
+                ELSE
+                    -- Remove previous promo price entry for this product + UOM + PROMO price list if it exists
+                    DELETE FROM product_prices
+                    WHERE product_id = v_target_product_id
+                      AND price_list_id = v_promo_pl_id
+                      AND (product_variant_id = v_retail_pp.product_variant_id OR (product_variant_id IS NULL AND v_retail_pp.product_variant_id IS NULL))
+                      AND (uom_id = v_retail_pp.uom_id OR (uom_id IS NULL AND v_retail_pp.uom_id IS NULL));
+
+                    -- Insert new promotional package price into product_prices
+                    INSERT INTO product_prices (
+                        product_id,
+                        product_variant_id,
+                        price_list_id,
+                        uom_id,
+                        price,
+                        min_quantity,
+                        max_quantity,
+                        valid_from,
+                        valid_to,
+                        is_active,
+                        metadata
+                    ) VALUES (
+                        v_target_product_id,
+                        v_retail_pp.product_variant_id,
+                        v_promo_pl_id,
+                        v_retail_pp.uom_id,
+                        v_calculated_price,
+                        v_retail_pp.min_quantity,
+                        v_retail_pp.max_quantity,
+                        NEW.valid_from,
+                        NEW.valid_to,
+                        true,
+                        jsonb_build_object(
+                            'promotion_id', NEW.id,
+                            'promotion_name', NEW.name,
+                            'discount_percent', v_discount_percent_str
+                        )
+                    );
+                END IF;
             END LOOP;
         END LOOP;
     END IF;
@@ -1972,7 +2166,7 @@ CREATE TABLE "public"."promotions" (
   CONSTRAINT "promotions_organization_id_code_key" UNIQUE ("organization_id", "code"),
   CONSTRAINT "promotions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "promotions_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "promotions_applies_to_check" CHECK ((applies_to)::text = ANY ((ARRAY['all'::character varying, 'category'::character varying, 'product'::character varying, 'customer_type'::character varying, 'price_list'::character varying])::text[])),
+  CONSTRAINT "promotions_applies_to_check" CHECK ((applies_to)::text = ANY ((ARRAY['all'::character varying, 'order'::character varying, 'category'::character varying, 'product'::character varying, 'customer_type'::character varying, 'price_list'::character varying])::text[])),
   CONSTRAINT "promotions_promotion_type_check" CHECK ((promotion_type)::text = ANY ((ARRAY['percentage_discount'::character varying, 'fixed_discount'::character varying, 'bogo'::character varying, 'buy_x_get_y'::character varying, 'free_item'::character varying, 'bundle_price'::character varying, 'points_multiplier'::character varying, 'happy_hour'::character varying])::text[]))
 );
 -- Create trigger "trg_sync_promotion_to_product_prices"
@@ -2034,7 +2228,7 @@ CREATE TRIGGER "trg_purchase_orders_updated_at" BEFORE UPDATE ON "public"."purch
 CREATE TRIGGER "update_purchase_orders_updated_at" BEFORE UPDATE ON "public"."purchase_orders" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "quotes" table
 CREATE TABLE "public"."quotes" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "quote_number" character varying(50) NOT NULL,
   "organization_id" integer NOT NULL,
   "store_id" integer NULL,
@@ -2088,7 +2282,7 @@ CREATE INDEX "idx_quotes_valid_until" ON "public"."quotes" ("valid_until");
 COMMENT ON TABLE "public"."quotes" IS 'Sales quotations with approval workflow';
 -- Create "quote_lines" table
 CREATE TABLE "public"."quote_lines" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "quote_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
   "line_number" integer NOT NULL,
@@ -2382,51 +2576,6 @@ END;
 $$;
 -- Create trigger "calculate_order_totals_trigger"
 CREATE TRIGGER "calculate_order_totals_trigger" AFTER DELETE OR INSERT OR UPDATE ON "public"."sales_order_lines_v2" FOR EACH ROW EXECUTE FUNCTION "public"."calculate_order_totals"();
--- Create "stock_movements" table
-CREATE TABLE "public"."stock_movements" (
-  "id" serial NOT NULL,
-  "movement_type" character varying(50) NOT NULL,
-  "reference_type" character varying(50) NULL,
-  "reference_id" integer NULL,
-  "product_id" integer NOT NULL,
-  "product_variant_id" integer NULL,
-  "from_store_id" integer NULL,
-  "to_store_id" integer NULL,
-  "from_location_id" integer NULL,
-  "to_location_id" integer NULL,
-  "quantity" numeric(15,3) NOT NULL,
-  "uom_id" integer NULL,
-  "batch_number" character varying(100) NULL,
-  "serial_number" character varying(100) NULL,
-  "movement_date" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  "posted_by" integer NULL,
-  "status" character varying(50) NULL DEFAULT 'completed',
-  "cost_per_unit" numeric(15,4) NULL,
-  "total_value" numeric(15,2) NULL,
-  "metadata" jsonb NULL DEFAULT '{}',
-  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "stock_movements_from_location_id_fkey" FOREIGN KEY ("from_location_id") REFERENCES "public"."storage_locations" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "stock_movements_from_store_id_fkey" FOREIGN KEY ("from_store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "stock_movements_posted_by_fkey" FOREIGN KEY ("posted_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "stock_movements_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "stock_movements_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "stock_movements_to_location_id_fkey" FOREIGN KEY ("to_location_id") REFERENCES "public"."storage_locations" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "stock_movements_to_store_id_fkey" FOREIGN KEY ("to_store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "stock_movements_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
-);
--- Create index "idx_stock_movements_from_store_id" to table: "stock_movements"
-CREATE INDEX "idx_stock_movements_from_store_id" ON "public"."stock_movements" ("from_store_id");
--- Create index "idx_stock_movements_movement_date" to table: "stock_movements"
-CREATE INDEX "idx_stock_movements_movement_date" ON "public"."stock_movements" ("movement_date");
--- Create index "idx_stock_movements_movement_type" to table: "stock_movements"
-CREATE INDEX "idx_stock_movements_movement_type" ON "public"."stock_movements" ("movement_type");
--- Create index "idx_stock_movements_product_id" to table: "stock_movements"
-CREATE INDEX "idx_stock_movements_product_id" ON "public"."stock_movements" ("product_id");
--- Create index "idx_stock_movements_reference_type_id" to table: "stock_movements"
-CREATE INDEX "idx_stock_movements_reference_type_id" ON "public"."stock_movements" ("reference_type", "reference_id");
--- Create index "idx_stock_movements_to_store_id" to table: "stock_movements"
-CREATE INDEX "idx_stock_movements_to_store_id" ON "public"."stock_movements" ("to_store_id");
 -- Create "fn_trigger_allocate_inventory_on_order_line" function
 CREATE FUNCTION "public"."fn_trigger_allocate_inventory_on_order_line" () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -2635,6 +2784,22 @@ BEGIN
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
+        -- Update product batch if batch number is present (product_batches table uses quantity_available)
+        IF v_order_line.batch_number IS NOT NULL AND v_order_line.batch_number <> '' THEN
+            UPDATE product_batches
+            SET quantity_available = GREATEST(0, quantity_available - v_fulfilled_qty),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_order_line.product_id
+              AND (product_variant_id = v_order_line.product_variant_id 
+                   OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
+              AND store_id = NEW.store_id
+              AND (
+                  batch_number = v_order_line.batch_number
+                  OR LOWER(REPLACE(batch_number, ' ', '-')) = LOWER(REPLACE(v_order_line.batch_number, ' ', '-'))
+                  OR LOWER(REPLACE(batch_number, '-', ' ')) = LOWER(REPLACE(v_order_line.batch_number, '-', ' '))
+              );
+        END IF;
+
         -- Record the stock movement for auditing
         INSERT INTO stock_movements (
             movement_type,
@@ -2645,6 +2810,7 @@ BEGIN
             from_store_id,
             quantity,
             uom_id,
+            batch_number,
             status,
             metadata
         )
@@ -2657,12 +2823,14 @@ BEGIN
             NEW.store_id,
             v_fulfilled_qty,
             v_order_line.uom_id,
+            v_order_line.batch_number,
             'completed',
             jsonb_build_object(
                 'sales_order_id', NEW.id::TEXT,
                 'sales_order_number', NEW.order_number,
                 'order_line_id', v_order_line.id::TEXT,
-                'order_status', NEW.order_status
+                'fulfillment_status', NEW.fulfillment_status,
+                'batch_number', v_order_line.batch_number
             )
         );
 
@@ -2746,7 +2914,7 @@ CREATE TRIGGER "trg_submenus_updated_at" BEFORE UPDATE ON "public"."submenus" FO
 CREATE TRIGGER "update_submenus_updated_at" BEFORE UPDATE ON "public"."submenus" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "tenants" table
 CREATE TABLE "public"."tenants" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "tenant_name" character varying(255) NOT NULL,
   "slug" character varying(100) NOT NULL,
   "db_conn_str" text NOT NULL,
@@ -2775,6 +2943,7 @@ CREATE TABLE "public"."product_uom_conversions" (
   "is_default" boolean NULL DEFAULT false,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "product_uom_conversions_product_id_from_uom_id_to_uom_id_key" UNIQUE ("product_id", "from_uom_id", "to_uom_id"),
   CONSTRAINT "product_uom_conversions_from_uom_id_fkey" FOREIGN KEY ("from_uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -3489,6 +3658,7 @@ CREATE TABLE "public"."product_barcodes" (
   "is_primary" boolean NULL DEFAULT false,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "product_barcodes_barcode_key" UNIQUE ("barcode"),
   CONSTRAINT "product_barcodes_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -3584,11 +3754,11 @@ CREATE VIEW "public"."vw_pos_product_catalog" (
     COALESCE(pp_promo_v.metadata ->> 'promotion_name'::text, pp_promo.metadata ->> 'promotion_name'::text) AS promotion_name,
     COALESCE(pp_promo_v.metadata ->> 'discount_percent'::text, pp_promo.metadata ->> 'discount_percent'::text) AS discount_percent,
         CASE
-            WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE) THEN COALESCE(pp_promo_v.price, pp_promo.price)
+            WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE) AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE) THEN COALESCE(pp_promo_v.price, pp_promo.price)
             ELSE COALESCE(pp_retail_v.price, pp_retail.price)
         END AS effective_price,
         CASE
-            WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true AND COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE) THEN true
+            WHEN COALESCE(pp_promo_v.id, pp_promo.id) IS NOT NULL AND COALESCE(pp_promo_v.is_active, pp_promo.is_active) = true AND (COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) IS NULL OR COALESCE(pp_promo_v.valid_from, pp_promo.valid_from) <= CURRENT_DATE) AND (COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) IS NULL OR COALESCE(pp_promo_v.valid_to, pp_promo.valid_to) >= CURRENT_DATE) THEN true
             ELSE false
         END AS has_active_promotion,
     p.is_active,
@@ -3627,7 +3797,21 @@ CREATE VIEW "public"."vw_pos_product_catalog" (
   ORDER BY pc.name, p.name, pv.variant_name;
 -- Create "fn_pos_get_product_by_barcode" function
 CREATE FUNCTION "public"."fn_pos_get_product_by_barcode" ("p_barcode" character varying, "p_store_id" integer) RETURNS TABLE ("product_id" integer, "sku" character varying, "product_name" character varying, "description" text, "category_name" character varying, "brand_name" character varying, "barcode" character varying, "uom_code" character varying, "decimal_places" integer, "retail_price" numeric, "promo_price" numeric, "effective_price" numeric, "has_promotion" boolean, "promotion_name" character varying, "promo_min_quantity" numeric, "tax_rate" numeric, "tax_is_inclusive" boolean, "quantity_available" numeric, "is_in_stock" boolean, "allow_decimal_quantity" boolean, "is_serialized" boolean, "is_batch_managed" boolean, "product_metadata" jsonb, "package_n_price" jsonb, "product_uom_conversions" jsonb) LANGUAGE plpgsql AS $$
+DECLARE
+    v_product_id INT;
+    v_variant_id INT;
 BEGIN
+    -- 1. Find product / variant by matching barcode
+    SELECT pb.product_id, pb.product_variant_id INTO v_product_id, v_variant_id
+    FROM product_barcodes pb
+    WHERE pb.barcode = p_barcode
+    LIMIT 1;
+
+    IF v_product_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- 2. Return catalog query matching product ID and variant ID
     RETURN QUERY
     SELECT 
         cat.product_id,
@@ -3636,7 +3820,7 @@ BEGIN
         cat.description,
         cat.category_name::VARCHAR,
         cat.brand_name::VARCHAR,
-        cat.barcode::VARCHAR,
+        p_barcode::VARCHAR AS barcode, -- Return scanned barcode
         cat.uom_code::VARCHAR,
         (cat.decimal_places)::INTEGER,
         cat.retail_price,
@@ -3692,9 +3876,9 @@ BEGIN
          FROM (
              SELECT fu.code AS fu_code, tu.code AS tu_code,
                     jsonb_build_object(
-                        'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
-                        'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
-                        'conversion_factor', puc.conversion_factor
+                         'from_uom_id', fu.id, 'from_uom_code', fu.code, 'from_uom_name', fu.name,
+                         'to_uom_id', tu.id, 'to_uom_code', tu.code, 'to_uom_name', tu.name,
+                         'conversion_factor', puc.conversion_factor
                     ) AS cv
              FROM product_uom_conversions puc
              JOIN units_of_measure fu ON puc.from_uom_id = fu.id
@@ -3725,11 +3909,31 @@ BEGIN
               OR (pr.applies_to = 'product' AND cat.product_id = ANY(pr.target_product_ids))
               OR (pr.applies_to = 'category' AND cat.category_id = ANY(pr.target_category_ids))
           )
+          AND (
+              NOT (pr.metadata ? 'target_uoms')
+              OR NOT (pr.metadata->'target_uoms' ? cat.product_id::text)
+              OR (
+                  jsonb_typeof(pr.metadata->'target_uoms'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_uoms'->(cat.product_id::text)) @> cat.uom_id::text::jsonb
+              )
+              OR (pr.metadata->'target_uoms'->>(cat.product_id::text)) = cat.uom_id::text
+          )
+          AND (
+              NOT (pr.metadata ? 'target_variants')
+              OR NOT (pr.metadata->'target_variants' ? cat.product_id::text)
+              OR cat.product_variant_id IS NULL
+              OR (
+                  jsonb_typeof(pr.metadata->'target_variants'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_variants'->(cat.product_id::text)) @> cat.product_variant_id::text::jsonb
+              )
+              OR (pr.metadata->'target_variants'->>(cat.product_id::text)) = cat.product_variant_id::text
+          )
         ORDER BY pr.created_at DESC
         LIMIT 1
     ) promo_rule ON true
     LEFT JOIN inventory_stock inv ON cat.product_id = inv.product_id AND inv.store_id = p_store_id
-    WHERE cat.barcode = p_barcode
+    WHERE cat.product_id = v_product_id
+      AND (cat.product_variant_id = v_variant_id OR (cat.product_variant_id IS NULL AND v_variant_id IS NULL))
     LIMIT 1;
 END;
 $$;
@@ -3904,8 +4108,7 @@ BEGIN
              INNER JOIN price_lists pl ON pp.price_list_id = pl.id AND pl.is_active = true
              LEFT JOIN units_of_measure uom ON pp.uom_id = uom.id
              WHERE pp.product_id = cat.product_id
-               AND (pp.product_variant_id = cat.product_variant_id
-                    OR (cat.product_variant_id IS NULL AND pp.product_variant_id IS NULL))
+               AND (pp.product_variant_id = cat.product_variant_id OR pp.product_variant_id IS NULL)
                AND pp.is_active = true
                AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
                AND (pp.valid_to   IS NULL OR pp.valid_to   >= CURRENT_DATE)
@@ -3951,6 +4154,25 @@ BEGIN
               pr.applies_to = 'all'
               OR (pr.applies_to = 'product' AND cat.product_id = ANY(pr.target_product_ids))
               OR (pr.applies_to = 'category' AND cat.category_id = ANY(pr.target_category_ids))
+          )
+          AND (
+              NOT (pr.metadata ? 'target_uoms')
+              OR NOT (pr.metadata->'target_uoms' ? cat.product_id::text)
+              OR (
+                  jsonb_typeof(pr.metadata->'target_uoms'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_uoms'->(cat.product_id::text)) @> cat.uom_id::text::jsonb
+              )
+              OR (pr.metadata->'target_uoms'->>(cat.product_id::text)) = cat.uom_id::text
+          )
+          AND (
+              NOT (pr.metadata ? 'target_variants')
+              OR NOT (pr.metadata->'target_variants' ? cat.product_id::text)
+              OR cat.product_variant_id IS NULL
+              OR (
+                  jsonb_typeof(pr.metadata->'target_variants'->(cat.product_id::text)) = 'array'
+                  AND (pr.metadata->'target_variants'->(cat.product_id::text)) @> cat.product_variant_id::text::jsonb
+              )
+              OR (pr.metadata->'target_variants'->>(cat.product_id::text)) = cat.product_variant_id::text
           )
         ORDER BY pr.created_at DESC
         LIMIT 1
@@ -4114,6 +4336,13 @@ DECLARE
     v_all_po_received BOOLEAN := true;
     v_any_po_received BOOLEAN := false;
     v_po_line RECORD;
+    v_org_metadata JSONB;
+    v_strategy VARCHAR(50);
+    v_current_price NUMERIC;
+    v_old_qty NUMERIC;
+    v_new_price NUMERIC;
+    v_incoming_price NUMERIC;
+    v_total_qty NUMERIC;
 BEGIN
     SELECT * INTO v_grn FROM goods_receipt_notes WHERE id = p_grn_id FOR UPDATE;
     IF v_grn IS NULL THEN
@@ -4157,6 +4386,28 @@ BEGIN
             );
         END IF;
 
+        -- Update/Insert product batch if batch number is present
+        IF v_item.batch_number IS NOT NULL AND v_item.batch_number <> '' THEN
+            UPDATE product_batches
+            SET quantity_available = quantity_available + v_item.quantity_received,
+                expiry_date = COALESCE(v_item.expiry_date, expiry_date),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_grn.store_id
+              AND batch_number = v_item.batch_number;
+
+            IF NOT FOUND THEN
+                INSERT INTO product_batches (
+                    product_id, product_variant_id, batch_number,
+                    expiry_date, store_id, quantity_available, status
+                ) VALUES (
+                    v_item.product_id, v_item.product_variant_id, v_item.batch_number,
+                    v_item.expiry_date, v_grn.store_id, v_item.quantity_received, 'active'
+                );
+            END IF;
+        END IF;
+
         -- Insert stock movement (purchase_receipt)
         INSERT INTO stock_movements (
             movement_type, reference_type, reference_id, product_id, product_variant_id,
@@ -4168,6 +4419,58 @@ BEGIN
             v_grn.received_by, 'completed', COALESCE(v_item.unit_cost, 0), (COALESCE(v_item.unit_cost, 0) * v_item.quantity_received),
             jsonb_build_object('grn_number', v_grn.grn_number, 'delivery_note_number', COALESCE(v_grn.delivery_note_number, ''))
         );
+
+        -- Load organization metadata and strategy
+        SELECT metadata INTO v_org_metadata FROM organizations WHERE id = v_grn.organization_id;
+        
+        IF jsonb_typeof(v_org_metadata) = 'array' THEN
+            v_strategy := COALESCE((v_org_metadata->0)->>'inventory_strategy', 'WEIGHTED_AVERAGE');
+        ELSE
+            v_strategy := COALESCE(v_org_metadata->>'inventory_strategy', 'WEIGHTED_AVERAGE');
+        END IF;
+
+        -- If strategy is WEIGHTED_AVERAGE, calculate and update average price
+        IF v_strategy = 'WEIGHTED_AVERAGE' THEN
+            -- Get total quantity on hand AFTER the update
+            SELECT quantity_on_hand INTO v_total_qty
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_grn.store_id;
+
+            -- Calculate quantity on hand BEFORE this GRN item
+            v_old_qty := COALESCE(v_total_qty, 0) - v_item.quantity_received;
+            IF v_old_qty < 0 THEN
+                v_old_qty := 0;
+            END IF;
+
+            -- Fetch current retail price from price lists ('RETAIL' or 'RETAIL_SAR')
+            SELECT price INTO v_current_price 
+            FROM product_prices 
+            WHERE product_id = v_item.product_id 
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true)
+              AND is_active = true
+            LIMIT 1;
+
+            v_incoming_price := COALESCE(v_item.unit_cost, 0);
+
+            IF v_old_qty = 0 OR v_current_price IS NULL THEN
+                v_new_price := v_incoming_price;
+            ELSE
+                v_new_price := ROUND(((v_old_qty * v_current_price) + (v_item.quantity_received * v_incoming_price)) / (v_old_qty + v_item.quantity_received), 2);
+            END IF;
+
+            -- Update product prices for both RETAIL and RETAIL_SAR price lists
+            IF v_new_price > 0 THEN
+                UPDATE product_prices
+                SET price = v_new_price,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE product_id = v_item.product_id
+                  AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+                  AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true);
+            END IF;
+        END IF;
     END LOOP;
 
     -- Update GRN status
@@ -4371,6 +4674,7 @@ CREATE TABLE "public"."stock_counts" (
   "approved_by" integer NULL,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "stock_counts_count_number_key" UNIQUE ("count_number"),
   CONSTRAINT "stock_counts_approved_by_fkey" FOREIGN KEY ("approved_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
@@ -4402,6 +4706,7 @@ CREATE TABLE "public"."stock_count_lines" (
   "serial_number" character varying(100) NULL,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "stock_count_lines_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "stock_count_lines_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
@@ -4478,6 +4783,7 @@ CREATE TABLE "public"."pos_payments" (
   "payment_date" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "pos_payments_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."pos_transactions" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
 );
@@ -4485,35 +4791,6 @@ CREATE TABLE "public"."pos_payments" (
 CREATE INDEX "idx_pos_payments_payment_method" ON "public"."pos_payments" ("payment_method");
 -- Create index "idx_pos_payments_transaction_id" to table: "pos_payments"
 CREATE INDEX "idx_pos_payments_transaction_id" ON "public"."pos_payments" ("transaction_id");
--- Create "pos_transaction_lines" table
-CREATE TABLE "public"."pos_transaction_lines" (
-  "id" serial NOT NULL,
-  "transaction_id" integer NOT NULL,
-  "product_id" integer NOT NULL,
-  "product_variant_id" integer NULL,
-  "quantity" numeric(15,3) NOT NULL,
-  "uom_id" integer NULL,
-  "unit_price" numeric(15,4) NOT NULL,
-  "discount_amount" numeric(15,2) NULL DEFAULT 0,
-  "tax_amount" numeric(15,2) NULL DEFAULT 0,
-  "subtotal" numeric(15,2) NOT NULL,
-  "line_total" numeric(15,2) NULL DEFAULT 0,
-  "cost_price" numeric(15,2) NULL DEFAULT 0,
-  "line_number" integer NULL,
-  "serial_number" character varying(100) NULL,
-  "batch_number" character varying(100) NULL,
-  "metadata" jsonb NULL DEFAULT '{}',
-  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "pos_transaction_lines_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "pos_transaction_lines_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "pos_transaction_lines_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."pos_transactions" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "pos_transaction_lines_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
-);
--- Create index "idx_pos_transaction_lines_product_id" to table: "pos_transaction_lines"
-CREATE INDEX "idx_pos_transaction_lines_product_id" ON "public"."pos_transaction_lines" ("product_id");
--- Create index "idx_pos_transaction_lines_transaction_id" to table: "pos_transaction_lines"
-CREATE INDEX "idx_pos_transaction_lines_transaction_id" ON "public"."pos_transaction_lines" ("transaction_id");
 -- Create "fn_refresh_daily_analytics" function
 CREATE FUNCTION "public"."fn_refresh_daily_analytics" ("p_date" date DEFAULT CURRENT_DATE) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -4945,6 +5222,7 @@ CREATE TABLE "public"."exchange_rates" (
   "rate_date" date NOT NULL,
   "rate" numeric(18,6) NOT NULL,
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "exchange_rates_organization_id_from_currency_to_currency_ra_key" UNIQUE ("organization_id", "from_currency", "to_currency", "rate_date"),
   CONSTRAINT "exchange_rates_from_currency_fkey" FOREIGN KEY ("from_currency") REFERENCES "public"."currencies" ("code") ON UPDATE NO ACTION ON DELETE NO ACTION,
@@ -4977,6 +5255,7 @@ CREATE TABLE "public"."invoice_status_history" (
   "notes" text NULL,
   "changed_by_user_id" integer NULL,
   "changed_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "invoice_status_history_changed_by_user_id_fkey" FOREIGN KEY ("changed_by_user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "invoice_status_history_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5102,7 +5381,7 @@ CREATE TABLE "public"."module_permissions" (
 );
 -- Create "order_fulfillment_items" table
 CREATE TABLE "public"."order_fulfillment_items" (
-  "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "fulfillment_id" uuid NOT NULL,
   "order_line_id" uuid NOT NULL,
   "organization_id" integer NOT NULL,
@@ -5110,6 +5389,7 @@ CREATE TABLE "public"."order_fulfillment_items" (
   "batch_number" character varying(100) NULL,
   "serial_numbers" text[] NULL,
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "order_fulfillment_items_fulfillment_id_fkey" FOREIGN KEY ("fulfillment_id") REFERENCES "public"."order_fulfillments" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "order_fulfillment_items_order_line_id_fkey" FOREIGN KEY ("order_line_id") REFERENCES "public"."sales_order_lines_v2" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5131,6 +5411,7 @@ CREATE TABLE "public"."order_status_history" (
   "notes" text NULL,
   "changed_by_user_id" integer NULL,
   "changed_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "order_status_history_changed_by_user_id_fkey" FOREIGN KEY ("changed_by_user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "order_status_history_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5175,6 +5456,22 @@ CREATE TABLE "public"."partner_contacts" (
 );
 -- Create index "idx_partner_contacts_partner_id" to table: "partner_contacts"
 CREATE INDEX "idx_partner_contacts_partner_id" ON "public"."partner_contacts" ("partner_id");
+-- Create "payment_terms" table
+CREATE TABLE "public"."payment_terms" (
+  "id" serial NOT NULL,
+  "organization_id" integer NOT NULL,
+  "code" character varying(50) NOT NULL,
+  "name" character varying(100) NOT NULL,
+  "due_days" integer NOT NULL DEFAULT 0,
+  "discount_days" integer NULL DEFAULT 0,
+  "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
+  "late_fee_percentage" numeric(5,2) NULL DEFAULT 0.00,
+  "is_active" boolean NULL DEFAULT true,
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "payment_terms_code_key" UNIQUE ("code"),
+  CONSTRAINT "payment_terms_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+);
 -- Create "role_permissions" table
 CREATE TABLE "public"."role_permissions" (
   "id" serial NOT NULL,
@@ -5183,6 +5480,7 @@ CREATE TABLE "public"."role_permissions" (
   "scope" character varying(50) NULL DEFAULT 'all',
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "role_permissions_role_id_permission_id_key" UNIQUE ("role_id", "permission_id"),
   CONSTRAINT "role_permissions_permission_id_fkey" FOREIGN KEY ("permission_id") REFERENCES "public"."permissions" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5236,6 +5534,7 @@ CREATE TABLE "public"."sales_return_lines" (
   "line_number" integer NULL,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "sales_return_lines_original_line_id_fkey" FOREIGN KEY ("original_line_id") REFERENCES "public"."pos_transaction_lines" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "sales_return_lines_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5293,6 +5592,8 @@ CREATE TABLE "public"."uom_packaging_template_levels" (
   "level_order" integer NOT NULL,
   "uom_id" integer NOT NULL,
   "multiplier" numeric(15,6) NOT NULL DEFAULT 1,
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "uom_packaging_template_levels_template_id_level_order_key" UNIQUE ("template_id", "level_order"),
   CONSTRAINT "uom_packaging_template_levels_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "public"."uom_packaging_templates" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5309,6 +5610,7 @@ CREATE TABLE "public"."user_roles" (
   "role_id" integer NOT NULL,
   "metadata" jsonb NULL DEFAULT '{}',
   "assigned_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "user_roles_user_id_role_id_key" UNIQUE ("user_id", "role_id"),
   CONSTRAINT "user_roles_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "public"."roles" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -5369,7 +5671,7 @@ CREATE TABLE "public"."zatca_document_chain" (
   "entity_id" text NOT NULL,
   "device_config_id" integer NOT NULL,
   "organization_id" integer NOT NULL,
-  "zatca_uuid" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+  "zatca_uuid" uuid NOT NULL DEFAULT gen_random_uuid(),
   "icv" bigint NOT NULL,
   "pih" text NOT NULL,
   "xml_hash" text NOT NULL,
@@ -5380,6 +5682,7 @@ CREATE TABLE "public"."zatca_document_chain" (
   "submitted_at" timestamptz NULL,
   "cleared_at" timestamptz NULL,
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "zatca_document_chain_device_config_id_icv_key" UNIQUE ("device_config_id", "icv"),
   CONSTRAINT "zatca_document_chain_device_config_id_fkey" FOREIGN KEY ("device_config_id") REFERENCES "public"."zatca_device_configs" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
@@ -5437,7 +5740,7 @@ CREATE VIEW "public"."vw_accounts_payable" (
      JOIN public.organizations org ON org.id = po.organization_id
      JOIN public.business_partners sup ON sup.id = po.partners_id
      JOIN public.stores s ON s.id = po.store_id
-  WHERE po.status::text = ANY (ARRAY['partially_received'::character varying, 'received'::character varying, 'approved'::character varying]::text[])
+  WHERE po.status::text = 'partially_received'::text OR po.status::text = 'received'::text OR po.status::text = 'approved'::text
   ORDER BY po.po_date;
 -- Create "vw_active_restaurant_orders" view
 CREATE VIEW "public"."vw_active_restaurant_orders" (
@@ -5486,7 +5789,7 @@ CREATE VIEW "public"."vw_active_restaurant_orders" (
      LEFT JOIN public.cashiers c ON ro.cashier_id = c.id
      LEFT JOIN public.users u ON c.user_id = u.id
      LEFT JOIN public.customers cust ON ro.customer_id = cust.id
-  WHERE ro.status::text <> ALL (ARRAY['paid'::character varying, 'voided'::character varying]::text[]);
+  WHERE ro.status::text <> 'paid'::text AND ro.status::text <> 'voided'::text;
 -- Create "vw_customer_aging_report" view
 CREATE VIEW "public"."vw_customer_aging_report" (
   "customer_id",
@@ -5554,7 +5857,7 @@ CREATE VIEW "public"."vw_customer_aging_report" (
     max(i.due_date) AS latest_due_date,
     c.loyalty_points
    FROM public.customers c
-     LEFT JOIN public.invoices i ON i.customer_id = c.id AND (i.invoice_status <> ALL (ARRAY['cancelled'::public.invoice_status, 'draft'::public.invoice_status])) AND i.balance_due > 0::numeric
+     LEFT JOIN public.invoices i ON i.customer_id = c.id AND i.invoice_status <> 'cancelled'::public.invoice_status AND i.invoice_status <> 'draft'::public.invoice_status AND i.balance_due > 0::numeric
      LEFT JOIN public.organizations o ON o.id = i.organization_id
   WHERE c.is_active = true
   GROUP BY c.id, c.customer_code, c.name, c.email, c.phone, c.customer_type, c.credit_limit, c.outstanding_balance, c.loyalty_points, i.organization_id
@@ -5650,7 +5953,7 @@ CREATE VIEW "public"."vw_pending_purchase_orders" (
     po.expected_delivery_date,
     po.status,
     CURRENT_DATE - po.expected_delivery_date AS days_overdue,
-    po.expected_delivery_date < CURRENT_DATE AND (po.status::text <> ALL (ARRAY['received'::character varying, 'cancelled'::character varying, 'closed'::character varying]::text[])) AS is_overdue,
+    po.expected_delivery_date < CURRENT_DATE AND po.status::text <> 'received'::text AND po.status::text <> 'cancelled'::text AND po.status::text <> 'closed'::text AS is_overdue,
     s.id AS store_id,
     s.name AS store_name,
     sup.id AS supplier_id,
@@ -5672,8 +5975,8 @@ CREATE VIEW "public"."vw_pending_purchase_orders" (
      JOIN public.business_partners sup ON sup.id = po.partners_id
      LEFT JOIN public.users u_created ON u_created.id = po.created_by
      LEFT JOIN public.users u_approved ON u_approved.id = po.approved_by
-  WHERE po.status::text <> ALL (ARRAY['received'::character varying, 'cancelled'::character varying, 'closed'::character varying]::text[])
-  ORDER BY (po.expected_delivery_date < CURRENT_DATE AND (po.status::text <> ALL (ARRAY['received'::character varying, 'cancelled'::character varying, 'closed'::character varying]::text[]))) DESC, (CURRENT_DATE - po.expected_delivery_date) DESC NULLS LAST, po.expected_delivery_date;
+  WHERE po.status::text <> 'received'::text AND po.status::text <> 'cancelled'::text AND po.status::text <> 'closed'::text
+  ORDER BY (po.expected_delivery_date < CURRENT_DATE AND po.status::text <> 'received'::text AND po.status::text <> 'cancelled'::text AND po.status::text <> 'closed'::text) DESC, (CURRENT_DATE - po.expected_delivery_date) DESC NULLS LAST, po.expected_delivery_date;
 -- Create "vw_pos_categories" view
 CREATE VIEW "public"."vw_pos_categories" (
   "category_id",
