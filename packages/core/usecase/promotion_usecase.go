@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -638,13 +639,18 @@ func isHappyHourActive(schedule happyHourSchedule) bool {
 
 // numericToFloat decodes a pgtype.Numeric to float64. Returns 0 on NULL/error.
 func numericToFloat(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 0
+	}
+	f, err := n.Float64Value()
+	if err == nil && f.Valid {
+		return f.Float64
+	}
 	val, err := n.Value()
 	if err != nil || val == nil {
 		return 0
 	}
-	var f float64
-	fmt.Sscanf(fmt.Sprintf("%v", val), "%f", &f)
-	return f
+	return interfaceToFloat(val)
 }
 
 // interfaceToFloat decodes a generic interface{} (from COALESCE SUM columns) to float64.
@@ -652,9 +658,29 @@ func interfaceToFloat(v interface{}) float64 {
 	if v == nil {
 		return 0
 	}
-	var f float64
-	fmt.Sscanf(fmt.Sprintf("%v", v), "%f", &f)
-	return f
+	switch val := v.(type) {
+	case float64:
+		return val
+	case float32:
+		return float64(val)
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	case int32:
+		return float64(val)
+	case []byte:
+		f, _ := strconv.ParseFloat(string(val), 64)
+		return f
+	case string:
+		f, _ := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		return f
+	case pgtype.Numeric:
+		return numericToFloat(val)
+	default:
+		f, _ := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+		return f
+	}
 }
 
 // isStoreAllowed returns true if storeIDs is empty or contains cartStoreID.
