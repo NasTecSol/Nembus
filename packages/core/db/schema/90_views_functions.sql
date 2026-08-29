@@ -3232,6 +3232,11 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    -- If applies_to is 'order' (bill/invoice-level discount), skip generating item-level promotional prices
+    IF NEW.applies_to = 'order' THEN
+        RETURN NEW;
+    END IF;
+
     -- If INSERTING or UPDATING active promotion, generate promotional package prices
     IF NEW.is_active = true AND v_promo_pl_id IS NOT NULL THEN
         -- Clean up existing promotional prices for this promotion on UPDATE to ensure non-matching UOMs are purged
