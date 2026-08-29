@@ -84,7 +84,7 @@ jobs:
           cloud-token: ${{ secrets.ATLAS_TOKEN }}
 
       - name: Install sqlc
-        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 
       # ---------------------------------------------------------------
       # 1. VALIDATE SCHEMA — Dry-run and full apply against clean test DB

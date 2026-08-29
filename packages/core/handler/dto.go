@@ -852,6 +852,7 @@ type AddToCartRequest struct {
 	Quantity         float64 `json:"quantity" binding:"required" example:"2"`
 	UomID            int32   `json:"uom_id" binding:"required" example:"1"`
 	PriceListID      int32   `json:"price_list_id" binding:"required" example:"1"`
+	BatchNumber      *string `json:"batch_number,omitempty" example:"BATCH-001"`
 }
 
 // CartItemUpsertRequest is for directly creating cart item via SQLC CreateCartItem.
