@@ -688,10 +688,16 @@ input:focus {
 .review-row { cursor: pointer; }
 .review-row:hover { background: rgba(59, 130, 246, 0.08); }
 
+.enrichment-detail-row > td {
+    background: rgba(15, 23, 42, 0.35);
+    border-bottom: 1px solid var(--card-border);
+    padding: 0.9rem 1rem 1.25rem;
+}
+
 .enrichment-detail {
-    border-top: 1px solid var(--border, #334155);
-    margin-top: 1.25rem;
-    padding-top: 1.25rem;
+    border: 1px solid var(--border, #334155);
+    border-radius: 8px;
+    padding: 1rem;
 }
 
 .detail-header, .detail-meta {
@@ -755,7 +761,31 @@ input:focus {
     margin-top: 0.75rem;
 }
 
+.enrichment-pagination {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+.enrichment-page-size {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.4rem;
+    margin: 0 0 0 0.5rem;
+}
+
+.enrichment-page-size select {
+    background: var(--surface-2, #172033);
+    border: 1px solid var(--border, #334155);
+    border-radius: 6px;
+    color: var(--text, #e2e8f0);
+    padding: 0.4rem 0.55rem;
+}
+
 @media (max-width: 900px) {
     .comparison-grid { grid-template-columns: 1fr; }
     .review-toolbar { align-items: stretch; flex-direction: column; }
+    .enrichment-pagination { justify-content: flex-start; }
 }

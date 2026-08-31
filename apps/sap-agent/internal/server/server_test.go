@@ -17,6 +17,9 @@ func TestReviewProxyRoutesUseCloudClientAndDoNotExposeToken(t *testing.T) {
 		if r.URL.Path != "/api/v1/product-enrichment/suggestions" {
 			t.Fatalf("unexpected cloud path: %s", r.URL.Path)
 		}
+		if r.URL.Query().Get("status") != "in_review" || r.URL.Query().Get("limit") != "26" || r.URL.Query().Get("offset") != "25" {
+			t.Fatalf("expected review pagination query to be forwarded, got %q", r.URL.RawQuery)
+		}
 		if r.Header.Get("Authorization") != "Bearer private-token" {
 			t.Fatalf("expected private token to be attached by CloudClient")
 		}
@@ -29,7 +32,7 @@ func TestReviewProxyRoutesUseCloudClientAndDoNotExposeToken(t *testing.T) {
 	cfg.Cloud = config.CloudConfig{BaseURL: cloud.URL, M2MToken: "private-token", TenantSlug: "tenant-a", OrganizationID: 1, TimeoutSeconds: 5}
 	srv := NewServer(cfg, nil, nil, nil, transport.NewCloudClient(cfg.Cloud), ui.FS)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/product-enrichment/suggestions?status=in_review", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/product-enrichment/suggestions?status=in_review&limit=26&offset=25", nil)
 	res := httptest.NewRecorder()
 	srv.router.ServeHTTP(res, req)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"items"`) {

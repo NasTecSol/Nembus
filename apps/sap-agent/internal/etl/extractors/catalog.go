@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
@@ -64,6 +65,9 @@ func (e *CatalogExtractor) ExtractBrands(ctx context.Context) ([]mappings.Canoni
 			return nil, fmt.Errorf("failed to scan OMRC row: %w", err)
 		}
 		b.FirmName = name.String
+		if b.FirmCode <= 0 || strings.TrimSpace(b.FirmName) == "" {
+			continue
+		}
 		brands = append(brands, b.ToCanonical())
 	}
 	if err := rows.Err(); err != nil {

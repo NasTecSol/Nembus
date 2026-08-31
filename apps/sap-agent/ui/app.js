@@ -458,12 +458,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let selectedEnrichmentID = null;
     let enrichmentDetailRequestID = 0;
+    let enrichmentListRequestID = 0;
+    let enrichmentPage = 1;
+    let enrichmentPageSize = 25;
+    let enrichmentHasNextPage = false;
     const enrichmentError = document.getElementById('enrichment-error');
+    const enrichmentTableBody = document.getElementById('enrichment-table-body');
+    const enrichmentDetailRow = document.getElementById('enrichment-detail-row');
+    const enrichmentDetail = document.getElementById('enrichment-detail');
 
     function clearSelectedEnrichmentDetail() {
         selectedEnrichmentID = null;
         enrichmentDetailRequestID += 1;
-        document.getElementById('enrichment-detail').hidden = true;
+        enrichmentDetail.hidden = true;
+        enrichmentDetailRow.hidden = true;
+        enrichmentDetailRow.remove();
     }
 
     function setEnrichmentError(message) {
@@ -479,22 +488,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderEnrichmentRows(items) {
-        const tbody = document.getElementById('enrichment-table-body');
-        tbody.textContent = '';
+        const selectedID = selectedEnrichmentID;
+        enrichmentTableBody.textContent = '';
         if (!items || items.length === 0) {
+            if (selectedID !== null) clearSelectedEnrichmentDetail();
             const row = document.createElement('tr');
             const cell = document.createElement('td');
             cell.colSpan = 6;
             cell.className = 'text-center text-muted';
             cell.textContent = 'No suggestions for this status.';
             row.appendChild(cell);
-            tbody.appendChild(row);
+            enrichmentTableBody.appendChild(row);
             return;
         }
         items.forEach(item => {
             const row = document.createElement('tr');
             row.className = 'review-row';
-            row.dataset.suggestionId = item.suggestion_id;
+            row.dataset.suggestionId = String(item.suggestion_id);
             const values = [
                 `${item.source_item_code || '—'} / ${item.source_item_name || '—'}`,
                 'Open detail to compare',
@@ -514,20 +524,55 @@ document.addEventListener('DOMContentLoaded', () => {
             open.addEventListener('click', () => loadEnrichmentDetail(item.suggestion_id));
             actionCell.appendChild(open);
             row.appendChild(actionCell);
-            tbody.appendChild(row);
+            enrichmentTableBody.appendChild(row);
         });
+
+        if (selectedID !== null) {
+            const selectedRow = Array.from(enrichmentTableBody.querySelectorAll('.review-row'))
+                .find(row => row.dataset.suggestionId === String(selectedID));
+            if (selectedRow) {
+                selectedRow.after(enrichmentDetailRow);
+                enrichmentDetailRow.hidden = false;
+                enrichmentDetail.hidden = false;
+            } else {
+                clearSelectedEnrichmentDetail();
+            }
+        }
     }
 
-    async function loadEnrichmentSuggestions() {
+    function updateEnrichmentPagination() {
+        document.getElementById('enrichment-page-indicator').textContent = `Page ${enrichmentPage}`;
+        document.getElementById('btn-enrichment-previous').disabled = enrichmentPage <= 1;
+        document.getElementById('btn-enrichment-next').disabled = !enrichmentHasNextPage;
+    }
+
+    async function loadEnrichmentSuggestions({ allowEmptyPageFallback = true } = {}) {
+        const requestID = ++enrichmentListRequestID;
         setEnrichmentError('');
         const status = document.getElementById('enrichment-status-filter').value;
+        const requestedPage = enrichmentPage;
+        const requestedPageSize = enrichmentPageSize;
+        const offset = (requestedPage - 1) * requestedPageSize;
         try {
-            const res = await fetch(`/api/v1/product-enrichment/suggestions?status=${encodeURIComponent(status)}&limit=50&offset=0`);
+            // The review API has no total/count. Ask for one extra item to
+            // determine whether another server-side page exists.
+            const res = await fetch(`/api/v1/product-enrichment/suggestions?status=${encodeURIComponent(status)}&limit=${requestedPageSize + 1}&offset=${offset}`);
             const payload = await res.json();
             if (!res.ok) throw new Error(payload.message || 'Could not load enrichment suggestions.');
-            renderEnrichmentRows(payload.data?.items || []);
+            if (requestID !== enrichmentListRequestID) return;
+            const returnedItems = Array.isArray(payload.data?.items) ? payload.data.items : [];
+            if (allowEmptyPageFallback && returnedItems.length === 0 && requestedPage > 1) {
+                enrichmentPage = requestedPage - 1;
+                return loadEnrichmentSuggestions({ allowEmptyPageFallback: false });
+            }
+            enrichmentHasNextPage = returnedItems.length > requestedPageSize;
+            renderEnrichmentRows(returnedItems.slice(0, requestedPageSize));
+            updateEnrichmentPagination();
         } catch (err) {
+            if (requestID !== enrichmentListRequestID) return;
+            enrichmentHasNextPage = false;
             renderEnrichmentRows([]);
+            updateEnrichmentPagination();
             setEnrichmentError(err.message || 'Could not load enrichment suggestions.');
         }
     }
@@ -535,8 +580,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderEnrichmentDetail(id, detail) {
         const missingValue = '\u2014';
         const separator = '\u00b7';
+        const selectedRow = Array.from(enrichmentTableBody.querySelectorAll('.review-row'))
+            .find(row => row.dataset.suggestionId === String(id));
+        if (!selectedRow) return;
         selectedEnrichmentID = id;
-        document.getElementById('enrichment-detail').hidden = false;
+        selectedRow.after(enrichmentDetailRow);
+        enrichmentDetailRow.hidden = false;
+        enrichmentDetail.hidden = false;
         document.getElementById('enrichment-detail-title').textContent = `${detail.source_identity?.source_item_code || 'Suggestion'} ${missingValue} ${detail.source_identity?.source_item_name || ''}`;
         document.getElementById('enrichment-detail-status').textContent = detail.review_state?.status || missingValue;
         document.getElementById('enrichment-current').textContent = JSON.stringify(detail.current_authoritative_state || {}, null, 2);
@@ -552,6 +602,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadEnrichmentDetail(id) {
+        if (selectedEnrichmentID !== null && String(selectedEnrichmentID) !== String(id)) {
+            clearSelectedEnrichmentDetail();
+        }
         const requestID = ++enrichmentDetailRequestID;
         setEnrichmentError('');
         try {
@@ -568,10 +621,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function detailMatchesActiveFilter(detail) {
-        return detail.review_state?.status === document.getElementById('enrichment-status-filter').value;
-    }
-
     async function decideEnrichment(action) {
         if (!selectedEnrichmentID) return;
         const decidedSuggestionID = selectedEnrichmentID;
@@ -580,14 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const payload = await res.json();
             if (!res.ok) throw new Error(payload.message || `Could not ${action} suggestion.`);
             showToast(action === 'approve' ? 'Suggestion approved and applied to Nembus.' : 'Suggestion rejected.', 'success');
-            const detail = payload.data || {};
-            if (selectedEnrichmentID === decidedSuggestionID) {
-                if (detailMatchesActiveFilter(detail)) {
-                    renderEnrichmentDetail(decidedSuggestionID, detail);
-                } else {
-                    clearSelectedEnrichmentDetail();
-                }
-            }
+            if (selectedEnrichmentID === decidedSuggestionID) clearSelectedEnrichmentDetail();
             loadEnrichmentSuggestions();
         } catch (err) {
             setEnrichmentError(err.message || `Could not ${action} suggestion.`);
@@ -595,7 +637,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('btn-refresh-enrichment').addEventListener('click', loadEnrichmentSuggestions);
-    document.getElementById('enrichment-status-filter').addEventListener('change', loadEnrichmentSuggestions);
+    document.getElementById('enrichment-status-filter').addEventListener('change', () => {
+        enrichmentPage = 1;
+        clearSelectedEnrichmentDetail();
+        loadEnrichmentSuggestions();
+    });
+    document.getElementById('enrichment-page-size').addEventListener('change', event => {
+        enrichmentPageSize = Number(event.target.value) || 25;
+        enrichmentPage = 1;
+        clearSelectedEnrichmentDetail();
+        loadEnrichmentSuggestions();
+    });
+    document.getElementById('btn-enrichment-previous').addEventListener('click', () => {
+        if (enrichmentPage <= 1) return;
+        enrichmentPage -= 1;
+        clearSelectedEnrichmentDetail();
+        loadEnrichmentSuggestions();
+    });
+    document.getElementById('btn-enrichment-next').addEventListener('click', () => {
+        if (!enrichmentHasNextPage) return;
+        enrichmentPage += 1;
+        clearSelectedEnrichmentDetail();
+        loadEnrichmentSuggestions();
+    });
     document.getElementById('btn-close-enrichment-detail').addEventListener('click', clearSelectedEnrichmentDetail);
     document.getElementById('btn-approve-enrichment').addEventListener('click', () => decideEnrichment('approve'));
     document.getElementById('btn-reject-enrichment').addEventListener('click', () => decideEnrichment('reject'));
