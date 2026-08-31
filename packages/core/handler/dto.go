@@ -1438,7 +1438,7 @@ type UpdatePromotionRequest struct {
 
 // UpdatePromotionStatusRequest represents the request to toggle a promotion active state.
 type UpdatePromotionStatusRequest struct {
-	IsActive bool `json:"is_active" binding:"required" example:"true"`
+	IsActive *bool `json:"is_active" binding:"required" example:"true"`
 }
 
 // PromotionCouponRequest represents the request to apply or validate a coupon code
