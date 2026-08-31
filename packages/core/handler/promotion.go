@@ -410,9 +410,14 @@ func (h *PromotionHandler) UpdatePromotionStatus(c *gin.Context) {
 		return
 	}
 
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
 	resp := h.useCase.UpdatePromotionStatus(c.Request.Context(), repository.UpdatePromotionStatusParams{
 		ID:       int32(id64),
-		IsActive: pgtype.Bool{Bool: req.IsActive, Valid: true},
+		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
 	})
 	c.JSON(resp.StatusCode, resp)
 }

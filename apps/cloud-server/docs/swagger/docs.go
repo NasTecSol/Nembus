@@ -18323,7 +18323,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns products with stock for a store (categories, prices, barcode). Optional filters: category_id, search_term, include_out_of_stock.",
+                "description": "Returns products with stock for a store (categories, prices, barcode). Optional filters: category_id, search_term, include_out_of_stock, page, limit, page_size, offset.",
                 "consumes": [
                     "application/json"
                 ],
@@ -18372,6 +18372,30 @@ const docTemplate = `{
                         "type": "boolean",
                         "description": "Include out-of-stock products (default false)",
                         "name": "include_out_of_stock",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based, default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of records per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Alternative alias for limit",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of records to skip",
+                        "name": "offset",
                         "in": "query"
                     }
                 ],
