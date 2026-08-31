@@ -9,10 +9,10 @@ INSERT INTO promotions (
     action_metadata, valid_from, valid_to, schedule_json,
     applies_to, target_product_ids, target_category_ids,
     min_order_amount, min_quantity, coupon_code,
-    usage_limit, discount_value, is_stackable, is_active,
+    usage_limit, usage_per_customer, discount_value, is_stackable, is_active,
     store_ids, created_by, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
 ) RETURNING *;
 
 -- name: GetPromotion :one
@@ -50,11 +50,12 @@ SET name = $2,
     min_order_amount = $11,
     min_quantity = $12,
     usage_limit = $13,
-    discount_value = $14,
-    is_stackable = $15,
-    is_active = $16,
-    store_ids = $17,
-    metadata = $18,
+    usage_per_customer = $14,
+    discount_value = $15,
+    is_stackable = $16,
+    is_active = $17,
+    store_ids = $18,
+    metadata = $19,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;
