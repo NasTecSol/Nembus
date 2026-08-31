@@ -1405,6 +1405,7 @@ type CreatePromotionRequest struct {
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
 	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"100"`
+	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
 	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
@@ -1428,6 +1429,7 @@ type UpdatePromotionRequest struct {
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER25"`
 	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"200"`
+	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"25.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty"`
 	StoreIds          []int32                `json:"store_ids,omitempty" example:"[1,2]"`

@@ -115,6 +115,9 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 	if req.UsageLimit != nil {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
 	if req.ValidFrom != nil {
 		vf, err := parsePromotionTimestamp(req.ValidFrom)
 		if err != nil {
@@ -346,6 +349,9 @@ func (h *PromotionHandler) UpdatePromotion(c *gin.Context) {
 	}
 	if req.UsageLimit != nil {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
+	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
 	}
 	if req.ValidFrom != nil {
 		vf, err := parsePromotionTimestamp(req.ValidFrom)
