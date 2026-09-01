@@ -78,6 +78,14 @@ func (uc *StoreUseCase) getOrganizationID(ctx context.Context) *repository.Respo
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	if len(orgs) == 0 {
+		// Fallback: try to find ANY organization regardless of is_active filter
+		allOrgs, err := uc.repo.ListOrganizations(ctx, repository.ListOrganizationsParams{
+			Limit:  1,
+			Offset: 0,
+		})
+		if err == nil && len(allOrgs) > 0 {
+			return utils.NewResponse(utils.CodeOK, "organization found", allOrgs[0].ID)
+		}
 		return utils.NewResponse(utils.CodeNotFound, "no active organization found", nil)
 	}
 

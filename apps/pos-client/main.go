@@ -87,8 +87,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
