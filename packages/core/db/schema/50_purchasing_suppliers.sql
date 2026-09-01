@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS currencies (
     name VARCHAR(50) NOT NULL,
     symbol VARCHAR(10) NOT NULL,
     decimal_places INTEGER DEFAULT 2,
-    is_active BOOLEAN DEFAULT true
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS exchange_rates (
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     rate_date DATE NOT NULL,
     rate DECIMAL(18,6) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(organization_id, from_currency, to_currency, rate_date)
 );
 
@@ -304,7 +307,7 @@ CREATE TYPE cart_type AS ENUM ('standard', 'quote', 'saved', 'wishlist', 'retail
 
 -- Main carts table - supports both guest and registered customers
 CREATE TABLE carts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cart_number VARCHAR(50) UNIQUE NOT NULL, -- Human-readable cart reference
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
@@ -369,7 +372,7 @@ CREATE TABLE carts (
 
 -- Cart line items
 CREATE TABLE cart_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     

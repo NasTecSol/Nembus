@@ -47,7 +47,8 @@ CREATE TABLE pos_transaction_lines (
     serial_number VARCHAR(100),
     batch_number VARCHAR(100),
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE pos_payments (
@@ -60,7 +61,8 @@ CREATE TABLE pos_payments (
     reference_number VARCHAR(100),
     payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =====================================================
@@ -168,7 +170,7 @@ CREATE TABLE promotions (
     valid_to              TIMESTAMP,
     schedule_json         JSONB DEFAULT '{}', -- e.g. {"days":[1,2,3],"start_time":"12:00","end_time":"14:00"}
     -- Applicability
-    applies_to            VARCHAR(50) DEFAULT 'all' CHECK (applies_to IN ('all','category','product','customer_type','price_list')),
+    applies_to            VARCHAR(50) DEFAULT 'all' CHECK (applies_to IN ('all','order','category','product','customer_type','price_list')),
     target_product_ids    INTEGER[] DEFAULT '{}',
     target_category_ids   INTEGER[] DEFAULT '{}',
     -- FIX #17: customer segmentation

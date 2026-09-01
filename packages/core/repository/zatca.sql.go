@@ -164,7 +164,7 @@ func (q *Queries) GetActivePosDevice(ctx context.Context, arg GetActivePosDevice
 }
 
 const getChainEntryByEntity = `-- name: GetChainEntryByEntity :one
-SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at FROM zatca_document_chain
+SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at, updated_at FROM zatca_document_chain
 WHERE entity_type = $1 AND entity_id = $2
 `
 
@@ -193,13 +193,14 @@ func (q *Queries) GetChainEntryByEntity(ctx context.Context, arg GetChainEntryBy
 		&i.SubmittedAt,
 		&i.ClearedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getLatestChainEntry = `-- name: GetLatestChainEntry :one
 
-SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at FROM zatca_document_chain
+SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at, updated_at FROM zatca_document_chain
 WHERE device_config_id = $1
 ORDER BY icv DESC
 LIMIT 1
@@ -228,6 +229,7 @@ func (q *Queries) GetLatestChainEntry(ctx context.Context, deviceConfigID int32)
 		&i.SubmittedAt,
 		&i.ClearedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -455,7 +457,7 @@ INSERT INTO zatca_document_chain (
     zatca_status, qr_code_base64, signed_xml
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-) RETURNING id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at
+) RETURNING id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at, updated_at
 `
 
 type InsertChainEntryParams struct {
@@ -504,12 +506,13 @@ func (q *Queries) InsertChainEntry(ctx context.Context, arg InsertChainEntryPara
 		&i.SubmittedAt,
 		&i.ClearedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listChainEntriesByDevice = `-- name: ListChainEntriesByDevice :many
-SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at FROM zatca_document_chain
+SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at, updated_at FROM zatca_document_chain
 WHERE device_config_id = $1
 ORDER BY icv DESC
 LIMIT $2 OFFSET $3
@@ -547,6 +550,7 @@ func (q *Queries) ListChainEntriesByDevice(ctx context.Context, arg ListChainEnt
 			&i.SubmittedAt,
 			&i.ClearedAt,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -559,7 +563,7 @@ func (q *Queries) ListChainEntriesByDevice(ctx context.Context, arg ListChainEnt
 }
 
 const listPendingChainEntries = `-- name: ListPendingChainEntries :many
-SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at FROM zatca_document_chain
+SELECT id, entity_type, entity_id, device_config_id, organization_id, zatca_uuid, icv, pih, xml_hash, zatca_status, zatca_response, qr_code_base64, signed_xml, submitted_at, cleared_at, created_at, updated_at FROM zatca_document_chain
 WHERE zatca_status IN ('pending', 'failed')
 ORDER BY created_at ASC
 LIMIT $1
@@ -592,6 +596,7 @@ func (q *Queries) ListPendingChainEntries(ctx context.Context, limit int32) ([]Z
 			&i.SubmittedAt,
 			&i.ClearedAt,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

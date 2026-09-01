@@ -1052,7 +1052,7 @@ SELECT
     po.expected_delivery_date,
     po.status,
     CURRENT_DATE - po.expected_delivery_date AS days_overdue,
-    (po.expected_delivery_date < CURRENT_DATE AND po.status NOT IN ('received','cancelled','closed')) AS is_overdue,
+    (po.expected_delivery_date < CURRENT_DATE AND (po.status <> 'received' AND po.status <> 'cancelled' AND po.status <> 'closed')) AS is_overdue,
     s.id    AS store_id,
     s.name  AS store_name,
     sup.id  AS supplier_id,
@@ -1073,7 +1073,7 @@ JOIN stores s    ON s.id = po.store_id
 JOIN business_partners sup ON sup.id = po.partners_id
 LEFT JOIN users u_created  ON u_created.id  = po.created_by
 LEFT JOIN users u_approved ON u_approved.id = po.approved_by
-WHERE po.status NOT IN ('received','cancelled','closed')
+WHERE po.status <> 'received' AND po.status <> 'cancelled' AND po.status <> 'closed'
 ORDER BY is_overdue DESC, days_overdue DESC NULLS LAST, po.expected_delivery_date;
 
 -- =====================================================
@@ -1103,7 +1103,7 @@ SELECT
 FROM customers c
 LEFT JOIN invoices i
     ON i.customer_id = c.id
-    AND i.invoice_status NOT IN ('cancelled','draft')
+    AND i.invoice_status <> 'cancelled' AND i.invoice_status <> 'draft'
     AND i.balance_due > 0
 LEFT JOIN organizations o 
     ON o.id = i.organization_id
@@ -1145,7 +1145,7 @@ FROM purchase_orders po
 JOIN organizations org ON org.id = po.organization_id
 JOIN business_partners sup ON sup.id = po.partners_id
 JOIN stores        s   ON s.id   = po.store_id
-WHERE po.status IN ('partially_received','received','approved')
+WHERE po.status = 'partially_received' OR po.status = 'received' OR po.status = 'approved'
 ORDER BY po.po_date;
 
 -- =====================================================
@@ -1729,7 +1729,7 @@ LEFT JOIN restaurant_tables rt  ON ro.table_id = rt.id
 LEFT JOIN cashiers c            ON ro.cashier_id = c.id
 LEFT JOIN users u               ON c.user_id = u.id
 LEFT JOIN customers cust        ON ro.customer_id = cust.id
-WHERE ro.status NOT IN ('paid', 'voided');
+WHERE ro.status <> 'paid' AND ro.status <> 'voided';
 
 CREATE OR REPLACE VIEW vw_waste_daily_summary AS
 SELECT
@@ -2466,10 +2466,12 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_order_line RECORD;
     v_fulfilled_qty DECIMAL(15,3);
+    v_conv_factor DECIMAL(15,6);
+    v_base_fulfilled_qty DECIMAL(15,3);
     v_reservation RECORD;
 BEGIN
-    -- Only process when order status changes to 'fulfilled'
-    IF NOT (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
+    -- Process when fulfillment_status becomes 'fulfilled'
+    IF NOT (OLD.fulfillment_status IS DISTINCT FROM NEW.fulfillment_status AND NEW.fulfillment_status = 'fulfilled') THEN
         RETURN NEW;
     END IF;
         
@@ -2487,7 +2489,8 @@ BEGIN
             product_variant_id,
             quantity_ordered,
             quantity_fulfilled,
-            uom_id
+            uom_id,
+            batch_number
         FROM sales_order_lines_v2
         WHERE sales_order_id = NEW.id
     LOOP
@@ -2502,14 +2505,30 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- FULFILLMENT: Deduct from on-hand and reduce allocated
+        -- Calculate UOM conversion factor (e.g. 1 Carton = 10 Pieces -> Multiply quantity by 10)
+        v_conv_factor := 1.0;
+        IF v_order_line.uom_id IS NOT NULL THEN
+            SELECT COALESCE(conversion_factor, 1.0) INTO v_conv_factor
+            FROM product_uom_conversions
+            WHERE product_id = v_order_line.product_id 
+              AND from_uom_id = v_order_line.uom_id
+            LIMIT 1;
+            IF v_conv_factor IS NULL OR v_conv_factor <= 0 THEN
+                v_conv_factor := 1.0;
+            END IF;
+        END IF;
+
+        -- Convert quantity to base units (e.g. 2 Cartons * 10 = 20 Base Pieces)
+        v_base_fulfilled_qty := v_fulfilled_qty * v_conv_factor;
+
+        -- 1. FULFILLMENT DEDUCTION: Deduct base units from inventory_stock
         UPDATE inventory_stock
         SET 
-            quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
-            quantity_allocated = GREATEST(0, quantity_allocated - v_fulfilled_qty),
+            quantity_on_hand = GREATEST(0, quantity_on_hand - v_base_fulfilled_qty),
+            quantity_allocated = GREATEST(0, quantity_allocated - v_base_fulfilled_qty),
             quantity_available = GREATEST(0, 
-                (quantity_on_hand - v_fulfilled_qty) - 
-                GREATEST(0, quantity_allocated - v_fulfilled_qty)
+                (quantity_on_hand - v_base_fulfilled_qty) - 
+                GREATEST(0, quantity_allocated - v_base_fulfilled_qty)
             ),
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_order_line.product_id
@@ -2522,19 +2541,23 @@ BEGIN
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
-        -- Update product batch if batch number is present
+        -- 2. FULFILLMENT DEDUCTION: Deduct base units from product_batches (if batch managed)
         IF v_order_line.batch_number IS NOT NULL AND v_order_line.batch_number <> '' THEN
             UPDATE product_batches
-            SET quantity_available = GREATEST(0, quantity_available - v_fulfilled_qty),
+            SET quantity_available = GREATEST(0, quantity_available - v_base_fulfilled_qty),
                 updated_at = CURRENT_TIMESTAMP
             WHERE product_id = v_order_line.product_id
               AND (product_variant_id = v_order_line.product_variant_id 
                    OR (product_variant_id IS NULL AND v_order_line.product_variant_id IS NULL))
               AND store_id = NEW.store_id
-              AND batch_number = v_order_line.batch_number;
+              AND (
+                  batch_number = v_order_line.batch_number
+                  OR LOWER(REPLACE(batch_number, ' ', '-')) = LOWER(REPLACE(v_order_line.batch_number, ' ', '-'))
+                  OR LOWER(REPLACE(batch_number, '-', ' ')) = LOWER(REPLACE(v_order_line.batch_number, '-', ' '))
+              );
         END IF;
 
-        -- Record the stock movement for auditing
+        -- 3. AUDIT LOG: Record stock movement for auditing
         INSERT INTO stock_movements (
             movement_type,
             reference_type,
@@ -2544,6 +2567,7 @@ BEGIN
             from_store_id,
             quantity,
             uom_id,
+            batch_number,
             status,
             metadata
         )
@@ -2554,18 +2578,21 @@ BEGIN
             v_order_line.product_id,
             v_order_line.product_variant_id,
             NEW.store_id,
-            v_fulfilled_qty,
+            v_base_fulfilled_qty,
             v_order_line.uom_id,
+            v_order_line.batch_number,
             'completed',
             jsonb_build_object(
                 'sales_order_id', NEW.id::TEXT,
                 'sales_order_number', NEW.order_number,
                 'order_line_id', v_order_line.id::TEXT,
-                'order_status', NEW.order_status
+                'fulfillment_status', NEW.fulfillment_status,
+                'batch_number', v_order_line.batch_number,
+                'conversion_factor', v_conv_factor
             )
         );
 
-        -- Mark active reservations as 'fulfilled' when order is fulfilled
+        -- 4. RESERVATION CLEANUP: Mark active reservations as 'fulfilled'
         FOR v_reservation IN
             SELECT id, quantity_reserved
             FROM stock_reservations
@@ -2590,11 +2617,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger for UPDATE: fires when order status changes to 'fulfilled'
+-- Trigger: Fires when order fulfillment_status changes to 'fulfilled'
+DROP TRIGGER IF EXISTS trg_deduct_inventory_on_fulfillment ON sales_orders_v2;
 CREATE TRIGGER trg_deduct_inventory_on_fulfillment
     AFTER UPDATE ON sales_orders_v2
     FOR EACH ROW
-    WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
+    WHEN (OLD.fulfillment_status IS DISTINCT FROM NEW.fulfillment_status AND NEW.fulfillment_status = 'fulfilled')
     EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
 
 -- =====================================================
@@ -3222,6 +3250,11 @@ BEGIN
         IF TG_OP = 'DELETE' THEN
             RETURN OLD;
         END IF;
+        RETURN NEW;
+    END IF;
+
+    -- If applies_to is 'order' (bill/invoice-level discount), skip generating item-level promotional prices
+    IF NEW.applies_to = 'order' THEN
         RETURN NEW;
     END IF;
 

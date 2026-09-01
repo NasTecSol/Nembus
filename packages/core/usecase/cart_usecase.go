@@ -770,7 +770,7 @@ func (uc *CartUseCase) MergeGuestCartToCustomer(ctx context.Context, arg reposit
 }
 
 // AddToCart adds an item to the cart.
-func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, productVariantID *int32, qty float64, uomID int32, priceListID int32) *repository.Response {
+func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, productVariantID *int32, qty float64, uomID int32, priceListID int32, batchNumber *string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -898,6 +898,11 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to convert line total: %v", err), nil)
 	}
 
+	var batchNumText pgtype.Text
+	if batchNumber != nil && *batchNumber != "" {
+		batchNumText = pgtype.Text{String: *batchNumber, Valid: true}
+	}
+
 	cartItem, err := uc.repo.CreateCartItem(ctx, repository.CreateCartItemParams{
 		CartID:           cartID,
 		OrganizationID:   orgID,
@@ -910,6 +915,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		LineTotal:        lineTotal,
 		PriceListID:      pgtype.Int4{Int32: productPrice.PriceListID, Valid: true},
 		TaxCategoryID:    pgtype.Int4{Int32: product.TaxCategoryID.Int32, Valid: product.TaxCategoryID.Valid},
+		BatchNumber:      batchNumText,
 	})
 
 	if err != nil {

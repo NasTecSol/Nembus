@@ -702,11 +702,13 @@ type CostCenter struct {
 }
 
 type Currency struct {
-	Code          string      `json:"code"`
-	Name          string      `json:"name"`
-	Symbol        string      `json:"symbol"`
-	DecimalPlaces pgtype.Int4 `json:"decimal_places"`
-	IsActive      pgtype.Bool `json:"is_active"`
+	Code          string           `json:"code"`
+	Name          string           `json:"name"`
+	Symbol        string           `json:"symbol"`
+	DecimalPlaces pgtype.Int4      `json:"decimal_places"`
+	IsActive      pgtype.Bool      `json:"is_active"`
+	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 }
 
 type Customer struct {
@@ -793,6 +795,7 @@ type ExchangeRate struct {
 	RateDate       pgtype.Date      `json:"rate_date"`
 	Rate           pgtype.Numeric   `json:"rate"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 }
 
 type GlAccountMapping struct {
@@ -995,6 +998,7 @@ type InvoiceStatusHistory struct {
 	Notes           pgtype.Text       `json:"notes"`
 	ChangedByUserID pgtype.Int4       `json:"changed_by_user_id"`
 	ChangedAt       pgtype.Timestamp  `json:"changed_at"`
+	UpdatedAt       pgtype.Timestamp  `json:"updated_at"`
 }
 
 type JournalEntry struct {
@@ -1205,6 +1209,7 @@ type OrderFulfillmentItem struct {
 	BatchNumber       pgtype.Text      `json:"batch_number"`
 	SerialNumbers     []string         `json:"serial_numbers"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 type OrderStatusHistory struct {
@@ -1217,6 +1222,7 @@ type OrderStatusHistory struct {
 	Notes           pgtype.Text       `json:"notes"`
 	ChangedByUserID pgtype.Int4       `json:"changed_by_user_id"`
 	ChangedAt       pgtype.Timestamp  `json:"changed_at"`
+	UpdatedAt       pgtype.Timestamp  `json:"updated_at"`
 }
 
 type Organization struct {
@@ -1292,6 +1298,7 @@ type PosPayment struct {
 	PaymentDate      pgtype.Timestamp `json:"payment_date"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type PosTerminal struct {
@@ -1352,6 +1359,7 @@ type PosTransactionLine struct {
 	BatchNumber      pgtype.Text      `json:"batch_number"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type PriceList struct {
@@ -1401,6 +1409,7 @@ type ProductBarcode struct {
 	IsPrimary        pgtype.Bool      `json:"is_primary"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type ProductBatch struct {
@@ -1471,6 +1480,7 @@ type ProductUomConversion struct {
 	IsDefault        pgtype.Bool      `json:"is_default"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type ProductVariant struct {
@@ -1773,6 +1783,7 @@ type RolePermission struct {
 	Scope        pgtype.Text      `json:"scope"`
 	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 }
 
 type RoleUiCustomization struct {
@@ -1983,6 +1994,7 @@ type SalesReturnLine struct {
 	LineNumber       pgtype.Int4      `json:"line_number"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type StockCount struct {
@@ -1999,6 +2011,7 @@ type StockCount struct {
 	ApprovedBy        pgtype.Int4      `json:"approved_by"`
 	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 type StockCountLine struct {
@@ -2018,6 +2031,7 @@ type StockCountLine struct {
 	SerialNumber      pgtype.Text      `json:"serial_number"`
 	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 type StockMovement struct {
@@ -2042,6 +2056,7 @@ type StockMovement struct {
 	TotalValue       pgtype.Numeric   `json:"total_value"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type StockReservation struct {
@@ -2130,6 +2145,7 @@ type TaxCategory struct {
 	IsActive    pgtype.Bool      `json:"is_active"`
 	Metadata    json.RawMessage  `json:"metadata"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
 type Tenant struct {
@@ -2193,13 +2209,15 @@ type UiSetting struct {
 }
 
 type UnitsOfMeasure struct {
-	ID            int32           `json:"id"`
-	Code          string          `json:"code"`
-	Name          string          `json:"name"`
-	UomType       pgtype.Text     `json:"uom_type"`
-	DecimalPlaces pgtype.Int4     `json:"decimal_places"`
-	IsActive      pgtype.Bool     `json:"is_active"`
-	Metadata      json.RawMessage `json:"metadata"`
+	ID            int32            `json:"id"`
+	Code          string           `json:"code"`
+	Name          string           `json:"name"`
+	UomType       pgtype.Text      `json:"uom_type"`
+	DecimalPlaces pgtype.Int4      `json:"decimal_places"`
+	IsActive      pgtype.Bool      `json:"is_active"`
+	Metadata      json.RawMessage  `json:"metadata"`
+	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 }
 
 type UomPackagingTemplate struct {
@@ -2214,11 +2232,13 @@ type UomPackagingTemplate struct {
 }
 
 type UomPackagingTemplateLevel struct {
-	ID         int32          `json:"id"`
-	TemplateID int32          `json:"template_id"`
-	LevelOrder int32          `json:"level_order"`
-	UomID      int32          `json:"uom_id"`
-	Multiplier pgtype.Numeric `json:"multiplier"`
+	ID         int32            `json:"id"`
+	TemplateID int32            `json:"template_id"`
+	LevelOrder int32            `json:"level_order"`
+	UomID      int32            `json:"uom_id"`
+	Multiplier pgtype.Numeric   `json:"multiplier"`
+	CreatedAt  pgtype.Timestamp `json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
 }
 
 type User struct {
@@ -2242,6 +2262,7 @@ type UserRole struct {
 	RoleID     int32            `json:"role_id"`
 	Metadata   json.RawMessage  `json:"metadata"`
 	AssignedAt pgtype.Timestamp `json:"assigned_at"`
+	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
 }
 
 type UserStoreAccess struct {
@@ -2618,4 +2639,5 @@ type ZatcaDocumentChain struct {
 	SubmittedAt    pgtype.Timestamptz `json:"submitted_at"`
 	ClearedAt      pgtype.Timestamptz `json:"cleared_at"`
 	CreatedAt      pgtype.Timestamp   `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp   `json:"updated_at"`
 }

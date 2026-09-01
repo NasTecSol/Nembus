@@ -38,7 +38,7 @@ INSERT INTO stock_movements (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19
-) RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+) RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 `
 
 type CreateStockMovementParams struct {
@@ -111,6 +111,7 @@ func (q *Queries) CreateStockMovement(ctx context.Context, arg CreateStockMoveme
 		&i.TotalValue,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -152,7 +153,7 @@ INSERT INTO stock_movements (
     $13,
     $14,
     COALESCE($15, '{}'::jsonb)
-) RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+) RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 `
 
 type CreateStockMovementFromPurchaseOrderParams struct {
@@ -214,6 +215,7 @@ func (q *Queries) CreateStockMovementFromPurchaseOrder(ctx context.Context, arg 
 		&i.TotalValue,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -256,7 +258,7 @@ INSERT INTO stock_movements (
     $13,
     $14,
     COALESCE($15, '{}'::jsonb)
-) RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+) RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 `
 
 type CreateStockMovementFromSalesOrderParams struct {
@@ -321,6 +323,7 @@ func (q *Queries) CreateStockMovementFromSalesOrder(ctx context.Context, arg Cre
 		&i.TotalValue,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -367,7 +370,7 @@ FROM sales_order_lines_v2 sol
 JOIN sales_orders_v2 so ON sol.sales_order_id = so.id
 WHERE sol.sales_order_id = $1
   AND sol.quantity_fulfilled > 0
-RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 `
 
 func (q *Queries) CreateStockMovementsFromOrderFulfillment(ctx context.Context, salesOrderID uuid.UUID) ([]StockMovement, error) {
@@ -401,6 +404,7 @@ func (q *Queries) CreateStockMovementsFromOrderFulfillment(ctx context.Context, 
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -413,7 +417,7 @@ func (q *Queries) CreateStockMovementsFromOrderFulfillment(ctx context.Context, 
 }
 
 const getStockMovement = `-- name: GetStockMovement :one
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at 
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at 
 FROM stock_movements
 WHERE stock_movements.id = $1
 `
@@ -443,6 +447,7 @@ func (q *Queries) GetStockMovement(ctx context.Context, id int32) (StockMovement
 		&i.TotalValue,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -494,7 +499,7 @@ func (q *Queries) GetStockMovementSummaryByProduct(ctx context.Context, arg GetS
 }
 
 const getStockMovementsByProductAndStore = `-- name: GetStockMovementsByProductAndStore :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.product_id = $1 
   AND (stock_movements.from_store_id = $2 OR stock_movements.to_store_id = $2)
@@ -539,6 +544,7 @@ func (q *Queries) GetStockMovementsByProductAndStore(ctx context.Context, arg Ge
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -551,7 +557,7 @@ func (q *Queries) GetStockMovementsByProductAndStore(ctx context.Context, arg Ge
 }
 
 const getStockMovementsByPurchaseOrder = `-- name: GetStockMovementsByPurchaseOrder :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.reference_type = 'purchase_order'
   AND stock_movements.reference_id = $1
@@ -589,6 +595,7 @@ func (q *Queries) GetStockMovementsByPurchaseOrder(ctx context.Context, referenc
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -601,7 +608,7 @@ func (q *Queries) GetStockMovementsByPurchaseOrder(ctx context.Context, referenc
 }
 
 const getStockMovementsBySalesOrder = `-- name: GetStockMovementsBySalesOrder :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.reference_type = 'sales_order'
   AND stock_movements.reference_id = $1
@@ -639,6 +646,7 @@ func (q *Queries) GetStockMovementsBySalesOrder(ctx context.Context, referenceID
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -651,7 +659,7 @@ func (q *Queries) GetStockMovementsBySalesOrder(ctx context.Context, referenceID
 }
 
 const listStockMovements = `-- name: ListStockMovements :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 ORDER BY stock_movements.movement_date DESC
 LIMIT $1 OFFSET $2
@@ -693,6 +701,7 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -705,7 +714,7 @@ func (q *Queries) ListStockMovements(ctx context.Context, arg ListStockMovements
 }
 
 const listStockMovementsByDateRange = `-- name: ListStockMovementsByDateRange :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.movement_date >= $1 AND stock_movements.movement_date <= $2
 ORDER BY stock_movements.movement_date DESC
@@ -747,6 +756,7 @@ func (q *Queries) ListStockMovementsByDateRange(ctx context.Context, arg ListSto
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -759,7 +769,7 @@ func (q *Queries) ListStockMovementsByDateRange(ctx context.Context, arg ListSto
 }
 
 const listStockMovementsByProduct = `-- name: ListStockMovementsByProduct :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.product_id = $1
 ORDER BY stock_movements.movement_date DESC
@@ -803,6 +813,7 @@ func (q *Queries) ListStockMovementsByProduct(ctx context.Context, arg ListStock
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -816,7 +827,7 @@ func (q *Queries) ListStockMovementsByProduct(ctx context.Context, arg ListStock
 
 const listStockMovementsByProductWithDateRange = `-- name: ListStockMovementsByProductWithDateRange :many
 SELECT
-    sm.id, sm.movement_type, sm.reference_type, sm.reference_id, sm.product_id, sm.product_variant_id, sm.from_store_id, sm.to_store_id, sm.from_location_id, sm.to_location_id, sm.quantity, sm.uom_id, sm.batch_number, sm.serial_number, sm.movement_date, sm.posted_by, sm.status, sm.cost_per_unit, sm.total_value, sm.metadata, sm.created_at,
+    sm.id, sm.movement_type, sm.reference_type, sm.reference_id, sm.product_id, sm.product_variant_id, sm.from_store_id, sm.to_store_id, sm.from_location_id, sm.to_location_id, sm.quantity, sm.uom_id, sm.batch_number, sm.serial_number, sm.movement_date, sm.posted_by, sm.status, sm.cost_per_unit, sm.total_value, sm.metadata, sm.created_at, sm.updated_at,
     fs.name AS from_store_name,
     ts.name AS to_store_name,
     uom.name AS uom_name
@@ -858,6 +869,7 @@ type ListStockMovementsByProductWithDateRangeRow struct {
 	TotalValue       pgtype.Numeric   `json:"total_value"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	FromStoreName    pgtype.Text      `json:"from_store_name"`
 	ToStoreName      pgtype.Text      `json:"to_store_name"`
 	UomName          pgtype.Text      `json:"uom_name"`
@@ -894,6 +906,7 @@ func (q *Queries) ListStockMovementsByProductWithDateRange(ctx context.Context, 
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.FromStoreName,
 			&i.ToStoreName,
 			&i.UomName,
@@ -909,7 +922,7 @@ func (q *Queries) ListStockMovementsByProductWithDateRange(ctx context.Context, 
 }
 
 const listStockMovementsByReference = `-- name: ListStockMovementsByReference :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.reference_type = $1 AND stock_movements.reference_id = $2
 ORDER BY stock_movements.movement_date DESC
@@ -951,6 +964,7 @@ func (q *Queries) ListStockMovementsByReference(ctx context.Context, arg ListSto
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -963,7 +977,7 @@ func (q *Queries) ListStockMovementsByReference(ctx context.Context, arg ListSto
 }
 
 const listStockMovementsByStore = `-- name: ListStockMovementsByStore :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.from_store_id = $1 OR stock_movements.to_store_id = $1
 ORDER BY stock_movements.movement_date DESC
@@ -1007,6 +1021,7 @@ func (q *Queries) ListStockMovementsByStore(ctx context.Context, arg ListStockMo
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1019,7 +1034,7 @@ func (q *Queries) ListStockMovementsByStore(ctx context.Context, arg ListStockMo
 }
 
 const listStockMovementsByType = `-- name: ListStockMovementsByType :many
-SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+SELECT stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 FROM stock_movements
 WHERE stock_movements.movement_type = $1
 ORDER BY stock_movements.movement_date DESC
@@ -1063,6 +1078,7 @@ func (q *Queries) ListStockMovementsByType(ctx context.Context, arg ListStockMov
 			&i.TotalValue,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1140,7 +1156,7 @@ const updateStockMovementStatus = `-- name: UpdateStockMovementStatus :one
 UPDATE stock_movements
 SET status = $2
 WHERE stock_movements.id = $1
-RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at
+RETURNING stock_movements.id, stock_movements.movement_type, stock_movements.reference_type, stock_movements.reference_id, stock_movements.product_id, stock_movements.product_variant_id, stock_movements.from_store_id, stock_movements.to_store_id, stock_movements.from_location_id, stock_movements.to_location_id, stock_movements.quantity, stock_movements.uom_id, stock_movements.batch_number, stock_movements.serial_number, stock_movements.movement_date, stock_movements.posted_by, stock_movements.status, stock_movements.cost_per_unit, stock_movements.total_value, stock_movements.metadata, stock_movements.created_at, stock_movements.updated_at
 `
 
 type UpdateStockMovementStatusParams struct {
@@ -1173,6 +1189,7 @@ func (q *Queries) UpdateStockMovementStatus(ctx context.Context, arg UpdateStock
 		&i.TotalValue,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

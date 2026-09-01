@@ -57,6 +57,7 @@ CREATE TABLE user_roles (
     role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     metadata JSONB DEFAULT '{}',
     assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, role_id)
 );
 

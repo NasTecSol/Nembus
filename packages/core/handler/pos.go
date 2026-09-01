@@ -37,7 +37,7 @@ func (h *PosHandler) getRepositoryFromContext(c *gin.Context) *repository.Querie
 
 // ListProducts handles GET /api/pos/stores/:store_id/products
 // @Summary      List POS products for store
-// @Description  Returns products with stock for a store (categories, prices, barcode). Optional filters: category_id, search_term, include_out_of_stock.
+// @Description  Returns products with stock for a store (categories, prices, barcode). Optional filters: category_id, search_term, include_out_of_stock, page, limit, page_size, offset.
 // @Tags         pos
 // @Accept       json
 // @Produce      json
@@ -48,6 +48,10 @@ func (h *PosHandler) getRepositoryFromContext(c *gin.Context) *repository.Querie
 // @Param        category_id           query     int     false  "Filter by category ID"
 // @Param        search_term           query     string  false  "Filter by name, SKU, or barcode"
 // @Param        include_out_of_stock  query     bool    false  "Include out-of-stock products (default false)"
+// @Param        page                  query     int     false  "Page number (1-based, default 1)"
+// @Param        limit                 query     int     false  "Number of records per page"
+// @Param        page_size             query     int     false  "Alternative alias for limit"
+// @Param        offset                query     int     false  "Number of records to skip"
 // @Success      200                   {object}  SuccessResponse
 // @Failure      400                   {object}  ErrorResponse
 // @Failure      401                   {object}  ErrorResponse
@@ -83,7 +87,40 @@ func (h *PosHandler) ListProducts(c *gin.Context) {
 	}
 	includeOutOfStock := c.Query("include_out_of_stock") == "true" || c.Query("include_out_of_stock") == "1"
 
-	resp := h.useCase.ListProductsForStore(c.Request.Context(), int32(storeID), categoryID, searchTerm, includeOutOfStock)
+	var limit *int32
+	if s := c.Query("limit"); s != "" {
+		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
+			val := int32(l)
+			limit = &val
+		}
+	} else if s := c.Query("page_size"); s != "" {
+		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
+			val := int32(l)
+			limit = &val
+		}
+	}
+
+	var offset *int32
+	if s := c.Query("offset"); s != "" {
+		if o, err := strconv.ParseInt(s, 10, 32); err == nil && o >= 0 {
+			val := int32(o)
+			offset = &val
+		}
+	} else if s := c.Query("page"); s != "" {
+		if p, err := strconv.ParseInt(s, 10, 32); err == nil && p > 0 {
+			pageSize := int32(20)
+			if limit != nil && *limit > 0 {
+				pageSize = *limit
+			}
+			val := int32((p - 1) * int64(pageSize))
+			offset = &val
+			if limit == nil {
+				limit = &pageSize
+			}
+		}
+	}
+
+	resp := h.useCase.ListProductsForStore(c.Request.Context(), int32(storeID), categoryID, searchTerm, includeOutOfStock, limit, offset)
 	c.JSON(resp.StatusCode, resp)
 }
 

@@ -22,7 +22,7 @@ INSERT INTO tax_categories (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6
-) RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at
+) RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at
 `
 
 type CreateTaxCategoryParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) CreateTaxCategory(ctx context.Context, arg CreateTaxCategoryPa
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -68,7 +69,7 @@ func (q *Queries) DeleteTaxCategory(ctx context.Context, id int32) error {
 }
 
 const getTaxCategory = `-- name: GetTaxCategory :one
-SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at FROM tax_categories
+SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at FROM tax_categories
 WHERE id = $1
 `
 
@@ -84,12 +85,13 @@ func (q *Queries) GetTaxCategory(ctx context.Context, id int32) (TaxCategory, er
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getTaxCategoryByCode = `-- name: GetTaxCategoryByCode :one
-SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at FROM tax_categories
+SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at FROM tax_categories
 WHERE code = $1
 `
 
@@ -105,12 +107,13 @@ func (q *Queries) GetTaxCategoryByCode(ctx context.Context, code string) (TaxCat
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listActiveTaxCategories = `-- name: ListActiveTaxCategories :many
-SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at FROM tax_categories
+SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at FROM tax_categories
 WHERE is_active = true
 ORDER BY name
 `
@@ -133,6 +136,7 @@ func (q *Queries) ListActiveTaxCategories(ctx context.Context) ([]TaxCategory, e
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -145,7 +149,7 @@ func (q *Queries) ListActiveTaxCategories(ctx context.Context) ([]TaxCategory, e
 }
 
 const listTaxCategories = `-- name: ListTaxCategories :many
-SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at FROM tax_categories
+SELECT id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at FROM tax_categories
 ORDER BY name
 `
 
@@ -167,6 +171,7 @@ func (q *Queries) ListTaxCategories(ctx context.Context) ([]TaxCategory, error) 
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -182,7 +187,7 @@ const toggleTaxCategoryActive = `-- name: ToggleTaxCategoryActive :one
 UPDATE tax_categories
 SET is_active = $2
 WHERE id = $1
-RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at
+RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at
 `
 
 type ToggleTaxCategoryActiveParams struct {
@@ -202,6 +207,7 @@ func (q *Queries) ToggleTaxCategoryActive(ctx context.Context, arg ToggleTaxCate
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -215,7 +221,7 @@ SET
     is_active = $5,
     metadata = $6
 WHERE id = $1
-RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at
+RETURNING id, name, code, tax_rate, is_inclusive, is_active, metadata, created_at, updated_at
 `
 
 type UpdateTaxCategoryParams struct {
@@ -246,6 +252,7 @@ func (q *Queries) UpdateTaxCategory(ctx context.Context, arg UpdateTaxCategoryPa
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

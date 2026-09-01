@@ -852,6 +852,7 @@ type AddToCartRequest struct {
 	Quantity         float64 `json:"quantity" binding:"required" example:"2"`
 	UomID            int32   `json:"uom_id" binding:"required" example:"1"`
 	PriceListID      int32   `json:"price_list_id" binding:"required" example:"1"`
+	BatchNumber      *string `json:"batch_number,omitempty" example:"BATCH-001"`
 }
 
 // CartItemUpsertRequest is for directly creating cart item via SQLC CreateCartItem.
@@ -1404,6 +1405,7 @@ type CreatePromotionRequest struct {
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
 	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"100"`
+	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
 	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
@@ -1427,6 +1429,7 @@ type UpdatePromotionRequest struct {
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER25"`
 	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"200"`
+	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"25.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty"`
 	StoreIds          []int32                `json:"store_ids,omitempty" example:"[1,2]"`
@@ -1435,7 +1438,7 @@ type UpdatePromotionRequest struct {
 
 // UpdatePromotionStatusRequest represents the request to toggle a promotion active state.
 type UpdatePromotionStatusRequest struct {
-	IsActive bool `json:"is_active" binding:"required" example:"true"`
+	IsActive *bool `json:"is_active" binding:"required" example:"true"`
 }
 
 // PromotionCouponRequest represents the request to apply or validate a coupon code

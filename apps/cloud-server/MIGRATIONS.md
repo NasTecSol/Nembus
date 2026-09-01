@@ -21,7 +21,6 @@ PostgreSQL (Master & Tenants)
 ```
 
 1. **Modular Desired Schema** (`packages/core/db/schema/`):
-   * `00_extensions.sql` (PostgreSQL extensions)
    * `10_identity_rbac.sql` (Organizations, tenants, modules, menus, permissions, roles, UI settings)
    * `20_stores_terminals.sql` (Stores, storage locations, users, cashiers, terminals, sessions)
    * `30_catalog.sql` (Categories, brands, UOM, packaging templates, price lists, taxes, products, variants, barcodes, pricing, batches)
@@ -98,7 +97,13 @@ Runs migration checksum validation, `sqlc generate`, and unit/integration test s
 Tenant migration is managed by `apps/cloud-server/cmd/migrate-tenants/main.go`:
 
 ```bash
-# Migrate Master DB and all active Tenant DBs
+# Declarative Schema Sync (Staging / Dev — Auto-Approve across Master + All Tenants)
+go run cmd/migrate-tenants/main.go -declarative
+
+# Declarative Dry-Run across Master + All Tenants
+go run cmd/migrate-tenants/main.go -declarative -status
+
+# Versioned Migrations: Migrate Master DB and all active Tenant DBs
 go run cmd/migrate-tenants/main.go
 
 # Migrate only active Tenant DBs

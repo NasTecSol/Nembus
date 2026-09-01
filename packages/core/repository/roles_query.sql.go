@@ -20,7 +20,7 @@ INSERT INTO role_permissions (
     metadata
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING id, role_id, permission_id, scope, metadata, created_at
+) RETURNING id, role_id, permission_id, scope, metadata, created_at, updated_at
 `
 
 type AssignPermissionToRoleParams struct {
@@ -45,6 +45,7 @@ func (q *Queries) AssignPermissionToRole(ctx context.Context, arg AssignPermissi
 		&i.Scope,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -169,7 +170,7 @@ func (q *Queries) GetRoleByCode(ctx context.Context, code string) (Role, error) 
 }
 
 const getRolePermissions = `-- name: GetRolePermissions :many
-SELECT rp.id, rp.role_id, rp.permission_id, rp.scope, rp.metadata, rp.created_at, p.name, p.code, p.description
+SELECT rp.id, rp.role_id, rp.permission_id, rp.scope, rp.metadata, rp.created_at, rp.updated_at, p.name, p.code, p.description
 FROM role_permissions rp
 JOIN permissions p ON rp.permission_id = p.id
 WHERE rp.role_id = $1
@@ -182,6 +183,7 @@ type GetRolePermissionsRow struct {
 	Scope        pgtype.Text      `json:"scope"`
 	Metadata     json.RawMessage  `json:"metadata"`
 	CreatedAt    pgtype.Timestamp `json:"created_at"`
+	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
 	Name         string           `json:"name"`
 	Code         string           `json:"code"`
 	Description  pgtype.Text      `json:"description"`
@@ -203,6 +205,7 @@ func (q *Queries) GetRolePermissions(ctx context.Context, roleID int32) ([]GetRo
 			&i.Scope,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.Name,
 			&i.Code,
 			&i.Description,
