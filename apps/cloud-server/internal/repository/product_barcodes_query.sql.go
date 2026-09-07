@@ -30,18 +30,20 @@ const createProductBarcode = `-- name: CreateProductBarcode :one
 INSERT INTO product_barcodes (
     product_id,
     product_variant_id,
+    uom_id,
     barcode,
     barcode_type,
     is_primary,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
-) RETURNING id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7
+) RETURNING id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
 `
 
 type CreateProductBarcodeParams struct {
 	ProductID        int32           `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	UomID            pgtype.Int4     `json:"uom_id"`
 	Barcode          string          `json:"barcode"`
 	BarcodeType      pgtype.Text     `json:"barcode_type"`
 	IsPrimary        pgtype.Bool     `json:"is_primary"`
@@ -52,6 +54,7 @@ func (q *Queries) CreateProductBarcode(ctx context.Context, arg CreateProductBar
 	row := q.db.QueryRow(ctx, createProductBarcode,
 		arg.ProductID,
 		arg.ProductVariantID,
+		arg.UomID,
 		arg.Barcode,
 		arg.BarcodeType,
 		arg.IsPrimary,
@@ -62,6 +65,7 @@ func (q *Queries) CreateProductBarcode(ctx context.Context, arg CreateProductBar
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,
@@ -293,15 +297,17 @@ func (q *Queries) SetPrimaryBarcode(ctx context.Context, arg SetPrimaryBarcodePa
 const updateProductBarcode = `-- name: UpdateProductBarcode :one
 UPDATE product_barcodes
 SET 
-    barcode_type = $2,
-    is_primary = $3,
-    metadata = $4
+    uom_id = $2,
+    barcode_type = $3,
+    is_primary = $4,
+    metadata = $5
 WHERE id = $1
-RETURNING id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
+RETURNING id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
 `
 
 type UpdateProductBarcodeParams struct {
 	ID          int32           `json:"id"`
+	UomID       pgtype.Int4     `json:"uom_id"`
 	BarcodeType pgtype.Text     `json:"barcode_type"`
 	IsPrimary   pgtype.Bool     `json:"is_primary"`
 	Metadata    json.RawMessage `json:"metadata"`
@@ -310,6 +316,7 @@ type UpdateProductBarcodeParams struct {
 func (q *Queries) UpdateProductBarcode(ctx context.Context, arg UpdateProductBarcodeParams) (ProductBarcode, error) {
 	row := q.db.QueryRow(ctx, updateProductBarcode,
 		arg.ID,
+		arg.UomID,
 		arg.BarcodeType,
 		arg.IsPrimary,
 		arg.Metadata,
@@ -319,6 +326,7 @@ func (q *Queries) UpdateProductBarcode(ctx context.Context, arg UpdateProductBar
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,

@@ -371,6 +371,7 @@ func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *r
 			_, _ = uc.repo.CreateProductBarcode(ctx, repository.CreateProductBarcodeParams{
 				ProductID:        prod.ID,
 				ProductVariantID: pgtype.Int4{},
+				UomID:            pgtype.Int4{},
 				Barcode:          *in.Barcode,
 				BarcodeType:      pgtype.Text{},
 				IsPrimary:        pgtype.Bool{Bool: true, Valid: true},
