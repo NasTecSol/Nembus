@@ -1433,6 +1433,9 @@ definitions:
       is_default:
         example: true
         type: boolean
+      partner_id:
+        example: 1
+        type: integer
       state:
         example: Riyadh Province
         type: string
@@ -1460,6 +1463,9 @@ definitions:
       last_name:
         example: Doe
         type: string
+      partner_id:
+        example: 1
+        type: integer
       phone:
         example: "+966500000000"
         type: string
@@ -3982,6 +3988,55 @@ definitions:
       is_active:
         type: boolean
       terminal_name:
+        type: string
+    type: object
+  handler.UpdatePartnerAddressRequest:
+    properties:
+      address_name:
+        example: Headquarters Updated
+        type: string
+      address_type:
+        description: bill_to, ship_to, both
+        example: both
+        type: string
+      city:
+        example: Riyadh
+        type: string
+      country_code:
+        example: SA
+        type: string
+      is_default:
+        example: true
+        type: boolean
+      state:
+        example: Riyadh Province
+        type: string
+      street:
+        example: 123 Main St
+        type: string
+      zip_code:
+        example: "12345"
+        type: string
+    type: object
+  handler.UpdatePartnerContactRequest:
+    properties:
+      email:
+        example: john.doe@example.com
+        type: string
+      first_name:
+        example: John
+        type: string
+      is_primary:
+        example: true
+        type: boolean
+      last_name:
+        example: Doe
+        type: string
+      phone:
+        example: "+966500000000"
+        type: string
+      position:
+        example: Purchasing Manager
         type: string
     type: object
   handler.UpdatePaymentRequest:
@@ -7580,6 +7635,650 @@ paths:
       summary: Update a business partner
       tags:
       - business-partners
+  /api/business-partners/{id}/addresses:
+    get:
+      consumes:
+      - application/json
+      description: Get all addresses associated with a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerAddressResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner addresses
+      tags:
+      - partner-addresses
+    post:
+      consumes:
+      - application/json
+      description: Add a new address to a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Partner address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerAddressDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner address
+      tags:
+      - partner-addresses
+  /api/business-partners/{id}/addresses/{addressId}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an address of a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner address
+      tags:
+      - partner-addresses
+    get:
+      consumes:
+      - application/json
+      description: Get a specific address for a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner address
+      tags:
+      - partner-addresses
+    put:
+      consumes:
+      - application/json
+      description: Update details of a business partner address
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      - description: Updated address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerAddressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner address
+      tags:
+      - partner-addresses
+  /api/business-partners/{id}/addresses/{addressId}/default:
+    patch:
+      consumes:
+      - application/json
+      description: Set a specific address as the default address for the partner and
+        unset others
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner address as default
+      tags:
+      - partner-addresses
+  /api/business-partners/{id}/contacts:
+    get:
+      consumes:
+      - application/json
+      description: Get all contact persons associated with a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerContactResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner contacts
+      tags:
+      - partner-contacts
+    post:
+      consumes:
+      - application/json
+      description: Add a new contact person to a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Partner contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerContactDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner contact
+      tags:
+      - partner-contacts
+  /api/business-partners/{id}/contacts/{contactId}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a contact person of a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner contact
+      tags:
+      - partner-contacts
+    get:
+      consumes:
+      - application/json
+      description: Get a specific contact person for a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner contact
+      tags:
+      - partner-contacts
+    put:
+      consumes:
+      - application/json
+      description: Update details of a business partner contact person
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      - description: Updated contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner contact
+      tags:
+      - partner-contacts
+  /api/business-partners/{id}/contacts/{contactId}/primary:
+    patch:
+      consumes:
+      - application/json
+      description: Set a specific contact person as primary for the partner and unset
+        others
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner contact as primary
+      tags:
+      - partner-contacts
   /api/business-partners/{id}/toggle:
     patch:
       consumes:
@@ -15632,6 +16331,590 @@ paths:
       summary: Get organization by code
       tags:
       - organizations
+  /api/partner-addresses:
+    get:
+      consumes:
+      - application/json
+      description: List addresses for a partner specified via query parameter partner_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: query
+        name: partner_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerAddressResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner addresses (standalone)
+      tags:
+      - partner-addresses
+    post:
+      consumes:
+      - application/json
+      description: Create a partner address by providing partner_id in the body
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Partner address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerAddressDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner address (standalone)
+      tags:
+      - partner-addresses
+  /api/partner-addresses/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a partner address by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner address by ID
+      tags:
+      - partner-addresses
+    get:
+      consumes:
+      - application/json
+      description: Get a partner address by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner address by ID
+      tags:
+      - partner-addresses
+    put:
+      consumes:
+      - application/json
+      description: Update a partner address by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerAddressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner address by ID
+      tags:
+      - partner-addresses
+  /api/partner-addresses/{id}/default:
+    patch:
+      consumes:
+      - application/json
+      description: Set a specific address as default by its primary address ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner address as default by ID
+      tags:
+      - partner-addresses
+  /api/partner-contacts:
+    get:
+      consumes:
+      - application/json
+      description: List contacts for a partner specified via query parameter partner_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: query
+        name: partner_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerContactResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner contacts (standalone)
+      tags:
+      - partner-contacts
+    post:
+      consumes:
+      - application/json
+      description: Create a partner contact by providing partner_id in the body
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Partner contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerContactDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner contact (standalone)
+      tags:
+      - partner-contacts
+  /api/partner-contacts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a partner contact by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner contact by ID
+      tags:
+      - partner-contacts
+    get:
+      consumes:
+      - application/json
+      description: Get a partner contact by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner contact by ID
+      tags:
+      - partner-contacts
+    put:
+      consumes:
+      - application/json
+      description: Update a partner contact by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner contact by ID
+      tags:
+      - partner-contacts
+  /api/partner-contacts/{id}/primary:
+    patch:
+      consumes:
+      - application/json
+      description: Set a contact as primary by its contact ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner contact as primary by ID
+      tags:
+      - partner-contacts
   /api/payment-terms:
     get:
       consumes:
