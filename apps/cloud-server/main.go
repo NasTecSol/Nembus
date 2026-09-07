@@ -65,7 +65,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -73,9 +73,14 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -158,6 +163,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		router.RegisterCustomerRoutes(api, customerHandler)
 		businessPartnerHandler := handler.NewBusinessPartnerHandler(businessPartnerUC)
 		router.RegisterBusinessPartnerRoutes(api, businessPartnerHandler)
+		bpPriceContractHandler := handler.NewBPPriceContractHandler(bpPriceContractUC)
+		router.RegisterBPPriceContractRoutes(api, bpPriceContractHandler)
 		paymentTermsHandler := handler.NewPaymentTermsHandler(paymentTermsUC)
 		router.RegisterPaymentTermRoutes(api, paymentTermsHandler)
 
@@ -284,6 +291,7 @@ func main() {
 	restaurantUC := usecase.NewRestaurantUseCase()
 	customerUC := usecase.NewCustomerUseCase()
 	businessPartnerUC := usecase.NewBusinessPartnerUseCase()
+	bpPriceContractUC := usecase.NewBPPriceContractUseCase()
 	paymentTermsUC := usecase.NewPaymentTermsUseCase()
 	uomUC := usecase.NewUOMUseCase()
 	uomPackagingTemplateUC := usecase.NewUomPackagingTemplateUseCase()
@@ -327,7 +335,7 @@ func main() {
 	}
 
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, businessPartnerUC, paymentTermsUC, cfg)
+	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 

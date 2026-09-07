@@ -1742,6 +1742,57 @@ type BusinessPartnerResponse struct {
 	Contacts           []PartnerContactResponse `json:"contacts,omitempty"`
 }
 
+type CreateBPPriceContractRequest struct {
+	OrganizationID     int32    `json:"organization_id" binding:"required" example:"1"`
+	PartnerID          int32    `json:"partner_id" binding:"required" example:"1"`
+	ProductID          int32    `json:"product_id" binding:"required" example:"10"`
+	ProductVariantID   *int32   `json:"product_variant_id,omitempty" example:"5"`
+	ContractPrice      float64  `json:"contract_price" binding:"required" example:"45.5000"`
+	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"5.00"`
+	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"10.000"`
+	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
+	IsActive           *bool    `json:"is_active,omitempty" example:"true"`
+	Notes              *string  `json:"notes,omitempty" example:"Special bulk purchasing agreement"`
+}
+
+type UpdateBPPriceContractRequest struct {
+	ContractPrice      *float64 `json:"contract_price,omitempty" example:"42.0000"`
+	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"7.50"`
+	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"15.000"`
+	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
+	IsActive           *bool    `json:"is_active,omitempty" example:"true"`
+	Notes              *string  `json:"notes,omitempty" example:"Updated price for Q2"`
+}
+
+type ToggleBPPriceContractActiveRequest struct {
+	IsActive bool `json:"is_active" binding:"required" example:"true"`
+}
+
+type BPPriceContractResponse struct {
+	ID                 int32   `json:"id" example:"1"`
+	OrganizationID     int32   `json:"organization_id" example:"1"`
+	PartnerID          int32   `json:"partner_id" example:"1"`
+	ProductID          int32   `json:"product_id" example:"10"`
+	ProductVariantID   *int32  `json:"product_variant_id,omitempty" example:"5"`
+	ContractPrice      string  `json:"contract_price" example:"45.5000"`
+	DiscountPercentage string  `json:"discount_percentage" example:"5.00"`
+	MinQuantity        string  `json:"min_quantity" example:"10.000"`
+	ValidFrom          *string `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo            *string `json:"valid_to,omitempty" example:"2026-12-31"`
+	IsActive           bool    `json:"is_active" example:"true"`
+	Notes              *string `json:"notes,omitempty" example:"Special bulk purchasing agreement"`
+	CreatedAt          string  `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt          string  `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+	PartnerName        *string `json:"partner_name,omitempty" example:"Supplier Co"`
+	PartnerCode        *string `json:"partner_code,omitempty" example:"SUP-001"`
+	ProductName        *string `json:"product_name,omitempty" example:"Organic Milk 1L"`
+	ProductSku         *string `json:"product_sku,omitempty" example:"MILK-001"`
+	VariantName        *string `json:"variant_name,omitempty" example:"Whole Milk"`
+	VariantSku         *string `json:"variant_sku,omitempty" example:"MILK-001-WHOLE"`
+}
+
 type CreateMenuModifierGroupRequest struct {
 	StoreID         int32                  `json:"store_id" binding:"required" example:"1"`
 	Name            string                 `json:"name" binding:"required" example:"Extra Sauce"`

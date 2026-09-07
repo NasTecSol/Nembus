@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -49,11 +50,19 @@ func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug stri
 	}
 }
 
-func extractGRPCTarget(cloudURL string) string {
-	if cloudURL == "" {
+func extractGRPCTarget(target string) string {
+	if target == "" {
 		return "localhost:50051"
 	}
-	parsed, err := url.Parse(cloudURL)
+	// If already in host:port format without scheme (e.g. "nembus.nashrms.com:50051")
+	if strings.Contains(target, ":") && !strings.Contains(target, "://") {
+		return target
+	}
+	// If target has no scheme, prefix with http:// so url.Parse can extract hostname
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	parsed, err := url.Parse(target)
 	if err != nil {
 		return "localhost:50051"
 	}
@@ -61,7 +70,11 @@ func extractGRPCTarget(cloudURL string) string {
 	if host == "" {
 		host = "localhost"
 	}
-	return fmt.Sprintf("%s:50051", host)
+	port := parsed.Port()
+	if port == "" {
+		port = "50051"
+	}
+	return fmt.Sprintf("%s:%s", host, port)
 }
 
 func (s *SyncService) Start() {
@@ -190,6 +203,7 @@ func (s *SyncService) drainOutboxGRPC() {
 			syncedIDs = append(syncedIDs, ack.Id)
 		} else {
 			log.Printf("[gRPC SYNC] Server rejected item %d: %s", ack.Id, ack.ErrorMessage)
+			s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("server rejected: %s", ack.ErrorMessage))
 		}
 	}
 

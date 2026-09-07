@@ -53,7 +53,7 @@ run:
 swagger:
 	@echo "Generating Swagger documentation..."
 	@which swag > /dev/null 2>&1 || (echo "Error: swag command not found. Install it with: make install-swagger" && exit 1)
-	@swag init -g main.go -o docs/swagger
+	@swag init -g main.go --dir ./,../../packages/core/handler,../../packages/core/usecase,../../packages/core/repository -o docs/swagger --parseDependency --parseInternal
 	@echo "Swagger docs generated in docs/swagger/"
 
 # Generate and serve Swagger docs
