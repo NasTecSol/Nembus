@@ -127,6 +127,7 @@ CREATE TABLE product_barcodes (
     id SERIAL PRIMARY KEY,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
     barcode VARCHAR(100) UNIQUE NOT NULL,
     barcode_type VARCHAR(50),
     is_primary BOOLEAN DEFAULT false,
@@ -134,6 +135,9 @@ CREATE TABLE product_barcodes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_product_barcodes_uom_id ON product_barcodes(uom_id);
+
 
 CREATE TABLE product_prices (
     id SERIAL PRIMARY KEY,
