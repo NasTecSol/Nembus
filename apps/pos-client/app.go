@@ -524,6 +524,7 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	restaurantUC := usecase.NewRestaurantUseCase()
 	customerUC := usecase.NewCustomerUseCase()
 	businessPartnerUC := usecase.NewBusinessPartnerUseCase()
+	bpPriceContractUC := usecase.NewBPPriceContractUseCase()
 	uomUC := usecase.NewUOMUseCase()
 	priceListsUC := usecase.NewPriceListsUseCase()
 	taxCategoriesUC := usecase.NewTaxCategoriesUseCase()
@@ -540,7 +541,7 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	printUC := usecase.NewPrintUseCase()
 	paymentTermsUC := usecase.NewPaymentTermsUseCase()
 
-	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, paymentTermsUC, a.cfg)
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, a.cfg)
 	r.Static("/images", "./images")
 
 	log.Printf("Starting Gin HTTP server on port %s (Swagger: http://localhost:%s/swagger/index.html)", a.cfg.Port, a.cfg.Port)
