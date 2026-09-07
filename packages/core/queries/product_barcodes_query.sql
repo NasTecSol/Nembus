@@ -2,12 +2,13 @@
 INSERT INTO product_barcodes (
     product_id,
     product_variant_id,
+    uom_id,
     barcode,
     barcode_type,
     is_primary,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 ) RETURNING *;
 
 -- name: GetProductBarcode :one
@@ -42,9 +43,10 @@ LIMIT 1;
 -- name: UpdateProductBarcode :one
 UPDATE product_barcodes
 SET 
-    barcode_type = $2,
-    is_primary = $3,
-    metadata = $4
+    uom_id = $2,
+    barcode_type = $3,
+    is_primary = $4,
+    metadata = $5
 WHERE id = $1
 RETURNING *;
 
