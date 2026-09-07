@@ -12,6 +12,8 @@ type PosGetProductsWithStockParams struct {
 	CategoryID        pgtype.Int4
 	SearchTerm        pgtype.Text
 	IncludeOutOfStock bool
+	Limit             *int32
+	Offset            *int32
 }
 
 // PosProductWithStockRow maps fn_pos_get_products_with_stock result.
@@ -52,8 +54,20 @@ type PosProductWithStockRow struct {
 
 // PosGetProductsWithStock calls fn_pos_get_products_with_stock.
 func (q *Queries) PosGetProductsWithStock(ctx context.Context, arg PosGetProductsWithStockParams) ([]PosProductWithStockRow, error) {
+	var limitParam, offsetParam pgtype.Int4
+	if arg.Limit != nil && *arg.Limit > 0 {
+		limitParam = pgtype.Int4{Int32: *arg.Limit, Valid: true}
+	} else {
+		limitParam = pgtype.Int4{Valid: false}
+	}
+	if arg.Offset != nil && *arg.Offset > 0 {
+		offsetParam = pgtype.Int4{Int32: *arg.Offset, Valid: true}
+	} else {
+		offsetParam = pgtype.Int4{Valid: false}
+	}
+
 	rows, err := q.db.Query(ctx, posGetProductsWithStockSQL,
-		arg.StoreID, arg.CategoryID, arg.SearchTerm, arg.IncludeOutOfStock)
+		arg.StoreID, arg.CategoryID, arg.SearchTerm, arg.IncludeOutOfStock, limitParam, offsetParam)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +96,8 @@ const posGetProductsWithStockSQL = `SELECT product_id, sku, product_name, descri
     has_promotion, promotion_name, discount_percent, promo_min_quantity, tax_rate, tax_is_inclusive,
     quantity_available, quantity_on_hand, quantity_allocated, is_in_stock, is_low_stock,
     reorder_level, allow_decimal_quantity, is_serialized, is_batch_managed, product_metadata, product_variants, package_n_price, product_uom_conversions
-FROM fn_pos_get_products_with_stock($1, $2, $3, $4)`
+FROM fn_pos_get_products_with_stock($1, $2, $3, $4)
+LIMIT $5 OFFSET $6`
 
 // PosGetProductByBarcode calls fn_pos_get_product_by_barcode.
 func (q *Queries) PosGetProductByBarcode(ctx context.Context, barcode string, storeID int32) (PosProductByBarcodeRow, error) {

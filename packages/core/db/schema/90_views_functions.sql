@@ -1259,15 +1259,56 @@ RETURNS TABLE (
 DECLARE
     v_product_id INT;
     v_variant_id INT;
+    v_uom_id INT;
+    v_uom_code VARCHAR;
+    v_decimal_places INT;
+    v_retail_price NUMERIC;
+    v_promo_price NUMERIC;
+    v_uom_factor NUMERIC := 1.0;
 BEGIN
-    -- 1. Find product / variant by matching barcode
-    SELECT pb.product_id, pb.product_variant_id INTO v_product_id, v_variant_id
+    -- 1. Find product / variant / uom by matching barcode
+    SELECT pb.product_id, pb.product_variant_id, pb.uom_id INTO v_product_id, v_variant_id, v_uom_id
     FROM product_barcodes pb
     WHERE pb.barcode = p_barcode
     LIMIT 1;
 
     IF v_product_id IS NULL THEN
         RETURN;
+    END IF;
+
+    -- If barcode has a specific UOM assigned:
+    IF v_uom_id IS NOT NULL THEN
+        SELECT code, decimal_places INTO v_uom_code, v_decimal_places
+        FROM units_of_measure WHERE id = v_uom_id;
+
+        -- Fetch UOM-specific retail price
+        SELECT price INTO v_retail_price
+        FROM product_prices
+        WHERE product_id = v_product_id
+          AND (product_variant_id = v_variant_id OR (product_variant_id IS NULL AND v_variant_id IS NULL))
+          AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('RETAIL', 'RETAIL_SAR') AND is_active = true)
+          AND uom_id = v_uom_id
+          AND is_active = true
+          AND (valid_from IS NULL OR valid_from <= CURRENT_DATE)
+          AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
+        LIMIT 1;
+
+        -- Fetch UOM-specific promo price
+        SELECT price INTO v_promo_price
+        FROM product_prices
+        WHERE product_id = v_product_id
+          AND (product_variant_id = v_variant_id OR (product_variant_id IS NULL AND v_variant_id IS NULL))
+          AND price_list_id IN (SELECT id FROM price_lists WHERE code IN ('PROMO', 'PROMO_SAR') AND is_active = true)
+          AND uom_id = v_uom_id
+          AND is_active = true
+          AND (valid_from IS NULL OR valid_from <= CURRENT_DATE)
+          AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
+        LIMIT 1;
+
+        -- Calculate conversion factor from base unit if available
+        IF v_uom_code IS NOT NULL THEN
+            v_uom_factor := COALESCE(fn_convert_uom_quantity(v_product_id, v_uom_code, 1.0), 1.0);
+        END IF;
     END IF;
 
     -- 2. Return catalog query matching product ID and variant ID
@@ -1280,17 +1321,17 @@ BEGIN
         cat.category_name::VARCHAR,
         cat.brand_name::VARCHAR,
         p_barcode::VARCHAR AS barcode, -- Return scanned barcode
-        cat.uom_code::VARCHAR,
-        (cat.decimal_places)::INTEGER,
-        cat.retail_price,
-        COALESCE(cat.promo_price, promo_rule.calculated_promo_price) AS promo_price,
-        COALESCE(cat.promo_price, promo_rule.calculated_promo_price, cat.retail_price) AS effective_price,
+        COALESCE(v_uom_code, cat.uom_code)::VARCHAR AS uom_code,
+        COALESCE(v_decimal_places, cat.decimal_places)::INTEGER AS decimal_places,
+        COALESCE(v_retail_price, CASE WHEN v_uom_factor > 1 THEN ROUND(cat.retail_price * v_uom_factor, 2) ELSE cat.retail_price END) AS retail_price,
+        COALESCE(v_promo_price, COALESCE(cat.promo_price, promo_rule.calculated_promo_price)) AS promo_price,
+        COALESCE(v_promo_price, COALESCE(cat.promo_price, promo_rule.calculated_promo_price), COALESCE(v_retail_price, CASE WHEN v_uom_factor > 1 THEN ROUND(cat.retail_price * v_uom_factor, 2) ELSE cat.retail_price END)) AS effective_price,
         (cat.has_active_promotion OR (promo_rule.promo_name IS NOT NULL)) AS has_promotion,
         COALESCE(cat.promotion_name, promo_rule.promo_name)::VARCHAR AS promotion_name,
         COALESCE(cat.promo_min_quantity, promo_rule.promo_min_qty) AS promo_min_quantity,
         cat.tax_rate,
         cat.tax_is_inclusive,
-        COALESCE(inv.quantity_available, 0)::NUMERIC,
+        ROUND(COALESCE(inv.quantity_available, 0) / GREATEST(v_uom_factor, 1.0), 3)::NUMERIC AS quantity_available,
         (COALESCE(inv.quantity_available, 0) > 0),
         cat.allow_decimal_quantity,
         cat.is_serialized,
@@ -2466,10 +2507,12 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_order_line RECORD;
     v_fulfilled_qty DECIMAL(15,3);
+    v_conv_factor DECIMAL(15,6);
+    v_base_fulfilled_qty DECIMAL(15,3);
     v_reservation RECORD;
 BEGIN
-    -- Only process when order status changes to 'fulfilled'
-    IF NOT (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled') THEN
+    -- Process when fulfillment_status becomes 'fulfilled'
+    IF NOT (OLD.fulfillment_status IS DISTINCT FROM NEW.fulfillment_status AND NEW.fulfillment_status = 'fulfilled') THEN
         RETURN NEW;
     END IF;
         
@@ -2487,7 +2530,8 @@ BEGIN
             product_variant_id,
             quantity_ordered,
             quantity_fulfilled,
-            uom_id
+            uom_id,
+            batch_number
         FROM sales_order_lines_v2
         WHERE sales_order_id = NEW.id
     LOOP
@@ -2502,14 +2546,30 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- FULFILLMENT: Deduct from on-hand and reduce allocated
+        -- Calculate UOM conversion factor (e.g. 1 Carton = 10 Pieces -> Multiply quantity by 10)
+        v_conv_factor := 1.0;
+        IF v_order_line.uom_id IS NOT NULL THEN
+            SELECT COALESCE(conversion_factor, 1.0) INTO v_conv_factor
+            FROM product_uom_conversions
+            WHERE product_id = v_order_line.product_id 
+              AND from_uom_id = v_order_line.uom_id
+            LIMIT 1;
+            IF v_conv_factor IS NULL OR v_conv_factor <= 0 THEN
+                v_conv_factor := 1.0;
+            END IF;
+        END IF;
+
+        -- Convert quantity to base units (e.g. 2 Cartons * 10 = 20 Base Pieces)
+        v_base_fulfilled_qty := v_fulfilled_qty * v_conv_factor;
+
+        -- 1. FULFILLMENT DEDUCTION: Deduct base units from inventory_stock
         UPDATE inventory_stock
         SET 
-            quantity_on_hand = quantity_on_hand - v_fulfilled_qty,
-            quantity_allocated = GREATEST(0, quantity_allocated - v_fulfilled_qty),
+            quantity_on_hand = GREATEST(0, quantity_on_hand - v_base_fulfilled_qty),
+            quantity_allocated = GREATEST(0, quantity_allocated - v_base_fulfilled_qty),
             quantity_available = GREATEST(0, 
-                (quantity_on_hand - v_fulfilled_qty) - 
-                GREATEST(0, quantity_allocated - v_fulfilled_qty)
+                (quantity_on_hand - v_base_fulfilled_qty) - 
+                GREATEST(0, quantity_allocated - v_base_fulfilled_qty)
             ),
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = v_order_line.product_id
@@ -2522,10 +2582,10 @@ BEGIN
                 v_order_line.product_id, v_order_line.product_variant_id, NEW.store_id;
         END IF;
 
-        -- Update product batch if batch number is present (product_batches table uses quantity_available)
+        -- 2. FULFILLMENT DEDUCTION: Deduct base units from product_batches (if batch managed)
         IF v_order_line.batch_number IS NOT NULL AND v_order_line.batch_number <> '' THEN
             UPDATE product_batches
-            SET quantity_available = GREATEST(0, quantity_available - v_fulfilled_qty),
+            SET quantity_available = GREATEST(0, quantity_available - v_base_fulfilled_qty),
                 updated_at = CURRENT_TIMESTAMP
             WHERE product_id = v_order_line.product_id
               AND (product_variant_id = v_order_line.product_variant_id 
@@ -2538,7 +2598,7 @@ BEGIN
               );
         END IF;
 
-        -- Record the stock movement for auditing
+        -- 3. AUDIT LOG: Record stock movement for auditing
         INSERT INTO stock_movements (
             movement_type,
             reference_type,
@@ -2559,7 +2619,7 @@ BEGIN
             v_order_line.product_id,
             v_order_line.product_variant_id,
             NEW.store_id,
-            v_fulfilled_qty,
+            v_base_fulfilled_qty,
             v_order_line.uom_id,
             v_order_line.batch_number,
             'completed',
@@ -2568,11 +2628,12 @@ BEGIN
                 'sales_order_number', NEW.order_number,
                 'order_line_id', v_order_line.id::TEXT,
                 'fulfillment_status', NEW.fulfillment_status,
-                'batch_number', v_order_line.batch_number
+                'batch_number', v_order_line.batch_number,
+                'conversion_factor', v_conv_factor
             )
         );
 
-        -- Mark active reservations as 'fulfilled' when order is fulfilled
+        -- 4. RESERVATION CLEANUP: Mark active reservations as 'fulfilled'
         FOR v_reservation IN
             SELECT id, quantity_reserved
             FROM stock_reservations
@@ -2597,11 +2658,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger for UPDATE: fires when order status changes to 'fulfilled'
+-- Trigger: Fires when order fulfillment_status changes to 'fulfilled'
+DROP TRIGGER IF EXISTS trg_deduct_inventory_on_fulfillment ON sales_orders_v2;
 CREATE TRIGGER trg_deduct_inventory_on_fulfillment
     AFTER UPDATE ON sales_orders_v2
     FOR EACH ROW
-    WHEN (OLD.order_status IS DISTINCT FROM NEW.order_status AND NEW.order_status = 'fulfilled')
+    WHEN (OLD.fulfillment_status IS DISTINCT FROM NEW.fulfillment_status AND NEW.fulfillment_status = 'fulfilled')
     EXECUTE FUNCTION fn_trigger_deduct_inventory_on_fulfillment();
 
 -- =====================================================
@@ -2613,6 +2675,8 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_store_id INTEGER;
     v_status VARCHAR(50);
+    v_base_quantity NUMERIC(15,3);
+    v_uom_code VARCHAR(50);
 BEGIN
     -- Get the store ID and status from the parent transaction
     SELECT store_id, status INTO v_store_id, v_status FROM pos_transactions WHERE id = NEW.transaction_id;
@@ -2621,19 +2685,28 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- 1. Deduct from general inventory stock
+    -- Resolve UOM and convert quantity to Base Unit if uom_id is specified
+    IF NEW.uom_id IS NOT NULL THEN
+        SELECT code INTO v_uom_code FROM units_of_measure WHERE id = NEW.uom_id;
+        IF v_uom_code IS NOT NULL THEN
+            v_base_quantity := fn_convert_uom_quantity(NEW.product_id, v_uom_code, NEW.quantity);
+        END IF;
+    END IF;
+    v_base_quantity := COALESCE(v_base_quantity, NEW.quantity);
+
+    -- 1. Deduct from general inventory stock using converted base quantity
     UPDATE inventory_stock
-    SET quantity_on_hand = quantity_on_hand - NEW.quantity,
-        quantity_available = GREATEST(0, quantity_available - NEW.quantity),
+    SET quantity_on_hand = quantity_on_hand - v_base_quantity,
+        quantity_available = GREATEST(0, quantity_available - v_base_quantity),
         updated_at = CURRENT_TIMESTAMP
     WHERE product_id = NEW.product_id
       AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
       AND store_id = v_store_id;
 
-    -- 2. Deduct from product batch if batch number is present
+    -- 2. Deduct from product batch if batch number is present using converted base quantity
     IF NEW.batch_number IS NOT NULL AND NEW.batch_number <> '' THEN
         UPDATE product_batches
-        SET quantity_available = GREATEST(0, quantity_available - NEW.quantity),
+        SET quantity_available = GREATEST(0, quantity_available - v_base_quantity),
             updated_at = CURRENT_TIMESTAMP
         WHERE product_id = NEW.product_id
           AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
@@ -3559,12 +3632,16 @@ SELECT
                 jsonb_build_object(
                     'id', pb.id,
                     'product_variant_id', pb.product_variant_id,
+                    'uom_id', pb.uom_id,
+                    'uom_code', buom.code,
+                    'uom_name', buom.name,
                     'barcode', pb.barcode,
                     'barcode_type', pb.barcode_type,
                     'is_primary', pb.is_primary
                 )
             )
             FROM product_barcodes pb
+            LEFT JOIN units_of_measure buom ON pb.uom_id = buom.id
             WHERE pb.product_id = p.id
         ),
         '[]'::jsonb

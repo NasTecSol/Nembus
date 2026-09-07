@@ -34,6 +34,8 @@ func (uc *PosUseCase) ListProductsForStore(
 	categoryID *int32,
 	searchTerm *string,
 	includeOutOfStock bool,
+	limit *int32,
+	offset *int32,
 ) *repository.Response {
 
 	if uc.repo == nil {
@@ -50,6 +52,8 @@ func (uc *PosUseCase) ListProductsForStore(
 	arg := repository.PosGetProductsWithStockParams{
 		StoreID:           storeID,
 		IncludeOutOfStock: includeOutOfStock,
+		Limit:             limit,
+		Offset:            offset,
 	}
 
 	if categoryID != nil {
@@ -66,7 +70,7 @@ func (uc *PosUseCase) ListProductsForStore(
 		}
 	}
 
-	// Query DB
+	// Query DB (SQL executes with LIMIT and OFFSET directly)
 	rows, err := uc.repo.PosGetProductsWithStock(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -367,6 +371,7 @@ func (uc *PosUseCase) AddProduct(ctx context.Context, in *PosAddProductInput) *r
 			_, _ = uc.repo.CreateProductBarcode(ctx, repository.CreateProductBarcodeParams{
 				ProductID:        prod.ID,
 				ProductVariantID: pgtype.Int4{},
+				UomID:            pgtype.Int4{},
 				Barcode:          *in.Barcode,
 				BarcodeType:      pgtype.Text{},
 				IsPrimary:        pgtype.Bool{Bool: true, Valid: true},

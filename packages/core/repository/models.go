@@ -1404,6 +1404,7 @@ type ProductBarcode struct {
 	ID               int32            `json:"id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	UomID            pgtype.Int4      `json:"uom_id"`
 	Barcode          string           `json:"barcode"`
 	BarcodeType      pgtype.Text      `json:"barcode_type"`
 	IsPrimary        pgtype.Bool      `json:"is_primary"`

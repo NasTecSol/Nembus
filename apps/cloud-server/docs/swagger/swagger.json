@@ -390,6 +390,645 @@
                 }
             }
         },
+        "/api/bp-price-contracts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List business partner price contracts filtered by organization, partner, product, or active state",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "List price contracts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Partner ID filter",
+                        "name": "partner_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Product ID filter",
+                        "name": "product_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Active status filter",
+                        "name": "is_active",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.BPPriceContractResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a price contract for a business partner and product/variant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "Create a new business partner price contract",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Price contract data",
+                        "name": "contract",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateBPPriceContractRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BPPriceContractResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bp-price-contracts/effective": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the currently active contract price for a partner, product, and optional variant/quantity",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "Get effective price contract",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Business partner ID",
+                        "name": "partner_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Product ID",
+                        "name": "product_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Product variant ID",
+                        "name": "product_variant_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Quantity (default 1)",
+                        "name": "quantity",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BPPriceContractResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bp-price-contracts/partner/{partner_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List all price contracts for a specific business partner",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "List price contracts by partner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Business partner ID",
+                        "name": "partner_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.BPPriceContractResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bp-price-contracts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieve a business partner price contract by its ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "Get price contract by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Price contract ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BPPriceContractResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update fields of an existing business partner price contract",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "Update price contract",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Price contract ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated contract data",
+                        "name": "contract",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateBPPriceContractRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BPPriceContractResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a business partner price contract by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "Delete price contract",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Price contract ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bp-price-contracts/{id}/toggle": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Toggle the is_active status of a business partner price contract",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bp-price-contracts"
+                ],
+                "summary": "Toggle price contract active status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Price contract ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Active state payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ToggleBPPriceContractActiveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BPPriceContractResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/brands": {
             "get": {
                 "security": [
@@ -18317,7 +18956,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns products with stock for a store (categories, prices, barcode). Optional filters: category_id, search_term, include_out_of_stock.",
+                "description": "Returns products with stock for a store (categories, prices, barcode). Optional filters: category_id, search_term, include_out_of_stock, page, limit, page_size, offset.",
                 "consumes": [
                     "application/json"
                 ],
@@ -18366,6 +19005,30 @@
                         "type": "boolean",
                         "description": "Include out-of-stock products (default false)",
                         "name": "include_out_of_stock",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based, default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of records per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Alternative alias for limit",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of records to skip",
+                        "name": "offset",
                         "in": "query"
                     }
                 ],
@@ -36348,6 +37011,10 @@
                 "uom_id"
             ],
             "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-001"
+                },
                 "organization_id": {
                     "type": "integer",
                     "example": 1
@@ -36495,6 +37162,91 @@
                     "description": "optional",
                     "type": "integer",
                     "example": 10
+                }
+            }
+        },
+        "handler.BPPriceContractResponse": {
+            "type": "object",
+            "properties": {
+                "contract_price": {
+                    "type": "string",
+                    "example": "45.5000"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-24T21:43:00Z"
+                },
+                "discount_percentage": {
+                    "type": "string",
+                    "example": "5.00"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "min_quantity": {
+                    "type": "string",
+                    "example": "10.000"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Special bulk purchasing agreement"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "partner_code": {
+                    "type": "string",
+                    "example": "SUP-001"
+                },
+                "partner_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "partner_name": {
+                    "type": "string",
+                    "example": "Supplier Co"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Organic Milk 1L"
+                },
+                "product_sku": {
+                    "type": "string",
+                    "example": "MILK-001"
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-24T21:43:00Z"
+                },
+                "valid_from": {
+                    "type": "string",
+                    "example": "2026-01-01"
+                },
+                "valid_to": {
+                    "type": "string",
+                    "example": "2026-12-31"
+                },
+                "variant_name": {
+                    "type": "string",
+                    "example": "Whole Milk"
+                },
+                "variant_sku": {
+                    "type": "string",
+                    "example": "MILK-001-WHOLE"
                 }
             }
         },
@@ -36956,6 +37708,61 @@
                 "count": {
                     "type": "integer",
                     "example": 100
+                }
+            }
+        },
+        "handler.CreateBPPriceContractRequest": {
+            "type": "object",
+            "required": [
+                "contract_price",
+                "organization_id",
+                "partner_id",
+                "product_id"
+            ],
+            "properties": {
+                "contract_price": {
+                    "type": "number",
+                    "example": 45.5
+                },
+                "discount_percentage": {
+                    "type": "number",
+                    "example": 5
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "min_quantity": {
+                    "type": "number",
+                    "example": 10
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Special bulk purchasing agreement"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "partner_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "valid_from": {
+                    "type": "string",
+                    "example": "2026-01-01"
+                },
+                "valid_to": {
+                    "type": "string",
+                    "example": "2026-12-31"
                 }
             }
         },
@@ -40749,6 +41556,18 @@
                 }
             }
         },
+        "handler.ToggleBPPriceContractActiveRequest": {
+            "type": "object",
+            "required": [
+                "is_active"
+            ],
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "handler.ToggleBusinessPartnerActiveRequest": {
             "type": "object",
             "required": [
@@ -40859,6 +41678,39 @@
                 "tenant_slug": {
                     "type": "string",
                     "example": "store-riyadh-01"
+                }
+            }
+        },
+        "handler.UpdateBPPriceContractRequest": {
+            "type": "object",
+            "properties": {
+                "contract_price": {
+                    "type": "number",
+                    "example": 42
+                },
+                "discount_percentage": {
+                    "type": "number",
+                    "example": 7.5
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "min_quantity": {
+                    "type": "number",
+                    "example": 15
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Updated price for Q2"
+                },
+                "valid_from": {
+                    "type": "string",
+                    "example": "2026-01-01"
+                },
+                "valid_to": {
+                    "type": "string",
+                    "example": "2026-12-31"
                 }
             }
         },

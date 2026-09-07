@@ -30,18 +30,20 @@ const createProductBarcode = `-- name: CreateProductBarcode :one
 INSERT INTO product_barcodes (
     product_id,
     product_variant_id,
+    uom_id,
     barcode,
     barcode_type,
     is_primary,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
-) RETURNING id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7
+) RETURNING id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
 `
 
 type CreateProductBarcodeParams struct {
 	ProductID        int32           `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	UomID            pgtype.Int4     `json:"uom_id"`
 	Barcode          string          `json:"barcode"`
 	BarcodeType      pgtype.Text     `json:"barcode_type"`
 	IsPrimary        pgtype.Bool     `json:"is_primary"`
@@ -52,6 +54,7 @@ func (q *Queries) CreateProductBarcode(ctx context.Context, arg CreateProductBar
 	row := q.db.QueryRow(ctx, createProductBarcode,
 		arg.ProductID,
 		arg.ProductVariantID,
+		arg.UomID,
 		arg.Barcode,
 		arg.BarcodeType,
 		arg.IsPrimary,
@@ -62,6 +65,7 @@ func (q *Queries) CreateProductBarcode(ctx context.Context, arg CreateProductBar
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,
@@ -83,7 +87,7 @@ func (q *Queries) DeleteProductBarcode(ctx context.Context, id int32) error {
 }
 
 const getPrimaryBarcode = `-- name: GetPrimaryBarcode :one
-SELECT id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
+SELECT id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
 WHERE product_id = $1 AND is_primary = true
 LIMIT 1
 `
@@ -95,6 +99,7 @@ func (q *Queries) GetPrimaryBarcode(ctx context.Context, productID int32) (Produ
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,
@@ -106,7 +111,7 @@ func (q *Queries) GetPrimaryBarcode(ctx context.Context, productID int32) (Produ
 }
 
 const getProductBarcode = `-- name: GetProductBarcode :one
-SELECT id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
+SELECT id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
 WHERE id = $1
 `
 
@@ -117,6 +122,7 @@ func (q *Queries) GetProductBarcode(ctx context.Context, id int32) (ProductBarco
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,
@@ -128,7 +134,7 @@ func (q *Queries) GetProductBarcode(ctx context.Context, id int32) (ProductBarco
 }
 
 const getProductByBarcode = `-- name: GetProductByBarcode :one
-SELECT pb.id, pb.product_id, pb.product_variant_id, pb.barcode, pb.barcode_type, pb.is_primary, pb.metadata, pb.created_at, pb.updated_at, p.name AS product_name, p.sku
+SELECT pb.id, pb.product_id, pb.product_variant_id, pb.uom_id, pb.barcode, pb.barcode_type, pb.is_primary, pb.metadata, pb.created_at, pb.updated_at, p.name AS product_name, p.sku
 FROM product_barcodes pb
 JOIN products p ON pb.product_id = p.id
 WHERE pb.barcode = $1
@@ -138,6 +144,7 @@ type GetProductByBarcodeRow struct {
 	ID               int32            `json:"id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	UomID            pgtype.Int4      `json:"uom_id"`
 	Barcode          string           `json:"barcode"`
 	BarcodeType      pgtype.Text      `json:"barcode_type"`
 	IsPrimary        pgtype.Bool      `json:"is_primary"`
@@ -155,6 +162,7 @@ func (q *Queries) GetProductByBarcode(ctx context.Context, barcode string) (GetP
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,
@@ -168,7 +176,7 @@ func (q *Queries) GetProductByBarcode(ctx context.Context, barcode string) (GetP
 }
 
 const listProductBarcodes = `-- name: ListProductBarcodes :many
-SELECT id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
+SELECT id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
 ORDER BY barcode
 `
 
@@ -185,6 +193,7 @@ func (q *Queries) ListProductBarcodes(ctx context.Context) ([]ProductBarcode, er
 			&i.ID,
 			&i.ProductID,
 			&i.ProductVariantID,
+			&i.UomID,
 			&i.Barcode,
 			&i.BarcodeType,
 			&i.IsPrimary,
@@ -203,7 +212,7 @@ func (q *Queries) ListProductBarcodes(ctx context.Context) ([]ProductBarcode, er
 }
 
 const listProductBarcodesByProduct = `-- name: ListProductBarcodesByProduct :many
-SELECT id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
+SELECT id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
 WHERE product_id = $1
 ORDER BY is_primary DESC, barcode
 `
@@ -221,6 +230,7 @@ func (q *Queries) ListProductBarcodesByProduct(ctx context.Context, productID in
 			&i.ID,
 			&i.ProductID,
 			&i.ProductVariantID,
+			&i.UomID,
 			&i.Barcode,
 			&i.BarcodeType,
 			&i.IsPrimary,
@@ -239,7 +249,7 @@ func (q *Queries) ListProductBarcodesByProduct(ctx context.Context, productID in
 }
 
 const listProductBarcodesByVariant = `-- name: ListProductBarcodesByVariant :many
-SELECT id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
+SELECT id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at FROM product_barcodes
 WHERE product_variant_id = $1
 ORDER BY is_primary DESC, barcode
 `
@@ -257,6 +267,7 @@ func (q *Queries) ListProductBarcodesByVariant(ctx context.Context, productVaria
 			&i.ID,
 			&i.ProductID,
 			&i.ProductVariantID,
+			&i.UomID,
 			&i.Barcode,
 			&i.BarcodeType,
 			&i.IsPrimary,
@@ -293,15 +304,17 @@ func (q *Queries) SetPrimaryBarcode(ctx context.Context, arg SetPrimaryBarcodePa
 const updateProductBarcode = `-- name: UpdateProductBarcode :one
 UPDATE product_barcodes
 SET 
-    barcode_type = $2,
-    is_primary = $3,
-    metadata = $4
+    uom_id = $2,
+    barcode_type = $3,
+    is_primary = $4,
+    metadata = $5
 WHERE id = $1
-RETURNING id, product_id, product_variant_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
+RETURNING id, product_id, product_variant_id, uom_id, barcode, barcode_type, is_primary, metadata, created_at, updated_at
 `
 
 type UpdateProductBarcodeParams struct {
 	ID          int32           `json:"id"`
+	UomID       pgtype.Int4     `json:"uom_id"`
 	BarcodeType pgtype.Text     `json:"barcode_type"`
 	IsPrimary   pgtype.Bool     `json:"is_primary"`
 	Metadata    json.RawMessage `json:"metadata"`
@@ -310,6 +323,7 @@ type UpdateProductBarcodeParams struct {
 func (q *Queries) UpdateProductBarcode(ctx context.Context, arg UpdateProductBarcodeParams) (ProductBarcode, error) {
 	row := q.db.QueryRow(ctx, updateProductBarcode,
 		arg.ID,
+		arg.UomID,
 		arg.BarcodeType,
 		arg.IsPrimary,
 		arg.Metadata,
@@ -319,6 +333,7 @@ func (q *Queries) UpdateProductBarcode(ctx context.Context, arg UpdateProductBar
 		&i.ID,
 		&i.ProductID,
 		&i.ProductVariantID,
+		&i.UomID,
 		&i.Barcode,
 		&i.BarcodeType,
 		&i.IsPrimary,

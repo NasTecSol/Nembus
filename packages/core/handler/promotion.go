@@ -115,6 +115,9 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 	if req.UsageLimit != nil {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
 	if req.ValidFrom != nil {
 		vf, err := parsePromotionTimestamp(req.ValidFrom)
 		if err != nil {
@@ -347,6 +350,9 @@ func (h *PromotionHandler) UpdatePromotion(c *gin.Context) {
 	if req.UsageLimit != nil {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
 	if req.ValidFrom != nil {
 		vf, err := parsePromotionTimestamp(req.ValidFrom)
 		if err != nil {
@@ -404,9 +410,14 @@ func (h *PromotionHandler) UpdatePromotionStatus(c *gin.Context) {
 		return
 	}
 
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
 	resp := h.useCase.UpdatePromotionStatus(c.Request.Context(), repository.UpdatePromotionStatusParams{
 		ID:       int32(id64),
-		IsActive: pgtype.Bool{Bool: req.IsActive, Valid: true},
+		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
 	})
 	c.JSON(resp.StatusCode, resp)
 }

@@ -65,6 +65,9 @@ definitions:
     type: object
   handler.AddToCartRequest:
     properties:
+      batch_number:
+        example: BATCH-001
+        type: string
       organization_id:
         example: 1
         type: integer
@@ -174,6 +177,69 @@ definitions:
         type: integer
     required:
     - role_id
+    type: object
+  handler.BPPriceContractResponse:
+    properties:
+      contract_price:
+        example: "45.5000"
+        type: string
+      created_at:
+        example: "2026-01-24T21:43:00Z"
+        type: string
+      discount_percentage:
+        example: "5.00"
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      min_quantity:
+        example: "10.000"
+        type: string
+      notes:
+        example: Special bulk purchasing agreement
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      partner_code:
+        example: SUP-001
+        type: string
+      partner_id:
+        example: 1
+        type: integer
+      partner_name:
+        example: Supplier Co
+        type: string
+      product_id:
+        example: 10
+        type: integer
+      product_name:
+        example: Organic Milk 1L
+        type: string
+      product_sku:
+        example: MILK-001
+        type: string
+      product_variant_id:
+        example: 5
+        type: integer
+      updated_at:
+        example: "2026-01-24T21:43:00Z"
+        type: string
+      valid_from:
+        example: "2026-01-01"
+        type: string
+      valid_to:
+        example: "2026-12-31"
+        type: string
+      variant_name:
+        example: Whole Milk
+        type: string
+      variant_sku:
+        example: MILK-001-WHOLE
+        type: string
     type: object
   handler.BackupGRPCInfoResponse:
     properties:
@@ -504,6 +570,47 @@ definitions:
       count:
         example: 100
         type: integer
+    type: object
+  handler.CreateBPPriceContractRequest:
+    properties:
+      contract_price:
+        example: 45.5
+        type: number
+      discount_percentage:
+        example: 5
+        type: number
+      is_active:
+        example: true
+        type: boolean
+      min_quantity:
+        example: 10
+        type: number
+      notes:
+        example: Special bulk purchasing agreement
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      partner_id:
+        example: 1
+        type: integer
+      product_id:
+        example: 10
+        type: integer
+      product_variant_id:
+        example: 5
+        type: integer
+      valid_from:
+        example: "2026-01-01"
+        type: string
+      valid_to:
+        example: "2026-12-31"
+        type: string
+    required:
+    - contract_price
+    - organization_id
+    - partner_id
+    - product_id
     type: object
   handler.CreateBrandRequest:
     properties:
@@ -3225,6 +3332,14 @@ definitions:
         example: "2025-01-01T10:00:00Z"
         type: string
     type: object
+  handler.ToggleBPPriceContractActiveRequest:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+    required:
+    - is_active
+    type: object
   handler.ToggleBusinessPartnerActiveRequest:
     properties:
       is_active:
@@ -3298,6 +3413,30 @@ definitions:
         type: boolean
       tenant_slug:
         example: store-riyadh-01
+        type: string
+    type: object
+  handler.UpdateBPPriceContractRequest:
+    properties:
+      contract_price:
+        example: 42
+        type: number
+      discount_percentage:
+        example: 7.5
+        type: number
+      is_active:
+        example: true
+        type: boolean
+      min_quantity:
+        example: 15
+        type: number
+      notes:
+        example: Updated price for Q2
+        type: string
+      valid_from:
+        example: "2026-01-01"
+        type: string
+      valid_to:
+        example: "2026-12-31"
         type: string
     type: object
   handler.UpdateBrandCodeRequest:
@@ -5138,6 +5277,427 @@ paths:
       summary: Trigger a server-side database backup
       tags:
       - backup
+  /api/bp-price-contracts:
+    get:
+      consumes:
+      - application/json
+      description: List business partner price contracts filtered by organization,
+        partner, product, or active state
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Partner ID filter
+        in: query
+        name: partner_id
+        type: integer
+      - description: Product ID filter
+        in: query
+        name: product_id
+        type: integer
+      - description: Active status filter
+        in: query
+        name: is_active
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.BPPriceContractResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List price contracts
+      tags:
+      - bp-price-contracts
+    post:
+      consumes:
+      - application/json
+      description: Create a price contract for a business partner and product/variant
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Price contract data
+        in: body
+        name: contract
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateBPPriceContractRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.BPPriceContractResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new business partner price contract
+      tags:
+      - bp-price-contracts
+  /api/bp-price-contracts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a business partner price contract by ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Price contract ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete price contract
+      tags:
+      - bp-price-contracts
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a business partner price contract by its ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Price contract ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.BPPriceContractResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get price contract by ID
+      tags:
+      - bp-price-contracts
+    put:
+      consumes:
+      - application/json
+      description: Update fields of an existing business partner price contract
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Price contract ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated contract data
+        in: body
+        name: contract
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateBPPriceContractRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.BPPriceContractResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update price contract
+      tags:
+      - bp-price-contracts
+  /api/bp-price-contracts/{id}/toggle:
+    patch:
+      consumes:
+      - application/json
+      description: Toggle the is_active status of a business partner price contract
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Price contract ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Active state payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ToggleBPPriceContractActiveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.BPPriceContractResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Toggle price contract active status
+      tags:
+      - bp-price-contracts
+  /api/bp-price-contracts/effective:
+    get:
+      consumes:
+      - application/json
+      description: Get the currently active contract price for a partner, product,
+        and optional variant/quantity
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: query
+        name: partner_id
+        required: true
+        type: integer
+      - description: Product ID
+        in: query
+        name: product_id
+        required: true
+        type: integer
+      - description: Product variant ID
+        in: query
+        name: product_variant_id
+        type: integer
+      - description: Quantity (default 1)
+        in: query
+        name: quantity
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.BPPriceContractResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get effective price contract
+      tags:
+      - bp-price-contracts
+  /api/bp-price-contracts/partner/{partner_id}:
+    get:
+      consumes:
+      - application/json
+      description: List all price contracts for a specific business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: partner_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.BPPriceContractResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List price contracts by partner
+      tags:
+      - bp-price-contracts
   /api/brands:
     get:
       consumes:
@@ -16870,7 +17430,8 @@ paths:
       consumes:
       - application/json
       description: 'Returns products with stock for a store (categories, prices, barcode).
-        Optional filters: category_id, search_term, include_out_of_stock.'
+        Optional filters: category_id, search_term, include_out_of_stock, page, limit,
+        page_size, offset.'
       parameters:
       - description: Tenant identifier
         in: header
@@ -16899,6 +17460,22 @@ paths:
         in: query
         name: include_out_of_stock
         type: boolean
+      - description: Page number (1-based, default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      - description: Alternative alias for limit
+        in: query
+        name: page_size
+        type: integer
+      - description: Number of records to skip
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:

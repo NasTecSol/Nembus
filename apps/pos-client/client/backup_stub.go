@@ -165,6 +165,12 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 		log.Printf("Warning: failed to set client_encoding to UTF8: %v", err)
 	}
 
+	// Clean the public schema to avoid duplicate key/relation errors on restore if the DB already exists
+	log.Printf("Cleaning public schema for a clean restore...")
+	if _, err := conn.Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"); err != nil {
+		log.Printf("Warning: failed to clean public schema: %v", err)
+	}
+
 	file, err := os.Open(sqlFilePath)
 	if err != nil {
 		return fmt.Errorf("could not open SQL file: %w", err)
