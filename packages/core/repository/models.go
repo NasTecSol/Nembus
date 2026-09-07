@@ -479,6 +479,20 @@ func (ns NullZatcaDocStatus) Value() (driver.Value, error) {
 	return string(ns.ZatcaDocStatus), nil
 }
 
+type AccountBalance struct {
+	ID              int64            `json:"id"`
+	OrganizationID  int32            `json:"organization_id"`
+	AccountID       int32            `json:"account_id"`
+	PostingPeriodID int32            `json:"posting_period_id"`
+	FiscalYearID    int32            `json:"fiscal_year_id"`
+	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
+	PeriodDebits    pgtype.Numeric   `json:"period_debits"`
+	PeriodCredits   pgtype.Numeric   `json:"period_credits"`
+	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
+	CurrencyCode    pgtype.Text      `json:"currency_code"`
+	LastUpdatedAt   pgtype.Timestamp `json:"last_updated_at"`
+}
+
 type AuditLog struct {
 	ID             int64            `json:"id"`
 	OrganizationID pgtype.Int4      `json:"organization_id"`
@@ -649,14 +663,22 @@ type CashierSession struct {
 }
 
 type ChartOfAccount struct {
-	ID              int32            `json:"id"`
-	OrganizationID  int32            `json:"organization_id"`
-	AccountCode     string           `json:"account_code"`
-	AccountName     string           `json:"account_name"`
-	AccountType     string           `json:"account_type"`
-	ParentAccountID pgtype.Int4      `json:"parent_account_id"`
-	IsActive        pgtype.Bool      `json:"is_active"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	AccountCode        string           `json:"account_code"`
+	AccountName        string           `json:"account_name"`
+	AccountType        string           `json:"account_type"`
+	ParentAccountID    pgtype.Int4      `json:"parent_account_id"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	AccountGroup       pgtype.Text      `json:"account_group"`
+	IsControlAccount   pgtype.Bool      `json:"is_control_account"`
+	ControlType        pgtype.Text      `json:"control_type"`
+	IsBankAccount      pgtype.Bool      `json:"is_bank_account"`
+	ExternalCode       pgtype.Text      `json:"external_code"`
+	CurrencyCode       pgtype.Text      `json:"currency_code"`
+	AllowDirectPosting pgtype.Bool      `json:"allow_direct_posting"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 }
 
 type ComboBundle struct {
@@ -751,6 +773,27 @@ type DiscountAnalytic struct {
 	UpdatedAt                pgtype.Timestamp `json:"updated_at"`
 }
 
+type DocumentSeries struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	DocType        string           `json:"doc_type"`
+	SeriesCode     string           `json:"series_code"`
+	Name           string           `json:"name"`
+	Prefix         pgtype.Text      `json:"prefix"`
+	Suffix         pgtype.Text      `json:"suffix"`
+	StartNo        int32            `json:"start_no"`
+	NextNo         int32            `json:"next_no"`
+	Increment      int32            `json:"increment"`
+	ZeroPadLength  pgtype.Int4      `json:"zero_pad_length"`
+	IsDefault      pgtype.Bool      `json:"is_default"`
+	PerFiscalYear  pgtype.Bool      `json:"per_fiscal_year"`
+	FiscalYearID   pgtype.Int4      `json:"fiscal_year_id"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
 // Saved carts and wishlists for quick reordering
 type DraftCartTemplate struct {
 	ID                   uuid.UUID        `json:"id"`
@@ -798,12 +841,43 @@ type ExchangeRate struct {
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 }
 
+type FiscalYear struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	Year           int32            `json:"year"`
+	Name           string           `json:"name"`
+	StartDate      pgtype.Date      `json:"start_date"`
+	EndDate        pgtype.Date      `json:"end_date"`
+	Status         string           `json:"status"`
+	ClosedBy       pgtype.Int4      `json:"closed_by"`
+	ClosedAt       pgtype.Timestamp `json:"closed_at"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
 type GlAccountMapping struct {
 	ID             int32       `json:"id"`
 	OrganizationID int32       `json:"organization_id"`
 	MappingType    string      `json:"mapping_type"`
 	StoreID        pgtype.Int4 `json:"store_id"`
 	GlAccountID    int32       `json:"gl_account_id"`
+}
+
+type GlPostingRule struct {
+	ID              int32            `json:"id"`
+	OrganizationID  int32            `json:"organization_id"`
+	PostingType     string           `json:"posting_type"`
+	DebitAccountID  pgtype.Int4      `json:"debit_account_id"`
+	CreditAccountID pgtype.Int4      `json:"credit_account_id"`
+	TaxAccountID    pgtype.Int4      `json:"tax_account_id"`
+	CostCenterID    pgtype.Int4      `json:"cost_center_id"`
+	ProfitCenterID  pgtype.Int4      `json:"profit_center_id"`
+	StoreID         pgtype.Int4      `json:"store_id"`
+	PaymentMethod   pgtype.Text      `json:"payment_method"`
+	Description     pgtype.Text      `json:"description"`
+	IsActive        pgtype.Bool      `json:"is_active"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 }
 
 type GoodsReceiptNote struct {
@@ -1002,24 +1076,52 @@ type InvoiceStatusHistory struct {
 }
 
 type JournalEntry struct {
-	ID             int64            `json:"id"`
-	OrganizationID int32            `json:"organization_id"`
-	EntryNumber    string           `json:"entry_number"`
-	PostingDate    pgtype.Date      `json:"posting_date"`
-	ReferenceType  string           `json:"reference_type"`
-	ReferenceID    string           `json:"reference_id"`
-	Memo           pgtype.Text      `json:"memo"`
-	CreatedAt      pgtype.Timestamp `json:"created_at"`
+	ID               int64            `json:"id"`
+	OrganizationID   int32            `json:"organization_id"`
+	EntryNumber      string           `json:"entry_number"`
+	PostingDate      pgtype.Date      `json:"posting_date"`
+	ReferenceType    string           `json:"reference_type"`
+	ReferenceID      string           `json:"reference_id"`
+	Memo             pgtype.Text      `json:"memo"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	FiscalYearID     pgtype.Int4      `json:"fiscal_year_id"`
+	PostingPeriodID  pgtype.Int4      `json:"posting_period_id"`
+	SeriesID         pgtype.Int4      `json:"series_id"`
+	DocumentNumber   pgtype.Text      `json:"document_number"`
+	Status           pgtype.Text      `json:"status"`
+	SourceType       pgtype.Text      `json:"source_type"`
+	SourceID         pgtype.Text      `json:"source_id"`
+	ReversalOfID     pgtype.Int8      `json:"reversal_of_id"`
+	BaseCurrencyCode pgtype.Text      `json:"base_currency_code"`
+	TotalDebitBase   pgtype.Numeric   `json:"total_debit_base"`
+	TotalCreditBase  pgtype.Numeric   `json:"total_credit_base"`
+	PostedBy         pgtype.Int4      `json:"posted_by"`
+	PostedAt         pgtype.Timestamp `json:"posted_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type JournalLine struct {
-	ID           int64          `json:"id"`
-	JournalID    int64          `json:"journal_id"`
-	AccountID    int32          `json:"account_id"`
-	CostCenterID pgtype.Int4    `json:"cost_center_id"`
-	Debit        pgtype.Numeric `json:"debit"`
-	Credit       pgtype.Numeric `json:"credit"`
-	Memo         pgtype.Text    `json:"memo"`
+	ID                int64            `json:"id"`
+	JournalID         int64            `json:"journal_id"`
+	AccountID         int32            `json:"account_id"`
+	CostCenterID      pgtype.Int4      `json:"cost_center_id"`
+	Debit             pgtype.Numeric   `json:"debit"`
+	Credit            pgtype.Numeric   `json:"credit"`
+	Memo              pgtype.Text      `json:"memo"`
+	LineNo            int32            `json:"line_no"`
+	PartnerID         pgtype.Int4      `json:"partner_id"`
+	ProfitCenterID    pgtype.Int4      `json:"profit_center_id"`
+	StoreID           pgtype.Int4      `json:"store_id"`
+	CurrencyCode      pgtype.Text      `json:"currency_code"`
+	ExchangeRate      pgtype.Numeric   `json:"exchange_rate"`
+	AmountDocCurrency pgtype.Numeric   `json:"amount_doc_currency"`
+	AmountBase        pgtype.Numeric   `json:"amount_base"`
+	DebitBase         pgtype.Numeric   `json:"debit_base"`
+	CreditBase        pgtype.Numeric   `json:"credit_base"`
+	ReferenceType     pgtype.Text      `json:"reference_type"`
+	ReferenceID       pgtype.Text      `json:"reference_id"`
+	ReferenceLine     pgtype.Int4      `json:"reference_line"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 type KioskSession struct {
@@ -1362,6 +1464,22 @@ type PosTransactionLine struct {
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
+type PostingPeriod struct {
+	ID                int32            `json:"id"`
+	OrganizationID    int32            `json:"organization_id"`
+	FiscalYearID      int32            `json:"fiscal_year_id"`
+	PeriodNo          int32            `json:"period_no"`
+	PeriodName        string           `json:"period_name"`
+	StartDate         pgtype.Date      `json:"start_date"`
+	EndDate           pgtype.Date      `json:"end_date"`
+	Status            string           `json:"status"`
+	AllowRetroPosting pgtype.Bool      `json:"allow_retro_posting"`
+	ClosedBy          pgtype.Int4      `json:"closed_by"`
+	ClosedAt          pgtype.Timestamp `json:"closed_at"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+}
+
 type PriceList struct {
 	ID            int32            `json:"id"`
 	Name          string           `json:"name"`
@@ -1493,6 +1611,16 @@ type ProductVariant struct {
 	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+}
+
+type ProfitCenter struct {
+	ID             int32            `json:"id"`
+	OrganizationID int32            `json:"organization_id"`
+	Code           string           `json:"code"`
+	Name           string           `json:"name"`
+	ParentID       pgtype.Int4      `json:"parent_id"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
 }
 
 type ProfitLossAnalytic struct {
@@ -2598,6 +2726,25 @@ type WasteLog struct {
 	WastedAt    pgtype.Timestamp `json:"wasted_at"`
 	Metadata    json.RawMessage  `json:"metadata"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
+}
+
+type WithholdingTaxEntry struct {
+	ID                int64            `json:"id"`
+	OrganizationID    int32            `json:"organization_id"`
+	BusinessPartnerID pgtype.Int4      `json:"business_partner_id"`
+	ReferenceType     string           `json:"reference_type"`
+	ReferenceID       string           `json:"reference_id"`
+	GrossAmount       pgtype.Numeric   `json:"gross_amount"`
+	WhtRate           pgtype.Numeric   `json:"wht_rate"`
+	WhtAmount         pgtype.Numeric   `json:"wht_amount"`
+	NetAmount         pgtype.Numeric   `json:"net_amount"`
+	PostingDate       pgtype.Date      `json:"posting_date"`
+	GlAccountID       pgtype.Int4      `json:"gl_account_id"`
+	JournalEntryID    pgtype.Int8      `json:"journal_entry_id"`
+	IsRemitted        pgtype.Bool      `json:"is_remitted"`
+	RemittedAt        pgtype.Timestamp `json:"remitted_at"`
+	Notes             pgtype.Text      `json:"notes"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
 }
 
 type ZatcaDeviceConfig struct {
