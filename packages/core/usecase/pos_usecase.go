@@ -739,6 +739,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		return utils.NewResponse(utils.CodeError, "failed to create transaction: "+err.Error(), nil)
 	}
 
+	createdLines := make([]repository.PosTransactionLine, 0, len(in.Lines))
 	for idx, line := range in.Lines {
 		lineNo := int32(idx + 1)
 		if line.LineNumber != nil && *line.LineNumber > 0 {
@@ -779,14 +780,25 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			lineParams.UomID = pgtype.Int4{Int32: *line.UomID, Valid: true}
 		}
 
-		if err := uc.repo.CreatePosTransactionLine(ctx, lineParams); err != nil {
+		createdLine, err := uc.repo.CreatePosTransactionLine(ctx, lineParams)
+		if err != nil {
 			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create line %d: %s", lineNo, err.Error()), nil)
 		}
+		createdLines = append(createdLines, createdLine)
 	}
 
 	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
 
-	return utils.NewResponse(utils.CodeCreated, "transaction created", header)
+	type transactionResult struct {
+		repository.PosTransaction
+		Lines []repository.PosTransactionLine `json:"lines"`
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "transaction created", transactionResult{
+		PosTransaction: header,
+		Lines:          createdLines,
+	})
+
 }
 
 // ListTodaysTransactions returns today's POS transactions for a store.

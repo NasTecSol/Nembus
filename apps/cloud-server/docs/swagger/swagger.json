@@ -41069,6 +41069,10 @@
                 "product_variant_id": {
                     "type": "integer",
                     "example": 1
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },
@@ -44548,6 +44552,10 @@
                 },
                 "metadata": {
                     "type": "object"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },

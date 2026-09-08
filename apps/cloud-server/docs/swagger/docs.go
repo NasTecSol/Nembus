@@ -41075,6 +41075,10 @@ const docTemplate = `{
                 "product_variant_id": {
                     "type": "integer",
                     "example": 1
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },
@@ -44554,6 +44558,10 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "type": "object"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },

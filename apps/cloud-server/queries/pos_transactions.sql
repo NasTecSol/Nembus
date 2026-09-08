@@ -23,14 +23,16 @@ INSERT INTO pos_transactions (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15, $16
-) RETURNING id, transaction_number, status, total_amount;
+) RETURNING *;
 
--- name: CreatePosTransactionLine :exec
+-- name: CreatePosTransactionLine :one
 INSERT INTO pos_transaction_lines (
     transaction_id, line_number, product_id, product_variant_id,
     serial_number, batch_number, quantity, uom_id,
     unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15);
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+RETURNING *;
+
 
 -- name: GetPosTransactionFull :many
 SELECT 

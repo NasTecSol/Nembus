@@ -3755,3 +3755,93 @@ BEGIN
     WHERE v.organization_id = p_organization_id;
 END;
 $$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- SALES RETURN & WASTE PROCESSING TRIGGER
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION fn_trigger_process_sales_return()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_store_id INT;
+    v_cost_price NUMERIC(15,4);
+    v_uom_id INT;
+    v_reason TEXT;
+BEGIN
+    -- Get store_id and return_reason from parent sales_returns header
+    SELECT store_id, COALESCE(return_reason, 'POS Sales Return') 
+    INTO v_store_id, v_reason 
+    FROM sales_returns 
+    WHERE id = NEW.return_id;
+
+    -- Fetch cost_price and uom_id from original pos_transaction_lines if available
+    IF NEW.original_line_id IS NOT NULL THEN
+        SELECT COALESCE(cost_price, 0), uom_id 
+        INTO v_cost_price, v_uom_id 
+        FROM pos_transaction_lines 
+        WHERE id = NEW.original_line_id;
+    ELSE
+        v_cost_price := 0;
+        v_uom_id := NULL;
+    END IF;
+
+    -- CASE 1: Return to stock = TRUE and Condition = 'good' -> Restock into inventory
+    IF NEW.return_to_stock = true AND (NEW.condition IS NULL OR NEW.condition = 'good') THEN
+        UPDATE inventory_stock
+        SET quantity_on_hand = quantity_on_hand + NEW.quantity,
+            quantity_available = quantity_available + NEW.quantity,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = NEW.product_id
+          AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+          AND store_id = v_store_id;
+
+        -- Record stock movement as a return
+        INSERT INTO stock_movements (
+            movement_type, reference_type, reference_id, product_id, product_variant_id,
+            to_store_id, quantity, uom_id, batch_number, serial_number, metadata
+        ) VALUES (
+            'return', 'sales_return', NEW.return_id, NEW.product_id, NEW.product_variant_id,
+            v_store_id, NEW.quantity, v_uom_id, NEW.batch_number, NEW.serial_number,
+            jsonb_build_object('return_line_id', NEW.id, 'condition', COALESCE(NEW.condition, 'good'))
+        );
+
+    -- CASE 2: Item is DAMAGED, DEFECTIVE, or OPENED (return_to_stock = false) -> Log to waste_logs
+    ELSE
+        INSERT INTO waste_logs (
+            store_id, product_id, waste_source, quantity, uom_id, unit_cost, total_cost,
+            reason, metadata
+        ) VALUES (
+            v_store_id, NEW.product_id, 'register', NEW.quantity, v_uom_id, v_cost_price,
+            (v_cost_price * NEW.quantity),
+            CONCAT('Customer Return - Condition: ', COALESCE(NEW.condition, 'damaged'), '. Reason: ', v_reason),
+            jsonb_build_object('return_id', NEW.return_id, 'return_line_id', NEW.id, 'condition', NEW.condition)
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_process_sales_return ON sales_return_lines;
+CREATE TRIGGER trg_process_sales_return
+AFTER INSERT ON sales_return_lines
+FOR EACH ROW EXECUTE FUNCTION fn_trigger_process_sales_return();
+
+-- Helper function to calculate remaining returnable quantity for a pos_transaction_line
+CREATE OR REPLACE FUNCTION fn_get_returnable_quantity(p_original_line_id INT)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_orig_qty NUMERIC(15,3);
+    v_ret_qty NUMERIC(15,3);
+BEGIN
+    SELECT quantity INTO v_orig_qty FROM pos_transaction_lines WHERE id = p_original_line_id;
+    IF v_orig_qty IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    SELECT COALESCE(SUM(quantity), 0) INTO v_ret_qty FROM sales_return_lines WHERE original_line_id = p_original_line_id;
+
+    RETURN GREATEST(0, v_orig_qty - v_ret_qty);
+END;
+$$ LANGUAGE plpgsql;
+

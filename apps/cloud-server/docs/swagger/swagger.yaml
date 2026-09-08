@@ -1640,6 +1640,9 @@ definitions:
       product_variant_id:
         example: 1
         type: integer
+      uom_id:
+        example: 5
+        type: integer
     required:
     - barcode
     - product_id
@@ -4126,6 +4129,9 @@ definitions:
         type: boolean
       metadata:
         type: object
+      uom_id:
+        example: 5
+        type: integer
     type: object
   handler.UpdateProductCategoryRequest:
     properties:

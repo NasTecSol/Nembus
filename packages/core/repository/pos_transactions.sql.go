@@ -33,7 +33,7 @@ INSERT INTO pos_transactions (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15, $16
-) RETURNING id, transaction_number, status, total_amount
+) RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
 `
 
 type CreatePosTransactionParams struct {
@@ -55,14 +55,7 @@ type CreatePosTransactionParams struct {
 	Metadata          json.RawMessage  `json:"metadata"`
 }
 
-type CreatePosTransactionRow struct {
-	ID                int32          `json:"id"`
-	TransactionNumber string         `json:"transaction_number"`
-	Status            pgtype.Text    `json:"status"`
-	TotalAmount       pgtype.Numeric `json:"total_amount"`
-}
-
-func (q *Queries) CreatePosTransaction(ctx context.Context, arg CreatePosTransactionParams) (CreatePosTransactionRow, error) {
+func (q *Queries) CreatePosTransaction(ctx context.Context, arg CreatePosTransactionParams) (PosTransaction, error) {
 	row := q.db.QueryRow(ctx, createPosTransaction,
 		arg.TransactionNumber,
 		arg.StoreID,
@@ -81,22 +74,44 @@ func (q *Queries) CreatePosTransaction(ctx context.Context, arg CreatePosTransac
 		arg.Status,
 		arg.Metadata,
 	)
-	var i CreatePosTransactionRow
+	var i PosTransaction
 	err := row.Scan(
 		&i.ID,
+		&i.StoreID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
 		&i.TransactionNumber,
-		&i.Status,
+		&i.TransactionDate,
+		&i.TransactionType,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
 		&i.TotalAmount,
+		&i.TotalCost,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.Status,
+		&i.PriceListID,
+		&i.SalesOrderID,
+		&i.SourceCartID,
+		&i.VoidedBy,
+		&i.VoidedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const createPosTransactionLine = `-- name: CreatePosTransactionLine :exec
+const createPosTransactionLine = `-- name: CreatePosTransactionLine :one
 INSERT INTO pos_transaction_lines (
     transaction_id, line_number, product_id, product_variant_id,
     serial_number, batch_number, quantity, uom_id,
     unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+RETURNING id, transaction_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, line_number, serial_number, batch_number, metadata, created_at, updated_at
 `
 
 type CreatePosTransactionLineParams struct {
@@ -117,8 +132,8 @@ type CreatePosTransactionLineParams struct {
 	Metadata         json.RawMessage `json:"metadata"`
 }
 
-func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTransactionLineParams) error {
-	_, err := q.db.Exec(ctx, createPosTransactionLine,
+func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTransactionLineParams) (PosTransactionLine, error) {
+	row := q.db.QueryRow(ctx, createPosTransactionLine,
 		arg.TransactionID,
 		arg.LineNumber,
 		arg.ProductID,
@@ -135,7 +150,28 @@ func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTra
 		arg.CostPrice,
 		arg.Metadata,
 	)
-	return err
+	var i PosTransactionLine
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
+		&i.CostPrice,
+		&i.LineNumber,
+		&i.SerialNumber,
+		&i.BatchNumber,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getPosTransaction = `-- name: GetPosTransaction :one
