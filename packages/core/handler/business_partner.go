@@ -393,13 +393,34 @@ func (h *BusinessPartnerHandler) ToggleBusinessPartnerActive(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ToggleBusinessPartnerActive(c.Request.Context(), idStr, req.IsActive)
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	resp := h.useCase.ToggleBusinessPartnerActive(c.Request.Context(), idStr, isActive)
 	c.JSON(resp.StatusCode, resp)
 }
 
 // Addresses management handlers
 
-// AddPartnerAddress handles POST /business-partners/:id/addresses
+// AddPartnerAddress handles POST /api/business-partners/:id/addresses
+// @Summary      Create partner address
+// @Description  Add a new address to a business partner
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                   true  "Tenant identifier"
+// @Param        Authorization header    string                   true  "Bearer token"
+// @Param        id            path      string                   true  "Business partner ID"
+// @Param        address       body      CreatePartnerAddressDTO  true  "Partner address data"
+// @Success      201           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/addresses [post]
 func (h *BusinessPartnerHandler) AddPartnerAddress(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -449,7 +470,80 @@ func (h *BusinessPartnerHandler) AddPartnerAddress(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdatePartnerAddress handles PUT /business-partners/:id/addresses/:addressId
+// ListPartnerAddresses handles GET /api/business-partners/:id/addresses
+// @Summary      List partner addresses
+// @Description  Get all addresses associated with a business partner
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Success      200           {array}   PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/addresses [get]
+func (h *BusinessPartnerHandler) ListPartnerAddresses(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	partnerIDStr := c.Param("id")
+	resp := h.useCase.ListPartnerAddresses(c.Request.Context(), partnerIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPartnerAddress handles GET /api/business-partners/:id/addresses/:addressId
+// @Summary      Get partner address
+// @Description  Get a specific address for a business partner
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Param        addressId     path      string  true  "Address ID"
+// @Success      200           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/addresses/{addressId} [get]
+func (h *BusinessPartnerHandler) GetPartnerAddress(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	addressIDStr := c.Param("addressId")
+	resp := h.useCase.GetPartnerAddress(c.Request.Context(), addressIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePartnerAddress handles PUT /api/business-partners/:id/addresses/:addressId
+// @Summary      Update partner address
+// @Description  Update details of a business partner address
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                       true  "Tenant identifier"
+// @Param        Authorization header    string                       true  "Bearer token"
+// @Param        id            path      string                       true  "Business partner ID"
+// @Param        addressId     path      string                       true  "Address ID"
+// @Param        address       body      UpdatePartnerAddressRequest  true  "Updated address data"
+// @Success      200           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/addresses/{addressId} [put]
 func (h *BusinessPartnerHandler) UpdatePartnerAddress(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -459,9 +553,146 @@ func (h *BusinessPartnerHandler) UpdatePartnerAddress(c *gin.Context) {
 
 	addressIDStr := c.Param("addressId")
 
+	var req UpdatePartnerAddressRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid address data", nil))
+		return
+	}
+
+	var addrName, addrType, street, city, state, zip, country string
+	var isDefault bool
+	if req.AddressName != nil {
+		addrName = *req.AddressName
+	}
+	if req.AddressType != nil {
+		addrType = *req.AddressType
+	}
+	if req.Street != nil {
+		street = *req.Street
+	}
+	if req.City != nil {
+		city = *req.City
+	}
+	if req.State != nil {
+		state = *req.State
+	}
+	if req.ZipCode != nil {
+		zip = *req.ZipCode
+	}
+	if req.CountryCode != nil {
+		country = *req.CountryCode
+	}
+	if req.IsDefault != nil {
+		isDefault = *req.IsDefault
+	}
+
+	resp := h.useCase.UpdatePartnerAddress(
+		c.Request.Context(),
+		addressIDStr,
+		usecase.PartnerAddressInput{
+			AddressName: addrName,
+			AddressType: addrType,
+			Street:      street,
+			City:        city,
+			State:       state,
+			ZipCode:     zip,
+			CountryCode: country,
+			IsDefault:   isDefault,
+		},
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// SetDefaultPartnerAddress handles PATCH /api/business-partners/:id/addresses/:addressId/default
+// @Summary      Set partner address as default
+// @Description  Set a specific address as the default address for the partner and unset others
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Param        addressId     path      string  true  "Address ID"
+// @Success      200           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/addresses/{addressId}/default [patch]
+func (h *BusinessPartnerHandler) SetDefaultPartnerAddress(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	addressIDStr := c.Param("addressId")
+	resp := h.useCase.SetDefaultPartnerAddress(c.Request.Context(), addressIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePartnerAddress handles DELETE /api/business-partners/:id/addresses/:addressId
+// @Summary      Delete partner address
+// @Description  Delete an address of a business partner
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Param        addressId     path      string  true  "Address ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/addresses/{addressId} [delete]
+func (h *BusinessPartnerHandler) DeletePartnerAddress(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	addressIDStr := c.Param("addressId")
+	resp := h.useCase.DeletePartnerAddress(c.Request.Context(), addressIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// Standalone Address Handlers (/api/partner-addresses)
+
+// CreatePartnerAddressStandalone handles POST /api/partner-addresses
+// @Summary      Create partner address (standalone)
+// @Description  Create a partner address by providing partner_id in the body
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                   true  "Tenant identifier"
+// @Param        Authorization header    string                   true  "Bearer token"
+// @Param        address       body      CreatePartnerAddressDTO  true  "Partner address data"
+// @Success      201           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-addresses [post]
+func (h *BusinessPartnerHandler) CreatePartnerAddressStandalone(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
 	var req CreatePartnerAddressDTO
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid address data", nil))
+		return
+	}
+
+	if req.PartnerID <= 0 {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "partner_id is required", nil))
 		return
 	}
 
@@ -482,9 +713,9 @@ func (h *BusinessPartnerHandler) UpdatePartnerAddress(c *gin.Context) {
 		country = *req.CountryCode
 	}
 
-	resp := h.useCase.UpdatePartnerAddress(
+	resp := h.useCase.AddPartnerAddress(
 		c.Request.Context(),
-		addressIDStr,
+		strconv.Itoa(int(req.PartnerID)),
 		usecase.PartnerAddressInput{
 			AddressName: req.AddressName,
 			AddressType: req.AddressType,
@@ -499,22 +730,217 @@ func (h *BusinessPartnerHandler) UpdatePartnerAddress(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeletePartnerAddress handles DELETE /business-partners/:id/addresses/:addressId
-func (h *BusinessPartnerHandler) DeletePartnerAddress(c *gin.Context) {
+// ListPartnerAddressesStandalone handles GET /api/partner-addresses
+// @Summary      List partner addresses (standalone)
+// @Description  List addresses for a partner specified via query parameter partner_id
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        partner_id    query     int     true  "Business partner ID"
+// @Success      200           {array}   PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-addresses [get]
+func (h *BusinessPartnerHandler) ListPartnerAddressesStandalone(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
 	}
 	h.useCase.SetRepository(repo)
 
-	addressIDStr := c.Param("addressId")
-	resp := h.useCase.DeletePartnerAddress(c.Request.Context(), addressIDStr)
+	partnerIDStr := c.Query("partner_id")
+	if partnerIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "partner_id query parameter is required", nil))
+		return
+	}
+
+	resp := h.useCase.ListPartnerAddresses(c.Request.Context(), partnerIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPartnerAddressByID handles GET /api/partner-addresses/:id
+// @Summary      Get partner address by ID
+// @Description  Get a partner address by its primary ID
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Address ID"
+// @Success      200           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-addresses/{id} [get]
+func (h *BusinessPartnerHandler) GetPartnerAddressByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	resp := h.useCase.GetPartnerAddress(c.Request.Context(), idStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePartnerAddressByID handles PUT /api/partner-addresses/:id
+// @Summary      Update partner address by ID
+// @Description  Update a partner address by its primary ID
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                       true  "Tenant identifier"
+// @Param        Authorization header    string                       true  "Bearer token"
+// @Param        id            path      string                       true  "Address ID"
+// @Param        address       body      UpdatePartnerAddressRequest  true  "Updated address data"
+// @Success      200           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-addresses/{id} [put]
+func (h *BusinessPartnerHandler) UpdatePartnerAddressByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+
+	var req UpdatePartnerAddressRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid address data", nil))
+		return
+	}
+
+	var addrName, addrType, street, city, state, zip, country string
+	var isDefault bool
+	if req.AddressName != nil {
+		addrName = *req.AddressName
+	}
+	if req.AddressType != nil {
+		addrType = *req.AddressType
+	}
+	if req.Street != nil {
+		street = *req.Street
+	}
+	if req.City != nil {
+		city = *req.City
+	}
+	if req.State != nil {
+		state = *req.State
+	}
+	if req.ZipCode != nil {
+		zip = *req.ZipCode
+	}
+	if req.CountryCode != nil {
+		country = *req.CountryCode
+	}
+	if req.IsDefault != nil {
+		isDefault = *req.IsDefault
+	}
+
+	resp := h.useCase.UpdatePartnerAddress(
+		c.Request.Context(),
+		idStr,
+		usecase.PartnerAddressInput{
+			AddressName: addrName,
+			AddressType: addrType,
+			Street:      street,
+			City:        city,
+			State:       state,
+			ZipCode:     zip,
+			CountryCode: country,
+			IsDefault:   isDefault,
+		},
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// SetDefaultPartnerAddressByID handles PATCH /api/partner-addresses/:id/default
+// @Summary      Set partner address as default by ID
+// @Description  Set a specific address as default by its primary address ID
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Address ID"
+// @Success      200           {object}  PartnerAddressResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-addresses/{id}/default [patch]
+func (h *BusinessPartnerHandler) SetDefaultPartnerAddressByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	resp := h.useCase.SetDefaultPartnerAddress(c.Request.Context(), idStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePartnerAddressByID handles DELETE /api/partner-addresses/:id
+// @Summary      Delete partner address by ID
+// @Description  Delete a partner address by its primary ID
+// @Tags         partner-addresses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Address ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-addresses/{id} [delete]
+func (h *BusinessPartnerHandler) DeletePartnerAddressByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	resp := h.useCase.DeletePartnerAddress(c.Request.Context(), idStr)
 	c.JSON(resp.StatusCode, resp)
 }
 
 // Contacts management handlers
 
-// AddPartnerContact handles POST /business-partners/:id/contacts
+// AddPartnerContact handles POST /api/business-partners/:id/contacts
+// @Summary      Create partner contact
+// @Description  Add a new contact person to a business partner
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                   true  "Tenant identifier"
+// @Param        Authorization header    string                   true  "Bearer token"
+// @Param        id            path      string                   true  "Business partner ID"
+// @Param        contact       body      CreatePartnerContactDTO  true  "Partner contact data"
+// @Success      201           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/contacts [post]
 func (h *BusinessPartnerHandler) AddPartnerContact(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -559,7 +985,80 @@ func (h *BusinessPartnerHandler) AddPartnerContact(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// UpdatePartnerContact handles PUT /business-partners/:id/contacts/:contactId
+// ListPartnerContacts handles GET /api/business-partners/:id/contacts
+// @Summary      List partner contacts
+// @Description  Get all contact persons associated with a business partner
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Success      200           {array}   PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/contacts [get]
+func (h *BusinessPartnerHandler) ListPartnerContacts(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	partnerIDStr := c.Param("id")
+	resp := h.useCase.ListPartnerContacts(c.Request.Context(), partnerIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPartnerContact handles GET /api/business-partners/:id/contacts/:contactId
+// @Summary      Get partner contact
+// @Description  Get a specific contact person for a business partner
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Param        contactId     path      string  true  "Contact ID"
+// @Success      200           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/contacts/{contactId} [get]
+func (h *BusinessPartnerHandler) GetPartnerContact(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	contactIDStr := c.Param("contactId")
+	resp := h.useCase.GetPartnerContact(c.Request.Context(), contactIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePartnerContact handles PUT /api/business-partners/:id/contacts/:contactId
+// @Summary      Update partner contact
+// @Description  Update details of a business partner contact person
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                       true  "Tenant identifier"
+// @Param        Authorization header    string                       true  "Bearer token"
+// @Param        id            path      string                       true  "Business partner ID"
+// @Param        contactId     path      string                       true  "Contact ID"
+// @Param        contact       body      UpdatePartnerContactRequest  true  "Updated contact data"
+// @Success      200           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/contacts/{contactId} [put]
 func (h *BusinessPartnerHandler) UpdatePartnerContact(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
@@ -569,9 +1068,138 @@ func (h *BusinessPartnerHandler) UpdatePartnerContact(c *gin.Context) {
 
 	contactIDStr := c.Param("contactId")
 
+	var req UpdatePartnerContactRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid contact data", nil))
+		return
+	}
+
+	var firstName, lastName, email, phone, pos string
+	var isPrimary bool
+	if req.FirstName != nil {
+		firstName = *req.FirstName
+	}
+	if req.LastName != nil {
+		lastName = *req.LastName
+	}
+	if req.Email != nil {
+		email = *req.Email
+	}
+	if req.Phone != nil {
+		phone = *req.Phone
+	}
+	if req.Position != nil {
+		pos = *req.Position
+	}
+	if req.IsPrimary != nil {
+		isPrimary = *req.IsPrimary
+	}
+
+	resp := h.useCase.UpdatePartnerContact(
+		c.Request.Context(),
+		contactIDStr,
+		usecase.PartnerContactInput{
+			FirstName: firstName,
+			LastName:  lastName,
+			Email:     email,
+			Phone:     phone,
+			Position:  pos,
+			IsPrimary: isPrimary,
+		},
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// SetPrimaryPartnerContact handles PATCH /api/business-partners/:id/contacts/:contactId/primary
+// @Summary      Set partner contact as primary
+// @Description  Set a specific contact person as primary for the partner and unset others
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Param        contactId     path      string  true  "Contact ID"
+// @Success      200           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/contacts/{contactId}/primary [patch]
+func (h *BusinessPartnerHandler) SetPrimaryPartnerContact(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	contactIDStr := c.Param("contactId")
+	resp := h.useCase.SetPrimaryPartnerContact(c.Request.Context(), contactIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePartnerContact handles DELETE /api/business-partners/:id/contacts/:contactId
+// @Summary      Delete partner contact
+// @Description  Delete a contact person of a business partner
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Business partner ID"
+// @Param        contactId     path      string  true  "Contact ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/business-partners/{id}/contacts/{contactId} [delete]
+func (h *BusinessPartnerHandler) DeletePartnerContact(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	contactIDStr := c.Param("contactId")
+	resp := h.useCase.DeletePartnerContact(c.Request.Context(), contactIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// Standalone Contact Handlers (/api/partner-contacts)
+
+// CreatePartnerContactStandalone handles POST /api/partner-contacts
+// @Summary      Create partner contact (standalone)
+// @Description  Create a partner contact by providing partner_id in the body
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                   true  "Tenant identifier"
+// @Param        Authorization header    string                   true  "Bearer token"
+// @Param        contact       body      CreatePartnerContactDTO  true  "Partner contact data"
+// @Success      201           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-contacts [post]
+func (h *BusinessPartnerHandler) CreatePartnerContactStandalone(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
 	var req CreatePartnerContactDTO
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid contact data", nil))
+		return
+	}
+
+	if req.PartnerID <= 0 {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "partner_id is required", nil))
 		return
 	}
 
@@ -589,9 +1217,9 @@ func (h *BusinessPartnerHandler) UpdatePartnerContact(c *gin.Context) {
 		pos = *req.Position
 	}
 
-	resp := h.useCase.UpdatePartnerContact(
+	resp := h.useCase.AddPartnerContact(
 		c.Request.Context(),
-		contactIDStr,
+		strconv.Itoa(int(req.PartnerID)),
 		usecase.PartnerContactInput{
 			FirstName: req.FirstName,
 			LastName:  lastName,
@@ -604,15 +1232,186 @@ func (h *BusinessPartnerHandler) UpdatePartnerContact(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
-// DeletePartnerContact handles DELETE /business-partners/:id/contacts/:contactId
-func (h *BusinessPartnerHandler) DeletePartnerContact(c *gin.Context) {
+// ListPartnerContactsStandalone handles GET /api/partner-contacts
+// @Summary      List partner contacts (standalone)
+// @Description  List contacts for a partner specified via query parameter partner_id
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        partner_id    query     int     true  "Business partner ID"
+// @Success      200           {array}   PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-contacts [get]
+func (h *BusinessPartnerHandler) ListPartnerContactsStandalone(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)
 	if repo == nil {
 		return
 	}
 	h.useCase.SetRepository(repo)
 
-	contactIDStr := c.Param("contactId")
-	resp := h.useCase.DeletePartnerContact(c.Request.Context(), contactIDStr)
+	partnerIDStr := c.Query("partner_id")
+	if partnerIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "partner_id query parameter is required", nil))
+		return
+	}
+
+	resp := h.useCase.ListPartnerContacts(c.Request.Context(), partnerIDStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPartnerContactByID handles GET /api/partner-contacts/:id
+// @Summary      Get partner contact by ID
+// @Description  Get a partner contact by its primary ID
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Contact ID"
+// @Success      200           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-contacts/{id} [get]
+func (h *BusinessPartnerHandler) GetPartnerContactByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	resp := h.useCase.GetPartnerContact(c.Request.Context(), idStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePartnerContactByID handles PUT /api/partner-contacts/:id
+// @Summary      Update partner contact by ID
+// @Description  Update a partner contact by its primary ID
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                       true  "Tenant identifier"
+// @Param        Authorization header    string                       true  "Bearer token"
+// @Param        id            path      string                       true  "Contact ID"
+// @Param        contact       body      UpdatePartnerContactRequest  true  "Updated contact data"
+// @Success      200           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-contacts/{id} [put]
+func (h *BusinessPartnerHandler) UpdatePartnerContactByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+
+	var req UpdatePartnerContactRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid contact data", nil))
+		return
+	}
+
+	var firstName, lastName, email, phone, pos string
+	var isPrimary bool
+	if req.FirstName != nil {
+		firstName = *req.FirstName
+	}
+	if req.LastName != nil {
+		lastName = *req.LastName
+	}
+	if req.Email != nil {
+		email = *req.Email
+	}
+	if req.Phone != nil {
+		phone = *req.Phone
+	}
+	if req.Position != nil {
+		pos = *req.Position
+	}
+	if req.IsPrimary != nil {
+		isPrimary = *req.IsPrimary
+	}
+
+	resp := h.useCase.UpdatePartnerContact(
+		c.Request.Context(),
+		idStr,
+		usecase.PartnerContactInput{
+			FirstName: firstName,
+			LastName:  lastName,
+			Email:     email,
+			Phone:     phone,
+			Position:  pos,
+			IsPrimary: isPrimary,
+		},
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// SetPrimaryPartnerContactByID handles PATCH /api/partner-contacts/:id/primary
+// @Summary      Set partner contact as primary by ID
+// @Description  Set a contact as primary by its contact ID
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Contact ID"
+// @Success      200           {object}  PartnerContactResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-contacts/{id}/primary [patch]
+func (h *BusinessPartnerHandler) SetPrimaryPartnerContactByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	resp := h.useCase.SetPrimaryPartnerContact(c.Request.Context(), idStr)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePartnerContactByID handles DELETE /api/partner-contacts/:id
+// @Summary      Delete partner contact by ID
+// @Description  Delete a partner contact by its primary ID
+// @Tags         partner-contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      string  true  "Contact ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/partner-contacts/{id} [delete]
+func (h *BusinessPartnerHandler) DeletePartnerContactByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	resp := h.useCase.DeletePartnerContact(c.Request.Context(), idStr)
 	c.JSON(resp.StatusCode, resp)
 }
