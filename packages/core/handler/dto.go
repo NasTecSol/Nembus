@@ -1396,13 +1396,13 @@ type CreatePromotionRequest struct {
 	Name              string                 `json:"name" binding:"required" example:"Summer Sale 20%"`
 	Description       *string                `json:"description,omitempty" example:"20% off all summer items"`
 	PromotionType     string                 `json:"promotion_type" binding:"required" example:"percentage_discount"`
-	ActionMetadata    map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object" example:"{\"multiplier\": 2}"`
+	ActionMetadata    map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
 	ValidFrom         *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
 	ValidTo           *string                `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
-	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object" example:"{\"days\":[\"Monday\"],\"start_time\":\"20:00\",\"end_time\":\"22:00\"}"`
+	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
 	AppliesTo         *string                `json:"applies_to,omitempty" example:"all"`
-	TargetProductIds  []int32                `json:"target_product_ids,omitempty" example:"[101,205]"`
-	TargetCategoryIds []int32                `json:"target_category_ids,omitempty" example:"[15]"`
+	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
+	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
 	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
@@ -1411,7 +1411,7 @@ type CreatePromotionRequest struct {
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
 	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
-	StoreIds          []int32                `json:"store_ids,omitempty" example:"[1,2]"`
+	StoreIds          []int32                `json:"store_ids,omitempty"`
 	CreatedBy         *int32                 `json:"created_by,omitempty" example:"1"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
@@ -1425,7 +1425,7 @@ type UpdatePromotionRequest struct {
 	ValidTo           *string                `json:"valid_to,omitempty" example:"2026-09-30T23:59:59Z"`
 	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
 	AppliesTo         *string                `json:"applies_to,omitempty" example:"product"`
-	TargetProductIds  []int32                `json:"target_product_ids,omitempty" example:"[101,205]"`
+	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
 	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
 	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
@@ -1434,7 +1434,7 @@ type UpdatePromotionRequest struct {
 	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
 	DiscountValue     *string                `json:"discount_value,omitempty" example:"25.00"`
 	IsStackable       *bool                  `json:"is_stackable,omitempty"`
-	StoreIds          []int32                `json:"store_ids,omitempty" example:"[1,2]"`
+	StoreIds          []int32                `json:"store_ids,omitempty"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
@@ -1892,5 +1892,339 @@ type PaymentTermResponse struct {
 	CreatedAt          string  `json:"created_at" example:"2026-08-21T09:00:00Z"`
 }
 
+// PurchaseOrderLineDTO represents a line item in a purchase order for Swagger docs.
+type PurchaseOrderLineDTO struct {
+	ProductID        int32                  `json:"product_id" example:"1"`
+	ProductVariantID *int32                 `json:"product_variant_id,omitempty" example:"2"`
+	Quantity         float64                `json:"quantity" example:"10.5"`
+	UomID            *int32                 `json:"uom_id,omitempty" example:"1"`
+	UnitPrice        float64                `json:"unit_price" example:"45.50"`
+	DiscountAmount   *float64               `json:"discount_amount,omitempty" example:"5.00"`
+	TaxAmount        *float64               `json:"tax_amount,omitempty" example:"6.075"`
+	LineNumber       *int32                 `json:"line_number,omitempty" example:"1"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+}
 
+// CreatePurchaseOrderRequest represents the request payload to create a purchase order.
+type CreatePurchaseOrderRequest struct {
+	OrganizationID       int32                  `json:"organization_id" binding:"required" example:"1"`
+	PoNumber             *string                `json:"po_number,omitempty" example:"PO-20260908-0001"`
+	SupplierID           int32                  `json:"supplier_id" binding:"required" example:"5"`
+	StoreID              int32                  `json:"store_id" binding:"required" example:"1"`
+	PoDate               *string                `json:"po_date,omitempty" example:"2026-09-08"`
+	ExpectedDeliveryDate *string                `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
+	Status               *string                `json:"status,omitempty" example:"draft"`
+	PriceListID          *int32                 `json:"price_list_id,omitempty" example:"1"`
+	CreatedBy            *int32                 `json:"created_by,omitempty" example:"1"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty"`
+	Items                []PurchaseOrderLineDTO `json:"items" binding:"required"`
+}
+
+// UpdatePurchaseOrderRequest represents the request payload to update a draft purchase order.
+type UpdatePurchaseOrderRequest struct {
+	SupplierID           *int32                 `json:"supplier_id,omitempty" example:"5"`
+	StoreID              *int32                 `json:"store_id,omitempty" example:"1"`
+	PoDate               *string                `json:"po_date,omitempty" example:"2026-09-08"`
+	ExpectedDeliveryDate *string                `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
+	PriceListID          *int32                 `json:"price_list_id,omitempty" example:"1"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty"`
+	Items                []PurchaseOrderLineDTO `json:"items,omitempty"`
+}
+
+// UpdatePurchaseOrderStatusRequest represents the request payload to update a purchase order status.
+type UpdatePurchaseOrderStatusRequest struct {
+	Status     string `json:"status" binding:"required" example:"approved"`
+	ApprovedBy *int32 `json:"approved_by,omitempty" example:"1"`
+}
+
+// PurchaseOrderLineResponse represents a line item response in a purchase order.
+type PurchaseOrderLineResponse struct {
+	ID               int32           `json:"id" example:"1"`
+	PurchaseOrderID  int32           `json:"purchase_order_id" example:"1"`
+	ProductID        int32           `json:"product_id" example:"1"`
+	ProductName      string          `json:"product_name" example:"Fresh Milk 1L"`
+	ProductSKU       string          `json:"product_sku" example:"MILK-001"`
+	ProductVariantID *int32          `json:"product_variant_id,omitempty" example:"2"`
+	VariantName      *string         `json:"variant_name,omitempty" example:"Full Cream"`
+	VariantSKU       *string         `json:"variant_sku,omitempty" example:"MILK-001-FC"`
+	Quantity         string          `json:"quantity" example:"10.500"`
+	UomID            *int32          `json:"uom_id,omitempty" example:"1"`
+	UomName          *string         `json:"uom_name,omitempty" example:"Liter"`
+	UnitPrice        string          `json:"unit_price" example:"45.5000"`
+	DiscountAmount   string          `json:"discount_amount" example:"5.00"`
+	TaxAmount        string          `json:"tax_amount" example:"6.08"`
+	Subtotal         string          `json:"subtotal" example:"477.75"`
+	LineTotal        string          `json:"line_total" example:"478.83"`
+	ReceivedQuantity string          `json:"received_quantity" example:"0.000"`
+	LineNumber       *int32          `json:"line_number,omitempty" example:"1"`
+	Barcode          string          `json:"barcode,omitempty" example:"628100010001"`
+	Metadata         json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt        string          `json:"created_at" example:"2026-09-08T10:00:00Z"`
+}
+
+// PurchaseOrderResponse represents the full purchase order response.
+type PurchaseOrderResponse struct {
+	ID                   int32                       `json:"id" example:"1"`
+	OrganizationID       int32                       `json:"organization_id" example:"1"`
+	PoNumber             string                      `json:"po_number" example:"PO-20260908-0001"`
+	SupplierID           int32                       `json:"supplier_id" example:"5"`
+	SupplierName         *string                     `json:"supplier_name,omitempty" example:"Almarai Dairy Co."`
+	SupplierCode         *string                     `json:"supplier_code,omitempty" example:"SUPP001"`
+	StoreID              int32                       `json:"store_id" example:"1"`
+	StoreName            *string                     `json:"store_name,omitempty" example:"Main Supermarket Branch"`
+	PoDate               string                      `json:"po_date" example:"2026-09-08"`
+	ExpectedDeliveryDate *string                     `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
+	Status               string                      `json:"status" example:"draft"`
+	Subtotal             string                      `json:"subtotal" example:"477.75"`
+	DiscountAmount       string                      `json:"discount_amount" example:"5.00"`
+	TaxAmount            string                      `json:"tax_amount" example:"6.08"`
+	TotalAmount          string                      `json:"total_amount" example:"478.83"`
+	PriceListID          *int32                      `json:"price_list_id,omitempty" example:"1"`
+	CreatedBy            *int32                      `json:"created_by,omitempty" example:"1"`
+	CreatedByName        *string                     `json:"created_by_name,omitempty" example:"admin"`
+	ApprovedBy           *int32                      `json:"approved_by,omitempty" example:"1"`
+	ApprovedByName       *string                     `json:"approved_by_name,omitempty" example:"manager"`
+	Metadata             json.RawMessage             `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt            string                      `json:"created_at" example:"2026-09-08T10:00:00Z"`
+	UpdatedAt            string                      `json:"updated_at" example:"2026-09-08T10:00:00Z"`
+	Items                []PurchaseOrderLineResponse `json:"items,omitempty"`
+}
+
+// PurchaseOrderSummaryResponse represents a purchase order summary in list responses.
+type PurchaseOrderSummaryResponse struct {
+	ID                   int32           `json:"id" example:"1"`
+	OrganizationID       int32           `json:"organization_id" example:"1"`
+	PoNumber             string          `json:"po_number" example:"PO-20260908-0001"`
+	SupplierID           int32           `json:"supplier_id" example:"5"`
+	SupplierName         *string         `json:"supplier_name,omitempty" example:"Almarai Dairy Co."`
+	SupplierCode         *string         `json:"supplier_code,omitempty" example:"SUPP001"`
+	StoreID              int32           `json:"store_id" example:"1"`
+	StoreName            *string         `json:"store_name,omitempty" example:"Main Supermarket Branch"`
+	PoDate               string          `json:"po_date" example:"2026-09-08"`
+	ExpectedDeliveryDate *string         `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
+	Status               string          `json:"status" example:"draft"`
+	Subtotal             string          `json:"subtotal" example:"477.75"`
+	DiscountAmount       string          `json:"discount_amount" example:"5.00"`
+	TaxAmount            string          `json:"tax_amount" example:"6.08"`
+	TotalAmount          string          `json:"total_amount" example:"478.83"`
+	PriceListID          *int32          `json:"price_list_id,omitempty" example:"1"`
+	ItemCount            int64           `json:"item_count" example:"5"`
+	TotalQuantity        string          `json:"total_quantity" example:"50.000"`
+	CreatedAt            string          `json:"created_at" example:"2026-09-08T10:00:00Z"`
+	UpdatedAt            string          `json:"updated_at" example:"2026-09-08T10:00:00Z"`
+}
+
+// PurchaseOrderListResponse represents paginated purchase orders list response.
+type PurchaseOrderListResponse struct {
+	Data       []PurchaseOrderSummaryResponse `json:"data"`
+	TotalCount int64                          `json:"total_count" example:"25"`
+	Page       int32                          `json:"page" example:"1"`
+	Limit      int32                          `json:"limit" example:"20"`
+	TotalPages int32                          `json:"total_pages" example:"2"`
+}
+
+// GRNItemDTO represents a line item in a goods receipt note for Swagger.
+type GRNItemDTO struct {
+	PurchaseOrderLineID *int32   `json:"purchase_order_line_id,omitempty" example:"1"`
+	ProductID           int32    `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID    *int32   `json:"product_variant_id,omitempty" example:"2"`
+	StorageLocationID   *int32   `json:"storage_location_id,omitempty" example:"1"`
+	QuantityReceived    float64  `json:"quantity_received" binding:"required" example:"10.0"`
+	QuantityRejected    *float64 `json:"quantity_rejected,omitempty" example:"0.0"`
+	UomID               *int32   `json:"uom_id,omitempty" example:"1"`
+	UnitCost            *float64 `json:"unit_cost,omitempty" example:"45.50"`
+	BatchNumber         *string  `json:"batch_number,omitempty" example:"BATCH-2026-01"`
+	ExpiryDate          *string  `json:"expiry_date,omitempty" example:"2027-01-01"`
+	RejectionReason     *string  `json:"rejection_reason,omitempty"`
+	Notes               *string  `json:"notes,omitempty"`
+}
+
+// CreateGRNRequest represents request body to create a Goods Receipt Note.
+type CreateGRNRequest struct {
+	OrganizationID     int32                  `json:"organization_id" binding:"required" example:"1"`
+	GRNNumber          string                 `json:"grn_number" binding:"required" example:"GRN-20260908-0001"`
+	PurchaseOrderID    *int32                 `json:"purchase_order_id,omitempty" example:"1"`
+	SupplierID         int32                  `json:"supplier_id" binding:"required" example:"5"`
+	StoreID            int32                  `json:"store_id" binding:"required" example:"1"`
+	ReceivedBy         *int32                 `json:"received_by,omitempty" example:"1"`
+	ReceiptDate        *string                `json:"receipt_date,omitempty" example:"2026-09-08"`
+	DeliveryNoteNumber *string                `json:"delivery_note_number,omitempty" example:"DN-9988"`
+	Notes              *string                `json:"notes,omitempty"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty"`
+	Items              []GRNItemDTO           `json:"items" binding:"required"`
+}
+
+// GRNItemResponse represents GRN item response.
+type GRNItemResponse struct {
+	ID                  int32   `json:"id" example:"1"`
+	GRNID               int32   `json:"grn_id" example:"1"`
+	PurchaseOrderLineID *int32  `json:"purchase_order_line_id,omitempty" example:"1"`
+	ProductID           int32   `json:"product_id" example:"1"`
+	ProductName         *string `json:"product_name,omitempty" example:"Fresh Milk 1L"`
+	ProductSKU          *string `json:"product_sku,omitempty" example:"MILK-001"`
+	ProductVariantID    *int32  `json:"product_variant_id,omitempty" example:"2"`
+	StorageLocationID   *int32  `json:"storage_location_id,omitempty" example:"1"`
+	QuantityReceived    string  `json:"quantity_received" example:"10.000"`
+	QuantityRejected    string  `json:"quantity_rejected" example:"0.000"`
+	UomID               *int32  `json:"uom_id,omitempty" example:"1"`
+	UomName             *string `json:"uom_name,omitempty" example:"Liter"`
+	UnitCost            *string `json:"unit_cost,omitempty" example:"45.5000"`
+	BatchNumber         *string `json:"batch_number,omitempty" example:"BATCH-2026-01"`
+	ExpiryDate          *string `json:"expiry_date,omitempty" example:"2027-01-01"`
+	RejectionReason     *string `json:"rejection_reason,omitempty"`
+	Notes               *string `json:"notes,omitempty"`
+	CreatedAt           string  `json:"created_at" example:"2026-09-08T10:00:00Z"`
+}
+
+// GRNResponse represents Goods Receipt Note response.
+type GRNResponse struct {
+	ID                 int32             `json:"id" example:"1"`
+	OrganizationID     int32             `json:"organization_id" example:"1"`
+	GRNNumber          string            `json:"grn_number" example:"GRN-20260908-0001"`
+	PurchaseOrderID    *int32            `json:"purchase_order_id,omitempty" example:"1"`
+	PONumber           *string           `json:"po_number,omitempty" example:"PO-20260908-0001"`
+	SupplierID         int32             `json:"supplier_id" example:"5"`
+	SupplierName       *string           `json:"supplier_name,omitempty" example:"Almarai Dairy Co."`
+	StoreID            int32             `json:"store_id" example:"1"`
+	StoreName          *string           `json:"store_name,omitempty" example:"Main Supermarket Branch"`
+	ReceivedBy         *int32            `json:"received_by,omitempty" example:"1"`
+	ReceivedByName     *string           `json:"received_by_name,omitempty" example:"warehouse_manager"`
+	ReceiptDate        string            `json:"receipt_date" example:"2026-09-08T10:00:00Z"`
+	DeliveryNoteNumber *string           `json:"delivery_note_number,omitempty" example:"DN-9988"`
+	Status             string            `json:"status" example:"posted"`
+	Notes              *string           `json:"notes,omitempty"`
+	Metadata           json.RawMessage   `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt          string            `json:"created_at" example:"2026-09-08T10:00:00Z"`
+	UpdatedAt          string            `json:"updated_at" example:"2026-09-08T10:00:00Z"`
+	Items              []GRNItemResponse `json:"items,omitempty"`
+}
+
+// TransferRequestItemDTO represents a line item in a transfer request.
+type TransferRequestItemDTO struct {
+	ProductID         int32   `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID  *int32  `json:"product_variant_id,omitempty" example:"2"`
+	FromLocationID    *int32  `json:"from_location_id,omitempty" example:"1"`
+	ToLocationID      *int32  `json:"to_location_id,omitempty" example:"2"`
+	RequestedQuantity float64 `json:"requested_quantity" binding:"required" example:"5.0"`
+	UomID             *int32  `json:"uom_id,omitempty" example:"1"`
+	BatchNumber       *string `json:"batch_number,omitempty" example:"BATCH-01"`
+	Notes             *string `json:"notes,omitempty"`
+}
+
+// CreateTransferRequestDTO represents the creation request for a transfer request.
+type CreateTransferRequestDTO struct {
+	OrganizationID       int32                    `json:"organization_id" binding:"required" example:"1"`
+	TransferNumber       string                   `json:"transfer_number" binding:"required" example:"TR-20260908-0001"`
+	FromStoreID          int32                    `json:"from_store_id" binding:"required" example:"1"`
+	ToStoreID            int32                    `json:"to_store_id" binding:"required" example:"2"`
+	RequestedBy          *int32                   `json:"requested_by,omitempty" example:"1"`
+	RequestDate          *string                  `json:"request_date,omitempty" example:"2026-09-08"`
+	ExpectedDeliveryDate *string                  `json:"expected_delivery_date,omitempty" example:"2026-09-12"`
+	Notes                *string                  `json:"notes,omitempty"`
+	Metadata             map[string]interface{}   `json:"metadata,omitempty"`
+	Items                []TransferRequestItemDTO `json:"items" binding:"required"`
+}
+
+// TransferRequestItemResponse represents transfer request item output.
+type TransferRequestItemResponse struct {
+	ID                int32   `json:"id" example:"1"`
+	TransferRequestID int32   `json:"transfer_request_id" example:"1"`
+	ProductID         int32   `json:"product_id" example:"1"`
+	ProductName       *string `json:"product_name,omitempty" example:"Fresh Milk 1L"`
+	ProductSKU        *string `json:"product_sku,omitempty" example:"MILK-001"`
+	ProductVariantID  *int32  `json:"product_variant_id,omitempty" example:"2"`
+	FromLocationID    *int32  `json:"from_location_id,omitempty" example:"1"`
+	ToLocationID      *int32  `json:"to_location_id,omitempty" example:"2"`
+	RequestedQuantity string  `json:"requested_quantity" example:"5.000"`
+	ApprovedQuantity  string  `json:"approved_quantity" example:"5.000"`
+	ShippedQuantity   string  `json:"shipped_quantity" example:"0.000"`
+	ReceivedQuantity  string  `json:"received_quantity" example:"0.000"`
+	UomID             *int32  `json:"uom_id,omitempty" example:"1"`
+	UomName           *string `json:"uom_name,omitempty" example:"Liter"`
+	BatchNumber       *string `json:"batch_number,omitempty"`
+	Notes             *string `json:"notes,omitempty"`
+	CreatedAt         string  `json:"created_at" example:"2026-09-08T10:00:00Z"`
+}
+
+// TransferRequestResponse represents transfer request response.
+type TransferRequestResponse struct {
+	ID                   int32                         `json:"id" example:"1"`
+	OrganizationID       int32                         `json:"organization_id" example:"1"`
+	TransferNumber       string                        `json:"transfer_number" example:"TR-20260908-0001"`
+	FromStoreID          int32                         `json:"from_store_id" example:"1"`
+	FromStoreName        *string                       `json:"from_store_name,omitempty" example:"Central Warehouse"`
+	ToStoreID            int32                         `json:"to_store_id" example:"2"`
+	ToStoreName          *string                       `json:"to_store_name,omitempty" example:"Downtown Branch"`
+	Status               string                        `json:"status" example:"draft"`
+	RequestedBy          *int32                        `json:"requested_by,omitempty" example:"1"`
+	RequestedByName      *string                       `json:"requested_by_name,omitempty" example:"store_manager"`
+	ApprovedBy           *int32                        `json:"approved_by,omitempty"`
+	ApprovedByName       *string                       `json:"approved_by_name,omitempty"`
+	ShippedBy            *int32                        `json:"shipped_by,omitempty"`
+	ReceivedBy           *int32                        `json:"received_by,omitempty"`
+	RequestDate          string                        `json:"request_date" example:"2026-09-08T10:00:00Z"`
+	ExpectedDeliveryDate *string                       `json:"expected_delivery_date,omitempty" example:"2026-09-12"`
+	ShippedAt            *string                       `json:"shipped_at,omitempty"`
+	ReceivedAt           *string                       `json:"received_at,omitempty"`
+	Notes                *string                       `json:"notes,omitempty"`
+	Metadata             json.RawMessage               `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt            string                        `json:"created_at" example:"2026-09-08T10:00:00Z"`
+	UpdatedAt            string                        `json:"updated_at" example:"2026-09-08T10:00:00Z"`
+	Items                []TransferRequestItemResponse `json:"items,omitempty"`
+}
+
+// M2MClientResponse represents the response body for an M2M client.
+type M2MClientResponse struct {
+	ClientID   string   `json:"client_id" example:"client_abc123"`
+	ClientName string   `json:"client_name" example:"ERP Sync Service"`
+	TenantID   string   `json:"tenant_id" example:"tenant_123"`
+	Scopes     []string `json:"scopes" example:"read,write"`
+	IsActive   bool     `json:"is_active" example:"true"`
+	Token      string   `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+}
+
+// PrintReceiptRequest represents the request payload to print a receipt.
+type PrintReceiptRequest struct {
+	OrgID   int32                  `json:"org_id" binding:"required" example:"1"`
+	Printer map[string]interface{} `json:"printer"`
+	Receipt map[string]interface{} `json:"receipt"`
+}
+
+// CreateStockMovementRequest represents request body for creating a stock movement.
+type CreateStockMovementRequest struct {
+	MovementType     string                 `json:"movement_type" binding:"required" example:"receipt"`
+	ReferenceType    *string                `json:"reference_type,omitempty" example:"purchase_order"`
+	ReferenceID      *int32                 `json:"reference_id,omitempty" example:"100"`
+	ProductID        int32                  `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID *int32                 `json:"product_variant_id,omitempty" example:"2"`
+	FromStoreID      *int32                 `json:"from_store_id,omitempty" example:"1"`
+	ToStoreID        *int32                 `json:"to_store_id,omitempty" example:"2"`
+	FromLocationID   *int32                 `json:"from_location_id,omitempty" example:"1"`
+	ToLocationID     *int32                 `json:"to_location_id,omitempty" example:"2"`
+	Quantity         string                 `json:"quantity" binding:"required" example:"10.5"`
+	UomID            *int32                 `json:"uom_id,omitempty" example:"1"`
+	BatchNumber      *string                `json:"batch_number,omitempty" example:"BATCH-2026-01"`
+	SerialNumber     *string                `json:"serial_number,omitempty"`
+	MovementDate     string                 `json:"movement_date" binding:"required" example:"2026-09-08T10:00:00Z"`
+	PostedBy         *int32                 `json:"posted_by,omitempty" example:"1"`
+	Status           *string                `json:"status,omitempty" example:"completed"`
+	CostPerUnit      *string                `json:"cost_per_unit,omitempty" example:"45.50"`
+	TotalValue       *string                `json:"total_value,omitempty" example:"477.75"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// ApproveTransferRequestDTO represents approval request for a transfer request.
+type ApproveTransferRequestDTO struct {
+	ApprovedBy int32 `json:"approved_by" binding:"required" example:"1"`
+}
+
+// ShipTransferRequestDTO represents ship request for a transfer request.
+type ShipTransferRequestDTO struct {
+	ShippedBy int32 `json:"shipped_by" binding:"required" example:"1"`
+}
+
+// ReceiveTransferRequestDTO represents receive request for a transfer request.
+type ReceiveTransferRequestDTO struct {
+	ReceivedBy int32 `json:"received_by" binding:"required" example:"1"`
+}
 

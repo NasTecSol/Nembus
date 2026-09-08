@@ -10884,7 +10884,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.CreateGoodsReceiptNoteInput"
+                            "$ref": "#/definitions/handler.CreateGRNRequest"
                         }
                     }
                 ],
@@ -10892,7 +10892,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/usecase.GoodsReceiptNoteOutput"
+                            "$ref": "#/definitions/handler.GRNResponse"
                         }
                     },
                     "400": {
@@ -10955,7 +10955,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/usecase.GoodsReceiptNoteOutput"
+                            "$ref": "#/definitions/handler.GRNResponse"
                         }
                     },
                     "400": {
@@ -12689,20 +12689,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/middleware.M2MClient"
+                                "$ref": "#/definitions/handler.M2MClientResponse"
                             }
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -12741,25 +12741,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/middleware.M2MClient"
+                            "$ref": "#/definitions/handler.M2MClientResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -23306,7 +23306,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.PrintReceiptInput"
+                            "$ref": "#/definitions/handler.PrintReceiptRequest"
                         }
                     }
                 ],
@@ -26036,25 +26036,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -27333,6 +27333,549 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/purchase-orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List purchase orders with filtering by organization, store, supplier, status, date range, search, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "List Purchase Orders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Supplier / Business Partner ID",
+                        "name": "partner_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status (draft, submitted, approved, partially_received, received, cancelled, closed)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "From date (YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "To date (YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search PO number or supplier name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PurchaseOrderListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new purchase order with itemized lines in draft status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "Create Purchase Order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Purchase order creation payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreatePurchaseOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PurchaseOrderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/purchase-orders/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get detailed purchase order with supplier, store, user details and line items",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "Get Purchase Order by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Purchase Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PurchaseOrderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates header and line items of a draft purchase order",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "Update Purchase Order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Purchase Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Purchase order update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdatePurchaseOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PurchaseOrderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a draft or cancelled purchase order",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "Delete Purchase Order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Purchase Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/purchase-orders/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Approves a submitted purchase order",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "Approve Purchase Order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Purchase Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional approval payload",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdatePurchaseOrderStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PurchaseOrderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/purchase-orders/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update purchase order lifecycle status (draft, submitted, approved, cancelled, closed)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "purchase-orders"
+                ],
+                "summary": "Update Purchase Order Status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Purchase Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Status update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdatePurchaseOrderStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PurchaseOrderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
@@ -32131,7 +32674,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.CreateStockMovementInput"
+                            "$ref": "#/definitions/handler.CreateStockMovementRequest"
                         }
                     }
                 ],
@@ -35707,7 +36250,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/usecase.TransferRequestOutput"
+                                "$ref": "#/definitions/handler.TransferRequestResponse"
                             }
                         }
                     },
@@ -35763,7 +36306,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.CreateTransferRequestInput"
+                            "$ref": "#/definitions/handler.CreateTransferRequestDTO"
                         }
                     }
                 ],
@@ -35771,7 +36314,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/usecase.TransferRequestOutput"
+                            "$ref": "#/definitions/handler.TransferRequestResponse"
                         }
                     },
                     "400": {
@@ -35834,7 +36377,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/usecase.TransferRequestOutput"
+                            "$ref": "#/definitions/handler.TransferRequestResponse"
                         }
                     },
                     "400": {
@@ -35904,7 +36447,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.ApproveTransferRequestInput"
+                            "$ref": "#/definitions/handler.ApproveTransferRequestDTO"
                         }
                     }
                 ],
@@ -35976,7 +36519,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.ReceiveTransferRequestInput"
+                            "$ref": "#/definitions/handler.ReceiveTransferRequestDTO"
                         }
                     }
                 ],
@@ -36048,7 +36591,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.ShipTransferRequestInput"
+                            "$ref": "#/definitions/handler.ShipTransferRequestDTO"
                         }
                     }
                 ],
@@ -38566,25 +39109,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -38631,7 +39174,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -38684,25 +39227,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/repository.Response"
+                            "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
                 }
@@ -38779,13 +39322,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "big.Int": {
-            "type": "object"
-        },
-        "gin.H": {
-            "type": "object",
-            "additionalProperties": {}
-        },
         "handler.AddPaymentToTransactionRequest": {
             "type": "object",
             "properties": {
@@ -38960,6 +39496,18 @@ const docTemplate = `{
                 "discount_amount": {
                     "type": "string",
                     "example": "10.00"
+                }
+            }
+        },
+        "handler.ApproveTransferRequestDTO": {
+            "type": "object",
+            "required": [
+                "approved_by"
+            ],
+            "properties": {
+                "approved_by": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -40078,6 +40626,63 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.CreateGRNRequest": {
+            "type": "object",
+            "required": [
+                "grn_number",
+                "items",
+                "organization_id",
+                "store_id",
+                "supplier_id"
+            ],
+            "properties": {
+                "delivery_note_number": {
+                    "type": "string",
+                    "example": "DN-9988"
+                },
+                "grn_number": {
+                    "type": "string",
+                    "example": "GRN-20260908-0001"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GRNItemDTO"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "purchase_order_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "receipt_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "received_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
         "handler.CreateInventoryStockRequest": {
             "type": "object",
             "required": [
@@ -41075,6 +41680,10 @@ const docTemplate = `{
                 "product_variant_id": {
                     "type": "integer",
                     "example": 1
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },
@@ -41222,7 +41831,167 @@ const docTemplate = `{
             }
         },
         "handler.CreatePromotionRequest": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "code",
+                "name",
+                "organization_id",
+                "promotion_type"
+            ],
+            "properties": {
+                "action_metadata": {
+                    "type": "object"
+                },
+                "applies_to": {
+                    "type": "string",
+                    "example": "all"
+                },
+                "code": {
+                    "type": "string",
+                    "example": "PROMO-SUMMER20"
+                },
+                "coupon_code": {
+                    "type": "string",
+                    "example": "SUMMER20"
+                },
+                "created_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "description": {
+                    "type": "string",
+                    "example": "20% off all summer items"
+                },
+                "discount_value": {
+                    "type": "string",
+                    "example": "20.00"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "is_stackable": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "min_order_amount": {
+                    "type": "string",
+                    "example": "500.00"
+                },
+                "min_quantity": {
+                    "type": "string",
+                    "example": "2"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Summer Sale 20%"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "promotion_type": {
+                    "type": "string",
+                    "example": "percentage_discount"
+                },
+                "schedule_json": {
+                    "type": "object"
+                },
+                "store_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "target_category_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "target_product_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "usage_limit": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "usage_per_customer": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "valid_from": {
+                    "type": "string",
+                    "example": "2026-06-01T00:00:00Z"
+                },
+                "valid_to": {
+                    "type": "string",
+                    "example": "2026-08-31T23:59:59Z"
+                }
+            }
+        },
+        "handler.CreatePurchaseOrderRequest": {
+            "type": "object",
+            "required": [
+                "items",
+                "organization_id",
+                "store_id",
+                "supplier_id"
+            ],
+            "properties": {
+                "created_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "expected_delivery_date": {
+                    "type": "string",
+                    "example": "2026-09-15"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.PurchaseOrderLineDTO"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "po_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "po_number": {
+                    "type": "string",
+                    "example": "PO-20260908-0001"
+                },
+                "price_list_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
         },
         "handler.CreateRecipeIngredientRequest": {
             "type": "object",
@@ -41726,6 +42495,91 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.CreateStockMovementRequest": {
+            "type": "object",
+            "required": [
+                "movement_date",
+                "movement_type",
+                "product_id",
+                "quantity"
+            ],
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-2026-01"
+                },
+                "cost_per_unit": {
+                    "type": "string",
+                    "example": "45.50"
+                },
+                "from_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "from_store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "movement_date": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "movement_type": {
+                    "type": "string",
+                    "example": "receipt"
+                },
+                "posted_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "10.5"
+                },
+                "reference_id": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "reference_type": {
+                    "type": "string",
+                    "example": "purchase_order"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "completed"
+                },
+                "to_location_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "to_store_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "total_value": {
+                    "type": "string",
+                    "example": "477.75"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.CreateStorageLocationRequest": {
             "type": "object",
             "required": [
@@ -41920,6 +42774,59 @@ const docTemplate = `{
                 "tenant_name": {
                     "type": "string",
                     "example": "Acme Corporation"
+                }
+            }
+        },
+        "handler.CreateTransferRequestDTO": {
+            "type": "object",
+            "required": [
+                "from_store_id",
+                "items",
+                "organization_id",
+                "to_store_id",
+                "transfer_number"
+            ],
+            "properties": {
+                "expected_delivery_date": {
+                    "type": "string",
+                    "example": "2026-09-12"
+                },
+                "from_store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.TransferRequestItemDTO"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "request_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "requested_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "to_store_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "transfer_number": {
+                    "type": "string",
+                    "example": "TR-20260908-0001"
                 }
             }
         },
@@ -42234,6 +43141,217 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.GRNItemDTO": {
+            "type": "object",
+            "required": [
+                "product_id",
+                "quantity_received"
+            ],
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-2026-01"
+                },
+                "expiry_date": {
+                    "type": "string",
+                    "example": "2027-01-01"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "purchase_order_line_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "quantity_received": {
+                    "type": "number",
+                    "example": 10
+                },
+                "quantity_rejected": {
+                    "type": "number",
+                    "example": 0
+                },
+                "rejection_reason": {
+                    "type": "string"
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "unit_cost": {
+                    "type": "number",
+                    "example": 45.5
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.GRNItemResponse": {
+            "type": "object",
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-2026-01"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "expiry_date": {
+                    "type": "string",
+                    "example": "2027-01-01"
+                },
+                "grn_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Fresh Milk 1L"
+                },
+                "product_sku": {
+                    "type": "string",
+                    "example": "MILK-001"
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "purchase_order_line_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "quantity_received": {
+                    "type": "string",
+                    "example": "10.000"
+                },
+                "quantity_rejected": {
+                    "type": "string",
+                    "example": "0.000"
+                },
+                "rejection_reason": {
+                    "type": "string"
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "unit_cost": {
+                    "type": "string",
+                    "example": "45.5000"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "uom_name": {
+                    "type": "string",
+                    "example": "Liter"
+                }
+            }
+        },
+        "handler.GRNResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "delivery_note_number": {
+                    "type": "string",
+                    "example": "DN-9988"
+                },
+                "grn_number": {
+                    "type": "string",
+                    "example": "GRN-20260908-0001"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GRNItemResponse"
+                    }
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "po_number": {
+                    "type": "string",
+                    "example": "PO-20260908-0001"
+                },
+                "purchase_order_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "receipt_date": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "received_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "received_by_name": {
+                    "type": "string",
+                    "example": "warehouse_manager"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "posted"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_name": {
+                    "type": "string",
+                    "example": "Main Supermarket Branch"
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "supplier_name": {
+                    "type": "string",
+                    "example": "Almarai Dairy Co."
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                }
+            }
+        },
         "handler.GrantStoreAccessRequest": {
             "type": "object",
             "required": [
@@ -42417,6 +43535,41 @@ const docTemplate = `{
                 "valid_to": {
                     "type": "string",
                     "example": "2026-12-31"
+                }
+            }
+        },
+        "handler.M2MClientResponse": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "example": "client_abc123"
+                },
+                "client_name": {
+                    "type": "string",
+                    "example": "ERP Sync Service"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "read",
+                        "write"
+                    ]
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": "tenant_123"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 }
             }
         },
@@ -42798,6 +43951,26 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.PrintReceiptRequest": {
+            "type": "object",
+            "required": [
+                "org_id"
+            ],
+            "properties": {
+                "org_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "printer": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "receipt": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
         "handler.ProcessReturnLineRequest": {
             "type": "object",
             "required": [
@@ -43095,6 +44268,349 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.PurchaseOrderLineDTO": {
+            "type": "object",
+            "properties": {
+                "discount_amount": {
+                    "type": "number",
+                    "example": 5
+                },
+                "line_number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 10.5
+                },
+                "tax_amount": {
+                    "type": "number",
+                    "example": 6.075
+                },
+                "unit_price": {
+                    "type": "number",
+                    "example": 45.5
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.PurchaseOrderLineResponse": {
+            "type": "object",
+            "properties": {
+                "barcode": {
+                    "type": "string",
+                    "example": "628100010001"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "discount_amount": {
+                    "type": "string",
+                    "example": "5.00"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "line_number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "line_total": {
+                    "type": "string",
+                    "example": "478.83"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Fresh Milk 1L"
+                },
+                "product_sku": {
+                    "type": "string",
+                    "example": "MILK-001"
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "purchase_order_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "10.500"
+                },
+                "received_quantity": {
+                    "type": "string",
+                    "example": "0.000"
+                },
+                "subtotal": {
+                    "type": "string",
+                    "example": "477.75"
+                },
+                "tax_amount": {
+                    "type": "string",
+                    "example": "6.08"
+                },
+                "unit_price": {
+                    "type": "string",
+                    "example": "45.5000"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "uom_name": {
+                    "type": "string",
+                    "example": "Liter"
+                },
+                "variant_name": {
+                    "type": "string",
+                    "example": "Full Cream"
+                },
+                "variant_sku": {
+                    "type": "string",
+                    "example": "MILK-001-FC"
+                }
+            }
+        },
+        "handler.PurchaseOrderListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.PurchaseOrderSummaryResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "total_count": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "total_pages": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "handler.PurchaseOrderResponse": {
+            "type": "object",
+            "properties": {
+                "approved_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "approved_by_name": {
+                    "type": "string",
+                    "example": "manager"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "created_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "created_by_name": {
+                    "type": "string",
+                    "example": "admin"
+                },
+                "discount_amount": {
+                    "type": "string",
+                    "example": "5.00"
+                },
+                "expected_delivery_date": {
+                    "type": "string",
+                    "example": "2026-09-15"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.PurchaseOrderLineResponse"
+                    }
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "po_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "po_number": {
+                    "type": "string",
+                    "example": "PO-20260908-0001"
+                },
+                "price_list_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_name": {
+                    "type": "string",
+                    "example": "Main Supermarket Branch"
+                },
+                "subtotal": {
+                    "type": "string",
+                    "example": "477.75"
+                },
+                "supplier_code": {
+                    "type": "string",
+                    "example": "SUPP001"
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "supplier_name": {
+                    "type": "string",
+                    "example": "Almarai Dairy Co."
+                },
+                "tax_amount": {
+                    "type": "string",
+                    "example": "6.08"
+                },
+                "total_amount": {
+                    "type": "string",
+                    "example": "478.83"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                }
+            }
+        },
+        "handler.PurchaseOrderSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "discount_amount": {
+                    "type": "string",
+                    "example": "5.00"
+                },
+                "expected_delivery_date": {
+                    "type": "string",
+                    "example": "2026-09-15"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "item_count": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "po_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "po_number": {
+                    "type": "string",
+                    "example": "PO-20260908-0001"
+                },
+                "price_list_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_name": {
+                    "type": "string",
+                    "example": "Main Supermarket Branch"
+                },
+                "subtotal": {
+                    "type": "string",
+                    "example": "477.75"
+                },
+                "supplier_code": {
+                    "type": "string",
+                    "example": "SUPP001"
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "supplier_name": {
+                    "type": "string",
+                    "example": "Almarai Dairy Co."
+                },
+                "tax_amount": {
+                    "type": "string",
+                    "example": "6.08"
+                },
+                "total_amount": {
+                    "type": "string",
+                    "example": "478.83"
+                },
+                "total_quantity": {
+                    "type": "string",
+                    "example": "50.000"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                }
+            }
+        },
         "handler.PushSyncItem": {
             "type": "object",
             "properties": {
@@ -43134,6 +44650,18 @@ const docTemplate = `{
                     }
                 },
                 "store_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.ReceiveTransferRequestDTO": {
+            "type": "object",
+            "required": [
+                "received_by"
+            ],
+            "properties": {
+                "received_by": {
                     "type": "integer",
                     "example": 1
                 }
@@ -43193,6 +44721,18 @@ const docTemplate = `{
             "properties": {
                 "pos_transaction_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "handler.ShipTransferRequestDTO": {
+            "type": "object",
+            "required": [
+                "shipped_by"
+            ],
+            "properties": {
+                "shipped_by": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -43541,6 +45081,208 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "handler.TransferRequestItemDTO": {
+            "type": "object",
+            "required": [
+                "product_id",
+                "requested_quantity"
+            ],
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-01"
+                },
+                "from_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "requested_quantity": {
+                    "type": "number",
+                    "example": 5
+                },
+                "to_location_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.TransferRequestItemResponse": {
+            "type": "object",
+            "properties": {
+                "approved_quantity": {
+                    "type": "string",
+                    "example": "5.000"
+                },
+                "batch_number": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "from_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Fresh Milk 1L"
+                },
+                "product_sku": {
+                    "type": "string",
+                    "example": "MILK-001"
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "received_quantity": {
+                    "type": "string",
+                    "example": "0.000"
+                },
+                "requested_quantity": {
+                    "type": "string",
+                    "example": "5.000"
+                },
+                "shipped_quantity": {
+                    "type": "string",
+                    "example": "0.000"
+                },
+                "to_location_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "transfer_request_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "uom_name": {
+                    "type": "string",
+                    "example": "Liter"
+                }
+            }
+        },
+        "handler.TransferRequestResponse": {
+            "type": "object",
+            "properties": {
+                "approved_by": {
+                    "type": "integer"
+                },
+                "approved_by_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "expected_delivery_date": {
+                    "type": "string",
+                    "example": "2026-09-12"
+                },
+                "from_store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "from_store_name": {
+                    "type": "string",
+                    "example": "Central Warehouse"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.TransferRequestItemResponse"
+                    }
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "received_by": {
+                    "type": "integer"
+                },
+                "request_date": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "requested_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "requested_by_name": {
+                    "type": "string",
+                    "example": "store_manager"
+                },
+                "shipped_at": {
+                    "type": "string"
+                },
+                "shipped_by": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "to_store_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "to_store_name": {
+                    "type": "string",
+                    "example": "Downtown Branch"
+                },
+                "transfer_number": {
+                    "type": "string",
+                    "example": "TR-20260908-0001"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
                 }
             }
         },
@@ -44554,6 +46296,10 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "type": "object"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },
@@ -44632,7 +46378,83 @@ const docTemplate = `{
             }
         },
         "handler.UpdatePromotionRequest": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "action_metadata": {
+                    "type": "object"
+                },
+                "applies_to": {
+                    "type": "string",
+                    "example": "product"
+                },
+                "coupon_code": {
+                    "type": "string",
+                    "example": "SUMMER25"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Updated description"
+                },
+                "discount_value": {
+                    "type": "string",
+                    "example": "25.00"
+                },
+                "is_stackable": {
+                    "type": "boolean"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "min_order_amount": {
+                    "type": "string",
+                    "example": "500.00"
+                },
+                "min_quantity": {
+                    "type": "string",
+                    "example": "2"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Summer Sale 25%"
+                },
+                "schedule_json": {
+                    "type": "object"
+                },
+                "store_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "target_category_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "target_product_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "usage_limit": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "usage_per_customer": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "valid_from": {
+                    "type": "string",
+                    "example": "2026-06-01T00:00:00Z"
+                },
+                "valid_to": {
+                    "type": "string",
+                    "example": "2026-09-30T23:59:59Z"
+                }
+            }
         },
         "handler.UpdatePromotionStatusRequest": {
             "type": "object",
@@ -44643,6 +46465,57 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "handler.UpdatePurchaseOrderRequest": {
+            "type": "object",
+            "properties": {
+                "expected_delivery_date": {
+                    "type": "string",
+                    "example": "2026-09-15"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.PurchaseOrderLineDTO"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "po_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "price_list_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
+        "handler.UpdatePurchaseOrderStatusRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "approved_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "status": {
+                    "type": "string",
+                    "example": "approved"
                 }
             }
         },
@@ -45155,787 +47028,6 @@ const docTemplate = `{
                 "vat_id": {
                     "type": "string",
                     "example": "300000000000003"
-                }
-            }
-        },
-        "middleware.M2MClient": {
-            "type": "object",
-            "properties": {
-                "client_id": {
-                    "type": "string"
-                },
-                "client_name": {
-                    "type": "string"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "scopes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "pgtype.Date": {
-            "type": "object",
-            "properties": {
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "time": {
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "pgtype.InfinityModifier": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-                1,
-                0,
-                -1
-            ],
-            "x-enum-varnames": [
-                "Infinity",
-                "Finite",
-                "NegativeInfinity"
-            ]
-        },
-        "pgtype.Int4": {
-            "type": "object",
-            "properties": {
-                "int32": {
-                    "type": "integer",
-                    "format": "int32"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "pgtype.Numeric": {
-            "type": "object",
-            "properties": {
-                "exp": {
-                    "type": "integer",
-                    "format": "int32"
-                },
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "int": {
-                    "$ref": "#/definitions/big.Int"
-                },
-                "naN": {
-                    "type": "boolean"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "pgtype.Text": {
-            "type": "object",
-            "properties": {
-                "string": {
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "pgtype.Timestamp": {
-            "type": "object",
-            "properties": {
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "time": {
-                    "description": "Time zone will be ignored when encoding to PostgreSQL.",
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "printing.LineItem": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "price": {
-                    "type": "number"
-                },
-                "qty": {
-                    "type": "number"
-                }
-            }
-        },
-        "printing.PrinterConfig": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "description": "Mode selects the connection method: \"usb\", \"serial\", or \"network\".",
-                    "type": "string"
-                },
-                "network_ip": {
-                    "description": "NetworkIP is the printer's IP address for Ethernet/Wi-Fi printers.",
-                    "type": "string"
-                },
-                "network_port": {
-                    "description": "NetworkPort is the TCP port (defaults to \"9100\" if empty).",
-                    "type": "string"
-                },
-                "printer_name": {
-                    "description": "PrinterName is the Windows spooler printer name (USB / Generic Text Only).",
-                    "type": "string"
-                },
-                "serial_port": {
-                    "description": "SerialPort is the COM port for serial connections (e.g. \"COM3\").",
-                    "type": "string"
-                }
-            }
-        },
-        "printing.ReceiptData": {
-            "type": "object",
-            "properties": {
-                "barcode": {
-                    "description": "value encoded in barcode (e.g. receipt number)",
-                    "type": "string"
-                },
-                "card_sales": {
-                    "type": "number"
-                },
-                "cash_sales": {
-                    "type": "number"
-                },
-                "cashier": {
-                    "type": "string"
-                },
-                "closed_at": {
-                    "type": "string"
-                },
-                "closing_balance": {
-                    "type": "number"
-                },
-                "closing_note": {
-                    "type": "string"
-                },
-                "currency": {
-                    "description": "e.g. \"PKR\"; defaults to \"PKR\"",
-                    "type": "string"
-                },
-                "customer": {
-                    "type": "string"
-                },
-                "discount": {
-                    "description": "absolute amount",
-                    "type": "number"
-                },
-                "expected_balance": {
-                    "type": "number"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/printing.LineItem"
-                    }
-                },
-                "opened_at": {
-                    "type": "string"
-                },
-                "opening_balance": {
-                    "description": "Session Summary / Z-Report fields",
-                    "type": "number"
-                },
-                "other_sales": {
-                    "type": "number"
-                },
-                "paid": {
-                    "description": "total cash tendered",
-                    "type": "number"
-                },
-                "payment_method": {
-                    "type": "string"
-                },
-                "receipt_number": {
-                    "type": "string"
-                },
-                "tax_rate": {
-                    "description": "e.g. 0.05 for 5 %",
-                    "type": "number"
-                },
-                "terminal": {
-                    "type": "string"
-                },
-                "total_sales": {
-                    "type": "number"
-                },
-                "total_transactions": {
-                    "type": "integer"
-                },
-                "type": {
-                    "description": "e.g. \"Z-REPORT\" or standard sales transaction",
-                    "type": "string"
-                },
-                "variance": {
-                    "type": "number"
-                }
-            }
-        },
-        "repository.Response": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "description": "can hold any type of data"
-                },
-                "message": {
-                    "description": "descriptive message",
-                    "type": "string"
-                },
-                "statusCode": {
-                    "description": "e.g., 200, 500",
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.ApproveTransferRequestInput": {
-            "type": "object",
-            "properties": {
-                "approved_by": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.CreateGoodsReceiptNoteInput": {
-            "type": "object",
-            "properties": {
-                "delivery_note_number": {
-                    "type": "string"
-                },
-                "grn_number": {
-                    "type": "string"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/usecase.GoodsReceiptNoteItemInput"
-                    }
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "notes": {
-                    "type": "string"
-                },
-                "organization_id": {
-                    "type": "integer"
-                },
-                "purchase_order_id": {
-                    "type": "integer"
-                },
-                "receipt_date": {
-                    "type": "string"
-                },
-                "received_by": {
-                    "type": "integer"
-                },
-                "store_id": {
-                    "type": "integer"
-                },
-                "supplier_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.CreateStockMovementInput": {
-            "type": "object",
-            "properties": {
-                "batch_number": {
-                    "type": "string"
-                },
-                "cost_per_unit": {
-                    "type": "string"
-                },
-                "from_location_id": {
-                    "type": "integer"
-                },
-                "from_store_id": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "movement_date": {
-                    "type": "string"
-                },
-                "movement_type": {
-                    "type": "string"
-                },
-                "posted_by": {
-                    "type": "integer"
-                },
-                "product_id": {
-                    "type": "integer"
-                },
-                "product_variant_id": {
-                    "type": "integer"
-                },
-                "quantity": {
-                    "type": "string"
-                },
-                "reference_id": {
-                    "type": "integer"
-                },
-                "reference_type": {
-                    "type": "string"
-                },
-                "serial_number": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "to_location_id": {
-                    "type": "integer"
-                },
-                "to_store_id": {
-                    "type": "integer"
-                },
-                "total_value": {
-                    "type": "string"
-                },
-                "uom_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.CreateTransferRequestInput": {
-            "type": "object",
-            "properties": {
-                "expected_delivery_date": {
-                    "type": "string"
-                },
-                "from_store_id": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/usecase.TransferRequestItemInput"
-                    }
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "notes": {
-                    "type": "string"
-                },
-                "organization_id": {
-                    "type": "integer"
-                },
-                "request_date": {
-                    "type": "string"
-                },
-                "requested_by": {
-                    "type": "integer"
-                },
-                "to_store_id": {
-                    "type": "integer"
-                },
-                "transfer_number": {
-                    "type": "string"
-                }
-            }
-        },
-        "usecase.GoodsReceiptNoteItemInput": {
-            "type": "object",
-            "properties": {
-                "batch_number": {
-                    "type": "string"
-                },
-                "expiry_date": {
-                    "type": "string"
-                },
-                "notes": {
-                    "type": "string"
-                },
-                "product_id": {
-                    "type": "integer"
-                },
-                "product_variant_id": {
-                    "type": "integer"
-                },
-                "purchase_order_line_id": {
-                    "type": "integer"
-                },
-                "quantity_received": {
-                    "type": "number"
-                },
-                "quantity_rejected": {
-                    "type": "number"
-                },
-                "rejection_reason": {
-                    "type": "string"
-                },
-                "storage_location_id": {
-                    "type": "integer"
-                },
-                "unit_cost": {
-                    "type": "number"
-                },
-                "uom_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.GoodsReceiptNoteItemOutput": {
-            "type": "object",
-            "properties": {
-                "batch_number": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "expiry_date": {
-                    "$ref": "#/definitions/pgtype.Date"
-                },
-                "grn_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "notes": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "product_id": {
-                    "type": "integer"
-                },
-                "product_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "product_sku": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "product_variant_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "purchase_order_line_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "quantity_received": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "quantity_rejected": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "rejection_reason": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "storage_location_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "unit_cost": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "uom_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "uom_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                }
-            }
-        },
-        "usecase.GoodsReceiptNoteOutput": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "delivery_note_number": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "grn_number": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/usecase.GoodsReceiptNoteItemOutput"
-                    }
-                },
-                "metadata": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "notes": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "organization_id": {
-                    "type": "integer"
-                },
-                "po_number": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "purchase_order_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "receipt_date": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "received_by": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "received_by_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "store_id": {
-                    "type": "integer"
-                },
-                "store_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "supplier_id": {
-                    "type": "integer"
-                },
-                "supplier_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                }
-            }
-        },
-        "usecase.PrintReceiptInput": {
-            "type": "object",
-            "properties": {
-                "org_id": {
-                    "description": "OrgID is the organisation whose branding (header/footer) will be applied.",
-                    "type": "integer"
-                },
-                "printer": {
-                    "description": "Printer describes how / where to send the ESC/POS data.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/printing.PrinterConfig"
-                        }
-                    ]
-                },
-                "receipt": {
-                    "description": "Receipt holds the transaction data (items, totals, cashier info, etc.).",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/printing.ReceiptData"
-                        }
-                    ]
-                }
-            }
-        },
-        "usecase.ReceiveTransferRequestInput": {
-            "type": "object",
-            "properties": {
-                "received_by": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.ShipTransferRequestInput": {
-            "type": "object",
-            "properties": {
-                "shipped_by": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.TransferRequestItemInput": {
-            "type": "object",
-            "properties": {
-                "batch_number": {
-                    "type": "string"
-                },
-                "from_location_id": {
-                    "type": "integer"
-                },
-                "notes": {
-                    "type": "string"
-                },
-                "product_id": {
-                    "type": "integer"
-                },
-                "product_variant_id": {
-                    "type": "integer"
-                },
-                "requested_quantity": {
-                    "type": "number"
-                },
-                "to_location_id": {
-                    "type": "integer"
-                },
-                "uom_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "usecase.TransferRequestItemOutput": {
-            "type": "object",
-            "properties": {
-                "approved_quantity": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "batch_number": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "from_location_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "notes": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "product_id": {
-                    "type": "integer"
-                },
-                "product_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "product_sku": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "product_variant_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "received_quantity": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "requested_quantity": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "shipped_quantity": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                },
-                "to_location_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "transfer_request_id": {
-                    "type": "integer"
-                },
-                "uom_id": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "uom_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                }
-            }
-        },
-        "usecase.TransferRequestOutput": {
-            "type": "object",
-            "properties": {
-                "approved_by": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "approved_by_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "expected_delivery_date": {
-                    "$ref": "#/definitions/pgtype.Date"
-                },
-                "from_store_id": {
-                    "type": "integer"
-                },
-                "from_store_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/usecase.TransferRequestItemOutput"
-                    }
-                },
-                "metadata": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "notes": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "organization_id": {
-                    "type": "integer"
-                },
-                "received_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "received_by": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "request_date": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "requested_by": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "requested_by_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "shipped_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "shipped_by": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "to_store_id": {
-                    "type": "integer"
-                },
-                "to_store_name": {
-                    "$ref": "#/definitions/pgtype.Text"
-                },
-                "transfer_number": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
                 }
             }
         }
