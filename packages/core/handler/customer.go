@@ -489,7 +489,12 @@ func (h *CustomerHandler) ToggleCustomerActive(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ToggleCustomerActive(c.Request.Context(), c.Param("id"), req.IsActive)
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	resp := h.useCase.ToggleCustomerActive(c.Request.Context(), c.Param("id"), isActive)
 	c.JSON(resp.StatusCode, resp)
 }
 

@@ -432,14 +432,37 @@ func (uc *BusinessPartnerUseCase) ToggleBusinessPartnerActive(ctx context.Contex
 
 // Granular Address operations
 
+func isValidAddressType(t string) bool {
+	return t == "bill_to" || t == "ship_to" || t == "both"
+}
+
 func (uc *BusinessPartnerUseCase) AddPartnerAddress(ctx context.Context, partnerIDStr string, input PartnerAddressInput) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
 	partnerID, err := strconv.ParseInt(partnerIDStr, 10, 32)
-	if err != nil {
+	if err != nil || partnerID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid business partner ID", nil)
+	}
+
+	if _, err := uc.repo.GetBusinessPartner(ctx, int32(partnerID)); err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "business partner not found", nil)
+	}
+
+	if input.AddressName == "" {
+		return utils.NewResponse(utils.CodeBadReq, "address_name is required", nil)
+	}
+
+	if input.AddressType == "" {
+		input.AddressType = "both"
+	}
+	if !isValidAddressType(input.AddressType) {
+		return utils.NewResponse(utils.CodeBadReq, "invalid address_type, must be one of: bill_to, ship_to, both", nil)
+	}
+
+	if input.CountryCode == "" {
+		input.CountryCode = "SA"
 	}
 
 	a, err := uc.repo.CreatePartnerAddress(ctx, repository.CreatePartnerAddressParams{
@@ -467,13 +490,53 @@ func (uc *BusinessPartnerUseCase) AddPartnerAddress(ctx context.Context, partner
 	return utils.NewResponse(utils.CodeCreated, "partner address added successfully", a)
 }
 
+func (uc *BusinessPartnerUseCase) GetPartnerAddress(ctx context.Context, addressIDStr string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	addrID, err := strconv.ParseInt(addressIDStr, 10, 32)
+	if err != nil || addrID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid address ID", nil)
+	}
+
+	a, err := uc.repo.GetPartnerAddress(ctx, int32(addrID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "address not found", nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "partner address fetched successfully", a)
+}
+
+func (uc *BusinessPartnerUseCase) ListPartnerAddresses(ctx context.Context, partnerIDStr string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	partnerID, err := strconv.ParseInt(partnerIDStr, 10, 32)
+	if err != nil || partnerID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing partner ID", nil)
+	}
+
+	addresses, err := uc.repo.ListPartnerAddresses(ctx, int32(partnerID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	if addresses == nil {
+		addresses = []repository.PartnerAddress{}
+	}
+
+	return utils.NewResponse(utils.CodeOK, "partner addresses fetched successfully", addresses)
+}
+
 func (uc *BusinessPartnerUseCase) UpdatePartnerAddress(ctx context.Context, addressIDStr string, input PartnerAddressInput) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
 	addrID, err := strconv.ParseInt(addressIDStr, 10, 32)
-	if err != nil {
+	if err != nil || addrID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid address ID", nil)
 	}
 
@@ -487,17 +550,40 @@ func (uc *BusinessPartnerUseCase) UpdatePartnerAddress(ctx context.Context, addr
 	}
 	if input.AddressType == "" {
 		input.AddressType = a.AddressType
+	} else if !isValidAddressType(input.AddressType) {
+		return utils.NewResponse(utils.CodeBadReq, "invalid address_type, must be one of: bill_to, ship_to, both", nil)
+	}
+
+	var street pgtype.Text = a.Street
+	if input.Street != "" {
+		street = utils.StringToPgText(&input.Street)
+	}
+	var city pgtype.Text = a.City
+	if input.City != "" {
+		city = utils.StringToPgText(&input.City)
+	}
+	var state pgtype.Text = a.State
+	if input.State != "" {
+		state = utils.StringToPgText(&input.State)
+	}
+	var zip pgtype.Text = a.ZipCode
+	if input.ZipCode != "" {
+		zip = utils.StringToPgText(&input.ZipCode)
+	}
+	var country pgtype.Text = a.CountryCode
+	if input.CountryCode != "" {
+		country = utils.StringToPgText(&input.CountryCode)
 	}
 
 	updated, err := uc.repo.UpdatePartnerAddress(ctx, repository.UpdatePartnerAddressParams{
 		ID:          a.ID,
 		AddressName: input.AddressName,
 		AddressType: input.AddressType,
-		Street:      utils.StringToPgText(&input.Street),
-		City:        utils.StringToPgText(&input.City),
-		State:       utils.StringToPgText(&input.State),
-		ZipCode:     utils.StringToPgText(&input.ZipCode),
-		CountryCode: utils.StringToPgText(&input.CountryCode),
+		Street:      street,
+		City:        city,
+		State:       state,
+		ZipCode:     zip,
+		CountryCode: country,
 		IsDefault:   pgtype.Bool{Bool: input.IsDefault, Valid: true},
 	})
 	if err != nil {
@@ -514,14 +600,57 @@ func (uc *BusinessPartnerUseCase) UpdatePartnerAddress(ctx context.Context, addr
 	return utils.NewResponse(utils.CodeOK, "partner address updated successfully", updated)
 }
 
+func (uc *BusinessPartnerUseCase) SetDefaultPartnerAddress(ctx context.Context, addressIDStr string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	addrID, err := strconv.ParseInt(addressIDStr, 10, 32)
+	if err != nil || addrID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid address ID", nil)
+	}
+
+	a, err := uc.repo.GetPartnerAddress(ctx, int32(addrID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "address not found", nil)
+	}
+
+	updated, err := uc.repo.UpdatePartnerAddress(ctx, repository.UpdatePartnerAddressParams{
+		ID:          a.ID,
+		AddressName: a.AddressName,
+		AddressType: a.AddressType,
+		Street:      a.Street,
+		City:        a.City,
+		State:       a.State,
+		ZipCode:     a.ZipCode,
+		CountryCode: a.CountryCode,
+		IsDefault:   pgtype.Bool{Bool: true, Valid: true},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	_ = uc.repo.ClearDefaultPartnerAddresses(ctx, repository.ClearDefaultPartnerAddressesParams{
+		PartnerID: a.PartnerID,
+		ID:        a.ID,
+	})
+
+	return utils.NewResponse(utils.CodeOK, "partner address set as default successfully", updated)
+}
+
 func (uc *BusinessPartnerUseCase) DeletePartnerAddress(ctx context.Context, addressIDStr string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
 	addrID, err := strconv.ParseInt(addressIDStr, 10, 32)
-	if err != nil {
+	if err != nil || addrID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid address ID", nil)
+	}
+
+	_, err = uc.repo.GetPartnerAddress(ctx, int32(addrID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "address not found", nil)
 	}
 
 	err = uc.repo.DeletePartnerAddress(ctx, int32(addrID))
@@ -540,8 +669,16 @@ func (uc *BusinessPartnerUseCase) AddPartnerContact(ctx context.Context, partner
 	}
 
 	partnerID, err := strconv.ParseInt(partnerIDStr, 10, 32)
-	if err != nil {
+	if err != nil || partnerID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid business partner ID", nil)
+	}
+
+	if _, err := uc.repo.GetBusinessPartner(ctx, int32(partnerID)); err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "business partner not found", nil)
+	}
+
+	if input.FirstName == "" {
+		return utils.NewResponse(utils.CodeBadReq, "first_name is required", nil)
 	}
 
 	c, err := uc.repo.CreatePartnerContact(ctx, repository.CreatePartnerContactParams{
@@ -567,13 +704,53 @@ func (uc *BusinessPartnerUseCase) AddPartnerContact(ctx context.Context, partner
 	return utils.NewResponse(utils.CodeCreated, "partner contact added successfully", c)
 }
 
+func (uc *BusinessPartnerUseCase) GetPartnerContact(ctx context.Context, contactIDStr string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	ctcID, err := strconv.ParseInt(contactIDStr, 10, 32)
+	if err != nil || ctcID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid contact ID", nil)
+	}
+
+	c, err := uc.repo.GetPartnerContact(ctx, int32(ctcID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "contact not found", nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "partner contact fetched successfully", c)
+}
+
+func (uc *BusinessPartnerUseCase) ListPartnerContacts(ctx context.Context, partnerIDStr string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	partnerID, err := strconv.ParseInt(partnerIDStr, 10, 32)
+	if err != nil || partnerID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing partner ID", nil)
+	}
+
+	contacts, err := uc.repo.ListPartnerContacts(ctx, int32(partnerID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	if contacts == nil {
+		contacts = []repository.PartnerContact{}
+	}
+
+	return utils.NewResponse(utils.CodeOK, "partner contacts fetched successfully", contacts)
+}
+
 func (uc *BusinessPartnerUseCase) UpdatePartnerContact(ctx context.Context, contactIDStr string, input PartnerContactInput) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
 	ctcID, err := strconv.ParseInt(contactIDStr, 10, 32)
-	if err != nil {
+	if err != nil || ctcID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid contact ID", nil)
 	}
 
@@ -586,13 +763,30 @@ func (uc *BusinessPartnerUseCase) UpdatePartnerContact(ctx context.Context, cont
 		input.FirstName = c.FirstName
 	}
 
+	var lastName pgtype.Text = c.LastName
+	if input.LastName != "" {
+		lastName = utils.StringToPgText(&input.LastName)
+	}
+	var email pgtype.Text = c.Email
+	if input.Email != "" {
+		email = utils.StringToPgText(&input.Email)
+	}
+	var phone pgtype.Text = c.Phone
+	if input.Phone != "" {
+		phone = utils.StringToPgText(&input.Phone)
+	}
+	var position pgtype.Text = c.Position
+	if input.Position != "" {
+		position = utils.StringToPgText(&input.Position)
+	}
+
 	updated, err := uc.repo.UpdatePartnerContact(ctx, repository.UpdatePartnerContactParams{
 		ID:        c.ID,
 		FirstName: input.FirstName,
-		LastName:  utils.StringToPgText(&input.LastName),
-		Email:     utils.StringToPgText(&input.Email),
-		Phone:     utils.StringToPgText(&input.Phone),
-		Position:  utils.StringToPgText(&input.Position),
+		LastName:  lastName,
+		Email:     email,
+		Phone:     phone,
+		Position:  position,
 		IsPrimary: pgtype.Bool{Bool: input.IsPrimary, Valid: true},
 	})
 	if err != nil {
@@ -609,14 +803,55 @@ func (uc *BusinessPartnerUseCase) UpdatePartnerContact(ctx context.Context, cont
 	return utils.NewResponse(utils.CodeOK, "partner contact updated successfully", updated)
 }
 
+func (uc *BusinessPartnerUseCase) SetPrimaryPartnerContact(ctx context.Context, contactIDStr string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	ctcID, err := strconv.ParseInt(contactIDStr, 10, 32)
+	if err != nil || ctcID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid contact ID", nil)
+	}
+
+	c, err := uc.repo.GetPartnerContact(ctx, int32(ctcID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "contact not found", nil)
+	}
+
+	updated, err := uc.repo.UpdatePartnerContact(ctx, repository.UpdatePartnerContactParams{
+		ID:        c.ID,
+		FirstName: c.FirstName,
+		LastName:  c.LastName,
+		Email:     c.Email,
+		Phone:     c.Phone,
+		Position:  c.Position,
+		IsPrimary: pgtype.Bool{Bool: true, Valid: true},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	_ = uc.repo.ClearPrimaryPartnerContacts(ctx, repository.ClearPrimaryPartnerContactsParams{
+		PartnerID: c.PartnerID,
+		ID:        c.ID,
+	})
+
+	return utils.NewResponse(utils.CodeOK, "partner contact set as primary successfully", updated)
+}
+
 func (uc *BusinessPartnerUseCase) DeletePartnerContact(ctx context.Context, contactIDStr string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
 	ctcID, err := strconv.ParseInt(contactIDStr, 10, 32)
-	if err != nil {
+	if err != nil || ctcID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "invalid contact ID", nil)
+	}
+
+	_, err = uc.repo.GetPartnerContact(ctx, int32(ctcID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "contact not found", nil)
 	}
 
 	err = uc.repo.DeletePartnerContact(ctx, int32(ctcID))

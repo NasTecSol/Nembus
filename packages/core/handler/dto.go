@@ -733,7 +733,7 @@ type UpdateCustomerRequest struct {
 }
 
 type ToggleCustomerActiveRequest struct {
-	IsActive bool `json:"is_active" binding:"required" example:"true"`
+	IsActive *bool `json:"is_active" binding:"required" example:"true"`
 }
 
 type UpdateCustomerBalanceRequest struct {
@@ -1512,7 +1512,7 @@ type UpdateLoyaltyRuleRequest struct {
 
 // ToggleLoyaltyRuleActiveRequest represents the request to toggle a loyalty rule active state
 type ToggleLoyaltyRuleActiveRequest struct {
-	IsActive bool `json:"is_active" binding:"required" example:"true"`
+	IsActive *bool `json:"is_active" binding:"required" example:"true"`
 }
 
 // LoyaltyRuleResponse represents a loyalty redemption rule in API responses
@@ -1648,6 +1648,7 @@ type CategoryHierarchyResponse struct {
 // =====================================================
 
 type CreatePartnerAddressDTO struct {
+	PartnerID   int32   `json:"partner_id,omitempty" example:"1"`
 	AddressName string  `json:"address_name" binding:"required" example:"Headquarters"`
 	AddressType string  `json:"address_type" binding:"required" example:"both"` // bill_to, ship_to, both
 	Street      *string `json:"street,omitempty" example:"123 Main St"`
@@ -1658,13 +1659,34 @@ type CreatePartnerAddressDTO struct {
 	IsDefault   bool    `json:"is_default" example:"true"`
 }
 
+type UpdatePartnerAddressRequest struct {
+	AddressName *string `json:"address_name,omitempty" example:"Headquarters Updated"`
+	AddressType *string `json:"address_type,omitempty" example:"both"` // bill_to, ship_to, both
+	Street      *string `json:"street,omitempty" example:"123 Main St"`
+	City        *string `json:"city,omitempty" example:"Riyadh"`
+	State       *string `json:"state,omitempty" example:"Riyadh Province"`
+	ZipCode     *string `json:"zip_code,omitempty" example:"12345"`
+	CountryCode *string `json:"country_code,omitempty" example:"SA"`
+	IsDefault   *bool   `json:"is_default,omitempty" example:"true"`
+}
+
 type CreatePartnerContactDTO struct {
+	PartnerID int32   `json:"partner_id,omitempty" example:"1"`
 	FirstName string  `json:"first_name" binding:"required" example:"John"`
 	LastName  *string `json:"last_name,omitempty" example:"Doe"`
 	Email     *string `json:"email,omitempty" example:"john.doe@example.com"`
 	Phone     *string `json:"phone,omitempty" example:"+966500000000"`
 	Position  *string `json:"position,omitempty" example:"Purchasing Manager"`
 	IsPrimary bool    `json:"is_primary" example:"true"`
+}
+
+type UpdatePartnerContactRequest struct {
+	FirstName *string `json:"first_name,omitempty" example:"John"`
+	LastName  *string `json:"last_name,omitempty" example:"Doe"`
+	Email     *string `json:"email,omitempty" example:"john.doe@example.com"`
+	Phone     *string `json:"phone,omitempty" example:"+966500000000"`
+	Position  *string `json:"position,omitempty" example:"Purchasing Manager"`
+	IsPrimary *bool   `json:"is_primary,omitempty" example:"true"`
 }
 
 type CreateBusinessPartnerRequest struct {
@@ -1697,7 +1719,7 @@ type UpdateBusinessPartnerRequest struct {
 }
 
 type ToggleBusinessPartnerActiveRequest struct {
-	IsActive bool `json:"is_active" binding:"required" example:"true"`
+	IsActive *bool `json:"is_active" binding:"required" example:"true"`
 }
 
 type PartnerAddressResponse struct {
@@ -1769,7 +1791,7 @@ type UpdateBPPriceContractRequest struct {
 }
 
 type ToggleBPPriceContractActiveRequest struct {
-	IsActive bool `json:"is_active" binding:"required" example:"true"`
+	IsActive *bool `json:"is_active" binding:"required" example:"true"`
 }
 
 type BPPriceContractResponse struct {
