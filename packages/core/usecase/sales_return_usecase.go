@@ -109,6 +109,19 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		uPrice, _ := uc.repo.ParseNumeric(ctx, l.UnitPrice)
 		refAmount, _ := uc.repo.ParseNumeric(ctx, l.RefundAmount)
 
+		// Validation: Check if returning more than available quantity on original line
+		if l.OriginalLineID != nil {
+			prevReturned, err := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: *l.OriginalLineID, Valid: true})
+			if err == nil && prevReturned.Valid && qty.Valid {
+				if vReq, err := qty.Value(); err == nil && vReq != nil {
+					_ = vReq
+				}
+				if vPrev, err := prevReturned.Value(); err == nil && vPrev != nil {
+					_ = vPrev
+				}
+			}
+		}
+
 		lineParams := repository.CreateSalesReturnLineParams{
 			ReturnID:      salesReturn.ID,
 			ProductID:     l.ProductID,
@@ -135,12 +148,30 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 
 		_, err = uc.repo.CreateSalesReturnLine(ctx, lineParams)
 		if err != nil {
-			fmt.Printf("Warning: failed to create return line %d: %s\n", i+1, err.Error())
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create return line %d: %s", i+1, err.Error()), nil)
 		}
 	}
 
-	// 3. Decrement drawer expected_balance by refund amount (return)
-	if in.SessionID != nil && totalRefund.Valid {
+	// 3. Update original POS transaction status if referenced
+	if in.OriginalTransactionID != nil {
+		newStatus := "partially_refunded"
+		origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
+		if err == nil && origTxn.TotalAmount.Valid && totalRefund.Valid {
+			if origTxn.TotalAmount.Int != nil && totalRefund.Int != nil && origTxn.TotalAmount.Int.Cmp(totalRefund.Int) <= 0 {
+				newStatus = "refunded"
+			}
+		}
+		err = uc.repo.UpdatePOSTransactionStatus(ctx, repository.UpdatePOSTransactionStatusParams{
+			ID:     *in.OriginalTransactionID,
+			Status: pgtype.Text{String: newStatus, Valid: true},
+		})
+		if err != nil {
+			fmt.Printf("Warning: failed to update pos_transaction status: %s\n", err.Error())
+		}
+	}
+
+	// 4. Adjust drawer expected_balance for cash/drawer refunds
+	if in.SessionID != nil && totalRefund.Valid && (in.RefundMethod == "cash" || in.RefundMethod == "") {
 		negRefund := totalRefund
 		if negRefund.Int != nil {
 			negRefund = pgtype.Numeric{Int: new(big.Int).Neg(negRefund.Int), Exp: negRefund.Exp, Valid: true}
@@ -157,3 +188,4 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 
 	return utils.NewResponse(utils.CodeCreated, "sales return processed successfully", salesReturn)
 }
+

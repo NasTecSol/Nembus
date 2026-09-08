@@ -51,3 +51,20 @@ WHERE id = $1;
 -- name: ListSalesReturnsByTransaction :many
 SELECT * FROM sales_returns
 WHERE original_transaction_id = $1;
+
+-- name: ListSalesReturnLinesByReturnID :many
+SELECT * FROM sales_return_lines
+WHERE return_id = $1;
+
+-- name: GetReturnedQuantityByLineID :one
+SELECT COALESCE(SUM(quantity), 0)::DECIMAL(15,3) AS total_returned_qty
+FROM sales_return_lines
+WHERE original_line_id = $1;
+
+-- name: UpdatePOSTransactionStatus :exec
+UPDATE pos_transactions
+SET status = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+
