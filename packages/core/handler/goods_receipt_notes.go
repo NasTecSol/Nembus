@@ -39,10 +39,10 @@ func (h *GoodsReceiptNotesHandler) getRepositoryFromContext(c *gin.Context) *rep
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id   header    string                                true   "Tenant identifier"
-// @Param        Authorization header    string                                true   "Bearer token"
-// @Param        body          body      usecase.CreateGoodsReceiptNoteInput   true   "GRN creation payload"
-// @Success      200           {object}  usecase.GoodsReceiptNoteOutput
+// @Param        x-tenant-id   header    string            true   "Tenant identifier"
+// @Param        Authorization header    string            true   "Bearer token"
+// @Param        body          body      CreateGRNRequest  true   "GRN creation payload"
+// @Success      200           {object}  GRNResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
 // @Router       /api/goods-receipt-notes [post]
@@ -73,7 +73,7 @@ func (h *GoodsReceiptNotesHandler) CreateGoodsReceiptNote(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "GRN ID"
-// @Success      200           {object}  usecase.GoodsReceiptNoteOutput
+// @Success      200           {object}  GRNResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse

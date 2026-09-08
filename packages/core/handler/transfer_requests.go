@@ -39,10 +39,10 @@ func (h *TransferRequestsHandler) getRepositoryFromContext(c *gin.Context) *repo
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id   header    string                              true   "Tenant identifier"
-// @Param        Authorization header    string                              true   "Bearer token"
-// @Param        body          body      usecase.CreateTransferRequestInput  true   "Transfer request payload"
-// @Success      200           {object}  usecase.TransferRequestOutput
+// @Param        x-tenant-id   header    string                    true   "Tenant identifier"
+// @Param        Authorization header    string                    true   "Bearer token"
+// @Param        body          body      CreateTransferRequestDTO  true   "Transfer request payload"
+// @Success      200           {object}  TransferRequestResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
 // @Router       /api/transfer-requests [post]
@@ -73,7 +73,7 @@ func (h *TransferRequestsHandler) CreateTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Success      200           {object}  usecase.TransferRequestOutput
+// @Success      200           {object}  TransferRequestResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -108,7 +108,7 @@ func (h *TransferRequestsHandler) GetTransferRequest(c *gin.Context) {
 // @Param        organization_id query     int     true   "Organization ID"
 // @Param        limit           query     int     false  "Limit" default(50)
 // @Param        offset          query     int     false  "Offset" default(0)
-// @Success      200             {array}   usecase.TransferRequestOutput
+// @Success      200             {array}   TransferRequestResponse
 // @Failure      400             {object}  ErrorResponse
 // @Failure      500             {object}  ErrorResponse
 // @Router       /api/transfer-requests [get]
@@ -145,7 +145,7 @@ func (h *TransferRequestsHandler) ListTransferRequests(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Param        body          body      usecase.ApproveTransferRequestInput true "Approval payload"
+// @Param        body          body      ApproveTransferRequestDTO true "Approval payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -181,7 +181,7 @@ func (h *TransferRequestsHandler) ApproveTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Param        body          body      usecase.ShipTransferRequestInput true "Shipping payload"
+// @Param        body          body      ShipTransferRequestDTO true "Shipping payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -217,7 +217,7 @@ func (h *TransferRequestsHandler) ShipTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Param        body          body      usecase.ReceiveTransferRequestInput true "Receiving payload"
+// @Param        body          body      ReceiveTransferRequestDTO true "Receiving payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse

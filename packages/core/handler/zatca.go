@@ -57,10 +57,10 @@ type ZatcaStatusResponse struct {
 // @Param        Authorization header    string  true   "Bearer token"
 // @Param        store_id      query     int     true   "Store ID" example(1)
 // @Param        since         query     string  false  "ISO 8601 Timestamp (e.g. 2026-01-01T00:00:00Z) or epoch" example(2026-01-01T00:00:00Z)
-// @Success      200  {object}  repository.Response
-// @Failure      400  {object}  repository.Response
-// @Failure      401  {object}  repository.Response
-// @Failure      500  {object}  repository.Response
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
 // @Router       /api/zatca/configs [get]
 func (h *ZatcaHandler) GetConfigsDelta(c *gin.Context) {
 	storeIDStr := c.Query("store_id")
@@ -101,10 +101,10 @@ func (h *ZatcaHandler) GetConfigsDelta(c *gin.Context) {
 // @Param        x-tenant-id   header    string           true  "Tenant identifier"
 // @Param        Authorization header    string           true  "Bearer token"
 // @Param        body          body      PushSyncPayload  true  "POS Outbox Push Payload"
-// @Success      200  {object}  repository.Response
-// @Failure      400  {object}  repository.Response
-// @Failure      401  {object}  repository.Response
-// @Failure      500  {object}  repository.Response
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
 // @Router       /api/zatca/sync/push [post]
 func (h *ZatcaHandler) ReceivePushSync(c *gin.Context) {
 	var payload PushSyncPayload
@@ -134,7 +134,7 @@ func (h *ZatcaHandler) ReceivePushSync(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Success      200  {object}  ZatcaStatusResponse
-// @Failure      401  {object}  repository.Response
+// @Failure      401  {object}  ErrorResponse
 // @Router       /api/zatca/status [get]
 func (h *ZatcaHandler) GetZatcaStatus(c *gin.Context) {
 	cfg := h.zatcaUC.GetConfig()

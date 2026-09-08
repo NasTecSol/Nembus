@@ -44,7 +44,7 @@ func (h *StockMovementHandler) getRepositoryFromContext(c *gin.Context) *reposit
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string                     true   "Tenant identifier"
 // @Param        Authorization header    string                     true   "Bearer token"
-// @Param        body          body      usecase.CreateStockMovementInput true "Stock movement payload"
+// @Param        body          body      CreateStockMovementRequest true "Stock movement payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
