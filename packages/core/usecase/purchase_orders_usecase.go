@@ -776,3 +776,353 @@ func (uc *PurchaseOrdersUseCase) DeletePurchaseOrder(ctx context.Context, id int
 
 	return utils.NewResponse(utils.CodeOK, "purchase order deleted successfully", nil)
 }
+
+// GetPurchaseOrderLines retrieves all lines for a specific purchase order.
+func (uc *PurchaseOrdersUseCase) GetPurchaseOrderLines(ctx context.Context, poID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	_, err := uc.repo.GetPurchaseOrderByID(ctx, poID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "purchase order not found", nil)
+	}
+
+	lines, err := uc.repo.ListPurchaseOrderLines(ctx, poID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to load purchase order lines: %v", err), nil)
+	}
+
+	items := make([]PurchaseOrderLineOutput, len(lines))
+	for i, line := range lines {
+		items[i] = formatPOLineOutput(line)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "purchase order lines retrieved successfully", items)
+}
+
+// GetPurchaseOrderLine retrieves a single purchase order line by its ID.
+func (uc *PurchaseOrdersUseCase) GetPurchaseOrderLine(ctx context.Context, lineID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	line, err := uc.repo.GetPurchaseOrderLineByID(ctx, lineID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "purchase order line not found", nil)
+	}
+
+	out := formatPOLineByIDOutput(line)
+	return utils.NewResponse(utils.CodeOK, "purchase order line retrieved successfully", out)
+}
+
+// AddPurchaseOrderLine adds a new line item to a draft purchase order.
+func (uc *PurchaseOrdersUseCase) AddPurchaseOrderLine(ctx context.Context, poID int32, item PurchaseOrderLineInput) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	po, err := uc.repo.GetPurchaseOrderByID(ctx, poID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "purchase order not found", nil)
+	}
+
+	status := "draft"
+	if po.Status.Valid && po.Status.String != "" {
+		status = po.Status.String
+	}
+	if status != "draft" {
+		return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("cannot add items to purchase order with status '%s'; only 'draft' orders can be edited", status), nil)
+	}
+
+	if item.ProductID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "product_id is required", nil)
+	}
+	if item.Quantity <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "quantity must be greater than 0", nil)
+	}
+	if item.UnitPrice < 0 {
+		return utils.NewResponse(utils.CodeBadReq, "unit_price cannot be negative", nil)
+	}
+
+	subtotal := item.Quantity * item.UnitPrice
+	discount := 0.0
+	if item.DiscountAmount != nil && *item.DiscountAmount > 0 {
+		discount = *item.DiscountAmount
+	}
+	tax := 0.0
+	if item.TaxAmount != nil && *item.TaxAmount > 0 {
+		tax = *item.TaxAmount
+	}
+	lineTotal := subtotal - discount + tax
+	if lineTotal < 0 {
+		lineTotal = 0
+	}
+
+	lineNum := int32(1)
+	if item.LineNumber != nil && *item.LineNumber > 0 {
+		lineNum = *item.LineNumber
+	} else {
+		existingLines, _ := uc.repo.ListPurchaseOrderLines(ctx, poID)
+		lineNum = int32(len(existingLines) + 1)
+	}
+
+	itemMetaBytes, _ := json.Marshal(item.Metadata)
+	newLine, err := uc.repo.CreatePurchaseOrderLine(ctx, repository.CreatePurchaseOrderLineParams{
+		PurchaseOrderID:  poID,
+		ProductID:        item.ProductID,
+		ProductVariantID: utils.Int32ToPgInt4(item.ProductVariantID),
+		Quantity:         utils.Float64ToPgNumeric(item.Quantity),
+		UomID:            utils.Int32ToPgInt4(item.UomID),
+		UnitPrice:        utils.Float64ToPgNumeric(item.UnitPrice),
+		DiscountAmount:   utils.Float64ToPgNumeric(discount),
+		TaxAmount:        utils.Float64ToPgNumeric(tax),
+		Subtotal:         utils.Float64ToPgNumeric(subtotal),
+		LineTotal:        utils.Float64ToPgNumeric(lineTotal),
+		ReceivedQuantity: utils.Float64ToPgNumeric(0),
+		LineNumber:       pgtype.Int4{Int32: lineNum, Valid: true},
+		Metadata:         itemMetaBytes,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create purchase order line: %v", err), nil)
+	}
+
+	_ = uc.recalculatePOTotals(ctx, poID)
+	return uc.GetPurchaseOrderLine(ctx, newLine.ID)
+}
+
+// UpdatePurchaseOrderLine updates an existing line in a draft purchase order.
+func (uc *PurchaseOrdersUseCase) UpdatePurchaseOrderLine(ctx context.Context, lineID int32, item PurchaseOrderLineInput) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	existingLine, err := uc.repo.GetPurchaseOrderLineByID(ctx, lineID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "purchase order line not found", nil)
+	}
+
+	po, err := uc.repo.GetPurchaseOrderByID(ctx, existingLine.PurchaseOrderID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "parent purchase order not found", nil)
+	}
+
+	status := "draft"
+	if po.Status.Valid && po.Status.String != "" {
+		status = po.Status.String
+	}
+	if status != "draft" {
+		return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("cannot update items on purchase order with status '%s'; only 'draft' orders can be edited", status), nil)
+	}
+
+	productID := existingLine.ProductID
+	if item.ProductID > 0 {
+		productID = item.ProductID
+	}
+
+	productVariantID := existingLine.ProductVariantID
+	if item.ProductVariantID != nil {
+		productVariantID = utils.Int32ToPgInt4(item.ProductVariantID)
+	}
+
+	uomID := existingLine.UomID
+	if item.UomID != nil {
+		uomID = utils.Int32ToPgInt4(item.UomID)
+	}
+
+	qty := 0.0
+	if qf, err := existingLine.Quantity.Float64Value(); err == nil && qf.Valid {
+		qty = qf.Float64
+	}
+	if item.Quantity > 0 {
+		qty = item.Quantity
+	}
+
+	unitPrice := 0.0
+	if upf, err := existingLine.UnitPrice.Float64Value(); err == nil && upf.Valid {
+		unitPrice = upf.Float64
+	}
+	if item.UnitPrice >= 0 {
+		unitPrice = item.UnitPrice
+	}
+
+	discount := 0.0
+	if df, err := existingLine.DiscountAmount.Float64Value(); err == nil && df.Valid {
+		discount = df.Float64
+	}
+	if item.DiscountAmount != nil {
+		discount = *item.DiscountAmount
+	}
+
+	tax := 0.0
+	if tf, err := existingLine.TaxAmount.Float64Value(); err == nil && tf.Valid {
+		tax = tf.Float64
+	}
+	if item.TaxAmount != nil {
+		tax = *item.TaxAmount
+	}
+
+	subtotal := qty * unitPrice
+	lineTotal := subtotal - discount + tax
+	if lineTotal < 0 {
+		lineTotal = 0
+	}
+
+	lineNum := existingLine.LineNumber
+	if item.LineNumber != nil && *item.LineNumber > 0 {
+		lineNum = pgtype.Int4{Int32: *item.LineNumber, Valid: true}
+	}
+
+	metadataBytes := existingLine.Metadata
+	if item.Metadata != nil {
+		metadataBytes, _ = json.Marshal(item.Metadata)
+	}
+
+	_, err = uc.repo.UpdatePurchaseOrderLine(ctx, repository.UpdatePurchaseOrderLineParams{
+		ID:               lineID,
+		ProductID:        productID,
+		ProductVariantID: productVariantID,
+		Quantity:         utils.Float64ToPgNumeric(qty),
+		UomID:            uomID,
+		UnitPrice:        utils.Float64ToPgNumeric(unitPrice),
+		DiscountAmount:   utils.Float64ToPgNumeric(discount),
+		TaxAmount:        utils.Float64ToPgNumeric(tax),
+		Subtotal:         utils.Float64ToPgNumeric(subtotal),
+		LineTotal:        utils.Float64ToPgNumeric(lineTotal),
+		LineNumber:       lineNum,
+		Metadata:         metadataBytes,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to update purchase order line: %v", err), nil)
+	}
+
+	_ = uc.recalculatePOTotals(ctx, existingLine.PurchaseOrderID)
+	return uc.GetPurchaseOrderLine(ctx, lineID)
+}
+
+// DeletePurchaseOrderLine deletes a line from a draft purchase order.
+func (uc *PurchaseOrdersUseCase) DeletePurchaseOrderLine(ctx context.Context, lineID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	existingLine, err := uc.repo.GetPurchaseOrderLineByID(ctx, lineID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "purchase order line not found", nil)
+	}
+
+	po, err := uc.repo.GetPurchaseOrderByID(ctx, existingLine.PurchaseOrderID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "parent purchase order not found", nil)
+	}
+
+	status := "draft"
+	if po.Status.Valid && po.Status.String != "" {
+		status = po.Status.String
+	}
+	if status != "draft" {
+		return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("cannot delete items from purchase order with status '%s'; only 'draft' orders can be edited", status), nil)
+	}
+
+	if err := uc.repo.DeletePurchaseOrderLine(ctx, lineID); err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to delete purchase order line: %v", err), nil)
+	}
+
+	_ = uc.recalculatePOTotals(ctx, existingLine.PurchaseOrderID)
+	return utils.NewResponse(utils.CodeOK, "purchase order line deleted successfully", nil)
+}
+
+func (uc *PurchaseOrdersUseCase) recalculatePOTotals(ctx context.Context, poID int32) error {
+	lines, err := uc.repo.ListPurchaseOrderLines(ctx, poID)
+	if err != nil {
+		return err
+	}
+	po, err := uc.repo.GetPurchaseOrderByID(ctx, poID)
+	if err != nil {
+		return err
+	}
+
+	var subtotal, discount, tax, total float64
+	for _, l := range lines {
+		if sf, err := l.Subtotal.Float64Value(); err == nil && sf.Valid {
+			subtotal += sf.Float64
+		}
+		if df, err := l.DiscountAmount.Float64Value(); err == nil && df.Valid {
+			discount += df.Float64
+		}
+		if tf, err := l.TaxAmount.Float64Value(); err == nil && tf.Valid {
+			tax += tf.Float64
+		}
+		if totf, err := l.LineTotal.Float64Value(); err == nil && totf.Valid {
+			total += totf.Float64
+		}
+	}
+
+	_, err = uc.repo.UpdatePurchaseOrderHeader(ctx, repository.UpdatePurchaseOrderHeaderParams{
+		ID:                   poID,
+		PartnersID:           po.PartnersID,
+		StoreID:              po.StoreID,
+		PoDate:               po.PoDate,
+		ExpectedDeliveryDate: po.ExpectedDeliveryDate,
+		Subtotal:             utils.Float64ToPgNumeric(subtotal),
+		DiscountAmount:       utils.Float64ToPgNumeric(discount),
+		TaxAmount:            utils.Float64ToPgNumeric(tax),
+		TotalAmount:          utils.Float64ToPgNumeric(total),
+		PriceListID:          po.PriceListID,
+		Metadata:             po.Metadata,
+	})
+	return err
+}
+
+func formatPOLineOutput(line repository.ListPurchaseOrderLinesRow) PurchaseOrderLineOutput {
+	return PurchaseOrderLineOutput{
+		ID:               line.ID,
+		PurchaseOrderID:  line.PurchaseOrderID,
+		ProductID:        line.ProductID,
+		ProductName:      line.ProductName,
+		ProductSKU:       line.ProductSku,
+		ProductVariantID: line.ProductVariantID,
+		VariantName:      line.VariantName,
+		VariantSKU:       line.VariantSku,
+		Quantity:         line.Quantity,
+		UomID:            line.UomID,
+		UomName:          line.UomName,
+		UnitPrice:        line.UnitPrice,
+		DiscountAmount:   line.DiscountAmount,
+		TaxAmount:        line.TaxAmount,
+		Subtotal:         line.Subtotal,
+		LineTotal:        line.LineTotal,
+		ReceivedQuantity: line.ReceivedQuantity,
+		LineNumber:       line.LineNumber,
+		Barcode:          line.Barcode,
+		Metadata:         line.Metadata,
+		CreatedAt:        line.CreatedAt,
+	}
+}
+
+func formatPOLineByIDOutput(line repository.GetPurchaseOrderLineByIDRow) PurchaseOrderLineOutput {
+	return PurchaseOrderLineOutput{
+		ID:               line.ID,
+		PurchaseOrderID:  line.PurchaseOrderID,
+		ProductID:        line.ProductID,
+		ProductName:      line.ProductName,
+		ProductSKU:       line.ProductSku,
+		ProductVariantID: line.ProductVariantID,
+		VariantName:      line.VariantName,
+		VariantSKU:       line.VariantSku,
+		Quantity:         line.Quantity,
+		UomID:            line.UomID,
+		UomName:          line.UomName,
+		UnitPrice:        line.UnitPrice,
+		DiscountAmount:   line.DiscountAmount,
+		TaxAmount:        line.TaxAmount,
+		Subtotal:         line.Subtotal,
+		LineTotal:        line.LineTotal,
+		ReceivedQuantity: line.ReceivedQuantity,
+		LineNumber:       line.LineNumber,
+		Barcode:          line.Barcode,
+		Metadata:         line.Metadata,
+		CreatedAt:        line.CreatedAt,
+	}
+}
+

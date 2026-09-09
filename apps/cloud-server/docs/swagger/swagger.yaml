@@ -1871,6 +1871,40 @@ definitions:
     - organization_id
     - promotion_type
     type: object
+  handler.CreatePurchaseOrderLineRequest:
+    properties:
+      discount_amount:
+        example: 5
+        type: number
+      line_number:
+        example: 1
+        type: integer
+      metadata:
+        additionalProperties: true
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      quantity:
+        example: 10.5
+        type: number
+      tax_amount:
+        example: 6.075
+        type: number
+      unit_price:
+        example: 45.5
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+    required:
+    - product_id
+    - quantity
+    - unit_price
+    type: object
   handler.CreatePurchaseOrderRequest:
     properties:
       created_by:
@@ -5118,6 +5152,36 @@ definitions:
         type: boolean
     required:
     - is_active
+    type: object
+  handler.UpdatePurchaseOrderLineRequest:
+    properties:
+      discount_amount:
+        example: 5
+        type: number
+      line_number:
+        example: 1
+        type: integer
+      metadata:
+        additionalProperties: true
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      quantity:
+        example: 15
+        type: number
+      tax_amount:
+        example: 6.075
+        type: number
+      unit_price:
+        example: 45.5
+        type: number
+      uom_id:
+        example: 1
+        type: integer
     type: object
   handler.UpdatePurchaseOrderRequest:
     properties:
@@ -23440,6 +23504,53 @@ paths:
       summary: Validate coupon (read-only)
       tags:
       - promotions
+  /api/purchase-order-lines:
+    get:
+      consumes:
+      - application/json
+      description: Get purchase order lines by purchase_order_id query parameter
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: query
+        name: purchase_order_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Purchase Order Lines by Query
+      tags:
+      - purchase-orders
   /api/purchase-orders:
     get:
       consumes:
@@ -23746,6 +23857,245 @@ paths:
       security:
       - BearerAuth: []
       summary: Approve Purchase Order
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}/lines:
+    get:
+      consumes:
+      - application/json
+      description: Get itemized line items for a specific purchase order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Purchase Order Lines
+      tags:
+      - purchase-orders
+    post:
+      consumes:
+      - application/json
+      description: Adds a single line item to a draft purchase order and recalculates
+        totals
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line item payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePurchaseOrderLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Purchase Order Line
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}/lines/{line_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a line item from a draft purchase order and recalculates
+        totals
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order Line ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Purchase Order Line
+      tags:
+      - purchase-orders
+    get:
+      consumes:
+      - application/json
+      description: Get a single purchase order line item by its ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order Line ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Purchase Order Line by ID
+      tags:
+      - purchase-orders
+    put:
+      consumes:
+      - application/json
+      description: Updates a line item in a draft purchase order and recalculates
+        totals
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order Line ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      - description: Line item update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePurchaseOrderLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Purchase Order Line
       tags:
       - purchase-orders
   /api/purchase-orders/{id}/status:

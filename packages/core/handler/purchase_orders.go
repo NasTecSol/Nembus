@@ -333,3 +333,230 @@ func (h *PurchaseOrdersHandler) DeletePurchaseOrder(c *gin.Context) {
 	resp := h.useCase.DeletePurchaseOrder(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
+
+// ListPurchaseOrderLines handles GET /api/purchase-orders/:id/lines
+// @Summary      List Purchase Order Lines
+// @Description  Get itemized line items for a specific purchase order
+// @Tags         purchase-orders
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Purchase Order ID"
+// @Success      200           {array}   PurchaseOrderLineResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/purchase-orders/{id}/lines [get]
+func (h *PurchaseOrdersHandler) ListPurchaseOrderLines(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid purchase order id", nil))
+		return
+	}
+
+	resp := h.useCase.GetPurchaseOrderLines(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetPurchaseOrderLine handles GET /api/purchase-orders/:id/lines/:line_id and GET /api/purchase-order-lines/:id
+// @Summary      Get Purchase Order Line by ID
+// @Description  Get a single purchase order line item by its ID
+// @Tags         purchase-orders
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        line_id       path      int     true  "Purchase Order Line ID"
+// @Success      200           {object}  PurchaseOrderLineResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/purchase-orders/{id}/lines/{line_id} [get]
+func (h *PurchaseOrdersHandler) GetPurchaseOrderLine(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	lineIDStr := c.Param("line_id")
+	if lineIDStr == "" {
+		lineIDStr = c.Param("id")
+	}
+	lineID, err := strconv.ParseInt(lineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid purchase order line id", nil))
+		return
+	}
+
+	resp := h.useCase.GetPurchaseOrderLine(c.Request.Context(), int32(lineID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// AddPurchaseOrderLine handles POST /api/purchase-orders/:id/lines
+// @Summary      Add Purchase Order Line
+// @Description  Adds a single line item to a draft purchase order and recalculates totals
+// @Tags         purchase-orders
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                          true  "Tenant identifier"
+// @Param        Authorization header    string                          true  "Bearer token"
+// @Param        id            path      int                             true  "Purchase Order ID"
+// @Param        body          body      CreatePurchaseOrderLineRequest  true  "Line item payload"
+// @Success      200           {object}  PurchaseOrderLineResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/purchase-orders/{id}/lines [post]
+func (h *PurchaseOrdersHandler) AddPurchaseOrderLine(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid purchase order id", nil))
+		return
+	}
+
+	var req usecase.PurchaseOrderLineInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("invalid request body: %v", err), nil))
+		return
+	}
+
+	resp := h.useCase.AddPurchaseOrderLine(c.Request.Context(), int32(id), req)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdatePurchaseOrderLine handles PUT /api/purchase-orders/:id/lines/:line_id and PUT /api/purchase-order-lines/:id
+// @Summary      Update Purchase Order Line
+// @Description  Updates a line item in a draft purchase order and recalculates totals
+// @Tags         purchase-orders
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                          true  "Tenant identifier"
+// @Param        Authorization header    string                          true  "Bearer token"
+// @Param        line_id       path      int                             true  "Purchase Order Line ID"
+// @Param        body          body      UpdatePurchaseOrderLineRequest  true  "Line item update payload"
+// @Success      200           {object}  PurchaseOrderLineResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/purchase-orders/{id}/lines/{line_id} [put]
+func (h *PurchaseOrdersHandler) UpdatePurchaseOrderLine(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	lineIDStr := c.Param("line_id")
+	if lineIDStr == "" {
+		lineIDStr = c.Param("id")
+	}
+	lineID, err := strconv.ParseInt(lineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid purchase order line id", nil))
+		return
+	}
+
+	var req usecase.PurchaseOrderLineInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("invalid request body: %v", err), nil))
+		return
+	}
+
+	resp := h.useCase.UpdatePurchaseOrderLine(c.Request.Context(), int32(lineID), req)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeletePurchaseOrderLine handles DELETE /api/purchase-orders/:id/lines/:line_id and DELETE /api/purchase-order-lines/:id
+// @Summary      Delete Purchase Order Line
+// @Description  Deletes a line item from a draft purchase order and recalculates totals
+// @Tags         purchase-orders
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        line_id       path      int     true  "Purchase Order Line ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/purchase-orders/{id}/lines/{line_id} [delete]
+func (h *PurchaseOrdersHandler) DeletePurchaseOrderLine(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	lineIDStr := c.Param("line_id")
+	if lineIDStr == "" {
+		lineIDStr = c.Param("id")
+	}
+	lineID, err := strconv.ParseInt(lineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid purchase order line id", nil))
+		return
+	}
+
+	resp := h.useCase.DeletePurchaseOrderLine(c.Request.Context(), int32(lineID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListAllPurchaseOrderLines handles GET /api/purchase-order-lines?purchase_order_id=...
+// @Summary      List Purchase Order Lines by Query
+// @Description  Get purchase order lines by purchase_order_id query parameter
+// @Tags         purchase-orders
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id       header    string  true  "Tenant identifier"
+// @Param        Authorization     header    string  true  "Bearer token"
+// @Param        purchase_order_id query     int     true  "Purchase Order ID"
+// @Success      200               {array}   PurchaseOrderLineResponse
+// @Failure      400               {object}  ErrorResponse
+// @Failure      404               {object}  ErrorResponse
+// @Failure      500               {object}  ErrorResponse
+// @Router       /api/purchase-order-lines [get]
+func (h *PurchaseOrdersHandler) ListAllPurchaseOrderLines(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	poIDStr := c.Query("purchase_order_id")
+	if poIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "purchase_order_id query parameter is required", nil))
+		return
+	}
+
+	poID, err := strconv.ParseInt(poIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid purchase_order_id", nil))
+		return
+	}
+
+	resp := h.useCase.GetPurchaseOrderLines(c.Request.Context(), int32(poID))
+	c.JSON(resp.StatusCode, resp)
+}
+
