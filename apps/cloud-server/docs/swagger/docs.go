@@ -10846,6 +10846,122 @@ const docTemplate = `{
             }
         },
         "/api/goods-receipt-notes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List Goods Receipt Notes with filtering by organization, store, supplier, PO, status, date range, search, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goods-receipt-notes"
+                ],
+                "summary": "List Goods Receipt Notes (GRN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Supplier / Partner ID",
+                        "name": "supplier_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Purchase Order ID",
+                        "name": "purchase_order_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status (draft, posted, cancelled)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "From date (YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "To date (YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search GRN number, DN number, PO number, or supplier name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.GRNListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -10956,6 +11072,149 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.GRNResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates header and item lines for a draft Goods Receipt Note",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goods-receipt-notes"
+                ],
+                "summary": "Update Goods Receipt Note (GRN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "GRN ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "GRN update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateGRNRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.GRNResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a draft Goods Receipt Note",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goods-receipt-notes"
+                ],
+                "summary": "Delete Goods Receipt Note",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "GRN ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
                         }
                     },
                     "400": {
@@ -43749,6 +44008,33 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.GRNListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GRNSummaryResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "total_count": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "total_pages": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
         "handler.GRNResponse": {
             "type": "object",
             "properties": {
@@ -43823,6 +44109,90 @@ const docTemplate = `{
                 "supplier_name": {
                     "type": "string",
                     "example": "Almarai Dairy Co."
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                }
+            }
+        },
+        "handler.GRNSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "delivery_note_number": {
+                    "type": "string",
+                    "example": "DN-9988"
+                },
+                "grn_number": {
+                    "type": "string",
+                    "example": "GRN-20260908-0001"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "item_count": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "po_number": {
+                    "type": "string",
+                    "example": "PO-20260908-0001"
+                },
+                "purchase_order_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "receipt_date": {
+                    "type": "string",
+                    "example": "2026-09-08T10:00:00Z"
+                },
+                "received_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "received_by_name": {
+                    "type": "string",
+                    "example": "warehouse_manager"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "posted"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_name": {
+                    "type": "string",
+                    "example": "Main Supermarket Branch"
+                },
+                "supplier_code": {
+                    "type": "string",
+                    "example": "SUPP001"
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "supplier_name": {
+                    "type": "string",
+                    "example": "Almarai Dairy Co."
+                },
+                "total_received_quantity": {
+                    "type": "string",
+                    "example": "50.000"
                 },
                 "updated_at": {
                     "type": "string",
@@ -46232,6 +46602,48 @@ const docTemplate = `{
                 "shipment_status": {
                     "type": "string",
                     "example": "shipped"
+                }
+            }
+        },
+        "handler.UpdateGRNRequest": {
+            "type": "object",
+            "properties": {
+                "delivery_note_number": {
+                    "type": "string",
+                    "example": "DN-9988"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.GRNItemDTO"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "purchase_order_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "receipt_date": {
+                    "type": "string",
+                    "example": "2026-09-08"
+                },
+                "received_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "supplier_id": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },
