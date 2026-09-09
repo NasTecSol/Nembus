@@ -220,6 +220,16 @@ func (q *Queries) DeletePurchaseOrder(ctx context.Context, id int32) error {
 	return err
 }
 
+const deletePurchaseOrderLine = `-- name: DeletePurchaseOrderLine :exec
+DELETE FROM purchase_order_lines
+WHERE id = $1
+`
+
+func (q *Queries) DeletePurchaseOrderLine(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, deletePurchaseOrderLine, id)
+	return err
+}
+
 const deletePurchaseOrderLines = `-- name: DeletePurchaseOrderLines :exec
 DELETE FROM purchase_order_lines
 WHERE purchase_order_id = $1
@@ -292,6 +302,76 @@ func (q *Queries) GetPurchaseOrderByNumber(ctx context.Context, arg GetPurchaseO
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPurchaseOrderLineByID = `-- name: GetPurchaseOrderLineByID :one
+SELECT 
+    pol.id, pol.purchase_order_id, pol.product_id, pol.product_variant_id, pol.quantity, pol.uom_id, pol.unit_price, pol.discount_amount, pol.tax_amount, pol.subtotal, pol.line_total, pol.received_quantity, pol.line_number, pol.metadata, pol.created_at,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    pv.variant_name,
+    pv.variant_sku,
+    uom.name AS uom_name,
+    COALESCE(pb.barcode, '') AS barcode
+FROM purchase_order_lines pol
+JOIN products p ON pol.product_id = p.id
+LEFT JOIN product_variants pv ON pol.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom ON pol.uom_id = uom.id
+LEFT JOIN product_barcodes pb ON pb.product_id = p.id AND pb.is_primary = true
+WHERE pol.id = $1
+`
+
+type GetPurchaseOrderLineByIDRow struct {
+	ID               int32            `json:"id"`
+	PurchaseOrderID  int32            `json:"purchase_order_id"`
+	ProductID        int32            `json:"product_id"`
+	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	Quantity         pgtype.Numeric   `json:"quantity"`
+	UomID            pgtype.Int4      `json:"uom_id"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
+	Subtotal         pgtype.Numeric   `json:"subtotal"`
+	LineTotal        pgtype.Numeric   `json:"line_total"`
+	ReceivedQuantity pgtype.Numeric   `json:"received_quantity"`
+	LineNumber       pgtype.Int4      `json:"line_number"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	ProductName      string           `json:"product_name"`
+	ProductSku       string           `json:"product_sku"`
+	VariantName      pgtype.Text      `json:"variant_name"`
+	VariantSku       pgtype.Text      `json:"variant_sku"`
+	UomName          pgtype.Text      `json:"uom_name"`
+	Barcode          string           `json:"barcode"`
+}
+
+func (q *Queries) GetPurchaseOrderLineByID(ctx context.Context, id int32) (GetPurchaseOrderLineByIDRow, error) {
+	row := q.db.QueryRow(ctx, getPurchaseOrderLineByID, id)
+	var i GetPurchaseOrderLineByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.PurchaseOrderID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
+		&i.ReceivedQuantity,
+		&i.LineNumber,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.ProductName,
+		&i.ProductSku,
+		&i.VariantName,
+		&i.VariantSku,
+		&i.UomName,
+		&i.Barcode,
 	)
 	return i, err
 }
@@ -711,6 +791,74 @@ func (q *Queries) UpdatePurchaseOrderHeader(ctx context.Context, arg UpdatePurch
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePurchaseOrderLine = `-- name: UpdatePurchaseOrderLine :one
+UPDATE purchase_order_lines
+SET product_id = $2,
+    product_variant_id = $3,
+    quantity = $4,
+    uom_id = $5,
+    unit_price = $6,
+    discount_amount = $7,
+    tax_amount = $8,
+    subtotal = $9,
+    line_total = $10,
+    line_number = $11,
+    metadata = $12
+WHERE id = $1
+RETURNING id, purchase_order_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, subtotal, line_total, received_quantity, line_number, metadata, created_at
+`
+
+type UpdatePurchaseOrderLineParams struct {
+	ID               int32           `json:"id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	Subtotal         pgtype.Numeric  `json:"subtotal"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	Metadata         json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) UpdatePurchaseOrderLine(ctx context.Context, arg UpdatePurchaseOrderLineParams) (PurchaseOrderLine, error) {
+	row := q.db.QueryRow(ctx, updatePurchaseOrderLine,
+		arg.ID,
+		arg.ProductID,
+		arg.ProductVariantID,
+		arg.Quantity,
+		arg.UomID,
+		arg.UnitPrice,
+		arg.DiscountAmount,
+		arg.TaxAmount,
+		arg.Subtotal,
+		arg.LineTotal,
+		arg.LineNumber,
+		arg.Metadata,
+	)
+	var i PurchaseOrderLine
+	err := row.Scan(
+		&i.ID,
+		&i.PurchaseOrderID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
+		&i.ReceivedQuantity,
+		&i.LineNumber,
+		&i.Metadata,
+		&i.CreatedAt,
 	)
 	return i, err
 }
