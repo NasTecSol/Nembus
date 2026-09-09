@@ -1905,6 +1905,33 @@ type PurchaseOrderLineDTO struct {
 	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// CreatePurchaseOrderLineRequest represents payload to add a single line to a purchase order.
+type CreatePurchaseOrderLineRequest struct {
+	ProductID        int32                  `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID *int32                 `json:"product_variant_id,omitempty" example:"2"`
+	Quantity         float64                `json:"quantity" binding:"required" example:"10.5"`
+	UomID            *int32                 `json:"uom_id,omitempty" example:"1"`
+	UnitPrice        float64                `json:"unit_price" binding:"required" example:"45.50"`
+	DiscountAmount   *float64               `json:"discount_amount,omitempty" example:"5.00"`
+	TaxAmount        *float64               `json:"tax_amount,omitempty" example:"6.075"`
+	LineNumber       *int32                 `json:"line_number,omitempty" example:"1"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// UpdatePurchaseOrderLineRequest represents payload to update a single line in a purchase order.
+type UpdatePurchaseOrderLineRequest struct {
+	ProductID        int32                  `json:"product_id,omitempty" example:"1"`
+	ProductVariantID *int32                 `json:"product_variant_id,omitempty" example:"2"`
+	Quantity         float64                `json:"quantity,omitempty" example:"15.0"`
+	UomID            *int32                 `json:"uom_id,omitempty" example:"1"`
+	UnitPrice        float64                `json:"unit_price,omitempty" example:"45.50"`
+	DiscountAmount   *float64               `json:"discount_amount,omitempty" example:"5.00"`
+	TaxAmount        *float64               `json:"tax_amount,omitempty" example:"6.075"`
+	LineNumber       *int32                 `json:"line_number,omitempty" example:"1"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+}
+
+
 // CreatePurchaseOrderRequest represents the request payload to create a purchase order.
 type CreatePurchaseOrderRequest struct {
 	OrganizationID       int32                  `json:"organization_id" binding:"required" example:"1"`

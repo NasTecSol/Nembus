@@ -176,3 +176,39 @@ JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
 JOIN products p ON pol.product_id = p.id
 WHERE po.id = $1
 ORDER BY pol.line_number;
+
+-- name: GetPurchaseOrderLineByID :one
+SELECT 
+    pol.*,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    pv.variant_name,
+    pv.variant_sku,
+    uom.name AS uom_name,
+    COALESCE(pb.barcode, '') AS barcode
+FROM purchase_order_lines pol
+JOIN products p ON pol.product_id = p.id
+LEFT JOIN product_variants pv ON pol.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom ON pol.uom_id = uom.id
+LEFT JOIN product_barcodes pb ON pb.product_id = p.id AND pb.is_primary = true
+WHERE pol.id = $1;
+
+-- name: UpdatePurchaseOrderLine :one
+UPDATE purchase_order_lines
+SET product_id = $2,
+    product_variant_id = $3,
+    quantity = $4,
+    uom_id = $5,
+    unit_price = $6,
+    discount_amount = $7,
+    tax_amount = $8,
+    subtotal = $9,
+    line_total = $10,
+    line_number = $11,
+    metadata = $12
+WHERE id = $1
+RETURNING *;
+
+-- name: DeletePurchaseOrderLine :exec
+DELETE FROM purchase_order_lines
+WHERE id = $1;
