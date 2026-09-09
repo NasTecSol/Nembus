@@ -43,6 +43,7 @@ SELECT
     term.terminal_name,
     sess.session_number,
     cust.name AS customer_name,
+    tl.id AS line_id,
     tl.line_number,
     tl.product_id,
     tl.quantity,
@@ -51,7 +52,8 @@ SELECT
     tl.line_total,
     p.sku,
     p.name AS product_name,
-    COALESCE(pb.barcode, '') AS scanned_barcode
+    COALESCE(pb.barcode, '') AS scanned_barcode,
+    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
 FROM pos_transactions t
 JOIN cashiers          cshr  ON t.cashier_id         = cshr.id
 JOIN users             cashier ON cshr.user_id        = cashier.id
@@ -64,8 +66,15 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+LEFT JOIN (
+    SELECT original_line_id, SUM(quantity) AS returned_quantity
+    FROM sales_return_lines
+    WHERE original_line_id IS NOT NULL
+    GROUP BY original_line_id
+) srl ON srl.original_line_id = tl.id
 WHERE t.id = $1
 ORDER BY tl.line_number;
+
 
 -- name: ListPosTransactionsByCashierSession :many
 SELECT 
