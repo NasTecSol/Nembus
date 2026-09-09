@@ -2081,6 +2081,19 @@ type CreateGRNRequest struct {
 	Items              []GRNItemDTO           `json:"items" binding:"required"`
 }
 
+// UpdateGRNRequest represents request body to update a Goods Receipt Note.
+type UpdateGRNRequest struct {
+	PurchaseOrderID    *int32                 `json:"purchase_order_id,omitempty" example:"1"`
+	SupplierID         *int32                 `json:"supplier_id,omitempty" example:"5"`
+	StoreID            *int32                 `json:"store_id,omitempty" example:"1"`
+	ReceivedBy         *int32                 `json:"received_by,omitempty" example:"1"`
+	ReceiptDate        *string                `json:"receipt_date,omitempty" example:"2026-09-08"`
+	DeliveryNoteNumber *string                `json:"delivery_note_number,omitempty" example:"DN-9988"`
+	Notes              *string                `json:"notes,omitempty"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty"`
+	Items              []GRNItemDTO           `json:"items,omitempty"`
+}
+
 // GRNItemResponse represents GRN item response.
 type GRNItemResponse struct {
 	ID                  int32   `json:"id" example:"1"`
@@ -2124,6 +2137,39 @@ type GRNResponse struct {
 	CreatedAt          string            `json:"created_at" example:"2026-09-08T10:00:00Z"`
 	UpdatedAt          string            `json:"updated_at" example:"2026-09-08T10:00:00Z"`
 	Items              []GRNItemResponse `json:"items,omitempty"`
+}
+
+// GRNSummaryResponse represents Goods Receipt Note summary in list responses.
+type GRNSummaryResponse struct {
+	ID                    int32   `json:"id" example:"1"`
+	OrganizationID        int32   `json:"organization_id" example:"1"`
+	GRNNumber             string  `json:"grn_number" example:"GRN-20260908-0001"`
+	PurchaseOrderID       *int32  `json:"purchase_order_id,omitempty" example:"1"`
+	PONumber              *string `json:"po_number,omitempty" example:"PO-20260908-0001"`
+	SupplierID            int32   `json:"supplier_id" example:"5"`
+	SupplierName          *string `json:"supplier_name,omitempty" example:"Almarai Dairy Co."`
+	SupplierCode          *string `json:"supplier_code,omitempty" example:"SUPP001"`
+	StoreID               int32   `json:"store_id" example:"1"`
+	StoreName             *string `json:"store_name,omitempty" example:"Main Supermarket Branch"`
+	ReceivedBy            *int32  `json:"received_by,omitempty" example:"1"`
+	ReceivedByName        *string `json:"received_by_name,omitempty" example:"warehouse_manager"`
+	ReceiptDate           string  `json:"receipt_date" example:"2026-09-08T10:00:00Z"`
+	DeliveryNoteNumber    *string `json:"delivery_note_number,omitempty" example:"DN-9988"`
+	Status                string  `json:"status" example:"posted"`
+	Notes                 *string `json:"notes,omitempty"`
+	ItemCount             int64   `json:"item_count" example:"5"`
+	TotalReceivedQuantity string  `json:"total_received_quantity" example:"50.000"`
+	CreatedAt             string  `json:"created_at" example:"2026-09-08T10:00:00Z"`
+	UpdatedAt             string  `json:"updated_at" example:"2026-09-08T10:00:00Z"`
+}
+
+// GRNListResponse represents paginated Goods Receipt Notes list response.
+type GRNListResponse struct {
+	Data       []GRNSummaryResponse `json:"data"`
+	TotalCount int64                `json:"total_count" example:"25"`
+	Page       int32                `json:"page" example:"1"`
+	Limit      int32                `json:"limit" example:"20"`
+	TotalPages int32                `json:"total_pages" example:"2"`
 }
 
 // TransferRequestItemDTO represents a line item in a transfer request.
