@@ -801,12 +801,25 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 
 }
 
-// ListTodaysTransactions returns today's POS transactions for a store.
-func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32) *repository.Response {
+// ListTodaysTransactions returns POS transactions for a store with pagination.
+func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32, limit *int32, offset *int32) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	rows, err := uc.repo.ListTodaysPosTransactions(ctx, storeID)
+	l := int32(20)
+	if limit != nil && *limit > 0 {
+		l = *limit
+	}
+	o := int32(0)
+	if offset != nil && *offset >= 0 {
+		o = *offset
+	}
+
+	rows, err := uc.repo.ListTodaysPosTransactions(ctx, repository.ListTodaysPosTransactionsParams{
+		StoreID: storeID,
+		Limit:   l,
+		Offset:  o,
+	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
