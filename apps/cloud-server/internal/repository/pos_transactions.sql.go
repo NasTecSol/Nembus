@@ -532,22 +532,26 @@ SELECT
     t.transaction_date,
     t.total_amount,
     t.status,
-    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
-    term.terminal_name,
-    COUNT(tl.id) AS items_count,
-    SUM(tl.quantity) AS total_quantity
+    COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
+    COALESCE(term.terminal_name, '') AS terminal_name,
+    COALESCE(COUNT(tl.id), 0) AS items_count,
+    COALESCE(SUM(tl.quantity), 0) AS total_quantity
 FROM pos_transactions t
-JOIN cashiers cshr ON t.cashier_id = cshr.id
-JOIN users cashier ON cshr.user_id = cashier.id
-JOIN pos_terminals term ON t.pos_terminal_id = term.id
-JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
+LEFT JOIN cashiers cshr ON t.cashier_id = cshr.id
+LEFT JOIN users cashier ON cshr.user_id = cashier.id
+LEFT JOIN pos_terminals term ON t.pos_terminal_id = term.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
 WHERE t.store_id = $1
-  AND t.transaction_date >= CURRENT_DATE
-  AND t.transaction_date < CURRENT_DATE + INTERVAL '1 day'
 GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name
-ORDER BY t.transaction_date DESC
-LIMIT 200
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT $2 OFFSET $3
 `
+
+type ListTodaysPosTransactionsParams struct {
+	StoreID int32 `json:"store_id"`
+	Limit   int32 `json:"limit"`
+	Offset  int32 `json:"offset"`
+}
 
 type ListTodaysPosTransactionsRow struct {
 	ID                int32            `json:"id"`
@@ -556,13 +560,13 @@ type ListTodaysPosTransactionsRow struct {
 	TotalAmount       pgtype.Numeric   `json:"total_amount"`
 	Status            pgtype.Text      `json:"status"`
 	CashierName       interface{}      `json:"cashier_name"`
-	TerminalName      pgtype.Text      `json:"terminal_name"`
+	TerminalName      interface{}      `json:"terminal_name"`
 	ItemsCount        int64            `json:"items_count"`
 	TotalQuantity     int64            `json:"total_quantity"`
 }
 
-func (q *Queries) ListTodaysPosTransactions(ctx context.Context, storeID int32) ([]ListTodaysPosTransactionsRow, error) {
-	rows, err := q.db.Query(ctx, listTodaysPosTransactions, storeID)
+func (q *Queries) ListTodaysPosTransactions(ctx context.Context, arg ListTodaysPosTransactionsParams) ([]ListTodaysPosTransactionsRow, error) {
+	rows, err := q.db.Query(ctx, listTodaysPosTransactions, arg.StoreID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

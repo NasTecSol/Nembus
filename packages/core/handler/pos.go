@@ -551,15 +551,19 @@ func (h *PosHandler) ProcessPayment(c *gin.Context) {
 }
 
 // ListTodayTransactions handles GET /api/pos/stores/:store_id/transactions
-// @Summary      List today's POS transactions
-// @Description  Returns today's completed POS transactions for a store
+// @Summary      List POS transactions for a store
+// @Description  Returns POS transactions for a store with pagination
 // @Tags         pos
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id   header    string  true  "Tenant identifier"
-// @Param        Authorization header    string  true  "Bearer token"
-// @Param        store_id      path      int     true  "Store ID"
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        Authorization header    string  true   "Bearer token"
+// @Param        store_id      path      int     true   "Store ID"
+// @Param        page          query     int     false  "Page number (default: 1)"
+// @Param        limit         query     int     false  "Items per page (default: 20)"
+// @Param        page_size     query     int     false  "Items per page alias"
+// @Param        offset        query     int     false  "Offset override"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -576,7 +580,41 @@ func (h *PosHandler) ListTodayTransactions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
 		return
 	}
-	resp := h.useCase.ListTodaysTransactions(c.Request.Context(), int32(storeID))
+
+	var limit *int32
+	if s := c.Query("limit"); s != "" {
+		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
+			val := int32(l)
+			limit = &val
+		}
+	} else if s := c.Query("page_size"); s != "" {
+		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
+			val := int32(l)
+			limit = &val
+		}
+	}
+
+	var offset *int32
+	if s := c.Query("offset"); s != "" {
+		if o, err := strconv.ParseInt(s, 10, 32); err == nil && o >= 0 {
+			val := int32(o)
+			offset = &val
+		}
+	} else if s := c.Query("page"); s != "" {
+		if p, err := strconv.ParseInt(s, 10, 32); err == nil && p > 0 {
+			pageSize := int32(20)
+			if limit != nil && *limit > 0 {
+				pageSize = *limit
+			}
+			val := int32((p - 1) * int64(pageSize))
+			offset = &val
+			if limit == nil {
+				limit = &pageSize
+			}
+		}
+	}
+
+	resp := h.useCase.ListTodaysTransactions(c.Request.Context(), int32(storeID), limit, offset)
 	c.JSON(resp.StatusCode, resp)
 }
 
