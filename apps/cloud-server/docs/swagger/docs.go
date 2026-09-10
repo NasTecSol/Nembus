@@ -21353,7 +21353,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns today's completed POS transactions for a store",
+                "description": "Returns POS transactions for a store with pagination",
                 "consumes": [
                     "application/json"
                 ],
@@ -21363,7 +21363,7 @@ const docTemplate = `{
                 "tags": [
                     "pos"
                 ],
-                "summary": "List today's POS transactions",
+                "summary": "List POS transactions for a store",
                 "parameters": [
                     {
                         "type": "string",
@@ -21385,6 +21385,30 @@ const docTemplate = `{
                         "name": "store_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page alias",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset override",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {

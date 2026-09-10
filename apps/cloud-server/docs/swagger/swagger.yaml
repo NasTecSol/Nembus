@@ -19570,7 +19570,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Returns today's completed POS transactions for a store
+      description: Returns POS transactions for a store with pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -19586,6 +19586,22 @@ paths:
         in: path
         name: store_id
         required: true
+        type: integer
+      - description: 'Page number (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Items per page (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      - description: Items per page alias
+        in: query
+        name: page_size
+        type: integer
+      - description: Offset override
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -19608,7 +19624,7 @@ paths:
             $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: List today's POS transactions
+      summary: List POS transactions for a store
       tags:
       - pos
   /api/pos/terminals:
