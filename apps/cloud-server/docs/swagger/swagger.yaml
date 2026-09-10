@@ -2865,6 +2865,25 @@ definitions:
         example: Liter
         type: string
     type: object
+  handler.GRNListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/handler.GRNSummaryResponse'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total_count:
+        example: 25
+        type: integer
+      total_pages:
+        example: 2
+        type: integer
+    type: object
   handler.GRNResponse:
     properties:
       created_at:
@@ -2919,6 +2938,68 @@ definitions:
         type: integer
       supplier_name:
         example: Almarai Dairy Co.
+        type: string
+      updated_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+    type: object
+  handler.GRNSummaryResponse:
+    properties:
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      delivery_note_number:
+        example: DN-9988
+        type: string
+      grn_number:
+        example: GRN-20260908-0001
+        type: string
+      id:
+        example: 1
+        type: integer
+      item_count:
+        example: 5
+        type: integer
+      notes:
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      po_number:
+        example: PO-20260908-0001
+        type: string
+      purchase_order_id:
+        example: 1
+        type: integer
+      receipt_date:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      received_by:
+        example: 1
+        type: integer
+      received_by_name:
+        example: warehouse_manager
+        type: string
+      status:
+        example: posted
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Supermarket Branch
+        type: string
+      supplier_code:
+        example: SUPP001
+        type: string
+      supplier_id:
+        example: 5
+        type: integer
+      supplier_name:
+        example: Almarai Dairy Co.
+        type: string
+      total_received_quantity:
+        example: "50.000"
         type: string
       updated_at:
         example: "2026-09-08T10:00:00Z"
@@ -4650,6 +4731,36 @@ definitions:
         type: string
     required:
     - shipment_status
+    type: object
+  handler.UpdateGRNRequest:
+    properties:
+      delivery_note_number:
+        example: DN-9988
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.GRNItemDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      notes:
+        type: string
+      purchase_order_id:
+        example: 1
+        type: integer
+      receipt_date:
+        example: "2026-09-08"
+        type: string
+      received_by:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      supplier_id:
+        example: 5
+        type: integer
     type: object
   handler.UpdateInventoryStockRequest:
     properties:
@@ -12681,6 +12792,84 @@ paths:
       tags:
       - dev
   /api/goods-receipt-notes:
+    get:
+      consumes:
+      - application/json
+      description: List Goods Receipt Notes with filtering by organization, store,
+        supplier, PO, status, date range, search, and pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Supplier / Partner ID
+        in: query
+        name: supplier_id
+        type: integer
+      - description: Purchase Order ID
+        in: query
+        name: purchase_order_id
+        type: integer
+      - description: Status (draft, posted, cancelled)
+        in: query
+        name: status
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Search GRN number, DN number, PO number, or supplier name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.GRNListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Goods Receipt Notes (GRN)
+      tags:
+      - goods-receipt-notes
     post:
       consumes:
       - application/json
@@ -12724,6 +12913,50 @@ paths:
       tags:
       - goods-receipt-notes
   /api/goods-receipt-notes/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a draft Goods Receipt Note
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: GRN ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Goods Receipt Note
+      tags:
+      - goods-receipt-notes
     get:
       consumes:
       - application/json
@@ -12766,6 +12999,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Get Goods Receipt Note by ID
+      tags:
+      - goods-receipt-notes
+    put:
+      consumes:
+      - application/json
+      description: Updates header and item lines for a draft Goods Receipt Note
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: GRN ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: GRN update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateGRNRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.GRNResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Goods Receipt Note (GRN)
       tags:
       - goods-receipt-notes
   /api/goods-receipt-notes/{id}/post:

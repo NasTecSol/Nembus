@@ -316,7 +316,6 @@ func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPos
 			&i.ScannedBarcode,
 			&i.ReturnedQuantity,
 		); err != nil {
-
 			return nil, err
 		}
 		items = append(items, i)
