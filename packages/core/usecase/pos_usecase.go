@@ -899,6 +899,71 @@ func (uc *PosUseCase) ListTransactionsByCashierSession(
 	return utils.NewResponse(utils.CodeOK, "transactions fetched", out)
 }
 
+// ListTransactionsByCustomer returns POS transactions for a specific customer ID with pagination.
+func (uc *PosUseCase) ListTransactionsByCustomer(
+	ctx context.Context,
+	customerID int32,
+	limit *int32,
+	offset *int32,
+) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	l := int32(20)
+	if limit != nil && *limit > 0 {
+		l = *limit
+	}
+	o := int32(0)
+	if offset != nil && *offset >= 0 {
+		o = *offset
+	}
+
+	arg := repository.ListPosTransactionsByCustomerIDParams{
+		CustomerID: pgtype.Int4{Int32: customerID, Valid: true},
+		Limit:      l,
+		Offset:     o,
+	}
+
+	rows, err := uc.repo.ListPosTransactionsByCustomerID(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	out := make([]PosTransactionWithLinesOutput, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PosTransactionWithLinesOutput{
+			ID:                row.ID,
+			StoreID:           row.StoreID,
+			CashierID:         row.CashierID,
+			CashierSessionID:  row.CashierSessionID,
+			CustomerID:        row.CustomerID,
+			PosTerminalID:     row.PosTerminalID,
+			TransactionNumber: row.TransactionNumber,
+			TransactionDate:   row.TransactionDate,
+			TransactionType:   row.TransactionType,
+			Subtotal:          row.Subtotal,
+			DiscountAmount:    row.DiscountAmount,
+			TaxAmount:         row.TaxAmount,
+			TotalAmount:       row.TotalAmount,
+			TotalCost:         row.TotalCost,
+			AmountPaid:        row.AmountPaid,
+			ChangeGiven:       row.ChangeGiven,
+			Status:            row.Status,
+			PriceListID:       row.PriceListID,
+			SalesOrderID:      row.SalesOrderID,
+			SourceCartID:      row.SourceCartID,
+			VoidedBy:          row.VoidedBy,
+			VoidedAt:          row.VoidedAt,
+			Metadata:          utils.BytesToJSONRawMessage(row.Metadata),
+			CreatedAt:         row.CreatedAt,
+			Lines:             linesToJSONRawMessage(row.Lines),
+		})
+	}
+
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", out)
+}
+
 // GetTransaction returns a single POS transaction by ID.
 func (uc *PosUseCase) GetTransaction(ctx context.Context, id int32) *repository.Response {
 	if uc.repo == nil {
