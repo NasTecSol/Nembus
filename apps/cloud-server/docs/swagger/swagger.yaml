@@ -20621,6 +20621,68 @@ paths:
       summary: List POS transactions by cashier session
       tags:
       - pos
+  /api/pos/transactions/customer/{customer_id}:
+    get:
+      consumes:
+      - application/json
+      description: Returns POS transactions for a specific customer with optional
+        pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Customer ID
+        in: path
+        name: customer_id
+        required: true
+        type: integer
+      - description: 'Page number (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Items per page (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      - description: Items per page alias
+        in: query
+        name: page_size
+        type: integer
+      - description: Offset override
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List POS transactions by customer ID
+      tags:
+      - pos
   /api/price-lists:
     get:
       consumes:
