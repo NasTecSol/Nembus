@@ -637,7 +637,9 @@ CREATE INDEX idx_kiosk_sessions_token               ON kiosk_sessions(session_to
 -- CREATE INDEX idx_restaurant_order_items_menu_item ON restaurant_order_items(menu_item_id);
 -- CREATE INDEX idx_restaurant_order_items_status   ON restaurant_order_items(status);
 -- FIX #13 indexes
+CREATE INDEX idx_combo_bundles_org_id    ON combo_bundles(organization_id);
 CREATE INDEX idx_combo_bundles_store_id  ON combo_bundles(store_id);
+CREATE INDEX idx_combo_bundles_price_list_id ON combo_bundles(price_list_id);
 CREATE INDEX idx_combo_bundles_is_active ON combo_bundles(is_active);
 CREATE INDEX idx_combo_bundle_items_bundle_id ON combo_bundle_items(combo_bundle_id);
 -- CREATE INDEX idx_waste_logs_store_id     ON waste_logs(store_id);

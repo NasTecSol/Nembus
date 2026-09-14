@@ -9686,6 +9686,771 @@
                 }
             }
         },
+        "/api/combo-bundle-items/{item_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates a specific combo bundle item slot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Update a combo bundle item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Item data",
+                        "name": "item",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleItemRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleItemResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes an item slot from a combo bundle",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Delete a combo bundle item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/combo-bundles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List combo bundles for an organization with optional store, price list, and active status filters",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "List combo bundles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID (optional)",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Price List ID (optional)",
+                        "name": "price_list_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Active status filter (optional)",
+                        "name": "is_active",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.ComboBundleResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new sellable combo bundle or promotional kit for retail, wholesale, or restaurant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Create a combo bundle or promotional deal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Combo bundle data",
+                        "name": "bundle",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateComboBundleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/combo-bundles/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves a combo bundle with all its configured items and details",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Get combo bundle by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates combo bundle header details (pricing, customer types, schedules)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Update a combo bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated bundle data",
+                        "name": "bundle",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateComboBundleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a combo bundle and its associated items",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Delete a combo bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/combo-bundles/{id}/create-promotion": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Bridges a sellable combo bundle to the promotion engine as an automatic or coupon-driven bundle promotion",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Create promotion from combo bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional coupon code",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateBundlePromotionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.PromotionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/combo-bundles/{id}/items": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists all items configured for a specific combo bundle",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "List items of a combo bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.ComboBundleItemResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a product or menu item slot to a combo bundle",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Add item to combo bundle",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Item definition",
+                        "name": "item",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleItemRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleItemResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/combo-bundles/{id}/items/batch": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Atomically replaces all items for a combo bundle",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Batch set combo bundle items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "List of items",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.BatchSetComboBundleItemsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.ComboBundleItemResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/combo-bundles/{id}/toggle": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Activates or deactivates a combo bundle",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "Toggle combo bundle active status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Combo Bundle ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Status",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ToggleComboBundleActiveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ComboBundleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/customers": {
             "get": {
                 "security": [
@@ -35259,6 +36024,63 @@
                 }
             }
         },
+        "/api/stores/{store_id}/combo-bundles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieves active combo bundles valid for a store (used by POS terminals \u0026 kiosks)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "combo-bundles"
+                ],
+                "summary": "List active combo bundles for a store",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.ComboBundleResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/stores/{store_id}/locations": {
             "get": {
                 "security": [
@@ -40430,6 +41252,20 @@
                 }
             }
         },
+        "handler.BatchSetComboBundleItemsRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ComboBundleItemRequest"
+                    }
+                }
+            }
+        },
         "handler.BrandResponse": {
             "type": "object",
             "properties": {
@@ -40831,6 +41667,203 @@
                 }
             }
         },
+        "handler.ComboBundleItemRequest": {
+            "type": "object",
+            "properties": {
+                "display_order": {
+                    "type": "integer"
+                },
+                "group_tag": {
+                    "type": "string"
+                },
+                "is_required": {
+                    "type": "boolean"
+                },
+                "item_type": {
+                    "description": "menu_item, product",
+                    "type": "string"
+                },
+                "menu_item_id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "price_override": {
+                    "type": "number"
+                },
+                "product_id": {
+                    "type": "integer"
+                },
+                "product_variant_id": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
+        "handler.ComboBundleItemResponse": {
+            "type": "object",
+            "properties": {
+                "combo_bundle_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "group_tag": {
+                    "type": "string",
+                    "example": "Main"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "item_type": {
+                    "type": "string",
+                    "example": "product"
+                },
+                "menu_item_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "menu_item_name": {
+                    "type": "string",
+                    "example": "Burger"
+                },
+                "menu_item_price": {
+                    "type": "string",
+                    "example": "15.00"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "price_override": {
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Shampoo 250ml"
+                },
+                "product_sku": {
+                    "type": "string",
+                    "example": "SHP-250"
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 101
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "2.000"
+                },
+                "variant_name": {
+                    "type": "string",
+                    "example": "Original"
+                },
+                "variant_sku": {
+                    "type": "string",
+                    "example": "SHP-250-ORIG"
+                }
+            }
+        },
+        "handler.ComboBundleResponse": {
+            "type": "object",
+            "properties": {
+                "applicable_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[\"retail\"",
+                        "\"wholesale\"]"
+                    ]
+                },
+                "bundle_price": {
+                    "type": "string",
+                    "example": "49.99"
+                },
+                "bundle_type": {
+                    "type": "string",
+                    "example": "fixed"
+                },
+                "code": {
+                    "type": "string",
+                    "example": "BUNDLE-001"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-24T21:43:00Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Retail bundle promotion"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ComboBundleItemResponse"
+                    }
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Starter Kit Bundle"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "price_list_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-24T21:43:00Z"
+                },
+                "valid_from": {
+                    "type": "string",
+                    "example": "2026-01-01"
+                },
+                "valid_to": {
+                    "type": "string",
+                    "example": "2026-12-31"
+                }
+            }
+        },
         "handler.CountResponse": {
             "type": "object",
             "properties": {
@@ -40933,6 +41966,14 @@
                 "name": {
                     "type": "string",
                     "example": "Nike"
+                }
+            }
+        },
+        "handler.CreateBundlePromotionRequest": {
+            "type": "object",
+            "properties": {
+                "coupon_code": {
+                    "type": "string"
                 }
             }
         },
@@ -41275,6 +42316,72 @@
                 "user_id": {
                     "type": "integer",
                     "example": 10
+                }
+            }
+        },
+        "handler.CreateComboBundleRequest": {
+            "type": "object",
+            "required": [
+                "bundle_price",
+                "code",
+                "name",
+                "organization_id"
+            ],
+            "properties": {
+                "applicable_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "bundle_price": {
+                    "type": "number"
+                },
+                "bundle_type": {
+                    "description": "fixed, build_your_own, meal_deal, bogo",
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ComboBundleItemRequest"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer"
+                },
+                "price_list_id": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "integer"
+                },
+                "valid_from": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "valid_to": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
                 }
             }
         },
@@ -45866,6 +46973,14 @@
                 }
             }
         },
+        "handler.ToggleComboBundleActiveRequest": {
+            "type": "object",
+            "properties": {
+                "is_active": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handler.ToggleCustomerActiveRequest": {
             "type": "object",
             "required": [
@@ -46535,6 +47650,59 @@
                 "user_id": {
                     "type": "integer",
                     "example": 10
+                }
+            }
+        },
+        "handler.UpdateComboBundleRequest": {
+            "type": "object",
+            "required": [
+                "bundle_price",
+                "code",
+                "name"
+            ],
+            "properties": {
+                "applicable_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "bundle_price": {
+                    "type": "number"
+                },
+                "bundle_type": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "price_list_id": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "integer"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_to": {
+                    "type": "string"
                 }
             }
         },

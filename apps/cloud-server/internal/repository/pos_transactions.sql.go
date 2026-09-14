@@ -560,9 +560,9 @@ type ListTodaysPosTransactionsRow struct {
 	TotalAmount       pgtype.Numeric   `json:"total_amount"`
 	Status            pgtype.Text      `json:"status"`
 	CashierName       interface{}      `json:"cashier_name"`
-	TerminalName      interface{}      `json:"terminal_name"`
-	ItemsCount        int64            `json:"items_count"`
-	TotalQuantity     int64            `json:"total_quantity"`
+	TerminalName      string           `json:"terminal_name"`
+	ItemsCount        interface{}      `json:"items_count"`
+	TotalQuantity     interface{}      `json:"total_quantity"`
 }
 
 func (q *Queries) ListTodaysPosTransactions(ctx context.Context, arg ListTodaysPosTransactionsParams) ([]ListTodaysPosTransactionsRow, error) {

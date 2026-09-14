@@ -231,7 +231,10 @@ CREATE TABLE recipe_ingredients (
 -- FIX #13 (P1): Combo / meal deal / bundle support
 CREATE TABLE combo_bundles (
     id              SERIAL PRIMARY KEY,
-    store_id        INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id        INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+    price_list_id   INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    applicable_customer_types TEXT[] DEFAULT '{"retail","wholesale"}',
     code            VARCHAR(50) NOT NULL,
     name            VARCHAR(255) NOT NULL,
     description     TEXT,
@@ -244,7 +247,7 @@ CREATE TABLE combo_bundles (
     metadata        JSONB     DEFAULT '{}',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(store_id, code)
+    UNIQUE(organization_id, code)
 );
 
 ALTER TABLE menu_items

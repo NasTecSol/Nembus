@@ -277,6 +277,15 @@ definitions:
       tenant_slug:
         type: string
     type: object
+  handler.BatchSetComboBundleItemsRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/handler.ComboBundleItemRequest'
+        type: array
+    required:
+    - items
+    type: object
   handler.BrandResponse:
     properties:
       code:
@@ -568,6 +577,148 @@ definitions:
     - closed_by
     - closing_balance
     type: object
+  handler.ComboBundleItemRequest:
+    properties:
+      display_order:
+        type: integer
+      group_tag:
+        type: string
+      is_required:
+        type: boolean
+      item_type:
+        description: menu_item, product
+        type: string
+      menu_item_id:
+        type: integer
+      metadata:
+        additionalProperties: true
+        type: object
+      price_override:
+        type: number
+      product_id:
+        type: integer
+      product_variant_id:
+        type: integer
+      quantity:
+        type: number
+    type: object
+  handler.ComboBundleItemResponse:
+    properties:
+      combo_bundle_id:
+        example: 1
+        type: integer
+      display_order:
+        example: 1
+        type: integer
+      group_tag:
+        example: Main
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_required:
+        example: true
+        type: boolean
+      item_type:
+        example: product
+        type: string
+      menu_item_id:
+        example: 1
+        type: integer
+      menu_item_name:
+        example: Burger
+        type: string
+      menu_item_price:
+        example: "15.00"
+        type: string
+      metadata:
+        type: object
+      price_override:
+        example: "0.00"
+        type: string
+      product_id:
+        example: 10
+        type: integer
+      product_name:
+        example: Shampoo 250ml
+        type: string
+      product_sku:
+        example: SHP-250
+        type: string
+      product_variant_id:
+        example: 101
+        type: integer
+      quantity:
+        example: "2.000"
+        type: string
+      variant_name:
+        example: Original
+        type: string
+      variant_sku:
+        example: SHP-250-ORIG
+        type: string
+    type: object
+  handler.ComboBundleResponse:
+    properties:
+      applicable_customer_types:
+        example:
+        - '["retail"'
+        - '"wholesale"]'
+        items:
+          type: string
+        type: array
+      bundle_price:
+        example: "49.99"
+        type: string
+      bundle_type:
+        example: fixed
+        type: string
+      code:
+        example: BUNDLE-001
+        type: string
+      created_at:
+        example: "2026-01-24T21:43:00Z"
+        type: string
+      description:
+        example: Retail bundle promotion
+        type: string
+      display_order:
+        example: 1
+        type: integer
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/handler.ComboBundleItemResponse'
+        type: array
+      metadata:
+        type: object
+      name:
+        example: Starter Kit Bundle
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      price_list_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-01-24T21:43:00Z"
+        type: string
+      valid_from:
+        example: "2026-01-01"
+        type: string
+      valid_to:
+        example: "2026-12-31"
+        type: string
+    type: object
   handler.CountResponse:
     properties:
       count:
@@ -643,6 +794,11 @@ definitions:
     required:
     - code
     - name
+    type: object
+  handler.CreateBundlePromotionRequest:
+    properties:
+      coupon_code:
+        type: string
     type: object
   handler.CreateBusinessPartnerRequest:
     properties:
@@ -894,6 +1050,52 @@ definitions:
     - cashier_code
     - store_id
     - user_id
+    type: object
+  handler.CreateComboBundleRequest:
+    properties:
+      applicable_customer_types:
+        items:
+          type: string
+        type: array
+      bundle_price:
+        type: number
+      bundle_type:
+        description: fixed, build_your_own, meal_deal, bogo
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      display_order:
+        type: integer
+      is_active:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/handler.ComboBundleItemRequest'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      organization_id:
+        type: integer
+      price_list_id:
+        type: integer
+      store_id:
+        type: integer
+      valid_from:
+        description: YYYY-MM-DD
+        type: string
+      valid_to:
+        description: YYYY-MM-DD
+        type: string
+    required:
+    - bundle_price
+    - code
+    - name
+    - organization_id
     type: object
   handler.CreateCustomerRequest:
     properties:
@@ -4197,6 +4399,11 @@ definitions:
     required:
     - is_active
     type: object
+  handler.ToggleComboBundleActiveRequest:
+    properties:
+      is_active:
+        type: boolean
+    type: object
   handler.ToggleCustomerActiveRequest:
     properties:
       is_active:
@@ -4671,6 +4878,42 @@ definitions:
       user_id:
         example: 10
         type: integer
+    type: object
+  handler.UpdateComboBundleRequest:
+    properties:
+      applicable_customer_types:
+        items:
+          type: string
+        type: array
+      bundle_price:
+        type: number
+      bundle_type:
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      display_order:
+        type: integer
+      is_active:
+        type: boolean
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      price_list_id:
+        type: integer
+      store_id:
+        type: integer
+      valid_from:
+        type: string
+      valid_to:
+        type: string
+    required:
+    - bundle_price
+    - code
+    - name
     type: object
   handler.UpdateCustomerBalanceRequest:
     properties:
@@ -12034,6 +12277,508 @@ paths:
       summary: Create a new cashier with defaults
       tags:
       - cashiers
+  /api/combo-bundle-items/{item_id}:
+    delete:
+      description: Removes an item slot from a combo bundle
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a combo bundle item
+      tags:
+      - combo-bundles
+    put:
+      consumes:
+      - application/json
+      description: Updates a specific combo bundle item slot
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      - description: Item data
+        in: body
+        name: item
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ComboBundleItemRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ComboBundleItemResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a combo bundle item
+      tags:
+      - combo-bundles
+  /api/combo-bundles:
+    get:
+      description: List combo bundles for an organization with optional store, price
+        list, and active status filters
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID (optional)
+        in: query
+        name: store_id
+        type: integer
+      - description: Price List ID (optional)
+        in: query
+        name: price_list_id
+        type: integer
+      - description: Active status filter (optional)
+        in: query
+        name: is_active
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.ComboBundleResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List combo bundles
+      tags:
+      - combo-bundles
+    post:
+      consumes:
+      - application/json
+      description: Creates a new sellable combo bundle or promotional kit for retail,
+        wholesale, or restaurant
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo bundle data
+        in: body
+        name: bundle
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateComboBundleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.ComboBundleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a combo bundle or promotional deal
+      tags:
+      - combo-bundles
+  /api/combo-bundles/{id}:
+    delete:
+      description: Deletes a combo bundle and its associated items
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a combo bundle
+      tags:
+      - combo-bundles
+    get:
+      description: Retrieves a combo bundle with all its configured items and details
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ComboBundleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get combo bundle by ID
+      tags:
+      - combo-bundles
+    put:
+      consumes:
+      - application/json
+      description: Updates combo bundle header details (pricing, customer types, schedules)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated bundle data
+        in: body
+        name: bundle
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateComboBundleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ComboBundleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a combo bundle
+      tags:
+      - combo-bundles
+  /api/combo-bundles/{id}/create-promotion:
+    post:
+      consumes:
+      - application/json
+      description: Bridges a sellable combo bundle to the promotion engine as an automatic
+        or coupon-driven bundle promotion
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Optional coupon code
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.CreateBundlePromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PromotionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create promotion from combo bundle
+      tags:
+      - combo-bundles
+  /api/combo-bundles/{id}/items:
+    get:
+      description: Lists all items configured for a specific combo bundle
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.ComboBundleItemResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List items of a combo bundle
+      tags:
+      - combo-bundles
+    post:
+      consumes:
+      - application/json
+      description: Adds a product or menu item slot to a combo bundle
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Item definition
+        in: body
+        name: item
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ComboBundleItemRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.ComboBundleItemResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add item to combo bundle
+      tags:
+      - combo-bundles
+  /api/combo-bundles/{id}/items/batch:
+    put:
+      consumes:
+      - application/json
+      description: Atomically replaces all items for a combo bundle
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: List of items
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.BatchSetComboBundleItemsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.ComboBundleItemResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Batch set combo bundle items
+      tags:
+      - combo-bundles
+  /api/combo-bundles/{id}/toggle:
+    patch:
+      consumes:
+      - application/json
+      description: Activates or deactivates a combo bundle
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Combo Bundle ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ToggleComboBundleActiveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ComboBundleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Toggle combo bundle active status
+      tags:
+      - combo-bundles
   /api/customers:
     get:
       consumes:
@@ -28658,6 +29403,44 @@ paths:
       summary: Update store
       tags:
       - stores
+  /api/stores/{store_id}/combo-bundles:
+    get:
+      description: Retrieves active combo bundles valid for a store (used by POS terminals
+        & kiosks)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Store ID
+        in: path
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.ComboBundleResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List active combo bundles for a store
+      tags:
+      - combo-bundles
   /api/stores/{store_id}/locations:
     get:
       consumes:

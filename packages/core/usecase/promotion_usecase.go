@@ -171,6 +171,23 @@ type pointsMultiplierMetadata struct {
 	Multiplier float64 `json:"multiplier"`
 }
 
+// bundlePriceItemMetadata defines one required product item within a bundle promotion.
+type bundlePriceItemMetadata struct {
+	ProductID        int32   `json:"product_id"`
+	ProductVariantID *int32  `json:"product_variant_id,omitempty"`
+	Quantity         float64 `json:"quantity"`
+}
+
+// bundlePriceMetadata is the expected shape of action_metadata for bundle_price promotions.
+//
+//	{"bundle_price": 50.00, "bundle_items": [{"product_id": 10, "quantity": 2}, {"product_id": 20, "quantity": 1}], "combo_bundle_id": 5}
+type bundlePriceMetadata struct {
+	BundlePrice   float64                   `json:"bundle_price"`
+	BundleItems   []bundlePriceItemMetadata `json:"bundle_items,omitempty"`
+	ComboBundleID *int32                    `json:"combo_bundle_id,omitempty"`
+	AllowMultiple bool                      `json:"allow_multiple"`
+}
+
 // ApplyCoupon validates and applies a coupon code to a cart.
 //
 // Flow:
@@ -208,6 +225,32 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 	// 2a. Check store restriction
 	if !isStoreAllowed(promo.StoreIds, cart.StoreID) {
 		return utils.NewResponse(utils.CodeBadReq, "coupon is not valid for this store", nil)
+	}
+
+	// 2b. Check customer type restriction (retail, wholesale, etc.)
+	if len(promo.TargetCustomerTypes) > 0 {
+		matched := false
+		cartTypeStr := string(cart.CartType)
+		for _, t := range promo.TargetCustomerTypes {
+			if strings.EqualFold(t, cartTypeStr) {
+				matched = true
+				break
+			}
+		}
+		if !matched && cart.CustomerID.Valid {
+			customer, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+			if err == nil && customer.CustomerType.Valid {
+				for _, t := range promo.TargetCustomerTypes {
+					if strings.EqualFold(t, customer.CustomerType.String) {
+						matched = true
+						break
+					}
+				}
+			}
+		}
+		if !matched {
+			return utils.NewResponse(utils.CodeBadReq, "coupon is not applicable to this customer or order type", nil)
+		}
 	}
 
 	// 3. Fetch cart totals for constraint checks
@@ -411,9 +454,99 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 
 	// ── 6. Bundle Price ────────────────────────────────────────────────────────
 	case "bundle_price":
-		// discount_value is the target bundle total price; discount = subtotal − bundle_price
-		if discountValueFloat < subtotalFloat {
-			discountFloat = subtotalFloat - discountValueFloat
+		var meta bundlePriceMetadata
+		if len(promo.ActionMetadata) > 0 {
+			_ = json.Unmarshal(promo.ActionMetadata, &meta)
+		}
+
+		targetBundlePrice := discountValueFloat
+		if meta.BundlePrice > 0 {
+			targetBundlePrice = meta.BundlePrice
+		}
+
+		// If linked to a combo_bundle, pull its items if not specified in metadata
+		if meta.ComboBundleID != nil && len(meta.BundleItems) == 0 {
+			bundleItems, err := uc.repo.ListComboBundleItems(ctx, *meta.ComboBundleID)
+			if err == nil {
+				for _, bi := range bundleItems {
+					if bi.ProductID.Valid {
+						qty := numericToFloat(bi.Quantity)
+						var varID *int32
+						if bi.ProductVariantID.Valid {
+							v := bi.ProductVariantID.Int32
+							varID = &v
+						}
+						meta.BundleItems = append(meta.BundleItems, bundlePriceItemMetadata{
+							ProductID:        bi.ProductID.Int32,
+							ProductVariantID: varID,
+							Quantity:         qty,
+						})
+					}
+				}
+			}
+		}
+
+		// If bundle items are specified, validate presence in cart & allocate discount
+		if len(meta.BundleItems) > 0 {
+			var bundleItemsSubtotal float64
+			for _, reqItem := range meta.BundleItems {
+				var foundQty float64
+				var matchedUnitPrice float64
+				for _, it := range items {
+					if it.ProductID == reqItem.ProductID {
+						if reqItem.ProductVariantID == nil || (it.ProductVariantID.Valid && it.ProductVariantID.Int32 == *reqItem.ProductVariantID) {
+							foundQty += numericToFloat(it.Quantity)
+							matchedUnitPrice = numericToFloat(it.UnitPrice)
+						}
+					}
+				}
+
+				if foundQty < reqItem.Quantity {
+					return utils.NewResponse(utils.CodeBadReq,
+						fmt.Sprintf("bundle promotion requires at least %.0f unit(s) of product ID %d in cart (found %.0f)",
+							reqItem.Quantity, reqItem.ProductID, foundQty),
+						nil)
+				}
+
+				bundleItemsSubtotal += matchedUnitPrice * reqItem.Quantity
+			}
+
+			// Calculate savings: normal subtotal minus bundle price
+			if bundleItemsSubtotal > targetBundlePrice {
+				totalBundleSavings := bundleItemsSubtotal - targetBundlePrice
+				discountFloat = totalBundleSavings
+
+				// Distribute discount proportionally across matching cart items
+				for _, reqItem := range meta.BundleItems {
+					for _, it := range items {
+						if it.ProductID == reqItem.ProductID {
+							if reqItem.ProductVariantID == nil || (it.ProductVariantID.Valid && it.ProductVariantID.Int32 == *reqItem.ProductVariantID) {
+								itemUnit := numericToFloat(it.UnitPrice)
+								itemTotal := itemUnit * reqItem.Quantity
+								itemRatio := 0.0
+								if bundleItemsSubtotal > 0 {
+									itemRatio = itemTotal / bundleItemsSubtotal
+								}
+								itemDiscount := totalBundleSavings * itemRatio
+
+								perItemNumeric := pgtype.Numeric{}
+								_ = perItemNumeric.Scan(fmt.Sprintf("%.2f", itemDiscount))
+								_, _ = uc.repo.ApplyDiscountToCartItem(ctx, repository.ApplyDiscountToCartItemParams{
+									ID:             it.ID,
+									DiscountAmount: perItemNumeric,
+									Column3:        promo.Code,
+								})
+							}
+						}
+					}
+				}
+			}
+			isProductTargeted = false // discounts applied directly per item
+		} else {
+			// Fallback: whole-order bundle price cap
+			if targetBundlePrice < subtotalFloat {
+				discountFloat = subtotalFloat - targetBundlePrice
+			}
 		}
 
 	default:
@@ -698,3 +831,84 @@ func isStoreAllowed(storeIDs []int32, cartStoreID pgtype.Int4) bool {
 	}
 	return false
 }
+
+// CreateBundlePromotionFromCombo creates a promotion record directly from a combo_bundle definition.
+func (uc *PromotionUseCase) CreateBundlePromotionFromCombo(ctx context.Context, comboID int32, couponCode string) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	combo, err := uc.repo.GetComboBundle(ctx, comboID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "combo bundle not found", nil)
+	}
+
+	items, err := uc.repo.ListComboBundleItems(ctx, comboID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to list bundle items: "+err.Error(), nil)
+	}
+
+	var bundleReqs []bundlePriceItemMetadata
+	var targetProductIDs []int32
+	for _, it := range items {
+		if it.ProductID.Valid {
+			targetProductIDs = append(targetProductIDs, it.ProductID.Int32)
+			var vID *int32
+			if it.ProductVariantID.Valid {
+				v := it.ProductVariantID.Int32
+				vID = &v
+			}
+			bundleReqs = append(bundleReqs, bundlePriceItemMetadata{
+				ProductID:        it.ProductID.Int32,
+				ProductVariantID: vID,
+				Quantity:         numericToFloat(it.Quantity),
+			})
+		}
+	}
+
+	bundlePriceFloat := numericToFloat(combo.BundlePrice)
+	meta := bundlePriceMetadata{
+		BundlePrice:   bundlePriceFloat,
+		BundleItems:   bundleReqs,
+		ComboBundleID: &combo.ID,
+		AllowMultiple: true,
+	}
+	metaBytes, _ := json.Marshal(meta)
+
+	var storeIDs []int32
+	if combo.StoreID.Valid {
+		storeIDs = append(storeIDs, combo.StoreID.Int32)
+	}
+
+	var validFrom, validTo pgtype.Timestamp
+	if combo.ValidFrom.Valid {
+		validFrom = pgtype.Timestamp{Time: combo.ValidFrom.Time, Valid: true}
+	}
+	if combo.ValidTo.Valid {
+		validTo = pgtype.Timestamp{Time: combo.ValidTo.Time, Valid: true}
+	}
+
+	promoCode := fmt.Sprintf("PROMO-BUNDLE-%s", combo.Code)
+	promo, err := uc.repo.CreatePromotion(ctx, repository.CreatePromotionParams{
+		OrganizationID:      combo.OrganizationID,
+		Code:                promoCode,
+		Name:                "Bundle Promo: " + combo.Name,
+		Description:         combo.Description,
+		PromotionType:       "bundle_price",
+		ActionMetadata:      metaBytes,
+		ValidFrom:           validFrom,
+		ValidTo:             validTo,
+		AppliesTo:        pgtype.Text{String: "product", Valid: true},
+		TargetProductIds: targetProductIDs,
+		CouponCode:       pgtype.Text{String: couponCode, Valid: couponCode != ""},
+		DiscountValue:    combo.BundlePrice,
+		IsActive:            combo.IsActive,
+		StoreIds:            storeIDs,
+		Metadata:            combo.Metadata,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to create bundle promotion: "+err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "bundle promotion created successfully", promo)
+}
+

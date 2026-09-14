@@ -660,20 +660,23 @@ type ChartOfAccount struct {
 }
 
 type ComboBundle struct {
-	ID           int32            `json:"id"`
-	StoreID      int32            `json:"store_id"`
-	Code         string           `json:"code"`
-	Name         string           `json:"name"`
-	Description  pgtype.Text      `json:"description"`
-	BundlePrice  pgtype.Numeric   `json:"bundle_price"`
-	BundleType   pgtype.Text      `json:"bundle_type"`
-	IsActive     pgtype.Bool      `json:"is_active"`
-	ValidFrom    pgtype.Date      `json:"valid_from"`
-	ValidTo      pgtype.Date      `json:"valid_to"`
-	DisplayOrder pgtype.Int4      `json:"display_order"`
-	Metadata     json.RawMessage  `json:"metadata"`
-	CreatedAt    pgtype.Timestamp `json:"created_at"`
-	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	ID                      int32            `json:"id"`
+	OrganizationID          int32            `json:"organization_id"`
+	StoreID                 pgtype.Int4      `json:"store_id"`
+	PriceListID             pgtype.Int4      `json:"price_list_id"`
+	ApplicableCustomerTypes []string         `json:"applicable_customer_types"`
+	Code                    string           `json:"code"`
+	Name                    string           `json:"name"`
+	Description             pgtype.Text      `json:"description"`
+	BundlePrice             pgtype.Numeric   `json:"bundle_price"`
+	BundleType              pgtype.Text      `json:"bundle_type"`
+	IsActive                pgtype.Bool      `json:"is_active"`
+	ValidFrom               pgtype.Date      `json:"valid_from"`
+	ValidTo                 pgtype.Date      `json:"valid_to"`
+	DisplayOrder            pgtype.Int4      `json:"display_order"`
+	Metadata                json.RawMessage  `json:"metadata"`
+	CreatedAt               pgtype.Timestamp `json:"created_at"`
+	UpdatedAt               pgtype.Timestamp `json:"updated_at"`
 }
 
 type ComboBundleItem struct {

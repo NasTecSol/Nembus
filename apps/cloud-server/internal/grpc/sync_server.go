@@ -256,7 +256,7 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 		targetEntities = []string{
 			"product_barcodes", "product_prices", "promotions",
 			"customers",
-			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
+			"menu_items", "menu_modifier_groups", "combo_bundles", "combo_bundle_items", "recipes", "menu_item_availability_schedules",
 			"inventory_stock", "stock_movements",
 			"zatca_device_configs",
 		}

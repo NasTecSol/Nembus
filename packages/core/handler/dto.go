@@ -2301,3 +2301,48 @@ type ReceiveTransferRequestDTO struct {
 	ReceivedBy int32 `json:"received_by" binding:"required" example:"1"`
 }
 
+// ComboBundleItemResponse represents an item inside a combo bundle in API responses.
+type ComboBundleItemResponse struct {
+	ID               int32           `json:"id" example:"1"`
+	ComboBundleID    int32           `json:"combo_bundle_id" example:"1"`
+	MenuItemID       *int32          `json:"menu_item_id,omitempty" example:"1"`
+	MenuItemName     *string         `json:"menu_item_name,omitempty" example:"Burger"`
+	MenuItemPrice    *string         `json:"menu_item_price,omitempty" example:"15.00"`
+	ProductID        *int32          `json:"product_id,omitempty" example:"10"`
+	ProductName      *string         `json:"product_name,omitempty" example:"Shampoo 250ml"`
+	ProductSKU       *string         `json:"product_sku,omitempty" example:"SHP-250"`
+	ProductVariantID *int32          `json:"product_variant_id,omitempty" example:"101"`
+	VariantName      *string         `json:"variant_name,omitempty" example:"Original"`
+	VariantSKU       *string         `json:"variant_sku,omitempty" example:"SHP-250-ORIG"`
+	ItemType         string          `json:"item_type" example:"product"`
+	Quantity         string          `json:"quantity" example:"2.000"`
+	IsRequired       bool            `json:"is_required" example:"true"`
+	GroupTag         string          `json:"group_tag,omitempty" example:"Main"`
+	PriceOverride    *string         `json:"price_override,omitempty" example:"0.00"`
+	DisplayOrder     int32           `json:"display_order" example:"1"`
+	Metadata         json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// ComboBundleResponse represents a combo deal or bundle promotion in API responses.
+type ComboBundleResponse struct {
+	ID                      int32                     `json:"id" example:"1"`
+	OrganizationID          int32                     `json:"organization_id" example:"1"`
+	StoreID                 *int32                    `json:"store_id,omitempty" example:"1"`
+	PriceListID             *int32                    `json:"price_list_id,omitempty" example:"1"`
+	ApplicableCustomerTypes []string                  `json:"applicable_customer_types" example:"[\"retail\",\"wholesale\"]"`
+	Code                    string                    `json:"code" example:"BUNDLE-001"`
+	Name                    string                    `json:"name" example:"Starter Kit Bundle"`
+	Description             string                    `json:"description,omitempty" example:"Retail bundle promotion"`
+	BundlePrice             string                    `json:"bundle_price" example:"49.99"`
+	BundleType              string                    `json:"bundle_type" example:"fixed"`
+	IsActive                bool                      `json:"is_active" example:"true"`
+	ValidFrom               *string                   `json:"valid_from,omitempty" example:"2026-01-01"`
+	ValidTo                 *string                   `json:"valid_to,omitempty" example:"2026-12-31"`
+	DisplayOrder            int32                     `json:"display_order" example:"1"`
+	Metadata                json.RawMessage           `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt               string                    `json:"created_at" example:"2026-01-24T21:43:00Z"`
+	UpdatedAt               string                    `json:"updated_at" example:"2026-01-24T21:43:00Z"`
+	Items                   []ComboBundleItemResponse `json:"items,omitempty"`
+}
+
+

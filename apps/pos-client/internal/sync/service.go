@@ -262,7 +262,7 @@ func (s *SyncService) fetchDeltaGRPC() {
 		EntityTypes: []string{
 			"product_barcodes", "product_prices", "promotions",
 			"customers",
-			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
+			"menu_items", "menu_modifier_groups", "combo_bundles", "combo_bundle_items", "recipes", "menu_item_availability_schedules",
 			"inventory_stock", "stock_movements",
 			"zatca_device_configs",
 		},
@@ -319,7 +319,7 @@ func (s *SyncService) applyPulledEntity(event *syncpb.SyncEvent) {
 	// Supported catalog, pricing, menu, promotion, and compliance entities
 	validTables := map[string]bool{
 		"product_barcodes": true, "product_prices": true, "promotions": true,
-		"menu_items": true, "menu_modifier_groups": true, "combo_bundles": true,
+		"menu_items": true, "menu_modifier_groups": true, "combo_bundles": true, "combo_bundle_items": true,
 		"recipes": true, "menu_item_availability_schedules": true,
 		"customers": true, "inventory_stock": true, "zatca_device_configs": true,
 	}

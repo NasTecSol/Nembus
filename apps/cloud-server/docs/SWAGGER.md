@@ -91,3 +91,18 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
   - `GET /api/restaurant/tables` - List tables
   - `GET /api/restaurant/orders/{order_id}` - Get order by specific ID
   - `POST /api/restaurant/orders` - Create restaurant order
+- **Combo Deals & Bundles**:
+  - `POST /api/combo-bundles` - Create combo bundle or promotional kit
+  - `GET /api/combo-bundles` - List combo bundles with org/store/price_list filters
+  - `GET /api/combo-bundles/{id}` - Get bundle with all configured items
+  - `PUT /api/combo-bundles/{id}` - Update combo bundle details & pricing
+  - `PATCH /api/combo-bundles/{id}/toggle` - Toggle bundle active status
+  - `DELETE /api/combo-bundles/{id}` - Delete combo bundle
+  - `POST /api/combo-bundles/{id}/create-promotion` - Convert combo bundle to `bundle_price` promotion rule
+  - `POST /api/combo-bundles/{id}/items` - Add item to combo bundle
+  - `GET /api/combo-bundles/{id}/items` - List bundle items
+  - `PUT /api/combo-bundles/{id}/items/batch` - Atomically set all items in bundle
+  - `PUT /api/combo-bundle-items/{item_id}` - Update single bundle item
+  - `DELETE /api/combo-bundle-items/{item_id}` - Delete single bundle item
+  - `GET /api/stores/{store_id}/combo-bundles` - List active combo bundles for POS/kiosk
+

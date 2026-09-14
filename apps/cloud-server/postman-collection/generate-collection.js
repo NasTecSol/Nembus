@@ -48,7 +48,9 @@ const collection = {
     { key: 'id', value: '1' },
     { key: 'user_id', value: '1' },
     { key: 'role_id', value: '1' },
-    { key: 'product_id', value: '1' }
+    { key: 'product_id', value: '1' },
+    { key: 'bundle_id', value: '1' },
+    { key: 'bundle_item_id', value: '1' }
   ],
   item: [
     // --- Auth (no JWT) ---
@@ -632,6 +634,171 @@ const collection = {
           coupon_code: 'SAVE50',
           is_active: true
         }
+      }),
+      req('[Example] Create bundle_price promotion (Retail/Wholesale Bundle)', 'POST', '/api/promotions', {
+        body: {
+          organization_id: 1,
+          code: 'PROMO-SUMMER-BUNDLE',
+          name: 'Summer Essential Kit Bundle',
+          description: 'Special fixed bundle price for buying item #1 and item #2 together',
+          promotion_type: 'bundle_price',
+          action_metadata: {
+            bundle_price: 49.99,
+            items: [
+              { product_id: 1, quantity: 2 },
+              { product_id: 2, quantity: 1 }
+            ]
+          },
+          applicable_customer_types: ['retail', 'wholesale'],
+          applies_to: 'all',
+          coupon_code: 'SUMMERKIT',
+          is_active: true
+        },
+        description: 'Creates a bundle promotion where cart items matching the bundle configuration receive proportional discounts totaling the configured bundle price.'
+      })
+    ]),
+    // --- Combo Deals & Promotional Bundles ---
+    folder('Combo Deals & Bundles', [
+      req('Create Combo Bundle (Retail/Wholesale)', 'POST', '/api/combo-bundles', {
+        body: {
+          organization_id: 1,
+          code: 'COMBO-OFFICE-KIT',
+          name: 'Office Stationery Kit',
+          description: 'Wholesale & Retail office essentials combo bundle',
+          bundle_price: 45.00,
+          bundle_type: 'fixed',
+          applicable_customer_types: ['retail', 'wholesale'],
+          is_active: true,
+          items: [
+            {
+              product_id: 1,
+              item_group: 'main',
+              quantity: 2,
+              unit_discount_percentage: 10.0,
+              is_required: true
+            },
+            {
+              product_id: 2,
+              item_group: 'accessory',
+              quantity: 1,
+              unit_discount_percentage: 15.0,
+              is_required: true
+            }
+          ]
+        },
+        description: 'Creates a sellable combo bundle or promotional kit with initial items created atomically.'
+      }),
+      req('Create Combo Bundle (Restaurant Meal Deal)', 'POST', '/api/combo-bundles', {
+        body: {
+          organization_id: 1,
+          store_id: 1,
+          code: 'BURGER-MEAL-01',
+          name: 'Classic Burger & Beverage Combo',
+          description: 'Burger with fries and drink meal deal',
+          bundle_price: 19.99,
+          bundle_type: 'meal_deal',
+          applicable_customer_types: ['dine_in', 'takeaway'],
+          is_active: true,
+          items: [
+            {
+              product_id: 1,
+              item_group: 'entree',
+              quantity: 1,
+              is_required: true
+            },
+            {
+              product_id: 2,
+              item_group: 'side',
+              quantity: 1,
+              is_required: true
+            }
+          ]
+        },
+        description: 'Creates a store-scoped meal deal combo bundle for restaurant POS / kiosks.'
+      }),
+      req('List Combo Bundles', 'GET', '/api/combo-bundles?organization_id=1&is_active=true', {
+        description: 'Lists combo bundles for an organization with optional store, price_list, and is_active filters.'
+      }),
+      req('Get Combo Bundle with Items', 'GET', '/api/combo-bundles/{{bundle_id}}', {
+        description: 'Retrieves a single combo bundle by ID along with its full items array.'
+      }),
+      req('Update Combo Bundle', 'PUT', '/api/combo-bundles/{{bundle_id}}', {
+        body: {
+          name: 'Holiday Office Stationery Kit',
+          description: 'Updated bundle description and promotional bundle pricing',
+          bundle_price: 42.50,
+          is_active: true
+        }
+      }),
+      req('Toggle Combo Bundle Active Status', 'PATCH', '/api/combo-bundles/{{bundle_id}}/toggle', {
+        description: 'Toggles active status (true/false) of the combo bundle.'
+      }),
+      req('Create Promotion from Combo (Bridge)', 'POST', '/api/combo-bundles/{{bundle_id}}/create-promotion', {
+        body: {
+          code: 'PROMO-OFFICE-KIT-2026',
+          name: 'Office Kit Promotional Rule',
+          coupon_code: 'OFFICEKIT'
+        },
+        description: 'Converts this combo bundle into a first-class bundle_price promotion rule for POS and eCommerce carts.'
+      }),
+      req('Delete Combo Bundle', 'DELETE', '/api/combo-bundles/{{bundle_id}}', {
+        description: 'Soft-deletes the combo bundle and archives its associated items.'
+      }),
+      req('Add Item to Combo Bundle', 'POST', '/api/combo-bundles/{{bundle_id}}/items', {
+        body: {
+          product_id: 3,
+          item_group: 'addon',
+          quantity: 1,
+          unit_discount_percentage: 5.0,
+          is_required: false
+        }
+      }),
+      req('List Combo Bundle Items', 'GET', '/api/combo-bundles/{{bundle_id}}/items', {
+        description: 'Lists all items configured for the specified combo bundle.'
+      }),
+      req('Batch Set Combo Bundle Items', 'PUT', '/api/combo-bundles/{{bundle_id}}/items/batch', {
+        body: {
+          items: [
+            {
+              product_id: 1,
+              item_group: 'main',
+              quantity: 2,
+              unit_discount_percentage: 10.0,
+              is_required: true
+            },
+            {
+              product_id: 2,
+              item_group: 'accessory',
+              quantity: 1,
+              unit_discount_percentage: 15.0,
+              is_required: true
+            },
+            {
+              product_id: 3,
+              item_group: 'bonus',
+              quantity: 1,
+              unit_discount_percentage: 100.0,
+              is_required: false
+            }
+          ]
+        },
+        description: 'Atomically replaces all items for the combo bundle within a single database transaction.'
+      }),
+      req('Update Combo Bundle Item', 'PUT', '/api/combo-bundle-items/{{bundle_item_id}}', {
+        body: {
+          quantity: 3,
+          unit_discount_percentage: 12.0,
+          is_required: true
+        }
+      }),
+      req('Delete Combo Bundle Item', 'DELETE', '/api/combo-bundle-items/{{bundle_item_id}}', {
+        description: 'Deletes a single item from a combo bundle.'
+      }),
+      req('List Store Active Combo Bundles (POS)', 'GET', '/api/stores/{{store_id}}/combo-bundles', {
+        description: 'Fetches active combo bundles applicable for this specific store (store-scoped or org-wide) for POS menu and cart checkout.'
+      }),
+      req('List Restaurant Store Combo Bundles (Alias)', 'GET', '/restaurant/stores/{{store_id}}/combo-bundles', {
+        description: 'Backwards-compatible restaurant alias route for POS kiosks.'
       })
     ]),
     // --- Loyalty Redemption Rules ---

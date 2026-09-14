@@ -67,6 +67,14 @@
     {
       "key": "product_id",
       "value": "1"
+    },
+    {
+      "key": "bundle_id",
+      "value": "1"
+    },
+    {
+      "key": "bundle_item_id",
+      "value": "1"
     }
   ],
   "item": [
@@ -929,57 +937,6 @@
               "mode": "raw",
               "raw": "{}"
             }
-          }
-        },
-        {
-          "name": "Assign Cashiers to Terminal",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/api/pos/terminals/1/assign-cashiers",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cashier_ids\": [1, 2, 3]\n}"
-            }
-          }
-        },
-        {
-          "name": "Get Cashiers for Terminal",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/api/pos/terminals/1/cashiers"
-          }
-        },
-        {
-          "name": "Unassign Cashier from Terminal",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/api/pos/terminals/1/cashiers/1"
           }
         },
         {
@@ -6317,6 +6274,280 @@
               "mode": "raw",
               "raw": "{\"organization_id\":1,\"code\":\"PROMO-50OFF500\",\"name\":\"Spend 500, Save 50\",\"promotion_type\":\"fixed_discount\",\"discount_value\":\"50.00\",\"min_order_amount\":\"500.00\",\"applies_to\":\"all\",\"coupon_code\":\"SAVE50\",\"is_active\":true}"
             }
+          }
+        },
+        {
+          "name": "[Example] Create bundle_price promotion (Retail/Wholesale Bundle)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/promotions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"PROMO-SUMMER-BUNDLE\",\"name\":\"Summer Essential Kit Bundle\",\"description\":\"Special fixed bundle price for buying item #1 and item #2 together\",\"promotion_type\":\"bundle_price\",\"action_metadata\":{\"bundle_price\":49.99,\"items\":[{\"product_id\":1,\"quantity\":2},{\"product_id\":2,\"quantity\":1}]},\"applicable_customer_types\":[\"retail\",\"wholesale\"],\"applies_to\":\"all\",\"coupon_code\":\"SUMMERKIT\",\"is_active\":true}"
+            },
+            "description": "Creates a bundle promotion where cart items matching the bundle configuration receive proportional discounts totaling the configured bundle price."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Combo Deals & Bundles",
+      "item": [
+        {
+          "name": "Create Combo Bundle (Retail/Wholesale)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"code\":\"COMBO-OFFICE-KIT\",\"name\":\"Office Stationery Kit\",\"description\":\"Wholesale & Retail office essentials combo bundle\",\"bundle_price\":45,\"bundle_type\":\"fixed\",\"applicable_customer_types\":[\"retail\",\"wholesale\"],\"is_active\":true,\"items\":[{\"product_id\":1,\"item_group\":\"main\",\"quantity\":2,\"unit_discount_percentage\":10,\"is_required\":true},{\"product_id\":2,\"item_group\":\"accessory\",\"quantity\":1,\"unit_discount_percentage\":15,\"is_required\":true}]}"
+            },
+            "description": "Creates a sellable combo bundle or promotional kit with initial items created atomically."
+          }
+        },
+        {
+          "name": "Create Combo Bundle (Restaurant Meal Deal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organization_id\":1,\"store_id\":1,\"code\":\"BURGER-MEAL-01\",\"name\":\"Classic Burger & Beverage Combo\",\"description\":\"Burger with fries and drink meal deal\",\"bundle_price\":19.99,\"bundle_type\":\"meal_deal\",\"applicable_customer_types\":[\"dine_in\",\"takeaway\"],\"is_active\":true,\"items\":[{\"product_id\":1,\"item_group\":\"entree\",\"quantity\":1,\"is_required\":true},{\"product_id\":2,\"item_group\":\"side\",\"quantity\":1,\"is_required\":true}]}"
+            },
+            "description": "Creates a store-scoped meal deal combo bundle for restaurant POS / kiosks."
+          }
+        },
+        {
+          "name": "List Combo Bundles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles?organization_id=1&is_active=true",
+            "description": "Lists combo bundles for an organization with optional store, price_list, and is_active filters."
+          }
+        },
+        {
+          "name": "Get Combo Bundle with Items",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}",
+            "description": "Retrieves a single combo bundle by ID along with its full items array."
+          }
+        },
+        {
+          "name": "Update Combo Bundle",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Holiday Office Stationery Kit\",\"description\":\"Updated bundle description and promotional bundle pricing\",\"bundle_price\":42.5,\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "Toggle Combo Bundle Active Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}/toggle",
+            "description": "Toggles active status (true/false) of the combo bundle."
+          }
+        },
+        {
+          "name": "Create Promotion from Combo (Bridge)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}/create-promotion",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\":\"PROMO-OFFICE-KIT-2026\",\"name\":\"Office Kit Promotional Rule\",\"coupon_code\":\"OFFICEKIT\"}"
+            },
+            "description": "Converts this combo bundle into a first-class bundle_price promotion rule for POS and eCommerce carts."
+          }
+        },
+        {
+          "name": "Delete Combo Bundle",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}",
+            "description": "Soft-deletes the combo bundle and archives its associated items."
+          }
+        },
+        {
+          "name": "Add Item to Combo Bundle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"product_id\":3,\"item_group\":\"addon\",\"quantity\":1,\"unit_discount_percentage\":5,\"is_required\":false}"
+            }
+          }
+        },
+        {
+          "name": "List Combo Bundle Items",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}/items",
+            "description": "Lists all items configured for the specified combo bundle."
+          }
+        },
+        {
+          "name": "Batch Set Combo Bundle Items",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundles/{{bundle_id}}/items/batch",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"items\":[{\"product_id\":1,\"item_group\":\"main\",\"quantity\":2,\"unit_discount_percentage\":10,\"is_required\":true},{\"product_id\":2,\"item_group\":\"accessory\",\"quantity\":1,\"unit_discount_percentage\":15,\"is_required\":true},{\"product_id\":3,\"item_group\":\"bonus\",\"quantity\":1,\"unit_discount_percentage\":100,\"is_required\":false}]}"
+            },
+            "description": "Atomically replaces all items for the combo bundle within a single database transaction."
+          }
+        },
+        {
+          "name": "Update Combo Bundle Item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundle-items/{{bundle_item_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"quantity\":3,\"unit_discount_percentage\":12,\"is_required\":true}"
+            }
+          }
+        },
+        {
+          "name": "Delete Combo Bundle Item",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/combo-bundle-items/{{bundle_item_id}}",
+            "description": "Deletes a single item from a combo bundle."
+          }
+        },
+        {
+          "name": "List Store Active Combo Bundles (POS)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/stores/{{store_id}}/combo-bundles",
+            "description": "Fetches active combo bundles applicable for this specific store (store-scoped or org-wide) for POS menu and cart checkout."
+          }
+        },
+        {
+          "name": "List Restaurant Store Combo Bundles (Alias)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/restaurant/stores/{{store_id}}/combo-bundles",
+            "description": "Backwards-compatible restaurant alias route for POS kiosks."
           }
         }
       ]
