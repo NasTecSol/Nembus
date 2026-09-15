@@ -62,6 +62,17 @@ swagger-serve: swagger
 	@echo "Starting server..."
 	@ENV=development go run main.go
 
+# Regenerate Postman collection from generate-collection.js
+postman:
+	@echo "Regenerating Postman collection..."
+	@which node > /dev/null 2>&1 || (echo "Error: node not found. Install Node.js." && exit 1)
+	@node postman-collection/generate-collection.js
+	@echo "Collection written to postman-collection/Nembus-API.postman_collection.json"
+
+# Regenerate both Swagger and Postman together
+docs: swagger postman
+	@echo "All docs regenerated."
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."

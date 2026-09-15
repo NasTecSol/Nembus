@@ -48,7 +48,8 @@ const collection = {
     { key: 'id', value: '1' },
     { key: 'user_id', value: '1' },
     { key: 'role_id', value: '1' },
-    { key: 'product_id', value: '1' }
+    { key: 'product_id', value: '1' },
+    { key: 'authorization_token', value: '' }
   ],
   item: [
     // --- Auth (no JWT) ---
@@ -57,7 +58,50 @@ const collection = {
         auth: authNoAuth,
         header: [H('x-tenant-id', '{{tenant_id}}'), H('Content-Type', 'application/json')],
         body: '{"user_login":"admin","password":"your_password"}'
-      })
+      }),
+      // Supervisor override: authenticate a supervisor and obtain a short-lived
+      // authorization token scoped to a specific permission code.
+      // The returned authorization_token is auto-saved to the environment variable.
+      {
+        name: 'Authorize Action (Supervisor Override)',
+        request: {
+          method: 'POST',
+          auth: authNoAuth,
+          header: [
+            H('x-tenant-id', '{{tenant_id}}'),
+            H('Content-Type', 'application/json')
+          ],
+          url: '{{base_url}}/api/auth/authorize-action',
+          body: {
+            mode: 'raw',
+            raw: JSON.stringify({
+              supervisor_login: 'supervisor_jane',
+              supervisor_password: 'your_password',
+              permission_code: 'sales_return.process',
+              cashier_id: 1
+            }, null, 2)
+          },
+          description: 'Authenticates a supervisor and returns a short-lived authorization token (5-min TTL) scoped to the given permission_code. The POS uses this token in the X-Authorization-Token header when calling a restricted endpoint (e.g. POST /api/pos/returns).\n\nThe test script below auto-saves the token to the `authorization_token` environment/collection variable so the POS Returns request can use it immediately.'
+        },
+        event: [
+          {
+            listen: 'test',
+            script: {
+              type: 'text/javascript',
+              exec: [
+                'const res = pm.response.json();',
+                'if (res && res.data && res.data.authorization_token) {',
+                '  pm.collectionVariables.set("authorization_token", res.data.authorization_token);',
+                '  pm.environment.set("authorization_token", res.data.authorization_token);',
+                '  console.log("✅ authorization_token saved:", res.data.permission_code, "expires:", res.data.expires_at);',
+                '} else {',
+                '  console.error("❌ No authorization_token in response", JSON.stringify(res));',
+                '}'
+              ]
+            }
+          }
+        ]
+      }
     ]),
     // --- Dev (dev only) ---
     folder('Dev', [
@@ -118,7 +162,37 @@ const collection = {
       req('Void Transaction', 'POST', '/api/pos/transactions/{{transaction_id}}/void', { body: { voided_by: 1, reason: 'test' } })
     ]),
     folder('POS Returns', [
-      req('Process Return', 'POST', '/api/pos/returns', { body: { store_id: 1, session_id: 1, original_transaction_id: 1, return_reason: 'Defective', subtotal: '50', tax_amount: '5', total_refund_amount: '55', refund_method: 'cash', lines: [] } })
+      // Step 1: Call POST /api/auth/authorize-action to get an authorization_token first.
+      // Step 2: Use that token in the X-Authorization-Token header here.
+      req('Process Return (requires supervisor auth)', 'POST', '/api/pos/returns', {
+        header: [
+          H('x-tenant-id', '{{tenant_id}}'),
+          H('Content-Type', 'application/json'),
+          H('X-Authorization-Token', '{{authorization_token}}')
+        ],
+        body: {
+          store_id: 1,
+          cashier_id: 1,
+          session_id: 1,
+          original_transaction_id: 1,
+          return_reason: 'Defective product',
+          subtotal: '50.00',
+          tax_amount: '5.00',
+          total_refund_amount: '55.00',
+          refund_method: 'cash',
+          lines: [
+            {
+              product_id: 1,
+              quantity: '1',
+              unit_price: '50.00',
+              refund_amount: '55.00',
+              return_to_stock: true,
+              condition: 'good'
+            }
+          ]
+        },
+        description: 'Process a sales return. Requires a valid supervisor authorization token in X-Authorization-Token header.\n\n**Flow:**\n1. Run `Authorize Action (Supervisor Override)` first — the test script will auto-save the token.\n2. Run this request — the `{{authorization_token}}` variable is used automatically.\n\nThe `authorized_by_user_id` of the approving supervisor is stored in the return metadata for audit.'
+      })
     ]),
     folder('POS Terminals', [
       req('List Terminals', 'GET', '/api/pos/terminals'),

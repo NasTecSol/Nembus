@@ -28,6 +28,29 @@ type LoginResponse struct {
 	Type  string `json:"type" example:"Bearer"`
 }
 
+// AuthorizeActionRequest is the body for the supervisor override endpoint.
+// A cashier without a required permission asks a supervisor to authorize the action
+// by providing the supervisor's own credentials + the permission code needed.
+type AuthorizeActionRequest struct {
+	SupervisorLogin    string `json:"supervisor_login" binding:"required" example:"supervisor_jane"`
+	SupervisorPassword string `json:"supervisor_password" binding:"required" example:"securepassword123"`
+	// PermissionCode is the permission the supervisor must hold (e.g. "sales_return.process")
+	PermissionCode string `json:"permission_code" binding:"required" example:"sales_return.process"`
+	// CashierID optionally binds the token to a specific cashier session for audit purposes
+	CashierID *int32 `json:"cashier_id,omitempty" example:"5"`
+}
+
+// AuthorizeActionResponse is returned after a successful supervisor override.
+// The POS sends the AuthorizationToken in the X-Authorization-Token header
+// when calling the restricted endpoint.
+type AuthorizeActionResponse struct {
+	AuthorizationToken string `json:"authorization_token" example:"eyJhbGci..."`
+	AuthorizedByUserID int32  `json:"authorized_by_user_id" example:"42"`
+	AuthorizedByLogin  string `json:"authorized_by_login" example:"supervisor_jane"`
+	PermissionCode     string `json:"permission_code" example:"sales_return.process"`
+	ExpiresAt          string `json:"expires_at" example:"2026-09-15T13:25:00Z"`
+}
+
 // CreateUserRequest represents user creation request
 type CreateUserRequest struct {
 	FirstName    string  `json:"first_name" binding:"required" example:"John"`

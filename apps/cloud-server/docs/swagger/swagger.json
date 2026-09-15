@@ -18,6 +18,71 @@
     "host": "localhost:8080",
     "basePath": "/",
     "paths": {
+        "/api/auth/authorize-action": {
+            "post": {
+                "description": "A supervisor authenticates with their own credentials and authorizes a specific",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Supervisor override authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Supervisor credentials and permission code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.AuthorizeActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AuthorizeActionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/login": {
             "post": {
                 "description": "Authenticate user and receive JWT token",
@@ -40532,6 +40597,59 @@
                     "description": "optional",
                     "type": "integer",
                     "example": 10
+                }
+            }
+        },
+        "handler.AuthorizeActionRequest": {
+            "type": "object",
+            "required": [
+                "permission_code",
+                "supervisor_login",
+                "supervisor_password"
+            ],
+            "properties": {
+                "cashier_id": {
+                    "description": "CashierID optionally binds the token to a specific cashier session for audit purposes",
+                    "type": "integer",
+                    "example": 5
+                },
+                "permission_code": {
+                    "description": "PermissionCode is the permission the supervisor must hold (e.g. \"sales_return.process\")",
+                    "type": "string",
+                    "example": "sales_return.process"
+                },
+                "supervisor_login": {
+                    "type": "string",
+                    "example": "supervisor_jane"
+                },
+                "supervisor_password": {
+                    "type": "string",
+                    "example": "securepassword123"
+                }
+            }
+        },
+        "handler.AuthorizeActionResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_token": {
+                    "type": "string",
+                    "example": "eyJhbGci..."
+                },
+                "authorized_by_login": {
+                    "type": "string",
+                    "example": "supervisor_jane"
+                },
+                "authorized_by_user_id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-09-15T13:25:00Z"
+                },
+                "permission_code": {
+                    "type": "string",
+                    "example": "sales_return.process"
                 }
             }
         },
