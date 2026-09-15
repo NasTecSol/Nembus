@@ -23,14 +23,16 @@ INSERT INTO pos_transactions (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15, $16
-) RETURNING id, transaction_number, status, total_amount;
+) RETURNING *;
 
--- name: CreatePosTransactionLine :exec
+-- name: CreatePosTransactionLine :one
 INSERT INTO pos_transaction_lines (
     transaction_id, line_number, product_id, product_variant_id,
     serial_number, batch_number, quantity, uom_id,
     unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15);
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+RETURNING *;
+
 
 -- name: GetPosTransactionFull :many
 SELECT 
@@ -41,6 +43,7 @@ SELECT
     term.terminal_name,
     sess.session_number,
     cust.name AS customer_name,
+    tl.id AS line_id,
     tl.line_number,
     tl.product_id,
     tl.quantity,
@@ -49,7 +52,8 @@ SELECT
     tl.line_total,
     p.sku,
     p.name AS product_name,
-    COALESCE(pb.barcode, '') AS scanned_barcode
+    COALESCE(pb.barcode, '') AS scanned_barcode,
+    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
 FROM pos_transactions t
 JOIN cashiers          cshr  ON t.cashier_id         = cshr.id
 JOIN users             cashier ON cshr.user_id        = cashier.id
@@ -62,8 +66,15 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+LEFT JOIN (
+    SELECT original_line_id, SUM(quantity) AS returned_quantity
+    FROM sales_return_lines
+    WHERE original_line_id IS NOT NULL
+    GROUP BY original_line_id
+) srl ON srl.original_line_id = tl.id
 WHERE t.id = $1
 ORDER BY tl.line_number;
+
 
 -- name: ListPosTransactionsByCashierSession :many
 SELECT 
@@ -176,21 +187,19 @@ SELECT
     t.transaction_date,
     t.total_amount,
     t.status,
-    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
-    term.terminal_name,
-    COUNT(tl.id) AS items_count,
-    SUM(tl.quantity) AS total_quantity
+    COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
+    COALESCE(term.terminal_name, '') AS terminal_name,
+    COALESCE(COUNT(tl.id), 0) AS items_count,
+    COALESCE(SUM(tl.quantity), 0) AS total_quantity
 FROM pos_transactions t
-JOIN cashiers cshr ON t.cashier_id = cshr.id
-JOIN users cashier ON cshr.user_id = cashier.id
-JOIN pos_terminals term ON t.pos_terminal_id = term.id
-JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
+LEFT JOIN cashiers cshr ON t.cashier_id = cshr.id
+LEFT JOIN users cashier ON cshr.user_id = cashier.id
+LEFT JOIN pos_terminals term ON t.pos_terminal_id = term.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
 WHERE t.store_id = $1
-  AND t.transaction_date >= CURRENT_DATE
-  AND t.transaction_date < CURRENT_DATE + INTERVAL '1 day'
 GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name
-ORDER BY t.transaction_date DESC
-LIMIT 200;
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT $2 OFFSET $3;
 
 -- name: VoidPosTransaction :execrows
 UPDATE pos_transactions
@@ -202,3 +211,106 @@ SET
 WHERE id = $1
   AND status = 'completed'
   AND voided_at IS NULL;
+
+-- name: ListPosTransactionsByCustomerID :many
+SELECT 
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name AS customer_name,
+    COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', tl.id,
+                'transaction_id', tl.transaction_id,
+                'line_number', tl.line_number,
+                'product_id', tl.product_id,
+                'product_variant_id', tl.product_variant_id,
+                'serial_number', tl.serial_number,
+                'batch_number', tl.batch_number,
+                'quantity', tl.quantity,
+                'uom_id', tl.uom_id,
+                'unit_price', tl.unit_price,
+                'discount_amount', tl.discount_amount,
+                'tax_amount', tl.tax_amount,
+                'subtotal', tl.subtotal,
+                'line_total', tl.line_total,
+                'cost_price', tl.cost_price,
+                'metadata', tl.metadata,
+                'product_sku', p.sku,
+                'product_name', p.name,
+                'scanned_barcode', COALESCE(pb.barcode, '')
+            ) ORDER BY tl.line_number
+        ) FILTER (WHERE tl.id IS NOT NULL),
+        '[]'::jsonb
+    ) AS lines
+FROM pos_transactions t
+LEFT JOIN cashiers          cshr   ON t.cashier_id         = cshr.id
+LEFT JOIN users             cashier ON cshr.user_id        = cashier.id
+LEFT JOIN pos_terminals     term   ON t.pos_terminal_id    = term.id
+LEFT JOIN cashier_sessions  sess   ON t.cashier_session_id = sess.id
+LEFT JOIN customers    cust   ON t.customer_id        = cust.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id    = t.id
+LEFT JOIN products          p      ON tl.product_id        = p.id
+LEFT JOIN product_barcodes pb 
+    ON pb.product_id = p.id 
+   AND pb.is_primary = true
+   AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+WHERE t.customer_id = $1
+GROUP BY
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name,
+    cashier.last_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT $2 OFFSET $3;
+

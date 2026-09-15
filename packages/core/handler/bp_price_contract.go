@@ -311,6 +311,11 @@ func (h *BPPriceContractHandler) ToggleBPPriceContractActive(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ToggleBPPriceContractActive(c.Request.Context(), idStr, req.IsActive)
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	resp := h.useCase.ToggleBPPriceContractActive(c.Request.Context(), idStr, isActive)
 	c.JSON(resp.StatusCode, resp)
 }

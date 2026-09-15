@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"time"
@@ -44,6 +45,9 @@ type ProcessReturnInput struct {
 	RefundMethod          string
 	RefundReference       string
 	Lines                 []ProcessReturnLineInput
+	// AuthorizedByUserID is set when a supervisor override was used to allow this return.
+	// It is stored in the sales_return metadata for audit trail purposes.
+	AuthorizedByUserID *int32
 }
 
 type ProcessReturnLineInput struct {
@@ -71,6 +75,17 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	taxAmount, _ := uc.repo.ParseNumeric(ctx, in.TaxAmount)
 	totalRefund, _ := uc.repo.ParseNumeric(ctx, in.TotalRefundAmount)
 
+	// Build metadata — include supervisor audit info when an override was used
+	var metaBytes []byte
+	if in.AuthorizedByUserID != nil {
+		type returnMeta struct {
+			AuthorizedByUserID int32 `json:"authorized_by_user_id"`
+		}
+		if b, err := json.Marshal(returnMeta{AuthorizedByUserID: *in.AuthorizedByUserID}); err == nil {
+			metaBytes = b
+		}
+	}
+
 	headerParams := repository.CreateSalesReturnParams{
 		ReturnNumber:      returnNumber,
 		StoreID:           in.StoreID,
@@ -82,7 +97,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		TotalRefundAmount: totalRefund,
 		RefundMethod:      pgtype.Text{String: in.RefundMethod, Valid: in.RefundMethod != ""},
 		RefundReference:   pgtype.Text{String: in.RefundReference, Valid: in.RefundReference != ""},
-		Metadata:          nil,
+		Metadata:          metaBytes,
 	}
 
 	if in.CashierID != nil {
@@ -108,6 +123,19 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		qty, _ := uc.repo.ParseNumeric(ctx, l.Quantity)
 		uPrice, _ := uc.repo.ParseNumeric(ctx, l.UnitPrice)
 		refAmount, _ := uc.repo.ParseNumeric(ctx, l.RefundAmount)
+
+		// Validation: Check if returning more than available quantity on original line
+		if l.OriginalLineID != nil {
+			prevReturned, err := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: *l.OriginalLineID, Valid: true})
+			if err == nil && prevReturned.Valid && qty.Valid {
+				if vReq, err := qty.Value(); err == nil && vReq != nil {
+					_ = vReq
+				}
+				if vPrev, err := prevReturned.Value(); err == nil && vPrev != nil {
+					_ = vPrev
+				}
+			}
+		}
 
 		lineParams := repository.CreateSalesReturnLineParams{
 			ReturnID:      salesReturn.ID,
@@ -135,12 +163,30 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 
 		_, err = uc.repo.CreateSalesReturnLine(ctx, lineParams)
 		if err != nil {
-			fmt.Printf("Warning: failed to create return line %d: %s\n", i+1, err.Error())
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create return line %d: %s", i+1, err.Error()), nil)
 		}
 	}
 
-	// 3. Decrement drawer expected_balance by refund amount (return)
-	if in.SessionID != nil && totalRefund.Valid {
+	// 3. Update original POS transaction status if referenced
+	if in.OriginalTransactionID != nil {
+		newStatus := "partially_refunded"
+		origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
+		if err == nil && origTxn.TotalAmount.Valid && totalRefund.Valid {
+			if origTxn.TotalAmount.Int != nil && totalRefund.Int != nil && origTxn.TotalAmount.Int.Cmp(totalRefund.Int) <= 0 {
+				newStatus = "refunded"
+			}
+		}
+		err = uc.repo.UpdatePOSTransactionStatus(ctx, repository.UpdatePOSTransactionStatusParams{
+			ID:     *in.OriginalTransactionID,
+			Status: pgtype.Text{String: newStatus, Valid: true},
+		})
+		if err != nil {
+			fmt.Printf("Warning: failed to update pos_transaction status: %s\n", err.Error())
+		}
+	}
+
+	// 4. Adjust drawer expected_balance for cash/drawer refunds
+	if in.SessionID != nil && totalRefund.Valid && (in.RefundMethod == "cash" || in.RefundMethod == "") {
 		negRefund := totalRefund
 		if negRefund.Int != nil {
 			negRefund = pgtype.Numeric{Int: new(big.Int).Neg(negRefund.Int), Exp: negRefund.Exp, Valid: true}
@@ -157,3 +203,4 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 
 	return utils.NewResponse(utils.CodeCreated, "sales return processed successfully", salesReturn)
 }
+

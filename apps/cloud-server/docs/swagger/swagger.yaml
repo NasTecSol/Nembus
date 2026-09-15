@@ -1,10 +1,5 @@
 basePath: /
 definitions:
-  big.Int:
-    type: object
-  gin.H:
-    additionalProperties: {}
-    type: object
   handler.AddPaymentToTransactionRequest:
     properties:
       amount:
@@ -128,6 +123,14 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.ApproveTransferRequestDTO:
+    properties:
+      approved_by:
+        example: 1
+        type: integer
+    required:
+    - approved_by
+    type: object
   handler.AssignCashiersRequest:
     properties:
       cashier_ids:
@@ -177,6 +180,47 @@ definitions:
         type: integer
     required:
     - role_id
+    type: object
+  handler.AuthorizeActionRequest:
+    properties:
+      cashier_id:
+        description: CashierID optionally binds the token to a specific cashier session
+          for audit purposes
+        example: 5
+        type: integer
+      permission_code:
+        description: PermissionCode is the permission the supervisor must hold (e.g.
+          "sales_return.process")
+        example: sales_return.process
+        type: string
+      supervisor_login:
+        example: supervisor_jane
+        type: string
+      supervisor_password:
+        example: securepassword123
+        type: string
+    required:
+    - permission_code
+    - supervisor_login
+    - supervisor_password
+    type: object
+  handler.AuthorizeActionResponse:
+    properties:
+      authorization_token:
+        example: eyJhbGci...
+        type: string
+      authorized_by_login:
+        example: supervisor_jane
+        type: string
+      authorized_by_user_id:
+        example: 42
+        type: integer
+      expires_at:
+        example: "2026-09-15T13:25:00Z"
+        type: string
+      permission_code:
+        example: sales_return.process
+        type: string
     type: object
   handler.BPPriceContractResponse:
     properties:
@@ -422,6 +466,14 @@ definitions:
       updated_at:
         example: "2026-01-24T21:43:00Z"
         type: string
+    type: object
+  handler.CancelTransferRequestDTO:
+    properties:
+      cancelled_by:
+        example: 1
+        type: integer
+    required:
+    - cancelled_by
     type: object
   handler.CashierResponse:
     properties:
@@ -934,6 +986,48 @@ definitions:
     - name
     - organization_id
     type: object
+  handler.CreateGRNRequest:
+    properties:
+      delivery_note_number:
+        example: DN-9988
+        type: string
+      grn_number:
+        example: GRN-20260908-0001
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.GRNItemDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      notes:
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      purchase_order_id:
+        example: 1
+        type: integer
+      receipt_date:
+        example: "2026-09-08"
+        type: string
+      received_by:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      supplier_id:
+        example: 5
+        type: integer
+    required:
+    - grn_number
+    - items
+    - organization_id
+    - store_id
+    - supplier_id
+    type: object
   handler.CreateInventoryStockRequest:
     properties:
       max_stock_level:
@@ -1433,6 +1527,9 @@ definitions:
       is_default:
         example: true
         type: boolean
+      partner_id:
+        example: 1
+        type: integer
       state:
         example: Riyadh Province
         type: string
@@ -1460,6 +1557,9 @@ definitions:
       last_name:
         example: Doe
         type: string
+      partner_id:
+        example: 1
+        type: integer
       phone:
         example: "+966500000000"
         type: string
@@ -1634,6 +1734,9 @@ definitions:
       product_variant_id:
         example: 1
         type: integer
+      uom_id:
+        example: 5
+        type: integer
     required:
     - barcode
     - product_id
@@ -1741,6 +1844,157 @@ definitions:
     - variant_sku
     type: object
   handler.CreatePromotionRequest:
+    properties:
+      action_metadata:
+        type: object
+      applies_to:
+        example: all
+        type: string
+      code:
+        example: PROMO-SUMMER20
+        type: string
+      coupon_code:
+        example: SUMMER20
+        type: string
+      created_by:
+        example: 1
+        type: integer
+      description:
+        example: 20% off all summer items
+        type: string
+      discount_value:
+        example: "20.00"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_stackable:
+        example: false
+        type: boolean
+      metadata:
+        type: object
+      min_order_amount:
+        example: "500.00"
+        type: string
+      min_quantity:
+        example: "2"
+        type: string
+      name:
+        example: Summer Sale 20%
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      promotion_type:
+        example: percentage_discount
+        type: string
+      schedule_json:
+        type: object
+      store_ids:
+        items:
+          type: integer
+        type: array
+      target_category_ids:
+        items:
+          type: integer
+        type: array
+      target_product_ids:
+        items:
+          type: integer
+        type: array
+      usage_limit:
+        example: 100
+        type: integer
+      usage_per_customer:
+        example: 2
+        type: integer
+      valid_from:
+        example: "2026-06-01T00:00:00Z"
+        type: string
+      valid_to:
+        example: "2026-08-31T23:59:59Z"
+        type: string
+    required:
+    - code
+    - name
+    - organization_id
+    - promotion_type
+    type: object
+  handler.CreatePurchaseOrderLineRequest:
+    properties:
+      discount_amount:
+        example: 5
+        type: number
+      line_number:
+        example: 1
+        type: integer
+      metadata:
+        additionalProperties: true
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      quantity:
+        example: 10.5
+        type: number
+      tax_amount:
+        example: 6.075
+        type: number
+      unit_price:
+        example: 45.5
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+    required:
+    - product_id
+    - quantity
+    - unit_price
+    type: object
+  handler.CreatePurchaseOrderRequest:
+    properties:
+      created_by:
+        example: 1
+        type: integer
+      expected_delivery_date:
+        example: "2026-09-15"
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.PurchaseOrderLineDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      organization_id:
+        example: 1
+        type: integer
+      po_date:
+        example: "2026-09-08"
+        type: string
+      po_number:
+        example: PO-20260908-0001
+        type: string
+      price_list_id:
+        example: 1
+        type: integer
+      status:
+        example: draft
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      supplier_id:
+        example: 5
+        type: integer
+    required:
+    - items
+    - organization_id
+    - store_id
+    - supplier_id
     type: object
   handler.CreateRecipeIngredientRequest:
     properties:
@@ -2098,6 +2352,69 @@ definitions:
     - organization_id
     - payment_status
     type: object
+  handler.CreateStockMovementRequest:
+    properties:
+      batch_number:
+        example: BATCH-2026-01
+        type: string
+      cost_per_unit:
+        example: "45.50"
+        type: string
+      from_location_id:
+        example: 1
+        type: integer
+      from_store_id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      movement_date:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      movement_type:
+        example: receipt
+        type: string
+      posted_by:
+        example: 1
+        type: integer
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      quantity:
+        example: "10.5"
+        type: string
+      reference_id:
+        example: 100
+        type: integer
+      reference_type:
+        example: purchase_order
+        type: string
+      serial_number:
+        type: string
+      status:
+        example: completed
+        type: string
+      to_location_id:
+        example: 2
+        type: integer
+      to_store_id:
+        example: 2
+        type: integer
+      total_value:
+        example: "477.75"
+        type: string
+      uom_id:
+        example: 1
+        type: integer
+    required:
+    - movement_date
+    - movement_type
+    - product_id
+    - quantity
+    type: object
   handler.CreateStorageLocationRequest:
     properties:
       code:
@@ -2239,6 +2556,48 @@ definitions:
       tenant_name:
         example: Acme Corporation
         type: string
+    type: object
+  handler.CreateTransferRequestDTO:
+    properties:
+      expected_delivery_date:
+        example: "2026-09-12"
+        type: string
+      from_store_id:
+        example: 1
+        type: integer
+      is_stock_reserved:
+        example: true
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/handler.TransferRequestItemDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      notes:
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      request_date:
+        example: "2026-09-08"
+        type: string
+      requested_by:
+        example: 1
+        type: integer
+      to_store_id:
+        example: 2
+        type: integer
+      transfer_number:
+        example: TR-20260908-0001
+        type: string
+    required:
+    - from_store_id
+    - items
+    - organization_id
+    - to_store_id
+    - transfer_number
     type: object
   handler.CreateUnitOfMeasureRequest:
     properties:
@@ -2463,6 +2822,241 @@ definitions:
         example: true
         type: boolean
     type: object
+  handler.GRNItemDTO:
+    properties:
+      batch_number:
+        example: BATCH-2026-01
+        type: string
+      expiry_date:
+        example: "2027-01-01"
+        type: string
+      notes:
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      purchase_order_line_id:
+        example: 1
+        type: integer
+      quantity_received:
+        example: 10
+        type: number
+      quantity_rejected:
+        example: 0
+        type: number
+      rejection_reason:
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      unit_cost:
+        example: 45.5
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+    required:
+    - product_id
+    - quantity_received
+    type: object
+  handler.GRNItemResponse:
+    properties:
+      batch_number:
+        example: BATCH-2026-01
+        type: string
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      expiry_date:
+        example: "2027-01-01"
+        type: string
+      grn_id:
+        example: 1
+        type: integer
+      id:
+        example: 1
+        type: integer
+      notes:
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_name:
+        example: Fresh Milk 1L
+        type: string
+      product_sku:
+        example: MILK-001
+        type: string
+      product_variant_id:
+        example: 2
+        type: integer
+      purchase_order_line_id:
+        example: 1
+        type: integer
+      quantity_received:
+        example: "10.000"
+        type: string
+      quantity_rejected:
+        example: "0.000"
+        type: string
+      rejection_reason:
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      unit_cost:
+        example: "45.5000"
+        type: string
+      uom_id:
+        example: 1
+        type: integer
+      uom_name:
+        example: Liter
+        type: string
+    type: object
+  handler.GRNListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/handler.GRNSummaryResponse'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total_count:
+        example: 25
+        type: integer
+      total_pages:
+        example: 2
+        type: integer
+    type: object
+  handler.GRNResponse:
+    properties:
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      delivery_note_number:
+        example: DN-9988
+        type: string
+      grn_number:
+        example: GRN-20260908-0001
+        type: string
+      id:
+        example: 1
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/handler.GRNItemResponse'
+        type: array
+      metadata:
+        type: object
+      notes:
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      po_number:
+        example: PO-20260908-0001
+        type: string
+      purchase_order_id:
+        example: 1
+        type: integer
+      receipt_date:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      received_by:
+        example: 1
+        type: integer
+      received_by_name:
+        example: warehouse_manager
+        type: string
+      status:
+        example: posted
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Supermarket Branch
+        type: string
+      supplier_id:
+        example: 5
+        type: integer
+      supplier_name:
+        example: Almarai Dairy Co.
+        type: string
+      updated_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+    type: object
+  handler.GRNSummaryResponse:
+    properties:
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      delivery_note_number:
+        example: DN-9988
+        type: string
+      grn_number:
+        example: GRN-20260908-0001
+        type: string
+      id:
+        example: 1
+        type: integer
+      item_count:
+        example: 5
+        type: integer
+      notes:
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      po_number:
+        example: PO-20260908-0001
+        type: string
+      purchase_order_id:
+        example: 1
+        type: integer
+      receipt_date:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      received_by:
+        example: 1
+        type: integer
+      received_by_name:
+        example: warehouse_manager
+        type: string
+      status:
+        example: posted
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Supermarket Branch
+        type: string
+      supplier_code:
+        example: SUPP001
+        type: string
+      supplier_id:
+        example: 5
+        type: integer
+      supplier_name:
+        example: Almarai Dairy Co.
+        type: string
+      total_received_quantity:
+        example: "50.000"
+        type: string
+      updated_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+    type: object
   handler.GrantStoreAccessRequest:
     properties:
       is_primary:
@@ -2594,6 +3188,31 @@ definitions:
         type: string
       valid_to:
         example: "2026-12-31"
+        type: string
+    type: object
+  handler.M2MClientResponse:
+    properties:
+      client_id:
+        example: client_abc123
+        type: string
+      client_name:
+        example: ERP Sync Service
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      scopes:
+        example:
+        - read
+        - write
+        items:
+          type: string
+        type: array
+      tenant_id:
+        example: tenant_123
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
     type: object
   handler.MenuModifierGroupResponse:
@@ -2872,6 +3491,20 @@ definitions:
         example: 1
         type: integer
     type: object
+  handler.PrintReceiptRequest:
+    properties:
+      org_id:
+        example: 1
+        type: integer
+      printer:
+        additionalProperties: true
+        type: object
+      receipt:
+        additionalProperties: true
+        type: object
+    required:
+    - org_id
+    type: object
   handler.ProcessReturnLineRequest:
     properties:
       batch_number:
@@ -3089,6 +3722,258 @@ definitions:
         example: "2026-08-31T23:59:59Z"
         type: string
     type: object
+  handler.PurchaseOrderLineDTO:
+    properties:
+      discount_amount:
+        example: 5
+        type: number
+      line_number:
+        example: 1
+        type: integer
+      metadata:
+        additionalProperties: true
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      quantity:
+        example: 10.5
+        type: number
+      tax_amount:
+        example: 6.075
+        type: number
+      unit_price:
+        example: 45.5
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+    type: object
+  handler.PurchaseOrderLineResponse:
+    properties:
+      barcode:
+        example: "628100010001"
+        type: string
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      discount_amount:
+        example: "5.00"
+        type: string
+      id:
+        example: 1
+        type: integer
+      line_number:
+        example: 1
+        type: integer
+      line_total:
+        example: "478.83"
+        type: string
+      metadata:
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_name:
+        example: Fresh Milk 1L
+        type: string
+      product_sku:
+        example: MILK-001
+        type: string
+      product_variant_id:
+        example: 2
+        type: integer
+      purchase_order_id:
+        example: 1
+        type: integer
+      quantity:
+        example: "10.500"
+        type: string
+      received_quantity:
+        example: "0.000"
+        type: string
+      subtotal:
+        example: "477.75"
+        type: string
+      tax_amount:
+        example: "6.08"
+        type: string
+      unit_price:
+        example: "45.5000"
+        type: string
+      uom_id:
+        example: 1
+        type: integer
+      uom_name:
+        example: Liter
+        type: string
+      variant_name:
+        example: Full Cream
+        type: string
+      variant_sku:
+        example: MILK-001-FC
+        type: string
+    type: object
+  handler.PurchaseOrderListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/handler.PurchaseOrderSummaryResponse'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total_count:
+        example: 25
+        type: integer
+      total_pages:
+        example: 2
+        type: integer
+    type: object
+  handler.PurchaseOrderResponse:
+    properties:
+      approved_by:
+        example: 1
+        type: integer
+      approved_by_name:
+        example: manager
+        type: string
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      created_by:
+        example: 1
+        type: integer
+      created_by_name:
+        example: admin
+        type: string
+      discount_amount:
+        example: "5.00"
+        type: string
+      expected_delivery_date:
+        example: "2026-09-15"
+        type: string
+      id:
+        example: 1
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        type: array
+      metadata:
+        type: object
+      organization_id:
+        example: 1
+        type: integer
+      po_date:
+        example: "2026-09-08"
+        type: string
+      po_number:
+        example: PO-20260908-0001
+        type: string
+      price_list_id:
+        example: 1
+        type: integer
+      status:
+        example: draft
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Supermarket Branch
+        type: string
+      subtotal:
+        example: "477.75"
+        type: string
+      supplier_code:
+        example: SUPP001
+        type: string
+      supplier_id:
+        example: 5
+        type: integer
+      supplier_name:
+        example: Almarai Dairy Co.
+        type: string
+      tax_amount:
+        example: "6.08"
+        type: string
+      total_amount:
+        example: "478.83"
+        type: string
+      updated_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+    type: object
+  handler.PurchaseOrderSummaryResponse:
+    properties:
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      discount_amount:
+        example: "5.00"
+        type: string
+      expected_delivery_date:
+        example: "2026-09-15"
+        type: string
+      id:
+        example: 1
+        type: integer
+      item_count:
+        example: 5
+        type: integer
+      organization_id:
+        example: 1
+        type: integer
+      po_date:
+        example: "2026-09-08"
+        type: string
+      po_number:
+        example: PO-20260908-0001
+        type: string
+      price_list_id:
+        example: 1
+        type: integer
+      status:
+        example: draft
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Supermarket Branch
+        type: string
+      subtotal:
+        example: "477.75"
+        type: string
+      supplier_code:
+        example: SUPP001
+        type: string
+      supplier_id:
+        example: 5
+        type: integer
+      supplier_name:
+        example: Almarai Dairy Co.
+        type: string
+      tax_amount:
+        example: "6.08"
+        type: string
+      total_amount:
+        example: "478.83"
+        type: string
+      total_quantity:
+        example: "50.000"
+        type: string
+      updated_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+    type: object
   handler.PushSyncItem:
     properties:
       action:
@@ -3119,6 +4004,14 @@ definitions:
       store_id:
         example: 1
         type: integer
+    type: object
+  handler.ReceiveTransferRequestDTO:
+    properties:
+      received_by:
+        example: 1
+        type: integer
+    required:
+    - received_by
     type: object
   handler.RemovePermissionFromRoleRequest:
     properties:
@@ -3156,6 +4049,14 @@ definitions:
         type: integer
     required:
     - pos_transaction_id
+    type: object
+  handler.ShipTransferRequestDTO:
+    properties:
+      shipped_by:
+        example: 1
+        type: integer
+    required:
+    - shipped_by
     type: object
   handler.StockByLocationSummary:
     properties:
@@ -3402,6 +4303,155 @@ definitions:
         type: boolean
     required:
     - is_active
+    type: object
+  handler.TransferRequestItemDTO:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      from_location_id:
+        example: 1
+        type: integer
+      notes:
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      requested_quantity:
+        example: 5
+        type: number
+      to_location_id:
+        example: 2
+        type: integer
+      uom_id:
+        example: 1
+        type: integer
+    required:
+    - product_id
+    - requested_quantity
+    type: object
+  handler.TransferRequestItemResponse:
+    properties:
+      approved_quantity:
+        example: "5.000"
+        type: string
+      batch_number:
+        type: string
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      from_location_id:
+        example: 1
+        type: integer
+      id:
+        example: 1
+        type: integer
+      notes:
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_name:
+        example: Fresh Milk 1L
+        type: string
+      product_sku:
+        example: MILK-001
+        type: string
+      product_variant_id:
+        example: 2
+        type: integer
+      received_quantity:
+        example: "0.000"
+        type: string
+      requested_quantity:
+        example: "5.000"
+        type: string
+      shipped_quantity:
+        example: "0.000"
+        type: string
+      to_location_id:
+        example: 2
+        type: integer
+      transfer_request_id:
+        example: 1
+        type: integer
+      uom_id:
+        example: 1
+        type: integer
+      uom_name:
+        example: Liter
+        type: string
+    type: object
+  handler.TransferRequestResponse:
+    properties:
+      approved_by:
+        type: integer
+      approved_by_name:
+        type: string
+      created_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      expected_delivery_date:
+        example: "2026-09-12"
+        type: string
+      from_store_id:
+        example: 1
+        type: integer
+      from_store_name:
+        example: Central Warehouse
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_stock_reserved:
+        example: true
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/handler.TransferRequestItemResponse'
+        type: array
+      metadata:
+        type: object
+      notes:
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      received_at:
+        type: string
+      received_by:
+        type: integer
+      request_date:
+        example: "2026-09-08T10:00:00Z"
+        type: string
+      requested_by:
+        example: 1
+        type: integer
+      requested_by_name:
+        example: store_manager
+        type: string
+      shipped_at:
+        type: string
+      shipped_by:
+        type: integer
+      status:
+        example: draft
+        type: string
+      to_store_id:
+        example: 2
+        type: integer
+      to_store_name:
+        example: Downtown Branch
+        type: string
+      transfer_number:
+        example: TR-20260908-0001
+        type: string
+      updated_at:
+        example: "2026-09-08T10:00:00Z"
+        type: string
     type: object
   handler.TriggerBackupRequest:
     properties:
@@ -3737,6 +4787,36 @@ definitions:
     required:
     - shipment_status
     type: object
+  handler.UpdateGRNRequest:
+    properties:
+      delivery_note_number:
+        example: DN-9988
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.GRNItemDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      notes:
+        type: string
+      purchase_order_id:
+        example: 1
+        type: integer
+      receipt_date:
+        example: "2026-09-08"
+        type: string
+      received_by:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      supplier_id:
+        example: 5
+        type: integer
+    type: object
   handler.UpdateInventoryStockRequest:
     properties:
       last_counted_at:
@@ -3984,6 +5064,55 @@ definitions:
       terminal_name:
         type: string
     type: object
+  handler.UpdatePartnerAddressRequest:
+    properties:
+      address_name:
+        example: Headquarters Updated
+        type: string
+      address_type:
+        description: bill_to, ship_to, both
+        example: both
+        type: string
+      city:
+        example: Riyadh
+        type: string
+      country_code:
+        example: SA
+        type: string
+      is_default:
+        example: true
+        type: boolean
+      state:
+        example: Riyadh Province
+        type: string
+      street:
+        example: 123 Main St
+        type: string
+      zip_code:
+        example: "12345"
+        type: string
+    type: object
+  handler.UpdatePartnerContactRequest:
+    properties:
+      email:
+        example: john.doe@example.com
+        type: string
+      first_name:
+        example: John
+        type: string
+      is_primary:
+        example: true
+        type: boolean
+      last_name:
+        example: Doe
+        type: string
+      phone:
+        example: "+966500000000"
+        type: string
+      position:
+        example: Purchasing Manager
+        type: string
+    type: object
   handler.UpdatePaymentRequest:
     properties:
       amount:
@@ -4071,6 +5200,9 @@ definitions:
         type: boolean
       metadata:
         type: object
+      uom_id:
+        example: 5
+        type: integer
     type: object
   handler.UpdateProductCategoryRequest:
     properties:
@@ -4124,6 +5256,60 @@ definitions:
     - conversion_factor
     type: object
   handler.UpdatePromotionRequest:
+    properties:
+      action_metadata:
+        type: object
+      applies_to:
+        example: product
+        type: string
+      coupon_code:
+        example: SUMMER25
+        type: string
+      description:
+        example: Updated description
+        type: string
+      discount_value:
+        example: "25.00"
+        type: string
+      is_stackable:
+        type: boolean
+      metadata:
+        type: object
+      min_order_amount:
+        example: "500.00"
+        type: string
+      min_quantity:
+        example: "2"
+        type: string
+      name:
+        example: Summer Sale 25%
+        type: string
+      schedule_json:
+        type: object
+      store_ids:
+        items:
+          type: integer
+        type: array
+      target_category_ids:
+        items:
+          type: integer
+        type: array
+      target_product_ids:
+        items:
+          type: integer
+        type: array
+      usage_limit:
+        example: 200
+        type: integer
+      usage_per_customer:
+        example: 2
+        type: integer
+      valid_from:
+        example: "2026-06-01T00:00:00Z"
+        type: string
+      valid_to:
+        example: "2026-09-30T23:59:59Z"
+        type: string
     type: object
   handler.UpdatePromotionStatusRequest:
     properties:
@@ -4132,6 +5318,72 @@ definitions:
         type: boolean
     required:
     - is_active
+    type: object
+  handler.UpdatePurchaseOrderLineRequest:
+    properties:
+      discount_amount:
+        example: 5
+        type: number
+      line_number:
+        example: 1
+        type: integer
+      metadata:
+        additionalProperties: true
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      quantity:
+        example: 15
+        type: number
+      tax_amount:
+        example: 6.075
+        type: number
+      unit_price:
+        example: 45.5
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+    type: object
+  handler.UpdatePurchaseOrderRequest:
+    properties:
+      expected_delivery_date:
+        example: "2026-09-15"
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.PurchaseOrderLineDTO'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      po_date:
+        example: "2026-09-08"
+        type: string
+      price_list_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      supplier_id:
+        example: 5
+        type: integer
+    type: object
+  handler.UpdatePurchaseOrderStatusRequest:
+    properties:
+      approved_by:
+        example: 1
+        type: integer
+      status:
+        example: approved
+        type: string
+    required:
+    - status
     type: object
   handler.UpdateRolePermissionScopeRequest:
     properties:
@@ -4493,528 +5745,6 @@ definitions:
         example: "300000000000003"
         type: string
     type: object
-  middleware.M2MClient:
-    properties:
-      client_id:
-        type: string
-      client_name:
-        type: string
-      is_active:
-        type: boolean
-      scopes:
-        items:
-          type: string
-        type: array
-      tenant_id:
-        type: string
-      token:
-        type: string
-    type: object
-  pgtype.Date:
-    properties:
-      infinityModifier:
-        $ref: '#/definitions/pgtype.InfinityModifier'
-      time:
-        type: string
-      valid:
-        type: boolean
-    type: object
-  pgtype.InfinityModifier:
-    enum:
-    - 1
-    - 0
-    - -1
-    format: int32
-    type: integer
-    x-enum-varnames:
-    - Infinity
-    - Finite
-    - NegativeInfinity
-  pgtype.Int4:
-    properties:
-      int32:
-        format: int32
-        type: integer
-      valid:
-        type: boolean
-    type: object
-  pgtype.Numeric:
-    properties:
-      exp:
-        format: int32
-        type: integer
-      infinityModifier:
-        $ref: '#/definitions/pgtype.InfinityModifier'
-      int:
-        $ref: '#/definitions/big.Int'
-      naN:
-        type: boolean
-      valid:
-        type: boolean
-    type: object
-  pgtype.Text:
-    properties:
-      string:
-        type: string
-      valid:
-        type: boolean
-    type: object
-  pgtype.Timestamp:
-    properties:
-      infinityModifier:
-        $ref: '#/definitions/pgtype.InfinityModifier'
-      time:
-        description: Time zone will be ignored when encoding to PostgreSQL.
-        type: string
-      valid:
-        type: boolean
-    type: object
-  printing.LineItem:
-    properties:
-      name:
-        type: string
-      price:
-        type: number
-      qty:
-        type: number
-    type: object
-  printing.PrinterConfig:
-    properties:
-      mode:
-        description: 'Mode selects the connection method: "usb", "serial", or "network".'
-        type: string
-      network_ip:
-        description: NetworkIP is the printer's IP address for Ethernet/Wi-Fi printers.
-        type: string
-      network_port:
-        description: NetworkPort is the TCP port (defaults to "9100" if empty).
-        type: string
-      printer_name:
-        description: PrinterName is the Windows spooler printer name (USB / Generic
-          Text Only).
-        type: string
-      serial_port:
-        description: SerialPort is the COM port for serial connections (e.g. "COM3").
-        type: string
-    type: object
-  printing.ReceiptData:
-    properties:
-      barcode:
-        description: value encoded in barcode (e.g. receipt number)
-        type: string
-      card_sales:
-        type: number
-      cash_sales:
-        type: number
-      cashier:
-        type: string
-      closed_at:
-        type: string
-      closing_balance:
-        type: number
-      closing_note:
-        type: string
-      currency:
-        description: e.g. "PKR"; defaults to "PKR"
-        type: string
-      customer:
-        type: string
-      discount:
-        description: absolute amount
-        type: number
-      expected_balance:
-        type: number
-      items:
-        items:
-          $ref: '#/definitions/printing.LineItem'
-        type: array
-      opened_at:
-        type: string
-      opening_balance:
-        description: Session Summary / Z-Report fields
-        type: number
-      other_sales:
-        type: number
-      paid:
-        description: total cash tendered
-        type: number
-      payment_method:
-        type: string
-      receipt_number:
-        type: string
-      tax_rate:
-        description: e.g. 0.05 for 5 %
-        type: number
-      terminal:
-        type: string
-      total_sales:
-        type: number
-      total_transactions:
-        type: integer
-      type:
-        description: e.g. "Z-REPORT" or standard sales transaction
-        type: string
-      variance:
-        type: number
-    type: object
-  repository.Response:
-    properties:
-      data:
-        description: can hold any type of data
-      message:
-        description: descriptive message
-        type: string
-      statusCode:
-        description: e.g., 200, 500
-        type: integer
-    type: object
-  usecase.ApproveTransferRequestInput:
-    properties:
-      approved_by:
-        type: integer
-    type: object
-  usecase.CreateGoodsReceiptNoteInput:
-    properties:
-      delivery_note_number:
-        type: string
-      grn_number:
-        type: string
-      items:
-        items:
-          $ref: '#/definitions/usecase.GoodsReceiptNoteItemInput'
-        type: array
-      metadata:
-        additionalProperties: true
-        type: object
-      notes:
-        type: string
-      organization_id:
-        type: integer
-      purchase_order_id:
-        type: integer
-      receipt_date:
-        type: string
-      received_by:
-        type: integer
-      store_id:
-        type: integer
-      supplier_id:
-        type: integer
-    type: object
-  usecase.CreateStockMovementInput:
-    properties:
-      batch_number:
-        type: string
-      cost_per_unit:
-        type: string
-      from_location_id:
-        type: integer
-      from_store_id:
-        type: integer
-      metadata:
-        additionalProperties: true
-        type: object
-      movement_date:
-        type: string
-      movement_type:
-        type: string
-      posted_by:
-        type: integer
-      product_id:
-        type: integer
-      product_variant_id:
-        type: integer
-      quantity:
-        type: string
-      reference_id:
-        type: integer
-      reference_type:
-        type: string
-      serial_number:
-        type: string
-      status:
-        type: string
-      to_location_id:
-        type: integer
-      to_store_id:
-        type: integer
-      total_value:
-        type: string
-      uom_id:
-        type: integer
-    type: object
-  usecase.CreateTransferRequestInput:
-    properties:
-      expected_delivery_date:
-        type: string
-      from_store_id:
-        type: integer
-      items:
-        items:
-          $ref: '#/definitions/usecase.TransferRequestItemInput'
-        type: array
-      metadata:
-        additionalProperties: true
-        type: object
-      notes:
-        type: string
-      organization_id:
-        type: integer
-      request_date:
-        type: string
-      requested_by:
-        type: integer
-      to_store_id:
-        type: integer
-      transfer_number:
-        type: string
-    type: object
-  usecase.GoodsReceiptNoteItemInput:
-    properties:
-      batch_number:
-        type: string
-      expiry_date:
-        type: string
-      notes:
-        type: string
-      product_id:
-        type: integer
-      product_variant_id:
-        type: integer
-      purchase_order_line_id:
-        type: integer
-      quantity_received:
-        type: number
-      quantity_rejected:
-        type: number
-      rejection_reason:
-        type: string
-      storage_location_id:
-        type: integer
-      unit_cost:
-        type: number
-      uom_id:
-        type: integer
-    type: object
-  usecase.GoodsReceiptNoteItemOutput:
-    properties:
-      batch_number:
-        $ref: '#/definitions/pgtype.Text'
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      expiry_date:
-        $ref: '#/definitions/pgtype.Date'
-      grn_id:
-        type: integer
-      id:
-        type: integer
-      notes:
-        $ref: '#/definitions/pgtype.Text'
-      product_id:
-        type: integer
-      product_name:
-        $ref: '#/definitions/pgtype.Text'
-      product_sku:
-        $ref: '#/definitions/pgtype.Text'
-      product_variant_id:
-        $ref: '#/definitions/pgtype.Int4'
-      purchase_order_line_id:
-        $ref: '#/definitions/pgtype.Int4'
-      quantity_received:
-        $ref: '#/definitions/pgtype.Numeric'
-      quantity_rejected:
-        $ref: '#/definitions/pgtype.Numeric'
-      rejection_reason:
-        $ref: '#/definitions/pgtype.Text'
-      storage_location_id:
-        $ref: '#/definitions/pgtype.Int4'
-      unit_cost:
-        $ref: '#/definitions/pgtype.Numeric'
-      uom_id:
-        $ref: '#/definitions/pgtype.Int4'
-      uom_name:
-        $ref: '#/definitions/pgtype.Text'
-    type: object
-  usecase.GoodsReceiptNoteOutput:
-    properties:
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      delivery_note_number:
-        $ref: '#/definitions/pgtype.Text'
-      grn_number:
-        type: string
-      id:
-        type: integer
-      items:
-        items:
-          $ref: '#/definitions/usecase.GoodsReceiptNoteItemOutput'
-        type: array
-      metadata:
-        items:
-          type: integer
-        type: array
-      notes:
-        $ref: '#/definitions/pgtype.Text'
-      organization_id:
-        type: integer
-      po_number:
-        $ref: '#/definitions/pgtype.Text'
-      purchase_order_id:
-        $ref: '#/definitions/pgtype.Int4'
-      receipt_date:
-        $ref: '#/definitions/pgtype.Timestamp'
-      received_by:
-        $ref: '#/definitions/pgtype.Int4'
-      received_by_name:
-        $ref: '#/definitions/pgtype.Text'
-      status:
-        type: string
-      store_id:
-        type: integer
-      store_name:
-        $ref: '#/definitions/pgtype.Text'
-      supplier_id:
-        type: integer
-      supplier_name:
-        $ref: '#/definitions/pgtype.Text'
-      updated_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-    type: object
-  usecase.PrintReceiptInput:
-    properties:
-      org_id:
-        description: OrgID is the organisation whose branding (header/footer) will
-          be applied.
-        type: integer
-      printer:
-        allOf:
-        - $ref: '#/definitions/printing.PrinterConfig'
-        description: Printer describes how / where to send the ESC/POS data.
-      receipt:
-        allOf:
-        - $ref: '#/definitions/printing.ReceiptData'
-        description: Receipt holds the transaction data (items, totals, cashier info,
-          etc.).
-    type: object
-  usecase.ReceiveTransferRequestInput:
-    properties:
-      received_by:
-        type: integer
-    type: object
-  usecase.ShipTransferRequestInput:
-    properties:
-      shipped_by:
-        type: integer
-    type: object
-  usecase.TransferRequestItemInput:
-    properties:
-      batch_number:
-        type: string
-      from_location_id:
-        type: integer
-      notes:
-        type: string
-      product_id:
-        type: integer
-      product_variant_id:
-        type: integer
-      requested_quantity:
-        type: number
-      to_location_id:
-        type: integer
-      uom_id:
-        type: integer
-    type: object
-  usecase.TransferRequestItemOutput:
-    properties:
-      approved_quantity:
-        $ref: '#/definitions/pgtype.Numeric'
-      batch_number:
-        $ref: '#/definitions/pgtype.Text'
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      from_location_id:
-        $ref: '#/definitions/pgtype.Int4'
-      id:
-        type: integer
-      notes:
-        $ref: '#/definitions/pgtype.Text'
-      product_id:
-        type: integer
-      product_name:
-        $ref: '#/definitions/pgtype.Text'
-      product_sku:
-        $ref: '#/definitions/pgtype.Text'
-      product_variant_id:
-        $ref: '#/definitions/pgtype.Int4'
-      received_quantity:
-        $ref: '#/definitions/pgtype.Numeric'
-      requested_quantity:
-        $ref: '#/definitions/pgtype.Numeric'
-      shipped_quantity:
-        $ref: '#/definitions/pgtype.Numeric'
-      to_location_id:
-        $ref: '#/definitions/pgtype.Int4'
-      transfer_request_id:
-        type: integer
-      uom_id:
-        $ref: '#/definitions/pgtype.Int4'
-      uom_name:
-        $ref: '#/definitions/pgtype.Text'
-    type: object
-  usecase.TransferRequestOutput:
-    properties:
-      approved_by:
-        $ref: '#/definitions/pgtype.Int4'
-      approved_by_name:
-        $ref: '#/definitions/pgtype.Text'
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      expected_delivery_date:
-        $ref: '#/definitions/pgtype.Date'
-      from_store_id:
-        type: integer
-      from_store_name:
-        $ref: '#/definitions/pgtype.Text'
-      id:
-        type: integer
-      items:
-        items:
-          $ref: '#/definitions/usecase.TransferRequestItemOutput'
-        type: array
-      metadata:
-        items:
-          type: integer
-        type: array
-      notes:
-        $ref: '#/definitions/pgtype.Text'
-      organization_id:
-        type: integer
-      received_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      received_by:
-        $ref: '#/definitions/pgtype.Int4'
-      request_date:
-        $ref: '#/definitions/pgtype.Timestamp'
-      requested_by:
-        $ref: '#/definitions/pgtype.Int4'
-      requested_by_name:
-        $ref: '#/definitions/pgtype.Text'
-      shipped_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      shipped_by:
-        $ref: '#/definitions/pgtype.Int4'
-      status:
-        type: string
-      to_store_id:
-        type: integer
-      to_store_name:
-        $ref: '#/definitions/pgtype.Text'
-      transfer_number:
-        type: string
-      updated_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-    type: object
 host: localhost:8080
 info:
   contact:
@@ -5029,6 +5759,50 @@ info:
   title: NEMBUS API
   version: "1.0"
 paths:
+  /api/auth/authorize-action:
+    post:
+      consumes:
+      - application/json
+      description: A supervisor authenticates with their own credentials and authorizes
+        a specific
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Supervisor credentials and permission code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.AuthorizeActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthorizeActionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Supervisor override authorization
+      tags:
+      - auth
   /api/auth/login:
     post:
       consumes:
@@ -7580,6 +8354,650 @@ paths:
       summary: Update a business partner
       tags:
       - business-partners
+  /api/business-partners/{id}/addresses:
+    get:
+      consumes:
+      - application/json
+      description: Get all addresses associated with a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerAddressResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner addresses
+      tags:
+      - partner-addresses
+    post:
+      consumes:
+      - application/json
+      description: Add a new address to a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Partner address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerAddressDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner address
+      tags:
+      - partner-addresses
+  /api/business-partners/{id}/addresses/{addressId}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an address of a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner address
+      tags:
+      - partner-addresses
+    get:
+      consumes:
+      - application/json
+      description: Get a specific address for a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner address
+      tags:
+      - partner-addresses
+    put:
+      consumes:
+      - application/json
+      description: Update details of a business partner address
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      - description: Updated address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerAddressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner address
+      tags:
+      - partner-addresses
+  /api/business-partners/{id}/addresses/{addressId}/default:
+    patch:
+      consumes:
+      - application/json
+      description: Set a specific address as the default address for the partner and
+        unset others
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: addressId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner address as default
+      tags:
+      - partner-addresses
+  /api/business-partners/{id}/contacts:
+    get:
+      consumes:
+      - application/json
+      description: Get all contact persons associated with a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerContactResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner contacts
+      tags:
+      - partner-contacts
+    post:
+      consumes:
+      - application/json
+      description: Add a new contact person to a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Partner contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerContactDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner contact
+      tags:
+      - partner-contacts
+  /api/business-partners/{id}/contacts/{contactId}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a contact person of a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner contact
+      tags:
+      - partner-contacts
+    get:
+      consumes:
+      - application/json
+      description: Get a specific contact person for a business partner
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner contact
+      tags:
+      - partner-contacts
+    put:
+      consumes:
+      - application/json
+      description: Update details of a business partner contact person
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      - description: Updated contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner contact
+      tags:
+      - partner-contacts
+  /api/business-partners/{id}/contacts/{contactId}/primary:
+    patch:
+      consumes:
+      - application/json
+      description: Set a specific contact person as primary for the partner and unset
+        others
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner contact as primary
+      tags:
+      - partner-contacts
   /api/business-partners/{id}/toggle:
     patch:
       consumes:
@@ -11473,6 +12891,84 @@ paths:
       tags:
       - dev
   /api/goods-receipt-notes:
+    get:
+      consumes:
+      - application/json
+      description: List Goods Receipt Notes with filtering by organization, store,
+        supplier, PO, status, date range, search, and pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Supplier / Partner ID
+        in: query
+        name: supplier_id
+        type: integer
+      - description: Purchase Order ID
+        in: query
+        name: purchase_order_id
+        type: integer
+      - description: Status (draft, posted, cancelled)
+        in: query
+        name: status
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Search GRN number, DN number, PO number, or supplier name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.GRNListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Goods Receipt Notes (GRN)
+      tags:
+      - goods-receipt-notes
     post:
       consumes:
       - application/json
@@ -11494,14 +12990,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.CreateGoodsReceiptNoteInput'
+          $ref: '#/definitions/handler.CreateGRNRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/usecase.GoodsReceiptNoteOutput'
+            $ref: '#/definitions/handler.GRNResponse'
         "400":
           description: Bad Request
           schema:
@@ -11516,6 +13012,50 @@ paths:
       tags:
       - goods-receipt-notes
   /api/goods-receipt-notes/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a draft Goods Receipt Note
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: GRN ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Goods Receipt Note
+      tags:
+      - goods-receipt-notes
     get:
       consumes:
       - application/json
@@ -11542,7 +13082,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/usecase.GoodsReceiptNoteOutput'
+            $ref: '#/definitions/handler.GRNResponse'
         "400":
           description: Bad Request
           schema:
@@ -11558,6 +13098,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Get Goods Receipt Note by ID
+      tags:
+      - goods-receipt-notes
+    put:
+      consumes:
+      - application/json
+      description: Updates header and item lines for a draft Goods Receipt Note
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: GRN ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: GRN update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateGRNRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.GRNResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Goods Receipt Note (GRN)
       tags:
       - goods-receipt-notes
   /api/goods-receipt-notes/{id}/post:
@@ -12680,16 +14270,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/middleware.M2MClient'
+              $ref: '#/definitions/handler.M2MClientResponse'
             type: array
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/handler.ErrorResponse'
       summary: List M2M tokens
       tags:
       - m2m
@@ -12716,19 +14306,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/middleware.M2MClient'
+            $ref: '#/definitions/handler.M2MClientResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/handler.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/handler.ErrorResponse'
       summary: Create M2M token
       tags:
       - m2m
@@ -15632,6 +17222,590 @@ paths:
       summary: Get organization by code
       tags:
       - organizations
+  /api/partner-addresses:
+    get:
+      consumes:
+      - application/json
+      description: List addresses for a partner specified via query parameter partner_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: query
+        name: partner_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerAddressResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner addresses (standalone)
+      tags:
+      - partner-addresses
+    post:
+      consumes:
+      - application/json
+      description: Create a partner address by providing partner_id in the body
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Partner address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerAddressDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner address (standalone)
+      tags:
+      - partner-addresses
+  /api/partner-addresses/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a partner address by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner address by ID
+      tags:
+      - partner-addresses
+    get:
+      consumes:
+      - application/json
+      description: Get a partner address by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner address by ID
+      tags:
+      - partner-addresses
+    put:
+      consumes:
+      - application/json
+      description: Update a partner address by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated address data
+        in: body
+        name: address
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerAddressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner address by ID
+      tags:
+      - partner-addresses
+  /api/partner-addresses/{id}/default:
+    patch:
+      consumes:
+      - application/json
+      description: Set a specific address as default by its primary address ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Address ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerAddressResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner address as default by ID
+      tags:
+      - partner-addresses
+  /api/partner-contacts:
+    get:
+      consumes:
+      - application/json
+      description: List contacts for a partner specified via query parameter partner_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Business partner ID
+        in: query
+        name: partner_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PartnerContactResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List partner contacts (standalone)
+      tags:
+      - partner-contacts
+    post:
+      consumes:
+      - application/json
+      description: Create a partner contact by providing partner_id in the body
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Partner contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePartnerContactDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create partner contact (standalone)
+      tags:
+      - partner-contacts
+  /api/partner-contacts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a partner contact by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete partner contact by ID
+      tags:
+      - partner-contacts
+    get:
+      consumes:
+      - application/json
+      description: Get a partner contact by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get partner contact by ID
+      tags:
+      - partner-contacts
+    put:
+      consumes:
+      - application/json
+      description: Update a partner contact by its primary ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated contact data
+        in: body
+        name: contact
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePartnerContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update partner contact by ID
+      tags:
+      - partner-contacts
+  /api/partner-contacts/{id}/primary:
+    patch:
+      consumes:
+      - application/json
+      description: Set a contact as primary by its contact ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Contact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PartnerContactResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set partner contact as primary by ID
+      tags:
+      - partner-contacts
   /api/payment-terms:
     get:
       consumes:
@@ -17778,7 +19952,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Returns today's completed POS transactions for a store
+      description: Returns POS transactions for a store with pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -17794,6 +19968,22 @@ paths:
         in: path
         name: store_id
         required: true
+        type: integer
+      - description: 'Page number (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Items per page (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      - description: Items per page alias
+        in: query
+        name: page_size
+        type: integer
+      - description: Offset override
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -17816,7 +20006,7 @@ paths:
             $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: List today's POS transactions
+      summary: List POS transactions for a store
       tags:
       - pos
   /api/pos/terminals:
@@ -18530,6 +20720,68 @@ paths:
       summary: List POS transactions by cashier session
       tags:
       - pos
+  /api/pos/transactions/customer/{customer_id}:
+    get:
+      consumes:
+      - application/json
+      description: Returns POS transactions for a specific customer with optional
+        pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Customer ID
+        in: path
+        name: customer_id
+        required: true
+        type: integer
+      - description: 'Page number (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Items per page (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      - description: Items per page alias
+        in: query
+        name: page_size
+        type: integer
+      - description: Offset override
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List POS transactions by customer ID
+      tags:
+      - pos
   /api/price-lists:
     get:
       consumes:
@@ -19049,7 +21301,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.PrintReceiptInput'
+          $ref: '#/definitions/handler.PrintReceiptRequest'
       produces:
       - application/json
       responses:
@@ -21188,19 +23440,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.SuccessResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Master product catalog (detailed)
@@ -21712,6 +23964,652 @@ paths:
       summary: Validate coupon (read-only)
       tags:
       - promotions
+  /api/purchase-order-lines:
+    get:
+      consumes:
+      - application/json
+      description: Get purchase order lines by purchase_order_id query parameter
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: query
+        name: purchase_order_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Purchase Order Lines by Query
+      tags:
+      - purchase-orders
+  /api/purchase-orders:
+    get:
+      consumes:
+      - application/json
+      description: List purchase orders with filtering by organization, store, supplier,
+        status, date range, search, and pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Supplier / Business Partner ID
+        in: query
+        name: partner_id
+        type: integer
+      - description: Status (draft, submitted, approved, partially_received, received,
+          cancelled, closed)
+        in: query
+        name: status
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Search PO number or supplier name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Purchase Orders
+      tags:
+      - purchase-orders
+    post:
+      consumes:
+      - application/json
+      description: Creates a new purchase order with itemized lines in draft status
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase order creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePurchaseOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Purchase Order
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a draft or cancelled purchase order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Purchase Order
+      tags:
+      - purchase-orders
+    get:
+      consumes:
+      - application/json
+      description: Get detailed purchase order with supplier, store, user details
+        and line items
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Purchase Order by ID
+      tags:
+      - purchase-orders
+    put:
+      consumes:
+      - application/json
+      description: Updates header and line items of a draft purchase order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Purchase order update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePurchaseOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Purchase Order
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: Approves a submitted purchase order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Optional approval payload
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.UpdatePurchaseOrderStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve Purchase Order
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}/lines:
+    get:
+      consumes:
+      - application/json
+      description: Get itemized line items for a specific purchase order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Purchase Order Lines
+      tags:
+      - purchase-orders
+    post:
+      consumes:
+      - application/json
+      description: Adds a single line item to a draft purchase order and recalculates
+        totals
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line item payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreatePurchaseOrderLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Purchase Order Line
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}/lines/{line_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a line item from a draft purchase order and recalculates
+        totals
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order Line ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Purchase Order Line
+      tags:
+      - purchase-orders
+    get:
+      consumes:
+      - application/json
+      description: Get a single purchase order line item by its ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order Line ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Purchase Order Line by ID
+      tags:
+      - purchase-orders
+    put:
+      consumes:
+      - application/json
+      description: Updates a line item in a draft purchase order and recalculates
+        totals
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order Line ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      - description: Line item update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePurchaseOrderLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Purchase Order Line
+      tags:
+      - purchase-orders
+  /api/purchase-orders/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Update purchase order lifecycle status (draft, submitted, approved,
+        cancelled, closed)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Purchase Order ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePurchaseOrderStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PurchaseOrderResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Purchase Order Status
+      tags:
+      - purchase-orders
   /api/restaurant/kiosk/sessions:
     post:
       consumes:
@@ -24809,7 +27707,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.CreateStockMovementInput'
+          $ref: '#/definitions/handler.CreateStockMovementRequest'
       produces:
       - application/json
       responses:
@@ -27146,7 +30044,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/usecase.TransferRequestOutput'
+              $ref: '#/definitions/handler.TransferRequestResponse'
             type: array
         "400":
           description: Bad Request
@@ -27181,14 +30079,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.CreateTransferRequestInput'
+          $ref: '#/definitions/handler.CreateTransferRequestDTO'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/usecase.TransferRequestOutput'
+            $ref: '#/definitions/handler.TransferRequestResponse'
         "400":
           description: Bad Request
           schema:
@@ -27229,7 +30127,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/usecase.TransferRequestOutput'
+            $ref: '#/definitions/handler.TransferRequestResponse'
         "400":
           description: Bad Request
           schema:
@@ -27245,6 +30143,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Get transfer request by ID
+      tags:
+      - transfer-requests
+    put:
+      consumes:
+      - application/json
+      description: Update a draft transfer request header and itemized lines
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Transfer Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Transfer request payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateTransferRequestDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TransferRequestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update draft transfer request
       tags:
       - transfer-requests
   /api/transfer-requests/{id}/approve:
@@ -27274,7 +30222,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.ApproveTransferRequestInput'
+          $ref: '#/definitions/handler.ApproveTransferRequestDTO'
       produces:
       - application/json
       responses:
@@ -27293,6 +30241,53 @@ paths:
       security:
       - BearerAuth: []
       summary: Approve transfer request
+      tags:
+      - transfer-requests
+  /api/transfer-requests/{id}/cancel:
+    post:
+      consumes:
+      - application/json
+      description: Cancel transfer request and release reserved stock if applicable
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Transfer Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Cancellation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CancelTransferRequestDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel transfer request
       tags:
       - transfer-requests
   /api/transfer-requests/{id}/receive:
@@ -27322,7 +30317,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.ReceiveTransferRequestInput'
+          $ref: '#/definitions/handler.ReceiveTransferRequestDTO'
       produces:
       - application/json
       responses:
@@ -27370,7 +30365,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/usecase.ShipTransferRequestInput'
+          $ref: '#/definitions/handler.ShipTransferRequestDTO'
       produces:
       - application/json
       responses:
@@ -29016,19 +32011,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.SuccessResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get ZATCA device configuration deltas (Pull Sync)
@@ -29059,7 +32054,7 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get ZATCA configuration status
@@ -29094,19 +32089,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.SuccessResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/repository.Response'
+            $ref: '#/definitions/handler.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Ingest offline transaction outbox payload (Push Sync)

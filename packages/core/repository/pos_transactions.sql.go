@@ -33,7 +33,7 @@ INSERT INTO pos_transactions (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15, $16
-) RETURNING id, transaction_number, status, total_amount
+) RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
 `
 
 type CreatePosTransactionParams struct {
@@ -55,14 +55,7 @@ type CreatePosTransactionParams struct {
 	Metadata          json.RawMessage  `json:"metadata"`
 }
 
-type CreatePosTransactionRow struct {
-	ID                int32          `json:"id"`
-	TransactionNumber string         `json:"transaction_number"`
-	Status            pgtype.Text    `json:"status"`
-	TotalAmount       pgtype.Numeric `json:"total_amount"`
-}
-
-func (q *Queries) CreatePosTransaction(ctx context.Context, arg CreatePosTransactionParams) (CreatePosTransactionRow, error) {
+func (q *Queries) CreatePosTransaction(ctx context.Context, arg CreatePosTransactionParams) (PosTransaction, error) {
 	row := q.db.QueryRow(ctx, createPosTransaction,
 		arg.TransactionNumber,
 		arg.StoreID,
@@ -81,22 +74,44 @@ func (q *Queries) CreatePosTransaction(ctx context.Context, arg CreatePosTransac
 		arg.Status,
 		arg.Metadata,
 	)
-	var i CreatePosTransactionRow
+	var i PosTransaction
 	err := row.Scan(
 		&i.ID,
+		&i.StoreID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
 		&i.TransactionNumber,
-		&i.Status,
+		&i.TransactionDate,
+		&i.TransactionType,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
 		&i.TotalAmount,
+		&i.TotalCost,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.Status,
+		&i.PriceListID,
+		&i.SalesOrderID,
+		&i.SourceCartID,
+		&i.VoidedBy,
+		&i.VoidedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const createPosTransactionLine = `-- name: CreatePosTransactionLine :exec
+const createPosTransactionLine = `-- name: CreatePosTransactionLine :one
 INSERT INTO pos_transaction_lines (
     transaction_id, line_number, product_id, product_variant_id,
     serial_number, batch_number, quantity, uom_id,
     unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+RETURNING id, transaction_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, line_number, serial_number, batch_number, metadata, created_at, updated_at
 `
 
 type CreatePosTransactionLineParams struct {
@@ -117,8 +132,8 @@ type CreatePosTransactionLineParams struct {
 	Metadata         json.RawMessage `json:"metadata"`
 }
 
-func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTransactionLineParams) error {
-	_, err := q.db.Exec(ctx, createPosTransactionLine,
+func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTransactionLineParams) (PosTransactionLine, error) {
+	row := q.db.QueryRow(ctx, createPosTransactionLine,
 		arg.TransactionID,
 		arg.LineNumber,
 		arg.ProductID,
@@ -135,7 +150,28 @@ func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTra
 		arg.CostPrice,
 		arg.Metadata,
 	)
-	return err
+	var i PosTransactionLine
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
+		&i.CostPrice,
+		&i.LineNumber,
+		&i.SerialNumber,
+		&i.BatchNumber,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getPosTransaction = `-- name: GetPosTransaction :one
@@ -185,6 +221,7 @@ SELECT
     term.terminal_name,
     sess.session_number,
     cust.name AS customer_name,
+    tl.id AS line_id,
     tl.line_number,
     tl.product_id,
     tl.quantity,
@@ -193,7 +230,8 @@ SELECT
     tl.line_total,
     p.sku,
     p.name AS product_name,
-    COALESCE(pb.barcode, '') AS scanned_barcode
+    COALESCE(pb.barcode, '') AS scanned_barcode,
+    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
 FROM pos_transactions t
 JOIN cashiers          cshr  ON t.cashier_id         = cshr.id
 JOIN users             cashier ON cshr.user_id        = cashier.id
@@ -206,6 +244,12 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+LEFT JOIN (
+    SELECT original_line_id, SUM(quantity) AS returned_quantity
+    FROM sales_return_lines
+    WHERE original_line_id IS NOT NULL
+    GROUP BY original_line_id
+) srl ON srl.original_line_id = tl.id
 WHERE t.id = $1
 ORDER BY tl.line_number
 `
@@ -224,6 +268,7 @@ type GetPosTransactionFullRow struct {
 	TerminalName      pgtype.Text      `json:"terminal_name"`
 	SessionNumber     string           `json:"session_number"`
 	CustomerName      pgtype.Text      `json:"customer_name"`
+	LineID            int32            `json:"line_id"`
 	LineNumber        pgtype.Int4      `json:"line_number"`
 	ProductID         int32            `json:"product_id"`
 	Quantity          pgtype.Numeric   `json:"quantity"`
@@ -233,6 +278,7 @@ type GetPosTransactionFullRow struct {
 	Sku               string           `json:"sku"`
 	ProductName       string           `json:"product_name"`
 	ScannedBarcode    string           `json:"scanned_barcode"`
+	ReturnedQuantity  pgtype.Numeric   `json:"returned_quantity"`
 }
 
 func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPosTransactionFullRow, error) {
@@ -258,6 +304,7 @@ func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPos
 			&i.TerminalName,
 			&i.SessionNumber,
 			&i.CustomerName,
+			&i.LineID,
 			&i.LineNumber,
 			&i.ProductID,
 			&i.Quantity,
@@ -267,6 +314,7 @@ func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPos
 			&i.Sku,
 			&i.ProductName,
 			&i.ScannedBarcode,
+			&i.ReturnedQuantity,
 		); err != nil {
 			return nil, err
 		}
@@ -477,6 +525,197 @@ func (q *Queries) ListPosTransactionsByCashierSession(ctx context.Context, arg L
 	return items, nil
 }
 
+const listPosTransactionsByCustomerID = `-- name: ListPosTransactionsByCustomerID :many
+SELECT 
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name AS customer_name,
+    COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', tl.id,
+                'transaction_id', tl.transaction_id,
+                'line_number', tl.line_number,
+                'product_id', tl.product_id,
+                'product_variant_id', tl.product_variant_id,
+                'serial_number', tl.serial_number,
+                'batch_number', tl.batch_number,
+                'quantity', tl.quantity,
+                'uom_id', tl.uom_id,
+                'unit_price', tl.unit_price,
+                'discount_amount', tl.discount_amount,
+                'tax_amount', tl.tax_amount,
+                'subtotal', tl.subtotal,
+                'line_total', tl.line_total,
+                'cost_price', tl.cost_price,
+                'metadata', tl.metadata,
+                'product_sku', p.sku,
+                'product_name', p.name,
+                'scanned_barcode', COALESCE(pb.barcode, '')
+            ) ORDER BY tl.line_number
+        ) FILTER (WHERE tl.id IS NOT NULL),
+        '[]'::jsonb
+    ) AS lines
+FROM pos_transactions t
+LEFT JOIN cashiers          cshr   ON t.cashier_id         = cshr.id
+LEFT JOIN users             cashier ON cshr.user_id        = cashier.id
+LEFT JOIN pos_terminals     term   ON t.pos_terminal_id    = term.id
+LEFT JOIN cashier_sessions  sess   ON t.cashier_session_id = sess.id
+LEFT JOIN customers    cust   ON t.customer_id        = cust.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id    = t.id
+LEFT JOIN products          p      ON tl.product_id        = p.id
+LEFT JOIN product_barcodes pb 
+    ON pb.product_id = p.id 
+   AND pb.is_primary = true
+   AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+WHERE t.customer_id = $1
+GROUP BY
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name,
+    cashier.last_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListPosTransactionsByCustomerIDParams struct {
+	CustomerID pgtype.Int4 `json:"customer_id"`
+	Limit      int32       `json:"limit"`
+	Offset     int32       `json:"offset"`
+}
+
+type ListPosTransactionsByCustomerIDRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	CashierName       interface{}      `json:"cashier_name"`
+	TerminalName      pgtype.Text      `json:"terminal_name"`
+	SessionNumber     pgtype.Text      `json:"session_number"`
+	CustomerName      pgtype.Text      `json:"customer_name"`
+	Lines             interface{}      `json:"lines"`
+}
+
+func (q *Queries) ListPosTransactionsByCustomerID(ctx context.Context, arg ListPosTransactionsByCustomerIDParams) ([]ListPosTransactionsByCustomerIDRow, error) {
+	rows, err := q.db.Query(ctx, listPosTransactionsByCustomerID, arg.CustomerID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPosTransactionsByCustomerIDRow
+	for rows.Next() {
+		var i ListPosTransactionsByCustomerIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.PosTerminalID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.TransactionType,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.TotalCost,
+			&i.AmountPaid,
+			&i.ChangeGiven,
+			&i.Status,
+			&i.PriceListID,
+			&i.SalesOrderID,
+			&i.SourceCartID,
+			&i.VoidedBy,
+			&i.VoidedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.CashierName,
+			&i.TerminalName,
+			&i.SessionNumber,
+			&i.CustomerName,
+			&i.Lines,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTodaysPosTransactions = `-- name: ListTodaysPosTransactions :many
 SELECT 
     t.id,
@@ -484,22 +723,26 @@ SELECT
     t.transaction_date,
     t.total_amount,
     t.status,
-    cashier.first_name || ' ' || cashier.last_name AS cashier_name,
-    term.terminal_name,
-    COUNT(tl.id) AS items_count,
-    SUM(tl.quantity) AS total_quantity
+    COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
+    COALESCE(term.terminal_name, '') AS terminal_name,
+    COALESCE(COUNT(tl.id), 0) AS items_count,
+    COALESCE(SUM(tl.quantity), 0) AS total_quantity
 FROM pos_transactions t
-JOIN cashiers cshr ON t.cashier_id = cshr.id
-JOIN users cashier ON cshr.user_id = cashier.id
-JOIN pos_terminals term ON t.pos_terminal_id = term.id
-JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
+LEFT JOIN cashiers cshr ON t.cashier_id = cshr.id
+LEFT JOIN users cashier ON cshr.user_id = cashier.id
+LEFT JOIN pos_terminals term ON t.pos_terminal_id = term.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
 WHERE t.store_id = $1
-  AND t.transaction_date >= CURRENT_DATE
-  AND t.transaction_date < CURRENT_DATE + INTERVAL '1 day'
 GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name
-ORDER BY t.transaction_date DESC
-LIMIT 200
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT $2 OFFSET $3
 `
+
+type ListTodaysPosTransactionsParams struct {
+	StoreID int32 `json:"store_id"`
+	Limit   int32 `json:"limit"`
+	Offset  int32 `json:"offset"`
+}
 
 type ListTodaysPosTransactionsRow struct {
 	ID                int32            `json:"id"`
@@ -508,13 +751,13 @@ type ListTodaysPosTransactionsRow struct {
 	TotalAmount       pgtype.Numeric   `json:"total_amount"`
 	Status            pgtype.Text      `json:"status"`
 	CashierName       interface{}      `json:"cashier_name"`
-	TerminalName      pgtype.Text      `json:"terminal_name"`
-	ItemsCount        int64            `json:"items_count"`
-	TotalQuantity     int64            `json:"total_quantity"`
+	TerminalName      string           `json:"terminal_name"`
+	ItemsCount        interface{}      `json:"items_count"`
+	TotalQuantity     interface{}      `json:"total_quantity"`
 }
 
-func (q *Queries) ListTodaysPosTransactions(ctx context.Context, storeID int32) ([]ListTodaysPosTransactionsRow, error) {
-	rows, err := q.db.Query(ctx, listTodaysPosTransactions, storeID)
+func (q *Queries) ListTodaysPosTransactions(ctx context.Context, arg ListTodaysPosTransactionsParams) ([]ListTodaysPosTransactionsRow, error) {
+	rows, err := q.db.Query(ctx, listTodaysPosTransactions, arg.StoreID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

@@ -99,10 +99,10 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 // @Param        organization_id  query     int     true   "Organization ID"
 // @Param        limit            query     int     false  "Page size (default 100)"
 // @Param        offset           query     int     false  "Page offset (default 0)"
-// @Success      200  {object}  repository.Response
-// @Failure      400  {object}  repository.Response
-// @Failure      401  {object}  repository.Response
-// @Failure      500  {object}  repository.Response
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
 // @Router       /api/products/master-catalog [get]
 func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 	repo := h.getRepositoryFromContext(c)

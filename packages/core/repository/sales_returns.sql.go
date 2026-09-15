@@ -180,6 +180,19 @@ func (q *Queries) CreateSalesReturnLine(ctx context.Context, arg CreateSalesRetu
 	return i, err
 }
 
+const getReturnedQuantityByLineID = `-- name: GetReturnedQuantityByLineID :one
+SELECT COALESCE(SUM(quantity), 0)::DECIMAL(15,3) AS total_returned_qty
+FROM sales_return_lines
+WHERE original_line_id = $1
+`
+
+func (q *Queries) GetReturnedQuantityByLineID(ctx context.Context, originalLineID pgtype.Int4) (pgtype.Numeric, error) {
+	row := q.db.QueryRow(ctx, getReturnedQuantityByLineID, originalLineID)
+	var total_returned_qty pgtype.Numeric
+	err := row.Scan(&total_returned_qty)
+	return total_returned_qty, err
+}
+
 const getSalesReturnByID = `-- name: GetSalesReturnByID :one
 SELECT id, return_number, store_id, cashier_id, cashier_session_id, customer_id, original_transaction_id, return_date, return_reason, status, subtotal, tax_amount, total_refund_amount, refund_method, refund_reference, approved_by, notes, metadata, created_at, updated_at FROM sales_returns
 WHERE id = $1
@@ -211,6 +224,48 @@ func (q *Queries) GetSalesReturnByID(ctx context.Context, id int32) (SalesReturn
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listSalesReturnLinesByReturnID = `-- name: ListSalesReturnLinesByReturnID :many
+SELECT id, return_id, product_id, product_variant_id, original_line_id, quantity, unit_price, refund_amount, return_to_stock, serial_number, batch_number, condition, line_number, metadata, created_at, updated_at FROM sales_return_lines
+WHERE return_id = $1
+`
+
+func (q *Queries) ListSalesReturnLinesByReturnID(ctx context.Context, returnID int32) ([]SalesReturnLine, error) {
+	rows, err := q.db.Query(ctx, listSalesReturnLinesByReturnID, returnID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SalesReturnLine
+	for rows.Next() {
+		var i SalesReturnLine
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReturnID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.OriginalLineID,
+			&i.Quantity,
+			&i.UnitPrice,
+			&i.RefundAmount,
+			&i.ReturnToStock,
+			&i.SerialNumber,
+			&i.BatchNumber,
+			&i.Condition,
+			&i.LineNumber,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listSalesReturnsByTransaction = `-- name: ListSalesReturnsByTransaction :many
@@ -257,4 +312,21 @@ func (q *Queries) ListSalesReturnsByTransaction(ctx context.Context, originalTra
 		return nil, err
 	}
 	return items, nil
+}
+
+const updatePOSTransactionStatus = `-- name: UpdatePOSTransactionStatus :exec
+UPDATE pos_transactions
+SET status = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type UpdatePOSTransactionStatusParams struct {
+	ID     int32       `json:"id"`
+	Status pgtype.Text `json:"status"`
+}
+
+func (q *Queries) UpdatePOSTransactionStatus(ctx context.Context, arg UpdatePOSTransactionStatusParams) error {
+	_, err := q.db.Exec(ctx, updatePOSTransactionStatus, arg.ID, arg.Status)
+	return err
 }

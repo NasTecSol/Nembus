@@ -2038,6 +2038,13 @@ RETURNS TABLE (
 ) AS $$
 DECLARE
     v_req RECORD;
+    v_item RECORD;
+    v_available DECIMAL(15,3);
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+    v_is_reserved BOOLEAN;
+    v_expires_at TIMESTAMP;
 BEGIN
     SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
     IF v_req IS NULL THEN
@@ -2050,6 +2057,61 @@ BEGIN
         RETURN;
     END IF;
 
+    v_is_reserved := COALESCE(v_req.is_stock_reserved, false);
+
+    -- Expiry timestamp: expected_delivery_date end of day if present, else midnight tonight (CURRENT_DATE + 1 day)
+    IF v_req.expected_delivery_date IS NOT NULL THEN
+        v_expires_at := (v_req.expected_delivery_date::TIMESTAMP + INTERVAL '1 day');
+    ELSE
+        v_expires_at := (CURRENT_DATE + INTERVAL '1 day');
+    END IF;
+
+    IF v_is_reserved THEN
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_item.product_id);
+                RETURN;
+            END IF;
+
+            -- Allocate stock at source store
+            UPDATE inventory_stock
+            SET quantity_allocated = quantity_allocated + v_base_qty,
+                quantity_available = quantity_available - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            -- Log reservation row with expires_at
+            INSERT INTO stock_reservations (
+                reservation_number, product_id, product_variant_id, store_id,
+                reference_type, reference_id, quantity_reserved, expires_at, status, reserved_by
+            ) VALUES (
+                'TR-RES-' || p_transfer_request_id || '-' || v_item.id || '-' || FLOOR(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)),
+                v_item.product_id, v_item.product_variant_id, v_req.from_store_id,
+                'transfer', p_transfer_request_id::text, v_base_qty, v_expires_at, 'active', p_approved_by
+            );
+        END LOOP;
+    END IF;
+
     UPDATE transfer_requests
     SET status = 'approved',
         approved_by = p_approved_by,
@@ -2057,6 +2119,141 @@ BEGIN
     WHERE id = p_transfer_request_id;
 
     RETURN QUERY SELECT true, 'Transfer request approved successfully.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_release_transfer_request_reservation(
+    p_transfer_request_id INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.is_stock_reserved AND v_req.status = 'approved' THEN
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            -- Release allocated stock back to available stock at source store
+            UPDATE inventory_stock
+            SET quantity_allocated = GREATEST(0, quantity_allocated - v_base_qty),
+                quantity_available = quantity_available + v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            UPDATE stock_reservations
+            SET status = 'cancelled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reference_type = 'transfer'
+              AND reference_id = p_transfer_request_id::text
+              AND product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND status = 'active';
+        END LOOP;
+    END IF;
+
+    RETURN QUERY SELECT true, 'Reservation released successfully.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_allocate_transfer_request_reservation(
+    p_transfer_request_id INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_available DECIMAL(15,3);
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+    v_expires_at TIMESTAMP;
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.is_stock_reserved AND v_req.status = 'approved' THEN
+        IF v_req.expected_delivery_date IS NOT NULL THEN
+            v_expires_at := (v_req.expected_delivery_date::TIMESTAMP + INTERVAL '1 day');
+        ELSE
+            v_expires_at := (CURRENT_DATE + INTERVAL '1 day');
+        END IF;
+
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_item.product_id);
+                RETURN;
+            END IF;
+
+            -- Allocate stock at source store
+            UPDATE inventory_stock
+            SET quantity_allocated = quantity_allocated + v_base_qty,
+                quantity_available = quantity_available - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            -- Log reservation row with expires_at
+            INSERT INTO stock_reservations (
+                reservation_number, product_id, product_variant_id, store_id,
+                reference_type, reference_id, quantity_reserved, expires_at, status, reserved_by
+            ) VALUES (
+                'TR-RES-' || p_transfer_request_id || '-' || v_item.id || '-' || FLOOR(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)),
+                v_item.product_id, v_item.product_variant_id, v_req.from_store_id,
+                'transfer', p_transfer_request_id::text, v_base_qty, v_expires_at, 'active', v_req.approved_by
+            );
+        END LOOP;
+    END IF;
+
+    RETURN QUERY SELECT true, 'Reservation allocated successfully.';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -2102,27 +2299,46 @@ BEGIN
             v_base_qty := v_qty;
         END IF;
 
-        -- Check available stock at source using v_base_qty
-        SELECT quantity_available INTO v_available
-        FROM inventory_stock
-        WHERE product_id = v_item.product_id
-          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
-          AND store_id = v_req.from_store_id
-        FOR UPDATE;
+        IF v_req.is_stock_reserved THEN
+            -- Reserved mode: clear allocated and deduct on_hand
+            UPDATE inventory_stock
+            SET quantity_allocated = GREATEST(0, quantity_allocated - v_base_qty),
+                quantity_on_hand = quantity_on_hand - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
 
-        IF v_available IS NULL OR v_available < v_base_qty THEN
-            RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
-            RETURN;
+            UPDATE stock_reservations
+            SET status = 'fulfilled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reference_type = 'transfer'
+              AND reference_id = p_transfer_request_id::text
+              AND product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND status = 'active';
+        ELSE
+            -- Default unreserved mode: check available and deduct both on_hand & available
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
+                RETURN;
+            END IF;
+
+            UPDATE inventory_stock
+            SET quantity_on_hand = quantity_on_hand - v_base_qty,
+                quantity_available = quantity_available - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
         END IF;
-
-        -- Deduct from source store using v_base_qty
-        UPDATE inventory_stock
-        SET quantity_on_hand = quantity_on_hand - v_base_qty,
-            quantity_available = quantity_available - v_base_qty,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE product_id = v_item.product_id
-          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
-          AND store_id = v_req.from_store_id;
 
         -- Increment quantity_in_transit at destination store using v_base_qty
         UPDATE inventory_stock
@@ -2167,6 +2383,113 @@ BEGIN
     WHERE id = p_transfer_request_id;
 
     RETURN QUERY SELECT true, 'Transfer request shipped successfully.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_cancel_transfer_request(
+    p_transfer_request_id INTEGER,
+    p_cancelled_by INTEGER
+)
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT
+) AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.status IN ('shipped', 'received', 'cancelled') THEN
+        RETURN QUERY SELECT false, 'Cannot cancel a transfer request that is already shipped, received, or cancelled.';
+        RETURN;
+    END IF;
+
+    IF v_req.is_stock_reserved AND v_req.status = 'approved' THEN
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            -- Release allocated stock
+            UPDATE inventory_stock
+            SET quantity_allocated = GREATEST(0, quantity_allocated - v_base_qty),
+                quantity_available = quantity_available + v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            UPDATE stock_reservations
+            SET status = 'cancelled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reference_type = 'transfer'
+              AND reference_id = p_transfer_request_id::text
+              AND product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND status = 'active';
+        END LOOP;
+    END IF;
+
+    UPDATE transfer_requests
+    SET status = 'cancelled',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_transfer_request_id;
+
+    RETURN QUERY SELECT true, 'Transfer request cancelled successfully.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_expire_stock_reservations()
+RETURNS TABLE (
+    success BOOLEAN,
+    message TEXT,
+    expired_count INTEGER
+) AS $$
+DECLARE
+    v_res RECORD;
+    v_count INTEGER := 0;
+BEGIN
+    FOR v_res IN
+        SELECT * FROM stock_reservations
+        WHERE status = 'active'
+          AND expires_at IS NOT NULL
+          AND expires_at <= CURRENT_TIMESTAMP
+        FOR UPDATE
+    LOOP
+        -- Release allocated inventory stock back to available stock
+        UPDATE inventory_stock
+        SET quantity_allocated = GREATEST(0, quantity_allocated - v_res.quantity_reserved),
+            quantity_available = quantity_available + v_res.quantity_reserved,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_res.product_id
+          AND (product_variant_id = v_res.product_variant_id OR (product_variant_id IS NULL AND v_res.product_variant_id IS NULL))
+          AND store_id = v_res.store_id;
+
+        -- Update reservation status to expired
+        UPDATE stock_reservations
+        SET status = 'expired',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = v_res.id;
+
+        v_count := v_count + 1;
+    END LOOP;
+
+    RETURN QUERY SELECT true, format('%s stock reservations expired and released.', v_count), v_count;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -3755,3 +4078,93 @@ BEGIN
     WHERE v.organization_id = p_organization_id;
 END;
 $$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- SALES RETURN & WASTE PROCESSING TRIGGER
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION fn_trigger_process_sales_return()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_store_id INT;
+    v_cost_price NUMERIC(15,4);
+    v_uom_id INT;
+    v_reason TEXT;
+BEGIN
+    -- Get store_id and return_reason from parent sales_returns header
+    SELECT store_id, COALESCE(return_reason, 'POS Sales Return') 
+    INTO v_store_id, v_reason 
+    FROM sales_returns 
+    WHERE id = NEW.return_id;
+
+    -- Fetch cost_price and uom_id from original pos_transaction_lines if available
+    IF NEW.original_line_id IS NOT NULL THEN
+        SELECT COALESCE(cost_price, 0), uom_id 
+        INTO v_cost_price, v_uom_id 
+        FROM pos_transaction_lines 
+        WHERE id = NEW.original_line_id;
+    ELSE
+        v_cost_price := 0;
+        v_uom_id := NULL;
+    END IF;
+
+    -- CASE 1: Return to stock = TRUE and Condition = 'good' -> Restock into inventory
+    IF NEW.return_to_stock = true AND (NEW.condition IS NULL OR NEW.condition = 'good') THEN
+        UPDATE inventory_stock
+        SET quantity_on_hand = quantity_on_hand + NEW.quantity,
+            quantity_available = quantity_available + NEW.quantity,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = NEW.product_id
+          AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+          AND store_id = v_store_id;
+
+        -- Record stock movement as a return
+        INSERT INTO stock_movements (
+            movement_type, reference_type, reference_id, product_id, product_variant_id,
+            to_store_id, quantity, uom_id, batch_number, serial_number, metadata
+        ) VALUES (
+            'return', 'sales_return', NEW.return_id, NEW.product_id, NEW.product_variant_id,
+            v_store_id, NEW.quantity, v_uom_id, NEW.batch_number, NEW.serial_number,
+            jsonb_build_object('return_line_id', NEW.id, 'condition', COALESCE(NEW.condition, 'good'))
+        );
+
+    -- CASE 2: Item is DAMAGED, DEFECTIVE, or OPENED (return_to_stock = false) -> Log to waste_logs
+    ELSE
+        INSERT INTO waste_logs (
+            store_id, product_id, waste_source, quantity, uom_id, unit_cost, total_cost,
+            reason, metadata
+        ) VALUES (
+            v_store_id, NEW.product_id, 'register', NEW.quantity, v_uom_id, v_cost_price,
+            (v_cost_price * NEW.quantity),
+            CONCAT('Customer Return - Condition: ', COALESCE(NEW.condition, 'damaged'), '. Reason: ', v_reason),
+            jsonb_build_object('return_id', NEW.return_id, 'return_line_id', NEW.id, 'condition', NEW.condition)
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_process_sales_return ON sales_return_lines;
+CREATE TRIGGER trg_process_sales_return
+AFTER INSERT ON sales_return_lines
+FOR EACH ROW EXECUTE FUNCTION fn_trigger_process_sales_return();
+
+-- Helper function to calculate remaining returnable quantity for a pos_transaction_line
+CREATE OR REPLACE FUNCTION fn_get_returnable_quantity(p_original_line_id INT)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_orig_qty NUMERIC(15,3);
+    v_ret_qty NUMERIC(15,3);
+BEGIN
+    SELECT quantity INTO v_orig_qty FROM pos_transaction_lines WHERE id = p_original_line_id;
+    IF v_orig_qty IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    SELECT COALESCE(SUM(quantity), 0) INTO v_ret_qty FROM sales_return_lines WHERE original_line_id = p_original_line_id;
+
+    RETURN GREATEST(0, v_orig_qty - v_ret_qty);
+END;
+$$ LANGUAGE plpgsql;
+

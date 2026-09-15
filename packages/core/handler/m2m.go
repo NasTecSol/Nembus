@@ -29,10 +29,10 @@ type CreateM2MRequest struct {
 // @Produce      json
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        request       body      CreateM2MRequest  true  "M2M client registration data"
-// @Success      200  {object}  middleware.M2MClient
-// @Failure      400  {object}  gin.H
-// @Failure      401  {object}  gin.H
-// @Failure      500  {object}  gin.H
+// @Success      200  {object}  M2MClientResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
 // @Router       /api/m2m/tokens [post]
 func (h *M2MHandler) CreateToken(c *gin.Context) {
 	tenantID := c.GetHeader("x-tenant-id")
@@ -81,9 +81,9 @@ func (h *M2MHandler) CreateToken(c *gin.Context) {
 // @Tags         m2m
 // @Produce      json
 // @Param        x-tenant-id  header    string  true  "Tenant identifier"
-// @Success      200  {array}   middleware.M2MClient
-// @Failure      400  {object}  gin.H
-// @Failure      500  {object}  gin.H
+// @Success      200  {array}   M2MClientResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
 // @Router       /api/m2m/tokens [get]
 func (h *M2MHandler) ListTokens(c *gin.Context) {
 	tenantID := c.GetHeader("x-tenant-id")

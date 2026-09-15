@@ -13,8 +13,10 @@ func RegisterTransferRequestRoutes(r *gin.RouterGroup, h *handler.TransferReques
 		transfers.POST("", h.CreateTransferRequest)
 		transfers.GET("", h.ListTransferRequests)
 		transfers.GET("/:id", h.GetTransferRequest)
+		transfers.PUT("/:id", h.UpdateTransferRequest)
 		transfers.POST("/:id/approve", h.ApproveTransferRequest)
 		transfers.POST("/:id/ship", h.ShipTransferRequest)
 		transfers.POST("/:id/receive", h.ReceiveTransferRequest)
+		transfers.POST("/:id/cancel", h.CancelTransferRequest)
 	}
 }

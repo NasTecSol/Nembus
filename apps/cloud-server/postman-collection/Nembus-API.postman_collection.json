@@ -67,6 +67,10 @@
     {
       "key": "product_id",
       "value": "1"
+    },
+    {
+      "key": "authorization_token",
+      "value": ""
     }
   ],
   "item": [
@@ -98,6 +102,51 @@
               "raw": "{\"user_login\":\"admin\",\"password\":\"your_password\"}"
             }
           }
+        },
+        {
+          "name": "Authorize Action (Supervisor Override)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/authorize-action",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supervisor_login\": \"supervisor_jane\",\n  \"supervisor_password\": \"your_password\",\n  \"permission_code\": \"sales_return.process\",\n  \"cashier_id\": 1\n}"
+            },
+            "description": "Authenticates a supervisor and returns a short-lived authorization token (5-min TTL) scoped to the given permission_code. The POS uses this token in the X-Authorization-Token header when calling a restricted endpoint (e.g. POST /api/pos/returns).\n\nThe test script below auto-saves the token to the `authorization_token` environment/collection variable so the POS Returns request can use it immediately."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res && res.data && res.data.authorization_token) {",
+                  "  pm.collectionVariables.set(\"authorization_token\", res.data.authorization_token);",
+                  "  pm.environment.set(\"authorization_token\", res.data.authorization_token);",
+                  "  console.log(\"✅ authorization_token saved:\", res.data.permission_code, \"expires:\", res.data.expires_at);",
+                  "} else {",
+                  "  console.error(\"❌ No authorization_token in response\", JSON.stringify(res));",
+                  "}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -813,7 +862,7 @@
       "name": "POS Returns",
       "item": [
         {
-          "name": "Process Return",
+          "name": "Process Return (requires supervisor auth)",
           "request": {
             "method": "POST",
             "header": [
@@ -821,13 +870,24 @@
                 "key": "x-tenant-id",
                 "value": "{{tenant_id}}",
                 "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Authorization-Token",
+                "value": "{{authorization_token}}",
+                "type": "text"
               }
             ],
             "url": "{{base_url}}/api/pos/returns",
             "body": {
               "mode": "raw",
-              "raw": "{\"store_id\":1,\"session_id\":1,\"original_transaction_id\":1,\"return_reason\":\"Defective\",\"subtotal\":\"50\",\"tax_amount\":\"5\",\"total_refund_amount\":\"55\",\"refund_method\":\"cash\",\"lines\":[]}"
-            }
+              "raw": "{\"store_id\":1,\"cashier_id\":1,\"session_id\":1,\"original_transaction_id\":1,\"return_reason\":\"Defective product\",\"subtotal\":\"50.00\",\"tax_amount\":\"5.00\",\"total_refund_amount\":\"55.00\",\"refund_method\":\"cash\",\"lines\":[{\"product_id\":1,\"quantity\":\"1\",\"unit_price\":\"50.00\",\"refund_amount\":\"55.00\",\"return_to_stock\":true,\"condition\":\"good\"}]}"
+            },
+            "description": "Process a sales return. Requires a valid supervisor authorization token in X-Authorization-Token header.\n\n**Flow:**\n1. Run `Authorize Action (Supervisor Override)` first — the test script will auto-save the token.\n2. Run this request — the `{{authorization_token}}` variable is used automatically.\n\nThe `authorized_by_user_id` of the approving supervisor is stored in the return metadata for audit."
           }
         }
       ]
@@ -929,57 +989,6 @@
               "mode": "raw",
               "raw": "{}"
             }
-          }
-        },
-        {
-          "name": "Assign Cashiers to Terminal",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/api/pos/terminals/1/assign-cashiers",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cashier_ids\": [1, 2, 3]\n}"
-            }
-          }
-        },
-        {
-          "name": "Get Cashiers for Terminal",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/api/pos/terminals/1/cashiers"
-          }
-        },
-        {
-          "name": "Unassign Cashier from Terminal",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "x-tenant-id",
-                "value": "{{tenant_id}}",
-                "type": "text"
-              }
-            ],
-            "url": "{{base_url}}/api/pos/terminals/1/cashiers/1"
           }
         },
         {
