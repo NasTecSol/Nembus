@@ -181,6 +181,47 @@ definitions:
     required:
     - role_id
     type: object
+  handler.AuthorizeActionRequest:
+    properties:
+      cashier_id:
+        description: CashierID optionally binds the token to a specific cashier session
+          for audit purposes
+        example: 5
+        type: integer
+      permission_code:
+        description: PermissionCode is the permission the supervisor must hold (e.g.
+          "sales_return.process")
+        example: sales_return.process
+        type: string
+      supervisor_login:
+        example: supervisor_jane
+        type: string
+      supervisor_password:
+        example: securepassword123
+        type: string
+    required:
+    - permission_code
+    - supervisor_login
+    - supervisor_password
+    type: object
+  handler.AuthorizeActionResponse:
+    properties:
+      authorization_token:
+        example: eyJhbGci...
+        type: string
+      authorized_by_login:
+        example: supervisor_jane
+        type: string
+      authorized_by_user_id:
+        example: 42
+        type: integer
+      expires_at:
+        example: "2026-09-15T13:25:00Z"
+        type: string
+      permission_code:
+        example: sales_return.process
+        type: string
+    type: object
   handler.BPPriceContractResponse:
     properties:
       contract_price:
@@ -5704,6 +5745,50 @@ info:
   title: NEMBUS API
   version: "1.0"
 paths:
+  /api/auth/authorize-action:
+    post:
+      consumes:
+      - application/json
+      description: A supervisor authenticates with their own credentials and authorizes
+        a specific
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Supervisor credentials and permission code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.AuthorizeActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthorizeActionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Supervisor override authorization
+      tags:
+      - auth
   /api/auth/login:
     post:
       consumes:

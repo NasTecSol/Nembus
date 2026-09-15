@@ -307,3 +307,112 @@ func GenerateJWTToken(userID string, userLogin string) (string, error) {
 func GenerateDevToken(userID, userLogin string) (string, error) {
 	return GenerateJWTToken(userID, userLogin)
 }
+
+// GenerateAuthorizationToken mints a short-lived JWT for supervisor override actions.
+// The token is scoped to a specific permission code and optionally to a cashier ID.
+// Default expiry is 5 minutes — enough time for the cashier to complete the action.
+func GenerateAuthorizationToken(supervisorID int32, supervisorLogin, permissionCode string, cashierID *int32) (string, error) {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return "", errors.New("JWT_SECRET not configured")
+	}
+
+	expiresAt := time.Now().Add(5 * time.Minute)
+
+	claims := jwt.MapClaims{
+		"is_authorization_token": true,
+		"authorized_by_user_id":  supervisorID,
+		"authorized_by_login":    supervisorLogin,
+		"permission_code":        permissionCode,
+		"exp":                    expiresAt.Unix(),
+		"iat":                    time.Now().Unix(),
+	}
+	if cashierID != nil {
+		claims["cashier_id"] = *cashierID
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret))
+}
+
+// RequireAuthorizationToken returns a Gin middleware that enforces the presence of a valid
+// supervisor authorization token in the X-Authorization-Token header.
+// It checks:
+//  1. The token is a valid JWT signed with JWT_SECRET
+//  2. The claim "is_authorization_token" is true
+//  3. The claim "permission_code" matches the required code
+//  4. The token has not expired
+//
+// On success it stores "authorized_by_user_id" and "authorized_by_login" in the Gin context.
+func RequireAuthorizationToken(permissionCode string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := c.GetHeader("X-Authorization-Token")
+		if tokenString == "" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "supervisor authorization required — provide X-Authorization-Token header",
+			})
+			c.Abort()
+			return
+		}
+
+		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT_SECRET not configured"})
+			c.Abort()
+			return
+		}
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("unexpected signing method")
+			}
+			return []byte(jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired authorization token"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "malformed authorization token"})
+			c.Abort()
+			return
+		}
+
+		// Must be an authorization token, not a regular user session token
+		isAuthToken, _ := claims["is_authorization_token"].(bool)
+		if !isAuthToken {
+			c.JSON(http.StatusForbidden, gin.H{"error": "token is not a supervisor authorization token"})
+			c.Abort()
+			return
+		}
+
+		// Permission code in the token must match the required code for this route
+		tokenPermCode, _ := claims["permission_code"].(string)
+		if tokenPermCode != permissionCode {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":             "authorization token does not cover the required permission",
+				"required":          permissionCode,
+				"token_covers":      tokenPermCode,
+			})
+			c.Abort()
+			return
+		}
+
+		// Inject supervisor context for downstream handlers / audit logging
+		if userID, ok := claims["authorized_by_user_id"].(float64); ok {
+			c.Set("authorized_by_user_id", int32(userID))
+		}
+		if login, ok := claims["authorized_by_login"].(string); ok {
+			c.Set("authorized_by_login", login)
+		}
+		if cashierID, ok := claims["cashier_id"].(float64); ok {
+			c.Set("authorization_cashier_id", int32(cashierID))
+		}
+
+		c.Next()
+	}
+}
+
