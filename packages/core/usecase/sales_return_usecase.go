@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"time"
@@ -44,6 +45,9 @@ type ProcessReturnInput struct {
 	RefundMethod          string
 	RefundReference       string
 	Lines                 []ProcessReturnLineInput
+	// AuthorizedByUserID is set when a supervisor override was used to allow this return.
+	// It is stored in the sales_return metadata for audit trail purposes.
+	AuthorizedByUserID *int32
 }
 
 type ProcessReturnLineInput struct {
@@ -71,6 +75,17 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	taxAmount, _ := uc.repo.ParseNumeric(ctx, in.TaxAmount)
 	totalRefund, _ := uc.repo.ParseNumeric(ctx, in.TotalRefundAmount)
 
+	// Build metadata — include supervisor audit info when an override was used
+	var metaBytes []byte
+	if in.AuthorizedByUserID != nil {
+		type returnMeta struct {
+			AuthorizedByUserID int32 `json:"authorized_by_user_id"`
+		}
+		if b, err := json.Marshal(returnMeta{AuthorizedByUserID: *in.AuthorizedByUserID}); err == nil {
+			metaBytes = b
+		}
+	}
+
 	headerParams := repository.CreateSalesReturnParams{
 		ReturnNumber:      returnNumber,
 		StoreID:           in.StoreID,
@@ -82,7 +97,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		TotalRefundAmount: totalRefund,
 		RefundMethod:      pgtype.Text{String: in.RefundMethod, Valid: in.RefundMethod != ""},
 		RefundReference:   pgtype.Text{String: in.RefundReference, Valid: in.RefundReference != ""},
-		Metadata:          nil,
+		Metadata:          metaBytes,
 	}
 
 	if in.CashierID != nil {

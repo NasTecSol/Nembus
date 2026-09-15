@@ -27,6 +27,7 @@ type CreateTransferRequestInput struct {
 	TransferNumber       string                     `json:"transfer_number"`
 	FromStoreID          int32                      `json:"from_store_id"`
 	ToStoreID            int32                      `json:"to_store_id"`
+	IsStockReserved      bool                       `json:"is_stock_reserved"`
 	RequestedBy          *int32                     `json:"requested_by,omitempty"`
 	RequestDate          *time.Time                 `json:"request_date,omitempty"`
 	ExpectedDeliveryDate *time.Time                 `json:"expected_delivery_date,omitempty"`
@@ -47,24 +48,27 @@ type ReceiveTransferRequestInput struct {
 	ReceivedBy int32 `json:"received_by"`
 }
 
+type CancelTransferRequestInput struct {
+	CancelledBy int32 `json:"cancelled_by"`
+}
 
 type TransferRequestItemOutput struct {
-	ID                int32           `json:"id"`
-	TransferRequestID int32           `json:"transfer_request_id"`
-	ProductID         int32           `json:"product_id"`
-	ProductName       pgtype.Text     `json:"product_name"`
-	ProductSKU        pgtype.Text     `json:"product_sku"`
-	ProductVariantID  pgtype.Int4     `json:"product_variant_id"`
-	FromLocationID    pgtype.Int4     `json:"from_location_id"`
-	ToLocationID      pgtype.Int4     `json:"to_location_id"`
-	RequestedQuantity pgtype.Numeric  `json:"requested_quantity"`
-	ApprovedQuantity  pgtype.Numeric  `json:"approved_quantity"`
-	ShippedQuantity   pgtype.Numeric  `json:"shipped_quantity"`
-	ReceivedQuantity  pgtype.Numeric  `json:"received_quantity"`
-	UomID             pgtype.Int4     `json:"uom_id"`
-	UomName           pgtype.Text     `json:"uom_name"`
-	BatchNumber       pgtype.Text     `json:"batch_number"`
-	Notes             pgtype.Text     `json:"notes"`
+	ID                int32            `json:"id"`
+	TransferRequestID int32            `json:"transfer_request_id"`
+	ProductID         int32            `json:"product_id"`
+	ProductName       pgtype.Text      `json:"product_name"`
+	ProductSKU        pgtype.Text      `json:"product_sku"`
+	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
+	FromLocationID    pgtype.Int4      `json:"from_location_id"`
+	ToLocationID      pgtype.Int4      `json:"to_location_id"`
+	RequestedQuantity pgtype.Numeric   `json:"requested_quantity"`
+	ApprovedQuantity  pgtype.Numeric   `json:"approved_quantity"`
+	ShippedQuantity   pgtype.Numeric   `json:"shipped_quantity"`
+	ReceivedQuantity  pgtype.Numeric   `json:"received_quantity"`
+	UomID             pgtype.Int4      `json:"uom_id"`
+	UomName           pgtype.Text      `json:"uom_name"`
+	BatchNumber       pgtype.Text      `json:"batch_number"`
+	Notes             pgtype.Text      `json:"notes"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 }
 
@@ -77,12 +81,13 @@ type TransferRequestOutput struct {
 	ToStoreID            int32                       `json:"to_store_id"`
 	ToStoreName          pgtype.Text                 `json:"to_store_name"`
 	Status               string                      `json:"status"`
+	IsStockReserved      bool                        `json:"is_stock_reserved"`
 	RequestedBy          pgtype.Int4                 `json:"requested_by"`
 	RequestedByName      pgtype.Text                 `json:"requested_by_name"`
-	ApprovedBy          pgtype.Int4                 `json:"approved_by"`
-	ApprovedByName      pgtype.Text                 `json:"approved_by_name"`
-	ShippedBy           pgtype.Int4                 `json:"shipped_by"`
-	ReceivedBy          pgtype.Int4                 `json:"received_by"`
+	ApprovedBy           pgtype.Int4                 `json:"approved_by"`
+	ApprovedByName       pgtype.Text                 `json:"approved_by_name"`
+	ShippedBy            pgtype.Int4                 `json:"shipped_by"`
+	ReceivedBy           pgtype.Int4                 `json:"received_by"`
 	RequestDate          pgtype.Timestamp            `json:"request_date"`
 	ExpectedDeliveryDate pgtype.Date                 `json:"expected_delivery_date"`
 	ShippedAt            pgtype.Timestamp            `json:"shipped_at"`
@@ -139,16 +144,17 @@ func (uc *TransferRequestsUseCase) CreateTransferRequest(ctx context.Context, in
 	metaBytes, _ := json.Marshal(input.Metadata)
 
 	req, err := uc.repo.CreateTransferRequest(ctx, repository.CreateTransferRequestParams{
-		OrganizationID: input.OrganizationID,
-		TransferNumber: input.TransferNumber,
-		FromStoreID:    input.FromStoreID,
-		ToStoreID:      input.ToStoreID,
-		Status:         "draft",
-		RequestedBy:    utils.Int32ToPgInt4(input.RequestedBy),
-		RequestDate:    reqDate,
+		OrganizationID:       input.OrganizationID,
+		TransferNumber:       input.TransferNumber,
+		FromStoreID:          input.FromStoreID,
+		ToStoreID:            input.ToStoreID,
+		Status:               "draft",
+		IsStockReserved:      input.IsStockReserved,
+		RequestedBy:          utils.Int32ToPgInt4(input.RequestedBy),
+		RequestDate:          reqDate,
 		ExpectedDeliveryDate: utils.TimeToPgDate(input.ExpectedDeliveryDate),
-		Notes:          utils.StringToPgText(input.Notes),
-		Metadata:       metaBytes,
+		Notes:                utils.StringToPgText(input.Notes),
+		Metadata:             metaBytes,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -198,10 +204,11 @@ func (uc *TransferRequestsUseCase) CreateTransferRequest(ctx context.Context, in
 		FromStoreID:          req.FromStoreID,
 		ToStoreID:            req.ToStoreID,
 		Status:               req.Status,
+		IsStockReserved:      req.IsStockReserved,
 		RequestedBy:          req.RequestedBy,
-		ApprovedBy:          req.ApprovedBy,
-		ShippedBy:           req.ShippedBy,
-		ReceivedBy:          req.ReceivedBy,
+		ApprovedBy:           req.ApprovedBy,
+		ShippedBy:            req.ShippedBy,
+		ReceivedBy:           req.ReceivedBy,
 		RequestDate:          req.RequestDate,
 		ExpectedDeliveryDate: req.ExpectedDeliveryDate,
 		ShippedAt:            req.ShippedAt,
@@ -263,12 +270,13 @@ func (uc *TransferRequestsUseCase) GetTransferRequest(ctx context.Context, id in
 		ToStoreID:            tr.ToStoreID,
 		ToStoreName:          tr.ToStoreName,
 		Status:               tr.Status,
+		IsStockReserved:      tr.IsStockReserved,
 		RequestedBy:          tr.RequestedBy,
 		RequestedByName:      tr.RequestedByName,
-		ApprovedBy:          tr.ApprovedBy,
-		ApprovedByName:      tr.ApprovedByName,
-		ShippedBy:           tr.ShippedBy,
-		ReceivedBy:          tr.ReceivedBy,
+		ApprovedBy:           tr.ApprovedBy,
+		ApprovedByName:       tr.ApprovedByName,
+		ShippedBy:            tr.ShippedBy,
+		ReceivedBy:           tr.ReceivedBy,
 		RequestDate:          tr.RequestDate,
 		ExpectedDeliveryDate: tr.ExpectedDeliveryDate,
 		ShippedAt:            tr.ShippedAt,
@@ -308,10 +316,11 @@ func (uc *TransferRequestsUseCase) ListTransferRequestsByOrganization(ctx contex
 			ToStoreID:            r.ToStoreID,
 			ToStoreName:          r.ToStoreName,
 			Status:               r.Status,
+			IsStockReserved:      r.IsStockReserved,
 			RequestedBy:          r.RequestedBy,
-			ApprovedBy:          r.ApprovedBy,
-			ShippedBy:           r.ShippedBy,
-			ReceivedBy:          r.ReceivedBy,
+			ApprovedBy:           r.ApprovedBy,
+			ShippedBy:            r.ShippedBy,
+			ReceivedBy:           r.ReceivedBy,
 			RequestDate:          r.RequestDate,
 			ExpectedDeliveryDate: r.ExpectedDeliveryDate,
 			ShippedAt:            r.ShippedAt,
@@ -324,6 +333,85 @@ func (uc *TransferRequestsUseCase) ListTransferRequestsByOrganization(ctx contex
 	}
 
 	return utils.NewResponse(utils.CodeOK, "transfer requests fetched successfully", out)
+}
+
+func (uc *TransferRequestsUseCase) UpdateTransferRequest(ctx context.Context, id int32, input CreateTransferRequestInput) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	tr, err := uc.repo.GetTransferRequest(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "transfer request not found", nil)
+	}
+	if tr.Status != "draft" && tr.Status != "approved" {
+		return utils.NewResponse(utils.CodeBadReq, "only draft or approved transfer requests can be updated", nil)
+	}
+
+	// If currently approved and stock was reserved, release old allocation before updating items
+	if tr.Status == "approved" && tr.IsStockReserved {
+		relRes, err := uc.repo.CallReleaseTransferRequestReservation(ctx, id)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		if !relRes.Success {
+			return utils.NewResponse(utils.CodeBadReq, relRes.Message, nil)
+		}
+	}
+
+	metaBytes, _ := json.Marshal(input.Metadata)
+
+	_, err = uc.repo.UpdateTransferRequestHeader(ctx, repository.UpdateTransferRequestHeaderParams{
+		ID:                   id,
+		FromStoreID:          input.FromStoreID,
+		ToStoreID:            input.ToStoreID,
+		Notes:                utils.StringToPgText(input.Notes),
+		ExpectedDeliveryDate: utils.TimeToPgDate(input.ExpectedDeliveryDate),
+		Metadata:             metaBytes,
+		IsStockReserved:      pgtype.Bool{Bool: input.IsStockReserved, Valid: true},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	if len(input.Items) > 0 {
+		if err := uc.repo.DeleteTransferRequestItems(ctx, id); err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+
+		for _, item := range input.Items {
+			_, err := uc.repo.CreateTransferRequestItem(ctx, repository.CreateTransferRequestItemParams{
+				TransferRequestID: id,
+				ProductID:         item.ProductID,
+				ProductVariantID:  utils.Int32ToPgInt4(item.ProductVariantID),
+				FromLocationID:    utils.Int32ToPgInt4(item.FromLocationID),
+				ToLocationID:      utils.Int32ToPgInt4(item.ToLocationID),
+				RequestedQuantity: utils.Float64ToPgNumeric(item.RequestedQuantity),
+				ApprovedQuantity:  utils.Float64ToPgNumeric(0),
+				ShippedQuantity:   utils.Float64ToPgNumeric(0),
+				ReceivedQuantity:  utils.Float64ToPgNumeric(0),
+				UomID:             utils.Int32ToPgInt4(item.UomID),
+				BatchNumber:       utils.StringToPgText(item.BatchNumber),
+				Notes:             utils.StringToPgText(item.Notes),
+			})
+			if err != nil {
+				return utils.NewResponse(utils.CodeError, err.Error(), nil)
+			}
+		}
+	}
+
+	// If currently approved and new is_stock_reserved is true, allocate new stock reservation
+	if tr.Status == "approved" && input.IsStockReserved {
+		allocRes, err := uc.repo.CallAllocateTransferRequestReservation(ctx, id)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		if !allocRes.Success {
+			return utils.NewResponse(utils.CodeBadReq, allocRes.Message, nil)
+		}
+	}
+
+	return uc.GetTransferRequest(ctx, id)
 }
 
 func (uc *TransferRequestsUseCase) ApproveTransferRequest(ctx context.Context, id int32, approvedBy int32) *repository.Response {
@@ -372,6 +460,25 @@ func (uc *TransferRequestsUseCase) ReceiveTransferRequest(ctx context.Context, i
 	res, err := uc.repo.CallReceiveTransferRequest(ctx, repository.CallReceiveTransferRequestParams{
 		PTransferRequestID: id,
 		PReceivedBy:        receivedBy,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	if !res.Success {
+		return utils.NewResponse(utils.CodeBadReq, res.Message, nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, res.Message, nil)
+}
+
+func (uc *TransferRequestsUseCase) CancelTransferRequest(ctx context.Context, id int32, cancelledBy int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	res, err := uc.repo.CallCancelTransferRequest(ctx, repository.CallCancelTransferRequestParams{
+		PTransferRequestID: id,
+		PCancelledBy:       cancelledBy,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)

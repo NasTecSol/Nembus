@@ -189,6 +189,7 @@ CREATE TABLE transfer_requests (
     from_store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     to_store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    is_stock_reserved BOOLEAN NOT NULL DEFAULT false,
     requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     shipped_by INTEGER REFERENCES users(id) ON DELETE SET NULL,

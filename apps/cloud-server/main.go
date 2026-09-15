@@ -105,6 +105,10 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		authHandler := handler.NewAuthHandler(authUC)
 		auth.POST("/login", authHandler.Login)
+		// Supervisor override: authenticate a supervisor and obtain a short-lived
+		// authorization token for a restricted action (e.g. sales return).
+		// Does NOT require the cashier's JWT — the supervisor credentials are self-authenticating.
+		auth.POST("/authorize-action", authHandler.AuthorizeAction)
 	}
 
 	publicTenants := r.Group("/api/tenants")

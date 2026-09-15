@@ -24,6 +24,71 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/auth/authorize-action": {
+            "post": {
+                "description": "A supervisor authenticates with their own credentials and authorizes a specific",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Supervisor override authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Supervisor credentials and permission code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.AuthorizeActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AuthorizeActionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/login": {
             "post": {
                 "description": "Authenticate user and receive JWT token",
@@ -37207,6 +37272,82 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a draft transfer request header and itemized lines",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transfer-requests"
+                ],
+                "summary": "Update draft transfer request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Transfer Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Transfer request payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateTransferRequestDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.TransferRequestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/transfer-requests/{id}/approve": {
@@ -37256,6 +37397,78 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/handler.ApproveTransferRequestDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/transfer-requests/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancel transfer request and release reserved stock if applicable",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transfer-requests"
+                ],
+                "summary": "Cancel transfer request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Transfer Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cancellation payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CancelTransferRequestDTO"
                         }
                     }
                 ],
@@ -40393,6 +40606,59 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.AuthorizeActionRequest": {
+            "type": "object",
+            "required": [
+                "permission_code",
+                "supervisor_login",
+                "supervisor_password"
+            ],
+            "properties": {
+                "cashier_id": {
+                    "description": "CashierID optionally binds the token to a specific cashier session for audit purposes",
+                    "type": "integer",
+                    "example": 5
+                },
+                "permission_code": {
+                    "description": "PermissionCode is the permission the supervisor must hold (e.g. \"sales_return.process\")",
+                    "type": "string",
+                    "example": "sales_return.process"
+                },
+                "supervisor_login": {
+                    "type": "string",
+                    "example": "supervisor_jane"
+                },
+                "supervisor_password": {
+                    "type": "string",
+                    "example": "securepassword123"
+                }
+            }
+        },
+        "handler.AuthorizeActionResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_token": {
+                    "type": "string",
+                    "example": "eyJhbGci..."
+                },
+                "authorized_by_login": {
+                    "type": "string",
+                    "example": "supervisor_jane"
+                },
+                "authorized_by_user_id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-09-15T13:25:00Z"
+                },
+                "permission_code": {
+                    "type": "string",
+                    "example": "sales_return.process"
+                }
+            }
+        },
         "handler.BPPriceContractResponse": {
             "type": "object",
             "properties": {
@@ -40734,6 +41000,18 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-24T21:43:00Z"
+                }
+            }
+        },
+        "handler.CancelTransferRequestDTO": {
+            "type": "object",
+            "required": [
+                "cancelled_by"
+            ],
+            "properties": {
+                "cancelled_by": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -43649,6 +43927,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
+                "is_stock_reserved": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -46188,6 +46470,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 1
+                },
+                "is_stock_reserved": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "items": {
                     "type": "array",
