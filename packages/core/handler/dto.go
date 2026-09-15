@@ -2190,6 +2190,7 @@ type CreateTransferRequestDTO struct {
 	TransferNumber       string                   `json:"transfer_number" binding:"required" example:"TR-20260908-0001"`
 	FromStoreID          int32                    `json:"from_store_id" binding:"required" example:"1"`
 	ToStoreID            int32                    `json:"to_store_id" binding:"required" example:"2"`
+	IsStockReserved      bool                     `json:"is_stock_reserved,omitempty" example:"true"`
 	RequestedBy          *int32                   `json:"requested_by,omitempty" example:"1"`
 	RequestDate          *string                  `json:"request_date,omitempty" example:"2026-09-08"`
 	ExpectedDeliveryDate *string                  `json:"expected_delivery_date,omitempty" example:"2026-09-12"`
@@ -2229,6 +2230,7 @@ type TransferRequestResponse struct {
 	ToStoreID            int32                         `json:"to_store_id" example:"2"`
 	ToStoreName          *string                       `json:"to_store_name,omitempty" example:"Downtown Branch"`
 	Status               string                        `json:"status" example:"draft"`
+	IsStockReserved      bool                          `json:"is_stock_reserved" example:"true"`
 	RequestedBy          *int32                        `json:"requested_by,omitempty" example:"1"`
 	RequestedByName      *string                       `json:"requested_by_name,omitempty" example:"store_manager"`
 	ApprovedBy           *int32                        `json:"approved_by,omitempty"`
@@ -2299,5 +2301,10 @@ type ShipTransferRequestDTO struct {
 // ReceiveTransferRequestDTO represents receive request for a transfer request.
 type ReceiveTransferRequestDTO struct {
 	ReceivedBy int32 `json:"received_by" binding:"required" example:"1"`
+}
+
+// CancelTransferRequestDTO represents cancellation request for a transfer request.
+type CancelTransferRequestDTO struct {
+	CancelledBy int32 `json:"cancelled_by" binding:"required" example:"1"`
 }
 
