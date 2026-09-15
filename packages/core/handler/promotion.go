@@ -41,7 +41,7 @@ func (h *PromotionHandler) getRepositoryFromContext(c *gin.Context) *repository.
 
 // CreatePromotion handles POST /api/promotions
 // @Summary      Create promotion
-// @Description  Create a new promotion or coupon (all types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item)
+// @Description  Create a new promotion or coupon (all types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo)
 // @Tags         promotions
 // @Accept       json
 // @Produce      json
@@ -459,7 +459,7 @@ func (h *PromotionHandler) DeletePromotion(c *gin.Context) {
 
 // ApplyCoupon handles POST /api/promotions/apply-coupon
 // @Summary      Apply coupon to cart
-// @Description  Apply a coupon code to a cart. Validates constraints (min_order_amount, min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the appropriate discount. Supported types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item.
+// @Description  Apply a coupon code to a cart. Validates constraints (min_order_amount, min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the appropriate discount. Supported types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo.
 // @Tags         promotions
 // @Accept       json
 // @Produce      json
