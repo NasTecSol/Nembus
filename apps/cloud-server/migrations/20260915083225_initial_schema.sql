@@ -3004,6 +3004,139 @@ CREATE INDEX "idx_sales_returns_original_transaction" ON "public"."sales_returns
 CREATE INDEX "idx_sales_returns_status" ON "public"."sales_returns" ("status");
 -- Create index "idx_sales_returns_store_id" to table: "sales_returns"
 CREATE INDEX "idx_sales_returns_store_id" ON "public"."sales_returns" ("store_id");
+-- Create "waste_logs" table
+CREATE TABLE "public"."waste_logs" (
+  "id" serial NOT NULL,
+  "store_id" integer NOT NULL,
+  "product_id" integer NULL,
+  "menu_item_id" integer NULL,
+  "recipe_id" integer NULL,
+  "waste_source" character varying(30) NOT NULL DEFAULT 'kitchen',
+  "quantity" numeric(15,3) NOT NULL,
+  "uom_id" integer NULL,
+  "unit_cost" numeric(15,4) NULL DEFAULT 0,
+  "total_cost" numeric(15,2) NULL DEFAULT 0,
+  "reason" text NULL,
+  "logged_by" integer NULL,
+  "order_id" integer NULL,
+  "wasted_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "waste_logs_logged_by_fkey" FOREIGN KEY ("logged_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "waste_logs_menu_item_id_fkey" FOREIGN KEY ("menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "waste_logs_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."restaurant_orders" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "waste_logs_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "waste_logs_recipe_id_fkey" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "waste_logs_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "waste_logs_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
+);
+-- Create index "idx_waste_logs_menu_item_id" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_menu_item_id" ON "public"."waste_logs" ("menu_item_id");
+-- Create index "idx_waste_logs_order_id" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_order_id" ON "public"."waste_logs" ("order_id");
+-- Create index "idx_waste_logs_product_id" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_product_id" ON "public"."waste_logs" ("product_id");
+-- Create index "idx_waste_logs_recipe_id" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_recipe_id" ON "public"."waste_logs" ("recipe_id");
+-- Create index "idx_waste_logs_store_id" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_store_id" ON "public"."waste_logs" ("store_id");
+-- Create index "idx_waste_logs_store_source_date" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_store_source_date" ON "public"."waste_logs" ("store_id", "waste_source", "wasted_at");
+-- Create index "idx_waste_logs_waste_source" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_waste_source" ON "public"."waste_logs" ("waste_source");
+-- Create index "idx_waste_logs_wasted_at" to table: "waste_logs"
+CREATE INDEX "idx_waste_logs_wasted_at" ON "public"."waste_logs" ("wasted_at");
+-- Create "fn_trigger_process_sales_return" function
+CREATE FUNCTION "public"."fn_trigger_process_sales_return" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_store_id INT;
+    v_cost_price NUMERIC(15,4);
+    v_uom_id INT;
+    v_reason TEXT;
+BEGIN
+    -- Get store_id and return_reason from parent sales_returns header
+    SELECT store_id, COALESCE(return_reason, 'POS Sales Return') 
+    INTO v_store_id, v_reason 
+    FROM sales_returns 
+    WHERE id = NEW.return_id;
+
+    -- Fetch cost_price and uom_id from original pos_transaction_lines if available
+    IF NEW.original_line_id IS NOT NULL THEN
+        SELECT COALESCE(cost_price, 0), uom_id 
+        INTO v_cost_price, v_uom_id 
+        FROM pos_transaction_lines 
+        WHERE id = NEW.original_line_id;
+    ELSE
+        v_cost_price := 0;
+        v_uom_id := NULL;
+    END IF;
+
+    -- CASE 1: Return to stock = TRUE and Condition = 'good' -> Restock into inventory
+    IF NEW.return_to_stock = true AND (NEW.condition IS NULL OR NEW.condition = 'good') THEN
+        UPDATE inventory_stock
+        SET quantity_on_hand = quantity_on_hand + NEW.quantity,
+            quantity_available = quantity_available + NEW.quantity,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = NEW.product_id
+          AND (product_variant_id = NEW.product_variant_id OR (product_variant_id IS NULL AND NEW.product_variant_id IS NULL))
+          AND store_id = v_store_id;
+
+        -- Record stock movement as a return
+        INSERT INTO stock_movements (
+            movement_type, reference_type, reference_id, product_id, product_variant_id,
+            to_store_id, quantity, uom_id, batch_number, serial_number, metadata
+        ) VALUES (
+            'return', 'sales_return', NEW.return_id, NEW.product_id, NEW.product_variant_id,
+            v_store_id, NEW.quantity, v_uom_id, NEW.batch_number, NEW.serial_number,
+            jsonb_build_object('return_line_id', NEW.id, 'condition', COALESCE(NEW.condition, 'good'))
+        );
+
+    -- CASE 2: Item is DAMAGED, DEFECTIVE, or OPENED (return_to_stock = false) -> Log to waste_logs
+    ELSE
+        INSERT INTO waste_logs (
+            store_id, product_id, waste_source, quantity, uom_id, unit_cost, total_cost,
+            reason, metadata
+        ) VALUES (
+            v_store_id, NEW.product_id, 'register', NEW.quantity, v_uom_id, v_cost_price,
+            (v_cost_price * NEW.quantity),
+            CONCAT('Customer Return - Condition: ', COALESCE(NEW.condition, 'damaged'), '. Reason: ', v_reason),
+            jsonb_build_object('return_id', NEW.return_id, 'return_line_id', NEW.id, 'condition', NEW.condition)
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+-- Create "sales_return_lines" table
+CREATE TABLE "public"."sales_return_lines" (
+  "id" serial NOT NULL,
+  "return_id" integer NOT NULL,
+  "product_id" integer NOT NULL,
+  "product_variant_id" integer NULL,
+  "original_line_id" integer NULL,
+  "quantity" numeric(15,3) NOT NULL,
+  "unit_price" numeric(15,4) NOT NULL,
+  "refund_amount" numeric(15,2) NOT NULL,
+  "return_to_stock" boolean NULL DEFAULT true,
+  "serial_number" character varying(100) NULL,
+  "batch_number" character varying(100) NULL,
+  "condition" character varying(50) NULL DEFAULT 'good',
+  "line_number" integer NULL,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "sales_return_lines_original_line_id_fkey" FOREIGN KEY ("original_line_id") REFERENCES "public"."pos_transaction_lines" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "sales_return_lines_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "sales_return_lines_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "sales_return_lines_return_id_fkey" FOREIGN KEY ("return_id") REFERENCES "public"."sales_returns" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "sales_return_lines_condition_check" CHECK ((condition)::text = ANY ((ARRAY['good'::character varying, 'damaged'::character varying, 'defective'::character varying, 'opened'::character varying])::text[]))
+);
+-- Create index "idx_sales_return_lines_return_id" to table: "sales_return_lines"
+CREATE INDEX "idx_sales_return_lines_return_id" ON "public"."sales_return_lines" ("return_id");
+-- Create trigger "trg_process_sales_return"
+CREATE TRIGGER "trg_process_sales_return" AFTER INSERT ON "public"."sales_return_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_process_sales_return"();
 -- Create trigger "trg_sales_returns_updated_at"
 CREATE TRIGGER "trg_sales_returns_updated_at" BEFORE UPDATE ON "public"."sales_returns" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "trg_stock_reservations_updated_at"
@@ -3045,6 +3178,7 @@ CREATE TABLE "public"."transfer_requests" (
   "from_store_id" integer NOT NULL,
   "to_store_id" integer NOT NULL,
   "status" character varying(50) NOT NULL DEFAULT 'draft',
+  "is_stock_reserved" boolean NOT NULL DEFAULT false,
   "requested_by" integer NULL,
   "approved_by" integer NULL,
   "shipped_by" integer NULL,
@@ -3284,10 +3418,89 @@ CREATE TRIGGER "update_ui_settings_updated_at" BEFORE UPDATE ON "public"."ui_set
 CREATE TRIGGER "trg_users_updated_at" BEFORE UPDATE ON "public"."users" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "update_users_updated_at"
 CREATE TRIGGER "update_users_updated_at" BEFORE UPDATE ON "public"."users" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create "fn_allocate_transfer_request_reservation" function
+CREATE FUNCTION "public"."fn_allocate_transfer_request_reservation" ("p_transfer_request_id" integer) RETURNS TABLE ("success" boolean, "message" text) LANGUAGE plpgsql AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_available DECIMAL(15,3);
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+    v_expires_at TIMESTAMP;
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.is_stock_reserved AND v_req.status = 'approved' THEN
+        IF v_req.expected_delivery_date IS NOT NULL THEN
+            v_expires_at := (v_req.expected_delivery_date::TIMESTAMP + INTERVAL '1 day');
+        ELSE
+            v_expires_at := (CURRENT_DATE + INTERVAL '1 day');
+        END IF;
+
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_item.product_id);
+                RETURN;
+            END IF;
+
+            -- Allocate stock at source store
+            UPDATE inventory_stock
+            SET quantity_allocated = quantity_allocated + v_base_qty,
+                quantity_available = quantity_available - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            -- Log reservation row with expires_at
+            INSERT INTO stock_reservations (
+                reservation_number, product_id, product_variant_id, store_id,
+                reference_type, reference_id, quantity_reserved, expires_at, status, reserved_by
+            ) VALUES (
+                'TR-RES-' || p_transfer_request_id || '-' || v_item.id || '-' || FLOOR(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)),
+                v_item.product_id, v_item.product_variant_id, v_req.from_store_id,
+                'transfer', p_transfer_request_id::text, v_base_qty, v_expires_at, 'active', v_req.approved_by
+            );
+        END LOOP;
+    END IF;
+
+    RETURN QUERY SELECT true, 'Reservation allocated successfully.';
+END;
+$$;
 -- Create "fn_approve_transfer_request" function
 CREATE FUNCTION "public"."fn_approve_transfer_request" ("p_transfer_request_id" integer, "p_approved_by" integer) RETURNS TABLE ("success" boolean, "message" text) LANGUAGE plpgsql AS $$
 DECLARE
     v_req RECORD;
+    v_item RECORD;
+    v_available DECIMAL(15,3);
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+    v_is_reserved BOOLEAN;
+    v_expires_at TIMESTAMP;
 BEGIN
     SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
     IF v_req IS NULL THEN
@@ -3298,6 +3511,61 @@ BEGIN
     IF v_req.status NOT IN ('draft', 'pending_approval') THEN
         RETURN QUERY SELECT false, 'Transfer request can only be approved from draft or pending_approval state.';
         RETURN;
+    END IF;
+
+    v_is_reserved := COALESCE(v_req.is_stock_reserved, false);
+
+    -- Expiry timestamp: expected_delivery_date end of day if present, else midnight tonight (CURRENT_DATE + 1 day)
+    IF v_req.expected_delivery_date IS NOT NULL THEN
+        v_expires_at := (v_req.expected_delivery_date::TIMESTAMP + INTERVAL '1 day');
+    ELSE
+        v_expires_at := (CURRENT_DATE + INTERVAL '1 day');
+    END IF;
+
+    IF v_is_reserved THEN
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_item.product_id);
+                RETURN;
+            END IF;
+
+            -- Allocate stock at source store
+            UPDATE inventory_stock
+            SET quantity_allocated = quantity_allocated + v_base_qty,
+                quantity_available = quantity_available - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            -- Log reservation row with expires_at
+            INSERT INTO stock_reservations (
+                reservation_number, product_id, product_variant_id, store_id,
+                reference_type, reference_id, quantity_reserved, expires_at, status, reserved_by
+            ) VALUES (
+                'TR-RES-' || p_transfer_request_id || '-' || v_item.id || '-' || FLOOR(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)),
+                v_item.product_id, v_item.product_variant_id, v_req.from_store_id,
+                'transfer', p_transfer_request_id::text, v_base_qty, v_expires_at, 'active', p_approved_by
+            );
+        END LOOP;
     END IF;
 
     UPDATE transfer_requests
@@ -3440,6 +3708,101 @@ BEGIN
       AND vb.is_optional  = false;
 
     RETURN v_total_cost;
+END;
+$$;
+-- Create "fn_cancel_transfer_request" function
+CREATE FUNCTION "public"."fn_cancel_transfer_request" ("p_transfer_request_id" integer, "p_cancelled_by" integer) RETURNS TABLE ("success" boolean, "message" text) LANGUAGE plpgsql AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.status IN ('shipped', 'received', 'cancelled') THEN
+        RETURN QUERY SELECT false, 'Cannot cancel a transfer request that is already shipped, received, or cancelled.';
+        RETURN;
+    END IF;
+
+    IF v_req.is_stock_reserved AND v_req.status = 'approved' THEN
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            -- Release allocated stock
+            UPDATE inventory_stock
+            SET quantity_allocated = GREATEST(0, quantity_allocated - v_base_qty),
+                quantity_available = quantity_available + v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            UPDATE stock_reservations
+            SET status = 'cancelled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reference_type = 'transfer'
+              AND reference_id = p_transfer_request_id::text
+              AND product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND status = 'active';
+        END LOOP;
+    END IF;
+
+    UPDATE transfer_requests
+    SET status = 'cancelled',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_transfer_request_id;
+
+    RETURN QUERY SELECT true, 'Transfer request cancelled successfully.';
+END;
+$$;
+-- Create "fn_expire_stock_reservations" function
+CREATE FUNCTION "public"."fn_expire_stock_reservations" () RETURNS TABLE ("success" boolean, "message" text, "expired_count" integer) LANGUAGE plpgsql AS $$
+DECLARE
+    v_res RECORD;
+    v_count INTEGER := 0;
+BEGIN
+    FOR v_res IN
+        SELECT * FROM stock_reservations
+        WHERE status = 'active'
+          AND expires_at IS NOT NULL
+          AND expires_at <= CURRENT_TIMESTAMP
+        FOR UPDATE
+    LOOP
+        -- Release allocated inventory stock back to available stock
+        UPDATE inventory_stock
+        SET quantity_allocated = GREATEST(0, quantity_allocated - v_res.quantity_reserved),
+            quantity_available = quantity_available + v_res.quantity_reserved,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = v_res.product_id
+          AND (product_variant_id = v_res.product_variant_id OR (product_variant_id IS NULL AND v_res.product_variant_id IS NULL))
+          AND store_id = v_res.store_id;
+
+        -- Update reservation status to expired
+        UPDATE stock_reservations
+        SET status = 'expired',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = v_res.id;
+
+        v_count := v_count + 1;
+    END LOOP;
+
+    RETURN QUERY SELECT true, format('%s stock reservations expired and released.', v_count), v_count;
 END;
 $$;
 -- Create "menu_item_modifiers" table
@@ -3609,49 +3972,22 @@ BEGIN
     ORDER BY vm.category_display_order, vm.display_order;
 END;
 $$;
--- Create "waste_logs" table
-CREATE TABLE "public"."waste_logs" (
-  "id" serial NOT NULL,
-  "store_id" integer NOT NULL,
-  "product_id" integer NULL,
-  "menu_item_id" integer NULL,
-  "recipe_id" integer NULL,
-  "waste_source" character varying(30) NOT NULL DEFAULT 'kitchen',
-  "quantity" numeric(15,3) NOT NULL,
-  "uom_id" integer NULL,
-  "unit_cost" numeric(15,4) NULL DEFAULT 0,
-  "total_cost" numeric(15,2) NULL DEFAULT 0,
-  "reason" text NULL,
-  "logged_by" integer NULL,
-  "order_id" integer NULL,
-  "wasted_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  "metadata" jsonb NULL DEFAULT '{}',
-  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "waste_logs_logged_by_fkey" FOREIGN KEY ("logged_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "waste_logs_menu_item_id_fkey" FOREIGN KEY ("menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "waste_logs_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."restaurant_orders" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "waste_logs_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "waste_logs_recipe_id_fkey" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "waste_logs_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "waste_logs_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
-);
--- Create index "idx_waste_logs_menu_item_id" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_menu_item_id" ON "public"."waste_logs" ("menu_item_id");
--- Create index "idx_waste_logs_order_id" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_order_id" ON "public"."waste_logs" ("order_id");
--- Create index "idx_waste_logs_product_id" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_product_id" ON "public"."waste_logs" ("product_id");
--- Create index "idx_waste_logs_recipe_id" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_recipe_id" ON "public"."waste_logs" ("recipe_id");
--- Create index "idx_waste_logs_store_id" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_store_id" ON "public"."waste_logs" ("store_id");
--- Create index "idx_waste_logs_store_source_date" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_store_source_date" ON "public"."waste_logs" ("store_id", "waste_source", "wasted_at");
--- Create index "idx_waste_logs_waste_source" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_waste_source" ON "public"."waste_logs" ("waste_source");
--- Create index "idx_waste_logs_wasted_at" to table: "waste_logs"
-CREATE INDEX "idx_waste_logs_wasted_at" ON "public"."waste_logs" ("wasted_at");
+-- Create "fn_get_returnable_quantity" function
+CREATE FUNCTION "public"."fn_get_returnable_quantity" ("p_original_line_id" integer) RETURNS numeric LANGUAGE plpgsql AS $$
+DECLARE
+    v_orig_qty NUMERIC(15,3);
+    v_ret_qty NUMERIC(15,3);
+BEGIN
+    SELECT quantity INTO v_orig_qty FROM pos_transaction_lines WHERE id = p_original_line_id;
+    IF v_orig_qty IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    SELECT COALESCE(SUM(quantity), 0) INTO v_ret_qty FROM sales_return_lines WHERE original_line_id = p_original_line_id;
+
+    RETURN GREATEST(0, v_orig_qty - v_ret_qty);
+END;
+$$;
 -- Create "fn_get_waste_report" function
 CREATE FUNCTION "public"."fn_get_waste_report" ("p_store_id" integer, "p_from_date" date, "p_to_date" date, "p_waste_source" character varying DEFAULT NULL::character varying) RETURNS TABLE ("waste_date" date, "waste_source" character varying, "product_id" integer, "product_name" character varying, "menu_item_id" integer, "menu_item_name" character varying, "quantity" numeric, "uom_code" character varying, "total_cost" numeric, "reason" text, "logged_by_name" character varying) LANGUAGE plpgsql AS $$
 BEGIN
@@ -4978,6 +5314,57 @@ BEGIN
     ON CONFLICT DO NOTHING;
 END;
 $$;
+-- Create "fn_release_transfer_request_reservation" function
+CREATE FUNCTION "public"."fn_release_transfer_request_reservation" ("p_transfer_request_id" integer) RETURNS TABLE ("success" boolean, "message" text) LANGUAGE plpgsql AS $$
+DECLARE
+    v_req RECORD;
+    v_item RECORD;
+    v_qty DECIMAL(15,3);
+    v_uom_code VARCHAR;
+    v_base_qty DECIMAL(15,3);
+BEGIN
+    SELECT * INTO v_req FROM transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+    IF v_req IS NULL THEN
+        RETURN QUERY SELECT false, 'Transfer request not found.';
+        RETURN;
+    END IF;
+
+    IF v_req.is_stock_reserved AND v_req.status = 'approved' THEN
+        FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
+            v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
+            IF v_qty <= 0 THEN
+                CONTINUE;
+            END IF;
+
+            SELECT code INTO v_uom_code FROM units_of_measure WHERE id = v_item.uom_id;
+            v_base_qty := fn_convert_uom_quantity(v_item.product_id, v_uom_code, v_qty);
+            IF v_base_qty IS NULL THEN
+                v_base_qty := v_qty;
+            END IF;
+
+            -- Release allocated stock back to available stock at source store
+            UPDATE inventory_stock
+            SET quantity_allocated = GREATEST(0, quantity_allocated - v_base_qty),
+                quantity_available = quantity_available + v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
+
+            UPDATE stock_reservations
+            SET status = 'cancelled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reference_type = 'transfer'
+              AND reference_id = p_transfer_request_id::text
+              AND product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND status = 'active';
+        END LOOP;
+    END IF;
+
+    RETURN QUERY SELECT true, 'Reservation released successfully.';
+END;
+$$;
 -- Create "fn_ship_transfer_request" function
 CREATE FUNCTION "public"."fn_ship_transfer_request" ("p_transfer_request_id" integer, "p_shipped_by" integer) RETURNS TABLE ("success" boolean, "message" text) LANGUAGE plpgsql AS $$
 DECLARE
@@ -5014,27 +5401,46 @@ BEGIN
             v_base_qty := v_qty;
         END IF;
 
-        -- Check available stock at source using v_base_qty
-        SELECT quantity_available INTO v_available
-        FROM inventory_stock
-        WHERE product_id = v_item.product_id
-          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
-          AND store_id = v_req.from_store_id
-        FOR UPDATE;
+        IF v_req.is_stock_reserved THEN
+            -- Reserved mode: clear allocated and deduct on_hand
+            UPDATE inventory_stock
+            SET quantity_allocated = GREATEST(0, quantity_allocated - v_base_qty),
+                quantity_on_hand = quantity_on_hand - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
 
-        IF v_available IS NULL OR v_available < v_base_qty THEN
-            RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
-            RETURN;
+            UPDATE stock_reservations
+            SET status = 'fulfilled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reference_type = 'transfer'
+              AND reference_id = p_transfer_request_id::text
+              AND product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND status = 'active';
+        ELSE
+            -- Default unreserved mode: check available and deduct both on_hand & available
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
+                RETURN;
+            END IF;
+
+            UPDATE inventory_stock
+            SET quantity_on_hand = quantity_on_hand - v_base_qty,
+                quantity_available = quantity_available - v_base_qty,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE product_id = v_item.product_id
+              AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id;
         END IF;
-
-        -- Deduct from source store using v_base_qty
-        UPDATE inventory_stock
-        SET quantity_on_hand = quantity_on_hand - v_base_qty,
-            quantity_available = quantity_available - v_base_qty,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE product_id = v_item.product_id
-          AND (product_variant_id = v_item.product_variant_id OR (product_variant_id IS NULL AND v_item.product_variant_id IS NULL))
-          AND store_id = v_req.from_store_id;
 
         -- Increment quantity_in_transit at destination store using v_base_qty
         UPDATE inventory_stock
@@ -5594,33 +6000,6 @@ CREATE TABLE "public"."sales_order_lines" (
 CREATE INDEX "idx_sales_order_lines_product_id" ON "public"."sales_order_lines" ("product_id");
 -- Create index "idx_sales_order_lines_sales_order_id" to table: "sales_order_lines"
 CREATE INDEX "idx_sales_order_lines_sales_order_id" ON "public"."sales_order_lines" ("sales_order_id");
--- Create "sales_return_lines" table
-CREATE TABLE "public"."sales_return_lines" (
-  "id" serial NOT NULL,
-  "return_id" integer NOT NULL,
-  "product_id" integer NOT NULL,
-  "product_variant_id" integer NULL,
-  "original_line_id" integer NULL,
-  "quantity" numeric(15,3) NOT NULL,
-  "unit_price" numeric(15,4) NOT NULL,
-  "refund_amount" numeric(15,2) NOT NULL,
-  "return_to_stock" boolean NULL DEFAULT true,
-  "serial_number" character varying(100) NULL,
-  "batch_number" character varying(100) NULL,
-  "condition" character varying(50) NULL DEFAULT 'good',
-  "line_number" integer NULL,
-  "metadata" jsonb NULL DEFAULT '{}',
-  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "sales_return_lines_original_line_id_fkey" FOREIGN KEY ("original_line_id") REFERENCES "public"."pos_transaction_lines" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "sales_return_lines_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "sales_return_lines_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
-  CONSTRAINT "sales_return_lines_return_id_fkey" FOREIGN KEY ("return_id") REFERENCES "public"."sales_returns" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "sales_return_lines_condition_check" CHECK ((condition)::text = ANY ((ARRAY['good'::character varying, 'damaged'::character varying, 'defective'::character varying, 'opened'::character varying])::text[]))
-);
--- Create index "idx_sales_return_lines_return_id" to table: "sales_return_lines"
-CREATE INDEX "idx_sales_return_lines_return_id" ON "public"."sales_return_lines" ("return_id");
 -- Create "submenu_permissions" table
 CREATE TABLE "public"."submenu_permissions" (
   "id" serial NOT NULL,

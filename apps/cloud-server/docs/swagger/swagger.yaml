@@ -426,6 +426,14 @@ definitions:
         example: "2026-01-24T21:43:00Z"
         type: string
     type: object
+  handler.CancelTransferRequestDTO:
+    properties:
+      cancelled_by:
+        example: 1
+        type: integer
+    required:
+    - cancelled_by
+    type: object
   handler.CashierResponse:
     properties:
       cashier_code:
@@ -2516,6 +2524,9 @@ definitions:
       from_store_id:
         example: 1
         type: integer
+      is_stock_reserved:
+        example: true
+        type: boolean
       items:
         items:
           $ref: '#/definitions/handler.TransferRequestItemDTO'
@@ -4354,6 +4365,9 @@ definitions:
       id:
         example: 1
         type: integer
+      is_stock_reserved:
+        example: true
+        type: boolean
       items:
         items:
           $ref: '#/definitions/handler.TransferRequestItemResponse'
@@ -30046,6 +30060,56 @@ paths:
       summary: Get transfer request by ID
       tags:
       - transfer-requests
+    put:
+      consumes:
+      - application/json
+      description: Update a draft transfer request header and itemized lines
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Transfer Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Transfer request payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateTransferRequestDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TransferRequestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update draft transfer request
+      tags:
+      - transfer-requests
   /api/transfer-requests/{id}/approve:
     post:
       consumes:
@@ -30092,6 +30156,53 @@ paths:
       security:
       - BearerAuth: []
       summary: Approve transfer request
+      tags:
+      - transfer-requests
+  /api/transfer-requests/{id}/cancel:
+    post:
+      consumes:
+      - application/json
+      description: Cancel transfer request and release reserved stock if applicable
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Transfer Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Cancellation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CancelTransferRequestDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel transfer request
       tags:
       - transfer-requests
   /api/transfer-requests/{id}/receive:

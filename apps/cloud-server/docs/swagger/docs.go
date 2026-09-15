@@ -37207,6 +37207,82 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a draft transfer request header and itemized lines",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transfer-requests"
+                ],
+                "summary": "Update draft transfer request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Transfer Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Transfer request payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateTransferRequestDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.TransferRequestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/transfer-requests/{id}/approve": {
@@ -37256,6 +37332,78 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/handler.ApproveTransferRequestDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/transfer-requests/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancel transfer request and release reserved stock if applicable",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transfer-requests"
+                ],
+                "summary": "Cancel transfer request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Transfer Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cancellation payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CancelTransferRequestDTO"
                         }
                     }
                 ],
@@ -40737,6 +40885,18 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.CancelTransferRequestDTO": {
+            "type": "object",
+            "required": [
+                "cancelled_by"
+            ],
+            "properties": {
+                "cancelled_by": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.CashierResponse": {
             "type": "object",
             "properties": {
@@ -43649,6 +43809,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
+                "is_stock_reserved": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -46188,6 +46352,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 1
+                },
+                "is_stock_reserved": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "items": {
                     "type": "array",

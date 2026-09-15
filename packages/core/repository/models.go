@@ -2167,6 +2167,7 @@ type TransferRequest struct {
 	FromStoreID          int32            `json:"from_store_id"`
 	ToStoreID            int32            `json:"to_store_id"`
 	Status               string           `json:"status"`
+	IsStockReserved      bool             `json:"is_stock_reserved"`
 	RequestedBy          pgtype.Int4      `json:"requested_by"`
 	ApprovedBy           pgtype.Int4      `json:"approved_by"`
 	ShippedBy            pgtype.Int4      `json:"shipped_by"`
