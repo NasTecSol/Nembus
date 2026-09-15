@@ -162,7 +162,7 @@ CREATE TABLE promotions (
     code                  VARCHAR(50) NOT NULL,
     name                  VARCHAR(255) NOT NULL,
     description           TEXT,
-    promotion_type        VARCHAR(50) NOT NULL CHECK (promotion_type IN ('percentage_discount','fixed_discount','bogo','buy_x_get_y','free_item','bundle_price','points_multiplier','happy_hour')),
+    promotion_type        VARCHAR(50) NOT NULL CHECK (promotion_type IN ('percentage_discount','fixed_discount','bogo','buy_x_get_y','free_item','bundle_price','points_multiplier','happy_hour','bucket_combo')),
     -- FIX #16: Action metadata for complex rules
     action_metadata       JSONB DEFAULT '{}',
     -- FIX #15: Scheduling
