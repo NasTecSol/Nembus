@@ -18,38 +18,41 @@ INSERT INTO promotions (
     organization_id, code, name, description, promotion_type,
     action_metadata, valid_from, valid_to, schedule_json,
     applies_to, target_product_ids, target_category_ids,
+    target_customer_types, target_customer_tiers,
     min_order_amount, min_quantity, coupon_code,
     usage_limit, usage_per_customer, discount_value, is_stackable, is_active,
     store_ids, created_by, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
-) RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+) RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
 `
 
 type CreatePromotionParams struct {
-	OrganizationID    int32            `json:"organization_id"`
-	Code              string           `json:"code"`
-	Name              string           `json:"name"`
-	Description       pgtype.Text      `json:"description"`
-	PromotionType     string           `json:"promotion_type"`
-	ActionMetadata    json.RawMessage  `json:"action_metadata"`
-	ValidFrom         pgtype.Timestamp `json:"valid_from"`
-	ValidTo           pgtype.Timestamp `json:"valid_to"`
-	ScheduleJson      json.RawMessage  `json:"schedule_json"`
-	AppliesTo         pgtype.Text      `json:"applies_to"`
-	TargetProductIds  []int32          `json:"target_product_ids"`
-	TargetCategoryIds []int32          `json:"target_category_ids"`
-	MinOrderAmount    pgtype.Numeric   `json:"min_order_amount"`
-	MinQuantity       pgtype.Numeric   `json:"min_quantity"`
-	CouponCode        pgtype.Text      `json:"coupon_code"`
-	UsageLimit        pgtype.Int4      `json:"usage_limit"`
-	UsagePerCustomer  pgtype.Int4      `json:"usage_per_customer"`
-	DiscountValue     pgtype.Numeric   `json:"discount_value"`
-	IsStackable       pgtype.Bool      `json:"is_stackable"`
-	IsActive          pgtype.Bool      `json:"is_active"`
-	StoreIds          []int32          `json:"store_ids"`
-	CreatedBy         pgtype.Int4      `json:"created_by"`
-	Metadata          json.RawMessage  `json:"metadata"`
+	OrganizationID      int32            `json:"organization_id"`
+	Code                string           `json:"code"`
+	Name                string           `json:"name"`
+	Description         pgtype.Text      `json:"description"`
+	PromotionType       string           `json:"promotion_type"`
+	ActionMetadata      json.RawMessage  `json:"action_metadata"`
+	ValidFrom           pgtype.Timestamp `json:"valid_from"`
+	ValidTo             pgtype.Timestamp `json:"valid_to"`
+	ScheduleJson        json.RawMessage  `json:"schedule_json"`
+	AppliesTo           pgtype.Text      `json:"applies_to"`
+	TargetProductIds    []int32          `json:"target_product_ids"`
+	TargetCategoryIds   []int32          `json:"target_category_ids"`
+	TargetCustomerTypes []string         `json:"target_customer_types"`
+	TargetCustomerTiers []string         `json:"target_customer_tiers"`
+	MinOrderAmount      pgtype.Numeric   `json:"min_order_amount"`
+	MinQuantity         pgtype.Numeric   `json:"min_quantity"`
+	CouponCode          pgtype.Text      `json:"coupon_code"`
+	UsageLimit          pgtype.Int4      `json:"usage_limit"`
+	UsagePerCustomer    pgtype.Int4      `json:"usage_per_customer"`
+	DiscountValue       pgtype.Numeric   `json:"discount_value"`
+	IsStackable         pgtype.Bool      `json:"is_stackable"`
+	IsActive            pgtype.Bool      `json:"is_active"`
+	StoreIds            []int32          `json:"store_ids"`
+	CreatedBy           pgtype.Int4      `json:"created_by"`
+	Metadata            json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
@@ -70,6 +73,8 @@ func (q *Queries) CreatePromotion(ctx context.Context, arg CreatePromotionParams
 		arg.AppliesTo,
 		arg.TargetProductIds,
 		arg.TargetCategoryIds,
+		arg.TargetCustomerTypes,
+		arg.TargetCustomerTiers,
 		arg.MinOrderAmount,
 		arg.MinQuantity,
 		arg.CouponCode,
@@ -98,6 +103,7 @@ func (q *Queries) CreatePromotion(ctx context.Context, arg CreatePromotionParams
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,
@@ -127,7 +133,7 @@ func (q *Queries) DeletePromotion(ctx context.Context, id int32) error {
 }
 
 const getActivePromotionByCouponCode = `-- name: GetActivePromotionByCouponCode :one
-SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
+SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
 WHERE coupon_code = $1
   AND organization_id = $2
   AND is_active = true
@@ -161,6 +167,7 @@ func (q *Queries) GetActivePromotionByCouponCode(ctx context.Context, arg GetAct
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,
@@ -180,7 +187,7 @@ func (q *Queries) GetActivePromotionByCouponCode(ctx context.Context, arg GetAct
 }
 
 const getPromotion = `-- name: GetPromotion :one
-SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
+SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
 WHERE id = $1
 `
 
@@ -202,6 +209,7 @@ func (q *Queries) GetPromotion(ctx context.Context, id int32) (Promotion, error)
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,
@@ -221,7 +229,7 @@ func (q *Queries) GetPromotion(ctx context.Context, id int32) (Promotion, error)
 }
 
 const getPromotionByCode = `-- name: GetPromotionByCode :one
-SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
+SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
 WHERE code = $1
   AND organization_id = $2
 `
@@ -249,6 +257,7 @@ func (q *Queries) GetPromotionByCode(ctx context.Context, arg GetPromotionByCode
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,
@@ -272,7 +281,7 @@ UPDATE promotions
 SET usage_count = usage_count + 1,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
+RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
 `
 
 // Atomically increments usage_count. Call this during ConvertCartToOrder.
@@ -294,6 +303,7 @@ func (q *Queries) IncrementPromotionUsage(ctx context.Context, id int32) (Promot
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,
@@ -313,7 +323,7 @@ func (q *Queries) IncrementPromotionUsage(ctx context.Context, id int32) (Promot
 }
 
 const listActivePromotions = `-- name: ListActivePromotions :many
-SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
+SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
 WHERE organization_id = $1
   AND is_active = true
 ORDER BY created_at DESC
@@ -343,6 +353,7 @@ func (q *Queries) ListActivePromotions(ctx context.Context, organizationID int32
 			&i.TargetProductIds,
 			&i.TargetCategoryIds,
 			&i.TargetCustomerTypes,
+			&i.TargetCustomerTiers,
 			&i.MinOrderAmount,
 			&i.MinQuantity,
 			&i.CouponCode,
@@ -369,7 +380,7 @@ func (q *Queries) ListActivePromotions(ctx context.Context, organizationID int32
 }
 
 const listAllPromotions = `-- name: ListAllPromotions :many
-SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
+SELECT id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at FROM promotions
 WHERE organization_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -405,6 +416,7 @@ func (q *Queries) ListAllPromotions(ctx context.Context, arg ListAllPromotionsPa
 			&i.TargetProductIds,
 			&i.TargetCategoryIds,
 			&i.TargetCustomerTypes,
+			&i.TargetCustomerTiers,
 			&i.MinOrderAmount,
 			&i.MinQuantity,
 			&i.CouponCode,
@@ -441,40 +453,44 @@ SET name = $2,
     applies_to = $8,
     target_product_ids = $9,
     target_category_ids = $10,
-    min_order_amount = $11,
-    min_quantity = $12,
-    usage_limit = $13,
-    usage_per_customer = $14,
-    discount_value = $15,
-    is_stackable = $16,
-    is_active = $17,
-    store_ids = $18,
-    metadata = $19,
+    target_customer_types = $11,
+    target_customer_tiers = $12,
+    min_order_amount = $13,
+    min_quantity = $14,
+    usage_limit = $15,
+    usage_per_customer = $16,
+    discount_value = $17,
+    is_stackable = $18,
+    is_active = $19,
+    store_ids = $20,
+    metadata = $21,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
+RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
 `
 
 type UpdatePromotionParams struct {
-	ID                int32            `json:"id"`
-	Name              string           `json:"name"`
-	Description       pgtype.Text      `json:"description"`
-	ActionMetadata    json.RawMessage  `json:"action_metadata"`
-	ValidFrom         pgtype.Timestamp `json:"valid_from"`
-	ValidTo           pgtype.Timestamp `json:"valid_to"`
-	ScheduleJson      json.RawMessage  `json:"schedule_json"`
-	AppliesTo         pgtype.Text      `json:"applies_to"`
-	TargetProductIds  []int32          `json:"target_product_ids"`
-	TargetCategoryIds []int32          `json:"target_category_ids"`
-	MinOrderAmount    pgtype.Numeric   `json:"min_order_amount"`
-	MinQuantity       pgtype.Numeric   `json:"min_quantity"`
-	UsageLimit        pgtype.Int4      `json:"usage_limit"`
-	UsagePerCustomer  pgtype.Int4      `json:"usage_per_customer"`
-	DiscountValue     pgtype.Numeric   `json:"discount_value"`
-	IsStackable       pgtype.Bool      `json:"is_stackable"`
-	IsActive          pgtype.Bool      `json:"is_active"`
-	StoreIds          []int32          `json:"store_ids"`
-	Metadata          json.RawMessage  `json:"metadata"`
+	ID                  int32            `json:"id"`
+	Name                string           `json:"name"`
+	Description         pgtype.Text      `json:"description"`
+	ActionMetadata      json.RawMessage  `json:"action_metadata"`
+	ValidFrom           pgtype.Timestamp `json:"valid_from"`
+	ValidTo             pgtype.Timestamp `json:"valid_to"`
+	ScheduleJson        json.RawMessage  `json:"schedule_json"`
+	AppliesTo           pgtype.Text      `json:"applies_to"`
+	TargetProductIds    []int32          `json:"target_product_ids"`
+	TargetCategoryIds   []int32          `json:"target_category_ids"`
+	TargetCustomerTypes []string         `json:"target_customer_types"`
+	TargetCustomerTiers []string         `json:"target_customer_tiers"`
+	MinOrderAmount      pgtype.Numeric   `json:"min_order_amount"`
+	MinQuantity         pgtype.Numeric   `json:"min_quantity"`
+	UsageLimit          pgtype.Int4      `json:"usage_limit"`
+	UsagePerCustomer    pgtype.Int4      `json:"usage_per_customer"`
+	DiscountValue       pgtype.Numeric   `json:"discount_value"`
+	IsStackable         pgtype.Bool      `json:"is_stackable"`
+	IsActive            pgtype.Bool      `json:"is_active"`
+	StoreIds            []int32          `json:"store_ids"`
+	Metadata            json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) UpdatePromotion(ctx context.Context, arg UpdatePromotionParams) (Promotion, error) {
@@ -489,6 +505,8 @@ func (q *Queries) UpdatePromotion(ctx context.Context, arg UpdatePromotionParams
 		arg.AppliesTo,
 		arg.TargetProductIds,
 		arg.TargetCategoryIds,
+		arg.TargetCustomerTypes,
+		arg.TargetCustomerTiers,
 		arg.MinOrderAmount,
 		arg.MinQuantity,
 		arg.UsageLimit,
@@ -515,6 +533,7 @@ func (q *Queries) UpdatePromotion(ctx context.Context, arg UpdatePromotionParams
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,
@@ -538,7 +557,7 @@ UPDATE promotions
 SET is_active = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
+RETURNING id, organization_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_product_ids, target_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, store_ids, created_by, metadata, created_at, updated_at
 `
 
 type UpdatePromotionStatusParams struct {
@@ -564,6 +583,7 @@ func (q *Queries) UpdatePromotionStatus(ctx context.Context, arg UpdatePromotion
 		&i.TargetProductIds,
 		&i.TargetCategoryIds,
 		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
 		&i.MinOrderAmount,
 		&i.MinQuantity,
 		&i.CouponCode,

@@ -1424,19 +1424,21 @@ type CreatePromotionRequest struct {
 	ValidTo           *string                `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
 	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
 	AppliesTo         *string                `json:"applies_to,omitempty" example:"all"`
-	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
-	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
-	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
-	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
-	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
-	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"100"`
-	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
-	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
-	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
-	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
-	StoreIds          []int32                `json:"store_ids,omitempty"`
-	CreatedBy         *int32                 `json:"created_by,omitempty" example:"1"`
-	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+	TargetProductIds    []int32                `json:"target_product_ids,omitempty"`
+	TargetCategoryIds   []int32                `json:"target_category_ids,omitempty"`
+	TargetCustomerTypes []string               `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers []string               `json:"target_customer_tiers,omitempty"`
+	MinOrderAmount      *string                `json:"min_order_amount,omitempty" example:"500.00"`
+	MinQuantity         *string                `json:"min_quantity,omitempty" example:"2"`
+	CouponCode          *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
+	UsageLimit          *int32                 `json:"usage_limit,omitempty" example:"100"`
+	UsagePerCustomer    *int32                 `json:"usage_per_customer,omitempty" example:"2"`
+	DiscountValue       *string                `json:"discount_value,omitempty" example:"20.00"`
+	IsStackable         *bool                  `json:"is_stackable,omitempty" example:"false"`
+	IsActive            *bool                  `json:"is_active,omitempty" example:"true"`
+	StoreIds            []int32                `json:"store_ids,omitempty"`
+	CreatedBy           *int32                 `json:"created_by,omitempty" example:"1"`
+	Metadata            map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // UpdatePromotionRequest represents request body for updating a promotion.
@@ -1450,6 +1452,8 @@ type UpdatePromotionRequest struct {
 	AppliesTo         *string                `json:"applies_to,omitempty" example:"product"`
 	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
 	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
+	TargetCustomerTypes []string             `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers []string             `json:"target_customer_tiers,omitempty"`
 	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER25"`

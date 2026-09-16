@@ -724,6 +724,7 @@ type Customer struct {
 	CreditLimit        pgtype.Numeric   `json:"credit_limit"`
 	OutstandingBalance pgtype.Numeric   `json:"outstanding_balance"`
 	LoyaltyPoints      pgtype.Numeric   `json:"loyalty_points"`
+	LoyaltyTier        pgtype.Text      `json:"loyalty_tier"`
 	IsActive           pgtype.Bool      `json:"is_active"`
 	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
@@ -1538,6 +1539,7 @@ type Promotion struct {
 	TargetProductIds    []int32          `json:"target_product_ids"`
 	TargetCategoryIds   []int32          `json:"target_category_ids"`
 	TargetCustomerTypes []string         `json:"target_customer_types"`
+	TargetCustomerTiers []string         `json:"target_customer_tiers"`
 	MinOrderAmount      pgtype.Numeric   `json:"min_order_amount"`
 	MinQuantity         pgtype.Numeric   `json:"min_quantity"`
 	CouponCode          pgtype.Text      `json:"coupon_code"`
