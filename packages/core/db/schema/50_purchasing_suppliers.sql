@@ -132,6 +132,7 @@ CREATE TABLE customers (
     credit_limit DECIMAL(15,2) DEFAULT 0,
     outstanding_balance DECIMAL(15,2) DEFAULT 0,
     loyalty_points DECIMAL(15,2) DEFAULT 0,
+    loyalty_tier VARCHAR(20) DEFAULT 'bronze',
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
