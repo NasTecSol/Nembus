@@ -310,6 +310,29 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 		return utils.NewResponse(utils.CodeBadReq, "coupon is not valid for this store", nil)
 	}
 
+	// 2b. Check target customer tiers restriction
+	if len(promo.TargetCustomerTiers) > 0 {
+		if !cart.CustomerID.Valid {
+			return utils.NewResponse(utils.CodeBadReq, "coupon is restricted to specific customer loyalty tiers, but no customer is assigned to this cart", nil)
+		}
+		cust, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+		if err != nil {
+			return utils.NewResponse(utils.CodeBadReq, "failed to fetch customer details for tier validation", nil)
+		}
+		custTier := "bronze"
+		if cust.LoyaltyTier.Valid && cust.LoyaltyTier.String != "" {
+			custTier = cust.LoyaltyTier.String
+		} else {
+			pts := numericToFloat(cust.LoyaltyPoints)
+			custTier, _ = CalculateTierAndThreshold(pts)
+		}
+		if !isTierAllowed(promo.TargetCustomerTiers, custTier) {
+			return utils.NewResponse(utils.CodeBadReq,
+				fmt.Sprintf("coupon is only available for customer loyalty tiers: %s", strings.Join(promo.TargetCustomerTiers, ", ")),
+				nil)
+		}
+	}
+
 	// 3. Fetch cart totals for constraint checks
 	totals, err := uc.repo.GetCartTotals(ctx, in.CartID)
 	if err != nil {
@@ -745,6 +768,29 @@ func (uc *PromotionUseCase) ValidateCoupon(ctx context.Context, in ApplyCouponIn
 		validationErrors = append(validationErrors, "coupon is not valid for this store")
 	}
 
+	if len(promo.TargetCustomerTiers) > 0 {
+		if !cart.CustomerID.Valid {
+			validationErrors = append(validationErrors, "coupon is restricted to specific customer loyalty tiers, but no customer is assigned to this cart")
+		} else {
+			cust, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+			if err != nil {
+				validationErrors = append(validationErrors, "failed to fetch customer details for tier validation")
+			} else {
+				custTier := "bronze"
+				if cust.LoyaltyTier.Valid && cust.LoyaltyTier.String != "" {
+					custTier = cust.LoyaltyTier.String
+				} else {
+					pts := numericToFloat(cust.LoyaltyPoints)
+					custTier, _ = CalculateTierAndThreshold(pts)
+				}
+				if !isTierAllowed(promo.TargetCustomerTiers, custTier) {
+					validationErrors = append(validationErrors,
+						fmt.Sprintf("coupon is only available for customer loyalty tiers: %s", strings.Join(promo.TargetCustomerTiers, ", ")))
+				}
+			}
+		}
+	}
+
 	if promo.MinOrderAmount.Valid {
 		minAmount := numericToFloat(promo.MinOrderAmount)
 		if subtotalFloat < minAmount {
@@ -918,3 +964,18 @@ func isStoreAllowed(storeIDs []int32, cartStoreID pgtype.Int4) bool {
 	}
 	return false
 }
+
+// isTierAllowed returns true if targetTiers is empty or contains customerTier.
+func isTierAllowed(targetTiers []string, customerTier string) bool {
+	if len(targetTiers) == 0 {
+		return true
+	}
+	customerTierLower := strings.ToLower(strings.TrimSpace(customerTier))
+	for _, tier := range targetTiers {
+		if strings.ToLower(strings.TrimSpace(tier)) == customerTierLower {
+			return true
+		}
+	}
+	return false
+}
+

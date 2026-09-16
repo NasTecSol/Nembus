@@ -175,6 +175,7 @@ CREATE TABLE promotions (
     target_category_ids   INTEGER[] DEFAULT '{}',
     -- FIX #17: customer segmentation
     target_customer_types TEXT[]    DEFAULT '{}',
+    target_customer_tiers TEXT[]    DEFAULT '{}',
     min_order_amount      DECIMAL(15,2),
     min_quantity          DECIMAL(15,3),
     coupon_code           VARCHAR(50),
