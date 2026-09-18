@@ -8,6 +8,7 @@ INSERT INTO bp_price_contracts (
     partner_id,
     product_id,
     product_variant_id,
+    uom_id,
     contract_price,
     discount_percentage,
     min_quantity,
@@ -16,7 +17,7 @@ INSERT INTO bp_price_contracts (
     is_active,
     notes
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 ) RETURNING *;
 
 -- name: GetBPPriceContract :one
@@ -26,6 +27,7 @@ SELECT
     bpc.partner_id,
     bpc.product_id,
     bpc.product_variant_id,
+    bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
     bpc.min_quantity,
@@ -40,11 +42,14 @@ SELECT
     p.name AS product_name,
     p.sku AS product_sku,
     pv.variant_name,
-    pv.variant_sku
+    pv.variant_sku,
+    uom.name AS uom_name,
+    uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
 INNER JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.id = $1 LIMIT 1;
 
 -- name: GetBPPriceContractRaw :one
@@ -60,6 +65,11 @@ WHERE partner_id = $1
     OR
     (product_variant_id = sqlc.narg(product_variant_id)::int)
   )
+  AND (
+    (sqlc.narg(uom_id)::int IS NULL AND uom_id IS NULL)
+    OR
+    (uom_id = sqlc.narg(uom_id)::int)
+  )
 LIMIT 1;
 
 -- name: ListBPPriceContracts :many
@@ -69,6 +79,7 @@ SELECT
     bpc.partner_id,
     bpc.product_id,
     bpc.product_variant_id,
+    bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
     bpc.min_quantity,
@@ -83,11 +94,14 @@ SELECT
     p.name AS product_name,
     p.sku AS product_sku,
     pv.variant_name,
-    pv.variant_sku
+    pv.variant_sku,
+    uom.name AS uom_name,
+    uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
 INNER JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.organization_id = $1
   AND (sqlc.narg(partner_id)::int IS NULL OR bpc.partner_id = sqlc.narg(partner_id)::int)
   AND (sqlc.narg(product_id)::int IS NULL OR bpc.product_id = sqlc.narg(product_id)::int)
@@ -101,6 +115,7 @@ SELECT
     bpc.partner_id,
     bpc.product_id,
     bpc.product_variant_id,
+    bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
     bpc.min_quantity,
@@ -115,11 +130,14 @@ SELECT
     p.name AS product_name,
     p.sku AS product_sku,
     pv.variant_name,
-    pv.variant_sku
+    pv.variant_sku,
+    uom.name AS uom_name,
+    uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
 INNER JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.partner_id = $1
 ORDER BY bpc.created_at DESC;
 
@@ -130,6 +148,7 @@ SELECT
     bpc.partner_id,
     bpc.product_id,
     bpc.product_variant_id,
+    bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
     bpc.min_quantity,
@@ -144,11 +163,14 @@ SELECT
     p.name AS product_name,
     p.sku AS product_sku,
     pv.variant_name,
-    pv.variant_sku
+    pv.variant_sku,
+    uom.name AS uom_name,
+    uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
 INNER JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
+LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.partner_id = $1
   AND bpc.product_id = $2
   AND (
@@ -156,16 +178,30 @@ WHERE bpc.partner_id = $1
     OR
     (bpc.product_variant_id = sqlc.narg(product_variant_id)::int)
   )
+  AND (
+    (sqlc.narg(uom_id)::int IS NULL AND bpc.uom_id IS NULL)
+    OR
+    (bpc.uom_id = sqlc.narg(uom_id)::int)
+    OR
+    (sqlc.narg(uom_id)::int IS NOT NULL AND bpc.uom_id IS NULL)
+  )
   AND bpc.is_active = true
   AND (bpc.valid_from IS NULL OR bpc.valid_from <= CURRENT_DATE)
   AND (bpc.valid_to IS NULL OR bpc.valid_to >= CURRENT_DATE)
   AND bpc.min_quantity <= COALESCE(sqlc.narg(quantity), 1)
-ORDER BY bpc.min_quantity DESC
+ORDER BY 
+  (CASE 
+    WHEN sqlc.narg(uom_id)::int IS NOT NULL AND bpc.uom_id = sqlc.narg(uom_id)::int THEN 1 
+    WHEN bpc.uom_id IS NULL THEN 2 
+    ELSE 3 
+  END), 
+  bpc.min_quantity DESC
 LIMIT 1;
 
 -- name: UpdateBPPriceContract :one
 UPDATE bp_price_contracts
 SET 
+    uom_id = COALESCE(sqlc.narg(uom_id), uom_id),
     contract_price = COALESCE(sqlc.narg(contract_price), contract_price),
     discount_percentage = COALESCE(sqlc.narg(discount_percentage), discount_percentage),
     min_quantity = COALESCE(sqlc.narg(min_quantity), min_quantity),

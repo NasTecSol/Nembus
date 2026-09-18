@@ -18,6 +18,7 @@ type BPPriceContractOutput struct {
 	PartnerID          int32   `json:"partner_id"`
 	ProductID          int32   `json:"product_id"`
 	ProductVariantID   *int32  `json:"product_variant_id,omitempty"`
+	UOMID              *int32  `json:"uom_id,omitempty"`
 	ContractPrice      string  `json:"contract_price"`
 	DiscountPercentage string  `json:"discount_percentage"`
 	MinQuantity        string  `json:"min_quantity"`
@@ -33,6 +34,8 @@ type BPPriceContractOutput struct {
 	ProductSku         *string `json:"product_sku,omitempty"`
 	VariantName        *string `json:"variant_name,omitempty"`
 	VariantSku         *string `json:"variant_sku,omitempty"`
+	UOMName            *string `json:"uom_name,omitempty"`
+	UOMCode            *string `json:"uom_code,omitempty"`
 }
 
 func bpPriceContractRowToOutput(row repository.GetBPPriceContractRow) BPPriceContractOutput {
@@ -57,6 +60,10 @@ func bpPriceContractRowToOutput(row repository.GetBPPriceContractRow) BPPriceCon
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
 	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
+	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
 		out.ValidFrom = &vf
@@ -73,6 +80,12 @@ func bpPriceContractRowToOutput(row repository.GetBPPriceContractRow) BPPriceCon
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
@@ -100,6 +113,10 @@ func bpPriceContractListRowToOutput(row repository.ListBPPriceContractsRow) BPPr
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
 	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
+	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
 		out.ValidFrom = &vf
@@ -116,6 +133,12 @@ func bpPriceContractListRowToOutput(row repository.ListBPPriceContractsRow) BPPr
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
@@ -143,6 +166,10 @@ func bpPriceContractPartnerRowToOutput(row repository.ListBPPriceContractsByPart
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
 	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
+	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
 		out.ValidFrom = &vf
@@ -159,6 +186,12 @@ func bpPriceContractPartnerRowToOutput(row repository.ListBPPriceContractsByPart
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
@@ -186,6 +219,10 @@ func bpPriceContractEffectiveRowToOutput(row repository.GetEffectiveBPPriceContr
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
 	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
+	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
 		out.ValidFrom = &vf
@@ -202,6 +239,12 @@ func bpPriceContractEffectiveRowToOutput(row repository.GetEffectiveBPPriceContr
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
@@ -225,6 +268,10 @@ func bpPriceContractRawToOutput(c repository.BpPriceContract) BPPriceContractOut
 		vID := c.ProductVariantID.Int32
 		out.ProductVariantID = &vID
 	}
+	if c.UomID.Valid {
+		uID := c.UomID.Int32
+		out.UOMID = &uID
+	}
 	if c.ValidFrom.Valid {
 		vf := utils.FormatDate(c.ValidFrom)
 		out.ValidFrom = &vf
@@ -245,6 +292,7 @@ type CreateBPPriceContractInput struct {
 	PartnerID          int32    `json:"partner_id"`
 	ProductID          int32    `json:"product_id"`
 	ProductVariantID   *int32   `json:"product_variant_id"`
+	UomID              *int32   `json:"uom_id"`
 	ContractPrice      float64  `json:"contract_price"`
 	DiscountPercentage *float64 `json:"discount_percentage"`
 	MinQuantity        *float64 `json:"min_quantity"`
@@ -255,6 +303,7 @@ type CreateBPPriceContractInput struct {
 }
 
 type UpdateBPPriceContractInput struct {
+	UomID              *int32   `json:"uom_id"`
 	ContractPrice      *float64 `json:"contract_price"`
 	DiscountPercentage *float64 `json:"discount_percentage"`
 	MinQuantity        *float64 `json:"min_quantity"`
@@ -307,13 +356,19 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 		pvID = pgtype.Int4{Int32: *input.ProductVariantID, Valid: true}
 	}
 
+	var uomID pgtype.Int4
+	if input.UomID != nil && *input.UomID > 0 {
+		uomID = pgtype.Int4{Int32: *input.UomID, Valid: true}
+	}
+
 	existing, err := uc.repo.GetBPPriceContractByUnique(ctx, repository.GetBPPriceContractByUniqueParams{
 		PartnerID:        input.PartnerID,
 		ProductID:        input.ProductID,
 		ProductVariantID: pvID,
+		UomID:            uomID,
 	})
 	if err == nil && existing.ID > 0 {
-		return utils.NewResponse(utils.CodeBadReq, "a price contract already exists for this business partner, product, and variant combination", nil)
+		return utils.NewResponse(utils.CodeBadReq, "a price contract already exists for this business partner, product, variant, and uom combination", nil)
 	}
 
 	var fromDate pgtype.Date
@@ -359,6 +414,7 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 		PartnerID:          input.PartnerID,
 		ProductID:          input.ProductID,
 		ProductVariantID:   pvID,
+		UomID:              uomID,
 		ContractPrice:      utils.Float64ToPgNumeric(input.ContractPrice),
 		DiscountPercentage: utils.Float64ToPgNumeric(discount),
 		MinQuantity:        utils.Float64ToPgNumeric(minQty),
@@ -470,7 +526,7 @@ func (uc *BPPriceContractUseCase) ListBPPriceContractsByPartner(ctx context.Cont
 	return utils.NewResponse(utils.CodeOK, "partner price contracts listed successfully", outputs)
 }
 
-func (uc *BPPriceContractUseCase) GetEffectiveBPPriceContract(ctx context.Context, partnerIDStr string, productIDStr string, variantIDStr string, quantityStr string) *repository.Response {
+func (uc *BPPriceContractUseCase) GetEffectiveBPPriceContract(ctx context.Context, partnerIDStr string, productIDStr string, variantIDStr string, uomIDStr string, quantityStr string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -492,6 +548,13 @@ func (uc *BPPriceContractUseCase) GetEffectiveBPPriceContract(ctx context.Contex
 		}
 	}
 
+	var uomID pgtype.Int4
+	if uomIDStr != "" {
+		if uID, err := strconv.ParseInt(uomIDStr, 10, 32); err == nil && uID > 0 {
+			uomID = pgtype.Int4{Int32: int32(uID), Valid: true}
+		}
+	}
+
 	qty := 1.0
 	if quantityStr != "" {
 		if q, err := strconv.ParseFloat(quantityStr, 64); err == nil && q > 0 {
@@ -503,6 +566,7 @@ func (uc *BPPriceContractUseCase) GetEffectiveBPPriceContract(ctx context.Contex
 		PartnerID:        int32(partnerID),
 		ProductID:        int32(productID),
 		ProductVariantID: variantID,
+		UomID:            uomID,
 		Quantity:         utils.Float64ToPgNumeric(qty),
 	})
 	if err != nil {
@@ -525,6 +589,15 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 	existing, err := uc.repo.GetBPPriceContractRaw(ctx, int32(id))
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "price contract not found", nil)
+	}
+
+	uomID := existing.UomID
+	if input.UomID != nil {
+		if *input.UomID <= 0 {
+			uomID = pgtype.Int4{Valid: false}
+		} else {
+			uomID = pgtype.Int4{Int32: *input.UomID, Valid: true}
+		}
 	}
 
 	contractPrice := existing.ContractPrice
@@ -583,6 +656,7 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 
 	updated, err := uc.repo.UpdateBPPriceContract(ctx, repository.UpdateBPPriceContractParams{
 		ID:                 int32(id),
+		UomID:              uomID,
 		ContractPrice:      contractPrice,
 		DiscountPercentage: discountPercentage,
 		MinQuantity:        minQuantity,

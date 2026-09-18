@@ -269,6 +269,7 @@ CREATE TABLE "public"."bp_price_contracts" (
   "partner_id" integer NOT NULL,
   "product_id" integer NOT NULL,
   "product_variant_id" integer NULL,
+  "uom_id" integer NULL,
   "contract_price" numeric(15,4) NOT NULL,
   "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
   "min_quantity" numeric(15,3) NULL DEFAULT 1,
@@ -279,11 +280,12 @@ CREATE TABLE "public"."bp_price_contracts" (
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
-  CONSTRAINT "bp_price_contracts_partner_id_product_id_product_variant_id_key" UNIQUE ("partner_id", "product_id", "product_variant_id"),
+  CONSTRAINT "bp_price_contracts_partner_id_product_id_product_variant_id_key" UNIQUE ("partner_id", "product_id", "product_variant_id", "uom_id"),
   CONSTRAINT "bp_price_contracts_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "bp_price_contracts_partner_id_fkey" FOREIGN KEY ("partner_id") REFERENCES "public"."business_partners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "bp_price_contracts_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "bp_price_contracts_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+  CONSTRAINT "bp_price_contracts_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "bp_price_contracts_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
 -- Create index "idx_bp_price_contracts_bp_product" to table: "bp_price_contracts"
 CREATE INDEX "idx_bp_price_contracts_bp_product" ON "public"."bp_price_contracts" ("partner_id", "product_id");
