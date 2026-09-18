@@ -12,6 +12,7 @@ import (
 )
 
 const createBPPriceContract = `-- name: CreateBPPriceContract :one
+
 INSERT INTO bp_price_contracts (
     organization_id,
     partner_id,
@@ -209,7 +210,12 @@ type GetBPPriceContractByUniqueParams struct {
 }
 
 func (q *Queries) GetBPPriceContractByUnique(ctx context.Context, arg GetBPPriceContractByUniqueParams) (BpPriceContract, error) {
-	row := q.db.QueryRow(ctx, getBPPriceContractByUnique, arg.PartnerID, arg.ProductID, arg.ProductVariantID, arg.UomID)
+	row := q.db.QueryRow(ctx, getBPPriceContractByUnique,
+		arg.PartnerID,
+		arg.ProductID,
+		arg.ProductVariantID,
+		arg.UomID,
+	)
 	var i BpPriceContract
 	err := row.Scan(
 		&i.ID,
