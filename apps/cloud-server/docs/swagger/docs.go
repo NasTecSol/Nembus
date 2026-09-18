@@ -41831,9 +41831,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2026-01-24T21:43:00Z"
                 },
+                "discount_amount": {
+                    "type": "string",
+                    "example": "5.00"
+                },
                 "discount_percentage": {
                     "type": "string",
                     "example": "5.00"
+                },
+                "discount_type": {
+                    "type": "string",
+                    "example": "percentage"
                 },
                 "id": {
                     "type": "integer",
@@ -42443,9 +42451,17 @@ const docTemplate = `{
                     "type": "number",
                     "example": 45.5
                 },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 5
+                },
                 "discount_percentage": {
                     "type": "number",
                     "example": 5
+                },
+                "discount_type": {
+                    "type": "string",
+                    "example": "percentage"
                 },
                 "is_active": {
                     "type": "boolean",
@@ -48138,9 +48154,17 @@ const docTemplate = `{
                     "type": "number",
                     "example": 42
                 },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 10
+                },
                 "discount_percentage": {
                     "type": "number",
                     "example": 7.5
+                },
+                "discount_type": {
+                    "type": "string",
+                    "example": "fixed"
                 },
                 "is_active": {
                     "type": "boolean",

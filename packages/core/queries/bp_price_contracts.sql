@@ -11,13 +11,15 @@ INSERT INTO bp_price_contracts (
     uom_id,
     contract_price,
     discount_percentage,
+    discount_type,
+    discount_amount,
     min_quantity,
     valid_from,
     valid_to,
     is_active,
     notes
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
 ) RETURNING *;
 
 -- name: GetBPPriceContract :one
@@ -30,6 +32,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -82,6 +86,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -118,6 +124,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -151,6 +159,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -204,6 +214,8 @@ SET
     uom_id = COALESCE(sqlc.narg(uom_id), uom_id),
     contract_price = COALESCE(sqlc.narg(contract_price), contract_price),
     discount_percentage = COALESCE(sqlc.narg(discount_percentage), discount_percentage),
+    discount_type = COALESCE(sqlc.narg(discount_type), discount_type),
+    discount_amount = COALESCE(sqlc.narg(discount_amount), discount_amount),
     min_quantity = COALESCE(sqlc.narg(min_quantity), min_quantity),
     valid_from = COALESCE(sqlc.narg(valid_from), valid_from),
     valid_to = COALESCE(sqlc.narg(valid_to), valid_to),

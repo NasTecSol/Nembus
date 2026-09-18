@@ -1801,6 +1801,8 @@ type CreateBPPriceContractRequest struct {
 	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      float64  `json:"contract_price" binding:"required" example:"45.5000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"5.00"`
+	DiscountType       *string  `json:"discount_type,omitempty" example:"percentage"`
+	DiscountAmount     *float64 `json:"discount_amount,omitempty" example:"5.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"10.000"`
 	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
@@ -1812,6 +1814,8 @@ type UpdateBPPriceContractRequest struct {
 	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      *float64 `json:"contract_price,omitempty" example:"42.0000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"7.50"`
+	DiscountType       *string  `json:"discount_type,omitempty" example:"fixed"`
+	DiscountAmount     *float64 `json:"discount_amount,omitempty" example:"10.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"15.000"`
 	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
@@ -1831,6 +1835,8 @@ type BPPriceContractResponse struct {
 	ProductVariantID   *int32  `json:"product_variant_id,omitempty" example:"5"`
 	ContractPrice      string  `json:"contract_price" example:"45.5000"`
 	DiscountPercentage string  `json:"discount_percentage" example:"5.00"`
+	DiscountType       *string `json:"discount_type,omitempty" example:"percentage"`
+	DiscountAmount     *string `json:"discount_amount,omitempty" example:"5.00"`
 	MinQuantity        string  `json:"min_quantity" example:"10.000"`
 	ValidFrom          *string `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string `json:"valid_to,omitempty" example:"2026-12-31"`

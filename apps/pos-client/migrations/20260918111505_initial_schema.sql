@@ -275,6 +275,8 @@ CREATE TABLE "public"."bp_price_contracts" (
   "uom_id" integer NULL,
   "contract_price" numeric(15,4) NOT NULL,
   "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
+  "discount_type" character varying(20) NULL DEFAULT 'percentage',
+  "discount_amount" numeric(15,2) NULL DEFAULT 0.00,
   "min_quantity" numeric(15,3) NULL DEFAULT 1,
   "valid_from" date NULL,
   "valid_to" date NULL,
