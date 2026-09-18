@@ -1798,6 +1798,7 @@ type CreateBPPriceContractRequest struct {
 	PartnerID          int32    `json:"partner_id" binding:"required" example:"1"`
 	ProductID          int32    `json:"product_id" binding:"required" example:"10"`
 	ProductVariantID   *int32   `json:"product_variant_id,omitempty" example:"5"`
+	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      float64  `json:"contract_price" binding:"required" example:"45.5000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"5.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"10.000"`
@@ -1808,6 +1809,7 @@ type CreateBPPriceContractRequest struct {
 }
 
 type UpdateBPPriceContractRequest struct {
+	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      *float64 `json:"contract_price,omitempty" example:"42.0000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"7.50"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"15.000"`
