@@ -627,7 +627,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get the currently active contract price for a partner, product, and optional variant/quantity",
+                "description": "Get the currently active contract price for a partner, product, optional variant, uom, and quantity",
                 "consumes": [
                     "application/json"
                 ],
@@ -671,6 +671,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Product variant ID",
                         "name": "product_variant_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "UOM ID",
+                        "name": "uom_id",
                         "in": "query"
                     },
                     {
@@ -42469,6 +42475,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 5
                 },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 2
+                },
                 "valid_from": {
                     "type": "string",
                     "example": "2026-01-01"
@@ -44203,6 +44213,18 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "integer"
+                    }
+                },
+                "target_customer_tiers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 },
                 "target_product_ids": {
@@ -48132,6 +48154,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Updated price for Q2"
                 },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 2
+                },
                 "valid_from": {
                     "type": "string",
                     "example": "2026-01-01"
@@ -49278,6 +49304,18 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "integer"
+                    }
+                },
+                "target_customer_tiers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 },
                 "target_product_ids": {

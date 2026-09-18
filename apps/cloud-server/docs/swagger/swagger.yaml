@@ -696,6 +696,9 @@ definitions:
       product_variant_id:
         example: 5
         type: integer
+      uom_id:
+        example: 2
+        type: integer
       valid_from:
         example: "2026-01-01"
         type: string
@@ -1941,6 +1944,14 @@ definitions:
       target_category_ids:
         items:
           type: integer
+        type: array
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
         type: array
       target_product_ids:
         items:
@@ -4779,6 +4790,9 @@ definitions:
       notes:
         example: Updated price for Q2
         type: string
+      uom_id:
+        example: 2
+        type: integer
       valid_from:
         example: "2026-01-01"
         type: string
@@ -5590,6 +5604,14 @@ definitions:
       target_category_ids:
         items:
           type: integer
+        type: array
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
         type: array
       target_product_ids:
         items:
@@ -6708,7 +6730,7 @@ paths:
       consumes:
       - application/json
       description: Get the currently active contract price for a partner, product,
-        and optional variant/quantity
+        optional variant, uom, and quantity
       parameters:
       - description: Tenant identifier
         in: header
@@ -6733,6 +6755,10 @@ paths:
       - description: Product variant ID
         in: query
         name: product_variant_id
+        type: integer
+      - description: UOM ID
+        in: query
+        name: uom_id
         type: integer
       - description: Quantity (default 1)
         in: query
