@@ -504,6 +504,8 @@ type BpPriceContract struct {
 	UomID              pgtype.Int4      `json:"uom_id"`
 	ContractPrice      pgtype.Numeric   `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	DiscountType       pgtype.Text      `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
 	ValidFrom          pgtype.Date      `json:"valid_from"`
 	ValidTo            pgtype.Date      `json:"valid_to"`
