@@ -21,6 +21,8 @@ type BPPriceContractOutput struct {
 	UOMID              *int32  `json:"uom_id,omitempty"`
 	ContractPrice      string  `json:"contract_price"`
 	DiscountPercentage string  `json:"discount_percentage"`
+	DiscountType       *string `json:"discount_type,omitempty"`
+	DiscountAmount     *string `json:"discount_amount,omitempty"`
 	MinQuantity        string  `json:"min_quantity"`
 	ValidFrom          *string `json:"valid_from,omitempty"`
 	ValidTo            *string `json:"valid_to,omitempty"`
@@ -54,6 +56,15 @@ func bpPriceContractRowToOutput(row repository.GetBPPriceContractRow) BPPriceCon
 		PartnerCode:        &row.PartnerCode,
 		ProductName:        &row.ProductName,
 		ProductSku:         &row.ProductSku,
+	}
+
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
 	}
 
 	if row.ProductVariantID.Valid {
@@ -109,6 +120,15 @@ func bpPriceContractListRowToOutput(row repository.ListBPPriceContractsRow) BPPr
 		ProductSku:         &row.ProductSku,
 	}
 
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
+	}
+
 	if row.ProductVariantID.Valid {
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
@@ -160,6 +180,15 @@ func bpPriceContractPartnerRowToOutput(row repository.ListBPPriceContractsByPart
 		PartnerCode:        &row.PartnerCode,
 		ProductName:        &row.ProductName,
 		ProductSku:         &row.ProductSku,
+	}
+
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
 	}
 
 	if row.ProductVariantID.Valid {
@@ -215,6 +244,15 @@ func bpPriceContractEffectiveRowToOutput(row repository.GetEffectiveBPPriceContr
 		ProductSku:         &row.ProductSku,
 	}
 
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
+	}
+
 	if row.ProductVariantID.Valid {
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
@@ -264,6 +302,15 @@ func bpPriceContractRawToOutput(c repository.BpPriceContract) BPPriceContractOut
 		UpdatedAt:          utils.FormatTimestamp(c.UpdatedAt),
 	}
 
+	if c.DiscountType.Valid {
+		dt := c.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if c.DiscountAmount.Valid {
+		da := numericToString(c.DiscountAmount)
+		out.DiscountAmount = &da
+	}
+
 	if c.ProductVariantID.Valid {
 		vID := c.ProductVariantID.Int32
 		out.ProductVariantID = &vID
@@ -295,6 +342,8 @@ type CreateBPPriceContractInput struct {
 	UomID              *int32   `json:"uom_id"`
 	ContractPrice      float64  `json:"contract_price"`
 	DiscountPercentage *float64 `json:"discount_percentage"`
+	DiscountType       *string  `json:"discount_type"`
+	DiscountAmount     *float64 `json:"discount_amount"`
 	MinQuantity        *float64 `json:"min_quantity"`
 	ValidFrom          *string  `json:"valid_from"`
 	ValidTo            *string  `json:"valid_to"`
@@ -306,6 +355,8 @@ type UpdateBPPriceContractInput struct {
 	UomID              *int32   `json:"uom_id"`
 	ContractPrice      *float64 `json:"contract_price"`
 	DiscountPercentage *float64 `json:"discount_percentage"`
+	DiscountType       *string  `json:"discount_type"`
+	DiscountAmount     *float64 `json:"discount_amount"`
 	MinQuantity        *float64 `json:"min_quantity"`
 	ValidFrom          *string  `json:"valid_from"`
 	ValidTo            *string  `json:"valid_to"`
@@ -332,6 +383,23 @@ func (uc *BPPriceContractUseCase) repoOrErr() *repository.Response {
 	return nil
 }
 
+// CalculateNetPrice calculates net unit price after applying contract discount (percentage or fixed amount).
+func CalculateNetPrice(contractPrice float64, discountType string, discountPercentage float64, discountAmount float64) float64 {
+	if discountType == "fixed" {
+		net := contractPrice - discountAmount
+		if net < 0 {
+			return 0
+		}
+		return net
+	}
+	// Percentage discount
+	net := contractPrice * (1.0 - (discountPercentage / 100.0))
+	if net < 0 {
+		return 0
+	}
+	return net
+}
+
 func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, input CreateBPPriceContractInput) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
@@ -348,6 +416,26 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 	}
 	if input.ContractPrice < 0 {
 		return utils.NewResponse(utils.CodeBadReq, "contract_price must be non-negative", nil)
+	}
+
+	discountType := "percentage"
+	if input.DiscountType != nil && *input.DiscountType != "" {
+		discountType = *input.DiscountType
+	}
+	if discountType != "percentage" && discountType != "fixed" {
+		return utils.NewResponse(utils.CodeBadReq, "discount_type must be either 'percentage' or 'fixed'", nil)
+	}
+
+	discountAmount := 0.00
+	if input.DiscountAmount != nil {
+		discountAmount = *input.DiscountAmount
+	}
+	if discountAmount < 0 {
+		return utils.NewResponse(utils.CodeBadReq, "discount_amount must be non-negative", nil)
+	}
+
+	if discountType == "fixed" && discountAmount > input.ContractPrice {
+		return utils.NewResponse(utils.CodeBadReq, "fixed discount amount cannot exceed contract price", nil)
 	}
 
 	// Check if unique contract already exists
@@ -417,6 +505,8 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 		UomID:              uomID,
 		ContractPrice:      utils.Float64ToPgNumeric(input.ContractPrice),
 		DiscountPercentage: utils.Float64ToPgNumeric(discount),
+		DiscountType:       pgtype.Text{String: discountType, Valid: true},
+		DiscountAmount:     utils.Float64ToPgNumeric(discountAmount),
 		MinQuantity:        utils.Float64ToPgNumeric(minQty),
 		ValidFrom:          fromDate,
 		ValidTo:            toDate,
@@ -601,10 +691,15 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 	}
 
 	contractPrice := existing.ContractPrice
+	contractPriceFloat := 0.0
+	if cpVal, err := existing.ContractPrice.Float64Value(); err == nil && cpVal.Valid {
+		contractPriceFloat = cpVal.Float64
+	}
 	if input.ContractPrice != nil {
 		if *input.ContractPrice < 0 {
 			return utils.NewResponse(utils.CodeBadReq, "contract_price must be non-negative", nil)
 		}
+		contractPriceFloat = *input.ContractPrice
 		contractPrice = utils.Float64ToPgNumeric(*input.ContractPrice)
 	}
 
@@ -612,6 +707,35 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 	if input.DiscountPercentage != nil {
 		discountPercentage = utils.Float64ToPgNumeric(*input.DiscountPercentage)
 	}
+
+	discountTypeStr := "percentage"
+	if existing.DiscountType.Valid && existing.DiscountType.String != "" {
+		discountTypeStr = existing.DiscountType.String
+	}
+	if input.DiscountType != nil && *input.DiscountType != "" {
+		discountTypeStr = *input.DiscountType
+	}
+	if discountTypeStr != "percentage" && discountTypeStr != "fixed" {
+		return utils.NewResponse(utils.CodeBadReq, "discount_type must be either 'percentage' or 'fixed'", nil)
+	}
+
+	discountAmountFloat := 0.0
+	if daVal, err := existing.DiscountAmount.Float64Value(); err == nil && daVal.Valid {
+		discountAmountFloat = daVal.Float64
+	}
+	if input.DiscountAmount != nil {
+		discountAmountFloat = *input.DiscountAmount
+	}
+	if discountAmountFloat < 0 {
+		return utils.NewResponse(utils.CodeBadReq, "discount_amount must be non-negative", nil)
+	}
+
+	if discountTypeStr == "fixed" && discountAmountFloat > contractPriceFloat {
+		return utils.NewResponse(utils.CodeBadReq, "fixed discount amount cannot exceed contract price", nil)
+	}
+
+	discountType := pgtype.Text{String: discountTypeStr, Valid: true}
+	discountAmount := utils.Float64ToPgNumeric(discountAmountFloat)
 
 	minQuantity := existing.MinQuantity
 	if input.MinQuantity != nil {
@@ -659,6 +783,8 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 		UomID:              uomID,
 		ContractPrice:      contractPrice,
 		DiscountPercentage: discountPercentage,
+		DiscountType:       discountType,
+		DiscountAmount:     discountAmount,
 		MinQuantity:        minQuantity,
 		ValidFrom:          validFrom,
 		ValidTo:            validTo,

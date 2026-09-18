@@ -449,6 +449,8 @@ CREATE TABLE IF NOT EXISTS bp_price_contracts (
     uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
     contract_price DECIMAL(15,4) NOT NULL,
     discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    discount_type VARCHAR(20) DEFAULT 'percentage',
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
     min_quantity DECIMAL(15,3) DEFAULT 1,
     valid_from DATE,
     valid_to DATE,

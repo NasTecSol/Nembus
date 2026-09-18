@@ -238,8 +238,14 @@ definitions:
       created_at:
         example: "2026-01-24T21:43:00Z"
         type: string
+      discount_amount:
+        example: "5.00"
+        type: string
       discount_percentage:
         example: "5.00"
+        type: string
+      discount_type:
+        example: percentage
         type: string
       id:
         example: 1
@@ -672,9 +678,15 @@ definitions:
       contract_price:
         example: 45.5
         type: number
+      discount_amount:
+        example: 5
+        type: number
       discount_percentage:
         example: 5
         type: number
+      discount_type:
+        example: percentage
+        type: string
       is_active:
         example: true
         type: boolean
@@ -4778,9 +4790,15 @@ definitions:
       contract_price:
         example: 42
         type: number
+      discount_amount:
+        example: 10
+        type: number
       discount_percentage:
         example: 7.5
         type: number
+      discount_type:
+        example: fixed
+        type: string
       is_active:
         example: true
         type: boolean

@@ -20,14 +20,16 @@ INSERT INTO bp_price_contracts (
     uom_id,
     contract_price,
     discount_percentage,
+    discount_type,
+    discount_amount,
     min_quantity,
     valid_from,
     valid_to,
     is_active,
     notes
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-) RETURNING id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+) RETURNING id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, discount_type, discount_amount, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at
 `
 
 type CreateBPPriceContractParams struct {
@@ -38,6 +40,8 @@ type CreateBPPriceContractParams struct {
 	UomID              pgtype.Int4    `json:"uom_id"`
 	ContractPrice      pgtype.Numeric `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric `json:"discount_percentage"`
+	DiscountType       pgtype.Text    `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric `json:"min_quantity"`
 	ValidFrom          pgtype.Date    `json:"valid_from"`
 	ValidTo            pgtype.Date    `json:"valid_to"`
@@ -57,6 +61,8 @@ func (q *Queries) CreateBPPriceContract(ctx context.Context, arg CreateBPPriceCo
 		arg.UomID,
 		arg.ContractPrice,
 		arg.DiscountPercentage,
+		arg.DiscountType,
+		arg.DiscountAmount,
 		arg.MinQuantity,
 		arg.ValidFrom,
 		arg.ValidTo,
@@ -73,6 +79,8 @@ func (q *Queries) CreateBPPriceContract(ctx context.Context, arg CreateBPPriceCo
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
@@ -104,6 +112,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -136,6 +146,8 @@ type GetBPPriceContractRow struct {
 	UomID              pgtype.Int4      `json:"uom_id"`
 	ContractPrice      pgtype.Numeric   `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	DiscountType       pgtype.Text      `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
 	ValidFrom          pgtype.Date      `json:"valid_from"`
 	ValidTo            pgtype.Date      `json:"valid_to"`
@@ -165,6 +177,8 @@ func (q *Queries) GetBPPriceContract(ctx context.Context, id int32) (GetBPPriceC
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
@@ -185,7 +199,7 @@ func (q *Queries) GetBPPriceContract(ctx context.Context, id int32) (GetBPPriceC
 }
 
 const getBPPriceContractByUnique = `-- name: GetBPPriceContractByUnique :one
-SELECT id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at FROM bp_price_contracts
+SELECT id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, discount_type, discount_amount, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at FROM bp_price_contracts
 WHERE partner_id = $1 
   AND product_id = $2 
   AND (
@@ -220,6 +234,8 @@ func (q *Queries) GetBPPriceContractByUnique(ctx context.Context, arg GetBPPrice
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
@@ -232,7 +248,7 @@ func (q *Queries) GetBPPriceContractByUnique(ctx context.Context, arg GetBPPrice
 }
 
 const getBPPriceContractRaw = `-- name: GetBPPriceContractRaw :one
-SELECT id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at FROM bp_price_contracts
+SELECT id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, discount_type, discount_amount, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at FROM bp_price_contracts
 WHERE id = $1 LIMIT 1
 `
 
@@ -248,6 +264,8 @@ func (q *Queries) GetBPPriceContractRaw(ctx context.Context, id int32) (BpPriceC
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
@@ -269,6 +287,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -334,6 +354,8 @@ type GetEffectiveBPPriceContractRow struct {
 	UomID              pgtype.Int4      `json:"uom_id"`
 	ContractPrice      pgtype.Numeric   `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	DiscountType       pgtype.Text      `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
 	ValidFrom          pgtype.Date      `json:"valid_from"`
 	ValidTo            pgtype.Date      `json:"valid_to"`
@@ -369,6 +391,8 @@ func (q *Queries) GetEffectiveBPPriceContract(ctx context.Context, arg GetEffect
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
@@ -398,6 +422,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -441,6 +467,8 @@ type ListBPPriceContractsRow struct {
 	UomID              pgtype.Int4      `json:"uom_id"`
 	ContractPrice      pgtype.Numeric   `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	DiscountType       pgtype.Text      `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
 	ValidFrom          pgtype.Date      `json:"valid_from"`
 	ValidTo            pgtype.Date      `json:"valid_to"`
@@ -481,6 +509,8 @@ func (q *Queries) ListBPPriceContracts(ctx context.Context, arg ListBPPriceContr
 			&i.UomID,
 			&i.ContractPrice,
 			&i.DiscountPercentage,
+			&i.DiscountType,
+			&i.DiscountAmount,
 			&i.MinQuantity,
 			&i.ValidFrom,
 			&i.ValidTo,
@@ -517,6 +547,8 @@ SELECT
     bpc.uom_id,
     bpc.contract_price,
     bpc.discount_percentage,
+    bpc.discount_type,
+    bpc.discount_amount,
     bpc.min_quantity,
     bpc.valid_from,
     bpc.valid_to,
@@ -550,6 +582,8 @@ type ListBPPriceContractsByPartnerRow struct {
 	UomID              pgtype.Int4      `json:"uom_id"`
 	ContractPrice      pgtype.Numeric   `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	DiscountType       pgtype.Text      `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
 	ValidFrom          pgtype.Date      `json:"valid_from"`
 	ValidTo            pgtype.Date      `json:"valid_to"`
@@ -585,6 +619,8 @@ func (q *Queries) ListBPPriceContractsByPartner(ctx context.Context, partnerID i
 			&i.UomID,
 			&i.ContractPrice,
 			&i.DiscountPercentage,
+			&i.DiscountType,
+			&i.DiscountAmount,
 			&i.MinQuantity,
 			&i.ValidFrom,
 			&i.ValidTo,
@@ -616,7 +652,7 @@ UPDATE bp_price_contracts
 SET is_active = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at
+RETURNING id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, discount_type, discount_amount, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at
 `
 
 type ToggleBPPriceContractActiveParams struct {
@@ -636,6 +672,8 @@ func (q *Queries) ToggleBPPriceContractActive(ctx context.Context, arg ToggleBPP
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
@@ -653,20 +691,24 @@ SET
     uom_id = COALESCE($1, uom_id),
     contract_price = COALESCE($2, contract_price),
     discount_percentage = COALESCE($3, discount_percentage),
-    min_quantity = COALESCE($4, min_quantity),
-    valid_from = COALESCE($5, valid_from),
-    valid_to = COALESCE($6, valid_to),
-    is_active = COALESCE($7, is_active),
-    notes = COALESCE($8, notes),
+    discount_type = COALESCE($4, discount_type),
+    discount_amount = COALESCE($5, discount_amount),
+    min_quantity = COALESCE($6, min_quantity),
+    valid_from = COALESCE($7, valid_from),
+    valid_to = COALESCE($8, valid_to),
+    is_active = COALESCE($9, is_active),
+    notes = COALESCE($10, notes),
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $9
-RETURNING id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at
+WHERE id = $11
+RETURNING id, organization_id, partner_id, product_id, product_variant_id, uom_id, contract_price, discount_percentage, discount_type, discount_amount, min_quantity, valid_from, valid_to, is_active, notes, created_at, updated_at
 `
 
 type UpdateBPPriceContractParams struct {
 	UomID              pgtype.Int4    `json:"uom_id"`
 	ContractPrice      pgtype.Numeric `json:"contract_price"`
 	DiscountPercentage pgtype.Numeric `json:"discount_percentage"`
+	DiscountType       pgtype.Text    `json:"discount_type"`
+	DiscountAmount     pgtype.Numeric `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric `json:"min_quantity"`
 	ValidFrom          pgtype.Date    `json:"valid_from"`
 	ValidTo            pgtype.Date    `json:"valid_to"`
@@ -680,6 +722,8 @@ func (q *Queries) UpdateBPPriceContract(ctx context.Context, arg UpdateBPPriceCo
 		arg.UomID,
 		arg.ContractPrice,
 		arg.DiscountPercentage,
+		arg.DiscountType,
+		arg.DiscountAmount,
 		arg.MinQuantity,
 		arg.ValidFrom,
 		arg.ValidTo,
@@ -697,6 +741,8 @@ func (q *Queries) UpdateBPPriceContract(ctx context.Context, arg UpdateBPPriceCo
 		&i.UomID,
 		&i.ContractPrice,
 		&i.DiscountPercentage,
+		&i.DiscountType,
+		&i.DiscountAmount,
 		&i.MinQuantity,
 		&i.ValidFrom,
 		&i.ValidTo,
