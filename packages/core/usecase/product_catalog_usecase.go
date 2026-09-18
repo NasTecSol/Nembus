@@ -145,3 +145,77 @@ func (uc *ProductCatalogUseCase) GetMasterProductCatalog(
 
 	return utils.NewResponse(utils.CodeOK, "master product catalog fetched successfully", respData)
 }
+
+// SearchMasterProductCatalog searches master products by SKU, name, description, brand, category, barcode, or variant with pagination.
+func (uc *ProductCatalogUseCase) SearchMasterProductCatalog(
+	ctx context.Context,
+	orgIDStr string,
+	query string,
+	limit int32,
+	offset int32,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 32)
+	if err != nil || orgID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
+	}
+
+	if limit <= 0 {
+		limit = 100 // default 100 per page
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// 1. Get filtered total count
+	countParams := repository.SearchMasterProductCatalogCountParams{
+		OrganizationID: int32(orgID),
+		Search:         query,
+	}
+	totalCount, err := uc.repo.SearchMasterProductCatalogCount(ctx, countParams)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog search count", err.Error())
+	}
+
+	// 2. Get catalog products matching search
+	params := repository.SearchMasterProductCatalogParams{
+		OrganizationID: int32(orgID),
+		Search:         query,
+		Limit:          limit,
+		Offset:         offset,
+	}
+	catalog, err := uc.repo.SearchMasterProductCatalog(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to search master product catalog", err.Error())
+	}
+
+	// 3. Compute total pages
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = int32((totalCount + int64(limit) - 1) / int64(limit))
+	}
+
+	type PaginatedSearchCatalog struct {
+		TotalCount int64                                      `json:"total_count"`
+		TotalPages int32                                      `json:"total_pages"`
+		Page       int32                                      `json:"page"`
+		Limit      int32                                      `json:"limit"`
+		Data       []repository.SearchMasterProductCatalogRow `json:"data"`
+	}
+
+	currentPage := (offset / limit) + 1
+
+	respData := PaginatedSearchCatalog{
+		TotalCount: totalCount,
+		TotalPages: totalPages,
+		Page:       currentPage,
+		Limit:      limit,
+		Data:       catalog,
+	}
+
+	return utils.NewResponse(utils.CodeOK, "master product catalog search results fetched successfully", respData)
+}
+

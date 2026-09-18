@@ -23794,7 +23794,7 @@ paths:
       consumes:
       - application/json
       description: Returns all master products with their base details, UOMs, conversions,
-        pricing, variants, and barcodes nested.
+        pricing, variants, and barcodes nested. Supports optional search filter.
       parameters:
       - description: Tenant identifier
         in: header
@@ -23811,6 +23811,15 @@ paths:
         name: organization_id
         required: true
         type: integer
+      - description: Optional search query (SKU, product name, description, brand,
+          category, barcode, variant)
+        in: query
+        name: q
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search
+        type: string
       - description: Page size (default 100)
         in: query
         name: limit
@@ -23841,6 +23850,78 @@ paths:
       security:
       - BearerAuth: []
       summary: Master product catalog (detailed)
+      tags:
+      - products
+  /api/products/master-catalog/search:
+    get:
+      consumes:
+      - application/json
+      description: Searches master product catalog by SKU, product name, description,
+        brand, category, variant, or barcode with nested details (UOMs, conversions,
+        pricing, variants, barcodes, inventory) and pagination.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Search query (SKU, product name, description, brand, category,
+          barcode, variant)
+        in: query
+        name: q
+        type: string
+      - description: Alias for search query
+        in: query
+        name: query
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search_term
+        type: string
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Search master product catalog
       tags:
       - products
   /api/promotions:

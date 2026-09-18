@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,9 @@ import (
 )
 
 const UserIDKey contextKey = "user_id"
+const OrgIDKey contextKey = "organization_id"
 const ClaimsKey contextKey = "jwt_claims"
+
 
 type M2MClient struct {
 	ClientID   string   `json:"client_id"`
@@ -244,6 +247,22 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			if userID, ok := claims["user_id"].(string); ok {
 				c.Set(string(UserIDKey), userID)
 			}
+			if orgID, ok := claims["organization_id"]; ok {
+				switch v := orgID.(type) {
+				case float64:
+					c.Set(string(OrgIDKey), int32(v))
+				case int32:
+					c.Set(string(OrgIDKey), v)
+				case int:
+					c.Set(string(OrgIDKey), int32(v))
+				case int64:
+					c.Set(string(OrgIDKey), int32(v))
+				case string:
+					if id, err := strconv.ParseInt(v, 10, 32); err == nil {
+						c.Set(string(OrgIDKey), int32(id))
+					}
+				}
+			}
 		}
 
 		c.Set(string(ClaimsKey), claims)
@@ -262,6 +281,16 @@ func GetUserIDFromContext(c *gin.Context) (string, bool) {
 	return userIDStr, ok
 }
 
+// GetOrganizationIDFromContext extracts organization ID from Gin context
+func GetOrganizationIDFromContext(c *gin.Context) (int32, bool) {
+	orgID, exists := c.Get(string(OrgIDKey))
+	if !exists {
+		return 0, false
+	}
+	orgIDInt, ok := orgID.(int32)
+	return orgIDInt, ok
+}
+
 // GetClaimsFromContext extracts JWT claims from Gin context
 func GetClaimsFromContext(c *gin.Context) (jwt.MapClaims, bool) {
 	claims, exists := c.Get(string(ClaimsKey))
@@ -272,8 +301,8 @@ func GetClaimsFromContext(c *gin.Context) (jwt.MapClaims, bool) {
 	return claimsMap, ok
 }
 
-// GenerateJWTToken generates a JWT token for a user
-func GenerateJWTToken(userID string, userLogin string) (string, error) {
+// GenerateJWTToken generates a JWT token for a user with optional organization ID
+func GenerateJWTToken(userID string, userLogin string, orgID ...int32) (string, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		return "", errors.New("JWT_SECRET not configured")
@@ -282,12 +311,18 @@ func GenerateJWTToken(userID string, userLogin string) (string, error) {
 	// Set token expiration (24 hours)
 	expirationTime := time.Now().Add(24 * time.Hour)
 
+	var organizationID int32
+	if len(orgID) > 0 {
+		organizationID = orgID[0]
+	}
+
 	// Create claims
 	claims := jwt.MapClaims{
-		"user_id":    userID,
-		"user_login": userLogin,
-		"exp":        expirationTime.Unix(),
-		"iat":        time.Now().Unix(),
+		"user_id":         userID,
+		"user_login":      userLogin,
+		"organization_id": organizationID,
+		"exp":             expirationTime.Unix(),
+		"iat":             time.Now().Unix(),
 	}
 
 	// Create token
