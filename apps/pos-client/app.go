@@ -252,6 +252,17 @@ func (a *App) migrate(dbURL string) error {
 			SELECT 20260829112654, true
 			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260829112654);
 
+			INSERT INTO goose_db_version (version_id, is_applied)
+			SELECT 20260916085642, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260916085642);
+
+			INSERT INTO goose_db_version (version_id, is_applied)
+			SELECT 20260917120000, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260917120000);
+
+			INSERT INTO goose_db_version (version_id, is_applied)
+			SELECT 20260918140000, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260918140000);
 		`)
 	}
 

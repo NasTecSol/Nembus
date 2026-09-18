@@ -269,8 +269,11 @@ CREATE TABLE "public"."bp_price_contracts" (
   "partner_id" integer NOT NULL,
   "product_id" integer NOT NULL,
   "product_variant_id" integer NULL,
+  "uom_id" integer NULL,
   "contract_price" numeric(15,4) NOT NULL,
   "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
+  "discount_type" character varying(20) NULL DEFAULT 'percentage',
+  "discount_amount" numeric(15,2) NULL DEFAULT 0.00,
   "min_quantity" numeric(15,3) NULL DEFAULT 1,
   "valid_from" date NULL,
   "valid_to" date NULL,
@@ -279,11 +282,12 @@ CREATE TABLE "public"."bp_price_contracts" (
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
-  CONSTRAINT "bp_price_contracts_partner_id_product_id_product_variant_id_key" UNIQUE ("partner_id", "product_id", "product_variant_id"),
+  CONSTRAINT "bp_price_contracts_partner_id_product_id_product_variant_id_key" UNIQUE ("partner_id", "product_id", "product_variant_id", "uom_id"),
   CONSTRAINT "bp_price_contracts_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "bp_price_contracts_partner_id_fkey" FOREIGN KEY ("partner_id") REFERENCES "public"."business_partners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "bp_price_contracts_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "bp_price_contracts_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+  CONSTRAINT "bp_price_contracts_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "bp_price_contracts_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
 -- Create index "idx_bp_price_contracts_bp_product" to table: "bp_price_contracts"
 CREATE INDEX "idx_bp_price_contracts_bp_product" ON "public"."bp_price_contracts" ("partner_id", "product_id");
@@ -391,6 +395,7 @@ CREATE TABLE "public"."customers" (
   "credit_limit" numeric(15,2) NULL DEFAULT 0,
   "outstanding_balance" numeric(15,2) NULL DEFAULT 0,
   "loyalty_points" numeric(15,2) NULL DEFAULT 0,
+  "loyalty_tier" character varying(20) NULL DEFAULT 'bronze',
   "is_active" boolean NULL DEFAULT true,
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2232,6 +2237,7 @@ CREATE TABLE "public"."promotions" (
   "target_product_ids" integer[] NULL DEFAULT '{}',
   "target_category_ids" integer[] NULL DEFAULT '{}',
   "target_customer_types" text[] NULL DEFAULT '{}',
+  "target_customer_tiers" text[] NULL DEFAULT '{}',
   "min_order_amount" numeric(15,2) NULL,
   "min_quantity" numeric(15,3) NULL,
   "coupon_code" character varying(50) NULL,
@@ -2251,7 +2257,7 @@ CREATE TABLE "public"."promotions" (
   CONSTRAINT "promotions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "promotions_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "promotions_applies_to_check" CHECK ((applies_to)::text = ANY ((ARRAY['all'::character varying, 'order'::character varying, 'category'::character varying, 'product'::character varying, 'customer_type'::character varying, 'price_list'::character varying])::text[])),
-  CONSTRAINT "promotions_promotion_type_check" CHECK ((promotion_type)::text = ANY ((ARRAY['percentage_discount'::character varying, 'fixed_discount'::character varying, 'bogo'::character varying, 'buy_x_get_y'::character varying, 'free_item'::character varying, 'bundle_price'::character varying, 'points_multiplier'::character varying, 'happy_hour'::character varying])::text[]))
+  CONSTRAINT "promotions_promotion_type_check" CHECK ((promotion_type)::text = ANY ((ARRAY['percentage_discount'::character varying, 'fixed_discount'::character varying, 'bogo'::character varying, 'buy_x_get_y'::character varying, 'free_item'::character varying, 'bundle_price'::character varying, 'points_multiplier'::character varying, 'happy_hour'::character varying, 'bucket_combo'::character varying])::text[]))
 );
 -- Create trigger "trg_sync_promotion_to_product_prices"
 CREATE TRIGGER "trg_sync_promotion_to_product_prices" AFTER DELETE OR INSERT OR UPDATE ON "public"."promotions" FOR EACH ROW EXECUTE FUNCTION "public"."fn_sync_promotion_to_product_prices"();

@@ -123,6 +123,14 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.ApproveStockCountRequest:
+    properties:
+      approved_by:
+        example: 1
+        type: integer
+    required:
+    - approved_by
+    type: object
   handler.ApproveTransferRequestDTO:
     properties:
       approved_by:
@@ -230,8 +238,14 @@ definitions:
       created_at:
         example: "2026-01-24T21:43:00Z"
         type: string
+      discount_amount:
+        example: "5.00"
+        type: string
       discount_percentage:
         example: "5.00"
+        type: string
+      discount_type:
+        example: percentage
         type: string
       id:
         example: 1
@@ -411,6 +425,42 @@ definitions:
         type: string
     required:
     - percentage_change
+    type: object
+  handler.BulkUpdateStockCountLineItem:
+    properties:
+      batch_number:
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: 10
+        type: number
+      id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      serial_number:
+        type: string
+      variance:
+        example: 0
+        type: number
+      variance_value:
+        example: 0
+        type: number
+    required:
+    - counted_quantity
+    - id
+    type: object
+  handler.BulkUpdateStockCountLinesRequest:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/handler.BulkUpdateStockCountLineItem'
+        type: array
+    required:
+    - lines
     type: object
   handler.BusinessPartnerResponse:
     properties:
@@ -628,9 +678,15 @@ definitions:
       contract_price:
         example: 45.5
         type: number
+      discount_amount:
+        example: 5
+        type: number
       discount_percentage:
         example: 5
         type: number
+      discount_type:
+        example: percentage
+        type: string
       is_active:
         example: true
         type: boolean
@@ -651,6 +707,9 @@ definitions:
         type: integer
       product_variant_id:
         example: 5
+        type: integer
+      uom_id:
+        example: 2
         type: integer
       valid_from:
         example: "2026-01-01"
@@ -1898,6 +1957,14 @@ definitions:
         items:
           type: integer
         type: array
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
       target_product_ids:
         items:
           type: integer
@@ -2351,6 +2418,38 @@ definitions:
     - order_type
     - organization_id
     - payment_status
+    type: object
+  handler.CreateStockCountRequest:
+    properties:
+      count_number:
+        example: SC-20260916-0001
+        type: string
+      count_type:
+        example: full
+        type: string
+      counted_by:
+        example: 1
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/handler.StockCountLineDTO'
+        type: array
+      metadata:
+        type: object
+      scheduled_date:
+        example: "2026-09-16"
+        type: string
+      status:
+        example: planned
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+    required:
+    - store_id
     type: object
   handler.CreateStockMovementRequest:
     properties:
@@ -4100,6 +4199,227 @@ definitions:
         example: 1
         type: integer
     type: object
+  handler.StockCountLineDTO:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: 9
+        type: number
+      expected_quantity:
+        example: 10
+        type: number
+      metadata:
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      serial_number:
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      system_quantity:
+        example: 10
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+      variance:
+        example: -1
+        type: number
+      variance_value:
+        example: -15.5
+        type: number
+    required:
+    - counted_quantity
+    - product_id
+    type: object
+  handler.StockCountLineResponse:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: "9.000"
+        type: string
+      created_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      expected_quantity:
+        example: "10.000"
+        type: string
+      id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_name:
+        example: Fresh Milk 1L
+        type: string
+      product_sku:
+        example: MILK-001
+        type: string
+      product_variant_id:
+        example: 2
+        type: integer
+      serial_number:
+        type: string
+      stock_count_id:
+        example: 1
+        type: integer
+      storage_location_id:
+        example: 1
+        type: integer
+      storage_location_name:
+        example: Main Shelf A1
+        type: string
+      system_quantity:
+        example: "10.000"
+        type: string
+      uom_id:
+        example: 1
+        type: integer
+      uom_name:
+        example: Liter
+        type: string
+      updated_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      variance:
+        example: "-1.000"
+        type: string
+      variance_value:
+        example: "-15.50"
+        type: string
+      variant_name:
+        example: Whole Milk
+        type: string
+      variant_sku:
+        example: MILK-001-W
+        type: string
+    type: object
+  handler.StockCountListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/handler.StockCountResponse'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total_count:
+        example: 50
+        type: integer
+      total_pages:
+        example: 3
+        type: integer
+    type: object
+  handler.StockCountResponse:
+    properties:
+      approved_by:
+        example: 2
+        type: integer
+      approved_by_name:
+        example: manager_jane
+        type: string
+      completed_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      count_number:
+        example: SC-20260916-0001
+        type: string
+      count_type:
+        example: full
+        type: string
+      counted_by:
+        example: 1
+        type: integer
+      counted_by_name:
+        example: john_doe
+        type: string
+      created_at:
+        example: "2026-09-16T08:00:00Z"
+        type: string
+      id:
+        example: 1
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/handler.StockCountLineResponse'
+        type: array
+      lines_with_variance:
+        example: 2
+        type: integer
+      metadata:
+        type: object
+      scheduled_date:
+        example: "2026-09-16"
+        type: string
+      started_at:
+        example: "2026-09-16T10:00:00Z"
+        type: string
+      status:
+        example: planned
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      storage_location_name:
+        example: Warehouse Bay 1
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Store Branch
+        type: string
+      summary:
+        $ref: '#/definitions/handler.StockCountSummaryResponse'
+      total_lines:
+        example: 15
+        type: integer
+      total_variance_value:
+        example: "-25.00"
+        type: string
+      updated_at:
+        example: "2026-09-16T08:00:00Z"
+        type: string
+    type: object
+  handler.StockCountSummaryResponse:
+    properties:
+      lines_with_variance:
+        example: 3
+        type: integer
+      negative_variance:
+        example: "-55.50"
+        type: string
+      positive_variance:
+        example: "10.00"
+        type: string
+      total_lines:
+        example: 25
+        type: integer
+      total_variance_value:
+        example: "-45.50"
+        type: string
+    type: object
   handler.StoreResponse:
     properties:
       code:
@@ -4470,9 +4790,15 @@ definitions:
       contract_price:
         example: 42
         type: number
+      discount_amount:
+        example: 10
+        type: number
       discount_percentage:
         example: 7.5
         type: number
+      discount_type:
+        example: fixed
+        type: string
       is_active:
         example: true
         type: boolean
@@ -4482,6 +4808,9 @@ definitions:
       notes:
         example: Updated price for Q2
         type: string
+      uom_id:
+        example: 2
+        type: integer
       valid_from:
         example: "2026-01-01"
         type: string
@@ -5294,6 +5623,14 @@ definitions:
         items:
           type: integer
         type: array
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
       target_product_ids:
         items:
           type: integer
@@ -5487,6 +5824,50 @@ definitions:
         type: string
     required:
     - status
+    type: object
+  handler.UpdateStockCountLineRequest:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: 12
+        type: number
+      metadata:
+        type: object
+      serial_number:
+        type: string
+      variance:
+        example: 2
+        type: number
+      variance_value:
+        example: 30
+        type: number
+    required:
+    - counted_quantity
+    type: object
+  handler.UpdateStockCountRequest:
+    properties:
+      count_type:
+        example: cycle
+        type: string
+      counted_by:
+        example: 2
+        type: integer
+      metadata:
+        type: object
+      scheduled_date:
+        example: "2026-09-17"
+        type: string
+      status:
+        example: in_progress
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
     type: object
   handler.UpdateStorageLocationRequest:
     properties:
@@ -6367,7 +6748,7 @@ paths:
       consumes:
       - application/json
       description: Get the currently active contract price for a partner, product,
-        and optional variant/quantity
+        optional variant, uom, and quantity
       parameters:
       - description: Tenant identifier
         in: header
@@ -6392,6 +6773,10 @@ paths:
       - description: Product variant ID
         in: query
         name: product_variant_id
+        type: integer
+      - description: UOM ID
+        in: query
+        name: uom_id
         type: integer
       - description: Quantity (default 1)
         in: query
@@ -23409,7 +23794,7 @@ paths:
       consumes:
       - application/json
       description: Returns all master products with their base details, UOMs, conversions,
-        pricing, variants, and barcodes nested.
+        pricing, variants, and barcodes nested. Supports optional search filter.
       parameters:
       - description: Tenant identifier
         in: header
@@ -23426,6 +23811,15 @@ paths:
         name: organization_id
         required: true
         type: integer
+      - description: Optional search query (SKU, product name, description, brand,
+          category, barcode, variant)
+        in: query
+        name: q
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search
+        type: string
       - description: Page size (default 100)
         in: query
         name: limit
@@ -23456,6 +23850,78 @@ paths:
       security:
       - BearerAuth: []
       summary: Master product catalog (detailed)
+      tags:
+      - products
+  /api/products/master-catalog/search:
+    get:
+      consumes:
+      - application/json
+      description: Searches master product catalog by SKU, product name, description,
+        brand, category, variant, or barcode with nested details (UOMs, conversions,
+        pricing, variants, barcodes, inventory) and pagination.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Search query (SKU, product name, description, brand, category,
+          barcode, variant)
+        in: query
+        name: q
+        type: string
+      - description: Alias for search query
+        in: query
+        name: query
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search_term
+        type: string
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Search master product catalog
       tags:
       - products
   /api/promotions:
@@ -23519,7 +23985,7 @@ paths:
       - application/json
       description: 'Create a new promotion or coupon (all types: percentage_discount,
         fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price,
-        free_item)'
+        free_item, bucket_combo)'
       parameters:
       - description: Tenant identifier
         in: header
@@ -23817,7 +24283,7 @@ paths:
       description: 'Apply a coupon code to a cart. Validates constraints (min_order_amount,
         min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the
         appropriate discount. Supported types: percentage_discount, fixed_discount,
-        buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item.'
+        buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo.'
       parameters:
       - description: Tenant identifier
         in: header
@@ -27637,6 +28103,767 @@ paths:
       summary: List non-system roles
       tags:
       - roles
+  /api/stock-counts:
+    get:
+      consumes:
+      - application/json
+      description: List stock counts with filtering by store, status, count_type,
+        date range, search, and pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Status (planned, in_progress, completed, approved, reconciled,
+          cancelled)
+        in: query
+        name: status
+        type: string
+      - description: Count type (full, cycle, spot, annual)
+        in: query
+        name: count_type
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Search count number, store name, or counter name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Stock Counts
+      tags:
+      - stock-counts
+    post:
+      consumes:
+      - application/json
+      description: Creates a new stock count session with planned status and optional
+        line items
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock count creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateStockCountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a stock count and its lines (cannot delete completed or
+        reconciled counts)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Stock Count
+      tags:
+      - stock-counts
+    get:
+      consumes:
+      - application/json
+      description: Get detailed stock count header with line items and variance calculations
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Stock Count by ID
+      tags:
+      - stock-counts
+    put:
+      consumes:
+      - application/json
+      description: Updates stock count header properties like location, scheduled
+        date, count type, and metadata
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Stock count update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateStockCountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Stock Count Header
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: Approves a completed stock count session
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Approver payload
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.ApproveStockCountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/complete:
+    post:
+      consumes:
+      - application/json
+      description: Transitions a stock count status from in_progress to completed
+        and records completed timestamp
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/lines:
+    get:
+      consumes:
+      - application/json
+      description: Returns all line items with product and variance details for a
+        specific stock count
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.StockCountLineResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Line Items for Stock Count
+      tags:
+      - stock-counts
+    post:
+      consumes:
+      - application/json
+      description: Adds a product/variant count line to an existing stock count
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line item creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.StockCountLineDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.StockCountLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Line Item to Stock Count
+      tags:
+      - stock-counts
+    put:
+      consumes:
+      - application/json
+      description: Submits counted quantities for multiple line items in a stock count
+        at once
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Bulk update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.BulkUpdateStockCountLinesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk Update Stock Count Lines
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/lines/{line_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a single line item from a stock count
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line Item ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Stock Count Line
+      tags:
+      - stock-counts
+    get:
+      consumes:
+      - application/json
+      description: Get a single stock count line item by its ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line Item ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Stock Count Line by ID
+      tags:
+      - stock-counts
+    put:
+      consumes:
+      - application/json
+      description: Updates counted quantity, batch, serial number, or metadata for
+        a single line item
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line Item ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      - description: Line item update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateStockCountLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Stock Count Line
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/reconcile:
+    post:
+      consumes:
+      - application/json
+      description: Reconciles counted inventory with system stock, applies adjustments
+        to inventory_stock, and logs stock_movements
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reconcile Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/start:
+    post:
+      consumes:
+      - application/json
+      description: Transitions a stock count status from planned to in_progress and
+        records started timestamp
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/summary:
+    get:
+      consumes:
+      - application/json
+      description: Calculates total lines, variance counts, positive/negative variance
+        values
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Stock Count Variance Summary
+      tags:
+      - stock-counts
   /api/stock-movements:
     get:
       consumes:

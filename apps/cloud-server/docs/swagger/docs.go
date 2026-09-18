@@ -627,7 +627,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get the currently active contract price for a partner, product, and optional variant/quantity",
+                "description": "Get the currently active contract price for a partner, product, optional variant, uom, and quantity",
                 "consumes": [
                     "application/json"
                 ],
@@ -671,6 +671,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Product variant ID",
                         "name": "product_variant_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "UOM ID",
+                        "name": "uom_id",
                         "in": "query"
                     },
                     {
@@ -26427,7 +26433,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested.",
+                "description": "Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested. Supports optional search filter.",
                 "consumes": [
                     "application/json"
                 ],
@@ -26459,6 +26465,123 @@ const docTemplate = `{
                         "name": "organization_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional search query (SKU, product name, description, brand, category, barcode, variant)",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Alias for search query",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/products/master-catalog/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Searches master product catalog by SKU, product name, description, brand, category, variant, or barcode with nested details (UOMs, conversions, pricing, variants, barcodes, inventory) and pagination.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "products"
+                ],
+                "summary": "Search master product catalog",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search query (SKU, product name, description, brand, category, barcode, variant)",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Alias for search query",
+                        "name": "query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Alias for search query",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Alias for search query",
+                        "name": "search_term",
+                        "in": "query"
                     },
                     {
                         "type": "integer",
@@ -27119,7 +27242,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Create a new promotion or coupon (all types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item)",
+                "description": "Create a new promotion or coupon (all types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo)",
                 "consumes": [
                     "application/json"
                 ],
@@ -27262,7 +27385,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Apply a coupon code to a cart. Validates constraints (min_order_amount, min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the appropriate discount. Supported types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item.",
+                "description": "Apply a coupon code to a cart. Validates constraints (min_order_amount, min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the appropriate discount. Supported types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo.",
                 "consumes": [
                     "application/json"
                 ],
@@ -33421,6 +33544,1149 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List stock counts with filtering by store, status, count_type, date range, search, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "List Stock Counts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status (planned, in_progress, completed, approved, reconciled, cancelled)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Count type (full, cycle, spot, annual)",
+                        "name": "count_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "From date (YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "To date (YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search count number, store name, or counter name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new stock count session with planned status and optional line items",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Create Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Stock count creation payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateStockCountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get detailed stock count header with line items and variance calculations",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Get Stock Count by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates stock count header properties like location, scheduled date, count type, and metadata",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Update Stock Count Header",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Stock count update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateStockCountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a stock count and its lines (cannot delete completed or reconciled counts)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Delete Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Approves a completed stock count session",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Approve Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Approver payload",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ApproveStockCountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Transitions a stock count status from in_progress to completed and records completed timestamp",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Complete Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/lines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all line items with product and variance details for a specific stock count",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "List Line Items for Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.StockCountLineResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Submits counted quantities for multiple line items in a stock count at once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Bulk Update Stock Count Lines",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Bulk update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.BulkUpdateStockCountLinesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a product/variant count line to an existing stock count",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Add Line Item to Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Line item creation payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountLineDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountLineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/lines/{line_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a single stock count line item by its ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Get Stock Count Line by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Line Item ID",
+                        "name": "line_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountLineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates counted quantity, batch, serial number, or metadata for a single line item",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Update Stock Count Line",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Line Item ID",
+                        "name": "line_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Line item update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateStockCountLineRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountLineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a single line item from a stock count",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Delete Stock Count Line",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Line Item ID",
+                        "name": "line_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/reconcile": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reconciles counted inventory with system stock, applies adjustments to inventory_stock, and logs stock_movements",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Reconcile Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Transitions a stock count status from planned to in_progress and records started timestamp",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Start Stock Count",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-counts/{id}/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Calculates total lines, variance counts, positive/negative variance values",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-counts"
+                ],
+                "summary": "Get Stock Count Variance Summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Stock Count ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.StockCountSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
@@ -40520,6 +41786,18 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.ApproveStockCountRequest": {
+            "type": "object",
+            "required": [
+                "approved_by"
+            ],
+            "properties": {
+                "approved_by": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.ApproveTransferRequestDTO": {
             "type": "object",
             "required": [
@@ -40670,9 +41948,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2026-01-24T21:43:00Z"
                 },
+                "discount_amount": {
+                    "type": "string",
+                    "example": "5.00"
+                },
                 "discount_percentage": {
                     "type": "string",
                     "example": "5.00"
+                },
+                "discount_type": {
+                    "type": "string",
+                    "example": "percentage"
                 },
                 "id": {
                     "type": "integer",
@@ -40924,6 +42210,58 @@ const docTemplate = `{
             "properties": {
                 "percentage_change": {
                     "type": "string"
+                }
+            }
+        },
+        "handler.BulkUpdateStockCountLineItem": {
+            "type": "object",
+            "required": [
+                "counted_quantity",
+                "id"
+            ],
+            "properties": {
+                "batch_number": {
+                    "type": "string"
+                },
+                "counted_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "counted_quantity": {
+                    "type": "number",
+                    "example": 10
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "variance": {
+                    "type": "number",
+                    "example": 0
+                },
+                "variance_value": {
+                    "type": "number",
+                    "example": 0
+                }
+            }
+        },
+        "handler.BulkUpdateStockCountLinesRequest": {
+            "type": "object",
+            "required": [
+                "lines"
+            ],
+            "properties": {
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.BulkUpdateStockCountLineItem"
+                    }
                 }
             }
         },
@@ -41230,9 +42568,17 @@ const docTemplate = `{
                     "type": "number",
                     "example": 45.5
                 },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 5
+                },
                 "discount_percentage": {
                     "type": "number",
                     "example": 5
+                },
+                "discount_type": {
+                    "type": "string",
+                    "example": "percentage"
                 },
                 "is_active": {
                     "type": "boolean",
@@ -41261,6 +42607,10 @@ const docTemplate = `{
                 "product_variant_id": {
                     "type": "integer",
                     "example": 5
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 2
                 },
                 "valid_from": {
                     "type": "string",
@@ -42998,6 +44348,18 @@ const docTemplate = `{
                         "type": "integer"
                     }
                 },
+                "target_customer_tiers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "target_product_ids": {
                     "type": "array",
                     "items": {
@@ -43624,6 +44986,51 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "handler.CreateStockCountRequest": {
+            "type": "object",
+            "required": [
+                "store_id"
+            ],
+            "properties": {
+                "count_number": {
+                    "type": "string",
+                    "example": "SC-20260916-0001"
+                },
+                "count_type": {
+                    "type": "string",
+                    "example": "full"
+                },
+                "counted_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.StockCountLineDTO"
+                    }
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "scheduled_date": {
+                    "type": "string",
+                    "example": "2026-09-16"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "planned"
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -46040,6 +47447,309 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.StockCountLineDTO": {
+            "type": "object",
+            "required": [
+                "counted_quantity",
+                "product_id"
+            ],
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-01"
+                },
+                "counted_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "counted_quantity": {
+                    "type": "number",
+                    "example": 9
+                },
+                "expected_quantity": {
+                    "type": "number",
+                    "example": 10
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "system_quantity": {
+                    "type": "number",
+                    "example": 10
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "variance": {
+                    "type": "number",
+                    "example": -1
+                },
+                "variance_value": {
+                    "type": "number",
+                    "example": -15.5
+                }
+            }
+        },
+        "handler.StockCountLineResponse": {
+            "type": "object",
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-01"
+                },
+                "counted_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "counted_quantity": {
+                    "type": "string",
+                    "example": "9.000"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "expected_quantity": {
+                    "type": "string",
+                    "example": "10.000"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Fresh Milk 1L"
+                },
+                "product_sku": {
+                    "type": "string",
+                    "example": "MILK-001"
+                },
+                "product_variant_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "stock_count_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "storage_location_name": {
+                    "type": "string",
+                    "example": "Main Shelf A1"
+                },
+                "system_quantity": {
+                    "type": "string",
+                    "example": "10.000"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "uom_name": {
+                    "type": "string",
+                    "example": "Liter"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "variance": {
+                    "type": "string",
+                    "example": "-1.000"
+                },
+                "variance_value": {
+                    "type": "string",
+                    "example": "-15.50"
+                },
+                "variant_name": {
+                    "type": "string",
+                    "example": "Whole Milk"
+                },
+                "variant_sku": {
+                    "type": "string",
+                    "example": "MILK-001-W"
+                }
+            }
+        },
+        "handler.StockCountListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.StockCountResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "total_count": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "total_pages": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "handler.StockCountResponse": {
+            "type": "object",
+            "properties": {
+                "approved_by": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "approved_by_name": {
+                    "type": "string",
+                    "example": "manager_jane"
+                },
+                "completed_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "count_number": {
+                    "type": "string",
+                    "example": "SC-20260916-0001"
+                },
+                "count_type": {
+                    "type": "string",
+                    "example": "full"
+                },
+                "counted_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "counted_by_name": {
+                    "type": "string",
+                    "example": "john_doe"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-09-16T08:00:00Z"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.StockCountLineResponse"
+                    }
+                },
+                "lines_with_variance": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "scheduled_date": {
+                    "type": "string",
+                    "example": "2026-09-16"
+                },
+                "started_at": {
+                    "type": "string",
+                    "example": "2026-09-16T10:00:00Z"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "planned"
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "storage_location_name": {
+                    "type": "string",
+                    "example": "Warehouse Bay 1"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_name": {
+                    "type": "string",
+                    "example": "Main Store Branch"
+                },
+                "summary": {
+                    "$ref": "#/definitions/handler.StockCountSummaryResponse"
+                },
+                "total_lines": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "total_variance_value": {
+                    "type": "string",
+                    "example": "-25.00"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-09-16T08:00:00Z"
+                }
+            }
+        },
+        "handler.StockCountSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "lines_with_variance": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "negative_variance": {
+                    "type": "string",
+                    "example": "-55.50"
+                },
+                "positive_variance": {
+                    "type": "string",
+                    "example": "10.00"
+                },
+                "total_lines": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "total_variance_value": {
+                    "type": "string",
+                    "example": "-45.50"
+                }
+            }
+        },
         "handler.StoreResponse": {
             "type": "object",
             "properties": {
@@ -46561,9 +48271,17 @@ const docTemplate = `{
                     "type": "number",
                     "example": 42
                 },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 10
+                },
                 "discount_percentage": {
                     "type": "number",
                     "example": 7.5
+                },
+                "discount_type": {
+                    "type": "string",
+                    "example": "fixed"
                 },
                 "is_active": {
                     "type": "boolean",
@@ -46576,6 +48294,10 @@ const docTemplate = `{
                 "notes": {
                     "type": "string",
                     "example": "Updated price for Q2"
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 2
                 },
                 "valid_from": {
                     "type": "string",
@@ -47725,6 +49447,18 @@ const docTemplate = `{
                         "type": "integer"
                     }
                 },
+                "target_customer_tiers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_customer_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "target_product_ids": {
                     "type": "array",
                     "items": {
@@ -47995,6 +49729,68 @@ const docTemplate = `{
             "properties": {
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "handler.UpdateStockCountLineRequest": {
+            "type": "object",
+            "required": [
+                "counted_quantity"
+            ],
+            "properties": {
+                "batch_number": {
+                    "type": "string",
+                    "example": "BATCH-01"
+                },
+                "counted_at": {
+                    "type": "string",
+                    "example": "2026-09-16T12:00:00Z"
+                },
+                "counted_quantity": {
+                    "type": "number",
+                    "example": 12
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "serial_number": {
+                    "type": "string"
+                },
+                "variance": {
+                    "type": "number",
+                    "example": 2
+                },
+                "variance_value": {
+                    "type": "number",
+                    "example": 30
+                }
+            }
+        },
+        "handler.UpdateStockCountRequest": {
+            "type": "object",
+            "properties": {
+                "count_type": {
+                    "type": "string",
+                    "example": "cycle"
+                },
+                "counted_by": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "scheduled_date": {
+                    "type": "string",
+                    "example": "2026-09-17"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "in_progress"
+                },
+                "storage_location_id": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
