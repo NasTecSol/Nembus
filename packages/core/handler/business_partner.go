@@ -189,7 +189,7 @@ func (h *BusinessPartnerHandler) GetBusinessPartner(c *gin.Context) {
 
 // ListBusinessPartners handles GET /business-partners
 // @Summary      List business partners
-// @Description  List business partners filtered by role and organization
+// @Description  List business partners filtered by role and organization with pagination
 // @Tags         business-partners
 // @Accept       json
 // @Produce      json
@@ -198,7 +198,9 @@ func (h *BusinessPartnerHandler) GetBusinessPartner(c *gin.Context) {
 // @Param        Authorization    header    string  true  "Bearer token"
 // @Param        organization_id  query     int     true  "Organization ID"
 // @Param        partner_role     query     string  false "Filter by role (supplier, vendor, special_customer, corporate_group)"
-// @Success      200              {array}   BusinessPartnerResponse
+// @Param        page             query     int     false "Page number" default(1)
+// @Param        limit            query     int     false "Number of records per page" default(50)
+// @Success      200              {object}  BusinessPartnerResponse
 // @Failure      400              {object}  ErrorResponse
 // @Failure      401              {object}  ErrorResponse
 // @Failure      500              {object}  ErrorResponse
@@ -212,14 +214,19 @@ func (h *BusinessPartnerHandler) ListBusinessPartners(c *gin.Context) {
 
 	orgIDStr := c.Query("organization_id")
 	roleFilter := c.Query("partner_role")
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
 
-	resp := h.useCase.ListBusinessPartners(c.Request.Context(), orgIDStr, roleFilter)
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
+	resp := h.useCase.ListBusinessPartners(c.Request.Context(), orgIDStr, roleFilter, int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 
 // SearchBusinessPartners handles GET /business-partners/search
 // @Summary      Search business partners
-// @Description  Search business partners by name or code
+// @Description  Search business partners by name or code with pagination
 // @Tags         business-partners
 // @Accept       json
 // @Produce      json
@@ -228,8 +235,9 @@ func (h *BusinessPartnerHandler) ListBusinessPartners(c *gin.Context) {
 // @Param        Authorization    header    string  true  "Bearer token"
 // @Param        organization_id  query     int     true  "Organization ID"
 // @Param        q                query     string  true  "Search query"
-// @Param        limit            query     int     false "Limit (default 10)"
-// @Success      200              {array}   BusinessPartnerResponse
+// @Param        page             query     int     false "Page number" default(1)
+// @Param        limit            query     int     false "Limit (default 50)"
+// @Success      200              {object}  BusinessPartnerResponse
 // @Failure      400              {object}  ErrorResponse
 // @Router       /api/business-partners/search [get]
 func (h *BusinessPartnerHandler) SearchBusinessPartners(c *gin.Context) {
@@ -241,14 +249,13 @@ func (h *BusinessPartnerHandler) SearchBusinessPartners(c *gin.Context) {
 
 	orgIDStr := c.Query("organization_id")
 	query := c.Query("q")
-	limitStr := c.DefaultQuery("limit", "10")
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
 
-	limit, err := strconv.ParseInt(limitStr, 10, 32)
-	if err != nil {
-		limit = 10
-	}
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
 
-	resp := h.useCase.SearchBusinessPartners(c.Request.Context(), orgIDStr, query, int32(limit))
+	resp := h.useCase.SearchBusinessPartners(c.Request.Context(), orgIDStr, query, int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 

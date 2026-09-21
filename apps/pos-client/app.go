@@ -279,6 +279,7 @@ func (a *App) migrate(dbURL string) error {
 	// Ensure legacy DB triggers that double-count cashier session balances are dropped
 	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
 	_, _ = sqlDB.Exec("DROP FUNCTION IF EXISTS update_cashier_session_balance();")
+	_, _ = sqlDB.Exec("ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;")
 
 	return nil
 }
@@ -552,8 +553,9 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	printUC := usecase.NewPrintUseCase()
 	paymentTermsUC := usecase.NewPaymentTermsUseCase()
 	purchaseOrdersUC := usecase.NewPurchaseOrdersUseCase()
+	invoiceUC := usecase.NewInvoiceUseCase()
 
-	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.cfg)
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.cfg)
 	r.Static("/images", "./images")
 
 	log.Printf("Starting Gin HTTP server on port %s (Swagger: http://localhost:%s/swagger/index.html)", a.cfg.Port, a.cfg.Port)

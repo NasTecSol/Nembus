@@ -76,6 +76,14 @@ WHERE t.id = $1
 ORDER BY tl.line_number;
 
 
+-- name: CountPosTransactionsByCashierSession :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
+  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
+  AND ($4::timestamp IS NULL OR t.transaction_date <= $4);
+
 -- name: ListPosTransactionsByCashierSession :many
 SELECT 
     t.id,
@@ -144,8 +152,8 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
-WHERE ($1 = 0 OR t.cashier_id = $1)
-  AND ($2 = 0 OR t.cashier_session_id = $2)
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
   AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
   AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
 GROUP BY
@@ -178,7 +186,13 @@ GROUP BY
     term.terminal_name,
     sess.session_number,
     cust.name
-ORDER BY t.transaction_date DESC, t.id;
+ORDER BY t.transaction_date DESC, t.id
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountTodaysPosTransactions :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.store_id = $1;
 
 -- name: ListTodaysPosTransactions :many
 SELECT 
@@ -211,6 +225,11 @@ SET
 WHERE id = $1
   AND status = 'completed'
   AND voided_at IS NULL;
+
+-- name: CountPosTransactionsByCustomerID :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.customer_id = $1;
 
 -- name: ListPosTransactionsByCustomerID :many
 SELECT 
