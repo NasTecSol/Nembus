@@ -460,6 +460,70 @@ func (q *Queries) ConvertQuoteToOrder(ctx context.Context, arg ConvertQuoteToOrd
 	return i, err
 }
 
+const countCustomerInvoices = `-- name: CountCustomerInvoices :one
+SELECT COUNT(*) FROM invoices
+WHERE customer_id = $1
+  AND organization_id = $2
+`
+
+type CountCustomerInvoicesParams struct {
+	CustomerID     int32 `json:"customer_id"`
+	OrganizationID int32 `json:"organization_id"`
+}
+
+func (q *Queries) CountCustomerInvoices(ctx context.Context, arg CountCustomerInvoicesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCustomerInvoices, arg.CustomerID, arg.OrganizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countInvoices = `-- name: CountInvoices :one
+SELECT COUNT(*) FROM invoices
+WHERE organization_id = $1
+  AND ($2::int IS NULL OR store_id = $2)
+  AND ($3::invoice_status IS NULL OR invoice_status = $3)
+  AND ($4::date IS NULL OR invoice_date >= $4)
+  AND ($5::date IS NULL OR invoice_date <= $5)
+`
+
+type CountInvoicesParams struct {
+	OrganizationID int32             `json:"organization_id"`
+	StoreID        pgtype.Int4       `json:"store_id"`
+	InvoiceStatus  NullInvoiceStatus `json:"invoice_status"`
+	FromDate       pgtype.Date       `json:"from_date"`
+	ToDate         pgtype.Date       `json:"to_date"`
+}
+
+func (q *Queries) CountInvoices(ctx context.Context, arg CountInvoicesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInvoices,
+		arg.OrganizationID,
+		arg.StoreID,
+		arg.InvoiceStatus,
+		arg.FromDate,
+		arg.ToDate,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOverdueInvoices = `-- name: CountOverdueInvoices :one
+SELECT COUNT(*)
+FROM invoices i
+WHERE i.store_id = $1
+  AND i.invoice_status IN ('sent', 'viewed', 'partially_paid')
+  AND i.due_date < CURRENT_DATE
+  AND i.balance_due > 0
+`
+
+func (q *Queries) CountOverdueInvoices(ctx context.Context, storeID pgtype.Int4) (int64, error) {
+	row := q.db.QueryRow(ctx, countOverdueInvoices, storeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCart = `-- name: CreateCart :one
 
 
@@ -2981,15 +3045,17 @@ SELECT
     COALESCE(SUM(paid_amount), 0) as total_paid,
     COALESCE(SUM(balance_due), 0) as total_outstanding
 FROM invoices
-WHERE store_id = $1
-  AND invoice_date >= $2
-  AND invoice_date <= $3
+WHERE organization_id = $1
+  AND ($2::int IS NULL OR store_id = $2)
+  AND ($3::date IS NULL OR invoice_date >= $3)
+  AND ($4::date IS NULL OR invoice_date <= $4)
 `
 
 type GetInvoiceStatsParams struct {
-	StoreID       pgtype.Int4 `json:"store_id"`
-	InvoiceDate   pgtype.Date `json:"invoice_date"`
-	InvoiceDate_2 pgtype.Date `json:"invoice_date_2"`
+	OrganizationID int32       `json:"organization_id"`
+	StoreID        pgtype.Int4 `json:"store_id"`
+	FromDate       pgtype.Date `json:"from_date"`
+	ToDate         pgtype.Date `json:"to_date"`
 }
 
 type GetInvoiceStatsRow struct {
@@ -3004,7 +3070,12 @@ type GetInvoiceStatsRow struct {
 }
 
 func (q *Queries) GetInvoiceStats(ctx context.Context, arg GetInvoiceStatsParams) (GetInvoiceStatsRow, error) {
-	row := q.db.QueryRow(ctx, getInvoiceStats, arg.StoreID, arg.InvoiceDate, arg.InvoiceDate_2)
+	row := q.db.QueryRow(ctx, getInvoiceStats,
+		arg.OrganizationID,
+		arg.StoreID,
+		arg.FromDate,
+		arg.ToDate,
+	)
 	var i GetInvoiceStatsRow
 	err := row.Scan(
 		&i.TotalInvoices,
@@ -4815,28 +4886,28 @@ WHERE organization_id = $1
   AND ($4::date IS NULL OR invoice_date >= $4)
   AND ($5::date IS NULL OR invoice_date <= $5)
 ORDER BY invoice_date DESC, created_at DESC
-LIMIT $6 OFFSET $7
+LIMIT $7 OFFSET $6
 `
 
 type ListInvoicesParams struct {
-	OrganizationID int32         `json:"organization_id"`
-	Column2        int32         `json:"column_2"`
-	Column3        InvoiceStatus `json:"column_3"`
-	Column4        pgtype.Date   `json:"column_4"`
-	Column5        pgtype.Date   `json:"column_5"`
-	Limit          int32         `json:"limit"`
-	Offset         int32         `json:"offset"`
+	OrganizationID int32             `json:"organization_id"`
+	StoreID        pgtype.Int4       `json:"store_id"`
+	InvoiceStatus  NullInvoiceStatus `json:"invoice_status"`
+	FromDate       pgtype.Date       `json:"from_date"`
+	ToDate         pgtype.Date       `json:"to_date"`
+	Offset         int32             `json:"offset"`
+	Limit          int32             `json:"limit"`
 }
 
 func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]Invoice, error) {
 	rows, err := q.db.Query(ctx, listInvoices,
 		arg.OrganizationID,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-		arg.Column5,
-		arg.Limit,
+		arg.StoreID,
+		arg.InvoiceStatus,
+		arg.FromDate,
+		arg.ToDate,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

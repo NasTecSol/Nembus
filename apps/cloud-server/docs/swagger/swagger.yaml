@@ -6126,6 +6126,184 @@ definitions:
         example: "300000000000003"
         type: string
     type: object
+  usecase.CreateInvoiceInput:
+    properties:
+      billing_address:
+        additionalProperties: true
+        type: object
+      created_by_user_id:
+        type: integer
+      currency_code:
+        type: string
+      customer_email:
+        type: string
+      customer_id:
+        type: integer
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      customer_tax_id:
+        type: string
+      due_date:
+        description: YYYY-MM-DD
+        type: string
+      exchange_rate:
+        type: string
+      internal_notes:
+        type: string
+      invoice_date:
+        description: YYYY-MM-DD
+        type: string
+      invoice_number:
+        type: string
+      invoice_status:
+        description: draft, sent, viewed, partially_paid, paid, overdue, cancelled,
+          refunded
+        type: string
+      invoice_type:
+        description: standard, proforma, credit_note, debit_note, recurring
+        type: string
+      is_recurring:
+        type: boolean
+      lines:
+        items:
+          $ref: '#/definitions/usecase.CreateInvoiceLineInput'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      next_invoice_date:
+        type: string
+      notes:
+        type: string
+      organization_id:
+        type: integer
+      payment_terms:
+        type: string
+      recurrence_pattern:
+        type: string
+      reference_number:
+        type: string
+      related_invoice_id:
+        type: string
+      sales_order_id:
+        type: string
+      shipping_address:
+        additionalProperties: true
+        type: object
+      store_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  usecase.CreateInvoiceLineInput:
+    properties:
+      description:
+        type: string
+      discount_amount:
+        type: string
+      item_type:
+        description: product, service, discount, shipping, fee
+        type: string
+      line_number:
+        type: integer
+      line_total:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      order_line_id:
+        type: string
+      product_id:
+        type: integer
+      product_sku:
+        type: string
+      product_variant_id:
+        type: integer
+      quantity:
+        type: string
+      tax_amount:
+        type: string
+      tax_category_id:
+        type: integer
+      tax_rate:
+        type: string
+      unit_price:
+        type: string
+      uom_id:
+        type: integer
+    type: object
+  usecase.RecordInvoicePaymentInput:
+    properties:
+      bank_account_id:
+        type: integer
+      currency_code:
+        type: string
+      exchange_rate:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      notes:
+        type: string
+      payment_amount:
+        type: string
+      payment_date:
+        description: YYYY-MM-DD
+        type: string
+      payment_gateway:
+        type: string
+      payment_method:
+        description: cash, card, bank_transfer, etc.
+        type: string
+      payment_number:
+        type: string
+      payment_reference:
+        type: string
+      received_by_user_id:
+        type: integer
+    type: object
+  usecase.UpdateInvoiceInput:
+    properties:
+      billing_address:
+        additionalProperties: true
+        type: object
+      customer_email:
+        type: string
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      due_date:
+        type: string
+      internal_notes:
+        type: string
+      is_recurring:
+        type: boolean
+      metadata:
+        additionalProperties: true
+        type: object
+      next_invoice_date:
+        type: string
+      notes:
+        type: string
+      payment_terms:
+        type: string
+      recurrence_pattern:
+        type: string
+      reference_number:
+        type: string
+      shipping_address:
+        additionalProperties: true
+        type: object
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -8522,7 +8700,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: List business partners filtered by role and organization
+      description: List business partners filtered by role and organization with pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -8543,15 +8721,23 @@ paths:
         in: query
         name: partner_role
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/handler.BusinessPartnerResponse'
-            type: array
+            $ref: '#/definitions/handler.BusinessPartnerResponse'
         "400":
           description: Bad Request
           schema:
@@ -9426,7 +9612,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Search business partners by name or code
+      description: Search business partners by name or code with pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -9448,7 +9634,12 @@ paths:
         name: q
         required: true
         type: string
-      - description: Limit (default 10)
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Limit (default 50)
         in: query
         name: limit
         type: integer
@@ -9458,9 +9649,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/handler.BusinessPartnerResponse'
-            type: array
+            $ref: '#/definitions/handler.BusinessPartnerResponse'
         "400":
           description: Bad Request
           schema:
@@ -14315,6 +14504,764 @@ paths:
       summary: Upsert inventory stock
       tags:
       - inventory_stock
+  /api/invoices:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of invoices with filters
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Customer ID
+        in: query
+        name: customer_id
+        type: integer
+      - description: Invoice status (draft, sent, viewed, partially_paid, paid, overdue,
+          cancelled, refunded)
+        in: query
+        name: status
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Invoices
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Create a new commercial/customer invoice with line items
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateInvoiceInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Invoice
+      tags:
+      - invoices
+  /api/invoices/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an invoice by ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Invoice
+      tags:
+      - invoices
+    get:
+      consumes:
+      - application/json
+      description: Retrieve full invoice details with lines and payment history
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Invoice by ID
+      tags:
+      - invoices
+    put:
+      consumes:
+      - application/json
+      description: Update details of an existing invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Invoice update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateInvoiceInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Invoice
+      tags:
+      - invoices
+  /api/invoices/{id}/lines:
+    get:
+      consumes:
+      - application/json
+      description: Get all item lines for an invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Invoice Lines
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Add a new line item to an existing invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Line payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateInvoiceLineInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Invoice Line
+      tags:
+      - invoices
+  /api/invoices/{id}/payments:
+    get:
+      consumes:
+      - application/json
+      description: Get all payment transactions for an invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Invoice Payments
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Record a payment transaction against an invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Payment payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.RecordInvoicePaymentInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record Invoice Payment
+      tags:
+      - invoices
+  /api/invoices/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Change the status of an invoice (e.g. sent, paid, cancelled) and
+        record audit log
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Status update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Invoice Status
+      tags:
+      - invoices
+  /api/invoices/by-number/{invoice_number}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve invoice by unique invoice number
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice Number
+        in: path
+        name: invoice_number
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Invoice by Number
+      tags:
+      - invoices
+  /api/invoices/customer/{customer_id}:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated invoices for a specific customer
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Customer ID
+        in: path
+        name: customer_id
+        required: true
+        type: integer
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Customer Invoices
+      tags:
+      - invoices
+  /api/invoices/from-order/{order_id}:
+    post:
+      consumes:
+      - application/json
+      description: Automatically generates an invoice from an existing sales order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Sales Order UUID
+        in: path
+        name: order_id
+        required: true
+        type: string
+      - description: Payload with invoice_number
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Invoice from Order
+      tags:
+      - invoices
+  /api/invoices/lines/{line_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an invoice line item by UUID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice Line UUID
+        in: path
+        name: line_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Invoice Line
+      tags:
+      - invoices
+  /api/invoices/overdue:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated overdue invoices for a store
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Overdue Invoices
+      tags:
+      - invoices
+  /api/invoices/stats:
+    get:
+      consumes:
+      - application/json
+      description: Get aggregated invoice metrics (total invoices, paid, overdue,
+        total amounts)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Invoice Stats
+      tags:
+      - invoices
   /api/loyalty-rules:
     get:
       consumes:
@@ -20354,21 +21301,15 @@ paths:
         name: store_id
         required: true
         type: integer
-      - description: 'Page number (default: 1)'
+      - default: 1
+        description: Page number
         in: query
         name: page
         type: integer
-      - description: 'Items per page (default: 20)'
+      - default: 50
+        description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - description: Items per page alias
-        in: query
-        name: page_size
-        type: integer
-      - description: Offset override
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -21053,7 +21994,7 @@ paths:
       consumes:
       - application/json
       description: Returns POS transactions for a cashier and session with optional
-        date range
+        date range and pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -21081,6 +22022,16 @@ paths:
         in: query
         name: end_date
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
@@ -21127,21 +22078,15 @@ paths:
         name: customer_id
         required: true
         type: integer
-      - description: 'Page number (default: 1)'
+      - default: 1
+        description: Page number
         in: query
         name: page
         type: integer
-      - description: 'Items per page (default: 20)'
+      - default: 50
+        description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - description: Items per page alias
-        in: query
-        name: page_size
-        type: integer
-      - description: Offset override
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -28880,15 +29825,15 @@ paths:
         name: Authorization
         required: true
         type: string
-      - default: 10
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
         description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - default: 0
-        description: Offset for pagination
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -29066,7 +30011,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get stock movements filtered by date range (inclusive)
+      description: Get paginated stock movements filtered by date range (inclusive)
       parameters:
       - description: Tenant identifier
         in: header
@@ -29090,6 +30035,16 @@ paths:
         name: end
         required: true
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
@@ -29135,15 +30090,15 @@ paths:
         name: productID
         required: true
         type: string
-      - default: 10
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
         description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - default: 0
-        description: Offset for pagination
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -29201,6 +30156,16 @@ paths:
         in: query
         name: end_date
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
