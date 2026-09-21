@@ -103,8 +103,8 @@ func (h *StockMovementHandler) GetStockMovement(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id   header    string  true   "Tenant identifier"
 // @Param        Authorization header    string  true   "Bearer token"
-// @Param        limit         query     int     false  "Number of records per page" default(10)
-// @Param        offset        query     int     false  "Offset for pagination" default(0)
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -117,13 +117,13 @@ func (h *StockMovementHandler) ListStockMovements(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	limitStr := c.DefaultQuery("limit", "10")
-	offsetStr := c.DefaultQuery("offset", "0")
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
 
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
 	limit, _ := strconv.ParseInt(limitStr, 10, 32)
-	offset, _ := strconv.ParseInt(offsetStr, 10, 32)
 
-	resp := h.useCase.ListStockMovements(c.Request.Context(), int32(limit), int32(offset))
+	resp := h.useCase.ListStockMovements(c.Request.Context(), int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -137,8 +137,8 @@ func (h *StockMovementHandler) ListStockMovements(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true   "Tenant identifier"
 // @Param        Authorization header    string  true   "Bearer token"
 // @Param        productID     path      string  true   "Product ID"
-// @Param        limit         query     int     false  "Number of records per page" default(10)
-// @Param        offset        query     int     false  "Offset for pagination" default(0)
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -152,19 +152,19 @@ func (h *StockMovementHandler) ListStockMovementsByProduct(c *gin.Context) {
 	h.useCase.SetRepository(repo)
 
 	productID := c.Param("productID")
-	limitStr := c.DefaultQuery("limit", "10")
-	offsetStr := c.DefaultQuery("offset", "0")
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
 
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
 	limit, _ := strconv.ParseInt(limitStr, 10, 32)
-	offset, _ := strconv.ParseInt(offsetStr, 10, 32)
 
-	resp := h.useCase.ListStockMovementsByProduct(c.Request.Context(), productID, int32(limit), int32(offset))
+	resp := h.useCase.ListStockMovementsByProduct(c.Request.Context(), productID, int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 
 // ListStockMovementsByDateRange handles GET /api/stock-movements/daterange
 // @Summary      List stock movements in date range
-// @Description  Get stock movements filtered by date range (inclusive)
+// @Description  Get paginated stock movements filtered by date range (inclusive)
 // @Tags         stock-movements
 // @Accept       json
 // @Produce      json
@@ -173,6 +173,8 @@ func (h *StockMovementHandler) ListStockMovementsByProduct(c *gin.Context) {
 // @Param        Authorization header    string  true   "Bearer token"
 // @Param        start         query     string  true   "Start date (RFC3339)" example(2026-03-01T00:00:00Z)
 // @Param        end           query     string  true   "End date (RFC3339)"   example(2026-03-10T23:59:59Z)
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -203,7 +205,12 @@ func (h *StockMovementHandler) ListStockMovementsByDateRange(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListStockMovementsByDateRange(c.Request.Context(), &start, &end)
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
+	resp := h.useCase.ListStockMovementsByDateRange(c.Request.Context(), &start, &end, int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -256,6 +263,8 @@ func (h *StockMovementHandler) UpdateStockMovementStatus(c *gin.Context) {
 // @Param        productID     path        string  true   "Product ID"
 // @Param        start_date    query       string  false  "Start date (RFC3339)" example(2026-03-01T00:00:00Z)
 // @Param        end_date      query       string  false  "End date (RFC3339)"   example(2026-03-10T23:59:59Z)
+// @Param        page          query       int     false  "Page number" default(1)
+// @Param        limit         query       int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -290,6 +299,11 @@ func (h *StockMovementHandler) ListStockMovementsByProductWithDateRange(c *gin.C
 		endDate = &t
 	}
 
-	resp := h.useCase.ListStockMovementsByProductWithDateRange(c.Request.Context(), productID, startDate, endDate)
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
+	resp := h.useCase.ListStockMovementsByProductWithDateRange(c.Request.Context(), productID, startDate, endDate, int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }

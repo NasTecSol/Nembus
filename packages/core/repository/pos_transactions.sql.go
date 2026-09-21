@@ -12,6 +12,60 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countPosTransactionsByCashierSession = `-- name: CountPosTransactionsByCashierSession :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
+  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
+  AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
+`
+
+type CountPosTransactionsByCashierSessionParams struct {
+	Column1 int32            `json:"column_1"`
+	Column2 int32            `json:"column_2"`
+	Column3 pgtype.Timestamp `json:"column_3"`
+	Column4 pgtype.Timestamp `json:"column_4"`
+}
+
+func (q *Queries) CountPosTransactionsByCashierSession(ctx context.Context, arg CountPosTransactionsByCashierSessionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPosTransactionsByCashierSession,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPosTransactionsByCustomerID = `-- name: CountPosTransactionsByCustomerID :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.customer_id = $1
+`
+
+func (q *Queries) CountPosTransactionsByCustomerID(ctx context.Context, customerID pgtype.Int4) (int64, error) {
+	row := q.db.QueryRow(ctx, countPosTransactionsByCustomerID, customerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTodaysPosTransactions = `-- name: CountTodaysPosTransactions :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.store_id = $1
+`
+
+func (q *Queries) CountTodaysPosTransactions(ctx context.Context, storeID int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countTodaysPosTransactions, storeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createPosTransaction = `-- name: CreatePosTransaction :one
 INSERT INTO pos_transactions (
     transaction_number,
@@ -394,8 +448,8 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
-WHERE ($1 = 0 OR t.cashier_id = $1)
-  AND ($2 = 0 OR t.cashier_session_id = $2)
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
   AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
   AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
 GROUP BY
@@ -429,13 +483,16 @@ GROUP BY
     sess.session_number,
     cust.name
 ORDER BY t.transaction_date DESC, t.id
+LIMIT $6 OFFSET $5
 `
 
 type ListPosTransactionsByCashierSessionParams struct {
-	Column1 interface{}      `json:"column_1"`
-	Column2 interface{}      `json:"column_2"`
+	Column1 int32            `json:"column_1"`
+	Column2 int32            `json:"column_2"`
 	Column3 pgtype.Timestamp `json:"column_3"`
 	Column4 pgtype.Timestamp `json:"column_4"`
+	Offset  int32            `json:"offset"`
+	Limit   int32            `json:"limit"`
 }
 
 type ListPosTransactionsByCashierSessionRow struct {
@@ -476,6 +533,8 @@ func (q *Queries) ListPosTransactionsByCashierSession(ctx context.Context, arg L
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
+		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

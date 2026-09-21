@@ -45,9 +45,26 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 		return nil, fmt.Errorf("failed to connect to tenant database for '%s' using connection string: %w", slug, err)
 	}
 
+	// Ensure required columns / schema patches exist
+	PatchDatabase(ctx, pool)
+
 	// Cache the pool for future use
 	m.pools.Store(slug, pool)
 	return pool, nil
+}
+
+// PatchDatabase applies non-destructive idempotent schema patches to ensure
+// compatibility across existing tenant and master databases.
+func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) {
+	if pool == nil {
+		return
+	}
+	queries := []string{
+		`ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;`,
+	}
+	for _, q := range queries {
+		_, _ = pool.Exec(ctx, q)
+	}
 }
 
 // GetTenantDSN returns the raw connection string (DSN) for a tenant without
