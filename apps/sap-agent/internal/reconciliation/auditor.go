@@ -62,7 +62,11 @@ func (a *AuditEngine) Reconcile(ctx context.Context, runID string, orgID int) (*
 		{contracts.DomainProducts, schema.TableOITM, "ItemCode"},
 		{contracts.DomainBarcodes, schema.TableOBCD, "BcdEntry"},
 		{contracts.DomainPartners, schema.TableOCRD, "CardCode"},
+		{contracts.DomainPurchaseOrders, schema.TableOPOR, "DocEntry"},
+		{contracts.DomainGoodsReceipts, schema.TableOPDN, "DocEntry"},
+		{contracts.DomainStockMovements, schema.TableOINM, "TransNum"},
 		{contracts.DomainSalesOrders, schema.TableORDR, "DocEntry"},
+		{contracts.DomainIncomingPayments, schema.TableORCT, "DocEntry"},
 	}
 
 	for _, spec := range countChecks {

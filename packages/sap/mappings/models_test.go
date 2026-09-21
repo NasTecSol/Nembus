@@ -263,3 +263,186 @@ func TestBarcodeAndPriceWithUOM(t *testing.T) {
 	}
 }
 
+func TestPurchaseOrderMapping(t *testing.T) {
+	po := mappings.SAPPurchaseOrder{
+		DocEntry:   1001,
+		DocNum:     5001,
+		DocDate:    time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC),
+		DocDueDate: time.Date(2024, 2, 15, 0, 0, 0, 0, time.UTC),
+		CardCode:   "SUP-001",
+		CardName:   "Acme Roasters Ltd",
+		DocTotal:   1150.0,
+		VatSum:     150.0,
+		DiscSum:    0.0,
+		DocStatus:  "O",
+		Lines: []mappings.SAPPurchaseOrderLine{
+			{
+				DocEntry:   1001,
+				LineNum:    0,
+				ItemCode:   "ITEM-001",
+				Dscription: "Premium Coffee Beans 1kg",
+				Quantity:   100,
+				Price:      10.0,
+				LineTotal:  1000.0,
+				VatSum:     150.0,
+				WhsCode:    "01",
+				UnitMsr:    "KG",
+				OpenQty:    50, // 50 already received -> partially_received
+			},
+		},
+	}
+
+	canon := po.ToCanonical()
+	if canon.PONumber != "PO-5001" {
+		t.Errorf("expected PONumber 'PO-5001', got %s", canon.PONumber)
+	}
+	if canon.SupplierCode != "SUP-001" {
+		t.Errorf("expected SupplierCode 'SUP-001', got %s", canon.SupplierCode)
+	}
+	if canon.Status != "partially_received" {
+		t.Errorf("expected Status 'partially_received', got %s", canon.Status)
+	}
+	if canon.Subtotal != 1000.0 {
+		t.Errorf("expected Subtotal 1000.0, got %f", canon.Subtotal)
+	}
+	if len(canon.Lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(canon.Lines))
+	}
+	if canon.Lines[0].ReceivedQuantity != 50.0 {
+		t.Errorf("expected ReceivedQuantity 50.0, got %f", canon.Lines[0].ReceivedQuantity)
+	}
+}
+
+func TestGoodsReceiptMapping(t *testing.T) {
+	gr := mappings.SAPGoodsReceipt{
+		DocEntry:   2001,
+		DocNum:     6001,
+		DocDate:    time.Date(2024, 2, 10, 0, 0, 0, 0, time.UTC),
+		CardCode:   "SUP-001",
+		CardName:   "Acme Roasters Ltd",
+		DocTotal:   575.0,
+		VatSum:     75.0,
+		DocStatus:  "C",
+		Lines: []mappings.SAPGoodsReceiptLine{
+			{
+				DocEntry:   2001,
+				LineNum:    0,
+				ItemCode:   "ITEM-001",
+				Dscription: "Premium Coffee Beans 1kg",
+				Quantity:   50,
+				Price:      10.0,
+				LineTotal:  500.0,
+				VatSum:     75.0,
+				WhsCode:    "01",
+				UnitMsr:    "KG",
+				BaseEntry:  1001,
+				BaseLine:   0,
+				BaseType:   22, // PO
+			},
+		},
+	}
+
+	canon := gr.ToCanonical()
+	if canon.GRNNumber != "GRN-6001" {
+		t.Errorf("expected GRNNumber 'GRN-6001', got %s", canon.GRNNumber)
+	}
+	if canon.PONumber != "PO-1001" {
+		t.Errorf("expected PONumber 'PO-1001', got %s", canon.PONumber)
+	}
+	if canon.Status != "posted" {
+		t.Errorf("expected Status 'posted', got %s", canon.Status)
+	}
+	if len(canon.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(canon.Items))
+	}
+	if canon.Items[0].QuantityReceived != 50.0 {
+		t.Errorf("expected QuantityReceived 50.0, got %f", canon.Items[0].QuantityReceived)
+	}
+}
+
+func TestStockMovementMapping(t *testing.T) {
+	sm := mappings.SAPStockMovement{
+		TransNum:   9001,
+		TransType:  20, // Goods Receipt PO
+		CreatedBy:  2001,
+		BaseRef:    "6001",
+		DocDate:    time.Date(2024, 2, 10, 0, 0, 0, 0, time.UTC),
+		ItemCode:   "ITEM-001",
+		Warehouse:  "01",
+		InQty:      50.0,
+		OutQty:     0.0,
+		Price:      10.0,
+		TransValue: 500.0,
+	}
+
+	canon := sm.ToCanonical()
+	if canon.MovementType != "purchase_receipt" {
+		t.Errorf("expected MovementType 'purchase_receipt', got %s", canon.MovementType)
+	}
+	if canon.ReferenceType != "goods_receipt_note" {
+		t.Errorf("expected ReferenceType 'goods_receipt_note', got %s", canon.ReferenceType)
+	}
+	if canon.ReferenceNumber != "6001" {
+		t.Errorf("expected ReferenceNumber '6001', got %s", canon.ReferenceNumber)
+	}
+	if canon.Quantity != 50.0 {
+		t.Errorf("expected Quantity 50.0, got %f", canon.Quantity)
+	}
+	if canon.ToStoreCode != "01" {
+		t.Errorf("expected ToStoreCode '01', got %s", canon.ToStoreCode)
+	}
+}
+
+func TestIncomingPaymentMapping(t *testing.T) {
+	p := mappings.SAPIncomingPayment{
+		DocEntry:  3001,
+		DocNum:    7001,
+		DocDate:   time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+		CardCode:  "CUST-001",
+		CardName:  "Retail Customer Inc",
+		DocCurr:   "SAR",
+		DocTotal:  230.0,
+		CashSum:   230.0,
+		TrsfrSum:  0.0,
+		CheckSum:  0.0,
+		CreditSum: 0.0,
+		Comments:  "Cash payment for invoice",
+		Invoices: []mappings.SAPIncomingPaymentInvoice{
+			{
+				DocNum:        3001,
+				LineID:        0,
+				InvoiceID:     501,
+				InvType:       13,
+				SumApplied:    230.0,
+				InvoiceDocNum: 9001,
+			},
+		},
+	}
+
+	canons := p.ToCanonicalList()
+	if len(canons) != 1 {
+		t.Fatalf("expected 1 canonical payment, got %d", len(canons))
+	}
+	pay := canons[0]
+	if pay.PaymentNumber != "PAY-SAP-7001-0" {
+		t.Errorf("expected PaymentNumber 'PAY-SAP-7001-0', got %s", pay.PaymentNumber)
+	}
+	if pay.InvoiceNumber != "INV-SAP-9001" {
+		t.Errorf("expected InvoiceNumber 'INV-SAP-9001', got %s", pay.InvoiceNumber)
+	}
+	if pay.SAPInvoiceDocEntry != 501 {
+		t.Errorf("expected SAPInvoiceDocEntry 501, got %d", pay.SAPInvoiceDocEntry)
+	}
+	if pay.PaymentMethod != "cash" {
+		t.Errorf("expected PaymentMethod 'cash', got %s", pay.PaymentMethod)
+	}
+	if pay.PaymentAmount != 230.0 {
+		t.Errorf("expected PaymentAmount 230.0, got %f", pay.PaymentAmount)
+	}
+	if pay.CurrencyCode != "SAR" {
+		t.Errorf("expected CurrencyCode 'SAR', got %s", pay.CurrencyCode)
+	}
+}
+
+
+

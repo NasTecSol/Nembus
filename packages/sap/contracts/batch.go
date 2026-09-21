@@ -24,6 +24,10 @@ const (
 	DomainInvoices        DomainType = "invoices"
 	DomainPriceLists      DomainType = "price_lists"
 	DomainBPAddresses     DomainType = "bp_addresses"
+	DomainPurchaseOrders  DomainType = "purchase_orders"
+	DomainGoodsReceipts   DomainType = "goods_receipt_notes"
+	DomainStockMovements  DomainType = "stock_movements"
+	DomainIncomingPayments DomainType = "incoming_payments"
 )
 
 // Migration Execution Modes
@@ -79,6 +83,10 @@ type MigrationBatchPayload struct {
 	PriceLists     []mappings.CanonicalPriceList       `json:"price_lists,omitempty"`
 	PriceItems     []mappings.CanonicalPriceListItem   `json:"price_items,omitempty"`
 	BPAddresses    []mappings.CanonicalBPAddress       `json:"bp_addresses,omitempty"`
+	PurchaseOrders []mappings.CanonicalPurchaseOrder   `json:"purchase_orders,omitempty"`
+	GoodsReceipts  []mappings.CanonicalGoodsReceiptNote `json:"goods_receipt_notes,omitempty"`
+	StockMovements []mappings.CanonicalStockMovement   `json:"stock_movements,omitempty"`
+	IncomingPayments []mappings.CanonicalIncomingPayment `json:"incoming_payments,omitempty"`
 }
 
 func (p *MigrationBatchPayload) RecordCount() int {
@@ -111,6 +119,14 @@ func (p *MigrationBatchPayload) RecordCount() int {
 		return len(p.PriceLists) + len(p.PriceItems)
 	case DomainBPAddresses:
 		return len(p.BPAddresses)
+	case DomainPurchaseOrders:
+		return len(p.PurchaseOrders)
+	case DomainGoodsReceipts:
+		return len(p.GoodsReceipts)
+	case DomainStockMovements:
+		return len(p.StockMovements)
+	case DomainIncomingPayments:
+		return len(p.IncomingPayments)
 	default:
 		return 0
 	}

@@ -3,6 +3,7 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -31,8 +32,12 @@ var defaultDomainOrder = []contracts.DomainType{
 	contracts.DomainInventory,
 	contracts.DomainPartners,
 	contracts.DomainBPAddresses,
+	contracts.DomainPurchaseOrders,
+	contracts.DomainGoodsReceipts,
+	contracts.DomainStockMovements,
 	contracts.DomainSalesOrders,
 	contracts.DomainInvoices,
+	contracts.DomainIncomingPayments,
 }
 
 // ProgressEvent is broadcast to all WebSocket subscribers to report pipeline progress.
@@ -239,6 +244,7 @@ func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, doma
 		step.FinishedAt = &now
 		step.ProcessedCount = processed
 		step.FailedCount = failed
+		step.LastWatermark = watermark
 
 		if err != nil {
 			step.Status = contracts.StatusFailed
@@ -595,77 +601,312 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		}
 		return int64(resp.RecordsStaged), int64(resp.RecordsFailed), "", nil
 
-	case contracts.DomainSalesOrders:
-		ext := extractors.NewSalesExtractor(mssqlClient)
-		orders, err := ext.ExtractSalesOrders(ctx, time.Time{}, time.Time{})
-		if err != nil {
-			return 0, 0, "", err
-		}
+	case contracts.DomainPurchaseOrders:
+		ext := extractors.NewPurchasingExtractor(mssqlClient)
 		var totalStaged int64
 		var lastWatermark string
-		for i := 0; i < len(orders); i += batchSize {
-			end := i + batchSize
-			if end > len(orders) {
-				end = len(orders)
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now().AddDate(0, 3, 0), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
 			}
-			chunk := orders[i:end]
-			isLast := end == len(orders)
-			payload := &contracts.MigrationBatchPayload{
-				BatchID:        uuid.New().String(),
-				RunID:          runID,
-				OrganizationID: cloudCfg.OrganizationID,
-				Domain:         domain,
-				SequenceNumber: i / batchSize,
-				SalesOrders:    chunk,
-				IsLastBatch:    isLast,
-				Timestamp:      time.Now(),
-			}
-			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			orders, err := ext.ExtractPurchaseOrders(ctx, win[0], win[1])
 			if err != nil {
-				return totalStaged, 0, lastWatermark, err
+				return totalStaged, 0, lastWatermark, fmt.Errorf("purchase_orders window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
-			totalStaged += int64(resp.RecordsStaged)
-			if isLast && len(chunk) > 0 {
+			if len(orders) == 0 {
+				continue
+			}
+			for i := 0; i < len(orders); i += batchSize {
+				end := i + batchSize
+				if end > len(orders) {
+					end = len(orders)
+				}
+				chunk := orders[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					PurchaseOrders: chunk,
+					IsLastBatch:    false,
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].PODate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+
+	case contracts.DomainGoodsReceipts, "goods_receipts":
+		ext := extractors.NewPurchasingExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			receipts, err := ext.ExtractGoodsReceipts(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("goods_receipts window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(receipts) == 0 {
+				continue
+			}
+			for i := 0; i < len(receipts); i += batchSize {
+				end := i + batchSize
+				if end > len(receipts) {
+					end = len(receipts)
+				}
+				chunk := receipts[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					GoodsReceipts:  chunk,
+					IsLastBatch:    false,
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].ReceiptDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+
+	case contracts.DomainStockMovements:
+		ext := extractors.NewStockMovementExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now(), 1) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			moves, err := ext.ExtractStockMovements(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("stock_movements window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(moves) == 0 {
+				continue
+			}
+			for i := 0; i < len(moves); i += batchSize {
+				end := i + batchSize
+				if end > len(moves) {
+					end = len(moves)
+				}
+				chunk := moves[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					StockMovements: chunk,
+					IsLastBatch:    false,
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].MovementDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+
+	case contracts.DomainSalesOrders:
+		ext := extractors.NewSalesExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		// Stream in 3-month windows to avoid loading the entire history into memory.
+		for _, win := range dateWindows(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			orders, err := ext.ExtractSalesOrders(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("sales_orders window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(orders) == 0 {
+				continue
+			}
+			for i := 0; i < len(orders); i += batchSize {
+				end := i + batchSize
+				if end > len(orders) {
+					end = len(orders)
+				}
+				chunk := orders[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					SalesOrders:    chunk,
+					IsLastBatch:    false, // windows may continue
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
 				lastWatermark = chunk[len(chunk)-1].OrderDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
-			e.broadcastProgress(runID, domain, totalStaged, int64(len(orders)))
 		}
 		return totalStaged, 0, lastWatermark, nil
 
 	case contracts.DomainInvoices:
 		ext := extractors.NewSalesExtractor(mssqlClient)
-		invoices, err := ext.ExtractInvoices(ctx, time.Time{}, time.Time{})
-		if err != nil {
-			return 0, 0, "", err
-		}
 		var totalStaged int64
 		var lastWatermark string
-		for i := 0; i < len(invoices); i += batchSize {
-			end := i + batchSize
-			if end > len(invoices) {
-				end = len(invoices)
+		var seqNum int
+		start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		if e.cfg != nil && e.cfg.InvoiceStartDate != "" {
+			if parsed, pErr := time.Parse("2006-01-02", e.cfg.InvoiceStartDate); pErr == nil {
+				start = parsed
+				log.Printf("[ETL] Resuming invoices from configured start date: %s", start.Format("2006-01-02"))
 			}
-			chunk := invoices[i:end]
-			isLast := end == len(invoices)
-			payload := &contracts.MigrationBatchPayload{
-				BatchID:        uuid.New().String(),
-				RunID:          runID,
-				OrganizationID: cloudCfg.OrganizationID,
-				Domain:         domain,
-				SequenceNumber: i / batchSize,
-				Invoices:       chunk,
-				IsLastBatch:    isLast,
-				Timestamp:      time.Now(),
+		}
+		// Stream in 3-month windows to bound memory usage.
+		// Each window extracts headers+lines for that period only, sends batches,
+		// then releases memory before the next window starts.
+		for _, win := range dateWindows(start, time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
 			}
-			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
-			if err != nil {
-				return totalStaged, 0, lastWatermark, err
+			var invoices []mappings.CanonicalInvoice
+			var extErr error
+			for attempt := 1; attempt <= 5; attempt++ {
+				invoices, extErr = ext.ExtractInvoices(ctx, win[0], win[1])
+				if extErr == nil {
+					break
+				}
+				log.Printf("[ETL] Warning: invoices window %s–%s attempt %d/5 failed: %v. Retrying in %ds...",
+					win[0].Format("2006-01"), win[1].Format("2006-01"), attempt, extErr, attempt*10)
+				select {
+				case <-ctx.Done():
+					return totalStaged, 0, lastWatermark, ctx.Err()
+				case <-time.After(time.Duration(attempt*10) * time.Second):
+				}
+				// Refresh MSSQL client connection in case of network reset
+				if refreshed, rErr := e.getMSSQLClient(); rErr == nil {
+					ext = extractors.NewSalesExtractor(refreshed)
+				}
 			}
-			totalStaged += int64(resp.RecordsStaged)
-			if isLast && len(chunk) > 0 {
+			if extErr != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("invoices window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), extErr)
+			}
+			if len(invoices) == 0 {
+				continue
+			}
+			for i := 0; i < len(invoices); i += batchSize {
+				end := i + batchSize
+				if end > len(invoices) {
+					end = len(invoices)
+				}
+				chunk := invoices[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					Invoices:       chunk,
+					IsLastBatch:    false, // windows may continue
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
 				lastWatermark = chunk[len(chunk)-1].InvoiceDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
-			e.broadcastProgress(runID, domain, totalStaged, int64(len(invoices)))
+		}
+		return totalStaged, 0, lastWatermark, nil
+
+	case contracts.DomainIncomingPayments:
+		ext := extractors.NewPaymentExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			payments, err := ext.ExtractIncomingPayments(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("incoming_payments window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(payments) == 0 {
+				continue
+			}
+			for i := 0; i < len(payments); i += batchSize {
+				end := i + batchSize
+				if end > len(payments) {
+					end = len(payments)
+				}
+				chunk := payments[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:          uuid.New().String(),
+					RunID:            runID,
+					OrganizationID:   cloudCfg.OrganizationID,
+					Domain:           domain,
+					SequenceNumber:   seqNum,
+					IncomingPayments: chunk,
+					IsLastBatch:      false,
+					Timestamp:        time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].PaymentDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
 		}
 		return totalStaged, 0, lastWatermark, nil
 
@@ -761,10 +1002,15 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 }
 
 // broadcastProgress sends a step_progress event during chunked batch processing.
+// Pass total = -1 when the total is unknown (streaming window mode).
 func (e *Engine) broadcastProgress(runID string, domain contracts.DomainType, processed, total int64) {
 	pct := 0.0
 	if total > 0 {
 		pct = float64(processed) / float64(total) * 100
+	}
+	msg := fmt.Sprintf("Processing %s: %d records ingested", domain, processed)
+	if total > 0 {
+		msg = fmt.Sprintf("Processing %s: %d/%d records", domain, processed, total)
 	}
 	e.broadcast(ProgressEvent{
 		Type:           "step_progress",
@@ -774,7 +1020,23 @@ func (e *Engine) broadcastProgress(runID string, domain contracts.DomainType, pr
 		ProcessedCount: processed,
 		TotalRecords:   total,
 		Percentage:     pct,
-		Message:        fmt.Sprintf("Processing %s: %d/%d records", domain, processed, total),
+		Message:        msg,
 		Timestamp:      time.Now(),
 	})
+}
+
+// dateWindows splits [start, end] into consecutive N-month windows.
+// Returns a slice of [windowStart, windowEnd] pairs covering the full range.
+func dateWindows(start, end time.Time, monthsPerWindow int) [][2]time.Time {
+	var windows [][2]time.Time
+	win := start
+	for win.Before(end) {
+		next := win.AddDate(0, monthsPerWindow, 0)
+		if next.After(end) {
+			next = end
+		}
+		windows = append(windows, [2]time.Time{win, next})
+		win = next
+	}
+	return windows
 }

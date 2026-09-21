@@ -230,8 +230,12 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('count-oitw').textContent = (counts['OITW'] || 0).toLocaleString();
             document.getElementById('count-ocrd-c').textContent = (counts['OCRD_C'] || 0).toLocaleString();
             document.getElementById('count-ocrd-s').textContent = (counts['OCRD_S'] || 0).toLocaleString();
+            document.getElementById('count-opor').textContent = (counts['OPOR'] || 0).toLocaleString();
+            document.getElementById('count-opdn').textContent = (counts['OPDN'] || 0).toLocaleString();
+            document.getElementById('count-oinm').textContent = (counts['OINM'] || 0).toLocaleString();
             document.getElementById('count-ordr').textContent = (counts['ORDR'] || 0).toLocaleString();
             document.getElementById('count-oinv').textContent = (counts['OINV'] || 0).toLocaleString();
+            document.getElementById('count-orct').textContent = (counts['ORCT'] || 0).toLocaleString();
             document.getElementById('count-ousr').textContent = ((counts['OUSR'] || 0) + (counts['OSLP'] || 0)).toLocaleString();
 
             showToast('SAP discovery completed successfully.', 'success');
@@ -282,29 +286,31 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('overall-percent-text').textContent = `${pct}%`;
         }
 
+        const domDomain = (ev.domain === 'goods_receipt_notes') ? 'goods_receipts' : ev.domain;
+
         if (ev.type === 'run_started') {
             document.getElementById('overall-status-text').textContent = 'Status: Migrating...';
             document.getElementById('btn-start-migration').disabled = true;
             document.getElementById('btn-cancel-migration').disabled = false;
-        } else if (ev.type === 'step_started' && ev.domain) {
-            const indicator = document.getElementById(`step-status-${ev.domain}`);
-            const card = document.getElementById(`card-domain-${ev.domain}`);
+        } else if (ev.type === 'step_started' && domDomain) {
+            const indicator = document.getElementById(`step-status-${domDomain}`) || document.getElementById(`step-status-${ev.domain}`);
+            const card = document.getElementById(`card-domain-${domDomain}`) || document.getElementById(`card-domain-${ev.domain}`);
             if (indicator) {
                 indicator.textContent = 'Extracting...';
                 indicator.className = 'step-indicator running';
             }
             if (card) card.className = 'domain-card running';
-        } else if (ev.type === 'step_completed' && ev.domain) {
-            const indicator = document.getElementById(`step-status-${ev.domain}`);
-            const card = document.getElementById(`card-domain-${ev.domain}`);
+        } else if (ev.type === 'step_completed' && domDomain) {
+            const indicator = document.getElementById(`step-status-${domDomain}`) || document.getElementById(`step-status-${ev.domain}`);
+            const card = document.getElementById(`card-domain-${domDomain}`) || document.getElementById(`card-domain-${ev.domain}`);
             if (indicator) {
                 indicator.textContent = 'Completed';
                 indicator.className = 'step-indicator completed';
             }
             if (card) card.className = 'domain-card completed';
-        } else if (ev.type === 'step_failed' && ev.domain) {
-            const indicator = document.getElementById(`step-status-${ev.domain}`);
-            const card = document.getElementById(`card-domain-${ev.domain}`);
+        } else if (ev.type === 'step_failed' && domDomain) {
+            const indicator = document.getElementById(`step-status-${domDomain}`) || document.getElementById(`step-status-${ev.domain}`);
+            const card = document.getElementById(`card-domain-${domDomain}`) || document.getElementById(`card-domain-${ev.domain}`);
             if (indicator) {
                 indicator.textContent = 'Failed';
                 indicator.className = 'step-indicator failed';

@@ -6,6 +6,7 @@
   "default_store_code": "",
   "cashier_drawer_limit": 0,
   "cashier_discount_limit": 0,
+  "invoice_start_date": "2023-01-01",
   "mssql": {
     "host": "192.168.18.77",
     "port": 1433,
@@ -14,7 +15,7 @@
     "database": "Qadsiya",
     "encrypt": false,
     "trust_server_certificate": true,
-    "connection_timeout_seconds": 15
+    "connection_timeout_seconds": 60
   },
   "cloud": {
     "base_url": "http://127.0.0.1:8080",

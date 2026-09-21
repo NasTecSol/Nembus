@@ -38,6 +38,9 @@ type AgentConfig struct {
 	CashierDrawerLimit   float64     `json:"cashier_drawer_limit"`
 	// CashierDiscountLimit is the default max discount % for imported cashiers. Defaults to 20.
 	CashierDiscountLimit float64     `json:"cashier_discount_limit"`
+	// InvoiceStartDate is the starting date for the invoice window loop (format "YYYY-MM-DD").
+	// If empty, defaults to "2000-01-01". Set e.g. to "2023-01-01" to resume an interrupted migration.
+	InvoiceStartDate     string      `json:"invoice_start_date,omitempty"`
 	MSSQL                MSSQLConfig `json:"mssql"`
 	Cloud                CloudConfig `json:"cloud"`
 }

@@ -199,8 +199,12 @@
                         <div class="entity-card"><span class="entity-name">Stock Balances (OITW)</span><span class="entity-count" id="count-oitw">0</span></div>
                         <div class="entity-card"><span class="entity-name">Customers (OCRD)</span><span class="entity-count" id="count-ocrd-c">0</span></div>
                         <div class="entity-card"><span class="entity-name">Suppliers (OCRD)</span><span class="entity-count" id="count-ocrd-s">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Purchase Orders (OPOR)</span><span class="entity-count" id="count-opor">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Goods Receipts (OPDN)</span><span class="entity-count" id="count-opdn">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Stock Moves (OINM)</span><span class="entity-count" id="count-oinm">0</span></div>
                         <div class="entity-card"><span class="entity-name">Sales Orders (ORDR)</span><span class="entity-count" id="count-ordr">0</span></div>
                         <div class="entity-card"><span class="entity-name">Invoices (OINV)</span><span class="entity-count" id="count-oinv">0</span></div>
+                        <div class="entity-card"><span class="entity-name">Incoming Payments (ORCT)</span><span class="entity-count" id="count-orct">0</span></div>
                         <div class="entity-card"><span class="entity-name">Users / Cashiers</span><span class="entity-count" id="count-ousr">0</span></div>
                     </div>
                 </div>
@@ -332,6 +336,30 @@
                                 <span class="step-indicator" id="step-status-bp_addresses">Pending</span>
                             </div>
                         </label>
+                        <label class="domain-card" id="card-domain-purchase_orders">
+                            <input type="checkbox" name="domain" value="purchase_orders" checked>
+                            <div class="domain-content">
+                                <h4>Purchase Orders</h4>
+                                <p>OPOR & POR1 lines</p>
+                                <span class="step-indicator" id="step-status-purchase_orders">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-goods_receipts">
+                            <input type="checkbox" name="domain" value="goods_receipts" checked>
+                            <div class="domain-content">
+                                <h4>Goods Receipt PO</h4>
+                                <p>OPDN & PDN1 lines</p>
+                                <span class="step-indicator" id="step-status-goods_receipts">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-stock_movements">
+                            <input type="checkbox" name="domain" value="stock_movements" checked>
+                            <div class="domain-content">
+                                <h4>Stock Movements</h4>
+                                <p>OINM Item Ledger</p>
+                                <span class="step-indicator" id="step-status-stock_movements">Pending</span>
+                            </div>
+                        </label>
                         <label class="domain-card" id="card-domain-sales_orders">
                             <input type="checkbox" name="domain" value="sales_orders" checked>
                             <div class="domain-content">
@@ -346,6 +374,14 @@
                                 <h4>A/R Invoices</h4>
                                 <p>OINV & INV1 lines</p>
                                 <span class="step-indicator" id="step-status-invoices">Pending</span>
+                            </div>
+                        </label>
+                        <label class="domain-card" id="card-domain-incoming_payments">
+                            <input type="checkbox" name="domain" value="incoming_payments" checked>
+                            <div class="domain-content">
+                                <h4>Incoming Payments</h4>
+                                <p>ORCT & RCT2 tender</p>
+                                <span class="step-indicator" id="step-status-incoming_payments">Pending</span>
                             </div>
                         </label>
                     </div>

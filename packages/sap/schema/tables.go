@@ -22,6 +22,13 @@ const (
 	TableRDR1 = "RDR1" // Sales Orders Lines
 	TableOINV = "OINV" // A/R Invoices Header
 	TableINV1 = "INV1" // A/R Invoices Lines
+	TableOPOR = "OPOR" // Purchase Orders Header
+	TablePOR1 = "POR1" // Purchase Orders Lines
+	TableOPDN = "OPDN" // Goods Receipt PO Header
+	TablePDN1 = "PDN1" // Goods Receipt PO Lines
+	TableOINM = "OINM" // Item Ledger / Stock Movements
+	TableORCT = "ORCT" // Incoming Payments Header
+	TableRCT2 = "RCT2" // Incoming Payments Invoices
 	TableOADM = "OADM" // Company Administration / Info
 )
 
@@ -86,7 +93,19 @@ SELECT
     'ORDR' AS TableName, COUNT(1) AS TotalCount FROM ORDR
 UNION ALL
 SELECT 
-    'OINV' AS TableName, COUNT(1) AS TotalCount FROM OINV;
+    'OINV' AS TableName, COUNT(1) AS TotalCount FROM OINV
+UNION ALL
+SELECT 
+    'OPOR' AS TableName, COUNT(1) AS TotalCount FROM OPOR
+UNION ALL
+SELECT 
+    'OPDN' AS TableName, COUNT(1) AS TotalCount FROM OPDN
+UNION ALL
+SELECT 
+    'OINM' AS TableName, COUNT(1) AS TotalCount FROM OINM
+UNION ALL
+SELECT 
+    'ORCT' AS TableName, COUNT(1) AS TotalCount FROM ORCT;
 `
 
 const QueryStores = `
@@ -505,3 +524,140 @@ SELECT
 FROM CRD1
 ORDER BY CardCode, AdresType;
 `
+
+// Purchase Orders (OPOR / POR1)
+
+const QueryPurchaseOrdersHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    DocDueDate,
+    ISNULL(CardCode, '') AS CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(DocTotal, 0.0) AS DocTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(DiscSum, 0.0) AS DiscSum,
+    ISNULL(DocStatus, 'O') AS DocStatus,
+    ISNULL(SlpCode, -1) AS SlpCode,
+    ISNULL(Comments, '') AS Comments
+FROM OPOR
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
+
+const QueryPurchaseOrderLines = `
+SELECT 
+    DocEntry,
+    LineNum,
+    ISNULL(ItemCode, '') AS ItemCode,
+    ISNULL(Dscription, '') AS Dscription,
+    ISNULL(Quantity, 0.0) AS Quantity,
+    ISNULL(Price, 0.0) AS Price,
+    ISNULL(LineTotal, 0.0) AS LineTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(WhsCode, '') AS WhsCode,
+    ISNULL(unitMsr, 'UNIT') AS unitMsr,
+    ISNULL(OpenQty, 0.0) AS OpenQty
+FROM POR1
+WHERE DocEntry IN (%s)
+ORDER BY DocEntry, LineNum;
+`
+
+// Goods Receipt PO (OPDN / PDN1)
+
+const QueryGoodsReceiptsHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    DocDueDate,
+    ISNULL(CardCode, '') AS CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(DocTotal, 0.0) AS DocTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(DocStatus, 'C') AS DocStatus,
+    ISNULL(Comments, '') AS Comments
+FROM OPDN
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
+
+const QueryGoodsReceiptLines = `
+SELECT 
+    DocEntry,
+    LineNum,
+    ISNULL(ItemCode, '') AS ItemCode,
+    ISNULL(Dscription, '') AS Dscription,
+    ISNULL(Quantity, 0.0) AS Quantity,
+    ISNULL(Price, 0.0) AS Price,
+    ISNULL(LineTotal, 0.0) AS LineTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(WhsCode, '') AS WhsCode,
+    ISNULL(unitMsr, 'UNIT') AS unitMsr,
+    ISNULL(BaseEntry, -1) AS BaseEntry,
+    ISNULL(BaseLine, -1) AS BaseLine,
+    ISNULL(BaseType, -1) AS BaseType
+FROM PDN1
+WHERE DocEntry IN (%s)
+ORDER BY DocEntry, LineNum;
+`
+
+// Stock Movements (OINM Item Ledger)
+
+const QueryStockMovementsOINM = `
+SELECT 
+    TransNum,
+    TransType,
+    ISNULL(CreatedBy, -1) AS CreatedBy,
+    ISNULL(BASE_REF, '') AS BaseRef,
+    DocDate,
+    ISNULL(ItemCode, '') AS ItemCode,
+    ISNULL(Warehouse, '') AS Warehouse,
+    ISNULL(InQty, 0.0) AS InQty,
+    ISNULL(OutQty, 0.0) AS OutQty,
+    ISNULL(Price, 0.0) AS Price,
+    ISNULL(TransValue, 0.0) AS TransValue
+FROM OINM WITH (NOLOCK)
+WHERE DocDate >= @FromDate AND DocDate < @ToDate
+ORDER BY DocDate, TransNum;
+`
+
+// Incoming Payments (ORCT / RCT2)
+
+const QueryIncomingPaymentsHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    ISNULL(CardCode, '') AS CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(DocCurr, 'USD') AS DocCurr,
+    ISNULL(DocTotal, 0.0) AS DocTotal,
+    ISNULL(CashSum, 0.0) AS CashSum,
+    ISNULL(TrsfrSum, 0.0) AS TrsfrSum,
+    ISNULL(TrsfrRef, '') AS TrsfrRef,
+    ISNULL(CheckSum, 0.0) AS CheckSum,
+    ISNULL(CreditSum, 0.0) AS CreditSum,
+    ISNULL(Comments, '') AS Comments,
+    ISNULL(JrnlMemo, '') AS JrnlMemo
+FROM ORCT
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
+
+const QueryIncomingPaymentInvoices = `
+SELECT 
+    r.DocNum,
+    r.LineId,
+    r.InvoiceId,
+    r.InvType,
+    ISNULL(r.SumApplied, 0.0) AS SumApplied,
+    ISNULL(inv.DocNum, -1) AS InvoiceDocNum
+FROM RCT2 r
+LEFT JOIN OINV inv ON r.InvoiceId = inv.DocEntry AND r.InvType = 13
+WHERE r.DocNum IN (%s)
+ORDER BY r.DocNum, r.LineId;
+`
+
+

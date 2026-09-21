@@ -23,11 +23,18 @@ type TableSyncConfig struct {
 	OrgColumn     string
 	PKColumn      string
 	ConflictKey   string
-	DependentOnly bool // If true, truncated with parent or cascaded
+	DedupKey      string // If set, uses SELECT DISTINCT ON (DedupKey) to deduplicate source rows before copy
+	DependentOnly bool   // If true, truncated with parent or cascaded
 }
 
 // Ordered list of tables to sync in exact foreign-key topological order.
 var syncTables = []TableSyncConfig{
+	// 0a. Root: Currencies (no FKs — referenced by business_partners)
+	{Domain: "currencies", Schema: "public", Table: "currencies", HasOrgScope: false, PKColumn: "code", ConflictKey: "code"},
+
+	// 0b. Root: Organizations (must be before all org-scoped tables)
+	{Domain: "organizations", Schema: "public", Table: "organizations", HasOrgScope: false, PKColumn: "id", ConflictKey: "code"},
+
 	// 1. Foundation: Units of Measure
 	{Domain: "uom", Schema: "public", Table: "units_of_measure", HasOrgScope: false, PKColumn: "id", ConflictKey: "code"},
 
@@ -63,11 +70,23 @@ var syncTables = []TableSyncConfig{
 	{Domain: "bp_addresses", Schema: "public", Table: "customer_addresses", HasOrgScope: false, PKColumn: "id", ConflictKey: "customer_id, address_type, address_line"},
 
 	// 9. Warehouse Inventory Stock
-	{Domain: "inventory", Schema: "public", Table: "inventory_stock", HasOrgScope: false, PKColumn: "id", ConflictKey: "product_id, store_id"},
+	// DedupKey deduplicates source rows on (product_id, store_id) to satisfy the unique index on target.
+	{Domain: "inventory", Schema: "public", Table: "inventory_stock", HasOrgScope: false, PKColumn: "id", ConflictKey: "product_id, store_id", DedupKey: "product_id, store_id"},
 
 	// 10. Sales Orders & Order Lines
 	{Domain: "sales_orders", Schema: "public", Table: "sales_orders_v2", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "order_number"},
 	{Domain: "sales_orders", Schema: "public", Table: "sales_order_lines_v2", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "id"},
+
+	// 11. Invoices & Lines
+	{Domain: "invoices", Schema: "public", Table: "invoices", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "invoice_number"},
+	{Domain: "invoices", Schema: "public", Table: "invoice_lines", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "id"},
+
+	// 12. POS Terminals, Sessions, Transactions & Payments
+	{Domain: "pos", Schema: "public", Table: "pos_terminals", HasOrgScope: false, PKColumn: "id", ConflictKey: "store_id, terminal_code"},
+	{Domain: "pos", Schema: "public", Table: "cashier_sessions", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+	{Domain: "pos", Schema: "public", Table: "pos_transactions", HasOrgScope: false, PKColumn: "id", ConflictKey: "transaction_number"},
+	{Domain: "pos", Schema: "public", Table: "pos_transaction_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+	{Domain: "pos", Schema: "public", Table: "pos_payments", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 }
 
 type SyncReport struct {
@@ -288,8 +307,15 @@ func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t Tabl
 		quotedCols[i] = fmt.Sprintf(`"%s"`, c)
 	}
 
-	selectQuery := fmt.Sprintf("SELECT %s FROM %s.%s%s ORDER BY %s ASC",
-		strings.Join(quotedCols, ", "), t.Schema, t.Table, whereClause, t.PKColumn)
+	var selectQuery string
+	if t.DedupKey != "" {
+		// Use DISTINCT ON to deduplicate source rows before copy to avoid unique constraint violations on target
+		selectQuery = fmt.Sprintf("SELECT DISTINCT ON (%s) %s FROM %s.%s%s ORDER BY %s, %s ASC",
+			t.DedupKey, strings.Join(quotedCols, ", "), t.Schema, t.Table, whereClause, t.DedupKey, t.PKColumn)
+	} else {
+		selectQuery = fmt.Sprintf("SELECT %s FROM %s.%s%s ORDER BY %s ASC",
+			strings.Join(quotedCols, ", "), t.Schema, t.Table, whereClause, t.PKColumn)
+	}
 
 	rows, err := srcPool.Query(ctx, selectQuery)
 	if err != nil {
@@ -389,7 +415,23 @@ func truncateTargetTables(ctx context.Context, tgtPool *pgxpool.Pool, tables []T
 	if orgID <= 0 {
 		var tableNames []string
 		for i := len(tables) - 1; i >= 0; i-- {
-			tableNames = append(tableNames, fmt.Sprintf("%s.%s", tables[i].Schema, tables[i].Table))
+			t := tables[i]
+			// Check if table exists in target before including in TRUNCATE
+			var tgtExists bool
+			_ = tgtPool.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT FROM information_schema.tables
+					WHERE table_schema = $1 AND table_name = $2
+				);
+			`, t.Schema, t.Table).Scan(&tgtExists)
+			if !tgtExists {
+				log.Printf("⚠ Skipping TRUNCATE for %s.%s (not found in target)", t.Schema, t.Table)
+				continue
+			}
+			tableNames = append(tableNames, fmt.Sprintf("%s.%s", t.Schema, t.Table))
+		}
+		if len(tableNames) == 0 {
+			return nil
 		}
 		stmt := fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE;", strings.Join(tableNames, ", "))
 		_, err := tgtPool.Exec(ctx, stmt)

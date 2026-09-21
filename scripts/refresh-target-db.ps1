@@ -17,7 +17,7 @@
 
 .PARAMETER Domains
     Comma-separated list of domains to sync (or 'all').
-    Domains: uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, inventory, partners, bp_addresses, sales_orders
+    Domains: uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, inventory, partners, bp_addresses, sales_orders, invoices, pos
 
 .PARAMETER Mode
     Sync mode: 'truncate_copy' (default, clean fast refresh) or 'upsert'.
@@ -50,41 +50,44 @@ Write-Host "================================================================" -F
 Write-Host "       NEMBUS: Refresh Migrated Domains -> Target Database      " -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 
-# Check for Go binary or source
-Set-Location $CloudServerDir
+# Execute Go sync utility inside CloudServerDir without mutating caller's working directory
+Push-Location $CloudServerDir
+try {
+    $ArgsList = @(
+        "run", "./cmd/sync-target-db"
+    )
 
-$ArgsList = @(
-    "run", "./cmd/sync-target-db"
-)
+    if ($SourceUrl -ne "") {
+        $ArgsList += "-source-url=$SourceUrl"
+    }
 
-if ($SourceUrl -ne "") {
-    $ArgsList += "-source-url=$SourceUrl"
-}
+    if ($TargetUrl -ne "") {
+        $ArgsList += "-target-url=$TargetUrl"
+    }
 
-if ($TargetUrl -ne "") {
-    $ArgsList += "-target-url=$TargetUrl"
-}
+    if ($OrgId -gt 0) {
+        $ArgsList += "-org-id=$OrgId"
+    }
 
-if ($OrgId -gt 0) {
-    $ArgsList += "-org-id=$OrgId"
-}
+    if ($Domains -ne "" -and $Domains -ne "all") {
+        $ArgsList += "-domains=$Domains"
+    }
 
-if ($Domains -ne "" -and $Domains -ne "all") {
-    $ArgsList += "-domains=$Domains"
-}
+    $ArgsList += "-mode=$Mode"
 
-$ArgsList += "-mode=$Mode"
+    if ($DryRun) {
+        $ArgsList += "-dry-run=true"
+    }
 
-if ($DryRun) {
-    $ArgsList += "-dry-run=true"
-}
+    Write-Host "Executing Go sync utility from $CloudServerDir..." -ForegroundColor Yellow
+    & go @ArgsList
 
-Write-Host "Executing Go sync utility from $CloudServerDir..." -ForegroundColor Yellow
-& go @ArgsList
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Database sync failed with exit code $LASTEXITCODE" -ForegroundColor Red
-    exit $LASTEXITCODE
-} else {
-    Write-Host "✅ Target database refresh completed successfully!" -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Database sync failed with exit code $LASTEXITCODE" -ForegroundColor Red
+        exit $LASTEXITCODE
+    } else {
+        Write-Host "✅ Target database refresh completed successfully!" -ForegroundColor Green
+    }
+} finally {
+    Pop-Location
 }
