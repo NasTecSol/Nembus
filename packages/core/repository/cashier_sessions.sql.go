@@ -294,7 +294,14 @@ SELECT
     cs.variance,
     COUNT(t.id) AS transaction_count,
     COALESCE(SUM(t.total_amount), 0) AS total_sales,
-    COALESCE(SUM(t.total_amount), 0) AS cash_sales,
+    COALESCE((
+        SELECT SUM(p.amount)
+        FROM pos_payments p
+        JOIN pos_transactions pt ON pt.id = p.transaction_id
+        WHERE pt.cashier_session_id = cs.id
+          AND pt.status = 'completed'
+          AND LOWER(p.payment_method) = 'cash'
+    ), 0) AS cash_sales,
     COALESCE(SUM(t.discount_amount), 0) AS total_discounts_given
 FROM cashier_sessions cs
 LEFT JOIN pos_transactions t 
