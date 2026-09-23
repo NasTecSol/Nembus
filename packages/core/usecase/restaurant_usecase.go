@@ -141,6 +141,15 @@ func (uc *RestaurantUseCase) DeleteMenuCategory(ctx context.Context, id int32) *
 
 // === Menu Items ===
 
+type ComboComponentParamsInput struct {
+	ComponentMenuItemID int32  `json:"component_menu_item_id"`
+	GroupName           string `json:"group_name"`
+	MinSelection        int32  `json:"min_selection"`
+	MaxSelection        int32  `json:"max_selection"`
+	PriceAdjustment     string `json:"price_adjustment"`
+	DisplayOrder        int32  `json:"display_order"`
+}
+
 func (uc *RestaurantUseCase) GetMenuItem(ctx context.Context, id int32) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
@@ -149,6 +158,35 @@ func (uc *RestaurantUseCase) GetMenuItem(ctx context.Context, id int32) *reposit
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "menu item not found", nil)
 	}
+
+	if item.ItemType == "combo" {
+		components, _ := uc.repo.ListMenuItemComboComponentsByParentID(ctx, id)
+		res := map[string]interface{}{
+			"id":                   item.ID,
+			"store_id":             item.StoreID,
+			"menu_category_id":     item.MenuCategoryID,
+			"product_id":           item.ProductID,
+			"recipe_id":            item.RecipeID,
+			"name":                 item.Name,
+			"short_name":           item.ShortName,
+			"description":          item.Description,
+			"image_url":            item.ImageUrl,
+			"base_price":           item.BasePrice,
+			"cost_price":           item.CostPrice,
+			"preparation_time_min": item.PreparationTimeMin,
+			"tax_category_id":      item.TaxCategoryID,
+			"is_available":         item.IsAvailable,
+			"is_active":            item.IsActive,
+			"display_order":        item.DisplayOrder,
+			"item_type":            item.ItemType,
+			"metadata":             item.Metadata,
+			"created_at":           item.CreatedAt,
+			"updated_at":           item.UpdatedAt,
+			"combo_components":     components,
+		}
+		return utils.NewResponse(utils.CodeOK, "menu item fetched successfully", res)
+	}
+
 	return utils.NewResponse(utils.CodeOK, "menu item fetched successfully", item)
 }
 
@@ -163,26 +201,92 @@ func (uc *RestaurantUseCase) ListMenuItems(ctx context.Context, categoryID int32
 	return utils.NewResponse(utils.CodeOK, "menu items fetched successfully", items)
 }
 
-func (uc *RestaurantUseCase) CreateMenuItem(ctx context.Context, arg repository.CreateMenuItemParams) *repository.Response {
+func (uc *RestaurantUseCase) CreateMenuItem(ctx context.Context, arg repository.CreateMenuItemParams, comboComponents []ComboComponentParamsInput) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if arg.ItemType == "" {
+		arg.ItemType = "standard"
 	}
 	item, err := uc.repo.CreateMenuItem(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
+
+	if arg.ItemType == "combo" && len(comboComponents) > 0 {
+		for _, cc := range comboComponents {
+			priceAdj, _ := uc.repo.ParseNumeric(ctx, cc.PriceAdjustment)
+			minSel := cc.MinSelection
+			if minSel <= 0 {
+				minSel = 1
+			}
+			maxSel := cc.MaxSelection
+			if maxSel <= 0 {
+				maxSel = 1
+			}
+			_, _ = uc.repo.CreateMenuItemComboComponent(ctx, repository.CreateMenuItemComboComponentParams{
+				ParentMenuItemID:    item.ID,
+				ComponentMenuItemID: cc.ComponentMenuItemID,
+				GroupName:           cc.GroupName,
+				MinSelection:        pgtype.Int4{Int32: minSel, Valid: true},
+				MaxSelection:        pgtype.Int4{Int32: maxSel, Valid: true},
+				PriceAdjustment:     priceAdj,
+				DisplayOrder:        pgtype.Int4{Int32: cc.DisplayOrder, Valid: true},
+			})
+		}
+	}
+
 	return utils.NewResponse(utils.CodeCreated, "menu item created successfully", item)
 }
 
-func (uc *RestaurantUseCase) UpdateMenuItem(ctx context.Context, arg repository.UpdateMenuItemParams) *repository.Response {
+func (uc *RestaurantUseCase) UpdateMenuItem(ctx context.Context, arg repository.UpdateMenuItemParams, comboComponents []ComboComponentParamsInput) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if arg.ItemType == "" {
+		arg.ItemType = "standard"
 	}
 	item, err := uc.repo.UpdateMenuItem(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
+
+	if arg.ItemType == "combo" {
+		_ = uc.repo.DeleteMenuItemComboComponentsByParentID(ctx, item.ID)
+		for _, cc := range comboComponents {
+			priceAdj, _ := uc.repo.ParseNumeric(ctx, cc.PriceAdjustment)
+			minSel := cc.MinSelection
+			if minSel <= 0 {
+				minSel = 1
+			}
+			maxSel := cc.MaxSelection
+			if maxSel <= 0 {
+				maxSel = 1
+			}
+			_, _ = uc.repo.CreateMenuItemComboComponent(ctx, repository.CreateMenuItemComboComponentParams{
+				ParentMenuItemID:    item.ID,
+				ComponentMenuItemID: cc.ComponentMenuItemID,
+				GroupName:           cc.GroupName,
+				MinSelection:        pgtype.Int4{Int32: minSel, Valid: true},
+				MaxSelection:        pgtype.Int4{Int32: maxSel, Valid: true},
+				PriceAdjustment:     priceAdj,
+				DisplayOrder:        pgtype.Int4{Int32: cc.DisplayOrder, Valid: true},
+			})
+		}
+	}
+
 	return utils.NewResponse(utils.CodeOK, "menu item updated successfully", item)
+}
+
+func (uc *RestaurantUseCase) ListComboComponents(ctx context.Context, parentID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	components, err := uc.repo.ListMenuItemComboComponentsByParentID(ctx, parentID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "combo components fetched successfully", components)
 }
 
 func (uc *RestaurantUseCase) DeleteMenuItem(ctx context.Context, id int32) *repository.Response {
@@ -797,4 +901,187 @@ func bytesToMap(b []byte) map[string]interface{} {
 	json.Unmarshal(b, &m)
 	return m
 }
+
+// ModifierGroupWithOptionsResponse represents a modifier group with its nested list of item modifiers.
+type ModifierGroupWithOptionsResponse struct {
+	ID            int32                       `json:"id" example:"201"`
+	StoreID       int32                       `json:"store_id" example:"6"`
+	Name          string                      `json:"name" example:"Cold Drink Flavours"`
+	Code          string                      `json:"code" example:"COLDDRINK_FLAVOUR"`
+	SelectionType string                      `json:"selection_type" example:"required"`
+	MinSelections int32                       `json:"min_selections" example:"1"`
+	MaxSelections *int32                      `json:"max_selections,omitempty" example:"1"`
+	IsActive      bool                        `json:"is_active" example:"true"`
+	DisplayOrder  int32                       `json:"display_order" example:"1"`
+	Modifiers     []repository.MenuItemModifier `json:"modifiers"`
+}
+
+// ComboComponentWithDetailsResponse represents a combo component with nested details of its component item.
+type ComboComponentWithDetailsResponse struct {
+	ID                  int32                        `json:"id" example:"5"`
+	ParentMenuItemID   int32                        `json:"parent_menu_item_id" example:"99"`
+	ComponentMenuItemID int32                        `json:"component_menu_item_id" example:"10"`
+	GroupName           string                       `json:"group_name" example:"Main Dish"`
+	MinSelection        int32                        `json:"min_selection" example:"1"`
+	MaxSelection        int32                        `json:"max_selection" example:"1"`
+	PriceAdjustment     string                       `json:"price_adjustment" example:"0.00"`
+	DisplayOrder        int32                        `json:"display_order" example:"1"`
+	ComponentItem       *MenuItemFullDetailsResponse `json:"component_item,omitempty"`
+}
+
+// MenuItemFullDetailsResponse represents full tree structure for a menu item (standard or combo).
+type MenuItemFullDetailsResponse struct {
+	ID                 int32                               `json:"id" example:"12"`
+	StoreID            int32                               `json:"store_id" example:"6"`
+	MenuCategoryID     int32                               `json:"menu_category_id" example:"1"`
+	ProductID          *int32                              `json:"product_id,omitempty"`
+	RecipeID           *int32                              `json:"recipe_id,omitempty"`
+	Name               string                              `json:"name" example:"Fountain Soft Drink"`
+	ShortName          *string                             `json:"short_name,omitempty" example:"Drink"`
+	Description        *string                             `json:"description,omitempty" example:"Refreshing beverage"`
+	ImageUrl           *string                             `json:"image_url,omitempty"`
+	BasePrice          string                              `json:"base_price" example:"3.00"`
+	CostPrice          string                              `json:"cost_price" example:"0.00"`
+	PreparationTimeMin int32                               `json:"preparation_time_min" example:"0"`
+	IsAvailable        bool                                `json:"is_available" example:"true"`
+	IsActive           bool                                `json:"is_active" example:"true"`
+	DisplayOrder       int32                               `json:"display_order" example:"0"`
+	ItemType           string                              `json:"item_type" example:"standard"`
+	ModifierGroups     []ModifierGroupWithOptionsResponse  `json:"modifier_groups,omitempty"`
+	ComboComponents    []ComboComponentWithDetailsResponse `json:"combo_components,omitempty"`
+}
+
+func (uc *RestaurantUseCase) GetMenuItemFullDetails(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	details, err := uc.buildMenuItemFullDetails(ctx, id, 0)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "menu item full details fetched successfully", details)
+}
+
+func (uc *RestaurantUseCase) buildMenuItemFullDetails(ctx context.Context, id int32, depth int) (*MenuItemFullDetailsResponse, error) {
+	if depth > 5 {
+		return nil, fmt.Errorf("max combo recursion depth reached for item %d", id)
+	}
+
+	item, err := uc.repo.GetMenuItem(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("menu item %d not found", id)
+	}
+
+	details := &MenuItemFullDetailsResponse{
+		ID:                 item.ID,
+		StoreID:            item.StoreID,
+		MenuCategoryID:     item.MenuCategoryID,
+		Name:               item.Name,
+		BasePrice:          utils.NumericToString(item.BasePrice),
+		CostPrice:          utils.NumericToString(item.CostPrice),
+		PreparationTimeMin: utils.DerefInt32(utils.Int4ToPtr(item.PreparationTimeMin)),
+		IsAvailable:        utils.DerefBool(utils.BoolToPtr(item.IsAvailable)),
+		IsActive:           utils.DerefBool(utils.BoolToPtr(item.IsActive)),
+		DisplayOrder:       utils.DerefInt32(utils.Int4ToPtr(item.DisplayOrder)),
+		ItemType:           item.ItemType,
+	}
+
+	if item.ProductID.Valid {
+		details.ProductID = &item.ProductID.Int32
+	}
+	if item.RecipeID.Valid {
+		details.RecipeID = &item.RecipeID.Int32
+	}
+	if item.ShortName.Valid {
+		details.ShortName = &item.ShortName.String
+	}
+	if item.Description.Valid {
+		details.Description = &item.Description.String
+	}
+	if item.ImageUrl.Valid {
+		details.ImageUrl = &item.ImageUrl.String
+	}
+
+	// 1. Fetch Modifiers & Match with Modifier Groups
+	modifiers, err := uc.repo.ListMenuItemModifiers(ctx, item.ID)
+	if err == nil && len(modifiers) > 0 {
+		storeGroups, _ := uc.repo.ListMenuModifierGroupsByStore(ctx, item.StoreID)
+		groupMap := make(map[string]*ModifierGroupWithOptionsResponse)
+		var groupOrder []string
+
+		for _, g := range storeGroups {
+			groupMap[g.Code] = &ModifierGroupWithOptionsResponse{
+				ID:            g.ID,
+				StoreID:       g.StoreID,
+				Name:          g.Name,
+				Code:          g.Code,
+				SelectionType: utils.DerefString(utils.TextToPtr(g.SelectionType)),
+				MinSelections: utils.DerefInt32(utils.Int4ToPtr(g.MinSelections)),
+				IsActive:      utils.DerefBool(utils.BoolToPtr(g.IsActive)),
+				DisplayOrder:  utils.DerefInt32(utils.Int4ToPtr(g.DisplayOrder)),
+				Modifiers:     []repository.MenuItemModifier{},
+			}
+			if g.MaxSelections.Valid {
+				groupMap[g.Code].MaxSelections = &g.MaxSelections.Int32
+			}
+			groupOrder = append(groupOrder, g.Code)
+		}
+
+		for _, mod := range modifiers {
+			grpCode := mod.ModifierType
+			grp, exists := groupMap[grpCode]
+			if !exists {
+				grp = &ModifierGroupWithOptionsResponse{
+					Name:          grpCode,
+					Code:          grpCode,
+					SelectionType: "optional",
+					MinSelections: 0,
+					IsActive:      true,
+					Modifiers:     []repository.MenuItemModifier{},
+				}
+				groupMap[grpCode] = grp
+				groupOrder = append(groupOrder, grpCode)
+			}
+			grp.Modifiers = append(grp.Modifiers, mod)
+		}
+
+		var activeGroups []ModifierGroupWithOptionsResponse
+		for _, code := range groupOrder {
+			if grp, ok := groupMap[code]; ok && len(grp.Modifiers) > 0 {
+				activeGroups = append(activeGroups, *grp)
+				delete(groupMap, code)
+			}
+		}
+		details.ModifierGroups = activeGroups
+	}
+
+	// 2. Fetch Combo Components if item_type == 'combo'
+	if item.ItemType == "combo" {
+		components, err := uc.repo.ListMenuItemComboComponentsByParentID(ctx, item.ID)
+		if err == nil && len(components) > 0 {
+			var compResponses []ComboComponentWithDetailsResponse
+			for _, c := range components {
+				compItem, _ := uc.buildMenuItemFullDetails(ctx, c.ComponentMenuItemID, depth+1)
+				compResp := ComboComponentWithDetailsResponse{
+					ID:                  c.ID,
+					ParentMenuItemID:   c.ParentMenuItemID,
+					ComponentMenuItemID: c.ComponentMenuItemID,
+					GroupName:           c.GroupName,
+					MinSelection:        utils.DerefInt32(utils.Int4ToPtr(c.MinSelection)),
+					MaxSelection:        utils.DerefInt32(utils.Int4ToPtr(c.MaxSelection)),
+					PriceAdjustment:     utils.NumericToString(c.PriceAdjustment),
+					DisplayOrder:        utils.DerefInt32(utils.Int4ToPtr(c.DisplayOrder)),
+					ComponentItem:       compItem,
+				}
+				compResponses = append(compResponses, compResp)
+			}
+			details.ComboComponents = compResponses
+		}
+	}
+
+	return details, nil
+}
+
 

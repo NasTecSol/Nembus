@@ -28,6 +28,8 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 	rest.PUT("/menu-items/:item_id", h.UpdateMenuItem)
 	rest.DELETE("/menu-items/:item_id", h.DeleteMenuItem)
 	rest.GET("/menu-items/:item_id/modifiers", h.ListModifiers)
+	rest.GET("/menu-items/:item_id/combo-components", h.ListComboComponents)
+	rest.GET("/menu-items/:item_id/details", h.GetMenuItemFullDetails)
 
 	// Modifiers
 	rest.POST("/modifiers", h.CreateModifier)

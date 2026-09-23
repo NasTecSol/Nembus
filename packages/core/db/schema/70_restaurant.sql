@@ -118,6 +118,7 @@ CREATE TABLE menu_items (
     is_available        BOOLEAN      DEFAULT true,
     is_active           BOOLEAN      DEFAULT true,
     display_order       INTEGER      DEFAULT 0,
+    item_type           VARCHAR(20)  NOT NULL DEFAULT 'standard' CHECK (item_type IN ('standard', 'combo')),
     metadata            JSONB        DEFAULT '{}',
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
@@ -133,6 +134,18 @@ CREATE TABLE menu_item_modifiers (
     display_order       INTEGER     DEFAULT 0,
     metadata            JSONB       DEFAULT '{}',
     created_at          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE menu_item_combo_components (
+    id                      SERIAL PRIMARY KEY,
+    parent_menu_item_id    INTEGER     NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    component_menu_item_id INTEGER     NOT NULL REFERENCES menu_items(id) ON DELETE RESTRICT,
+    group_name             VARCHAR(100) NOT NULL,
+    min_selection          INTEGER     DEFAULT 1,
+    max_selection          INTEGER     DEFAULT 1,
+    price_adjustment       DECIMAL(15,2) DEFAULT 0.00,
+    display_order          INTEGER     DEFAULT 0,
+    created_at             TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 -- FIX #10 (P1): New menu_modifier_groups table to enforce min/max modifier selections
 CREATE TABLE menu_modifier_groups (

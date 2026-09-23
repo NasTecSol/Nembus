@@ -111,3 +111,40 @@ func Float64PointerToPgNumeric(v *float64) pgtype.Numeric {
 	return num
 }
 
+// NumericToString converts pgtype.Numeric to string.
+func NumericToString(n pgtype.Numeric) string {
+	if !n.Valid {
+		return "0.00"
+	}
+	v, err := n.Value()
+	if err != nil || v == nil {
+		return "0.00"
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// Int4ToPtr converts pgtype.Int4 to *int32.
+func Int4ToPtr(i pgtype.Int4) *int32 {
+	if !i.Valid {
+		return nil
+	}
+	return &i.Int32
+}
+
+// TextToPtr converts pgtype.Text to *string.
+func TextToPtr(t pgtype.Text) *string {
+	if !t.Valid {
+		return nil
+	}
+	return &t.String
+}
+
+// BoolToPtr converts pgtype.Bool to *bool.
+func BoolToPtr(b pgtype.Bool) *bool {
+	if !b.Valid {
+		return nil
+	}
+	return &b.Bool
+}
+
+
