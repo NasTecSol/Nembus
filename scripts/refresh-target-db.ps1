@@ -17,7 +17,7 @@
 
 .PARAMETER Domains
     Comma-separated list of domains to sync (or 'all').
-    Domains: uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, inventory, partners, bp_addresses, sales_orders, invoices, pos
+    Domains: uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, inventory, partners, bp_addresses, sales_orders, invoices, pos, procurement
 
 .PARAMETER Mode
     Sync mode: 'truncate_copy' (default, clean fast refresh) or 'upsert'.
@@ -38,7 +38,8 @@ param (
     [string]$Domains = "all",
     [ValidateSet("truncate_copy", "upsert")]
     [string]$Mode = "truncate_copy",
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$SkipSynced
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,6 +78,10 @@ try {
 
     if ($DryRun) {
         $ArgsList += "-dry-run=true"
+    }
+
+    if ($SkipSynced) {
+        $ArgsList += "-skip-synced=true"
     }
 
     Write-Host "Executing Go sync utility from $CloudServerDir..." -ForegroundColor Yellow

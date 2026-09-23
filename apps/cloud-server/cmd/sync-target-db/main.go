@@ -87,6 +87,13 @@ var syncTables = []TableSyncConfig{
 	{Domain: "pos", Schema: "public", Table: "pos_transactions", HasOrgScope: false, PKColumn: "id", ConflictKey: "transaction_number"},
 	{Domain: "pos", Schema: "public", Table: "pos_transaction_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 	{Domain: "pos", Schema: "public", Table: "pos_payments", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+
+	// 13. Procurement: Suppliers, Purchase Orders & Goods Receipt Notes (GRN)
+	{Domain: "procurement", Schema: "public", Table: "suppliers", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "organization_id, code"},
+	{Domain: "procurement", Schema: "public", Table: "purchase_orders", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "po_number"},
+	{Domain: "procurement", Schema: "public", Table: "purchase_order_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+	{Domain: "procurement", Schema: "public", Table: "goods_receipt_notes", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "grn_number"},
+	{Domain: "procurement", Schema: "public", Table: "goods_receipt_note_items", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 }
 
 type SyncReport struct {
@@ -107,6 +114,7 @@ func main() {
 	domainsFlag := flag.String("domains", "all", "Comma-separated list of domains to sync (or 'all')")
 	dryRunFlag := flag.Bool("dry-run", false, "Simulate execution without modifying target database")
 	batchSizeFlag := flag.Int("batch-size", 2000, "Batch size for chunked data transfer")
+	skipSyncedFlag := flag.Bool("skip-synced", false, "Resume mode: preserve tables where target already matches source count")
 	flag.Parse()
 
 	// Load environments
@@ -173,8 +181,14 @@ func main() {
 	}
 	log.Println("✓ Connected to Source DB")
 
-	// Connect to target pool
-	tgtPool, err := pgxpool.New(ctx, targetURL)
+	// Connect to target pool with generous timeout & keepalive settings
+	tgtConfig, err := pgxpool.ParseConfig(targetURL)
+	if err != nil {
+		log.Fatalf("❌ Failed to parse Target DB URL: %v", err)
+	}
+	tgtConfig.MaxConnIdleTime = 15 * time.Minute
+	tgtConfig.ConnConfig.ConnectTimeout = 45 * time.Second
+	tgtPool, err := pgxpool.NewWithConfig(ctx, tgtConfig)
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to Target DB: %v", err)
 	}
@@ -197,14 +211,14 @@ func main() {
 	// If truncate mode and not dry run, truncate in reverse topological order (or cascade)
 	if *modeFlag == "truncate_copy" && !*dryRunFlag {
 		log.Println("\n[1/3] Preparing target tables (clean refresh)...")
-		if err := truncateTargetTables(ctx, tgtPool, selectedTables, *orgIDFlag); err != nil {
+		if err := truncateTargetTables(ctx, srcPool, tgtPool, selectedTables, *orgIDFlag, *skipSyncedFlag); err != nil {
 			log.Fatalf("❌ Failed during table preparation: %v", err)
 		}
 	}
 
 	log.Println("\n[2/3] Syncing domain records from Source (STG) to Target...")
 	for _, t := range selectedTables {
-		report, err := syncSingleTable(ctx, srcPool, tgtPool, t, *orgIDFlag, *modeFlag, *dryRunFlag, *batchSizeFlag)
+		report, err := syncSingleTable(ctx, srcPool, tgtPool, t, *orgIDFlag, *modeFlag, *dryRunFlag, *batchSizeFlag, *skipSyncedFlag)
 		if err != nil {
 			log.Printf("❌ [%s] %s.%s failed: %v\n", t.Domain, t.Schema, t.Table, err)
 			report.Status = fmt.Sprintf("FAILED: %v", err)
@@ -229,7 +243,7 @@ func main() {
 	printSummaryTable(reports, time.Since(startTime))
 }
 
-func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t TableSyncConfig, orgID int, mode string, dryRun bool, batchSize int) (SyncReport, error) {
+func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t TableSyncConfig, orgID int, mode string, dryRun bool, batchSize int, skipSynced bool) (SyncReport, error) {
 	start := time.Now()
 	report := SyncReport{
 		Domain: t.Domain,
@@ -254,12 +268,15 @@ func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t Tabl
 
 	// Check if table exists in target
 	var tgtExists bool
-	_ = tgtPool.QueryRow(ctx, `
+	err := tgtPool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables 
 			WHERE table_schema = $1 AND table_name = $2
 		);
 	`, t.Schema, t.Table).Scan(&tgtExists)
+	if err != nil {
+		return report, fmt.Errorf("failed to verify target table %s: %w", t.Table, err)
+	}
 
 	if !tgtExists {
 		report.Status = "SKIPPED (Not found in target)"
@@ -279,13 +296,31 @@ func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t Tabl
 		return report, fmt.Errorf("failed to count source rows: %w", err)
 	}
 
+	// Check target count
+	_ = tgtPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.%s%s", t.Schema, t.Table, whereClause)).Scan(&report.TargetCount)
+
 	if dryRun {
-		// Dry run: query target count
-		_ = tgtPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.%s%s", t.Schema, t.Table, whereClause)).Scan(&report.TargetCount)
 		report.SyncedCount = report.SourceCount
 		report.Status = "DRY-RUN (Ready)"
 		report.Duration = time.Since(start)
 		return report, nil
+	}
+
+	if skipSynced && report.SourceCount > 0 && report.TargetCount == report.SourceCount {
+		report.Status = "ALREADY_SYNCED (Preserved)"
+		report.SyncedCount = report.TargetCount
+		report.Duration = time.Since(start)
+		return report, nil
+	}
+
+	var offsetClause string
+	initialCopied := int64(0)
+	if skipSynced && report.TargetCount > 0 && report.TargetCount < report.SourceCount {
+		log.Printf("   ... Resuming %s.%s from row %d / %d (%.1f%% already on target)\n",
+			t.Domain, t.Table, report.TargetCount, report.SourceCount,
+			float64(report.TargetCount)/float64(report.SourceCount)*100)
+		offsetClause = fmt.Sprintf(" OFFSET %d", report.TargetCount)
+		initialCopied = report.TargetCount
 	}
 
 	if report.SourceCount == 0 {
@@ -312,6 +347,10 @@ func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t Tabl
 		// Use DISTINCT ON to deduplicate source rows before copy to avoid unique constraint violations on target
 		selectQuery = fmt.Sprintf("SELECT DISTINCT ON (%s) %s FROM %s.%s%s ORDER BY %s, %s ASC",
 			t.DedupKey, strings.Join(quotedCols, ", "), t.Schema, t.Table, whereClause, t.DedupKey, t.PKColumn)
+	} else if mode == "truncate_copy" {
+		// No ORDER BY required for bulk COPY — allows immediate sequential streaming without multi-gigabyte disk sorts on 5M+ row tables!
+		selectQuery = fmt.Sprintf("SELECT %s FROM %s.%s%s%s",
+			strings.Join(quotedCols, ", "), t.Schema, t.Table, whereClause, offsetClause)
 	} else {
 		selectQuery = fmt.Sprintf("SELECT %s FROM %s.%s%s ORDER BY %s ASC",
 			strings.Join(quotedCols, ", "), t.Schema, t.Table, whereClause, t.PKColumn)
@@ -324,17 +363,66 @@ func syncSingleTable(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, t Tabl
 	defer rows.Close()
 
 	if mode == "truncate_copy" {
-		// Fast bulk copy via COPY protocol
-		copied, err := tgtPool.CopyFrom(
-			ctx,
-			pgx.Identifier{t.Schema, t.Table},
-			colNames,
-			rows,
-		)
-		if err != nil {
-			return report, fmt.Errorf("copy into %s failed: %w", t.Table, err)
+		// Fast bulk copy via chunked COPY protocol
+		const copyChunkSize = 50000
+		if report.SourceCount > copyChunkSize {
+			var chunk [][]any
+			totalCopied := initialCopied
+
+			for rows.Next() {
+				vals, err := rows.Values()
+				if err != nil {
+					return report, fmt.Errorf("failed to read source row from %s: %w", t.Table, err)
+				}
+				rowCopy := make([]any, len(vals))
+				copy(rowCopy, vals)
+				chunk = append(chunk, rowCopy)
+
+				if len(chunk) >= copyChunkSize {
+					copied, err := tgtPool.CopyFrom(
+						ctx,
+						pgx.Identifier{t.Schema, t.Table},
+						colNames,
+						pgx.CopyFromRows(chunk),
+					)
+					if err != nil {
+						return report, fmt.Errorf("copy chunk into %s failed: %w", t.Table, err)
+					}
+					totalCopied += copied
+					chunk = chunk[:0]
+					pct := float64(totalCopied) / float64(report.SourceCount) * 100
+					log.Printf("   ... [%s] %s: %d / %d rows copied (%.1f%%)\n", t.Domain, t.Table, totalCopied, report.SourceCount, pct)
+				}
+			}
+			if err := rows.Err(); err != nil {
+				return report, fmt.Errorf("row iteration error on %s: %w", t.Table, err)
+			}
+			if len(chunk) > 0 {
+				copied, err := tgtPool.CopyFrom(
+					ctx,
+					pgx.Identifier{t.Schema, t.Table},
+					colNames,
+					pgx.CopyFromRows(chunk),
+				)
+				if err != nil {
+					return report, fmt.Errorf("copy final chunk into %s failed: %w", t.Table, err)
+				}
+				totalCopied += copied
+			}
+			report.SyncedCount = totalCopied
+		} else {
+			// For smaller tables, stream all directly in one shot
+			copied, err := tgtPool.CopyFrom(
+				ctx,
+				pgx.Identifier{t.Schema, t.Table},
+				colNames,
+				rows,
+			)
+			if err != nil {
+				return report, fmt.Errorf("copy into %s failed: %w", t.Table, err)
+			}
+			report.SyncedCount = copied
 		}
-		report.SyncedCount = copied
 	} else {
 		// Upsert mode with batched INSERT ... ON CONFLICT
 		synced, err := upsertRows(ctx, tgtPool, t, colNames, rows, batchSize)
@@ -410,29 +498,48 @@ func upsertRows(ctx context.Context, pool *pgxpool.Pool, t TableSyncConfig, cols
 	return totalSynced, nil
 }
 
-func truncateTargetTables(ctx context.Context, tgtPool *pgxpool.Pool, tables []TableSyncConfig, orgID int) error {
-	// If no org ID specified, we can TRUNCATE ... CASCADE in reverse order or single statement
+func truncateTargetTables(ctx context.Context, srcPool, tgtPool *pgxpool.Pool, tables []TableSyncConfig, orgID int, skipSynced bool) error {
+	// If no org ID specified, we can TRUNCATE
 	if orgID <= 0 {
 		var tableNames []string
 		for i := len(tables) - 1; i >= 0; i-- {
 			t := tables[i]
 			// Check if table exists in target before including in TRUNCATE
 			var tgtExists bool
-			_ = tgtPool.QueryRow(ctx, `
+			err := tgtPool.QueryRow(ctx, `
 				SELECT EXISTS (
 					SELECT FROM information_schema.tables
 					WHERE table_schema = $1 AND table_name = $2
 				);
 			`, t.Schema, t.Table).Scan(&tgtExists)
-			if !tgtExists {
-				log.Printf("⚠ Skipping TRUNCATE for %s.%s (not found in target)", t.Schema, t.Table)
+			if err != nil || !tgtExists {
 				continue
 			}
+
+			// If skipSynced, check if table is already fully synced or partially synced
+			if skipSynced {
+				var tgtCount int64
+				_ = tgtPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", t.Schema, t.Table)).Scan(&tgtCount)
+				if tgtCount > 0 {
+					log.Printf("   [Preserving] %s.%s already has %d rows on target (will resume if needed)\n", t.Schema, t.Table, tgtCount)
+					continue
+				}
+			}
+
 			tableNames = append(tableNames, fmt.Sprintf("%s.%s", t.Schema, t.Table))
 		}
 		if len(tableNames) == 0 {
 			return nil
 		}
+
+		if skipSynced {
+			// Truncate non-synced tables individually
+			for _, tbl := range tableNames {
+				_, _ = tgtPool.Exec(ctx, fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE;", tbl))
+			}
+			return nil
+		}
+
 		stmt := fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE;", strings.Join(tableNames, ", "))
 		_, err := tgtPool.Exec(ctx, stmt)
 		return err
