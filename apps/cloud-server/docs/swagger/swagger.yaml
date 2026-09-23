@@ -1,5 +1,7 @@
 basePath: /
 definitions:
+  big.Int:
+    type: object
   handler.AddPaymentToTransactionRequest:
     properties:
       amount:
@@ -667,6 +669,34 @@ definitions:
     - closed_by
     - closing_balance
     type: object
+  handler.ComboComponentDTO:
+    properties:
+      component_base_price:
+        type: string
+      component_image_url:
+        type: string
+      component_is_available:
+        type: boolean
+      component_menu_item_id:
+        type: integer
+      component_name:
+        type: string
+      display_order:
+        type: integer
+      group_name:
+        type: string
+      id:
+        type: integer
+      max_selection:
+        type: integer
+      min_selection:
+        type: integer
+      price_adjustment:
+        type: string
+    required:
+    - component_menu_item_id
+    - group_name
+    type: object
   handler.CountResponse:
     properties:
       count:
@@ -1256,6 +1286,10 @@ definitions:
     properties:
       base_price:
         type: string
+      combo_components:
+        items:
+          $ref: '#/definitions/handler.ComboComponentDTO'
+        type: array
       description:
         type: string
       display_order:
@@ -1266,6 +1300,8 @@ definitions:
         type: boolean
       is_available:
         type: boolean
+      item_type:
+        type: string
       menu_category_id:
         type: integer
       metadata:
@@ -3313,6 +3349,62 @@ definitions:
       token:
         example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
+    type: object
+  handler.MenuItemFullDetailsResponse:
+    properties:
+      base_price:
+        example: "3.00"
+        type: string
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.ComboComponentWithDetailsResponse'
+        type: array
+      cost_price:
+        example: "0.00"
+        type: string
+      description:
+        example: Refreshing beverage
+        type: string
+      display_order:
+        example: 0
+        type: integer
+      id:
+        example: 12
+        type: integer
+      image_url:
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_available:
+        example: true
+        type: boolean
+      item_type:
+        example: standard
+        type: string
+      menu_category_id:
+        example: 1
+        type: integer
+      modifier_groups:
+        items:
+          $ref: '#/definitions/usecase.ModifierGroupWithOptionsResponse'
+        type: array
+      name:
+        example: Fountain Soft Drink
+        type: string
+      preparation_time_min:
+        example: 0
+        type: integer
+      product_id:
+        type: integer
+      recipe_id:
+        type: integer
+      short_name:
+        example: Drink
+        type: string
+      store_id:
+        example: 6
+        type: integer
     type: object
   handler.MenuModifierGroupResponse:
     properties:
@@ -6126,6 +6218,108 @@ definitions:
         example: "300000000000003"
         type: string
     type: object
+  pgtype.Bool:
+    properties:
+      bool:
+        type: boolean
+      valid:
+        type: boolean
+    type: object
+  pgtype.InfinityModifier:
+    enum:
+    - 1
+    - 0
+    - -1
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - Infinity
+    - Finite
+    - NegativeInfinity
+  pgtype.Int4:
+    properties:
+      int32:
+        format: int32
+        type: integer
+      valid:
+        type: boolean
+    type: object
+  pgtype.Numeric:
+    properties:
+      exp:
+        format: int32
+        type: integer
+      infinityModifier:
+        $ref: '#/definitions/pgtype.InfinityModifier'
+      int:
+        $ref: '#/definitions/big.Int'
+      naN:
+        type: boolean
+      valid:
+        type: boolean
+    type: object
+  pgtype.Timestamp:
+    properties:
+      infinityModifier:
+        $ref: '#/definitions/pgtype.InfinityModifier'
+      time:
+        description: Time zone will be ignored when encoding to PostgreSQL.
+        type: string
+      valid:
+        type: boolean
+    type: object
+  repository.MenuItemModifier:
+    properties:
+      created_at:
+        $ref: '#/definitions/pgtype.Timestamp'
+      display_order:
+        $ref: '#/definitions/pgtype.Int4'
+      id:
+        type: integer
+      is_active:
+        $ref: '#/definitions/pgtype.Bool'
+      menu_item_id:
+        type: integer
+      metadata:
+        items:
+          type: integer
+        type: array
+      modifier_name:
+        type: string
+      modifier_type:
+        type: string
+      price_adjustment:
+        $ref: '#/definitions/pgtype.Numeric'
+    type: object
+  usecase.ComboComponentWithDetailsResponse:
+    properties:
+      component_item:
+        $ref: '#/definitions/usecase.MenuItemFullDetailsResponse'
+      component_menu_item_id:
+        example: 10
+        type: integer
+      display_order:
+        example: 1
+        type: integer
+      group_name:
+        example: Main Dish
+        type: string
+      id:
+        example: 5
+        type: integer
+      max_selection:
+        example: 1
+        type: integer
+      min_selection:
+        example: 1
+        type: integer
+      parent_menu_item_id:
+        example: 99
+        type: integer
+      price_adjustment:
+        example: "0.00"
+        type: string
+    type: object
   usecase.CreateInvoiceInput:
     properties:
       billing_address:
@@ -6234,6 +6428,96 @@ definitions:
       unit_price:
         type: string
       uom_id:
+        type: integer
+    type: object
+  usecase.MenuItemFullDetailsResponse:
+    properties:
+      base_price:
+        example: "3.00"
+        type: string
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.ComboComponentWithDetailsResponse'
+        type: array
+      cost_price:
+        example: "0.00"
+        type: string
+      description:
+        example: Refreshing beverage
+        type: string
+      display_order:
+        example: 0
+        type: integer
+      id:
+        example: 12
+        type: integer
+      image_url:
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_available:
+        example: true
+        type: boolean
+      item_type:
+        example: standard
+        type: string
+      menu_category_id:
+        example: 1
+        type: integer
+      modifier_groups:
+        items:
+          $ref: '#/definitions/usecase.ModifierGroupWithOptionsResponse'
+        type: array
+      name:
+        example: Fountain Soft Drink
+        type: string
+      preparation_time_min:
+        example: 0
+        type: integer
+      product_id:
+        type: integer
+      recipe_id:
+        type: integer
+      short_name:
+        example: Drink
+        type: string
+      store_id:
+        example: 6
+        type: integer
+    type: object
+  usecase.ModifierGroupWithOptionsResponse:
+    properties:
+      code:
+        example: COLDDRINK_FLAVOUR
+        type: string
+      display_order:
+        example: 1
+        type: integer
+      id:
+        example: 201
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      max_selections:
+        example: 1
+        type: integer
+      min_selections:
+        example: 1
+        type: integer
+      modifiers:
+        items:
+          $ref: '#/definitions/repository.MenuItemModifier'
+        type: array
+      name:
+        example: Cold Drink Flavours
+        type: string
+      selection_type:
+        example: required
+        type: string
+      store_id:
+        example: 6
         type: integer
     type: object
   usecase.RecordInvoicePaymentInput:
@@ -26485,6 +26769,51 @@ paths:
       summary: Create menu item
       tags:
       - restaurant
+  /api/restaurant/menu-items/{id}/details:
+    get:
+      consumes:
+      - application/json
+      description: Returns complete tree structure for a menu item including modifier
+        groups, modifiers, and combo components.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Menu Item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.MenuItemFullDetailsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get full menu item details
+      tags:
+      - restaurant
   /api/restaurant/menu-items/{item_id}:
     delete:
       consumes:
@@ -26611,6 +26940,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Update menu item
+      tags:
+      - restaurant
+  /api/restaurant/menu-items/{item_id}/combo-components:
+    get:
+      consumes:
+      - application/json
+      description: Returns all combo component choices for a given combo menu item.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Menu Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List item combo components
       tags:
       - restaurant
   /api/restaurant/menu-items/{item_id}/modifiers:

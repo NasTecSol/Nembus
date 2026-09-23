@@ -1666,6 +1666,8 @@ ORDER BY
 -- RESTAURANT MODULE VIEWS
 -- =====================================================
 
+DROP VIEW IF EXISTS vw_restaurant_menu CASCADE;
+
 CREATE OR REPLACE VIEW vw_restaurant_menu AS
 SELECT
     mi.id                       AS menu_item_id,
@@ -1680,6 +1682,7 @@ SELECT
     mi.is_available,
     mi.is_active,
     mi.display_order,
+    mi.item_type,
     mi.metadata                 AS item_metadata,
     mc.id                       AS category_id,
     mc.name                     AS category_name,

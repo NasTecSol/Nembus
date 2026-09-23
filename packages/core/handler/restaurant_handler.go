@@ -98,6 +98,8 @@ func (h *RestaurantHandler) GetTable(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+
+
 // CreateTable handles POST /api/restaurant/tables
 // @Summary      Create restaurant table
 // @Description  Creates a new table in a store.
@@ -478,13 +480,53 @@ func (h *RestaurantHandler) GetMenuItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
 	}
 
 	resp := h.useCase.GetMenuItem(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMenuItemFullDetails handles GET /api/restaurant/menu-items/:id/details
+// @Summary      Get full menu item details
+// @Description  Returns complete tree structure for a menu item including modifier groups, modifiers, and combo components.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Item ID"
+// @Success      200          {object}  MenuItemFullDetailsResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{id}/details [get]
+func (h *RestaurantHandler) GetMenuItemFullDetails(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	if idStr == "" {
+		idStr = c.Param("item_id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.useCase.GetMenuItemFullDetails(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -517,6 +559,11 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 
 	basePrice, _ := repo.ParseNumeric(c.Request.Context(), req.BasePrice)
 
+	itemType := req.ItemType
+	if itemType == "" {
+		itemType = "standard"
+	}
+
 	params := repository.CreateMenuItemParams{
 		StoreID:            req.StoreID,
 		MenuCategoryID:     req.MenuCategoryID,
@@ -532,13 +579,26 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 		IsAvailable:        pgtype.Bool{Bool: req.IsAvailable, Valid: true},
 		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
 		DisplayOrder:       pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		ItemType:           itemType,
 		Metadata:           []byte(req.Metadata),
 	}
 	if req.Metadata == "" {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateMenuItem(c.Request.Context(), params)
+	comboInputs := make([]usecase.ComboComponentParamsInput, len(req.ComboComponents))
+	for i, cc := range req.ComboComponents {
+		comboInputs[i] = usecase.ComboComponentParamsInput{
+			ComponentMenuItemID: cc.ComponentMenuItemID,
+			GroupName:           cc.GroupName,
+			MinSelection:        cc.MinSelection,
+			MaxSelection:        cc.MaxSelection,
+			PriceAdjustment:     cc.PriceAdjustment,
+			DisplayOrder:        cc.DisplayOrder,
+		}
+	}
+
+	resp := h.useCase.CreateMenuItem(c.Request.Context(), params, comboInputs)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -564,7 +624,11 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
@@ -577,6 +641,11 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 	}
 
 	basePrice, _ := repo.ParseNumeric(c.Request.Context(), req.BasePrice)
+
+	itemType := req.ItemType
+	if itemType == "" {
+		itemType = "standard"
+	}
 
 	params := repository.UpdateMenuItemParams{
 		ID:                 int32(id),
@@ -593,13 +662,26 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 		IsAvailable:        pgtype.Bool{Bool: req.IsAvailable, Valid: true},
 		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
 		DisplayOrder:       pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		ItemType:           itemType,
 		Metadata:           []byte(req.Metadata),
 	}
 	if req.Metadata == "" {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateMenuItem(c.Request.Context(), params)
+	comboInputs := make([]usecase.ComboComponentParamsInput, len(req.ComboComponents))
+	for i, cc := range req.ComboComponents {
+		comboInputs[i] = usecase.ComboComponentParamsInput{
+			ComponentMenuItemID: cc.ComponentMenuItemID,
+			GroupName:           cc.GroupName,
+			MinSelection:        cc.MinSelection,
+			MaxSelection:        cc.MaxSelection,
+			PriceAdjustment:     cc.PriceAdjustment,
+			DisplayOrder:        cc.DisplayOrder,
+		}
+	}
+
+	resp := h.useCase.UpdateMenuItem(c.Request.Context(), params, comboInputs)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -624,13 +706,52 @@ func (h *RestaurantHandler) DeleteMenuItem(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
 		return
 	}
 
 	resp := h.useCase.DeleteMenuItem(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListComboComponents handles GET /api/restaurant/menu-items/:item_id/combo-components
+// @Summary      List item combo components
+// @Description  Returns all combo component choices for a given combo menu item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        item_id      path      int     true   "Menu Item ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{item_id}/combo-components [get]
+func (h *RestaurantHandler) ListComboComponents(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid item_id", nil))
+		return
+	}
+
+	resp := h.useCase.ListComboComponents(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
