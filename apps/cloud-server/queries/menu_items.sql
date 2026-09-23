@@ -16,9 +16,9 @@ ORDER BY display_order, name;
 
 -- name: CreateMenuItem :one
 INSERT INTO menu_items (
-    store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, metadata
+    store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
 )
 RETURNING *;
 
@@ -39,7 +39,8 @@ SET
     is_available = $13,
     is_active = $14,
     display_order = $15,
-    metadata = $16,
+    item_type = $16,
+    metadata = $17,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;

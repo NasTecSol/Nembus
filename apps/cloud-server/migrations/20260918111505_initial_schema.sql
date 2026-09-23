@@ -1435,6 +1435,7 @@ CREATE TABLE "public"."menu_items" (
   "is_available" boolean NULL DEFAULT true,
   "is_active" boolean NULL DEFAULT true,
   "display_order" integer NULL DEFAULT 0,
+  "item_type" character varying(20) NOT NULL DEFAULT 'standard',
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1461,6 +1462,21 @@ CREATE INDEX "idx_menu_items_recipe_id" ON "public"."menu_items" ("recipe_id");
 CREATE INDEX "idx_menu_items_store_id" ON "public"."menu_items" ("store_id");
 -- Create trigger "trg_menu_items_updated_at"
 CREATE TRIGGER "trg_menu_items_updated_at" BEFORE UPDATE ON "public"."menu_items" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create "menu_item_combo_components" table
+CREATE TABLE "public"."menu_item_combo_components" (
+  "id" serial NOT NULL,
+  "parent_menu_item_id" integer NOT NULL,
+  "component_menu_item_id" integer NOT NULL,
+  "group_name" character varying(100) NOT NULL,
+  "min_selection" integer NULL DEFAULT 1,
+  "max_selection" integer NULL DEFAULT 1,
+  "price_adjustment" numeric(15,2) NULL DEFAULT 0.00,
+  "display_order" integer NULL DEFAULT 0,
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "fk_parent_menu_item" FOREIGN KEY ("parent_menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "fk_component_menu_item" FOREIGN KEY ("component_menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE RESTRICT
+);
 -- Create "menu_modifier_groups" table
 CREATE TABLE "public"."menu_modifier_groups" (
   "id" serial NOT NULL,
@@ -3889,6 +3905,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
   "is_available",
   "is_active",
   "display_order",
+  "item_type",
   "item_metadata",
   "category_id",
   "category_name",
@@ -3919,6 +3936,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
     mi.is_available,
     mi.is_active,
     mi.display_order,
+    mi.item_type,
     mi.metadata AS item_metadata,
     mc.id AS category_id,
     mc.name AS category_name,

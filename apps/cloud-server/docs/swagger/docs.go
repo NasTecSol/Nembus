@@ -30768,6 +30768,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/restaurant/menu-items/{id}/details": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns complete tree structure for a menu item including modifier groups, modifiers, and combo components.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Get full menu item details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Menu Item ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MenuItemFullDetailsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/restaurant/menu-items/{item_id}": {
             "get": {
                 "security": [
@@ -30921,6 +30989,68 @@ const docTemplate = `{
                     "restaurant"
                 ],
                 "summary": "Delete menu item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Menu Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/menu-items/{item_id}/combo-components": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all combo component choices for a given combo menu item.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "List item combo components",
                 "parameters": [
                     {
                         "type": "string",
@@ -42796,6 +42926,9 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "big.Int": {
+            "type": "object"
+        },
         "handler.AddPaymentToTransactionRequest": {
             "type": "object",
             "properties": {
@@ -43733,6 +43866,48 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.ComboComponentDTO": {
+            "type": "object",
+            "required": [
+                "component_menu_item_id",
+                "group_name"
+            ],
+            "properties": {
+                "component_base_price": {
+                    "type": "string"
+                },
+                "component_image_url": {
+                    "type": "string"
+                },
+                "component_is_available": {
+                    "type": "boolean"
+                },
+                "component_menu_item_id": {
+                    "type": "integer"
+                },
+                "component_name": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "group_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_selection": {
+                    "type": "integer"
+                },
+                "min_selection": {
+                    "type": "integer"
+                },
+                "price_adjustment": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.CountResponse": {
             "type": "object",
             "properties": {
@@ -44558,6 +44733,12 @@ const docTemplate = `{
                 "base_price": {
                     "type": "string"
                 },
+                "combo_components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ComboComponentDTO"
+                    }
+                },
                 "description": {
                     "type": "string"
                 },
@@ -44572,6 +44753,9 @@ const docTemplate = `{
                 },
                 "is_available": {
                     "type": "boolean"
+                },
+                "item_type": {
+                    "type": "string"
                 },
                 "menu_category_id": {
                     "type": "integer"
@@ -47411,6 +47595,84 @@ const docTemplate = `{
                 "token": {
                     "type": "string",
                     "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+            }
+        },
+        "handler.MenuItemFullDetailsResponse": {
+            "type": "object",
+            "properties": {
+                "base_price": {
+                    "type": "string",
+                    "example": "3.00"
+                },
+                "combo_components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.ComboComponentWithDetailsResponse"
+                    }
+                },
+                "cost_price": {
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Refreshing beverage"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "image_url": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "is_available": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "item_type": {
+                    "type": "string",
+                    "example": "standard"
+                },
+                "menu_category_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "modifier_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.ModifierGroupWithOptionsResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Fountain Soft Drink"
+                },
+                "preparation_time_min": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "product_id": {
+                    "type": "integer"
+                },
+                "recipe_id": {
+                    "type": "integer"
+                },
+                "short_name": {
+                    "type": "string",
+                    "example": "Drink"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 6
                 }
             }
         },
@@ -51348,6 +51610,154 @@ const docTemplate = `{
                 }
             }
         },
+        "pgtype.Bool": {
+            "type": "object",
+            "properties": {
+                "bool": {
+                    "type": "boolean"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "pgtype.InfinityModifier": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+                1,
+                0,
+                -1
+            ],
+            "x-enum-varnames": [
+                "Infinity",
+                "Finite",
+                "NegativeInfinity"
+            ]
+        },
+        "pgtype.Int4": {
+            "type": "object",
+            "properties": {
+                "int32": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "pgtype.Numeric": {
+            "type": "object",
+            "properties": {
+                "exp": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "infinityModifier": {
+                    "$ref": "#/definitions/pgtype.InfinityModifier"
+                },
+                "int": {
+                    "$ref": "#/definitions/big.Int"
+                },
+                "naN": {
+                    "type": "boolean"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "pgtype.Timestamp": {
+            "type": "object",
+            "properties": {
+                "infinityModifier": {
+                    "$ref": "#/definitions/pgtype.InfinityModifier"
+                },
+                "time": {
+                    "description": "Time zone will be ignored when encoding to PostgreSQL.",
+                    "type": "string"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "repository.MenuItemModifier": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/pgtype.Timestamp"
+                },
+                "display_order": {
+                    "$ref": "#/definitions/pgtype.Int4"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "$ref": "#/definitions/pgtype.Bool"
+                },
+                "menu_item_id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "modifier_name": {
+                    "type": "string"
+                },
+                "modifier_type": {
+                    "type": "string"
+                },
+                "price_adjustment": {
+                    "$ref": "#/definitions/pgtype.Numeric"
+                }
+            }
+        },
+        "usecase.ComboComponentWithDetailsResponse": {
+            "type": "object",
+            "properties": {
+                "component_item": {
+                    "$ref": "#/definitions/usecase.MenuItemFullDetailsResponse"
+                },
+                "component_menu_item_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "group_name": {
+                    "type": "string",
+                    "example": "Main Dish"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "max_selection": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "min_selection": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "parent_menu_item_id": {
+                    "type": "integer",
+                    "example": 99
+                },
+                "price_adjustment": {
+                    "type": "string",
+                    "example": "0.00"
+                }
+            }
+        },
         "usecase.CreateInvoiceInput": {
             "type": "object",
             "properties": {
@@ -51505,6 +51915,131 @@ const docTemplate = `{
                 },
                 "uom_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "usecase.MenuItemFullDetailsResponse": {
+            "type": "object",
+            "properties": {
+                "base_price": {
+                    "type": "string",
+                    "example": "3.00"
+                },
+                "combo_components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.ComboComponentWithDetailsResponse"
+                    }
+                },
+                "cost_price": {
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Refreshing beverage"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "image_url": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "is_available": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "item_type": {
+                    "type": "string",
+                    "example": "standard"
+                },
+                "menu_category_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "modifier_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.ModifierGroupWithOptionsResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Fountain Soft Drink"
+                },
+                "preparation_time_min": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "product_id": {
+                    "type": "integer"
+                },
+                "recipe_id": {
+                    "type": "integer"
+                },
+                "short_name": {
+                    "type": "string",
+                    "example": "Drink"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 6
+                }
+            }
+        },
+        "usecase.ModifierGroupWithOptionsResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "COLDDRINK_FLAVOUR"
+                },
+                "display_order": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 201
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "max_selections": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "min_selections": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "modifiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/repository.MenuItemModifier"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Cold Drink Flavours"
+                },
+                "selection_type": {
+                    "type": "string",
+                    "example": "required"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 6
                 }
             }
         },

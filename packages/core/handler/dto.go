@@ -1,6 +1,10 @@
 package handler
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/NasTecSol/nembus-core/usecase"
+)
 
 // UserResponse represents a user in API responses
 type UserResponse struct {
@@ -594,23 +598,48 @@ type CreateMenuCategoryRequest struct {
 	Metadata         string `json:"metadata"`
 }
 
-type CreateMenuItemRequest struct {
-	StoreID            int32  `json:"store_id" binding:"required"`
-	MenuCategoryID     int32  `json:"menu_category_id" binding:"required"`
-	ProductID          *int32 `json:"product_id"`
-	RecipeID           *int32 `json:"recipe_id"`
-	Name               string `json:"name" binding:"required"`
-	ShortName          string `json:"short_name"`
-	Description        string `json:"description"`
-	ImageUrl           string `json:"image_url"`
-	BasePrice          string `json:"base_price" binding:"required"`
-	PreparationTimeMin int32  `json:"preparation_time_min"`
-	TaxCategoryID      *int32 `json:"tax_category_id"`
-	IsAvailable        bool   `json:"is_available"`
-	IsActive           bool   `json:"is_active"`
-	DisplayOrder       int32  `json:"display_order"`
-	Metadata           string `json:"metadata"`
+type ComboComponentDTO struct {
+	ID                   int32  `json:"id,omitempty"`
+	ComponentMenuItemID  int32  `json:"component_menu_item_id" binding:"required"`
+	GroupName            string `json:"group_name" binding:"required"`
+	MinSelection         int32  `json:"min_selection"`
+	MaxSelection         int32  `json:"max_selection"`
+	PriceAdjustment      string `json:"price_adjustment"`
+	DisplayOrder         int32  `json:"display_order"`
+	ComponentName        string `json:"component_name,omitempty"`
+	ComponentBasePrice   string `json:"component_base_price,omitempty"`
+	ComponentImageUrl    string `json:"component_image_url,omitempty"`
+	ComponentIsAvailable bool   `json:"component_is_available,omitempty"`
 }
+
+type CreateMenuItemRequest struct {
+	StoreID            int32               `json:"store_id" binding:"required"`
+	MenuCategoryID     int32               `json:"menu_category_id" binding:"required"`
+	ProductID          *int32              `json:"product_id"`
+	RecipeID           *int32              `json:"recipe_id"`
+	Name               string              `json:"name" binding:"required"`
+	ShortName          string              `json:"short_name"`
+	Description        string              `json:"description"`
+	ImageUrl           string              `json:"image_url"`
+	BasePrice          string              `json:"base_price" binding:"required"`
+	PreparationTimeMin int32               `json:"preparation_time_min"`
+	TaxCategoryID      *int32              `json:"tax_category_id"`
+	IsAvailable        bool                `json:"is_available"`
+	IsActive           bool                `json:"is_active"`
+	DisplayOrder       int32               `json:"display_order"`
+	ItemType           string              `json:"item_type"`
+	ComboComponents    []ComboComponentDTO `json:"combo_components"`
+	Metadata           string              `json:"metadata"`
+}
+
+// ModifierGroupWithOptionsResponse represents a modifier group with its nested list of item modifiers.
+type ModifierGroupWithOptionsResponse = usecase.ModifierGroupWithOptionsResponse
+
+// ComboComponentWithDetailsResponse represents a combo component with nested details of its component item.
+type ComboComponentWithDetailsResponse = usecase.ComboComponentWithDetailsResponse
+
+// MenuItemFullDetailsResponse represents full tree structure for a menu item (standard or combo).
+type MenuItemFullDetailsResponse = usecase.MenuItemFullDetailsResponse
 
 type CreateRecipeRequest struct {
 	OrganizationID     int32  `json:"organization_id" binding:"required"`
