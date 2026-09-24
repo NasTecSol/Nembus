@@ -2,9 +2,9 @@
 
 -- name: CreateMenuItemComboComponent :one
 INSERT INTO menu_item_combo_components (
-    parent_menu_item_id, component_menu_item_id, group_name, min_selection, max_selection, price_adjustment, display_order
+    parent_menu_item_id, component_menu_item_id, group_name, min_selection, max_selection, price_adjustment, display_order, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
 RETURNING *;
 
@@ -22,6 +22,7 @@ SELECT
     cc.max_selection,
     cc.price_adjustment,
     cc.display_order,
+    cc.metadata,
     cc.created_at,
     mi.name AS component_name,
     mi.base_price AS component_base_price,

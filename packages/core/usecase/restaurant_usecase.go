@@ -142,12 +142,13 @@ func (uc *RestaurantUseCase) DeleteMenuCategory(ctx context.Context, id int32) *
 // === Menu Items ===
 
 type ComboComponentParamsInput struct {
-	ComponentMenuItemID int32  `json:"component_menu_item_id"`
-	GroupName           string `json:"group_name"`
-	MinSelection        int32  `json:"min_selection"`
-	MaxSelection        int32  `json:"max_selection"`
-	PriceAdjustment     string `json:"price_adjustment"`
-	DisplayOrder        int32  `json:"display_order"`
+	ComponentMenuItemID int32           `json:"component_menu_item_id"`
+	GroupName           string          `json:"group_name"`
+	MinSelection        int32           `json:"min_selection"`
+	MaxSelection        int32           `json:"max_selection"`
+	PriceAdjustment     string          `json:"price_adjustment"`
+	DisplayOrder        int32           `json:"display_order"`
+	Metadata            json.RawMessage `json:"metadata"`
 }
 
 func (uc *RestaurantUseCase) GetMenuItem(ctx context.Context, id int32) *repository.Response {
@@ -224,6 +225,10 @@ func (uc *RestaurantUseCase) CreateMenuItem(ctx context.Context, arg repository.
 			if maxSel <= 0 {
 				maxSel = 1
 			}
+			metaBytes := cc.Metadata
+			if len(metaBytes) == 0 {
+				metaBytes = []byte("{}")
+			}
 			_, _ = uc.repo.CreateMenuItemComboComponent(ctx, repository.CreateMenuItemComboComponentParams{
 				ParentMenuItemID:    item.ID,
 				ComponentMenuItemID: cc.ComponentMenuItemID,
@@ -232,6 +237,7 @@ func (uc *RestaurantUseCase) CreateMenuItem(ctx context.Context, arg repository.
 				MaxSelection:        pgtype.Int4{Int32: maxSel, Valid: true},
 				PriceAdjustment:     priceAdj,
 				DisplayOrder:        pgtype.Int4{Int32: cc.DisplayOrder, Valid: true},
+				Metadata:            metaBytes,
 			})
 		}
 	}
@@ -263,6 +269,10 @@ func (uc *RestaurantUseCase) UpdateMenuItem(ctx context.Context, arg repository.
 			if maxSel <= 0 {
 				maxSel = 1
 			}
+			metaBytes := cc.Metadata
+			if len(metaBytes) == 0 {
+				metaBytes = []byte("{}")
+			}
 			_, _ = uc.repo.CreateMenuItemComboComponent(ctx, repository.CreateMenuItemComboComponentParams{
 				ParentMenuItemID:    item.ID,
 				ComponentMenuItemID: cc.ComponentMenuItemID,
@@ -271,6 +281,7 @@ func (uc *RestaurantUseCase) UpdateMenuItem(ctx context.Context, arg repository.
 				MaxSelection:        pgtype.Int4{Int32: maxSel, Valid: true},
 				PriceAdjustment:     priceAdj,
 				DisplayOrder:        pgtype.Int4{Int32: cc.DisplayOrder, Valid: true},
+				Metadata:            metaBytes,
 			})
 		}
 	}
@@ -926,6 +937,7 @@ type ComboComponentWithDetailsResponse struct {
 	MaxSelection        int32                        `json:"max_selection" example:"1"`
 	PriceAdjustment     string                       `json:"price_adjustment" example:"0.00"`
 	DisplayOrder        int32                        `json:"display_order" example:"1"`
+	Metadata            json.RawMessage              `json:"metadata,omitempty" swaggertype:"object"`
 	ComponentItem       *MenuItemFullDetailsResponse `json:"component_item,omitempty"`
 }
 
@@ -1073,6 +1085,7 @@ func (uc *RestaurantUseCase) buildMenuItemFullDetails(ctx context.Context, id in
 					MaxSelection:        utils.DerefInt32(utils.Int4ToPtr(c.MaxSelection)),
 					PriceAdjustment:     utils.NumericToString(c.PriceAdjustment),
 					DisplayOrder:        utils.DerefInt32(utils.Int4ToPtr(c.DisplayOrder)),
+					Metadata:            c.Metadata,
 					ComponentItem:       compItem,
 				}
 				compResponses = append(compResponses, compResp)

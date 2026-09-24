@@ -595,6 +595,7 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 			MaxSelection:        cc.MaxSelection,
 			PriceAdjustment:     cc.PriceAdjustment,
 			DisplayOrder:        cc.DisplayOrder,
+			Metadata:            cc.Metadata,
 		}
 	}
 
@@ -678,6 +679,7 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 			MaxSelection:        cc.MaxSelection,
 			PriceAdjustment:     cc.PriceAdjustment,
 			DisplayOrder:        cc.DisplayOrder,
+			Metadata:            cc.Metadata,
 		}
 	}
 

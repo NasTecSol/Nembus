@@ -43900,6 +43900,9 @@ const docTemplate = `{
                 "max_selection": {
                     "type": "integer"
                 },
+                "metadata": {
+                    "type": "object"
+                },
                 "min_selection": {
                     "type": "integer"
                 },
@@ -51743,6 +51746,9 @@ const docTemplate = `{
                 "max_selection": {
                     "type": "integer",
                     "example": 1
+                },
+                "metadata": {
+                    "type": "object"
                 },
                 "min_selection": {
                     "type": "integer",
