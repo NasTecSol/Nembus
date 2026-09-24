@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -14,21 +15,22 @@ import (
 const createMenuItemComboComponent = `-- name: CreateMenuItemComboComponent :one
 
 INSERT INTO menu_item_combo_components (
-    parent_menu_item_id, component_menu_item_id, group_name, min_selection, max_selection, price_adjustment, display_order
+    parent_menu_item_id, component_menu_item_id, group_name, min_selection, max_selection, price_adjustment, display_order, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, parent_menu_item_id, component_menu_item_id, group_name, min_selection, max_selection, price_adjustment, display_order, created_at
+RETURNING id, parent_menu_item_id, component_menu_item_id, group_name, min_selection, max_selection, price_adjustment, display_order, metadata, created_at
 `
 
 type CreateMenuItemComboComponentParams struct {
-	ParentMenuItemID    int32          `json:"parent_menu_item_id"`
-	ComponentMenuItemID int32          `json:"component_menu_item_id"`
-	GroupName           string         `json:"group_name"`
-	MinSelection        pgtype.Int4    `json:"min_selection"`
-	MaxSelection        pgtype.Int4    `json:"max_selection"`
-	PriceAdjustment     pgtype.Numeric `json:"price_adjustment"`
-	DisplayOrder        pgtype.Int4    `json:"display_order"`
+	ParentMenuItemID    int32           `json:"parent_menu_item_id"`
+	ComponentMenuItemID int32           `json:"component_menu_item_id"`
+	GroupName           string          `json:"group_name"`
+	MinSelection        pgtype.Int4     `json:"min_selection"`
+	MaxSelection        pgtype.Int4     `json:"max_selection"`
+	PriceAdjustment     pgtype.Numeric  `json:"price_adjustment"`
+	DisplayOrder        pgtype.Int4     `json:"display_order"`
+	Metadata            json.RawMessage `json:"metadata"`
 }
 
 // menu_item_combo_components.sql
@@ -41,6 +43,7 @@ func (q *Queries) CreateMenuItemComboComponent(ctx context.Context, arg CreateMe
 		arg.MaxSelection,
 		arg.PriceAdjustment,
 		arg.DisplayOrder,
+		arg.Metadata,
 	)
 	var i MenuItemComboComponent
 	err := row.Scan(
@@ -52,6 +55,7 @@ func (q *Queries) CreateMenuItemComboComponent(ctx context.Context, arg CreateMe
 		&i.MaxSelection,
 		&i.PriceAdjustment,
 		&i.DisplayOrder,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -77,6 +81,7 @@ SELECT
     cc.max_selection,
     cc.price_adjustment,
     cc.display_order,
+    cc.metadata,
     cc.created_at,
     mi.name AS component_name,
     mi.base_price AS component_base_price,
@@ -97,6 +102,7 @@ type ListMenuItemComboComponentsByParentIDRow struct {
 	MaxSelection         pgtype.Int4      `json:"max_selection"`
 	PriceAdjustment      pgtype.Numeric   `json:"price_adjustment"`
 	DisplayOrder         pgtype.Int4      `json:"display_order"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	ComponentName        string           `json:"component_name"`
 	ComponentBasePrice   pgtype.Numeric   `json:"component_base_price"`
@@ -122,6 +128,7 @@ func (q *Queries) ListMenuItemComboComponentsByParentID(ctx context.Context, par
 			&i.MaxSelection,
 			&i.PriceAdjustment,
 			&i.DisplayOrder,
+			&i.Metadata,
 			&i.CreatedAt,
 			&i.ComponentName,
 			&i.ComponentBasePrice,

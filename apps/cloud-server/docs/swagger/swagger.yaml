@@ -689,6 +689,8 @@ definitions:
         type: integer
       max_selection:
         type: integer
+      metadata:
+        type: object
       min_selection:
         type: integer
       price_adjustment:
@@ -6310,6 +6312,8 @@ definitions:
       max_selection:
         example: 1
         type: integer
+      metadata:
+        type: object
       min_selection:
         example: 1
         type: integer
