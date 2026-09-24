@@ -1134,6 +1134,7 @@ type MenuItemComboComponent struct {
 	MaxSelection        pgtype.Int4      `json:"max_selection"`
 	PriceAdjustment     pgtype.Numeric   `json:"price_adjustment"`
 	DisplayOrder        pgtype.Int4      `json:"display_order"`
+	Metadata            json.RawMessage  `json:"metadata"`
 	CreatedAt           pgtype.Timestamp `json:"created_at"`
 }
 

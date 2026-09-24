@@ -1483,6 +1483,7 @@ CREATE TABLE "public"."menu_item_combo_components" (
   "max_selection" integer NULL DEFAULT 1,
   "price_adjustment" numeric(15,2) NULL DEFAULT 0.00,
   "display_order" integer NULL DEFAULT 0,
+  "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_parent_menu_item" FOREIGN KEY ("parent_menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,

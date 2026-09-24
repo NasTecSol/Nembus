@@ -145,6 +145,7 @@ CREATE TABLE menu_item_combo_components (
     max_selection          INTEGER     DEFAULT 1,
     price_adjustment       DECIMAL(15,2) DEFAULT 0.00,
     display_order          INTEGER     DEFAULT 0,
+    metadata               JSONB       DEFAULT '{}',
     created_at             TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 -- FIX #10 (P1): New menu_modifier_groups table to enforce min/max modifier selections

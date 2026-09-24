@@ -608,8 +608,9 @@ type ComboComponentDTO struct {
 	DisplayOrder         int32  `json:"display_order"`
 	ComponentName        string `json:"component_name,omitempty"`
 	ComponentBasePrice   string `json:"component_base_price,omitempty"`
-	ComponentImageUrl    string `json:"component_image_url,omitempty"`
-	ComponentIsAvailable bool   `json:"component_is_available,omitempty"`
+	ComponentImageUrl    string          `json:"component_image_url,omitempty"`
+	ComponentIsAvailable bool            `json:"component_is_available,omitempty"`
+	Metadata             json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 type CreateMenuItemRequest struct {
