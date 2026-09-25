@@ -1094,6 +1094,7 @@ type MenuItem struct {
 	StoreID            int32            `json:"store_id"`
 	MenuCategoryID     int32            `json:"menu_category_id"`
 	ProductID          pgtype.Int4      `json:"product_id"`
+	ProductVariantID   pgtype.Int4      `json:"product_variant_id"`
 	RecipeID           pgtype.Int4      `json:"recipe_id"`
 	Name               string           `json:"name"`
 	ShortName          pgtype.Text      `json:"short_name"`
@@ -1769,6 +1770,37 @@ type RestaurantOrderItem struct {
 	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+}
+
+type RestaurantPromotion struct {
+	ID                    int32            `json:"id"`
+	StoreID               int32            `json:"store_id"`
+	Code                  string           `json:"code"`
+	Name                  string           `json:"name"`
+	Description           pgtype.Text      `json:"description"`
+	PromotionType         string           `json:"promotion_type"`
+	ActionMetadata        json.RawMessage  `json:"action_metadata"`
+	ValidFrom             pgtype.Timestamp `json:"valid_from"`
+	ValidTo               pgtype.Timestamp `json:"valid_to"`
+	ScheduleJson          json.RawMessage  `json:"schedule_json"`
+	AppliesTo             pgtype.Text      `json:"applies_to"`
+	TargetMenuItemIds     []int32          `json:"target_menu_item_ids"`
+	TargetMenuCategoryIds []int32          `json:"target_menu_category_ids"`
+	TargetCustomerTypes   []string         `json:"target_customer_types"`
+	TargetCustomerTiers   []string         `json:"target_customer_tiers"`
+	MinOrderAmount        pgtype.Numeric   `json:"min_order_amount"`
+	MinQuantity           pgtype.Numeric   `json:"min_quantity"`
+	CouponCode            pgtype.Text      `json:"coupon_code"`
+	UsageLimit            pgtype.Int4      `json:"usage_limit"`
+	UsageCount            pgtype.Int4      `json:"usage_count"`
+	UsagePerCustomer      pgtype.Int4      `json:"usage_per_customer"`
+	DiscountValue         pgtype.Numeric   `json:"discount_value"`
+	IsStackable           pgtype.Bool      `json:"is_stackable"`
+	IsActive              pgtype.Bool      `json:"is_active"`
+	CreatedBy             pgtype.Int4      `json:"created_by"`
+	Metadata              json.RawMessage  `json:"metadata"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
 }
 
 type RestaurantTable struct {
@@ -2573,6 +2605,7 @@ type VwRestaurantMenu struct {
 	RecipeName           pgtype.Text     `json:"recipe_name"`
 	RecipeYield          pgtype.Numeric  `json:"recipe_yield"`
 	ProductID            pgtype.Int4     `json:"product_id"`
+	ProductVariantID     pgtype.Int4     `json:"product_variant_id"`
 	ProductSku           pgtype.Text     `json:"product_sku"`
 	ActiveModifierCount  int32           `json:"active_modifier_count"`
 	MarginPercent        interface{}     `json:"margin_percent"`

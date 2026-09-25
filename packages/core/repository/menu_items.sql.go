@@ -14,17 +14,18 @@ import (
 
 const createMenuItem = `-- name: CreateMenuItem :one
 INSERT INTO menu_items (
-    store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata
+    store_id, menu_category_id, product_id, product_variant_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 )
-RETURNING id, store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at
+RETURNING id, store_id, menu_category_id, product_id, product_variant_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at
 `
 
 type CreateMenuItemParams struct {
 	StoreID            int32           `json:"store_id"`
 	MenuCategoryID     int32           `json:"menu_category_id"`
 	ProductID          pgtype.Int4     `json:"product_id"`
+	ProductVariantID   pgtype.Int4     `json:"product_variant_id"`
 	RecipeID           pgtype.Int4     `json:"recipe_id"`
 	Name               string          `json:"name"`
 	ShortName          pgtype.Text     `json:"short_name"`
@@ -46,6 +47,7 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		arg.StoreID,
 		arg.MenuCategoryID,
 		arg.ProductID,
+		arg.ProductVariantID,
 		arg.RecipeID,
 		arg.Name,
 		arg.ShortName,
@@ -67,6 +69,7 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		&i.StoreID,
 		&i.MenuCategoryID,
 		&i.ProductID,
+		&i.ProductVariantID,
 		&i.RecipeID,
 		&i.Name,
 		&i.ShortName,
@@ -99,7 +102,7 @@ func (q *Queries) DeleteMenuItem(ctx context.Context, id int32) error {
 
 const getMenuItem = `-- name: GetMenuItem :one
 
-SELECT id, store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at FROM menu_items
+SELECT id, store_id, menu_category_id, product_id, product_variant_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at FROM menu_items
 WHERE id = $1 LIMIT 1
 `
 
@@ -112,6 +115,7 @@ func (q *Queries) GetMenuItem(ctx context.Context, id int32) (MenuItem, error) {
 		&i.StoreID,
 		&i.MenuCategoryID,
 		&i.ProductID,
+		&i.ProductVariantID,
 		&i.RecipeID,
 		&i.Name,
 		&i.ShortName,
@@ -133,7 +137,7 @@ func (q *Queries) GetMenuItem(ctx context.Context, id int32) (MenuItem, error) {
 }
 
 const listMenuItems = `-- name: ListMenuItems :many
-SELECT id, store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at FROM menu_items
+SELECT id, store_id, menu_category_id, product_id, product_variant_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at FROM menu_items
 WHERE menu_category_id = $1
 ORDER BY display_order, name
 `
@@ -152,6 +156,7 @@ func (q *Queries) ListMenuItems(ctx context.Context, menuCategoryID int32) ([]Me
 			&i.StoreID,
 			&i.MenuCategoryID,
 			&i.ProductID,
+			&i.ProductVariantID,
 			&i.RecipeID,
 			&i.Name,
 			&i.ShortName,
@@ -180,7 +185,7 @@ func (q *Queries) ListMenuItems(ctx context.Context, menuCategoryID int32) ([]Me
 }
 
 const listMenuItemsByStore = `-- name: ListMenuItemsByStore :many
-SELECT id, store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at FROM menu_items
+SELECT id, store_id, menu_category_id, product_id, product_variant_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at FROM menu_items
 WHERE store_id = $1
 ORDER BY display_order, name
 `
@@ -199,6 +204,7 @@ func (q *Queries) ListMenuItemsByStore(ctx context.Context, storeID int32) ([]Me
 			&i.StoreID,
 			&i.MenuCategoryID,
 			&i.ProductID,
+			&i.ProductVariantID,
 			&i.RecipeID,
 			&i.Name,
 			&i.ShortName,
@@ -231,29 +237,31 @@ UPDATE menu_items
 SET
     menu_category_id = $2,
     product_id = $3,
-    recipe_id = $4,
-    name = $5,
-    short_name = $6,
-    description = $7,
-    image_url = $8,
-    base_price = $9,
-    cost_price = $10,
-    preparation_time_min = $11,
-    tax_category_id = $12,
-    is_available = $13,
-    is_active = $14,
-    display_order = $15,
-    item_type = $16,
-    metadata = $17,
+    product_variant_id = $4,
+    recipe_id = $5,
+    name = $6,
+    short_name = $7,
+    description = $8,
+    image_url = $9,
+    base_price = $10,
+    cost_price = $11,
+    preparation_time_min = $12,
+    tax_category_id = $13,
+    is_available = $14,
+    is_active = $15,
+    display_order = $16,
+    item_type = $17,
+    metadata = $18,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, store_id, menu_category_id, product_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at
+RETURNING id, store_id, menu_category_id, product_id, product_variant_id, recipe_id, name, short_name, description, image_url, base_price, cost_price, preparation_time_min, tax_category_id, is_available, is_active, display_order, item_type, metadata, created_at, updated_at
 `
 
 type UpdateMenuItemParams struct {
 	ID                 int32           `json:"id"`
 	MenuCategoryID     int32           `json:"menu_category_id"`
 	ProductID          pgtype.Int4     `json:"product_id"`
+	ProductVariantID   pgtype.Int4     `json:"product_variant_id"`
 	RecipeID           pgtype.Int4     `json:"recipe_id"`
 	Name               string          `json:"name"`
 	ShortName          pgtype.Text     `json:"short_name"`
@@ -275,6 +283,7 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		arg.ID,
 		arg.MenuCategoryID,
 		arg.ProductID,
+		arg.ProductVariantID,
 		arg.RecipeID,
 		arg.Name,
 		arg.ShortName,
@@ -296,6 +305,7 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		&i.StoreID,
 		&i.MenuCategoryID,
 		&i.ProductID,
+		&i.ProductVariantID,
 		&i.RecipeID,
 		&i.Name,
 		&i.ShortName,

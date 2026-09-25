@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -568,6 +569,7 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 		StoreID:            req.StoreID,
 		MenuCategoryID:     req.MenuCategoryID,
 		ProductID:          pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil && *req.ProductID > 0},
+		ProductVariantID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductVariantID), Valid: req.ProductVariantID != nil && *req.ProductVariantID > 0},
 		RecipeID:           pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil && *req.RecipeID > 0},
 		Name:               req.Name,
 		ShortName:          pgtype.Text{String: req.ShortName, Valid: req.ShortName != ""},
@@ -652,6 +654,7 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 		ID:                 int32(id),
 		MenuCategoryID:     req.MenuCategoryID,
 		ProductID:          pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil && *req.ProductID > 0},
+		ProductVariantID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductVariantID), Valid: req.ProductVariantID != nil && *req.ProductVariantID > 0},
 		RecipeID:           pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil && *req.RecipeID > 0},
 		Name:               req.Name,
 		ShortName:          pgtype.Text{String: req.ShortName, Valid: req.ShortName != ""},
@@ -2601,4 +2604,413 @@ func (h *RestaurantHandler) DeleteMenuModifierGroup(c *gin.Context) {
 	resp := h.useCase.DeleteMenuModifierGroup(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
+
+// === Restaurant Promotions ===
+
+// CreateRestaurantPromotion handles POST /api/restaurant/promotions
+// @Summary      Create restaurant promotion
+// @Description  Creates a new promotion specifically for restaurant menu items and categories.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string                           true  "Tenant identifier"
+// @Param        body         body      CreateRestaurantPromotionRequest true  "Promotion payload"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions [post]
+func (h *RestaurantHandler) CreateRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req CreateRestaurantPromotionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	actionMeta, _ := json.Marshal(req.ActionMetadata)
+	scheduleMeta, _ := json.Marshal(req.ScheduleJson)
+	metaBytes, _ := json.Marshal(req.Metadata)
+
+	arg := repository.CreateRestaurantPromotionParams{
+		StoreID:               req.StoreID,
+		Code:                  req.Code,
+		Name:                  req.Name,
+		Description:           promoTextOpt(req.Description),
+		PromotionType:         req.PromotionType,
+		ActionMetadata:        actionMeta,
+		ScheduleJson:          scheduleMeta,
+		AppliesTo:             promoTextOpt(req.AppliesTo),
+		TargetMenuItemIds:     req.TargetMenuItemIds,
+		TargetMenuCategoryIds: req.TargetMenuCategoryIds,
+		TargetCustomerTypes:   req.TargetCustomerTypes,
+		TargetCustomerTiers:   req.TargetCustomerTiers,
+		CouponCode:            promoTextOpt(req.CouponCode),
+		IsStackable:           promoBoolOpt(req.IsStackable),
+		IsActive:              promoBoolOpt(req.IsActive),
+		Metadata:              metaBytes,
+	}
+
+	if req.CreatedBy != nil {
+		arg.CreatedBy = pgtype.Int4{Int32: *req.CreatedBy, Valid: true}
+	} else if userIDStr, ok := middleware.GetUserIDFromContext(c); ok {
+		if uid, err := strconv.ParseInt(userIDStr, 10, 32); err == nil {
+			arg.CreatedBy = pgtype.Int4{Int32: int32(uid), Valid: true}
+		}
+	}
+
+	if req.MinOrderAmount != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinOrderAmount)
+		arg.MinOrderAmount = n
+	}
+	if req.MinQuantity != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinQuantity)
+		arg.MinQuantity = n
+	}
+	if req.DiscountValue != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.DiscountValue)
+		arg.DiscountValue = n
+	}
+	if req.UsageLimit != nil {
+		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
+	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
+	if req.ValidFrom != nil {
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
+		}
+		arg.ValidFrom = vf
+	}
+	if req.ValidTo != nil {
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
+		}
+		arg.ValidTo = vt
+	}
+
+	resp := h.useCase.CreateRestaurantPromotion(c.Request.Context(), arg)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetRestaurantPromotion handles GET /api/restaurant/promotions/:id
+// @Summary      Get restaurant promotion by ID
+// @Description  Retrieves a restaurant promotion by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        id           path      int     true  "Promotion ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id} [get]
+func (h *RestaurantHandler) GetRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.useCase.GetRestaurantPromotion(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetRestaurantPromotionByCode handles GET /api/restaurant/promotions/code/:code
+// @Summary      Get restaurant promotion by code
+// @Description  Retrieves a restaurant promotion by internal code and store_id.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        code         path      string  true  "Promotion code"
+// @Param        store_id     query     int     true  "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/code/{code} [get]
+func (h *RestaurantHandler) GetRestaurantPromotionByCode(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	code := c.Param("code")
+	storeIDStr := c.Query("store_id")
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.useCase.GetRestaurantPromotionByCode(c.Request.Context(), code, int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListActiveRestaurantPromotions handles GET /api/restaurant/promotions/active
+// @Summary      List active restaurant promotions
+// @Description  Lists active restaurant promotions for a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        store_id     query     int     true  "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/active [get]
+func (h *RestaurantHandler) ListActiveRestaurantPromotions(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeIDStr := c.Query("store_id")
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.useCase.ListActiveRestaurantPromotions(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListAllRestaurantPromotions handles GET /api/restaurant/promotions
+// @Summary      List all restaurant promotions
+// @Description  Lists all restaurant promotions for a store (paginated).
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     query     int     true   "Store ID"
+// @Param        limit        query     int     false  "Limit (default 50)"
+// @Param        offset       query     int     false  "Offset (default 0)"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions [get]
+func (h *RestaurantHandler) ListAllRestaurantPromotions(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeIDStr := c.Query("store_id")
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	limit64, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
+	offset64, _ := strconv.ParseInt(c.DefaultQuery("offset", "0"), 10, 32)
+
+	resp := h.useCase.ListAllRestaurantPromotions(c.Request.Context(), repository.ListAllRestaurantPromotionsParams{
+		StoreID: int32(storeID),
+		Limit:   int32(limit64),
+		Offset:  int32(offset64),
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateRestaurantPromotion handles PUT /api/restaurant/promotions/:id
+// @Summary      Update restaurant promotion
+// @Description  Updates an existing restaurant promotion.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string                           true  "Tenant identifier"
+// @Param        id           path      int                              true  "Promotion ID"
+// @Param        body         body      UpdateRestaurantPromotionRequest true  "Update payload"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id} [put]
+func (h *RestaurantHandler) UpdateRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdateRestaurantPromotionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	actionMeta, _ := json.Marshal(req.ActionMetadata)
+	scheduleMeta, _ := json.Marshal(req.ScheduleJson)
+	metaBytes, _ := json.Marshal(req.Metadata)
+
+	arg := repository.UpdateRestaurantPromotionParams{
+		ID:                    int32(id),
+		Name:                  promoStrDeref(req.Name),
+		Description:           promoTextOpt(req.Description),
+		ActionMetadata:        actionMeta,
+		ScheduleJson:          scheduleMeta,
+		AppliesTo:             promoTextOpt(req.AppliesTo),
+		TargetMenuItemIds:     req.TargetMenuItemIds,
+		TargetMenuCategoryIds: req.TargetMenuCategoryIds,
+		TargetCustomerTypes:   req.TargetCustomerTypes,
+		TargetCustomerTiers:   req.TargetCustomerTiers,
+		IsStackable:           promoBoolOpt(req.IsStackable),
+		Metadata:              metaBytes,
+	}
+
+	if req.MinOrderAmount != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinOrderAmount)
+		arg.MinOrderAmount = n
+	}
+	if req.MinQuantity != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinQuantity)
+		arg.MinQuantity = n
+	}
+	if req.DiscountValue != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.DiscountValue)
+		arg.DiscountValue = n
+	}
+	if req.UsageLimit != nil {
+		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
+	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
+	if req.ValidFrom != nil {
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
+		}
+		arg.ValidFrom = vf
+	}
+	if req.ValidTo != nil {
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
+		}
+		arg.ValidTo = vt
+	}
+
+	resp := h.useCase.UpdateRestaurantPromotion(c.Request.Context(), arg)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateRestaurantPromotionStatus handles PATCH /api/restaurant/promotions/:id/status
+// @Summary      Toggle restaurant promotion status
+// @Description  Activates or deactivates a restaurant promotion.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string                       true  "Tenant identifier"
+// @Param        id           path      int                          true  "Promotion ID"
+// @Param        body         body      UpdatePromotionStatusRequest true  "Status payload"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id}/status [patch]
+func (h *RestaurantHandler) UpdateRestaurantPromotionStatus(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdatePromotionStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	resp := h.useCase.UpdateRestaurantPromotionStatus(c.Request.Context(), repository.UpdateRestaurantPromotionStatusParams{
+		ID:       int32(id),
+		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteRestaurantPromotion handles DELETE /api/restaurant/promotions/:id
+// @Summary      Delete restaurant promotion
+// @Description  Deletes a restaurant promotion by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        id           path      int     true  "Promotion ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id} [delete]
+func (h *RestaurantHandler) DeleteRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.useCase.DeleteRestaurantPromotion(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
 

@@ -958,6 +958,7 @@ type MenuItemFullDetailsResponse struct {
 	StoreID            int32                               `json:"store_id" example:"6"`
 	MenuCategoryID     int32                               `json:"menu_category_id" example:"1"`
 	ProductID          *int32                              `json:"product_id,omitempty"`
+	ProductVariantID   *int32                              `json:"product_variant_id,omitempty"`
 	RecipeID           *int32                              `json:"recipe_id,omitempty"`
 	Name               string                              `json:"name" example:"Fountain Soft Drink"`
 	ShortName          *string                             `json:"short_name,omitempty" example:"Drink"`
@@ -1013,6 +1014,9 @@ func (uc *RestaurantUseCase) buildMenuItemFullDetails(ctx context.Context, id in
 
 	if item.ProductID.Valid {
 		details.ProductID = &item.ProductID.Int32
+	}
+	if item.ProductVariantID.Valid {
+		details.ProductVariantID = &item.ProductVariantID.Int32
 	}
 	if item.RecipeID.Valid {
 		details.RecipeID = &item.RecipeID.Int32
@@ -1107,5 +1111,99 @@ func (uc *RestaurantUseCase) buildMenuItemFullDetails(ctx context.Context, id in
 
 	return details, nil
 }
+
+// === Restaurant Promotions ===
+
+func (uc *RestaurantUseCase) CreateRestaurantPromotion(ctx context.Context, arg repository.CreateRestaurantPromotionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.CreateRestaurantPromotion(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to create restaurant promotion: "+err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "restaurant promotion created successfully", promo)
+}
+
+func (uc *RestaurantUseCase) GetRestaurantPromotion(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.GetRestaurantPromotion(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "restaurant promotion not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion fetched successfully", promo)
+}
+
+func (uc *RestaurantUseCase) GetRestaurantPromotionByCode(ctx context.Context, code string, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.GetRestaurantPromotionByCode(ctx, repository.GetRestaurantPromotionByCodeParams{
+		Code:    code,
+		StoreID: storeID,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "restaurant promotion not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion fetched successfully", promo)
+}
+
+func (uc *RestaurantUseCase) ListActiveRestaurantPromotions(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promos, err := uc.repo.ListActiveRestaurantPromotions(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "active restaurant promotions fetched successfully", promos)
+}
+
+func (uc *RestaurantUseCase) ListAllRestaurantPromotions(ctx context.Context, arg repository.ListAllRestaurantPromotionsParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promos, err := uc.repo.ListAllRestaurantPromotions(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotions fetched successfully", promos)
+}
+
+func (uc *RestaurantUseCase) UpdateRestaurantPromotion(ctx context.Context, arg repository.UpdateRestaurantPromotionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.UpdateRestaurantPromotion(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to update restaurant promotion: "+err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion updated successfully", promo)
+}
+
+func (uc *RestaurantUseCase) UpdateRestaurantPromotionStatus(ctx context.Context, arg repository.UpdateRestaurantPromotionStatusParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.UpdateRestaurantPromotionStatus(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to update restaurant promotion status: "+err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion status updated successfully", promo)
+}
+
+func (uc *RestaurantUseCase) DeleteRestaurantPromotion(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRestaurantPromotion(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion deleted successfully", nil)
+}
+
 
 

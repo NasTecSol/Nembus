@@ -1423,6 +1423,7 @@ CREATE TABLE "public"."menu_items" (
   "store_id" integer NOT NULL,
   "menu_category_id" integer NOT NULL,
   "product_id" integer NULL,
+  "product_variant_id" integer NULL,
   "recipe_id" integer NULL,
   "name" character varying(255) NOT NULL,
   "short_name" character varying(50) NULL,
@@ -1443,6 +1444,7 @@ CREATE TABLE "public"."menu_items" (
   CONSTRAINT "fk_menu_items_recipe" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_menu_category_id_fkey" FOREIGN KEY ("menu_category_id") REFERENCES "public"."menu_categories" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "menu_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "menu_items_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "menu_items_tax_category_id_fkey" FOREIGN KEY ("tax_category_id") REFERENCES "public"."tax_categories" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
@@ -2280,6 +2282,45 @@ CREATE TABLE "public"."promotions" (
 CREATE TRIGGER "trg_sync_promotion_to_product_prices" AFTER DELETE OR INSERT OR UPDATE ON "public"."promotions" FOR EACH ROW EXECUTE FUNCTION "public"."fn_sync_promotion_to_product_prices"();
 -- Create trigger "trg_promotions_updated_at"
 CREATE TRIGGER "trg_promotions_updated_at" BEFORE UPDATE ON "public"."promotions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create "restaurant_promotions" table
+CREATE TABLE "public"."restaurant_promotions" (
+  "id" serial NOT NULL,
+  "store_id" integer NOT NULL,
+  "code" character varying(50) NOT NULL,
+  "name" character varying(255) NOT NULL,
+  "description" text NULL,
+  "promotion_type" character varying(50) NOT NULL,
+  "action_metadata" jsonb NULL DEFAULT '{}',
+  "valid_from" timestamp NULL,
+  "valid_to" timestamp NULL,
+  "schedule_json" jsonb NULL DEFAULT '{}',
+  "applies_to" character varying(50) NULL DEFAULT 'all',
+  "target_menu_item_ids" integer[] NULL DEFAULT '{}',
+  "target_menu_category_ids" integer[] NULL DEFAULT '{}',
+  "target_customer_types" text[] NULL DEFAULT '{}',
+  "target_customer_tiers" text[] NULL DEFAULT '{}',
+  "min_order_amount" numeric(15,2) NULL,
+  "min_quantity" numeric(15,3) NULL,
+  "coupon_code" character varying(50) NULL,
+  "usage_limit" integer NULL,
+  "usage_count" integer NULL DEFAULT 0,
+  "usage_per_customer" integer NULL,
+  "discount_value" numeric(15,4) NULL,
+  "is_stackable" boolean NULL DEFAULT false,
+  "is_active" boolean NULL DEFAULT true,
+  "created_by" integer NULL,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "restaurant_promotions_store_id_code_key" UNIQUE ("store_id", "code"),
+  CONSTRAINT "restaurant_promotions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "restaurant_promotions_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "restaurant_promotions_applies_to_check" CHECK ((applies_to)::text = ANY ((ARRAY['all'::character varying, 'menu_category'::character varying, 'menu_item'::character varying])::text[])),
+  CONSTRAINT "restaurant_promotions_promotion_type_check" CHECK ((promotion_type)::text = ANY ((ARRAY['percentage_discount'::character varying, 'fixed_discount'::character varying, 'bogo'::character varying, 'buy_x_get_y'::character varying, 'free_item'::character varying, 'bundle_price'::character varying, 'points_multiplier'::character varying, 'happy_hour'::character varying, 'bucket_combo'::character varying])::text[]))
+);
+-- Create trigger "trg_restaurant_promotions_updated_at"
+CREATE TRIGGER "trg_restaurant_promotions_updated_at" BEFORE UPDATE ON "public"."restaurant_promotions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "purchase_analytics" table
 CREATE TABLE "public"."purchase_analytics" (
   "id" serial NOT NULL,
@@ -3922,6 +3963,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
   "recipe_name",
   "recipe_yield",
   "product_id",
+  "product_variant_id",
   "product_sku",
   "active_modifier_count",
   "margin_percent"
@@ -3953,6 +3995,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
     r.recipe_name,
     r.yield_quantity AS recipe_yield,
     mi.product_id,
+    mi.product_variant_id,
     p.sku AS product_sku,
     (( SELECT count(*) AS count
            FROM public.menu_item_modifiers m
@@ -3969,7 +4012,8 @@ CREATE VIEW "public"."vw_restaurant_menu" (
      LEFT JOIN public.products p ON mi.product_id = p.id
   WHERE mi.is_active = true;
 -- Create "fn_get_restaurant_menu" function
-CREATE FUNCTION "public"."fn_get_restaurant_menu" ("p_store_id" integer, "p_category_id" integer DEFAULT NULL::integer, "p_include_unavail" boolean DEFAULT false) RETURNS TABLE ("menu_item_id" integer, "item_name" character varying, "short_name" character varying, "description" text, "image_url" text, "base_price" numeric, "preparation_time_min" integer, "is_available" boolean, "category_id" integer, "category_name" character varying, "parent_category_name" character varying, "tax_rate" numeric, "tax_is_inclusive" boolean, "recipe_id" integer, "product_id" integer, "active_modifier_count" integer, "margin_percent" numeric) LANGUAGE plpgsql AS $$
+DROP FUNCTION IF EXISTS "public"."fn_get_restaurant_menu" CASCADE;
+CREATE FUNCTION "public"."fn_get_restaurant_menu" ("p_store_id" integer, "p_category_id" integer DEFAULT NULL::integer, "p_include_unavail" boolean DEFAULT false) RETURNS TABLE ("menu_item_id" integer, "item_name" character varying, "short_name" character varying, "description" text, "image_url" text, "base_price" numeric, "preparation_time_min" integer, "is_available" boolean, "category_id" integer, "category_name" character varying, "parent_category_name" character varying, "tax_rate" numeric, "tax_is_inclusive" boolean, "recipe_id" integer, "product_id" integer, "product_variant_id" integer, "active_modifier_count" integer, "margin_percent" numeric) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY
     SELECT
@@ -3988,6 +4032,7 @@ BEGIN
         vm.tax_is_inclusive,
         vm.recipe_id,
         vm.product_id,
+        vm.product_variant_id,
         vm.active_modifier_count,
         vm.margin_percent
     FROM vw_restaurant_menu vm
