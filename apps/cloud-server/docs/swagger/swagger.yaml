@@ -2,29 +2,6 @@ basePath: /
 definitions:
   big.Int:
     type: object
-  github_com_NasTecSol_nembus-core_repository.MenuItemModifier:
-    properties:
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      display_order:
-        $ref: '#/definitions/pgtype.Int4'
-      id:
-        type: integer
-      is_active:
-        $ref: '#/definitions/pgtype.Bool'
-      menu_item_id:
-        type: integer
-      metadata:
-        items:
-          type: integer
-        type: array
-      modifier_name:
-        type: string
-      modifier_type:
-        type: string
-      price_adjustment:
-        $ref: '#/definitions/pgtype.Numeric'
-    type: object
   handler.AddPaymentToTransactionRequest:
     properties:
       amount:
@@ -1337,6 +1314,8 @@ definitions:
         type: integer
       product_id:
         type: integer
+      product_variant_id:
+        type: integer
       recipe_id:
         type: integer
       short_name:
@@ -2248,6 +2227,87 @@ definitions:
       total_amount:
         type: string
     required:
+    - store_id
+    type: object
+  handler.CreateRestaurantPromotionRequest:
+    properties:
+      action_metadata:
+        type: object
+      applies_to:
+        example: menu_item
+        type: string
+      code:
+        example: RESTAURANT-PROMO-01
+        type: string
+      coupon_code:
+        example: PIZZA20
+        type: string
+      created_by:
+        example: 1
+        type: integer
+      description:
+        example: Special discount on selected pizza menu items
+        type: string
+      discount_value:
+        example: "20.00"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_stackable:
+        example: false
+        type: boolean
+      metadata:
+        type: object
+      min_order_amount:
+        example: "50.00"
+        type: string
+      min_quantity:
+        example: "1"
+        type: string
+      name:
+        example: Weekend Pizza Special
+        type: string
+      promotion_type:
+        example: percentage_discount
+        type: string
+      schedule_json:
+        type: object
+      store_id:
+        example: 6
+        type: integer
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
+      target_menu_category_ids:
+        items:
+          type: integer
+        type: array
+      target_menu_item_ids:
+        items:
+          type: integer
+        type: array
+      usage_limit:
+        example: 100
+        type: integer
+      usage_per_customer:
+        example: 2
+        type: integer
+      valid_from:
+        example: "2026-06-01T00:00:00Z"
+        type: string
+      valid_to:
+        example: "2026-08-31T23:59:59Z"
+        type: string
+    required:
+    - code
+    - name
+    - promotion_type
     - store_id
     type: object
   handler.CreateRestaurantTableRequest:
@@ -3421,6 +3481,8 @@ definitions:
         example: 0
         type: integer
       product_id:
+        type: integer
+      product_variant_id:
         type: integer
       recipe_id:
         type: integer
@@ -5839,6 +5901,68 @@ definitions:
     required:
     - status
     type: object
+  handler.UpdateRestaurantPromotionRequest:
+    properties:
+      action_metadata:
+        type: object
+      applies_to:
+        example: menu_item
+        type: string
+      coupon_code:
+        example: PIZZA25
+        type: string
+      description:
+        example: Updated description
+        type: string
+      discount_value:
+        example: "25.00"
+        type: string
+      is_active:
+        type: boolean
+      is_stackable:
+        type: boolean
+      metadata:
+        type: object
+      min_order_amount:
+        example: "50.00"
+        type: string
+      min_quantity:
+        example: "1"
+        type: string
+      name:
+        example: Updated Pizza Special
+        type: string
+      schedule_json:
+        type: object
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
+      target_menu_category_ids:
+        items:
+          type: integer
+        type: array
+      target_menu_item_ids:
+        items:
+          type: integer
+        type: array
+      usage_limit:
+        example: 200
+        type: integer
+      usage_per_customer:
+        example: 2
+        type: integer
+      valid_from:
+        example: "2026-06-01T00:00:00Z"
+        type: string
+      valid_to:
+        example: "2026-09-30T23:59:59Z"
+        type: string
+    type: object
   handler.UpdateRolePermissionScopeRequest:
     properties:
       scope:
@@ -6293,6 +6417,29 @@ definitions:
       valid:
         type: boolean
     type: object
+  repository.MenuItemModifier:
+    properties:
+      created_at:
+        $ref: '#/definitions/pgtype.Timestamp'
+      display_order:
+        $ref: '#/definitions/pgtype.Int4'
+      id:
+        type: integer
+      is_active:
+        $ref: '#/definitions/pgtype.Bool'
+      menu_item_id:
+        type: integer
+      metadata:
+        items:
+          type: integer
+        type: array
+      modifier_name:
+        type: string
+      modifier_type:
+        type: string
+      price_adjustment:
+        $ref: '#/definitions/pgtype.Numeric'
+    type: object
   usecase.ComboComponentWithDetailsResponse:
     properties:
       component_item:
@@ -6481,6 +6628,8 @@ definitions:
         type: integer
       product_id:
         type: integer
+      product_variant_id:
+        type: integer
       recipe_id:
         type: integer
       short_name:
@@ -6512,7 +6661,7 @@ definitions:
         type: integer
       modifiers:
         items:
-          $ref: '#/definitions/github_com_NasTecSol_nembus-core_repository.MenuItemModifier'
+          $ref: '#/definitions/repository.MenuItemModifier'
         type: array
       name:
         example: Cold Drink Flavours
@@ -27878,6 +28027,334 @@ paths:
       security:
       - BearerAuth: []
       summary: Create online order
+      tags:
+      - restaurant
+  /api/restaurant/promotions:
+    get:
+      consumes:
+      - application/json
+      description: Lists all restaurant promotions for a store (paginated).
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      - description: Limit (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all restaurant promotions
+      tags:
+      - restaurant
+    post:
+      consumes:
+      - application/json
+      description: Creates a new promotion specifically for restaurant menu items
+        and categories.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateRestaurantPromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create restaurant promotion
+      tags:
+      - restaurant
+  /api/restaurant/promotions/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a restaurant promotion by ID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete restaurant promotion
+      tags:
+      - restaurant
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a restaurant promotion by ID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get restaurant promotion by ID
+      tags:
+      - restaurant
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing restaurant promotion.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateRestaurantPromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update restaurant promotion
+      tags:
+      - restaurant
+  /api/restaurant/promotions/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Activates or deactivates a restaurant promotion.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePromotionStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Toggle restaurant promotion status
+      tags:
+      - restaurant
+  /api/restaurant/promotions/active:
+    get:
+      consumes:
+      - application/json
+      description: Lists active restaurant promotions for a store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List active restaurant promotions
+      tags:
+      - restaurant
+  /api/restaurant/promotions/code/{code}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a restaurant promotion by internal code and store_id.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get restaurant promotion by code
       tags:
       - restaurant
   /api/restaurant/recipe-ingredients/{recipe_ingredient_id}:

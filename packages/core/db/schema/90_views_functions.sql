@@ -1698,6 +1698,7 @@ SELECT
     r.recipe_name,
     r.yield_quantity            AS recipe_yield,
     mi.product_id,
+    mi.product_variant_id,
     p.sku                       AS product_sku,
     (SELECT COUNT(*) FROM menu_item_modifiers m WHERE m.menu_item_id = mi.id AND m.is_active = true)::INTEGER
                                 AS active_modifier_count,
@@ -1791,6 +1792,8 @@ GROUP BY wl.store_id, DATE(wl.wasted_at), wl.waste_source;
 -- RESTAURANT MODULE FUNCTIONS
 -- =====================================================
 
+DROP FUNCTION IF EXISTS fn_get_restaurant_menu CASCADE;
+
 CREATE OR REPLACE FUNCTION fn_get_restaurant_menu(
     p_store_id          INTEGER,
     p_category_id       INTEGER  DEFAULT NULL,
@@ -1812,6 +1815,7 @@ RETURNS TABLE (
     tax_is_inclusive        BOOLEAN,
     recipe_id               INTEGER,
     product_id              INTEGER,
+    product_variant_id      INTEGER,
     active_modifier_count   INTEGER,
     margin_percent          NUMERIC
 ) AS $$
@@ -1833,6 +1837,7 @@ BEGIN
         vm.tax_is_inclusive,
         vm.recipe_id,
         vm.product_id,
+        vm.product_variant_id,
         vm.active_modifier_count,
         vm.margin_percent
     FROM vw_restaurant_menu vm

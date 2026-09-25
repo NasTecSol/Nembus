@@ -617,6 +617,7 @@ type CreateMenuItemRequest struct {
 	StoreID            int32               `json:"store_id" binding:"required"`
 	MenuCategoryID     int32               `json:"menu_category_id" binding:"required"`
 	ProductID          *int32              `json:"product_id"`
+	ProductVariantID   *int32              `json:"product_variant_id"`
 	RecipeID           *int32              `json:"recipe_id"`
 	Name               string              `json:"name" binding:"required"`
 	ShortName          string              `json:"short_name"`
@@ -1493,6 +1494,58 @@ type UpdatePromotionRequest struct {
 	IsStackable       *bool                  `json:"is_stackable,omitempty"`
 	StoreIds          []int32                `json:"store_ids,omitempty"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// CreateRestaurantPromotionRequest represents request body for creating a restaurant promotion.
+type CreateRestaurantPromotionRequest struct {
+	StoreID               int32                  `json:"store_id" binding:"required" example:"6"`
+	Code                  string                 `json:"code" binding:"required" example:"RESTAURANT-PROMO-01"`
+	Name                  string                 `json:"name" binding:"required" example:"Weekend Pizza Special"`
+	Description           *string                `json:"description,omitempty" example:"Special discount on selected pizza menu items"`
+	PromotionType         string                 `json:"promotion_type" binding:"required" example:"percentage_discount"`
+	ActionMetadata        map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
+	ValidFrom             *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo               *string                `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
+	ScheduleJson          map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
+	AppliesTo             *string                `json:"applies_to,omitempty" example:"menu_item"`
+	TargetMenuItemIds     []int32                `json:"target_menu_item_ids,omitempty"`
+	TargetMenuCategoryIds []int32                `json:"target_menu_category_ids,omitempty"`
+	TargetCustomerTypes   []string               `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers   []string               `json:"target_customer_tiers,omitempty"`
+	MinOrderAmount        *string                `json:"min_order_amount,omitempty" example:"50.00"`
+	MinQuantity           *string                `json:"min_quantity,omitempty" example:"1"`
+	CouponCode            *string                `json:"coupon_code,omitempty" example:"PIZZA20"`
+	UsageLimit            *int32                 `json:"usage_limit,omitempty" example:"100"`
+	UsagePerCustomer      *int32                 `json:"usage_per_customer,omitempty" example:"2"`
+	DiscountValue         *string                `json:"discount_value,omitempty" example:"20.00"`
+	IsStackable           *bool                  `json:"is_stackable,omitempty" example:"false"`
+	IsActive              *bool                  `json:"is_active,omitempty" example:"true"`
+	CreatedBy             *int32                 `json:"created_by,omitempty" example:"1"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateRestaurantPromotionRequest represents request body for updating a restaurant promotion.
+type UpdateRestaurantPromotionRequest struct {
+	Name                  *string                `json:"name,omitempty" example:"Updated Pizza Special"`
+	Description           *string                `json:"description,omitempty" example:"Updated description"`
+	ActionMetadata        map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
+	ValidFrom             *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo               *string                `json:"valid_to,omitempty" example:"2026-09-30T23:59:59Z"`
+	ScheduleJson          map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
+	AppliesTo             *string                `json:"applies_to,omitempty" example:"menu_item"`
+	TargetMenuItemIds     []int32                `json:"target_menu_item_ids,omitempty"`
+	TargetMenuCategoryIds []int32                `json:"target_menu_category_ids,omitempty"`
+	TargetCustomerTypes   []string               `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers   []string               `json:"target_customer_tiers,omitempty"`
+	MinOrderAmount        *string                `json:"min_order_amount,omitempty" example:"50.00"`
+	MinQuantity           *string                `json:"min_quantity,omitempty" example:"1"`
+	CouponCode            *string                `json:"coupon_code,omitempty" example:"PIZZA25"`
+	UsageLimit            *int32                 `json:"usage_limit,omitempty" example:"200"`
+	UsagePerCustomer      *int32                 `json:"usage_per_customer,omitempty" example:"2"`
+	DiscountValue         *string                `json:"discount_value,omitempty" example:"25.00"`
+	IsStackable           *bool                  `json:"is_stackable,omitempty"`
+	IsActive              *bool                  `json:"is_active,omitempty"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // UpdatePromotionStatusRequest represents the request to toggle a promotion active state.

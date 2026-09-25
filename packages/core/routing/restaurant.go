@@ -43,6 +43,16 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 	rest.PUT("/menu-modifier-groups/:id", h.UpdateMenuModifierGroup)
 	rest.DELETE("/menu-modifier-groups/:id", h.DeleteMenuModifierGroup)
 
+	// Restaurant Promotions
+	rest.POST("/promotions", h.CreateRestaurantPromotion)
+	rest.GET("/promotions", h.ListAllRestaurantPromotions)
+	rest.GET("/promotions/active", h.ListActiveRestaurantPromotions)
+	rest.GET("/promotions/code/:code", h.GetRestaurantPromotionByCode)
+	rest.GET("/promotions/:id", h.GetRestaurantPromotion)
+	rest.PUT("/promotions/:id", h.UpdateRestaurantPromotion)
+	rest.PATCH("/promotions/:id/status", h.UpdateRestaurantPromotionStatus)
+	rest.DELETE("/promotions/:id", h.DeleteRestaurantPromotion)
+
 	// Orders
 	rest.GET("/orders", h.ListOrders)
 	rest.POST("/orders", h.CreateOrder)
