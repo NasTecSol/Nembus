@@ -31948,6 +31948,66 @@ const docTemplate = `{
             }
         },
         "/api/restaurant/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all restaurant orders for a given store. Accepts store_id as query parameter.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "List restaurant orders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -33165,6 +33225,68 @@ const docTemplate = `{
                     "restaurant"
                 ],
                 "summary": "List store modifiers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/stores/{store_id}/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all restaurant orders for a specific store.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "List restaurant orders by store",
                 "parameters": [
                     {
                         "type": "string",
@@ -42929,6 +43051,41 @@ const docTemplate = `{
         "big.Int": {
             "type": "object"
         },
+        "github_com_NasTecSol_nembus-core_repository.MenuItemModifier": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/pgtype.Timestamp"
+                },
+                "display_order": {
+                    "$ref": "#/definitions/pgtype.Int4"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "$ref": "#/definitions/pgtype.Bool"
+                },
+                "menu_item_id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "modifier_name": {
+                    "type": "string"
+                },
+                "modifier_type": {
+                    "type": "string"
+                },
+                "price_adjustment": {
+                    "$ref": "#/definitions/pgtype.Numeric"
+                }
+            }
+        },
         "handler.AddPaymentToTransactionRequest": {
             "type": "object",
             "properties": {
@@ -51686,41 +51843,6 @@ const docTemplate = `{
                 }
             }
         },
-        "repository.MenuItemModifier": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "display_order": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_active": {
-                    "$ref": "#/definitions/pgtype.Bool"
-                },
-                "menu_item_id": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "modifier_name": {
-                    "type": "string"
-                },
-                "modifier_type": {
-                    "type": "string"
-                },
-                "price_adjustment": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                }
-            }
-        },
         "usecase.ComboComponentWithDetailsResponse": {
             "type": "object",
             "properties": {
@@ -52032,7 +52154,7 @@ const docTemplate = `{
                 "modifiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/repository.MenuItemModifier"
+                        "$ref": "#/definitions/github_com_NasTecSol_nembus-core_repository.MenuItemModifier"
                     }
                 },
                 "name": {

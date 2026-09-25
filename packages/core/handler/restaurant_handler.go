@@ -1230,6 +1230,64 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// ListOrders handles GET /api/restaurant/orders
+// @Summary      List restaurant orders
+// @Description  Returns all restaurant orders for a given store. Accepts store_id as query parameter.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     query     int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders [get]
+func (h *RestaurantHandler) ListOrders(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeIDStr := c.Query("store_id")
+	if storeIDStr == "" {
+		storeIDStr = c.Param("store_id")
+	}
+	if storeIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "store_id is required", nil))
+		return
+	}
+
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.useCase.ListOrders(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListStoreOrders handles GET /api/restaurant/stores/:store_id/orders
+// @Summary      List restaurant orders by store
+// @Description  Returns all restaurant orders for a specific store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/orders [get]
+func (h *RestaurantHandler) ListStoreOrders(c *gin.Context) {
+	h.ListOrders(c)
+}
+
 // GetOrder handles GET /api/restaurant/orders/:order_id
 // @Summary      Get restaurant order
 // @Description  Returns a single restaurant order with its items by ID.

@@ -2,6 +2,29 @@ basePath: /
 definitions:
   big.Int:
     type: object
+  github_com_NasTecSol_nembus-core_repository.MenuItemModifier:
+    properties:
+      created_at:
+        $ref: '#/definitions/pgtype.Timestamp'
+      display_order:
+        $ref: '#/definitions/pgtype.Int4'
+      id:
+        type: integer
+      is_active:
+        $ref: '#/definitions/pgtype.Bool'
+      menu_item_id:
+        type: integer
+      metadata:
+        items:
+          type: integer
+        type: array
+      modifier_name:
+        type: string
+      modifier_type:
+        type: string
+      price_adjustment:
+        $ref: '#/definitions/pgtype.Numeric'
+    type: object
   handler.AddPaymentToTransactionRequest:
     properties:
       amount:
@@ -6270,29 +6293,6 @@ definitions:
       valid:
         type: boolean
     type: object
-  repository.MenuItemModifier:
-    properties:
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      display_order:
-        $ref: '#/definitions/pgtype.Int4'
-      id:
-        type: integer
-      is_active:
-        $ref: '#/definitions/pgtype.Bool'
-      menu_item_id:
-        type: integer
-      metadata:
-        items:
-          type: integer
-        type: array
-      modifier_name:
-        type: string
-      modifier_type:
-        type: string
-      price_adjustment:
-        $ref: '#/definitions/pgtype.Numeric'
-    type: object
   usecase.ComboComponentWithDetailsResponse:
     properties:
       component_item:
@@ -6512,7 +6512,7 @@ definitions:
         type: integer
       modifiers:
         items:
-          $ref: '#/definitions/repository.MenuItemModifier'
+          $ref: '#/definitions/github_com_NasTecSol_nembus-core_repository.MenuItemModifier'
         type: array
       name:
         example: Cold Drink Flavours
@@ -27539,6 +27539,46 @@ paths:
       tags:
       - restaurant
   /api/restaurant/orders:
+    get:
+      consumes:
+      - application/json
+      description: Returns all restaurant orders for a given store. Accepts store_id
+        as query parameter.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List restaurant orders
+      tags:
+      - restaurant
     post:
       consumes:
       - application/json
@@ -28353,6 +28393,46 @@ paths:
       security:
       - BearerAuth: []
       summary: List store modifiers
+      tags:
+      - restaurant
+  /api/restaurant/stores/{store_id}/orders:
+    get:
+      consumes:
+      - application/json
+      description: Returns all restaurant orders for a specific store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: path
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List restaurant orders by store
       tags:
       - restaurant
   /api/restaurant/stores/{store_id}/recipes:
