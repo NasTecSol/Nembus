@@ -458,6 +458,17 @@ func (uc *RestaurantUseCase) GetOrder(ctx context.Context, id int32) *repository
 	return utils.NewResponse(utils.CodeOK, "order fetched successfully", result)
 }
 
+func (uc *RestaurantUseCase) ListOrders(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	orders, err := uc.repo.ListRestaurantOrders(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "orders fetched successfully", orders)
+}
+
 func (uc *RestaurantUseCase) UpdateOrderStatus(ctx context.Context, orderID int32, status string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
