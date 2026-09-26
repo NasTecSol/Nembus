@@ -148,7 +148,7 @@ func (h *GoodsReceiptNotesHandler) ListGoodsReceiptNotes(c *gin.Context) {
 	}
 	filter.Page = page
 
-	pageSize := int32(20)
+	pageSize := int32(50)
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if l, err := strconv.ParseInt(limitStr, 10, 32); err == nil && l > 0 {
 			pageSize = int32(l)

@@ -140,7 +140,7 @@ func (q *Queries) ListRecipeBomView(ctx context.Context, recipeID int32) ([]VwRe
 }
 
 const listRestaurantMenuView = `-- name: ListRestaurantMenuView :many
-SELECT menu_item_id, store_id, item_name, short_name, description, image_url, base_price, cost_price, preparation_time_min, is_available, is_active, display_order, item_metadata, category_id, category_name, category_code, parent_category_id, category_display_order, category_image_url, parent_category_name, tax_category_id, tax_rate, tax_is_inclusive, recipe_id, recipe_name, recipe_yield, product_id, product_sku, active_modifier_count, margin_percent FROM vw_restaurant_menu
+SELECT menu_item_id, store_id, item_name, short_name, description, image_url, base_price, cost_price, preparation_time_min, is_available, is_active, display_order, item_type, item_metadata, category_id, category_name, category_code, parent_category_id, category_display_order, category_image_url, parent_category_name, tax_category_id, tax_rate, tax_is_inclusive, recipe_id, recipe_name, recipe_yield, product_id, product_variant_id, product_sku, active_modifier_count, margin_percent FROM vw_restaurant_menu
 WHERE store_id = $1
 ORDER BY category_display_order, display_order
 `
@@ -167,6 +167,7 @@ func (q *Queries) ListRestaurantMenuView(ctx context.Context, storeID int32) ([]
 			&i.IsAvailable,
 			&i.IsActive,
 			&i.DisplayOrder,
+			&i.ItemType,
 			&i.ItemMetadata,
 			&i.CategoryID,
 			&i.CategoryName,
@@ -182,6 +183,7 @@ func (q *Queries) ListRestaurantMenuView(ctx context.Context, storeID int32) ([]
 			&i.RecipeName,
 			&i.RecipeYield,
 			&i.ProductID,
+			&i.ProductVariantID,
 			&i.ProductSku,
 			&i.ActiveModifierCount,
 			&i.MarginPercent,

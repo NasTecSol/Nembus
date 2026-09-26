@@ -1,5 +1,7 @@
 basePath: /
 definitions:
+  big.Int:
+    type: object
   handler.AddPaymentToTransactionRequest:
     properties:
       amount:
@@ -123,6 +125,14 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.ApproveStockCountRequest:
+    properties:
+      approved_by:
+        example: 1
+        type: integer
+    required:
+    - approved_by
+    type: object
   handler.ApproveTransferRequestDTO:
     properties:
       approved_by:
@@ -230,8 +240,14 @@ definitions:
       created_at:
         example: "2026-01-24T21:43:00Z"
         type: string
+      discount_amount:
+        example: "5.00"
+        type: string
       discount_percentage:
         example: "5.00"
+        type: string
+      discount_type:
+        example: percentage
         type: string
       id:
         example: 1
@@ -411,6 +427,42 @@ definitions:
         type: string
     required:
     - percentage_change
+    type: object
+  handler.BulkUpdateStockCountLineItem:
+    properties:
+      batch_number:
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: 10
+        type: number
+      id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      serial_number:
+        type: string
+      variance:
+        example: 0
+        type: number
+      variance_value:
+        example: 0
+        type: number
+    required:
+    - counted_quantity
+    - id
+    type: object
+  handler.BulkUpdateStockCountLinesRequest:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/handler.BulkUpdateStockCountLineItem'
+        type: array
+    required:
+    - lines
     type: object
   handler.BusinessPartnerResponse:
     properties:
@@ -617,6 +669,36 @@ definitions:
     - closed_by
     - closing_balance
     type: object
+  handler.ComboComponentDTO:
+    properties:
+      component_base_price:
+        type: string
+      component_image_url:
+        type: string
+      component_is_available:
+        type: boolean
+      component_menu_item_id:
+        type: integer
+      component_name:
+        type: string
+      display_order:
+        type: integer
+      group_name:
+        type: string
+      id:
+        type: integer
+      max_selection:
+        type: integer
+      metadata:
+        type: object
+      min_selection:
+        type: integer
+      price_adjustment:
+        type: string
+    required:
+    - component_menu_item_id
+    - group_name
+    type: object
   handler.CountResponse:
     properties:
       count:
@@ -628,9 +710,15 @@ definitions:
       contract_price:
         example: 45.5
         type: number
+      discount_amount:
+        example: 5
+        type: number
       discount_percentage:
         example: 5
         type: number
+      discount_type:
+        example: percentage
+        type: string
       is_active:
         example: true
         type: boolean
@@ -651,6 +739,9 @@ definitions:
         type: integer
       product_variant_id:
         example: 5
+        type: integer
+      uom_id:
+        example: 2
         type: integer
       valid_from:
         example: "2026-01-01"
@@ -1197,6 +1288,10 @@ definitions:
     properties:
       base_price:
         type: string
+      combo_components:
+        items:
+          $ref: '#/definitions/handler.ComboComponentDTO'
+        type: array
       description:
         type: string
       display_order:
@@ -1207,6 +1302,8 @@ definitions:
         type: boolean
       is_available:
         type: boolean
+      item_type:
+        type: string
       menu_category_id:
         type: integer
       metadata:
@@ -1216,6 +1313,8 @@ definitions:
       preparation_time_min:
         type: integer
       product_id:
+        type: integer
+      product_variant_id:
         type: integer
       recipe_id:
         type: integer
@@ -1898,6 +1997,14 @@ definitions:
         items:
           type: integer
         type: array
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
       target_product_ids:
         items:
           type: integer
@@ -2120,6 +2227,87 @@ definitions:
       total_amount:
         type: string
     required:
+    - store_id
+    type: object
+  handler.CreateRestaurantPromotionRequest:
+    properties:
+      action_metadata:
+        type: object
+      applies_to:
+        example: menu_item
+        type: string
+      code:
+        example: RESTAURANT-PROMO-01
+        type: string
+      coupon_code:
+        example: PIZZA20
+        type: string
+      created_by:
+        example: 1
+        type: integer
+      description:
+        example: Special discount on selected pizza menu items
+        type: string
+      discount_value:
+        example: "20.00"
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_stackable:
+        example: false
+        type: boolean
+      metadata:
+        type: object
+      min_order_amount:
+        example: "50.00"
+        type: string
+      min_quantity:
+        example: "1"
+        type: string
+      name:
+        example: Weekend Pizza Special
+        type: string
+      promotion_type:
+        example: percentage_discount
+        type: string
+      schedule_json:
+        type: object
+      store_id:
+        example: 6
+        type: integer
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
+      target_menu_category_ids:
+        items:
+          type: integer
+        type: array
+      target_menu_item_ids:
+        items:
+          type: integer
+        type: array
+      usage_limit:
+        example: 100
+        type: integer
+      usage_per_customer:
+        example: 2
+        type: integer
+      valid_from:
+        example: "2026-06-01T00:00:00Z"
+        type: string
+      valid_to:
+        example: "2026-08-31T23:59:59Z"
+        type: string
+    required:
+    - code
+    - name
+    - promotion_type
     - store_id
     type: object
   handler.CreateRestaurantTableRequest:
@@ -2351,6 +2539,38 @@ definitions:
     - order_type
     - organization_id
     - payment_status
+    type: object
+  handler.CreateStockCountRequest:
+    properties:
+      count_number:
+        example: SC-20260916-0001
+        type: string
+      count_type:
+        example: full
+        type: string
+      counted_by:
+        example: 1
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/handler.StockCountLineDTO'
+        type: array
+      metadata:
+        type: object
+      scheduled_date:
+        example: "2026-09-16"
+        type: string
+      status:
+        example: planned
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+    required:
+    - store_id
     type: object
   handler.CreateStockMovementRequest:
     properties:
@@ -3214,6 +3434,64 @@ definitions:
       token:
         example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
+    type: object
+  handler.MenuItemFullDetailsResponse:
+    properties:
+      base_price:
+        example: "3.00"
+        type: string
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.ComboComponentWithDetailsResponse'
+        type: array
+      cost_price:
+        example: "0.00"
+        type: string
+      description:
+        example: Refreshing beverage
+        type: string
+      display_order:
+        example: 0
+        type: integer
+      id:
+        example: 12
+        type: integer
+      image_url:
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_available:
+        example: true
+        type: boolean
+      item_type:
+        example: standard
+        type: string
+      menu_category_id:
+        example: 1
+        type: integer
+      modifier_groups:
+        items:
+          $ref: '#/definitions/usecase.ModifierGroupWithOptionsResponse'
+        type: array
+      name:
+        example: Fountain Soft Drink
+        type: string
+      preparation_time_min:
+        example: 0
+        type: integer
+      product_id:
+        type: integer
+      product_variant_id:
+        type: integer
+      recipe_id:
+        type: integer
+      short_name:
+        example: Drink
+        type: string
+      store_id:
+        example: 6
+        type: integer
     type: object
   handler.MenuModifierGroupResponse:
     properties:
@@ -4100,6 +4378,227 @@ definitions:
         example: 1
         type: integer
     type: object
+  handler.StockCountLineDTO:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: 9
+        type: number
+      expected_quantity:
+        example: 10
+        type: number
+      metadata:
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        example: 2
+        type: integer
+      serial_number:
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      system_quantity:
+        example: 10
+        type: number
+      uom_id:
+        example: 1
+        type: integer
+      variance:
+        example: -1
+        type: number
+      variance_value:
+        example: -15.5
+        type: number
+    required:
+    - counted_quantity
+    - product_id
+    type: object
+  handler.StockCountLineResponse:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: "9.000"
+        type: string
+      created_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      expected_quantity:
+        example: "10.000"
+        type: string
+      id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      product_id:
+        example: 1
+        type: integer
+      product_name:
+        example: Fresh Milk 1L
+        type: string
+      product_sku:
+        example: MILK-001
+        type: string
+      product_variant_id:
+        example: 2
+        type: integer
+      serial_number:
+        type: string
+      stock_count_id:
+        example: 1
+        type: integer
+      storage_location_id:
+        example: 1
+        type: integer
+      storage_location_name:
+        example: Main Shelf A1
+        type: string
+      system_quantity:
+        example: "10.000"
+        type: string
+      uom_id:
+        example: 1
+        type: integer
+      uom_name:
+        example: Liter
+        type: string
+      updated_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      variance:
+        example: "-1.000"
+        type: string
+      variance_value:
+        example: "-15.50"
+        type: string
+      variant_name:
+        example: Whole Milk
+        type: string
+      variant_sku:
+        example: MILK-001-W
+        type: string
+    type: object
+  handler.StockCountListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/handler.StockCountResponse'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total_count:
+        example: 50
+        type: integer
+      total_pages:
+        example: 3
+        type: integer
+    type: object
+  handler.StockCountResponse:
+    properties:
+      approved_by:
+        example: 2
+        type: integer
+      approved_by_name:
+        example: manager_jane
+        type: string
+      completed_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      count_number:
+        example: SC-20260916-0001
+        type: string
+      count_type:
+        example: full
+        type: string
+      counted_by:
+        example: 1
+        type: integer
+      counted_by_name:
+        example: john_doe
+        type: string
+      created_at:
+        example: "2026-09-16T08:00:00Z"
+        type: string
+      id:
+        example: 1
+        type: integer
+      lines:
+        items:
+          $ref: '#/definitions/handler.StockCountLineResponse'
+        type: array
+      lines_with_variance:
+        example: 2
+        type: integer
+      metadata:
+        type: object
+      scheduled_date:
+        example: "2026-09-16"
+        type: string
+      started_at:
+        example: "2026-09-16T10:00:00Z"
+        type: string
+      status:
+        example: planned
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
+      storage_location_name:
+        example: Warehouse Bay 1
+        type: string
+      store_id:
+        example: 1
+        type: integer
+      store_name:
+        example: Main Store Branch
+        type: string
+      summary:
+        $ref: '#/definitions/handler.StockCountSummaryResponse'
+      total_lines:
+        example: 15
+        type: integer
+      total_variance_value:
+        example: "-25.00"
+        type: string
+      updated_at:
+        example: "2026-09-16T08:00:00Z"
+        type: string
+    type: object
+  handler.StockCountSummaryResponse:
+    properties:
+      lines_with_variance:
+        example: 3
+        type: integer
+      negative_variance:
+        example: "-55.50"
+        type: string
+      positive_variance:
+        example: "10.00"
+        type: string
+      total_lines:
+        example: 25
+        type: integer
+      total_variance_value:
+        example: "-45.50"
+        type: string
+    type: object
   handler.StoreResponse:
     properties:
       code:
@@ -4470,9 +4969,15 @@ definitions:
       contract_price:
         example: 42
         type: number
+      discount_amount:
+        example: 10
+        type: number
       discount_percentage:
         example: 7.5
         type: number
+      discount_type:
+        example: fixed
+        type: string
       is_active:
         example: true
         type: boolean
@@ -4482,6 +4987,9 @@ definitions:
       notes:
         example: Updated price for Q2
         type: string
+      uom_id:
+        example: 2
+        type: integer
       valid_from:
         example: "2026-01-01"
         type: string
@@ -5294,6 +5802,14 @@ definitions:
         items:
           type: integer
         type: array
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
       target_product_ids:
         items:
           type: integer
@@ -5384,6 +5900,68 @@ definitions:
         type: string
     required:
     - status
+    type: object
+  handler.UpdateRestaurantPromotionRequest:
+    properties:
+      action_metadata:
+        type: object
+      applies_to:
+        example: menu_item
+        type: string
+      coupon_code:
+        example: PIZZA25
+        type: string
+      description:
+        example: Updated description
+        type: string
+      discount_value:
+        example: "25.00"
+        type: string
+      is_active:
+        type: boolean
+      is_stackable:
+        type: boolean
+      metadata:
+        type: object
+      min_order_amount:
+        example: "50.00"
+        type: string
+      min_quantity:
+        example: "1"
+        type: string
+      name:
+        example: Updated Pizza Special
+        type: string
+      schedule_json:
+        type: object
+      target_customer_tiers:
+        items:
+          type: string
+        type: array
+      target_customer_types:
+        items:
+          type: string
+        type: array
+      target_menu_category_ids:
+        items:
+          type: integer
+        type: array
+      target_menu_item_ids:
+        items:
+          type: integer
+        type: array
+      usage_limit:
+        example: 200
+        type: integer
+      usage_per_customer:
+        example: 2
+        type: integer
+      valid_from:
+        example: "2026-06-01T00:00:00Z"
+        type: string
+      valid_to:
+        example: "2026-09-30T23:59:59Z"
+        type: string
     type: object
   handler.UpdateRolePermissionScopeRequest:
     properties:
@@ -5487,6 +6065,50 @@ definitions:
         type: string
     required:
     - status
+    type: object
+  handler.UpdateStockCountLineRequest:
+    properties:
+      batch_number:
+        example: BATCH-01
+        type: string
+      counted_at:
+        example: "2026-09-16T12:00:00Z"
+        type: string
+      counted_quantity:
+        example: 12
+        type: number
+      metadata:
+        type: object
+      serial_number:
+        type: string
+      variance:
+        example: 2
+        type: number
+      variance_value:
+        example: 30
+        type: number
+    required:
+    - counted_quantity
+    type: object
+  handler.UpdateStockCountRequest:
+    properties:
+      count_type:
+        example: cycle
+        type: string
+      counted_by:
+        example: 2
+        type: integer
+      metadata:
+        type: object
+      scheduled_date:
+        example: "2026-09-17"
+        type: string
+      status:
+        example: in_progress
+        type: string
+      storage_location_id:
+        example: 1
+        type: integer
     type: object
   handler.UpdateStorageLocationRequest:
     properties:
@@ -5744,6 +6366,380 @@ definitions:
       vat_id:
         example: "300000000000003"
         type: string
+    type: object
+  pgtype.Bool:
+    properties:
+      bool:
+        type: boolean
+      valid:
+        type: boolean
+    type: object
+  pgtype.InfinityModifier:
+    enum:
+    - 1
+    - 0
+    - -1
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - Infinity
+    - Finite
+    - NegativeInfinity
+  pgtype.Int4:
+    properties:
+      int32:
+        format: int32
+        type: integer
+      valid:
+        type: boolean
+    type: object
+  pgtype.Numeric:
+    properties:
+      exp:
+        format: int32
+        type: integer
+      infinityModifier:
+        $ref: '#/definitions/pgtype.InfinityModifier'
+      int:
+        $ref: '#/definitions/big.Int'
+      naN:
+        type: boolean
+      valid:
+        type: boolean
+    type: object
+  pgtype.Timestamp:
+    properties:
+      infinityModifier:
+        $ref: '#/definitions/pgtype.InfinityModifier'
+      time:
+        description: Time zone will be ignored when encoding to PostgreSQL.
+        type: string
+      valid:
+        type: boolean
+    type: object
+  repository.MenuItemModifier:
+    properties:
+      created_at:
+        $ref: '#/definitions/pgtype.Timestamp'
+      display_order:
+        $ref: '#/definitions/pgtype.Int4'
+      id:
+        type: integer
+      is_active:
+        $ref: '#/definitions/pgtype.Bool'
+      menu_item_id:
+        type: integer
+      metadata:
+        items:
+          type: integer
+        type: array
+      modifier_name:
+        type: string
+      modifier_type:
+        type: string
+      price_adjustment:
+        $ref: '#/definitions/pgtype.Numeric'
+    type: object
+  usecase.ComboComponentWithDetailsResponse:
+    properties:
+      component_item:
+        $ref: '#/definitions/usecase.MenuItemFullDetailsResponse'
+      component_menu_item_id:
+        example: 10
+        type: integer
+      display_order:
+        example: 1
+        type: integer
+      group_name:
+        example: Main Dish
+        type: string
+      id:
+        example: 5
+        type: integer
+      max_selection:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      min_selection:
+        example: 1
+        type: integer
+      parent_menu_item_id:
+        example: 99
+        type: integer
+      price_adjustment:
+        example: "0.00"
+        type: string
+    type: object
+  usecase.CreateInvoiceInput:
+    properties:
+      billing_address:
+        additionalProperties: true
+        type: object
+      created_by_user_id:
+        type: integer
+      currency_code:
+        type: string
+      customer_email:
+        type: string
+      customer_id:
+        type: integer
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      customer_tax_id:
+        type: string
+      due_date:
+        description: YYYY-MM-DD
+        type: string
+      exchange_rate:
+        type: string
+      internal_notes:
+        type: string
+      invoice_date:
+        description: YYYY-MM-DD
+        type: string
+      invoice_number:
+        type: string
+      invoice_status:
+        description: draft, sent, viewed, partially_paid, paid, overdue, cancelled,
+          refunded
+        type: string
+      invoice_type:
+        description: standard, proforma, credit_note, debit_note, recurring
+        type: string
+      is_recurring:
+        type: boolean
+      lines:
+        items:
+          $ref: '#/definitions/usecase.CreateInvoiceLineInput'
+        type: array
+      metadata:
+        additionalProperties: true
+        type: object
+      next_invoice_date:
+        type: string
+      notes:
+        type: string
+      organization_id:
+        type: integer
+      payment_terms:
+        type: string
+      recurrence_pattern:
+        type: string
+      reference_number:
+        type: string
+      related_invoice_id:
+        type: string
+      sales_order_id:
+        type: string
+      shipping_address:
+        additionalProperties: true
+        type: object
+      store_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  usecase.CreateInvoiceLineInput:
+    properties:
+      description:
+        type: string
+      discount_amount:
+        type: string
+      item_type:
+        description: product, service, discount, shipping, fee
+        type: string
+      line_number:
+        type: integer
+      line_total:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      order_line_id:
+        type: string
+      product_id:
+        type: integer
+      product_sku:
+        type: string
+      product_variant_id:
+        type: integer
+      quantity:
+        type: string
+      tax_amount:
+        type: string
+      tax_category_id:
+        type: integer
+      tax_rate:
+        type: string
+      unit_price:
+        type: string
+      uom_id:
+        type: integer
+    type: object
+  usecase.MenuItemFullDetailsResponse:
+    properties:
+      base_price:
+        example: "3.00"
+        type: string
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.ComboComponentWithDetailsResponse'
+        type: array
+      cost_price:
+        example: "0.00"
+        type: string
+      description:
+        example: Refreshing beverage
+        type: string
+      display_order:
+        example: 0
+        type: integer
+      id:
+        example: 12
+        type: integer
+      image_url:
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_available:
+        example: true
+        type: boolean
+      item_type:
+        example: standard
+        type: string
+      menu_category_id:
+        example: 1
+        type: integer
+      modifier_groups:
+        items:
+          $ref: '#/definitions/usecase.ModifierGroupWithOptionsResponse'
+        type: array
+      name:
+        example: Fountain Soft Drink
+        type: string
+      preparation_time_min:
+        example: 0
+        type: integer
+      product_id:
+        type: integer
+      product_variant_id:
+        type: integer
+      recipe_id:
+        type: integer
+      short_name:
+        example: Drink
+        type: string
+      store_id:
+        example: 6
+        type: integer
+    type: object
+  usecase.ModifierGroupWithOptionsResponse:
+    properties:
+      code:
+        example: COLDDRINK_FLAVOUR
+        type: string
+      display_order:
+        example: 1
+        type: integer
+      id:
+        example: 201
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      max_selections:
+        example: 1
+        type: integer
+      min_selections:
+        example: 1
+        type: integer
+      modifiers:
+        items:
+          $ref: '#/definitions/repository.MenuItemModifier'
+        type: array
+      name:
+        example: Cold Drink Flavours
+        type: string
+      selection_type:
+        example: required
+        type: string
+      store_id:
+        example: 6
+        type: integer
+    type: object
+  usecase.RecordInvoicePaymentInput:
+    properties:
+      bank_account_id:
+        type: integer
+      currency_code:
+        type: string
+      exchange_rate:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      notes:
+        type: string
+      payment_amount:
+        type: string
+      payment_date:
+        description: YYYY-MM-DD
+        type: string
+      payment_gateway:
+        type: string
+      payment_method:
+        description: cash, card, bank_transfer, etc.
+        type: string
+      payment_number:
+        type: string
+      payment_reference:
+        type: string
+      received_by_user_id:
+        type: integer
+    type: object
+  usecase.UpdateInvoiceInput:
+    properties:
+      billing_address:
+        additionalProperties: true
+        type: object
+      customer_email:
+        type: string
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      due_date:
+        type: string
+      internal_notes:
+        type: string
+      is_recurring:
+        type: boolean
+      metadata:
+        additionalProperties: true
+        type: object
+      next_invoice_date:
+        type: string
+      notes:
+        type: string
+      payment_terms:
+        type: string
+      recurrence_pattern:
+        type: string
+      reference_number:
+        type: string
+      shipping_address:
+        additionalProperties: true
+        type: object
+      tags:
+        items:
+          type: string
+        type: array
     type: object
 host: localhost:8080
 info:
@@ -6367,7 +7363,7 @@ paths:
       consumes:
       - application/json
       description: Get the currently active contract price for a partner, product,
-        and optional variant/quantity
+        optional variant, uom, and quantity
       parameters:
       - description: Tenant identifier
         in: header
@@ -6392,6 +7388,10 @@ paths:
       - description: Product variant ID
         in: query
         name: product_variant_id
+        type: integer
+      - description: UOM ID
+        in: query
+        name: uom_id
         type: integer
       - description: Quantity (default 1)
         in: query
@@ -8137,7 +9137,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: List business partners filtered by role and organization
+      description: List business partners filtered by role and organization with pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -8158,15 +9158,23 @@ paths:
         in: query
         name: partner_role
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/handler.BusinessPartnerResponse'
-            type: array
+            $ref: '#/definitions/handler.BusinessPartnerResponse'
         "400":
           description: Bad Request
           schema:
@@ -9041,7 +10049,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Search business partners by name or code
+      description: Search business partners by name or code with pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -9063,7 +10071,12 @@ paths:
         name: q
         required: true
         type: string
-      - description: Limit (default 10)
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Limit (default 50)
         in: query
         name: limit
         type: integer
@@ -9073,9 +10086,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/handler.BusinessPartnerResponse'
-            type: array
+            $ref: '#/definitions/handler.BusinessPartnerResponse'
         "400":
           description: Bad Request
           schema:
@@ -13930,6 +14941,764 @@ paths:
       summary: Upsert inventory stock
       tags:
       - inventory_stock
+  /api/invoices:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of invoices with filters
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Customer ID
+        in: query
+        name: customer_id
+        type: integer
+      - description: Invoice status (draft, sent, viewed, partially_paid, paid, overdue,
+          cancelled, refunded)
+        in: query
+        name: status
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Invoices
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Create a new commercial/customer invoice with line items
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateInvoiceInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Invoice
+      tags:
+      - invoices
+  /api/invoices/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an invoice by ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Invoice
+      tags:
+      - invoices
+    get:
+      consumes:
+      - application/json
+      description: Retrieve full invoice details with lines and payment history
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Invoice by ID
+      tags:
+      - invoices
+    put:
+      consumes:
+      - application/json
+      description: Update details of an existing invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Invoice update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateInvoiceInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Invoice
+      tags:
+      - invoices
+  /api/invoices/{id}/lines:
+    get:
+      consumes:
+      - application/json
+      description: Get all item lines for an invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Invoice Lines
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Add a new line item to an existing invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Line payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateInvoiceLineInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Invoice Line
+      tags:
+      - invoices
+  /api/invoices/{id}/payments:
+    get:
+      consumes:
+      - application/json
+      description: Get all payment transactions for an invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Invoice Payments
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Record a payment transaction against an invoice
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Payment payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.RecordInvoicePaymentInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record Invoice Payment
+      tags:
+      - invoices
+  /api/invoices/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Change the status of an invoice (e.g. sent, paid, cancelled) and
+        record audit log
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Status update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Invoice Status
+      tags:
+      - invoices
+  /api/invoices/by-number/{invoice_number}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve invoice by unique invoice number
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice Number
+        in: path
+        name: invoice_number
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Invoice by Number
+      tags:
+      - invoices
+  /api/invoices/customer/{customer_id}:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated invoices for a specific customer
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Customer ID
+        in: path
+        name: customer_id
+        required: true
+        type: integer
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Customer Invoices
+      tags:
+      - invoices
+  /api/invoices/from-order/{order_id}:
+    post:
+      consumes:
+      - application/json
+      description: Automatically generates an invoice from an existing sales order
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Sales Order UUID
+        in: path
+        name: order_id
+        required: true
+        type: string
+      - description: Payload with invoice_number
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Invoice from Order
+      tags:
+      - invoices
+  /api/invoices/lines/{line_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an invoice line item by UUID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Invoice Line UUID
+        in: path
+        name: line_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Invoice Line
+      tags:
+      - invoices
+  /api/invoices/overdue:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated overdue invoices for a store
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Overdue Invoices
+      tags:
+      - invoices
+  /api/invoices/stats:
+    get:
+      consumes:
+      - application/json
+      description: Get aggregated invoice metrics (total invoices, paid, overdue,
+        total amounts)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Invoice Stats
+      tags:
+      - invoices
   /api/loyalty-rules:
     get:
       consumes:
@@ -19969,21 +21738,15 @@ paths:
         name: store_id
         required: true
         type: integer
-      - description: 'Page number (default: 1)'
+      - default: 1
+        description: Page number
         in: query
         name: page
         type: integer
-      - description: 'Items per page (default: 20)'
+      - default: 50
+        description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - description: Items per page alias
-        in: query
-        name: page_size
-        type: integer
-      - description: Offset override
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -20668,7 +22431,7 @@ paths:
       consumes:
       - application/json
       description: Returns POS transactions for a cashier and session with optional
-        date range
+        date range and pagination
       parameters:
       - description: Tenant identifier
         in: header
@@ -20696,6 +22459,16 @@ paths:
         in: query
         name: end_date
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
@@ -20742,21 +22515,15 @@ paths:
         name: customer_id
         required: true
         type: integer
-      - description: 'Page number (default: 1)'
+      - default: 1
+        description: Page number
         in: query
         name: page
         type: integer
-      - description: 'Items per page (default: 20)'
+      - default: 50
+        description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - description: Items per page alias
-        in: query
-        name: page_size
-        type: integer
-      - description: Offset override
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -23409,7 +25176,7 @@ paths:
       consumes:
       - application/json
       description: Returns all master products with their base details, UOMs, conversions,
-        pricing, variants, and barcodes nested.
+        pricing, variants, and barcodes nested. Supports optional search filter.
       parameters:
       - description: Tenant identifier
         in: header
@@ -23426,6 +25193,15 @@ paths:
         name: organization_id
         required: true
         type: integer
+      - description: Optional search query (SKU, product name, description, brand,
+          category, barcode, variant)
+        in: query
+        name: q
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search
+        type: string
       - description: Page size (default 100)
         in: query
         name: limit
@@ -23456,6 +25232,78 @@ paths:
       security:
       - BearerAuth: []
       summary: Master product catalog (detailed)
+      tags:
+      - products
+  /api/products/master-catalog/search:
+    get:
+      consumes:
+      - application/json
+      description: Searches master product catalog by SKU, product name, description,
+        brand, category, variant, or barcode with nested details (UOMs, conversions,
+        pricing, variants, barcodes, inventory) and pagination.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Search query (SKU, product name, description, brand, category,
+          barcode, variant)
+        in: query
+        name: q
+        type: string
+      - description: Alias for search query
+        in: query
+        name: query
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search
+        type: string
+      - description: Alias for search query
+        in: query
+        name: search_term
+        type: string
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Search master product catalog
       tags:
       - products
   /api/promotions:
@@ -23519,7 +25367,7 @@ paths:
       - application/json
       description: 'Create a new promotion or coupon (all types: percentage_discount,
         fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price,
-        free_item)'
+        free_item, bucket_combo)'
       parameters:
       - description: Tenant identifier
         in: header
@@ -23817,7 +25665,7 @@ paths:
       description: 'Apply a coupon code to a cart. Validates constraints (min_order_amount,
         min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the
         appropriate discount. Supported types: percentage_discount, fixed_discount,
-        buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item.'
+        buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo.'
       parameters:
       - description: Tenant identifier
         in: header
@@ -25074,6 +26922,51 @@ paths:
       summary: Create menu item
       tags:
       - restaurant
+  /api/restaurant/menu-items/{id}/details:
+    get:
+      consumes:
+      - application/json
+      description: Returns complete tree structure for a menu item including modifier
+        groups, modifiers, and combo components.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Menu Item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.MenuItemFullDetailsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get full menu item details
+      tags:
+      - restaurant
   /api/restaurant/menu-items/{item_id}:
     delete:
       consumes:
@@ -25200,6 +27093,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Update menu item
+      tags:
+      - restaurant
+  /api/restaurant/menu-items/{item_id}/combo-components:
+    get:
+      consumes:
+      - application/json
+      description: Returns all combo component choices for a given combo menu item.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Menu Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List item combo components
       tags:
       - restaurant
   /api/restaurant/menu-items/{item_id}/modifiers:
@@ -25755,6 +27688,46 @@ paths:
       tags:
       - restaurant
   /api/restaurant/orders:
+    get:
+      consumes:
+      - application/json
+      description: Returns all restaurant orders for a given store. Accepts store_id
+        as query parameter.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List restaurant orders
+      tags:
+      - restaurant
     post:
       consumes:
       - application/json
@@ -26054,6 +28027,334 @@ paths:
       security:
       - BearerAuth: []
       summary: Create online order
+      tags:
+      - restaurant
+  /api/restaurant/promotions:
+    get:
+      consumes:
+      - application/json
+      description: Lists all restaurant promotions for a store (paginated).
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      - description: Limit (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all restaurant promotions
+      tags:
+      - restaurant
+    post:
+      consumes:
+      - application/json
+      description: Creates a new promotion specifically for restaurant menu items
+        and categories.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateRestaurantPromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create restaurant promotion
+      tags:
+      - restaurant
+  /api/restaurant/promotions/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a restaurant promotion by ID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete restaurant promotion
+      tags:
+      - restaurant
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a restaurant promotion by ID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get restaurant promotion by ID
+      tags:
+      - restaurant
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing restaurant promotion.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateRestaurantPromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update restaurant promotion
+      tags:
+      - restaurant
+  /api/restaurant/promotions/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Activates or deactivates a restaurant promotion.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdatePromotionStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Toggle restaurant promotion status
+      tags:
+      - restaurant
+  /api/restaurant/promotions/active:
+    get:
+      consumes:
+      - application/json
+      description: Lists active restaurant promotions for a store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List active restaurant promotions
+      tags:
+      - restaurant
+  /api/restaurant/promotions/code/{code}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a restaurant promotion by internal code and store_id.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Promotion code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get restaurant promotion by code
       tags:
       - restaurant
   /api/restaurant/recipe-ingredients/{recipe_ingredient_id}:
@@ -26569,6 +28870,46 @@ paths:
       security:
       - BearerAuth: []
       summary: List store modifiers
+      tags:
+      - restaurant
+  /api/restaurant/stores/{store_id}/orders:
+    get:
+      consumes:
+      - application/json
+      description: Returns all restaurant orders for a specific store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: path
+        name: store_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List restaurant orders by store
       tags:
       - restaurant
   /api/restaurant/stores/{store_id}/recipes:
@@ -27637,6 +29978,767 @@ paths:
       summary: List non-system roles
       tags:
       - roles
+  /api/stock-counts:
+    get:
+      consumes:
+      - application/json
+      description: List stock counts with filtering by store, status, count_type,
+        date range, search, and pagination
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Status (planned, in_progress, completed, approved, reconciled,
+          cancelled)
+        in: query
+        name: status
+        type: string
+      - description: Count type (full, cycle, spot, annual)
+        in: query
+        name: count_type
+        type: string
+      - description: From date (YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Search count number, store name, or counter name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Stock Counts
+      tags:
+      - stock-counts
+    post:
+      consumes:
+      - application/json
+      description: Creates a new stock count session with planned status and optional
+        line items
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock count creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateStockCountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a stock count and its lines (cannot delete completed or
+        reconciled counts)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Stock Count
+      tags:
+      - stock-counts
+    get:
+      consumes:
+      - application/json
+      description: Get detailed stock count header with line items and variance calculations
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Stock Count by ID
+      tags:
+      - stock-counts
+    put:
+      consumes:
+      - application/json
+      description: Updates stock count header properties like location, scheduled
+        date, count type, and metadata
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Stock count update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateStockCountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Stock Count Header
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: Approves a completed stock count session
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Approver payload
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.ApproveStockCountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/complete:
+    post:
+      consumes:
+      - application/json
+      description: Transitions a stock count status from in_progress to completed
+        and records completed timestamp
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/lines:
+    get:
+      consumes:
+      - application/json
+      description: Returns all line items with product and variance details for a
+        specific stock count
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.StockCountLineResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Line Items for Stock Count
+      tags:
+      - stock-counts
+    post:
+      consumes:
+      - application/json
+      description: Adds a product/variant count line to an existing stock count
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line item creation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.StockCountLineDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.StockCountLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Line Item to Stock Count
+      tags:
+      - stock-counts
+    put:
+      consumes:
+      - application/json
+      description: Submits counted quantities for multiple line items in a stock count
+        at once
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Bulk update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.BulkUpdateStockCountLinesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk Update Stock Count Lines
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/lines/{line_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a single line item from a stock count
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line Item ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Stock Count Line
+      tags:
+      - stock-counts
+    get:
+      consumes:
+      - application/json
+      description: Get a single stock count line item by its ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line Item ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Stock Count Line by ID
+      tags:
+      - stock-counts
+    put:
+      consumes:
+      - application/json
+      description: Updates counted quantity, batch, serial number, or metadata for
+        a single line item
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Line Item ID
+        in: path
+        name: line_id
+        required: true
+        type: integer
+      - description: Line item update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateStockCountLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountLineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Stock Count Line
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/reconcile:
+    post:
+      consumes:
+      - application/json
+      description: Reconciles counted inventory with system stock, applies adjustments
+        to inventory_stock, and logs stock_movements
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reconcile Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/start:
+    post:
+      consumes:
+      - application/json
+      description: Transitions a stock count status from planned to in_progress and
+        records started timestamp
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start Stock Count
+      tags:
+      - stock-counts
+  /api/stock-counts/{id}/summary:
+    get:
+      consumes:
+      - application/json
+      description: Calculates total lines, variance counts, positive/negative variance
+        values
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Stock Count ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.StockCountSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Stock Count Variance Summary
+      tags:
+      - stock-counts
   /api/stock-movements:
     get:
       consumes:
@@ -27653,15 +30755,15 @@ paths:
         name: Authorization
         required: true
         type: string
-      - default: 10
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
         description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - default: 0
-        description: Offset for pagination
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -27839,7 +30941,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get stock movements filtered by date range (inclusive)
+      description: Get paginated stock movements filtered by date range (inclusive)
       parameters:
       - description: Tenant identifier
         in: header
@@ -27863,6 +30965,16 @@ paths:
         name: end
         required: true
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
@@ -27908,15 +31020,15 @@ paths:
         name: productID
         required: true
         type: string
-      - default: 10
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
         description: Number of records per page
         in: query
         name: limit
-        type: integer
-      - default: 0
-        description: Offset for pagination
-        in: query
-        name: offset
         type: integer
       produces:
       - application/json
@@ -27974,6 +31086,16 @@ paths:
         in: query
         name: end_date
         type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:

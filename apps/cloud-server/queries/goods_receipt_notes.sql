@@ -66,6 +66,10 @@ JOIN products p ON grni.product_id = p.id
 LEFT JOIN units_of_measure uom ON grni.uom_id = uom.id
 WHERE grni.grn_id = $1;
 
+-- name: CountGoodsReceiptNotesByOrganization :one
+SELECT COUNT(*) FROM goods_receipt_notes
+WHERE organization_id = $1;
+
 -- name: ListGoodsReceiptNotesByOrganization :many
 SELECT 
     grn.*,
@@ -78,6 +82,10 @@ WHERE grn.organization_id = $1
 ORDER BY grn.created_at DESC
 LIMIT $2 OFFSET $3;
 
+-- name: CountGoodsReceiptNotesByPurchaseOrder :one
+SELECT COUNT(*) FROM goods_receipt_notes
+WHERE purchase_order_id = $1;
+
 -- name: ListGoodsReceiptNotesByPurchaseOrder :many
 SELECT 
     grn.*,
@@ -87,7 +95,8 @@ FROM goods_receipt_notes grn
 JOIN business_partners bp ON grn.partners_id = bp.id
 JOIN stores st ON grn.store_id = st.id
 WHERE grn.purchase_order_id = $1
-ORDER BY grn.created_at DESC;
+ORDER BY grn.created_at DESC
+LIMIT $2 OFFSET $3;
 
 -- name: ListGoodsReceiptNotes :many
 SELECT 

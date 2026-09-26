@@ -132,6 +132,7 @@ CREATE TABLE customers (
     credit_limit DECIMAL(15,2) DEFAULT 0,
     outstanding_balance DECIMAL(15,2) DEFAULT 0,
     loyalty_points DECIMAL(15,2) DEFAULT 0,
+    loyalty_tier VARCHAR(20) DEFAULT 'bronze',
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -445,8 +446,11 @@ CREATE TABLE IF NOT EXISTS bp_price_contracts (
     partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
     contract_price DECIMAL(15,4) NOT NULL,
     discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    discount_type VARCHAR(20) DEFAULT 'percentage',
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
     min_quantity DECIMAL(15,3) DEFAULT 1,
     valid_from DATE,
     valid_to DATE,
@@ -454,7 +458,7 @@ CREATE TABLE IF NOT EXISTS bp_price_contracts (
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(partner_id, product_id, product_variant_id)
+    UNIQUE(partner_id, product_id, product_variant_id, uom_id)
 );
 
 CREATE TABLE IF NOT EXISTS journal_entries (

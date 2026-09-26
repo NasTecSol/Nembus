@@ -1,6 +1,10 @@
 package handler
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/NasTecSol/nembus-core/usecase"
+)
 
 // UserResponse represents a user in API responses
 type UserResponse struct {
@@ -594,23 +598,50 @@ type CreateMenuCategoryRequest struct {
 	Metadata         string `json:"metadata"`
 }
 
-type CreateMenuItemRequest struct {
-	StoreID            int32  `json:"store_id" binding:"required"`
-	MenuCategoryID     int32  `json:"menu_category_id" binding:"required"`
-	ProductID          *int32 `json:"product_id"`
-	RecipeID           *int32 `json:"recipe_id"`
-	Name               string `json:"name" binding:"required"`
-	ShortName          string `json:"short_name"`
-	Description        string `json:"description"`
-	ImageUrl           string `json:"image_url"`
-	BasePrice          string `json:"base_price" binding:"required"`
-	PreparationTimeMin int32  `json:"preparation_time_min"`
-	TaxCategoryID      *int32 `json:"tax_category_id"`
-	IsAvailable        bool   `json:"is_available"`
-	IsActive           bool   `json:"is_active"`
-	DisplayOrder       int32  `json:"display_order"`
-	Metadata           string `json:"metadata"`
+type ComboComponentDTO struct {
+	ID                   int32  `json:"id,omitempty"`
+	ComponentMenuItemID  int32  `json:"component_menu_item_id" binding:"required"`
+	GroupName            string `json:"group_name" binding:"required"`
+	MinSelection         int32  `json:"min_selection"`
+	MaxSelection         int32  `json:"max_selection"`
+	PriceAdjustment      string `json:"price_adjustment"`
+	DisplayOrder         int32  `json:"display_order"`
+	ComponentName        string `json:"component_name,omitempty"`
+	ComponentBasePrice   string `json:"component_base_price,omitempty"`
+	ComponentImageUrl    string          `json:"component_image_url,omitempty"`
+	ComponentIsAvailable bool            `json:"component_is_available,omitempty"`
+	Metadata             json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 }
+
+type CreateMenuItemRequest struct {
+	StoreID            int32               `json:"store_id" binding:"required"`
+	MenuCategoryID     int32               `json:"menu_category_id" binding:"required"`
+	ProductID          *int32              `json:"product_id"`
+	ProductVariantID   *int32              `json:"product_variant_id"`
+	RecipeID           *int32              `json:"recipe_id"`
+	Name               string              `json:"name" binding:"required"`
+	ShortName          string              `json:"short_name"`
+	Description        string              `json:"description"`
+	ImageUrl           string              `json:"image_url"`
+	BasePrice          string              `json:"base_price" binding:"required"`
+	PreparationTimeMin int32               `json:"preparation_time_min"`
+	TaxCategoryID      *int32              `json:"tax_category_id"`
+	IsAvailable        bool                `json:"is_available"`
+	IsActive           bool                `json:"is_active"`
+	DisplayOrder       int32               `json:"display_order"`
+	ItemType           string              `json:"item_type"`
+	ComboComponents    []ComboComponentDTO `json:"combo_components"`
+	Metadata           string              `json:"metadata"`
+}
+
+// ModifierGroupWithOptionsResponse represents a modifier group with its nested list of item modifiers.
+type ModifierGroupWithOptionsResponse = usecase.ModifierGroupWithOptionsResponse
+
+// ComboComponentWithDetailsResponse represents a combo component with nested details of its component item.
+type ComboComponentWithDetailsResponse = usecase.ComboComponentWithDetailsResponse
+
+// MenuItemFullDetailsResponse represents full tree structure for a menu item (standard or combo).
+type MenuItemFullDetailsResponse = usecase.MenuItemFullDetailsResponse
 
 type CreateRecipeRequest struct {
 	OrganizationID     int32  `json:"organization_id" binding:"required"`
@@ -1424,19 +1455,21 @@ type CreatePromotionRequest struct {
 	ValidTo           *string                `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
 	ScheduleJson      map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
 	AppliesTo         *string                `json:"applies_to,omitempty" example:"all"`
-	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
-	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
-	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
-	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
-	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
-	UsageLimit        *int32                 `json:"usage_limit,omitempty" example:"100"`
-	UsagePerCustomer  *int32                 `json:"usage_per_customer,omitempty" example:"2"`
-	DiscountValue     *string                `json:"discount_value,omitempty" example:"20.00"`
-	IsStackable       *bool                  `json:"is_stackable,omitempty" example:"false"`
-	IsActive          *bool                  `json:"is_active,omitempty" example:"true"`
-	StoreIds          []int32                `json:"store_ids,omitempty"`
-	CreatedBy         *int32                 `json:"created_by,omitempty" example:"1"`
-	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+	TargetProductIds    []int32                `json:"target_product_ids,omitempty"`
+	TargetCategoryIds   []int32                `json:"target_category_ids,omitempty"`
+	TargetCustomerTypes []string               `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers []string               `json:"target_customer_tiers,omitempty"`
+	MinOrderAmount      *string                `json:"min_order_amount,omitempty" example:"500.00"`
+	MinQuantity         *string                `json:"min_quantity,omitempty" example:"2"`
+	CouponCode          *string                `json:"coupon_code,omitempty" example:"SUMMER20"`
+	UsageLimit          *int32                 `json:"usage_limit,omitempty" example:"100"`
+	UsagePerCustomer    *int32                 `json:"usage_per_customer,omitempty" example:"2"`
+	DiscountValue       *string                `json:"discount_value,omitempty" example:"20.00"`
+	IsStackable         *bool                  `json:"is_stackable,omitempty" example:"false"`
+	IsActive            *bool                  `json:"is_active,omitempty" example:"true"`
+	StoreIds            []int32                `json:"store_ids,omitempty"`
+	CreatedBy           *int32                 `json:"created_by,omitempty" example:"1"`
+	Metadata            map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // UpdatePromotionRequest represents request body for updating a promotion.
@@ -1450,6 +1483,8 @@ type UpdatePromotionRequest struct {
 	AppliesTo         *string                `json:"applies_to,omitempty" example:"product"`
 	TargetProductIds  []int32                `json:"target_product_ids,omitempty"`
 	TargetCategoryIds []int32                `json:"target_category_ids,omitempty"`
+	TargetCustomerTypes []string             `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers []string             `json:"target_customer_tiers,omitempty"`
 	MinOrderAmount    *string                `json:"min_order_amount,omitempty" example:"500.00"`
 	MinQuantity       *string                `json:"min_quantity,omitempty" example:"2"`
 	CouponCode        *string                `json:"coupon_code,omitempty" example:"SUMMER25"`
@@ -1459,6 +1494,58 @@ type UpdatePromotionRequest struct {
 	IsStackable       *bool                  `json:"is_stackable,omitempty"`
 	StoreIds          []int32                `json:"store_ids,omitempty"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// CreateRestaurantPromotionRequest represents request body for creating a restaurant promotion.
+type CreateRestaurantPromotionRequest struct {
+	StoreID               int32                  `json:"store_id" binding:"required" example:"6"`
+	Code                  string                 `json:"code" binding:"required" example:"RESTAURANT-PROMO-01"`
+	Name                  string                 `json:"name" binding:"required" example:"Weekend Pizza Special"`
+	Description           *string                `json:"description,omitempty" example:"Special discount on selected pizza menu items"`
+	PromotionType         string                 `json:"promotion_type" binding:"required" example:"percentage_discount"`
+	ActionMetadata        map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
+	ValidFrom             *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo               *string                `json:"valid_to,omitempty" example:"2026-08-31T23:59:59Z"`
+	ScheduleJson          map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
+	AppliesTo             *string                `json:"applies_to,omitempty" example:"menu_item"`
+	TargetMenuItemIds     []int32                `json:"target_menu_item_ids,omitempty"`
+	TargetMenuCategoryIds []int32                `json:"target_menu_category_ids,omitempty"`
+	TargetCustomerTypes   []string               `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers   []string               `json:"target_customer_tiers,omitempty"`
+	MinOrderAmount        *string                `json:"min_order_amount,omitempty" example:"50.00"`
+	MinQuantity           *string                `json:"min_quantity,omitempty" example:"1"`
+	CouponCode            *string                `json:"coupon_code,omitempty" example:"PIZZA20"`
+	UsageLimit            *int32                 `json:"usage_limit,omitempty" example:"100"`
+	UsagePerCustomer      *int32                 `json:"usage_per_customer,omitempty" example:"2"`
+	DiscountValue         *string                `json:"discount_value,omitempty" example:"20.00"`
+	IsStackable           *bool                  `json:"is_stackable,omitempty" example:"false"`
+	IsActive              *bool                  `json:"is_active,omitempty" example:"true"`
+	CreatedBy             *int32                 `json:"created_by,omitempty" example:"1"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateRestaurantPromotionRequest represents request body for updating a restaurant promotion.
+type UpdateRestaurantPromotionRequest struct {
+	Name                  *string                `json:"name,omitempty" example:"Updated Pizza Special"`
+	Description           *string                `json:"description,omitempty" example:"Updated description"`
+	ActionMetadata        map[string]interface{} `json:"action_metadata,omitempty" swaggertype:"object"`
+	ValidFrom             *string                `json:"valid_from,omitempty" example:"2026-06-01T00:00:00Z"`
+	ValidTo               *string                `json:"valid_to,omitempty" example:"2026-09-30T23:59:59Z"`
+	ScheduleJson          map[string]interface{} `json:"schedule_json,omitempty" swaggertype:"object"`
+	AppliesTo             *string                `json:"applies_to,omitempty" example:"menu_item"`
+	TargetMenuItemIds     []int32                `json:"target_menu_item_ids,omitempty"`
+	TargetMenuCategoryIds []int32                `json:"target_menu_category_ids,omitempty"`
+	TargetCustomerTypes   []string               `json:"target_customer_types,omitempty"`
+	TargetCustomerTiers   []string               `json:"target_customer_tiers,omitempty"`
+	MinOrderAmount        *string                `json:"min_order_amount,omitempty" example:"50.00"`
+	MinQuantity           *string                `json:"min_quantity,omitempty" example:"1"`
+	CouponCode            *string                `json:"coupon_code,omitempty" example:"PIZZA25"`
+	UsageLimit            *int32                 `json:"usage_limit,omitempty" example:"200"`
+	UsagePerCustomer      *int32                 `json:"usage_per_customer,omitempty" example:"2"`
+	DiscountValue         *string                `json:"discount_value,omitempty" example:"25.00"`
+	IsStackable           *bool                  `json:"is_stackable,omitempty"`
+	IsActive              *bool                  `json:"is_active,omitempty"`
+	Metadata              map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // UpdatePromotionStatusRequest represents the request to toggle a promotion active state.
@@ -1794,8 +1881,11 @@ type CreateBPPriceContractRequest struct {
 	PartnerID          int32    `json:"partner_id" binding:"required" example:"1"`
 	ProductID          int32    `json:"product_id" binding:"required" example:"10"`
 	ProductVariantID   *int32   `json:"product_variant_id,omitempty" example:"5"`
+	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      float64  `json:"contract_price" binding:"required" example:"45.5000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"5.00"`
+	DiscountType       *string  `json:"discount_type,omitempty" example:"percentage"`
+	DiscountAmount     *float64 `json:"discount_amount,omitempty" example:"5.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"10.000"`
 	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
@@ -1804,8 +1894,11 @@ type CreateBPPriceContractRequest struct {
 }
 
 type UpdateBPPriceContractRequest struct {
+	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      *float64 `json:"contract_price,omitempty" example:"42.0000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"7.50"`
+	DiscountType       *string  `json:"discount_type,omitempty" example:"fixed"`
+	DiscountAmount     *float64 `json:"discount_amount,omitempty" example:"10.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"15.000"`
 	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
@@ -1825,6 +1918,8 @@ type BPPriceContractResponse struct {
 	ProductVariantID   *int32  `json:"product_variant_id,omitempty" example:"5"`
 	ContractPrice      string  `json:"contract_price" example:"45.5000"`
 	DiscountPercentage string  `json:"discount_percentage" example:"5.00"`
+	DiscountType       *string `json:"discount_type,omitempty" example:"percentage"`
+	DiscountAmount     *string `json:"discount_amount,omitempty" example:"5.00"`
 	MinQuantity        string  `json:"min_quantity" example:"10.000"`
 	ValidFrom          *string `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string `json:"valid_to,omitempty" example:"2026-12-31"`
@@ -2329,5 +2424,150 @@ type ReceiveTransferRequestDTO struct {
 // CancelTransferRequestDTO represents cancellation request for a transfer request.
 type CancelTransferRequestDTO struct {
 	CancelledBy int32 `json:"cancelled_by" binding:"required" example:"1"`
+}
+
+// StockCountLineDTO represents a line item in stock count requests.
+type StockCountLineDTO struct {
+	ProductID         int32                  `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID  *int32                 `json:"product_variant_id,omitempty" example:"2"`
+	StorageLocationID *int32                 `json:"storage_location_id,omitempty" example:"1"`
+	ExpectedQuantity  *float64               `json:"expected_quantity,omitempty" example:"10.0"`
+	SystemQuantity    *float64               `json:"system_quantity,omitempty" example:"10.0"`
+	CountedQuantity   float64                `json:"counted_quantity" binding:"required" example:"9.0"`
+	Variance          *float64               `json:"variance,omitempty" example:"-1.0"`
+	VarianceValue     *float64               `json:"variance_value,omitempty" example:"-15.50"`
+	CountedAt         *string                `json:"counted_at,omitempty" example:"2026-09-16T12:00:00Z"`
+	UomID             *int32                 `json:"uom_id,omitempty" example:"1"`
+	BatchNumber       *string                `json:"batch_number,omitempty" example:"BATCH-01"`
+	SerialNumber      *string                `json:"serial_number,omitempty"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// CreateStockCountRequest represents the request body for creating a stock count.
+type CreateStockCountRequest struct {
+	CountNumber       *string                `json:"count_number,omitempty" example:"SC-20260916-0001"`
+	StoreID           int32                  `json:"store_id" binding:"required" example:"1"`
+	StorageLocationID *int32                 `json:"storage_location_id,omitempty" example:"1"`
+	CountType         *string                `json:"count_type,omitempty" example:"full"`
+	Status            *string                `json:"status,omitempty" example:"planned"`
+	ScheduledDate     *string                `json:"scheduled_date,omitempty" example:"2026-09-16"`
+	CountedBy         *int32                 `json:"counted_by,omitempty" example:"1"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+	Lines             []StockCountLineDTO    `json:"lines,omitempty"`
+}
+
+// UpdateStockCountRequest represents the request body for updating a stock count header.
+type UpdateStockCountRequest struct {
+	StorageLocationID *int32                 `json:"storage_location_id,omitempty" example:"1"`
+	CountType         *string                `json:"count_type,omitempty" example:"cycle"`
+	Status            *string                `json:"status,omitempty" example:"in_progress"`
+	ScheduledDate     *string                `json:"scheduled_date,omitempty" example:"2026-09-17"`
+	CountedBy         *int32                 `json:"counted_by,omitempty" example:"2"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// UpdateStockCountLineRequest represents the request body for updating a single stock count line.
+type UpdateStockCountLineRequest struct {
+	CountedQuantity float64                `json:"counted_quantity" binding:"required" example:"12.0"`
+	Variance        *float64               `json:"variance,omitempty" example:"2.0"`
+	VarianceValue   *float64               `json:"variance_value,omitempty" example:"30.00"`
+	CountedAt       *string                `json:"counted_at,omitempty" example:"2026-09-16T12:00:00Z"`
+	BatchNumber     *string                `json:"batch_number,omitempty" example:"BATCH-01"`
+	SerialNumber    *string                `json:"serial_number,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// BulkUpdateStockCountLineItem represents an individual line item in bulk update.
+type BulkUpdateStockCountLineItem struct {
+	ID              int32                  `json:"id" binding:"required" example:"1"`
+	CountedQuantity float64                `json:"counted_quantity" binding:"required" example:"10.0"`
+	Variance        *float64               `json:"variance,omitempty" example:"0.0"`
+	VarianceValue   *float64               `json:"variance_value,omitempty" example:"0.0"`
+	CountedAt       *string                `json:"counted_at,omitempty" example:"2026-09-16T12:00:00Z"`
+	BatchNumber     *string                `json:"batch_number,omitempty"`
+	SerialNumber    *string                `json:"serial_number,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+// BulkUpdateStockCountLinesRequest represents bulk line updates payload.
+type BulkUpdateStockCountLinesRequest struct {
+	Lines []BulkUpdateStockCountLineItem `json:"lines" binding:"required"`
+}
+
+// ApproveStockCountRequest represents the payload for approving a stock count.
+type ApproveStockCountRequest struct {
+	ApprovedBy int32 `json:"approved_by" binding:"required" example:"1"`
+}
+
+// StockCountLineResponse represents line item output for Swagger.
+type StockCountLineResponse struct {
+	ID                  int32           `json:"id" example:"1"`
+	StockCountID        int32           `json:"stock_count_id" example:"1"`
+	ProductID           int32           `json:"product_id" example:"1"`
+	ProductName         *string         `json:"product_name,omitempty" example:"Fresh Milk 1L"`
+	ProductSKU          *string         `json:"product_sku,omitempty" example:"MILK-001"`
+	ProductVariantID    *int32          `json:"product_variant_id,omitempty" example:"2"`
+	VariantName         *string         `json:"variant_name,omitempty" example:"Whole Milk"`
+	VariantSKU          *string         `json:"variant_sku,omitempty" example:"MILK-001-W"`
+	StorageLocationID   *int32          `json:"storage_location_id,omitempty" example:"1"`
+	StorageLocationName *string         `json:"storage_location_name,omitempty" example:"Main Shelf A1"`
+	ExpectedQuantity    string          `json:"expected_quantity" example:"10.000"`
+	SystemQuantity      string          `json:"system_quantity" example:"10.000"`
+	CountedQuantity     string          `json:"counted_quantity" example:"9.000"`
+	Variance            string          `json:"variance" example:"-1.000"`
+	VarianceValue       string          `json:"variance_value" example:"-15.50"`
+	CountedAt           *string         `json:"counted_at,omitempty" example:"2026-09-16T12:00:00Z"`
+	UomID               *int32          `json:"uom_id,omitempty" example:"1"`
+	UomName             *string         `json:"uom_name,omitempty" example:"Liter"`
+	BatchNumber         *string         `json:"batch_number,omitempty" example:"BATCH-01"`
+	SerialNumber        *string         `json:"serial_number,omitempty"`
+	Metadata            json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt           string          `json:"created_at" example:"2026-09-16T12:00:00Z"`
+	UpdatedAt           string          `json:"updated_at" example:"2026-09-16T12:00:00Z"`
+}
+
+// StockCountSummaryResponse represents variance summary aggregates.
+type StockCountSummaryResponse struct {
+	TotalLines         int64  `json:"total_lines" example:"25"`
+	LinesWithVariance  int64  `json:"lines_with_variance" example:"3"`
+	TotalVarianceValue string `json:"total_variance_value" example:"-45.50"`
+	PositiveVariance   string `json:"positive_variance" example:"10.00"`
+	NegativeVariance   string `json:"negative_variance" example:"-55.50"`
+}
+
+// StockCountResponse represents stock count output for Swagger.
+type StockCountResponse struct {
+	ID                  int32                      `json:"id" example:"1"`
+	CountNumber         string                     `json:"count_number" example:"SC-20260916-0001"`
+	StoreID             int32                      `json:"store_id" example:"1"`
+	StoreName           *string                    `json:"store_name,omitempty" example:"Main Store Branch"`
+	StorageLocationID   *int32                     `json:"storage_location_id,omitempty" example:"1"`
+	StorageLocationName *string                    `json:"storage_location_name,omitempty" example:"Warehouse Bay 1"`
+	CountType           *string                    `json:"count_type,omitempty" example:"full"`
+	Status              string                     `json:"status" example:"planned"`
+	ScheduledDate       *string                    `json:"scheduled_date,omitempty" example:"2026-09-16"`
+	StartedAt           *string                    `json:"started_at,omitempty" example:"2026-09-16T10:00:00Z"`
+	CompletedAt         *string                    `json:"completed_at,omitempty" example:"2026-09-16T12:00:00Z"`
+	CountedBy           *int32                     `json:"counted_by,omitempty" example:"1"`
+	CountedByName       *string                    `json:"counted_by_name,omitempty" example:"john_doe"`
+	ApprovedBy          *int32                     `json:"approved_by,omitempty" example:"2"`
+	ApprovedByName      *string                    `json:"approved_by_name,omitempty" example:"manager_jane"`
+	Metadata            json.RawMessage            `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt           string                     `json:"created_at" example:"2026-09-16T08:00:00Z"`
+	UpdatedAt           string                     `json:"updated_at" example:"2026-09-16T08:00:00Z"`
+	TotalLines          int64                      `json:"total_lines" example:"15"`
+	LinesWithVariance   int64                      `json:"lines_with_variance" example:"2"`
+	TotalVarianceValue  string                     `json:"total_variance_value" example:"-25.00"`
+	Summary             *StockCountSummaryResponse `json:"summary,omitempty"`
+	Lines               []StockCountLineResponse   `json:"lines,omitempty"`
+}
+
+// StockCountListResponse represents paginated stock counts response.
+type StockCountListResponse struct {
+	Data       []StockCountResponse `json:"data"`
+	TotalCount int64                `json:"total_count" example:"50"`
+	Page       int32                `json:"page" example:"1"`
+	Limit      int32                `json:"limit" example:"20"`
+	TotalPages int32                `json:"total_pages" example:"3"`
 }
 

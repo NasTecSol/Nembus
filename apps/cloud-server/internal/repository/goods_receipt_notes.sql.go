@@ -76,6 +76,30 @@ func (q *Queries) CountGoodsReceiptNotes(ctx context.Context, arg CountGoodsRece
 	return count, err
 }
 
+const countGoodsReceiptNotesByOrganization = `-- name: CountGoodsReceiptNotesByOrganization :one
+SELECT COUNT(*) FROM goods_receipt_notes
+WHERE organization_id = $1
+`
+
+func (q *Queries) CountGoodsReceiptNotesByOrganization(ctx context.Context, organizationID int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countGoodsReceiptNotesByOrganization, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countGoodsReceiptNotesByPurchaseOrder = `-- name: CountGoodsReceiptNotesByPurchaseOrder :one
+SELECT COUNT(*) FROM goods_receipt_notes
+WHERE purchase_order_id = $1
+`
+
+func (q *Queries) CountGoodsReceiptNotesByPurchaseOrder(ctx context.Context, purchaseOrderID pgtype.Int4) (int64, error) {
+	row := q.db.QueryRow(ctx, countGoodsReceiptNotesByPurchaseOrder, purchaseOrderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createGoodsReceiptNote = `-- name: CreateGoodsReceiptNote :one
 
 INSERT INTO goods_receipt_notes (
@@ -620,7 +644,14 @@ JOIN business_partners bp ON grn.partners_id = bp.id
 JOIN stores st ON grn.store_id = st.id
 WHERE grn.purchase_order_id = $1
 ORDER BY grn.created_at DESC
+LIMIT $2 OFFSET $3
 `
+
+type ListGoodsReceiptNotesByPurchaseOrderParams struct {
+	PurchaseOrderID pgtype.Int4 `json:"purchase_order_id"`
+	Limit           int32       `json:"limit"`
+	Offset          int32       `json:"offset"`
+}
 
 type ListGoodsReceiptNotesByPurchaseOrderRow struct {
 	ID                 int32            `json:"id"`
@@ -641,8 +672,8 @@ type ListGoodsReceiptNotesByPurchaseOrderRow struct {
 	StoreName          string           `json:"store_name"`
 }
 
-func (q *Queries) ListGoodsReceiptNotesByPurchaseOrder(ctx context.Context, purchaseOrderID pgtype.Int4) ([]ListGoodsReceiptNotesByPurchaseOrderRow, error) {
-	rows, err := q.db.Query(ctx, listGoodsReceiptNotesByPurchaseOrder, purchaseOrderID)
+func (q *Queries) ListGoodsReceiptNotesByPurchaseOrder(ctx context.Context, arg ListGoodsReceiptNotesByPurchaseOrderParams) ([]ListGoodsReceiptNotesByPurchaseOrderRow, error) {
+	rows, err := q.db.Query(ctx, listGoodsReceiptNotesByPurchaseOrder, arg.PurchaseOrderID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

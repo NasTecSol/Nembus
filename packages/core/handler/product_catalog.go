@@ -89,7 +89,7 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 
 // GetMasterProductCatalog handles GET /api/products/master-catalog
 // @Summary      Master product catalog (detailed)
-// @Description  Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested.
+// @Description  Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested. Supports optional search filter.
 // @Tags         products
 // @Accept       json
 // @Produce      json
@@ -97,6 +97,8 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 // @Param        x-tenant-id      header    string  true   "Tenant identifier"
 // @Param        Authorization    header    string  true   "Bearer token"
 // @Param        organization_id  query     int     true   "Organization ID"
+// @Param        q                query     string  false  "Optional search query (SKU, product name, description, brand, category, barcode, variant)"
+// @Param        search           query     string  false  "Alias for search query"
 // @Param        limit            query     int     false  "Page size (default 100)"
 // @Param        offset           query     int     false  "Page offset (default 0)"
 // @Success      200  {object}  SuccessResponse
@@ -117,6 +119,17 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 		return
 	}
 
+	searchQuery := c.Query("q")
+	if searchQuery == "" {
+		searchQuery = c.Query("query")
+	}
+	if searchQuery == "" {
+		searchQuery = c.Query("search")
+	}
+	if searchQuery == "" {
+		searchQuery = c.Query("search_term")
+	}
+
 	limitStr := c.DefaultQuery("limit", "100")
 	offsetStr := c.DefaultQuery("offset", "0")
 
@@ -129,6 +142,18 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 		offset = 0
 	}
 
+	if searchQuery != "" {
+		resp := h.useCase.SearchMasterProductCatalog(
+			c.Request.Context(),
+			orgIDStr,
+			searchQuery,
+			int32(limit),
+			int32(offset),
+		)
+		c.JSON(resp.StatusCode, resp)
+		return
+	}
+
 	resp := h.useCase.GetMasterProductCatalog(
 		c.Request.Context(),
 		orgIDStr,
@@ -137,3 +162,71 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 	)
 	c.JSON(resp.StatusCode, resp)
 }
+
+// SearchMasterProductCatalog handles GET /api/products/master-catalog/search
+// @Summary      Search master product catalog
+// @Description  Searches master product catalog by SKU, product name, description, brand, category, variant, or barcode with nested details (UOMs, conversions, pricing, variants, barcodes, inventory) and pagination.
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id      header    string  true   "Tenant identifier"
+// @Param        Authorization    header    string  true   "Bearer token"
+// @Param        organization_id  query     int     true   "Organization ID"
+// @Param        q                query     string  false  "Search query (SKU, product name, description, brand, category, barcode, variant)"
+// @Param        query            query     string  false  "Alias for search query"
+// @Param        search           query     string  false  "Alias for search query"
+// @Param        search_term      query     string  false  "Alias for search query"
+// @Param        limit            query     int     false  "Page size (default 100)"
+// @Param        offset           query     int     false  "Page offset (default 0)"
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /api/products/master-catalog/search [get]
+func (h *ProductCatalogHandler) SearchMasterProductCatalog(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	orgIDStr := c.Query("organization_id")
+	if orgIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil))
+		return
+	}
+
+	searchQuery := c.Query("q")
+	if searchQuery == "" {
+		searchQuery = c.Query("query")
+	}
+	if searchQuery == "" {
+		searchQuery = c.Query("search")
+	}
+	if searchQuery == "" {
+		searchQuery = c.Query("search_term")
+	}
+
+	limitStr := c.DefaultQuery("limit", "100")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.ParseInt(limitStr, 10, 32)
+	if err != nil || limit <= 0 {
+		limit = 100
+	}
+	offset, err := strconv.ParseInt(offsetStr, 10, 32)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	resp := h.useCase.SearchMasterProductCatalog(
+		c.Request.Context(),
+		orgIDStr,
+		searchQuery,
+		int32(limit),
+		int32(offset),
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+

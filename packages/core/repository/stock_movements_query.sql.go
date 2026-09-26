@@ -13,6 +13,108 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countStockMovements = `-- name: CountStockMovements :one
+SELECT COUNT(*) FROM stock_movements
+`
+
+func (q *Queries) CountStockMovements(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovements)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countStockMovementsByDateRange = `-- name: CountStockMovementsByDateRange :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.movement_date >= $1 AND stock_movements.movement_date <= $2
+`
+
+type CountStockMovementsByDateRangeParams struct {
+	MovementDate   pgtype.Timestamp `json:"movement_date"`
+	MovementDate_2 pgtype.Timestamp `json:"movement_date_2"`
+}
+
+func (q *Queries) CountStockMovementsByDateRange(ctx context.Context, arg CountStockMovementsByDateRangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovementsByDateRange, arg.MovementDate, arg.MovementDate_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countStockMovementsByProduct = `-- name: CountStockMovementsByProduct :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.product_id = $1
+`
+
+func (q *Queries) CountStockMovementsByProduct(ctx context.Context, productID int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovementsByProduct, productID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countStockMovementsByProductWithDateRange = `-- name: CountStockMovementsByProductWithDateRange :one
+SELECT COUNT(*)
+FROM stock_movements sm
+WHERE sm.product_id = $1
+  AND ($2::timestamp IS NULL OR sm.movement_date >= $2)
+  AND ($3::timestamp IS NULL OR sm.movement_date <= $3)
+`
+
+type CountStockMovementsByProductWithDateRangeParams struct {
+	ProductID int32            `json:"product_id"`
+	Column2   pgtype.Timestamp `json:"column_2"`
+	Column3   pgtype.Timestamp `json:"column_3"`
+}
+
+func (q *Queries) CountStockMovementsByProductWithDateRange(ctx context.Context, arg CountStockMovementsByProductWithDateRangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovementsByProductWithDateRange, arg.ProductID, arg.Column2, arg.Column3)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countStockMovementsByReference = `-- name: CountStockMovementsByReference :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.reference_type = $1 AND stock_movements.reference_id = $2
+`
+
+type CountStockMovementsByReferenceParams struct {
+	ReferenceType pgtype.Text `json:"reference_type"`
+	ReferenceID   pgtype.Int4 `json:"reference_id"`
+}
+
+func (q *Queries) CountStockMovementsByReference(ctx context.Context, arg CountStockMovementsByReferenceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovementsByReference, arg.ReferenceType, arg.ReferenceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countStockMovementsByStore = `-- name: CountStockMovementsByStore :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.from_store_id = $1 OR stock_movements.to_store_id = $1
+`
+
+func (q *Queries) CountStockMovementsByStore(ctx context.Context, fromStoreID pgtype.Int4) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovementsByStore, fromStoreID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countStockMovementsByType = `-- name: CountStockMovementsByType :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.movement_type = $1
+`
+
+func (q *Queries) CountStockMovementsByType(ctx context.Context, movementType string) (int64, error) {
+	row := q.db.QueryRow(ctx, countStockMovementsByType, movementType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createStockMovement = `-- name: CreateStockMovement :one
 
 INSERT INTO stock_movements (
@@ -718,15 +820,23 @@ SELECT stock_movements.id, stock_movements.movement_type, stock_movements.refere
 FROM stock_movements
 WHERE stock_movements.movement_date >= $1 AND stock_movements.movement_date <= $2
 ORDER BY stock_movements.movement_date DESC
+LIMIT $3 OFFSET $4
 `
 
 type ListStockMovementsByDateRangeParams struct {
 	MovementDate   pgtype.Timestamp `json:"movement_date"`
 	MovementDate_2 pgtype.Timestamp `json:"movement_date_2"`
+	Limit          int32            `json:"limit"`
+	Offset         int32            `json:"offset"`
 }
 
 func (q *Queries) ListStockMovementsByDateRange(ctx context.Context, arg ListStockMovementsByDateRangeParams) ([]StockMovement, error) {
-	rows, err := q.db.Query(ctx, listStockMovementsByDateRange, arg.MovementDate, arg.MovementDate_2)
+	rows, err := q.db.Query(ctx, listStockMovementsByDateRange,
+		arg.MovementDate,
+		arg.MovementDate_2,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -839,12 +949,15 @@ WHERE sm.product_id = $1
   AND ($2::timestamp IS NULL OR sm.movement_date >= $2)
   AND ($3::timestamp IS NULL OR sm.movement_date <= $3)
 ORDER BY sm.movement_date DESC
+LIMIT $4 OFFSET $5
 `
 
 type ListStockMovementsByProductWithDateRangeParams struct {
 	ProductID int32            `json:"product_id"`
 	Column2   pgtype.Timestamp `json:"column_2"`
 	Column3   pgtype.Timestamp `json:"column_3"`
+	Limit     int32            `json:"limit"`
+	Offset    int32            `json:"offset"`
 }
 
 type ListStockMovementsByProductWithDateRangeRow struct {
@@ -876,7 +989,13 @@ type ListStockMovementsByProductWithDateRangeRow struct {
 }
 
 func (q *Queries) ListStockMovementsByProductWithDateRange(ctx context.Context, arg ListStockMovementsByProductWithDateRangeParams) ([]ListStockMovementsByProductWithDateRangeRow, error) {
-	rows, err := q.db.Query(ctx, listStockMovementsByProductWithDateRange, arg.ProductID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, listStockMovementsByProductWithDateRange,
+		arg.ProductID,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -926,15 +1045,23 @@ SELECT stock_movements.id, stock_movements.movement_type, stock_movements.refere
 FROM stock_movements
 WHERE stock_movements.reference_type = $1 AND stock_movements.reference_id = $2
 ORDER BY stock_movements.movement_date DESC
+LIMIT $3 OFFSET $4
 `
 
 type ListStockMovementsByReferenceParams struct {
 	ReferenceType pgtype.Text `json:"reference_type"`
 	ReferenceID   pgtype.Int4 `json:"reference_id"`
+	Limit         int32       `json:"limit"`
+	Offset        int32       `json:"offset"`
 }
 
 func (q *Queries) ListStockMovementsByReference(ctx context.Context, arg ListStockMovementsByReferenceParams) ([]StockMovement, error) {
-	rows, err := q.db.Query(ctx, listStockMovementsByReference, arg.ReferenceType, arg.ReferenceID)
+	rows, err := q.db.Query(ctx, listStockMovementsByReference,
+		arg.ReferenceType,
+		arg.ReferenceID,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

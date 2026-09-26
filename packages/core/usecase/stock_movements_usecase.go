@@ -71,6 +71,35 @@ func stockMovementToOutput(m repository.ListStockMovementsByProductWithDateRange
 	}
 }
 
+type StockMovementListResponse struct {
+	Data       []StockMovementOutput `json:"data"`
+	TotalCount int64                 `json:"total_count"`
+	Page       int32                 `json:"page"`
+	Limit      int32                 `json:"limit"`
+	TotalPages int32                 `json:"total_pages"`
+}
+
+func calcPagination(page, limit int32) (int32, int32, int32) {
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+	return page, limit, offset
+}
+
+func calcTotalPages(totalCount int64, limit int32) int32 {
+	if limit <= 0 || totalCount <= 0 {
+		return 0
+	}
+	return int32((totalCount + int64(limit) - 1) / int64(limit))
+}
+
 func stockMovementBasicToOutput(m repository.StockMovement) StockMovementOutput {
 	return StockMovementOutput{
 		ID:               m.ID,
@@ -456,11 +485,16 @@ func (uc *StockMovementsUseCase) GetStockMovement(ctx context.Context, id string
 }
 
 // ListStockMovements lists stock movements with pagination.
-func (uc *StockMovementsUseCase) ListStockMovements(ctx context.Context, limit, offset int32) *repository.Response {
+func (uc *StockMovementsUseCase) ListStockMovements(ctx context.Context, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
-	rows, err := uc.repo.ListStockMovements(ctx, repository.ListStockMovementsParams{Limit: limit, Offset: offset})
+	p, l, offset := calcPagination(page, limit)
+	totalCount, err := uc.repo.CountStockMovements(ctx)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	rows, err := uc.repo.ListStockMovements(ctx, repository.ListStockMovementsParams{Limit: l, Offset: offset})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -468,11 +502,17 @@ func (uc *StockMovementsUseCase) ListStockMovements(ctx context.Context, limit, 
 	for i := range rows {
 		out[i] = stockMovementBasicToOutput(rows[i])
 	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
 }
 
 // ListStockMovementsByProduct lists stock movements by product with pagination.
-func (uc *StockMovementsUseCase) ListStockMovementsByProduct(ctx context.Context, productID string, limit, offset int32) *repository.Response {
+func (uc *StockMovementsUseCase) ListStockMovementsByProduct(ctx context.Context, productID string, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -480,9 +520,14 @@ func (uc *StockMovementsUseCase) ListStockMovementsByProduct(ctx context.Context
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid product_id", nil)
 	}
+	p, l, offset := calcPagination(page, limit)
+	totalCount, err := uc.repo.CountStockMovementsByProduct(ctx, int32(prodID))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
 	rows, err := uc.repo.ListStockMovementsByProduct(ctx, repository.ListStockMovementsByProductParams{
 		ProductID: int32(prodID),
-		Limit:     limit,
+		Limit:     l,
 		Offset:    offset,
 	})
 	if err != nil {
@@ -492,11 +537,17 @@ func (uc *StockMovementsUseCase) ListStockMovementsByProduct(ctx context.Context
 	for i := range rows {
 		out[i] = stockMovementBasicToOutput(rows[i])
 	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
 }
 
 // ListStockMovementsByStore lists stock movements by store with pagination.
-func (uc *StockMovementsUseCase) ListStockMovementsByStore(ctx context.Context, storeID string, limit, offset int32) *repository.Response {
+func (uc *StockMovementsUseCase) ListStockMovementsByStore(ctx context.Context, storeID string, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -504,9 +555,14 @@ func (uc *StockMovementsUseCase) ListStockMovementsByStore(ctx context.Context, 
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil)
 	}
+	p, l, offset := calcPagination(page, limit)
+	totalCount, err := uc.repo.CountStockMovementsByStore(ctx, pgtype.Int4{Int32: int32(sID), Valid: true})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
 	rows, err := uc.repo.ListStockMovementsByStore(ctx, repository.ListStockMovementsByStoreParams{
 		FromStoreID: pgtype.Int4{Int32: int32(sID), Valid: true},
-		Limit:       limit,
+		Limit:       l,
 		Offset:      offset,
 	})
 	if err != nil {
@@ -516,20 +572,31 @@ func (uc *StockMovementsUseCase) ListStockMovementsByStore(ctx context.Context, 
 	for i := range rows {
 		out[i] = stockMovementBasicToOutput(rows[i])
 	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
 }
 
 // ListStockMovementsByType lists stock movements by type with pagination.
-func (uc *StockMovementsUseCase) ListStockMovementsByType(ctx context.Context, movementType string, limit, offset int32) *repository.Response {
+func (uc *StockMovementsUseCase) ListStockMovementsByType(ctx context.Context, movementType string, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 	if strings.TrimSpace(movementType) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "movement_type is required", nil)
 	}
+	p, l, offset := calcPagination(page, limit)
+	totalCount, err := uc.repo.CountStockMovementsByType(ctx, strings.TrimSpace(movementType))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
 	rows, err := uc.repo.ListStockMovementsByType(ctx, repository.ListStockMovementsByTypeParams{
 		MovementType: strings.TrimSpace(movementType),
-		Limit:        limit,
+		Limit:        l,
 		Offset:       offset,
 	})
 	if err != nil {
@@ -539,11 +606,17 @@ func (uc *StockMovementsUseCase) ListStockMovementsByType(ctx context.Context, m
 	for i := range rows {
 		out[i] = stockMovementBasicToOutput(rows[i])
 	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
 }
 
-// ListStockMovementsByReference lists stock movements by reference.
-func (uc *StockMovementsUseCase) ListStockMovementsByReference(ctx context.Context, referenceType string, referenceID string) *repository.Response {
+// ListStockMovementsByReference lists stock movements by reference with pagination.
+func (uc *StockMovementsUseCase) ListStockMovementsByReference(ctx context.Context, referenceType string, referenceID string, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -554,31 +627,19 @@ func (uc *StockMovementsUseCase) ListStockMovementsByReference(ctx context.Conte
 	if err != nil {
 		return utils.NewResponse(utils.CodeBadReq, "invalid reference_id", nil)
 	}
-	rows, err := uc.repo.ListStockMovementsByReference(ctx, repository.ListStockMovementsByReferenceParams{
+	p, l, offset := calcPagination(page, limit)
+	totalCount, err := uc.repo.CountStockMovementsByReference(ctx, repository.CountStockMovementsByReferenceParams{
 		ReferenceType: pgtype.Text{String: strings.TrimSpace(referenceType), Valid: true},
 		ReferenceID:   pgtype.Int4{Int32: int32(refID), Valid: true},
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	out := make([]StockMovementOutput, len(rows))
-	for i := range rows {
-		out[i] = stockMovementBasicToOutput(rows[i])
-	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
-}
-
-// ListStockMovementsByDateRange lists stock movements by movement date range.
-func (uc *StockMovementsUseCase) ListStockMovementsByDateRange(ctx context.Context, startDate, endDate *time.Time) *repository.Response {
-	if resp := uc.repoOrErr(); resp != nil {
-		return resp
-	}
-	if startDate == nil || endDate == nil {
-		return utils.NewResponse(utils.CodeBadReq, "start_date and end_date are required", nil)
-	}
-	rows, err := uc.repo.ListStockMovementsByDateRange(ctx, repository.ListStockMovementsByDateRangeParams{
-		MovementDate:   pgtype.Timestamp{Time: *startDate, Valid: true},
-		MovementDate_2: pgtype.Timestamp{Time: *endDate, Valid: true},
+	rows, err := uc.repo.ListStockMovementsByReference(ctx, repository.ListStockMovementsByReferenceParams{
+		ReferenceType: pgtype.Text{String: strings.TrimSpace(referenceType), Valid: true},
+		ReferenceID:   pgtype.Int4{Int32: int32(refID), Valid: true},
+		Limit:         l,
+		Offset:        offset,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -587,7 +648,51 @@ func (uc *StockMovementsUseCase) ListStockMovementsByDateRange(ctx context.Conte
 	for i := range rows {
 		out[i] = stockMovementBasicToOutput(rows[i])
 	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
+}
+
+// ListStockMovementsByDateRange lists stock movements by movement date range with pagination.
+func (uc *StockMovementsUseCase) ListStockMovementsByDateRange(ctx context.Context, startDate, endDate *time.Time, page, limit int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	if startDate == nil || endDate == nil {
+		return utils.NewResponse(utils.CodeBadReq, "start_date and end_date are required", nil)
+	}
+	p, l, offset := calcPagination(page, limit)
+	totalCount, err := uc.repo.CountStockMovementsByDateRange(ctx, repository.CountStockMovementsByDateRangeParams{
+		MovementDate:   pgtype.Timestamp{Time: *startDate, Valid: true},
+		MovementDate_2: pgtype.Timestamp{Time: *endDate, Valid: true},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	rows, err := uc.repo.ListStockMovementsByDateRange(ctx, repository.ListStockMovementsByDateRangeParams{
+		MovementDate:   pgtype.Timestamp{Time: *startDate, Valid: true},
+		MovementDate_2: pgtype.Timestamp{Time: *endDate, Valid: true},
+		Limit:          l,
+		Offset:         offset,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	out := make([]StockMovementOutput, len(rows))
+	for i := range rows {
+		out[i] = stockMovementBasicToOutput(rows[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
 }
 
 // GetStockMovementsByProductAndStore lists movements by product and store from a start date.
@@ -743,12 +848,13 @@ func (uc *StockMovementsUseCase) UpsertInventoryStockFromMovement(ctx context.Co
 	return utils.NewResponse(utils.CodeOK, "inventory stock upserted", row)
 }
 
-// ListStockMovementsByProductWithDateRange lists stock movements by product with optional movement date range.
+// ListStockMovementsByProductWithDateRange lists stock movements by product with optional movement date range with pagination.
 func (uc *StockMovementsUseCase) ListStockMovementsByProductWithDateRange(
 	ctx context.Context,
 	productID string,
 	startDate *time.Time,
 	endDate *time.Time,
+	page, limit int32,
 ) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
@@ -759,20 +865,36 @@ func (uc *StockMovementsUseCase) ListStockMovementsByProductWithDateRange(
 		return utils.NewResponse(utils.CodeBadReq, "invalid product_id", nil)
 	}
 
-	params := repository.ListStockMovementsByProductWithDateRangeParams{
+	p, l, offset := calcPagination(page, limit)
+
+	countParams := repository.CountStockMovementsByProductWithDateRangeParams{
 		ProductID: int32(prodID),
 		Column2:   pgtype.Timestamp{},
 		Column3:   pgtype.Timestamp{},
 	}
+	listParams := repository.ListStockMovementsByProductWithDateRangeParams{
+		ProductID: int32(prodID),
+		Column2:   pgtype.Timestamp{},
+		Column3:   pgtype.Timestamp{},
+		Limit:     l,
+		Offset:    offset,
+	}
 
 	if startDate != nil {
-		params.Column2 = pgtype.Timestamp{Time: *startDate, Valid: true}
+		countParams.Column2 = pgtype.Timestamp{Time: *startDate, Valid: true}
+		listParams.Column2 = pgtype.Timestamp{Time: *startDate, Valid: true}
 	}
 	if endDate != nil {
-		params.Column3 = pgtype.Timestamp{Time: *endDate, Valid: true}
+		countParams.Column3 = pgtype.Timestamp{Time: *endDate, Valid: true}
+		listParams.Column3 = pgtype.Timestamp{Time: *endDate, Valid: true}
 	}
 
-	rows, err := uc.repo.ListStockMovementsByProductWithDateRange(ctx, params)
+	totalCount, err := uc.repo.CountStockMovementsByProductWithDateRange(ctx, countParams)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	rows, err := uc.repo.ListStockMovementsByProductWithDateRange(ctx, listParams)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -782,7 +904,13 @@ func (uc *StockMovementsUseCase) ListStockMovementsByProductWithDateRange(
 		out[i] = stockMovementToOutput(rows[i])
 	}
 
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", out)
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
 }
 
 func pgText(s *string) pgtype.Text {

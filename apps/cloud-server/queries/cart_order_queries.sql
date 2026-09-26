@@ -868,15 +868,28 @@ WHERE id = $1;
 SELECT * FROM invoices
 WHERE invoice_number = $1;
 
+-- name: CountInvoices :one
+SELECT COUNT(*) FROM invoices
+WHERE organization_id = $1
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('invoice_status')::invoice_status IS NULL OR invoice_status = sqlc.narg('invoice_status'))
+  AND (sqlc.narg('from_date')::date IS NULL OR invoice_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR invoice_date <= sqlc.narg('to_date'));
+
 -- name: ListInvoices :many
 SELECT * FROM invoices
 WHERE organization_id = $1
-  AND ($2::int IS NULL OR store_id = $2)
-  AND ($3::invoice_status IS NULL OR invoice_status = $3)
-  AND ($4::date IS NULL OR invoice_date >= $4)
-  AND ($5::date IS NULL OR invoice_date <= $5)
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('invoice_status')::invoice_status IS NULL OR invoice_status = sqlc.narg('invoice_status'))
+  AND (sqlc.narg('from_date')::date IS NULL OR invoice_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR invoice_date <= sqlc.narg('to_date'))
 ORDER BY invoice_date DESC, created_at DESC
-LIMIT $6 OFFSET $7;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountCustomerInvoices :one
+SELECT COUNT(*) FROM invoices
+WHERE customer_id = $1
+  AND organization_id = $2;
 
 -- name: ListCustomerInvoices :many
 SELECT * FROM invoices
@@ -884,6 +897,14 @@ WHERE customer_id = $1
   AND organization_id = $2
 ORDER BY invoice_date DESC
 LIMIT $3 OFFSET $4;
+
+-- name: CountOverdueInvoices :one
+SELECT COUNT(*)
+FROM invoices i
+WHERE i.store_id = $1
+  AND i.invoice_status IN ('sent', 'viewed', 'partially_paid')
+  AND i.due_date < CURRENT_DATE
+  AND i.balance_due > 0;
 
 -- name: ListOverdueInvoices :many
 SELECT i.*, c.name as customer_name_full, c.email as customer_email_full
@@ -990,9 +1011,10 @@ SELECT
     COALESCE(SUM(paid_amount), 0) as total_paid,
     COALESCE(SUM(balance_due), 0) as total_outstanding
 FROM invoices
-WHERE store_id = $1
-  AND invoice_date >= $2
-  AND invoice_date <= $3;
+WHERE organization_id = $1
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('from_date')::date IS NULL OR invoice_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR invoice_date <= sqlc.narg('to_date'));
 
 -- =====================================================
 -- INVOICE LINES
@@ -1340,6 +1362,48 @@ WHERE quote_id = $1;
 -- BUSINESS USE CASES - CART OPERATIONS
 -- =====================================================
 
+-- name: ReopenCart :one
+WITH order_to_delete AS (
+    SELECT id, store_id FROM sales_orders_v2 
+    WHERE source_cart_id = $1 
+      AND order_status IN ('draft', 'pending')
+),
+lines_to_delete AS (
+    SELECT id, product_id, product_variant_id, quantity_ordered
+    FROM sales_order_lines_v2
+    WHERE sales_order_id IN (SELECT id FROM order_to_delete)
+),
+deallocate_stock AS (
+    UPDATE inventory_stock
+    SET quantity_allocated = GREATEST(0, quantity_allocated - l.quantity_ordered),
+        quantity_available = quantity_on_hand - GREATEST(0, quantity_allocated - l.quantity_ordered),
+        updated_at = NOW()
+    FROM lines_to_delete l
+    CROSS JOIN order_to_delete o
+    WHERE inventory_stock.product_id = l.product_id
+      AND COALESCE(inventory_stock.product_variant_id, 0) = COALESCE(l.product_variant_id, 0)
+      AND inventory_stock.store_id = o.store_id
+    RETURNING inventory_stock.id
+),
+deleted_lines AS (
+    DELETE FROM sales_order_lines_v2 
+    WHERE sales_order_id IN (SELECT id FROM order_to_delete)
+    RETURNING id
+),
+deleted_order AS (
+    DELETE FROM sales_orders_v2 
+    WHERE id IN (SELECT id FROM order_to_delete)
+    RETURNING id
+)
+UPDATE carts
+SET cart_status = 'active',
+    converted_to_order_id = NULL,
+    converted_at = NULL,
+    updated_at = NOW()
+WHERE carts.id = $1
+  AND EXISTS (SELECT 1 FROM deleted_order)
+RETURNING *;
+
 -- name: ConvertCartToOrder :one
 -- Convert cart to sales order (business logic)
 WITH cart_data AS (
@@ -1608,46 +1672,4 @@ SET discount_amount = $2,
     metadata = jsonb_set(COALESCE(metadata, '{}'), '{applied_promotion}', to_jsonb($3::text)),
     updated_at = NOW()
 WHERE id = $1
-RETURNING *;
-
--- name: ReopenCart :one
-WITH order_to_delete AS (
-    SELECT id, store_id FROM sales_orders_v2 
-    WHERE source_cart_id = $1 
-      AND order_status IN ('draft', 'pending')
-),
-lines_to_delete AS (
-    SELECT id, product_id, product_variant_id, quantity_ordered
-    FROM sales_order_lines_v2
-    WHERE sales_order_id IN (SELECT id FROM order_to_delete)
-),
-deallocate_stock AS (
-    UPDATE inventory_stock
-    SET quantity_allocated = GREATEST(0, quantity_allocated - l.quantity_ordered),
-        quantity_available = quantity_on_hand - GREATEST(0, quantity_allocated - l.quantity_ordered),
-        updated_at = NOW()
-    FROM lines_to_delete l
-    CROSS JOIN order_to_delete o
-    WHERE inventory_stock.product_id = l.product_id
-      AND COALESCE(inventory_stock.product_variant_id, 0) = COALESCE(l.product_variant_id, 0)
-      AND inventory_stock.store_id = o.store_id
-    RETURNING inventory_stock.id
-),
-deleted_lines AS (
-    DELETE FROM sales_order_lines_v2 
-    WHERE sales_order_id IN (SELECT id FROM order_to_delete)
-    RETURNING id
-),
-deleted_order AS (
-    DELETE FROM sales_orders_v2 
-    WHERE id IN (SELECT id FROM order_to_delete)
-    RETURNING id
-)
-UPDATE carts
-SET cart_status = 'active',
-    converted_to_order_id = NULL,
-    converted_at = NULL,
-    updated_at = NOW()
-WHERE carts.id = $1
-  AND EXISTS (SELECT 1 FROM deleted_order)
 RETURNING *;

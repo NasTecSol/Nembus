@@ -560,10 +560,8 @@ func (h *PosHandler) ProcessPayment(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true   "Tenant identifier"
 // @Param        Authorization header    string  true   "Bearer token"
 // @Param        store_id      path      int     true   "Store ID"
-// @Param        page          query     int     false  "Page number (default: 1)"
-// @Param        limit         query     int     false  "Items per page (default: 20)"
-// @Param        page_size     query     int     false  "Items per page alias"
-// @Param        offset        query     int     false  "Offset override"
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -581,40 +579,12 @@ func (h *PosHandler) ListTodayTransactions(c *gin.Context) {
 		return
 	}
 
-	var limit *int32
-	if s := c.Query("limit"); s != "" {
-		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
-			val := int32(l)
-			limit = &val
-		}
-	} else if s := c.Query("page_size"); s != "" {
-		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
-			val := int32(l)
-			limit = &val
-		}
-	}
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
 
-	var offset *int32
-	if s := c.Query("offset"); s != "" {
-		if o, err := strconv.ParseInt(s, 10, 32); err == nil && o >= 0 {
-			val := int32(o)
-			offset = &val
-		}
-	} else if s := c.Query("page"); s != "" {
-		if p, err := strconv.ParseInt(s, 10, 32); err == nil && p > 0 {
-			pageSize := int32(20)
-			if limit != nil && *limit > 0 {
-				pageSize = *limit
-			}
-			val := int32((p - 1) * int64(pageSize))
-			offset = &val
-			if limit == nil {
-				limit = &pageSize
-			}
-		}
-	}
-
-	resp := h.useCase.ListTodaysTransactions(c.Request.Context(), int32(storeID), limit, offset)
+	resp := h.useCase.ListTodaysTransactions(c.Request.Context(), int32(storeID), int32(page), int32(limit))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -627,7 +597,7 @@ func coalesceEmpty(s, fallback string) string {
 
 // ListTransactionsByCashierSession handles GET /api/pos/transactions/by-cashier-session
 // @Summary      List POS transactions by cashier session
-// @Description  Returns POS transactions for a cashier and session with optional date range
+// @Description  Returns POS transactions for a cashier and session with optional date range and pagination
 // @Tags         pos
 // @Accept       json
 // @Produce      json
@@ -638,6 +608,8 @@ func coalesceEmpty(s, fallback string) string {
 // @Param        cashier_session_id  query     int     false  "Cashier Session ID"
 // @Param        start_date          query     string  false  "Start date (RFC3339)"
 // @Param        end_date            query     string  false  "End date (RFC3339, exclusive)"
+// @Param        page                query     int     false  "Page number" default(1)
+// @Param        limit               query     int     false  "Number of records per page" default(50)
 // @Success      200                 {object}  SuccessResponse
 // @Failure      400                 {object}  ErrorResponse
 // @Failure      401                 {object}  ErrorResponse
@@ -694,12 +666,19 @@ func (h *PosHandler) ListTransactionsByCashierSession(c *gin.Context) {
 		endDate = &parsed
 	}
 
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
 	resp := h.useCase.ListTransactionsByCashierSession(
 		c.Request.Context(),
 		cashierID,
 		cashierSessionID,
 		startDate,
 		endDate,
+		int32(page),
+		int32(limit),
 	)
 	c.JSON(resp.StatusCode, resp)
 }
@@ -714,10 +693,8 @@ func (h *PosHandler) ListTransactionsByCashierSession(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true   "Tenant identifier"
 // @Param        Authorization header    string  true   "Bearer token"
 // @Param        customer_id   path      int     true   "Customer ID"
-// @Param        page          query     int     false  "Page number (default: 1)"
-// @Param        limit         query     int     false  "Items per page (default: 20)"
-// @Param        page_size     query     int     false  "Items per page alias"
-// @Param        offset        query     int     false  "Offset override"
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      401           {object}  ErrorResponse
@@ -736,40 +713,79 @@ func (h *PosHandler) ListTransactionsByCustomer(c *gin.Context) {
 		return
 	}
 
-	var limit *int32
-	if s := c.Query("limit"); s != "" {
-		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
-			val := int32(l)
-			limit = &val
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
+	resp := h.useCase.ListTransactionsByCustomer(c.Request.Context(), int32(customerID), int32(page), int32(limit))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListTransactionsByTerminal handles GET /api/pos/transactions/terminal/:terminal_id and GET /api/pos/terminals/:id/transactions
+// @Summary      List POS transactions by terminal ID
+// @Description  Returns POS transactions for a specific terminal with optional pagination, date range, and status filters
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        Authorization header    string  true   "Bearer token"
+// @Param        terminal_id   path      int     true   "Terminal ID"
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
+// @Param        from_date     query     string  false  "From date (ISO 8601 / RFC 3339)"
+// @Param        to_date       query     string  false  "To date (ISO 8601 / RFC 3339)"
+// @Param        status        query     string  false  "Transaction status (e.g. completed, voided)"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/terminal/{terminal_id} [get]
+func (h *PosHandler) ListTransactionsByTerminal(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	termIDStr := c.Param("terminal_id")
+	if termIDStr == "" {
+		termIDStr = c.Param("id")
+	}
+	terminalID, err := strconv.ParseInt(termIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid terminal_id", nil))
+		return
+	}
+
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
+	var fromDatePtr, toDatePtr *time.Time
+	if fromStr := c.Query("from_date"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			fromDatePtr = &t
+		} else if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+			fromDatePtr = &t
 		}
-	} else if s := c.Query("page_size"); s != "" {
-		if l, err := strconv.ParseInt(s, 10, 32); err == nil && l > 0 {
-			val := int32(l)
-			limit = &val
+	}
+	if toStr := c.Query("to_date"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			toDatePtr = &t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", toStr); err == nil {
+			toDatePtr = &t
+		} else if t, err := time.Parse("2006-01-02", toStr); err == nil {
+			t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			toDatePtr = &t
 		}
 	}
 
-	var offset *int32
-	if s := c.Query("offset"); s != "" {
-		if o, err := strconv.ParseInt(s, 10, 32); err == nil && o >= 0 {
-			val := int32(o)
-			offset = &val
-		}
-	} else if s := c.Query("page"); s != "" {
-		if p, err := strconv.ParseInt(s, 10, 32); err == nil && p > 0 {
-			pageSize := int32(20)
-			if limit != nil && *limit > 0 {
-				pageSize = *limit
-			}
-			val := int32((p - 1) * int64(pageSize))
-			offset = &val
-			if limit == nil {
-				limit = &pageSize
-			}
-		}
-	}
+	status := c.Query("status")
 
-	resp := h.useCase.ListTransactionsByCustomer(c.Request.Context(), int32(customerID), limit, offset)
+	resp := h.useCase.ListTransactionsByTerminal(c.Request.Context(), int32(terminalID), int32(page), int32(limit), fromDatePtr, toDatePtr, status)
 	c.JSON(resp.StatusCode, resp)
 }
 

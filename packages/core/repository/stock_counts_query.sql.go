@@ -16,7 +16,8 @@ const approveStockCount = `-- name: ApproveStockCount :one
 UPDATE stock_counts
 SET 
     status = 'approved',
-    approved_by = $2
+    approved_by = $2,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
@@ -52,7 +53,8 @@ const completeStockCount = `-- name: CompleteStockCount :one
 UPDATE stock_counts
 SET 
     status = 'completed',
-    completed_at = CURRENT_TIMESTAMP
+    completed_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
@@ -80,33 +82,40 @@ func (q *Queries) CompleteStockCount(ctx context.Context, id int32) (StockCount,
 }
 
 const createStockCount = `-- name: CreateStockCount :one
+
 INSERT INTO stock_counts (
     count_number,
     store_id,
+    storage_location_id,
     count_type,
     status,
     scheduled_date,
     counted_by,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 ) RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 type CreateStockCountParams struct {
-	CountNumber   string          `json:"count_number"`
-	StoreID       int32           `json:"store_id"`
-	CountType     pgtype.Text     `json:"count_type"`
-	Status        pgtype.Text     `json:"status"`
-	ScheduledDate pgtype.Date     `json:"scheduled_date"`
-	CountedBy     pgtype.Int4     `json:"counted_by"`
-	Metadata      json.RawMessage `json:"metadata"`
+	CountNumber       string          `json:"count_number"`
+	StoreID           int32           `json:"store_id"`
+	StorageLocationID pgtype.Int4     `json:"storage_location_id"`
+	CountType         pgtype.Text     `json:"count_type"`
+	Status            pgtype.Text     `json:"status"`
+	ScheduledDate     pgtype.Date     `json:"scheduled_date"`
+	CountedBy         pgtype.Int4     `json:"counted_by"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
+// =====================================================
+// STOCK COUNTS QUERIES
+// =====================================================
 func (q *Queries) CreateStockCount(ctx context.Context, arg CreateStockCountParams) (StockCount, error) {
 	row := q.db.QueryRow(ctx, createStockCount,
 		arg.CountNumber,
 		arg.StoreID,
+		arg.StorageLocationID,
 		arg.CountType,
 		arg.Status,
 		arg.ScheduledDate,
@@ -139,16 +148,18 @@ INSERT INTO stock_count_lines (
     product_id,
     product_variant_id,
     storage_location_id,
+    expected_quantity,
     system_quantity,
     counted_quantity,
     variance,
     variance_value,
+    counted_at,
+    uom_id,
     batch_number,
     serial_number,
-    counted_at,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
 ) RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at, updated_at
 `
 
@@ -157,13 +168,15 @@ type CreateStockCountLineParams struct {
 	ProductID         int32            `json:"product_id"`
 	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
 	StorageLocationID pgtype.Int4      `json:"storage_location_id"`
+	ExpectedQuantity  pgtype.Numeric   `json:"expected_quantity"`
 	SystemQuantity    pgtype.Numeric   `json:"system_quantity"`
 	CountedQuantity   pgtype.Numeric   `json:"counted_quantity"`
 	Variance          pgtype.Numeric   `json:"variance"`
 	VarianceValue     pgtype.Numeric   `json:"variance_value"`
+	CountedAt         pgtype.Timestamp `json:"counted_at"`
+	UomID             pgtype.Int4      `json:"uom_id"`
 	BatchNumber       pgtype.Text      `json:"batch_number"`
 	SerialNumber      pgtype.Text      `json:"serial_number"`
-	CountedAt         pgtype.Timestamp `json:"counted_at"`
 	Metadata          json.RawMessage  `json:"metadata"`
 }
 
@@ -173,13 +186,15 @@ func (q *Queries) CreateStockCountLine(ctx context.Context, arg CreateStockCount
 		arg.ProductID,
 		arg.ProductVariantID,
 		arg.StorageLocationID,
+		arg.ExpectedQuantity,
 		arg.SystemQuantity,
 		arg.CountedQuantity,
 		arg.Variance,
 		arg.VarianceValue,
+		arg.CountedAt,
+		arg.UomID,
 		arg.BatchNumber,
 		arg.SerialNumber,
-		arg.CountedAt,
 		arg.Metadata,
 	)
 	var i StockCountLine
@@ -222,6 +237,16 @@ WHERE id = $1
 
 func (q *Queries) DeleteStockCountLine(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, deleteStockCountLine, id)
+	return err
+}
+
+const deleteStockCountLinesByCountID = `-- name: DeleteStockCountLinesByCountID :exec
+DELETE FROM stock_count_lines
+WHERE stock_count_id = $1
+`
+
+func (q *Queries) DeleteStockCountLinesByCountID(ctx context.Context, stockCountID int32) error {
+	_, err := q.db.Exec(ctx, deleteStockCountLinesByCountID, stockCountID)
 	return err
 }
 
@@ -311,21 +336,21 @@ func (q *Queries) GetStockCountLine(ctx context.Context, id int32) (StockCountLi
 
 const getStockCountSummary = `-- name: GetStockCountSummary :one
 SELECT 
-    COUNT(*) AS total_lines,
-    SUM(CASE WHEN variance != 0 THEN 1 ELSE 0 END) AS lines_with_variance,
-    SUM(variance_value) AS total_variance_value,
-    SUM(CASE WHEN variance > 0 THEN variance_value ELSE 0 END) AS positive_variance,
-    SUM(CASE WHEN variance < 0 THEN variance_value ELSE 0 END) AS negative_variance
+    COUNT(*)::bigint AS total_lines,
+    COALESCE(SUM(CASE WHEN variance != 0 THEN 1 ELSE 0 END), 0)::bigint AS lines_with_variance,
+    COALESCE(SUM(variance_value), 0)::numeric AS total_variance_value,
+    COALESCE(SUM(CASE WHEN variance > 0 THEN variance_value ELSE 0 END), 0)::numeric AS positive_variance,
+    COALESCE(SUM(CASE WHEN variance < 0 THEN variance_value ELSE 0 END), 0)::numeric AS negative_variance
 FROM stock_count_lines
 WHERE stock_count_id = $1
 `
 
 type GetStockCountSummaryRow struct {
-	TotalLines         int64 `json:"total_lines"`
-	LinesWithVariance  int64 `json:"lines_with_variance"`
-	TotalVarianceValue int64 `json:"total_variance_value"`
-	PositiveVariance   int64 `json:"positive_variance"`
-	NegativeVariance   int64 `json:"negative_variance"`
+	TotalLines         int64          `json:"total_lines"`
+	LinesWithVariance  int64          `json:"lines_with_variance"`
+	TotalVarianceValue pgtype.Numeric `json:"total_variance_value"`
+	PositiveVariance   pgtype.Numeric `json:"positive_variance"`
+	NegativeVariance   pgtype.Numeric `json:"negative_variance"`
 }
 
 func (q *Queries) GetStockCountSummary(ctx context.Context, stockCountID int32) (GetStockCountSummaryRow, error) {
@@ -337,6 +362,68 @@ func (q *Queries) GetStockCountSummary(ctx context.Context, stockCountID int32) 
 		&i.TotalVarianceValue,
 		&i.PositiveVariance,
 		&i.NegativeVariance,
+	)
+	return i, err
+}
+
+const getStockCountWithDetails = `-- name: GetStockCountWithDetails :one
+SELECT 
+    sc.id, sc.count_number, sc.store_id, sc.storage_location_id, sc.count_type, sc.status, sc.scheduled_date, sc.started_at, sc.completed_at, sc.counted_by, sc.approved_by, sc.metadata, sc.created_at, sc.updated_at,
+    st.name AS store_name,
+    sl.name AS storage_location_name,
+    u_counted.username AS counted_by_name,
+    u_approved.username AS approved_by_name
+FROM stock_counts sc
+JOIN stores st ON sc.store_id = st.id
+LEFT JOIN storage_locations sl ON sc.storage_location_id = sl.id
+LEFT JOIN users u_counted ON sc.counted_by = u_counted.id
+LEFT JOIN users u_approved ON sc.approved_by = u_approved.id
+WHERE sc.id = $1
+`
+
+type GetStockCountWithDetailsRow struct {
+	ID                  int32            `json:"id"`
+	CountNumber         string           `json:"count_number"`
+	StoreID             int32            `json:"store_id"`
+	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
+	CountType           pgtype.Text      `json:"count_type"`
+	Status              pgtype.Text      `json:"status"`
+	ScheduledDate       pgtype.Date      `json:"scheduled_date"`
+	StartedAt           pgtype.Timestamp `json:"started_at"`
+	CompletedAt         pgtype.Timestamp `json:"completed_at"`
+	CountedBy           pgtype.Int4      `json:"counted_by"`
+	ApprovedBy          pgtype.Int4      `json:"approved_by"`
+	Metadata            json.RawMessage  `json:"metadata"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
+	StoreName           string           `json:"store_name"`
+	StorageLocationName pgtype.Text      `json:"storage_location_name"`
+	CountedByName       pgtype.Text      `json:"counted_by_name"`
+	ApprovedByName      pgtype.Text      `json:"approved_by_name"`
+}
+
+func (q *Queries) GetStockCountWithDetails(ctx context.Context, id int32) (GetStockCountWithDetailsRow, error) {
+	row := q.db.QueryRow(ctx, getStockCountWithDetails, id)
+	var i GetStockCountWithDetailsRow
+	err := row.Scan(
+		&i.ID,
+		&i.CountNumber,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.CountType,
+		&i.Status,
+		&i.ScheduledDate,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CountedBy,
+		&i.ApprovedBy,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StoreName,
+		&i.StorageLocationName,
+		&i.CountedByName,
+		&i.ApprovedByName,
 	)
 	return i, err
 }
@@ -374,6 +461,94 @@ func (q *Queries) ListStockCountLines(ctx context.Context, stockCountID int32) (
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStockCountLinesWithDetails = `-- name: ListStockCountLinesWithDetails :many
+SELECT 
+    scl.id, scl.stock_count_id, scl.product_id, scl.product_variant_id, scl.storage_location_id, scl.expected_quantity, scl.system_quantity, scl.counted_quantity, scl.variance, scl.variance_value, scl.counted_at, scl.uom_id, scl.batch_number, scl.serial_number, scl.metadata, scl.created_at, scl.updated_at,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    pv.variant_name AS variant_name,
+    pv.variant_sku AS variant_sku,
+    sl.name AS storage_location_name,
+    uom.name AS uom_name
+FROM stock_count_lines scl
+JOIN products p ON scl.product_id = p.id
+LEFT JOIN product_variants pv ON scl.product_variant_id = pv.id
+LEFT JOIN storage_locations sl ON scl.storage_location_id = sl.id
+LEFT JOIN units_of_measure uom ON scl.uom_id = uom.id
+WHERE scl.stock_count_id = $1
+ORDER BY scl.id
+`
+
+type ListStockCountLinesWithDetailsRow struct {
+	ID                  int32            `json:"id"`
+	StockCountID        int32            `json:"stock_count_id"`
+	ProductID           int32            `json:"product_id"`
+	ProductVariantID    pgtype.Int4      `json:"product_variant_id"`
+	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
+	ExpectedQuantity    pgtype.Numeric   `json:"expected_quantity"`
+	SystemQuantity      pgtype.Numeric   `json:"system_quantity"`
+	CountedQuantity     pgtype.Numeric   `json:"counted_quantity"`
+	Variance            pgtype.Numeric   `json:"variance"`
+	VarianceValue       pgtype.Numeric   `json:"variance_value"`
+	CountedAt           pgtype.Timestamp `json:"counted_at"`
+	UomID               pgtype.Int4      `json:"uom_id"`
+	BatchNumber         pgtype.Text      `json:"batch_number"`
+	SerialNumber        pgtype.Text      `json:"serial_number"`
+	Metadata            json.RawMessage  `json:"metadata"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
+	ProductName         string           `json:"product_name"`
+	ProductSku          string           `json:"product_sku"`
+	VariantName         pgtype.Text      `json:"variant_name"`
+	VariantSku          pgtype.Text      `json:"variant_sku"`
+	StorageLocationName pgtype.Text      `json:"storage_location_name"`
+	UomName             pgtype.Text      `json:"uom_name"`
+}
+
+func (q *Queries) ListStockCountLinesWithDetails(ctx context.Context, stockCountID int32) ([]ListStockCountLinesWithDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listStockCountLinesWithDetails, stockCountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStockCountLinesWithDetailsRow
+	for rows.Next() {
+		var i ListStockCountLinesWithDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StockCountID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StorageLocationID,
+			&i.ExpectedQuantity,
+			&i.SystemQuantity,
+			&i.CountedQuantity,
+			&i.Variance,
+			&i.VarianceValue,
+			&i.CountedAt,
+			&i.UomID,
+			&i.BatchNumber,
+			&i.SerialNumber,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProductName,
+			&i.ProductSku,
+			&i.VariantName,
+			&i.VariantSku,
+			&i.StorageLocationName,
+			&i.UomName,
 		); err != nil {
 			return nil, err
 		}
@@ -507,11 +682,142 @@ func (q *Queries) ListStockCountsByStore(ctx context.Context, storeID int32) ([]
 	return items, nil
 }
 
+const listStockCountsWithDetails = `-- name: ListStockCountsWithDetails :many
+SELECT 
+    sc.id,
+    sc.count_number,
+    sc.store_id,
+    sc.storage_location_id,
+    sc.count_type,
+    sc.status,
+    sc.scheduled_date,
+    sc.started_at,
+    sc.completed_at,
+    sc.counted_by,
+    sc.approved_by,
+    sc.metadata,
+    sc.created_at,
+    sc.updated_at,
+    st.name AS store_name,
+    sl.name AS storage_location_name,
+    u_counted.username AS counted_by_name,
+    u_approved.username AS approved_by_name,
+    COUNT(scl.id)::bigint AS total_lines,
+    COALESCE(SUM(CASE WHEN scl.variance != 0 THEN 1 ELSE 0 END), 0)::bigint AS lines_with_variance,
+    COALESCE(SUM(scl.variance_value), 0)::numeric AS total_variance_value
+FROM stock_counts sc
+JOIN stores st ON sc.store_id = st.id
+LEFT JOIN storage_locations sl ON sc.storage_location_id = sl.id
+LEFT JOIN users u_counted ON sc.counted_by = u_counted.id
+LEFT JOIN users u_approved ON sc.approved_by = u_approved.id
+LEFT JOIN stock_count_lines scl ON sc.id = scl.stock_count_id
+GROUP BY sc.id, st.name, sl.name, u_counted.username, u_approved.username
+ORDER BY sc.created_at DESC
+`
+
+type ListStockCountsWithDetailsRow struct {
+	ID                  int32            `json:"id"`
+	CountNumber         string           `json:"count_number"`
+	StoreID             int32            `json:"store_id"`
+	StorageLocationID   pgtype.Int4      `json:"storage_location_id"`
+	CountType           pgtype.Text      `json:"count_type"`
+	Status              pgtype.Text      `json:"status"`
+	ScheduledDate       pgtype.Date      `json:"scheduled_date"`
+	StartedAt           pgtype.Timestamp `json:"started_at"`
+	CompletedAt         pgtype.Timestamp `json:"completed_at"`
+	CountedBy           pgtype.Int4      `json:"counted_by"`
+	ApprovedBy          pgtype.Int4      `json:"approved_by"`
+	Metadata            json.RawMessage  `json:"metadata"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
+	StoreName           string           `json:"store_name"`
+	StorageLocationName pgtype.Text      `json:"storage_location_name"`
+	CountedByName       pgtype.Text      `json:"counted_by_name"`
+	ApprovedByName      pgtype.Text      `json:"approved_by_name"`
+	TotalLines          int64            `json:"total_lines"`
+	LinesWithVariance   int64            `json:"lines_with_variance"`
+	TotalVarianceValue  pgtype.Numeric   `json:"total_variance_value"`
+}
+
+func (q *Queries) ListStockCountsWithDetails(ctx context.Context) ([]ListStockCountsWithDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listStockCountsWithDetails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStockCountsWithDetailsRow
+	for rows.Next() {
+		var i ListStockCountsWithDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CountNumber,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.CountType,
+			&i.Status,
+			&i.ScheduledDate,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.CountedBy,
+			&i.ApprovedBy,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.StoreName,
+			&i.StorageLocationName,
+			&i.CountedByName,
+			&i.ApprovedByName,
+			&i.TotalLines,
+			&i.LinesWithVariance,
+			&i.TotalVarianceValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reconcileStockCountStatus = `-- name: ReconcileStockCountStatus :one
+UPDATE stock_counts
+SET 
+    status = 'reconciled',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
+`
+
+func (q *Queries) ReconcileStockCountStatus(ctx context.Context, id int32) (StockCount, error) {
+	row := q.db.QueryRow(ctx, reconcileStockCountStatus, id)
+	var i StockCount
+	err := row.Scan(
+		&i.ID,
+		&i.CountNumber,
+		&i.StoreID,
+		&i.StorageLocationID,
+		&i.CountType,
+		&i.Status,
+		&i.ScheduledDate,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CountedBy,
+		&i.ApprovedBy,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const startStockCount = `-- name: StartStockCount :one
 UPDATE stock_counts
 SET 
     status = 'in_progress',
-    started_at = CURRENT_TIMESTAMP
+    started_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
@@ -541,20 +847,37 @@ func (q *Queries) StartStockCount(ctx context.Context, id int32) (StockCount, er
 const updateStockCount = `-- name: UpdateStockCount :one
 UPDATE stock_counts
 SET 
-    status = $2,
-    metadata = $3
+    storage_location_id = COALESCE($2, storage_location_id),
+    count_type = COALESCE($3, count_type),
+    status = COALESCE($4, status),
+    scheduled_date = COALESCE($5, scheduled_date),
+    counted_by = COALESCE($6, counted_by),
+    metadata = COALESCE($7, metadata),
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 type UpdateStockCountParams struct {
-	ID       int32           `json:"id"`
-	Status   pgtype.Text     `json:"status"`
-	Metadata json.RawMessage `json:"metadata"`
+	ID                int32           `json:"id"`
+	StorageLocationID pgtype.Int4     `json:"storage_location_id"`
+	CountType         pgtype.Text     `json:"count_type"`
+	Status            pgtype.Text     `json:"status"`
+	ScheduledDate     pgtype.Date     `json:"scheduled_date"`
+	CountedBy         pgtype.Int4     `json:"counted_by"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateStockCount(ctx context.Context, arg UpdateStockCountParams) (StockCount, error) {
-	row := q.db.QueryRow(ctx, updateStockCount, arg.ID, arg.Status, arg.Metadata)
+	row := q.db.QueryRow(ctx, updateStockCount,
+		arg.ID,
+		arg.StorageLocationID,
+		arg.CountType,
+		arg.Status,
+		arg.ScheduledDate,
+		arg.CountedBy,
+		arg.Metadata,
+	)
 	var i StockCount
 	err := row.Scan(
 		&i.ID,
@@ -581,7 +904,11 @@ SET
     counted_quantity = $2,
     variance = $3,
     variance_value = $4,
-    counted_at = $5
+    counted_at = $5,
+    batch_number = $6,
+    serial_number = $7,
+    metadata = COALESCE($8, metadata),
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at, updated_at
 `
@@ -592,6 +919,9 @@ type UpdateStockCountLineParams struct {
 	Variance        pgtype.Numeric   `json:"variance"`
 	VarianceValue   pgtype.Numeric   `json:"variance_value"`
 	CountedAt       pgtype.Timestamp `json:"counted_at"`
+	BatchNumber     pgtype.Text      `json:"batch_number"`
+	SerialNumber    pgtype.Text      `json:"serial_number"`
+	Metadata        json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) UpdateStockCountLine(ctx context.Context, arg UpdateStockCountLineParams) (StockCountLine, error) {
@@ -601,6 +931,9 @@ func (q *Queries) UpdateStockCountLine(ctx context.Context, arg UpdateStockCount
 		arg.Variance,
 		arg.VarianceValue,
 		arg.CountedAt,
+		arg.BatchNumber,
+		arg.SerialNumber,
+		arg.Metadata,
 	)
 	var i StockCountLine
 	err := row.Scan(

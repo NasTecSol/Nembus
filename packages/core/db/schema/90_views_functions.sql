@@ -1666,6 +1666,8 @@ ORDER BY
 -- RESTAURANT MODULE VIEWS
 -- =====================================================
 
+DROP VIEW IF EXISTS vw_restaurant_menu CASCADE;
+
 CREATE OR REPLACE VIEW vw_restaurant_menu AS
 SELECT
     mi.id                       AS menu_item_id,
@@ -1680,6 +1682,7 @@ SELECT
     mi.is_available,
     mi.is_active,
     mi.display_order,
+    mi.item_type,
     mi.metadata                 AS item_metadata,
     mc.id                       AS category_id,
     mc.name                     AS category_name,
@@ -1695,6 +1698,7 @@ SELECT
     r.recipe_name,
     r.yield_quantity            AS recipe_yield,
     mi.product_id,
+    mi.product_variant_id,
     p.sku                       AS product_sku,
     (SELECT COUNT(*) FROM menu_item_modifiers m WHERE m.menu_item_id = mi.id AND m.is_active = true)::INTEGER
                                 AS active_modifier_count,
@@ -1788,6 +1792,8 @@ GROUP BY wl.store_id, DATE(wl.wasted_at), wl.waste_source;
 -- RESTAURANT MODULE FUNCTIONS
 -- =====================================================
 
+DROP FUNCTION IF EXISTS fn_get_restaurant_menu CASCADE;
+
 CREATE OR REPLACE FUNCTION fn_get_restaurant_menu(
     p_store_id          INTEGER,
     p_category_id       INTEGER  DEFAULT NULL,
@@ -1809,6 +1815,7 @@ RETURNS TABLE (
     tax_is_inclusive        BOOLEAN,
     recipe_id               INTEGER,
     product_id              INTEGER,
+    product_variant_id      INTEGER,
     active_modifier_count   INTEGER,
     margin_percent          NUMERIC
 ) AS $$
@@ -1830,6 +1837,7 @@ BEGIN
         vm.tax_is_inclusive,
         vm.recipe_id,
         vm.product_id,
+        vm.product_variant_id,
         vm.active_modifier_count,
         vm.margin_percent
     FROM vw_restaurant_menu vm
@@ -4078,6 +4086,100 @@ BEGIN
     WHERE v.organization_id = p_organization_id;
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION search_master_product_catalog(
+    p_organization_id INT,
+    p_search TEXT DEFAULT ''
+)
+RETURNS TABLE (
+    product_id INT,
+    sku VARCHAR(100),
+    name VARCHAR(255),
+    description TEXT,
+    product_type VARCHAR(50),
+    is_serialized BOOLEAN,
+    is_batch_managed BOOLEAN,
+    is_active BOOLEAN,
+    is_sellable BOOLEAN,
+    is_purchasable BOOLEAN,
+    allow_decimal_quantity BOOLEAN,
+    track_inventory BOOLEAN,
+    metadata JSONB,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    category_id INT,
+    category_name VARCHAR(255),
+    category_code VARCHAR(50),
+    brand_id INT,
+    brand_name VARCHAR(255),
+    brand_code VARCHAR(50),
+    tax_category_id INT,
+    tax_category_name VARCHAR(100),
+    tax_rate DECIMAL(5,2),
+    tax_inclusive BOOLEAN,
+    base_uom_id INT,
+    base_uom_code VARCHAR(20),
+    base_uom_name VARCHAR(50),
+    uom_conversions JSONB,
+    prices JSONB,
+    variants JSONB,
+    barcodes JSONB,
+    inventory JSONB
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        v.product_id,
+        v.sku,
+        v.name,
+        v.description,
+        v.product_type,
+        v.is_serialized,
+        v.is_batch_managed,
+        v.is_active,
+        v.is_sellable,
+        v.is_purchasable,
+        v.allow_decimal_quantity,
+        v.track_inventory,
+        v.metadata,
+        v.created_at,
+        v.updated_at,
+        v.category_id,
+        v.category_name,
+        v.category_code,
+        v.brand_id,
+        v.brand_name,
+        v.brand_code,
+        v.tax_category_id,
+        v.tax_category_name,
+        v.tax_rate,
+        v.tax_inclusive,
+        v.base_uom_id,
+        v.base_uom_code,
+        v.base_uom_name,
+        v.uom_conversions,
+        v.prices,
+        v.variants,
+        v.barcodes,
+        v.inventory
+    FROM v_master_product_catalog v
+    WHERE v.organization_id = p_organization_id
+      AND (
+        p_search IS NULL OR p_search = '' OR
+        v.sku ILIKE '%' || p_search || '%' OR
+        v.name ILIKE '%' || p_search || '%' OR
+        COALESCE(v.description, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_code, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_code, '') ILIKE '%' || p_search || '%' OR
+        v.barcodes::text ILIKE '%' || p_search || '%' OR
+        v.variants::text ILIKE '%' || p_search || '%'
+      );
+END;
+$$ LANGUAGE plpgsql;
+
 
 -- =====================================================
 -- SALES RETURN & WASTE PROCESSING TRIGGER
