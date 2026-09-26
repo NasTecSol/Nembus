@@ -36,10 +36,13 @@ func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 		transactions.POST("", h.CreateTransaction)
 		transactions.GET("/by-cashier-session", h.ListTransactionsByCashierSession)
 		transactions.GET("/customer/:customer_id", h.ListTransactionsByCustomer)
+		transactions.GET("/terminal/:terminal_id", h.ListTransactionsByTerminal)
 		transactions.GET("/:id", h.GetTransaction)
 		transactions.GET("/:id/full", h.GetTransactionFull)
 		transactions.GET("/:id/payments", h.GetTransactionPayments)
 		transactions.GET("/:id/payment-summary", h.GetTransactionPaymentSummary)
 		transactions.POST("/:id/void", h.VoidTransaction)
 	}
+
+	pos.GET("/terminals/:id/transactions", h.ListTransactionsByTerminal)
 }

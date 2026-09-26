@@ -1025,6 +1025,96 @@ func (uc *PosUseCase) ListTransactionsByCustomer(
 	})
 }
 
+// ListTransactionsByTerminal returns POS transactions for a specific terminal ID with pagination and optional date/status filters.
+func (uc *PosUseCase) ListTransactionsByTerminal(
+	ctx context.Context,
+	terminalID int32,
+	page, limit int32,
+	fromDate, toDate *time.Time,
+	status string,
+) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	p, l, offset := calcPosPagination(page, limit)
+	termIDParam := pgtype.Int4{Int32: terminalID, Valid: true}
+
+	var fromDateParam, toDateParam pgtype.Timestamp
+	if fromDate != nil {
+		fromDateParam = pgtype.Timestamp{Time: *fromDate, Valid: true}
+	}
+	if toDate != nil {
+		toDateParam = pgtype.Timestamp{Time: *toDate, Valid: true}
+	}
+
+	var statusParam pgtype.Text
+	if status != "" {
+		statusParam = pgtype.Text{String: status, Valid: true}
+	}
+
+	totalCount, err := uc.repo.CountPosTransactionsByTerminalID(ctx, repository.CountPosTransactionsByTerminalIDParams{
+		PosTerminalID: termIDParam,
+		FromDate:      fromDateParam,
+		ToDate:        toDateParam,
+		Status:        statusParam,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	rows, err := uc.repo.ListPosTransactionsByTerminalID(ctx, repository.ListPosTransactionsByTerminalIDParams{
+		PosTerminalID: termIDParam,
+		FromDate:      fromDateParam,
+		ToDate:        toDateParam,
+		Status:        statusParam,
+		Limit:         l,
+		Offset:        offset,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	out := make([]PosTransactionWithLinesOutput, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PosTransactionWithLinesOutput{
+			ID:                row.ID,
+			StoreID:           row.StoreID,
+			CashierID:         row.CashierID,
+			CashierSessionID:  row.CashierSessionID,
+			CustomerID:        row.CustomerID,
+			PosTerminalID:     row.PosTerminalID,
+			TransactionNumber: row.TransactionNumber,
+			TransactionDate:   row.TransactionDate,
+			TransactionType:   row.TransactionType,
+			Subtotal:          row.Subtotal,
+			DiscountAmount:    row.DiscountAmount,
+			TaxAmount:         row.TaxAmount,
+			TotalAmount:       row.TotalAmount,
+			TotalCost:         row.TotalCost,
+			AmountPaid:        row.AmountPaid,
+			ChangeGiven:       row.ChangeGiven,
+			Status:            row.Status,
+			PriceListID:       row.PriceListID,
+			SalesOrderID:      row.SalesOrderID,
+			SourceCartID:      row.SourceCartID,
+			VoidedBy:          row.VoidedBy,
+			VoidedAt:          row.VoidedAt,
+			Metadata:          utils.BytesToJSONRawMessage(row.Metadata),
+			CreatedAt:         row.CreatedAt,
+			Lines:             linesToJSONRawMessage(row.Lines),
+		})
+	}
+
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", PosTransactionListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcPosTotalPages(totalCount, l),
+	})
+}
+
 // GetTransaction returns a single POS transaction by ID.
 func (uc *PosUseCase) GetTransaction(ctx context.Context, id int32) *repository.Response {
 	if uc.repo == nil {
