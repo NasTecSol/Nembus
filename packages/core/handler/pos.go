@@ -722,6 +722,73 @@ func (h *PosHandler) ListTransactionsByCustomer(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// ListTransactionsByTerminal handles GET /api/pos/transactions/terminal/:terminal_id and GET /api/pos/terminals/:id/transactions
+// @Summary      List POS transactions by terminal ID
+// @Description  Returns POS transactions for a specific terminal with optional pagination, date range, and status filters
+// @Tags         pos
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        Authorization header    string  true   "Bearer token"
+// @Param        terminal_id   path      int     true   "Terminal ID"
+// @Param        page          query     int     false  "Page number" default(1)
+// @Param        limit         query     int     false  "Number of records per page" default(50)
+// @Param        from_date     query     string  false  "From date (ISO 8601 / RFC 3339)"
+// @Param        to_date       query     string  false  "To date (ISO 8601 / RFC 3339)"
+// @Param        status        query     string  false  "Transaction status (e.g. completed, voided)"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/transactions/terminal/{terminal_id} [get]
+func (h *PosHandler) ListTransactionsByTerminal(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	termIDStr := c.Param("terminal_id")
+	if termIDStr == "" {
+		termIDStr = c.Param("id")
+	}
+	terminalID, err := strconv.ParseInt(termIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid terminal_id", nil))
+		return
+	}
+
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "50")
+	page, _ := strconv.ParseInt(pageStr, 10, 32)
+	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+
+	var fromDatePtr, toDatePtr *time.Time
+	if fromStr := c.Query("from_date"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			fromDatePtr = &t
+		} else if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+			fromDatePtr = &t
+		}
+	}
+	if toStr := c.Query("to_date"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			toDatePtr = &t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", toStr); err == nil {
+			toDatePtr = &t
+		} else if t, err := time.Parse("2006-01-02", toStr); err == nil {
+			t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			toDatePtr = &t
+		}
+	}
+
+	status := c.Query("status")
+
+	resp := h.useCase.ListTransactionsByTerminal(c.Request.Context(), int32(terminalID), int32(page), int32(limit), fromDatePtr, toDatePtr, status)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // GetTransaction handles GET /api/pos/transactions/:id
 // @Summary      Get POS transaction
 // @Description  Returns a single POS transaction by ID
