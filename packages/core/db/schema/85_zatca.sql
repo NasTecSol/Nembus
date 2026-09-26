@@ -25,7 +25,7 @@ CREATE TABLE invoices (
     store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
     
     -- Customer information
-    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
     customer_name VARCHAR(255) NOT NULL,
     customer_email VARCHAR(255),
     customer_phone VARCHAR(50),

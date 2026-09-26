@@ -18,7 +18,7 @@ type InvoiceOutput struct {
 	InvoiceNumber      string                     `json:"invoice_number"`
 	OrganizationID     int32                      `json:"organization_id"`
 	StoreID            pgtype.Int4                `json:"store_id"`
-	CustomerID         int32                      `json:"customer_id"`
+	CustomerID         pgtype.Int4                `json:"customer_id"`
 	CustomerName       string                     `json:"customer_name"`
 	CustomerEmail      pgtype.Text                `json:"customer_email"`
 	CustomerPhone      pgtype.Text                `json:"customer_phone"`
@@ -95,7 +95,7 @@ type CreateInvoiceInput struct {
 	InvoiceNumber     string                   `json:"invoice_number"`
 	OrganizationID    int32                    `json:"organization_id"`
 	StoreID           *int32                   `json:"store_id"`
-	CustomerID        int32                    `json:"customer_id"`
+	CustomerID        *int32                   `json:"customer_id"`
 	CustomerName      string                   `json:"customer_name"`
 	CustomerEmail     *string                  `json:"customer_email"`
 	CustomerPhone     *string                  `json:"customer_phone"`
@@ -271,9 +271,6 @@ func (uc *InvoiceUseCase) CreateInvoice(ctx context.Context, input CreateInvoice
 	if input.OrganizationID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil)
 	}
-	if input.CustomerID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "customer_id is required", nil)
-	}
 	if strings.TrimSpace(input.CustomerName) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "customer_name is required", nil)
 	}
@@ -328,11 +325,16 @@ func (uc *InvoiceUseCase) CreateInvoice(ctx context.Context, input CreateInvoice
 		_ = exRate.Scan("1.000000")
 	}
 
+	var custID pgtype.Int4
+	if input.CustomerID != nil && *input.CustomerID > 0 {
+		custID = pgtype.Int4{Int32: *input.CustomerID, Valid: true}
+	}
+
 	created, err := uc.repo.CreateInvoice(ctx, repository.CreateInvoiceParams{
 		InvoiceNumber:     strings.TrimSpace(input.InvoiceNumber),
 		OrganizationID:    input.OrganizationID,
 		StoreID:           pgInt4(input.StoreID),
-		CustomerID:        input.CustomerID,
+		CustomerID:        custID,
 		CustomerName:      strings.TrimSpace(input.CustomerName),
 		CustomerEmail:     pgText(input.CustomerEmail),
 		CustomerPhone:     pgText(input.CustomerPhone),
@@ -562,8 +564,10 @@ func (uc *InvoiceUseCase) ListCustomerInvoices(ctx context.Context, customerID, 
 
 	p, l, offset := calcInvoicePagination(page, limit)
 
+	custIDParam := pgtype.Int4{Int32: customerID, Valid: true}
+
 	totalCount, err := uc.repo.CountCustomerInvoices(ctx, repository.CountCustomerInvoicesParams{
-		CustomerID:     customerID,
+		CustomerID:     custIDParam,
 		OrganizationID: orgID,
 	})
 	if err != nil {
@@ -571,7 +575,7 @@ func (uc *InvoiceUseCase) ListCustomerInvoices(ctx context.Context, customerID, 
 	}
 
 	rows, err := uc.repo.ListCustomerInvoices(ctx, repository.ListCustomerInvoicesParams{
-		CustomerID:     customerID,
+		CustomerID:     custIDParam,
 		OrganizationID: orgID,
 		Limit:          l,
 		Offset:         offset,
