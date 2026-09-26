@@ -132,7 +132,7 @@ func (c *Client) UpsertUoM(ctx context.Context, code, name string) (int32, error
 	return id, err
 }
 
-func (c *Client) UpsertProduct(ctx context.Context, sku, name, foreignName string, categoryID, uomID, taxCategoryID *int32, isWeighted bool) (int32, error) {
+func (c *Client) UpsertProduct(ctx context.Context, sku, name, foreignName string, categoryID, uomID, taxCategoryID *int32, isWeighted bool, costPrice float64) (int32, error) {
 	var id int32
 	metaJSON, _ := json.Marshal(map[string]any{
 		"foreign_name": foreignName,
@@ -143,21 +143,23 @@ func (c *Client) UpsertProduct(ctx context.Context, sku, name, foreignName strin
 	query := `
 		INSERT INTO products (
 			organization_id, sku, name, category_id, base_uom_id, tax_category_id,
-			allow_decimal_quantity, is_active, is_sellable, is_purchasable, metadata, updated_at
+			allow_decimal_quantity, is_active, is_sellable, is_purchasable,
+			cost_price, metadata, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, true, $8, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, true, $9, $8, NOW())
 		ON CONFLICT (organization_id, sku) DO UPDATE
 		SET name = EXCLUDED.name,
 		    category_id = COALESCE(EXCLUDED.category_id, products.category_id),
 		    base_uom_id = COALESCE(EXCLUDED.base_uom_id, products.base_uom_id),
 		    tax_category_id = COALESCE(EXCLUDED.tax_category_id, products.tax_category_id),
 		    allow_decimal_quantity = EXCLUDED.allow_decimal_quantity,
+		    cost_price = CASE WHEN EXCLUDED.cost_price > 0 THEN EXCLUDED.cost_price ELSE products.cost_price END,
 		    metadata = products.metadata || EXCLUDED.metadata,
 		    updated_at = NOW()
 		RETURNING id
 	`
 	err := c.pool.QueryRow(ctx, query,
-		c.cfg.NembusOrganizationID, sku, name, categoryID, uomID, taxCategoryID, isWeighted, metaJSON,
+		c.cfg.NembusOrganizationID, sku, name, categoryID, uomID, taxCategoryID, isWeighted, metaJSON, costPrice,
 	).Scan(&id)
 	return id, err
 }
@@ -346,3 +348,18 @@ func (c *Client) UpdateSyncQueueStatus(ctx context.Context, id int64, status str
 	_, err := c.pool.Exec(ctx, query, id, status, lastErr)
 	return err
 }
+
+// FetchCustomerSAPCode looks up the SAP CardCode for a given Nembus customer ID.
+// Reads from customers.customer_code or metadata->>'sap_card_code'.
+func (c *Client) FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error) {
+	var code string
+	query := `
+		SELECT COALESCE(NULLIF(customer_code, ''), NULLIF(metadata->>'sap_card_code', ''), '')
+		FROM customers
+		WHERE id = $1
+		LIMIT 1
+	`
+	err := c.pool.QueryRow(ctx, query, customerID).Scan(&code)
+	return code, err
+}
+

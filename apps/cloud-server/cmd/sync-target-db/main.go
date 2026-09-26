@@ -63,6 +63,9 @@ var syncTables = []TableSyncConfig{
 	{Domain: "price_lists", Schema: "public", Table: "price_lists", HasOrgScope: false, PKColumn: "id", ConflictKey: "code"},
 	{Domain: "price_lists", Schema: "public", Table: "product_prices", HasOrgScope: false, PKColumn: "id", ConflictKey: "product_id, price_list_id, uom_id"},
 
+	// 7b. Payment Terms
+	{Domain: "payment_terms", Schema: "public", Table: "payment_terms", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "code"},
+
 	// 8. Business Partners, Customers & Addresses
 	{Domain: "partners", Schema: "public", Table: "business_partners", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "code"},
 	{Domain: "partners", Schema: "public", Table: "customers", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "organization_id, customer_code"},
@@ -94,6 +97,23 @@ var syncTables = []TableSyncConfig{
 	{Domain: "procurement", Schema: "public", Table: "purchase_order_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 	{Domain: "procurement", Schema: "public", Table: "goods_receipt_notes", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "grn_number"},
 	{Domain: "procurement", Schema: "public", Table: "goods_receipt_note_items", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+
+	// 14. Outgoing / Vendor Payments (A31)
+	{Domain: "outgoing_payments", Schema: "public", Table: "vendor_payments", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "payment_number"},
+
+	// 15. Sales Returns & Lines (A21: ORIN/ORDN)
+	{Domain: "sales_returns", Schema: "public", Table: "sales_returns", HasOrgScope: false, PKColumn: "id", ConflictKey: "return_number"},
+	{Domain: "sales_returns", Schema: "public", Table: "sales_return_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+
+	// 16. Transfer Requests & Items (A22: OWTR)
+	{Domain: "transfer_requests", Schema: "public", Table: "transfer_requests", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "transfer_number"},
+	{Domain: "transfer_requests", Schema: "public", Table: "transfer_request_items", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+
+	// 17. Stock Movements (A: OINM — must follow sales_returns & transfers)
+	{Domain: "stock_movements", Schema: "public", Table: "stock_movements", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
+
+	// 18. Incoming Payments (ORCT) — on-account ledger (A20)
+	{Domain: "incoming_payments", Schema: "public", Table: "customer_payments", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "payment_number"},
 }
 
 type SyncReport struct {
@@ -111,7 +131,7 @@ func main() {
 	targetURLFlag := flag.String("target-url", "", "Target PostgreSQL connection string (or TARGET_DB_URL env)")
 	orgIDFlag := flag.Int("org-id", 0, "Filter by organization ID (0 = sync all organizations)")
 	modeFlag := flag.String("mode", "truncate_copy", "Sync mode: 'truncate_copy' (clean refresh) or 'upsert'")
-	domainsFlag := flag.String("domains", "all", "Comma-separated list of domains to sync (or 'all')")
+	domainsFlag := flag.String("domains", "all", "Comma-separated list of domains to sync (or 'all', e.g. currencies, uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, payment_terms, partners, bp_addresses, inventory, sales_orders, invoices, pos, procurement, outgoing_payments, sales_returns, transfer_requests, stock_movements, incoming_payments)")
 	dryRunFlag := flag.Bool("dry-run", false, "Simulate execution without modifying target database")
 	batchSizeFlag := flag.Int("batch-size", 2000, "Batch size for chunked data transfer")
 	skipSyncedFlag := flag.Bool("skip-synced", false, "Resume mode: preserve tables where target already matches source count")

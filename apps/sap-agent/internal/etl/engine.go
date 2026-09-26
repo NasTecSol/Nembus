@@ -4,21 +4,24 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/NasTecSol/nembus-sap/contracts"
-	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl/extractors"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap/mappings"
 )
 
 // defaultDomainOrder is the canonical ordering of all migration domains.
-// Dependencies flow top-to-bottom (stores before inventory, categories before products, etc.)
+// Dependencies flow top-to-bottom (stores before inventory, categories before
+// products, payment_terms before partners, sales_returns/transfer_requests
+// before stock_movements so movement reference_id can resolve, etc.)
 var defaultDomainOrder = []contracts.DomainType{
 	contracts.DomainStores,
 	contracts.DomainUsers,
@@ -30,13 +33,17 @@ var defaultDomainOrder = []contracts.DomainType{
 	contracts.DomainBarcodes,
 	contracts.DomainPriceLists,
 	contracts.DomainInventory,
+	contracts.DomainPaymentTerms, // A23: before partners (payment_terms_id lookup)
 	contracts.DomainPartners,
 	contracts.DomainBPAddresses,
 	contracts.DomainPurchaseOrders,
 	contracts.DomainGoodsReceipts,
-	contracts.DomainStockMovements,
+	contracts.DomainOutgoingPayments, // A31: after POs (amount_paid metadata)
 	contracts.DomainSalesOrders,
 	contracts.DomainInvoices,
+	contracts.DomainSalesReturns, // A21: before stock_movements (reference_id)
+	contracts.DomainTransfers,    // A22: before stock_movements (reference_id)
+	contracts.DomainStockMovements,
 	contracts.DomainIncomingPayments,
 }
 
@@ -145,6 +152,12 @@ func (e *Engine) StartMigration(parentCtx context.Context, mode contracts.Migrat
 
 	if len(selectedDomains) == 0 {
 		selectedDomains = defaultDomainOrder
+	} else {
+		// The agent UI posts the checkboxes in visual order, which can drift
+		// from the dependency order — without normalization, stock_movements
+		// could run before sales_returns/transfer_requests/invoices, breaking
+		// the movement reference_id resolution. Reorder into canonical order.
+		selectedDomains = normalizeDomainOrder(selectedDomains)
 	}
 
 	run, err := e.sqlite.CreateRun(parentCtx, e.cfg.Cloud.OrganizationID, mode, len(selectedDomains))
@@ -601,6 +614,32 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		}
 		return int64(resp.RecordsStaged), int64(resp.RecordsFailed), "", nil
 
+	case contracts.DomainPaymentTerms:
+		// A23: OCTG master — small, single batch. Must precede partners so
+		// business_partners.payment_terms_id resolves.
+		ext := extractors.NewPartnersExtractor(mssqlClient)
+		terms, err := ext.ExtractPaymentTerms(ctx)
+		if err != nil {
+			return 0, 0, "", err
+		}
+		if len(terms) == 0 {
+			return 0, 0, "", nil
+		}
+		payload := &contracts.MigrationBatchPayload{
+			BatchID:        uuid.New().String(),
+			RunID:          runID,
+			OrganizationID: cloudCfg.OrganizationID,
+			Domain:         domain,
+			PaymentTerms:   terms,
+			IsLastBatch:    true,
+			Timestamp:      time.Now(),
+		}
+		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+		if err != nil {
+			return 0, 0, "", err
+		}
+		return int64(resp.RecordsStaged), int64(resp.RecordsFailed), "", nil
+
 	case contracts.DomainPurchaseOrders:
 		ext := extractors.NewPurchasingExtractor(mssqlClient)
 		var totalStaged int64
@@ -910,6 +949,163 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		}
 		return totalStaged, 0, lastWatermark, nil
 
+	case contracts.DomainOutgoingPayments:
+		// A31: supplier payments (OVPM/VPM2) → vendor_payments + PO amount_paid.
+		ext := extractors.NewPaymentExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			payments, err := ext.ExtractOutgoingPayments(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("outgoing_payments window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(payments) == 0 {
+				continue
+			}
+			for i := 0; i < len(payments); i += batchSize {
+				end := i + batchSize
+				if end > len(payments) {
+					end = len(payments)
+				}
+				chunk := payments[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:          uuid.New().String(),
+					RunID:            runID,
+					OrganizationID:   cloudCfg.OrganizationID,
+					Domain:           domain,
+					SequenceNumber:   seqNum,
+					OutgoingPayments: chunk,
+					IsLastBatch:      false,
+					Timestamp:        time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].PaymentDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+
+	case contracts.DomainSalesReturns:
+		// A21: A/R Credit Memos (ORIN) + A/R Returns (ORDN) → sales_returns.
+		// Uses the configured InvoiceStartDate so returns align with the
+		// migrated invoice window.
+		ext := extractors.NewSalesExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		if e.cfg != nil && e.cfg.InvoiceStartDate != "" {
+			if parsed, pErr := time.Parse("2006-01-02", e.cfg.InvoiceStartDate); pErr == nil {
+				start = parsed
+			}
+		}
+		for _, win := range dateWindows(start, time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			creditMemos, err := ext.ExtractSalesReturns(ctx, win[0], win[1], "credit_memo")
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("sales_returns credit memos window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			returnOrders, err := ext.ExtractSalesReturns(ctx, win[0], win[1], "return")
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("sales_returns returns window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			returns := append(creditMemos, returnOrders...)
+			if len(returns) == 0 {
+				continue
+			}
+			for i := 0; i < len(returns); i += batchSize {
+				end := i + batchSize
+				if end > len(returns) {
+					end = len(returns)
+				}
+				chunk := returns[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					SalesReturns:   chunk,
+					IsLastBatch:    false,
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].ReturnDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+
+	case contracts.DomainTransfers:
+		// A22: inventory transfers (OWTR/WTR1) → transfer_requests. Must
+		// precede stock_movements so TransType 67 movements resolve reference_id.
+		ext := extractors.NewPurchasingExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now(), 3) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			transfers, err := ext.ExtractTransfers(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("transfer_requests window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(transfers) == 0 {
+				continue
+			}
+			for i := 0; i < len(transfers); i += batchSize {
+				end := i + batchSize
+				if end > len(transfers) {
+					end = len(transfers)
+				}
+				chunk := transfers[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					Transfers:      chunk,
+					IsLastBatch:    false,
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].TransferDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+
 	case contracts.DomainPriceLists:
 		ext := extractors.NewCatalogExtractor(mssqlClient)
 		priceLists, err := ext.ExtractPriceLists(ctx)
@@ -999,6 +1195,35 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 	}
 
 	return 0, 0, "", fmt.Errorf("unsupported migration domain: %s", domain)
+}
+
+// normalizeDomainOrder reorders and de-duplicates caller-selected domains into
+// the canonical dependency order (defaultDomainOrder). Unknown domains are
+// kept at the end.
+func normalizeDomainOrder(selected []contracts.DomainType) []contracts.DomainType {
+	position := make(map[contracts.DomainType]int, len(defaultDomainOrder))
+	for i, d := range defaultDomainOrder {
+		position[d] = i
+	}
+
+	seen := make(map[contracts.DomainType]bool, len(selected))
+	ordered := make([]contracts.DomainType, 0, len(selected))
+	var unknown []contracts.DomainType
+	for _, d := range selected {
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		if _, known := position[d]; known {
+			ordered = append(ordered, d)
+		} else {
+			unknown = append(unknown, d)
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		return position[ordered[i]] < position[ordered[j]]
+	})
+	return append(ordered, unknown...)
 }
 
 // broadcastProgress sends a step_progress event during chunked batch processing.

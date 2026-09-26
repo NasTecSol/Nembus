@@ -18,6 +18,8 @@ startup.log
 startup_utf8.log
 build_errors.txt
 scratch/
+*.db-shm
+*.db-wal
 
 # Go & Build Artifacts
 *.o

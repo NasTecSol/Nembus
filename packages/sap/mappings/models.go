@@ -88,12 +88,12 @@ func (s *SAPStore) ToCanonical() CanonicalStore {
 }
 
 type SAPStorageLocation struct {
-	AbsEntry  int64                  `json:"abs_entry"`
-	BinCode   string                 `json:"bin_code"`
-	WhsCode   string                 `json:"whs_code"`
-	Descr     string                 `json:"descr,omitempty"`
-	Disabled  string                 `json:"disabled"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	AbsEntry int64                  `json:"abs_entry"`
+	BinCode  string                 `json:"bin_code"`
+	WhsCode  string                 `json:"whs_code"`
+	Descr    string                 `json:"descr,omitempty"`
+	Disabled string                 `json:"disabled"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type CanonicalStorageLocation struct {
@@ -510,14 +510,14 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 			}
 			return "standard"
 		}(),
-		IsSerialized:       SAPBool(p.ManSerNum, false),
-		IsBatchManaged:     SAPBool(p.ManBtchNum, false),
-		IsActive:           SAPBool(p.ValidFor, true),
-		IsSellable:         SAPBool(p.SellItem, true),
-		IsPurchasable:      SAPBool(p.PrchseItem, true),
-		TrackInventory:     SAPBool(p.InvntItem, true),
-		PrimaryBarcode:     strings.TrimSpace(p.CodeBars),
-		UOMConversions:     conversions,
+		IsSerialized:   SAPBool(p.ManSerNum, false),
+		IsBatchManaged: SAPBool(p.ManBtchNum, false),
+		IsActive:       SAPBool(p.ValidFor, true),
+		IsSellable:     SAPBool(p.SellItem, true),
+		IsPurchasable:  SAPBool(p.PrchseItem, true),
+		TrackInventory: SAPBool(p.InvntItem, true),
+		PrimaryBarcode: strings.TrimSpace(p.CodeBars),
+		UOMConversions: conversions,
 		Metadata: map[string]interface{}{
 			"sap_item_code":    p.ItemCode,
 			"sap_vat_group":    p.VatGourpSa,
@@ -582,15 +582,15 @@ type SAPInventoryStock struct {
 }
 
 type CanonicalInventoryStock struct {
-	ProductSKU         string                 `json:"product_sku"`
-	StoreCode          string                 `json:"store_code"`
-	QuantityOnHand     float64                `json:"quantity_on_hand"`
-	QuantityAllocated  float64                `json:"quantity_allocated"`
-	QuantityAvailable  float64                `json:"quantity_available"`
-	QuantityOnOrder    float64                `json:"quantity_on_order"`
-	ReorderLevel       float64                `json:"reorder_level"`
-	MaxStockLevel      float64                `json:"max_stock_level"`
-	Metadata           map[string]interface{} `json:"metadata"`
+	ProductSKU        string                 `json:"product_sku"`
+	StoreCode         string                 `json:"store_code"`
+	QuantityOnHand    float64                `json:"quantity_on_hand"`
+	QuantityAllocated float64                `json:"quantity_allocated"`
+	QuantityAvailable float64                `json:"quantity_available"`
+	QuantityOnOrder   float64                `json:"quantity_on_order"`
+	ReorderLevel      float64                `json:"reorder_level"`
+	MaxStockLevel     float64                `json:"max_stock_level"`
+	Metadata          map[string]interface{} `json:"metadata"`
 }
 
 func (inv *SAPInventoryStock) ToCanonical() CanonicalInventoryStock {
@@ -617,49 +617,66 @@ func (inv *SAPInventoryStock) ToCanonical() CanonicalInventoryStock {
 // ----------------------------------------------------
 
 type SAPBusinessPartner struct {
-	CardCode   string  `json:"card_code"`
-	CardName   string  `json:"card_name"`
-	CardType   string  `json:"card_type"` // 'C' = Customer, 'S' = Supplier, 'L' = Lead
-	LicTradNum string  `json:"lic_trad_num,omitempty"`
-	Phone1     string  `json:"phone1,omitempty"`
-	EMail      string  `json:"e_mail,omitempty"`
-	Currency   string  `json:"currency,omitempty"`
-	ValidFor   string  `json:"valid_for"`
-	Balance    float64 `json:"balance"`
+	CardCode    string  `json:"card_code"`
+	CardName    string  `json:"card_name"`
+	CardType    string  `json:"card_type"` // 'C' = Customer, 'S' = Supplier, 'L' = Lead
+	LicTradNum  string  `json:"lic_trad_num,omitempty"`
+	Phone1      string  `json:"phone1,omitempty"`
+	EMail       string  `json:"e_mail,omitempty"`
+	Currency    string  `json:"currency,omitempty"`
+	ValidFor    string  `json:"valid_for"`
+	Balance     float64 `json:"balance"`
+	CreditLimit float64 `json:"credit_limit"` // A19: feeds business_partners.credit_limit
+	GroupNum    int64   `json:"group_num"`    // A23: OCRD.GroupNum → OCTG payment term
 }
 
 type CanonicalPartner struct {
-	PartnerType  string                 `json:"partner_type"` // "customer" or "supplier"
-	Code         string                 `json:"code"`
-	Name         string                 `json:"name"`
-	Email        string                 `json:"email,omitempty"`
-	Phone        string                 `json:"phone,omitempty"`
-	TaxID        string                 `json:"tax_id,omitempty"`
-	CurrencyCode string                 `json:"currency_code"`
-	IsActive     bool                   `json:"is_active"`
-	Balance      float64                `json:"balance"`
-	Metadata     map[string]interface{} `json:"metadata"`
+	PartnerType     string                 `json:"partner_type"` // "customer", "supplier" or "lead"
+	Code            string                 `json:"code"`
+	Name            string                 `json:"name"`
+	Email           string                 `json:"email,omitempty"`
+	Phone           string                 `json:"phone,omitempty"`
+	TaxID           string                 `json:"tax_id,omitempty"`
+	CurrencyCode    string                 `json:"currency_code"`
+	IsActive        bool                   `json:"is_active"`
+	Balance         float64                `json:"balance"`
+	CreditLimit     float64                `json:"credit_limit"`
+	PaymentTermCode string                 `json:"payment_term_code,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata"`
 }
 
 func (bp *SAPBusinessPartner) ToCanonical() CanonicalPartner {
+	// A34.1: CardType 'L' (Lead) is preserved instead of defaulting to customer.
 	partnerType := "customer"
-	if strings.ToUpper(bp.CardType) == "S" {
+	switch strings.ToUpper(bp.CardType) {
+	case "S":
 		partnerType = "supplier"
+	case "L":
+		partnerType = "lead"
+	}
+
+	// A23: OCRD.GroupNum resolves to payment_terms code "PT-{GroupNum}".
+	paymentTermCode := ""
+	if bp.GroupNum > 0 {
+		paymentTermCode = fmt.Sprintf("PT-%d", bp.GroupNum)
 	}
 
 	return CanonicalPartner{
-		PartnerType:  partnerType,
-		Code:         strings.TrimSpace(bp.CardCode),
-		Name:         strings.TrimSpace(bp.CardName),
-		Email:        strings.TrimSpace(bp.EMail),
-		Phone:        strings.TrimSpace(bp.Phone1),
-		TaxID:        strings.TrimSpace(bp.LicTradNum),
-		CurrencyCode: strings.TrimSpace(bp.Currency),
-		IsActive:     SAPBool(bp.ValidFor, true),
-		Balance:      bp.Balance,
+		PartnerType:     partnerType,
+		Code:            strings.TrimSpace(bp.CardCode),
+		Name:            strings.TrimSpace(bp.CardName),
+		Email:           strings.TrimSpace(bp.EMail),
+		Phone:           strings.TrimSpace(bp.Phone1),
+		TaxID:           strings.TrimSpace(bp.LicTradNum),
+		CurrencyCode:    strings.TrimSpace(bp.Currency),
+		IsActive:        SAPBool(bp.ValidFor, true),
+		Balance:         bp.Balance,
+		CreditLimit:     bp.CreditLimit,
+		PaymentTermCode: paymentTermCode,
 		Metadata: map[string]interface{}{
 			"sap_card_code": bp.CardCode,
 			"sap_card_type": bp.CardType,
+			"sap_group_num": bp.GroupNum,
 		},
 	}
 }
@@ -669,16 +686,16 @@ func (bp *SAPBusinessPartner) ToCanonical() CanonicalPartner {
 // ----------------------------------------------------
 
 type SAPSalesOrderLine struct {
-	DocEntry  int64   `json:"doc_entry"`
-	LineNum   int     `json:"line_num"`
-	ItemCode  string  `json:"item_code"`
+	DocEntry   int64   `json:"doc_entry"`
+	LineNum    int     `json:"line_num"`
+	ItemCode   string  `json:"item_code"`
 	Dscription string  `json:"dscription"`
-	Quantity  float64 `json:"quantity"`
-	Price     float64 `json:"price"`
-	LineTotal float64 `json:"line_total"`
-	VatSum    float64 `json:"vat_sum"`
-	WhsCode   string  `json:"whs_code"`
-	UnitMsr   string  `json:"unit_msr"`
+	Quantity   float64 `json:"quantity"`
+	Price      float64 `json:"price"`
+	LineTotal  float64 `json:"line_total"`
+	VatSum     float64 `json:"vat_sum"`
+	WhsCode    string  `json:"whs_code"`
+	UnitMsr    string  `json:"unit_msr"`
 }
 
 type SAPSalesOrder struct {
@@ -711,9 +728,12 @@ type CanonicalSalesOrderLine struct {
 }
 
 type CanonicalSalesOrder struct {
-	OrderNumber       string                    `json:"order_number"`
-	CustomerCode      string                    `json:"customer_code"`
-	CustomerName      string                    `json:"customer_name"`
+	OrderNumber  string `json:"order_number"`
+	CustomerCode string `json:"customer_code"`
+	CustomerName string `json:"customer_name"`
+	// A18: primary warehouse (first non-empty RDR1.WhsCode) feeding
+	// sales_orders_v2.store_id.
+	StoreCode         string                    `json:"store_code,omitempty"`
 	OrderStatus       string                    `json:"order_status"`
 	PaymentStatus     string                    `json:"payment_status"`
 	FulfillmentStatus string                    `json:"fulfillment_status"`
@@ -739,12 +759,17 @@ func (so *SAPSalesOrder) ToCanonical() CanonicalSalesOrder {
 	}
 
 	lines := make([]CanonicalSalesOrderLine, len(so.Lines))
+	primaryStore := ""
 	for i, l := range so.Lines {
+		whs := strings.TrimSpace(l.WhsCode)
+		if primaryStore == "" && whs != "" {
+			primaryStore = whs
+		}
 		lines[i] = CanonicalSalesOrderLine{
 			LineNumber:   l.LineNum,
 			ProductSKU:   strings.TrimSpace(l.ItemCode),
 			ProductName:  strings.TrimSpace(l.Dscription),
-			StoreCode:    strings.TrimSpace(l.WhsCode),
+			StoreCode:    whs,
 			Quantity:     l.Quantity,
 			UnitPrice:    l.Price,
 			LineSubtotal: l.LineTotal,
@@ -754,6 +779,7 @@ func (so *SAPSalesOrder) ToCanonical() CanonicalSalesOrder {
 				"sap_doc_entry": l.DocEntry,
 				"sap_line_num":  l.LineNum,
 				"sap_unit_msr":  l.UnitMsr,
+				"sap_whs_code":  l.WhsCode,
 			},
 		}
 	}
@@ -764,6 +790,7 @@ func (so *SAPSalesOrder) ToCanonical() CanonicalSalesOrder {
 		OrderNumber:       fmt.Sprintf("SO-SAP-%d", so.DocNum),
 		CustomerCode:      strings.TrimSpace(so.CardCode),
 		CustomerName:      strings.TrimSpace(so.CardName),
+		StoreCode:         primaryStore,
 		OrderStatus:       orderStatus,
 		PaymentStatus:     paymentStatus,
 		FulfillmentStatus: fulfillmentStatus,
@@ -794,43 +821,66 @@ type SAPInvoiceLine struct {
 	VatSum     float64 `json:"vat_sum"`
 	WhsCode    string  `json:"whs_code"`
 	UnitMsr    string  `json:"unit_msr"`
+	// A01: line discount evidence
+	DiscPrcnt  float64 `json:"disc_prcnt"`
+	PriceBefDi float64 `json:"price_bef_di"`
 }
 
 type SAPInvoice struct {
-	DocEntry   int64            `json:"doc_entry"`
-	DocNum     int64            `json:"doc_num"`
-	DocDate    time.Time        `json:"doc_date"`
-	DocDueDate time.Time        `json:"doc_due_date"`
-	CardCode   string           `json:"card_code"`
-	CardName   string           `json:"card_name"`
-	DocTotal   float64          `json:"doc_total"`
-	PaidToDate float64          `json:"paid_to_date"`
-	VatSum     float64          `json:"vat_sum"`
-	DiscSum    float64          `json:"disc_sum"`
-	DocStatus  string           `json:"doc_status"` // 'O'=Open, 'C'=Closed
-	SlpCode    int64            `json:"slp_code"`
-	Comments   string           `json:"comments,omitempty"`
-	Lines      []SAPInvoiceLine `json:"lines,omitempty"`
+	DocEntry   int64     `json:"doc_entry"`
+	DocNum     int64     `json:"doc_num"`
+	DocDate    time.Time `json:"doc_date"`
+	DocDueDate time.Time `json:"doc_due_date"`
+	CardCode   string    `json:"card_code"`
+	CardName   string    `json:"card_name"`
+	DocTotal   float64   `json:"doc_total"`
+	PaidToDate float64   `json:"paid_to_date"`
+	VatSum     float64   `json:"vat_sum"`
+	DiscSum    float64   `json:"disc_sum"`
+	DocStatus  string    `json:"doc_status"` // 'O'=Open, 'C'=Closed
+	SlpCode    int64     `json:"slp_code"`
+	Comments   string    `json:"comments,omitempty"`
+	// A02: source currency
+	DocCur  string  `json:"doc_cur"`
+	DocRate float64 `json:"doc_rate"`
+	// A03: cancellation flag
+	Canceled string `json:"canceled"` // 'Y', 'C', or 'N'
+	// A04: document type
+	DocType string           `json:"doc_type"` // 'I'=standard, 'S'=service
+	Lines   []SAPInvoiceLine `json:"lines,omitempty"`
 }
 
 type CanonicalInvoiceLine struct {
-	LineNumber   int                    `json:"line_number"`
-	ProductSKU   string                 `json:"product_sku"`
-	ProductName  string                 `json:"product_name"`
-	Quantity     float64                `json:"quantity"`
-	UnitPrice    float64                `json:"unit_price"`
-	LineSubtotal float64                `json:"line_subtotal"`
-	TaxAmount    float64                `json:"tax_amount"`
-	LineTotal    float64                `json:"line_total"`
-	Metadata     map[string]interface{} `json:"metadata"`
+	LineNumber          int                    `json:"line_number"`
+	ProductSKU          string                 `json:"product_sku"`
+	ProductName         string                 `json:"product_name"`
+	ItemType            string                 `json:"item_type"`            // A04: 'product' or 'service'
+	StoreCode           string                 `json:"store_code,omitempty"` // A17: INV1.WhsCode
+	UOMCode             string                 `json:"uom_code"`             // A06: source UOM code
+	Quantity            float64                `json:"quantity"`
+	UnitPrice           float64                `json:"unit_price"`
+	DiscountPercent     float64                `json:"discount_percent"`      // A01: raw percentage
+	DiscountAmount      float64                `json:"discount_amount"`       // A01: monetary discount
+	PriceBeforeDiscount float64                `json:"price_before_discount"` // A01: pre-discount price
+	LineSubtotal        float64                `json:"line_subtotal"`
+	TaxAmount           float64                `json:"tax_amount"`
+	LineTotal           float64                `json:"line_total"`
+	Metadata            map[string]interface{} `json:"metadata"`
 }
 
 type CanonicalInvoice struct {
-	InvoiceNumber  string                 `json:"invoice_number"`
-	CustomerCode   string                 `json:"customer_code"`
-	CustomerName   string                 `json:"customer_name"`
-	InvoiceType    string                 `json:"invoice_type"`
-	InvoiceStatus  string                 `json:"invoice_status"`
+	InvoiceNumber string `json:"invoice_number"`
+	CustomerCode  string `json:"customer_code"`
+	CustomerName  string `json:"customer_name"`
+	InvoiceType   string `json:"invoice_type"`
+	InvoiceStatus string `json:"invoice_status"`
+	// A17: primary warehouse for the invoice (first non-empty INV1.WhsCode);
+	// feeds invoices.store_id so the migrated invoices appear in
+	// vw_realtime_pnl and vw_tax_vat_summary.
+	StoreCode string `json:"store_code,omitempty"`
+	// A02: source currency
+	CurrencyCode   string                 `json:"currency_code"`
+	ExchangeRate   float64                `json:"exchange_rate"`
 	InvoiceDate    time.Time              `json:"invoice_date"`
 	DueDate        time.Time              `json:"due_date"`
 	Subtotal       float64                `json:"subtotal"`
@@ -844,43 +894,95 @@ type CanonicalInvoice struct {
 }
 
 func (inv *SAPInvoice) ToCanonical() CanonicalInvoice {
+	// A03: check CANCELED flag first — takes precedence over balance
 	invoiceStatus := "paid"
-	balanceDue := inv.DocTotal - inv.PaidToDate
-	if balanceDue > 0.01 {
-		if inv.PaidToDate > 0.01 {
-			invoiceStatus = "partially_paid"
-		} else {
-			invoiceStatus = "sent"
+	canceled := strings.ToUpper(strings.TrimSpace(inv.Canceled))
+	if canceled == "Y" || canceled == "C" {
+		invoiceStatus = "cancelled"
+	} else {
+		balanceDue := inv.DocTotal - inv.PaidToDate
+		if balanceDue > 0.01 {
+			if inv.PaidToDate > 0.01 {
+				invoiceStatus = "partially_paid"
+			} else {
+				invoiceStatus = "sent"
+			}
 		}
 	}
 
+	// A04 + A26: invoice_type is an enum column ('standard','proforma','credit_note',
+	// 'debit_note','recurring') — the source DocType is preserved in metadata and the
+	// line-level item_type ('service') carries the service distinction. DocType 'S'
+	// must NOT be emitted as InvoiceType "service" (invalid enum value).
+	invoiceType := "standard"
+
+	// A02: ensure currency is populated; fallback to SAR
+	currencyCode := strings.TrimSpace(inv.DocCur)
+	if currencyCode == "" {
+		currencyCode = "SAR"
+	}
+	exchangeRate := inv.DocRate
+	if exchangeRate == 0 {
+		exchangeRate = 1.0
+	}
+
 	lines := make([]CanonicalInvoiceLine, len(inv.Lines))
+	primaryStore := ""
 	for i, l := range inv.Lines {
+		// A04: service-line item_type
+		itemType := "product"
+		if strings.ToUpper(strings.TrimSpace(inv.DocType)) == "S" && strings.TrimSpace(l.ItemCode) == "" {
+			itemType = "service"
+		}
+		// A17: per-line warehouse; first non-empty wins for the header store
+		whs := strings.TrimSpace(l.WhsCode)
+		if primaryStore == "" && whs != "" {
+			primaryStore = whs
+		}
+		// A01: derive monetary discount (Quantity * PriceBefDi * DiscPrcnt / 100)
+		// Stored unsigned; sign policy to be confirmed by finance.
+		discountAmount := 0.0
+		if l.DiscPrcnt != 0 && l.PriceBefDi != 0 {
+			discountAmount = math.Round(l.Quantity*l.PriceBefDi*(l.DiscPrcnt/100.0)*100) / 100
+		}
 		lines[i] = CanonicalInvoiceLine{
-			LineNumber:   l.LineNum,
-			ProductSKU:   strings.TrimSpace(l.ItemCode),
-			ProductName:  strings.TrimSpace(l.Dscription),
-			Quantity:     l.Quantity,
-			UnitPrice:    l.Price,
-			LineSubtotal: l.LineTotal,
-			TaxAmount:    l.VatSum,
-			LineTotal:    l.LineTotal + l.VatSum,
+			LineNumber:          l.LineNum,
+			ProductSKU:          strings.TrimSpace(l.ItemCode),
+			ProductName:         strings.TrimSpace(l.Dscription),
+			ItemType:            itemType,
+			StoreCode:           whs,
+			UOMCode:             strings.TrimSpace(l.UnitMsr),
+			Quantity:            l.Quantity,
+			UnitPrice:           l.Price,
+			DiscountPercent:     l.DiscPrcnt,
+			DiscountAmount:      discountAmount,
+			PriceBeforeDiscount: l.PriceBefDi,
+			LineSubtotal:        l.LineTotal,
+			TaxAmount:           l.VatSum,
+			LineTotal:           l.LineTotal + l.VatSum,
 			Metadata: map[string]interface{}{
-				"sap_doc_entry": l.DocEntry,
-				"sap_line_num":  l.LineNum,
-				"sap_unit_msr":  l.UnitMsr,
+				"sap_doc_entry":    l.DocEntry,
+				"sap_line_num":     l.LineNum,
+				"sap_unit_msr":     l.UnitMsr,
+				"sap_whs_code":     l.WhsCode,
+				"sap_disc_prcnt":   l.DiscPrcnt,
+				"sap_price_bef_di": l.PriceBefDi,
 			},
 		}
 	}
 
+	balanceDue := inv.DocTotal - inv.PaidToDate
 	subtotal := inv.DocTotal - inv.VatSum + inv.DiscSum
 
 	return CanonicalInvoice{
 		InvoiceNumber:  fmt.Sprintf("INV-SAP-%d", inv.DocNum),
 		CustomerCode:   strings.TrimSpace(inv.CardCode),
 		CustomerName:   strings.TrimSpace(inv.CardName),
-		InvoiceType:    "standard",
+		InvoiceType:    invoiceType,
 		InvoiceStatus:  invoiceStatus,
+		StoreCode:      primaryStore,
+		CurrencyCode:   currencyCode,
+		ExchangeRate:   exchangeRate,
 		InvoiceDate:    inv.DocDate,
 		DueDate:        inv.DocDueDate,
 		Subtotal:       subtotal,
@@ -893,6 +995,10 @@ func (inv *SAPInvoice) ToCanonical() CanonicalInvoice {
 		Metadata: map[string]interface{}{
 			"sap_doc_entry": inv.DocEntry,
 			"sap_doc_num":   inv.DocNum,
+			"sap_doc_cur":   inv.DocCur,
+			"sap_doc_rate":  inv.DocRate,
+			"sap_canceled":  inv.Canceled,
+			"sap_doc_type":  inv.DocType,
 			"sap_slp_code":  inv.SlpCode,
 			"sap_comments":  inv.Comments,
 		},
@@ -1139,10 +1245,13 @@ func (po *SAPPurchaseOrder) ToCanonical() CanonicalPurchaseOrder {
 		}
 	}
 
-	subtotal := po.DocTotal - po.VatSum - po.DiscSum
+	subtotal := po.DocTotal - po.VatSum + po.DiscSum
 	if subtotal < 0 {
 		subtotal = 0
 	}
+	// A34.2: aligned with the invoice formula (DocTotal − VatSum + DiscSum =
+	// pre-discount, pre-VAT net amount). The previous "− DiscSum" understated
+	// the subtotal by 2×DiscSum whenever a header discount existed.
 
 	var expDate *time.Time
 	if !po.DocDueDate.IsZero() {
@@ -1202,6 +1311,7 @@ type SAPGoodsReceipt struct {
 	DocTotal   float64               `json:"doc_total"`
 	VatSum     float64               `json:"vat_sum"`
 	DocStatus  string                `json:"doc_status"` // 'O'=Open, 'C'=Closed
+	Canceled   string                `json:"canceled"`   // A34: 'Y', 'C', or 'N'
 	Comments   string                `json:"comments,omitempty"`
 	Lines      []SAPGoodsReceiptLine `json:"lines,omitempty"`
 }
@@ -1235,9 +1345,11 @@ type CanonicalGoodsReceiptNote struct {
 }
 
 func (gr *SAPGoodsReceipt) ToCanonical() CanonicalGoodsReceiptNote {
+	// A34.3: a canceled GRP (CANCELED 'Y'/'C') must not import as a posted receipt;
+	// DocStatus 'C' (fully closed/processed) still maps to 'posted'.
 	status := "posted"
-	if strings.ToUpper(gr.DocStatus) == "C" {
-		status = "posted"
+	if gr.Canceled == "Y" || strings.ToUpper(strings.TrimSpace(gr.Canceled)) == "C" {
+		status = "cancelled"
 	}
 
 	primaryStore := ""
@@ -1249,7 +1361,10 @@ func (gr *SAPGoodsReceipt) ToCanonical() CanonicalGoodsReceiptNote {
 			primaryStore = whs
 		}
 		if sourcePONum == "" && l.BaseEntry > 0 && l.BaseType == 22 {
-			sourcePONum = fmt.Sprintf("PO-%d", l.BaseEntry)
+			// A08: store the SAP DocEntry of the source PO, NOT the DocNum.
+			// The PO lookup in sap_migration.go uses metadata->>'sap_doc_entry'
+			// so we format as the raw DocEntry integer string, not "PO-{DocNum}".
+			sourcePONum = fmt.Sprintf("%d", l.BaseEntry)
 		}
 		items[i] = CanonicalGoodsReceiptItem{
 			LineNumber:       l.LineNum,
@@ -1287,6 +1402,7 @@ func (gr *SAPGoodsReceipt) ToCanonical() CanonicalGoodsReceiptNote {
 			"sap_doc_num":   gr.DocNum,
 			"sap_card_code": gr.CardCode,
 			"sap_doc_total": gr.DocTotal,
+			"sap_canceled":  gr.Canceled,
 		},
 	}
 }
@@ -1341,14 +1457,34 @@ func (sm *SAPStockMovement) ToCanonical() CanonicalStockMovement {
 		movementType = "purchase_receipt"
 		referenceType = "goods_receipt_note"
 		toStore = whs
-	case 18: // A/R Invoice
+	case 13: // A/R Invoice (ObjType 13)
 		movementType = "sales_delivery"
-		referenceType = "pos_transaction"
+		referenceType = "invoice"
 		fromStore = whs
-	case 19: // A/R Credit Memo
+	case 14: // A/R Credit Memo (ObjType 14)
 		movementType = "sales_return"
-		referenceType = "sales_order"
+		referenceType = "sales_return"
 		toStore = whs
+	case 15: // Delivery Notes
+		movementType = "sales_delivery"
+		referenceType = "delivery_note"
+		fromStore = whs
+	case 16: // Returns (customer returns w/o credit memo)
+		movementType = "sales_return"
+		referenceType = "sales_return"
+		toStore = whs
+	case 18: // A/P Invoice (ObjType 18) — A28: was mislabeled "A/R Invoice"
+		movementType = "purchase_receipt"
+		referenceType = "purchase_invoice"
+		toStore = whs
+	case 19: // A/P Credit Memo (ObjType 19) — A28: was mislabeled "A/R Credit Memo"
+		movementType = "purchase_return"
+		referenceType = "purchase_credit_note"
+		fromStore = whs
+	case 21: // Goods Return to supplier
+		movementType = "purchase_return"
+		referenceType = "goods_return"
+		fromStore = whs
 	case 67: // Inventory Transfer
 		if sm.InQty > 0 {
 			movementType = "transfer_in"
@@ -1408,6 +1544,9 @@ func (sm *SAPStockMovement) ToCanonical() CanonicalStockMovement {
 			"sap_warehouse":  sm.Warehouse,
 			"sap_in_qty":     sm.InQty,
 			"sap_out_qty":    sm.OutQty,
+			// A27: OINM.BASE_REF (source document DocNum) must survive for the
+			// movement ledger audit trail even when reference_id cannot resolve.
+			"sap_base_ref": sm.BaseRef,
 		},
 	}
 }
@@ -1417,7 +1556,7 @@ func (sm *SAPStockMovement) ToCanonical() CanonicalStockMovement {
 // ----------------------------------------------------
 
 type SAPIncomingPaymentInvoice struct {
-	DocNum        int64   `json:"doc_num"`         // Payment DocEntry
+	DocNum        int64   `json:"doc_num"` // Payment DocEntry
 	LineID        int     `json:"line_id"`
 	InvoiceID     int64   `json:"invoice_id"`      // OINV.DocEntry
 	InvType       int     `json:"inv_type"`        // 13 = A/R Invoice
@@ -1444,18 +1583,22 @@ type SAPIncomingPayment struct {
 }
 
 type CanonicalIncomingPayment struct {
-	PaymentNumber      string                 `json:"payment_number"`
-	InvoiceNumber      string                 `json:"invoice_number"`       // Links to invoices.invoice_number
-	SAPInvoiceDocEntry int64                  `json:"sap_invoice_doc_entry"` // Fallback lookup via metadata->>'sap_doc_entry'
-	CustomerCode       string                 `json:"customer_code"`
-	CustomerName       string                 `json:"customer_name"`
-	PaymentDate        time.Time              `json:"payment_date"`
-	PaymentAmount      float64                `json:"payment_amount"`
-	PaymentMethod      string                 `json:"payment_method"` // cash, card, bank_transfer, check, other
-	PaymentReference   string                 `json:"payment_reference"`
-	CurrencyCode       string                 `json:"currency_code"`
-	Notes              string                 `json:"notes,omitempty"`
-	Metadata           map[string]interface{} `json:"metadata"`
+	PaymentNumber      string `json:"payment_number"`
+	InvoiceNumber      string `json:"invoice_number"`        // Links to invoices.invoice_number
+	SAPInvoiceDocEntry int64  `json:"sap_invoice_doc_entry"` // Fallback lookup via metadata->>'sap_doc_entry'
+	// A20: true when the payment has no invoice allocation (on-account) or the
+	// allocation could not be matched; routed to customer_payments instead of
+	// being silently dropped.
+	IsOnAccount      bool                   `json:"is_on_account,omitempty"`
+	CustomerCode     string                 `json:"customer_code"`
+	CustomerName     string                 `json:"customer_name"`
+	PaymentDate      time.Time              `json:"payment_date"`
+	PaymentAmount    float64                `json:"payment_amount"`
+	PaymentMethod    string                 `json:"payment_method"` // cash, card, bank_transfer, check, other
+	PaymentReference string                 `json:"payment_reference"`
+	CurrencyCode     string                 `json:"currency_code"`
+	Notes            string                 `json:"notes,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata"`
 }
 
 func (p *SAPIncomingPayment) ToCanonicalList() []CanonicalIncomingPayment {
@@ -1475,16 +1618,19 @@ func (p *SAPIncomingPayment) ToCanonicalList() []CanonicalIncomingPayment {
 		payRef = p.JrnlMemo
 	}
 
+	// A33: SAR is the deployment default (98_seed_currencies.sql).
 	curr := strings.TrimSpace(p.DocCurr)
 	if curr == "" {
-		curr = "USD"
+		curr = "SAR"
 	}
 
 	var results []CanonicalIncomingPayment
+	var appliedTotal float64
 	for _, inv := range p.Invoices {
 		if inv.SumApplied <= 0 {
 			continue
 		}
+		appliedTotal += inv.SumApplied
 		invNum := ""
 		if inv.InvoiceDocNum > 0 {
 			invNum = fmt.Sprintf("INV-SAP-%d", inv.InvoiceDocNum)
@@ -1508,6 +1654,7 @@ func (p *SAPIncomingPayment) ToCanonicalList() []CanonicalIncomingPayment {
 				"sap_payment_doc_num":   p.DocNum,
 				"sap_invoice_doc_entry": inv.InvoiceID,
 				"sap_line_id":           inv.LineID,
+				"sap_inv_type":          inv.InvType,
 				"sap_cash_sum":          p.CashSum,
 				"sap_credit_sum":        p.CreditSum,
 				"sap_transfer_sum":      p.TrsfrSum,
@@ -1516,7 +1663,393 @@ func (p *SAPIncomingPayment) ToCanonicalList() []CanonicalIncomingPayment {
 		})
 	}
 
+	// A20: on-account portion — allocations that are not A/R invoices
+	// (InvType != 13, e.g. credit-note or journal allocations) or a remaining
+	// unallocated balance. These must reach the cloud as customer_payments,
+	// never silently dropped.
+	unallocated := math.Round((p.DocTotal-appliedTotal)*100) / 100
+	if unallocated > 0.01 {
+		payNum := fmt.Sprintf("PAY-SAP-%d-OA", p.DocNum)
+		results = append(results, CanonicalIncomingPayment{
+			PaymentNumber:    payNum,
+			IsOnAccount:      true,
+			CustomerCode:     strings.TrimSpace(p.CardCode),
+			CustomerName:     strings.TrimSpace(p.CardName),
+			PaymentDate:      p.DocDate,
+			PaymentAmount:    unallocated,
+			PaymentMethod:    paymentMethod,
+			PaymentReference: payRef,
+			CurrencyCode:     curr,
+			Notes:            strings.TrimSpace(p.Comments),
+			Metadata: map[string]interface{}{
+				"sap_payment_doc_entry": p.DocEntry,
+				"sap_payment_doc_num":   p.DocNum,
+				"sap_on_account":        true,
+				"sap_doc_total":         p.DocTotal,
+				"sap_applied_total":     appliedTotal,
+			},
+		})
+	}
+
 	return results
 }
 
+// ----------------------------------------------------
+// Domain 12: Sales Returns / Credit Memos (ORIN/RIN1, ORDN/RDN1) — A21
+// ----------------------------------------------------
 
+type SAPSalesReturnLine struct {
+	DocEntry   int64   `json:"doc_entry"`
+	LineNum    int     `json:"line_num"`
+	ItemCode   string  `json:"item_code"`
+	Dscription string  `json:"dscription"`
+	Quantity   float64 `json:"quantity"`
+	Price      float64 `json:"price"`
+	LineTotal  float64 `json:"line_total"`
+	VatSum     float64 `json:"vat_sum"`
+	WhsCode    string  `json:"whs_code"`
+	UnitMsr    string  `json:"unit_msr"`
+	BaseEntry  int64   `json:"base_entry"` // Original invoice DocEntry (when linked)
+	BaseType   int     `json:"base_type"`  // 13 = A/R Invoice
+}
+
+type SAPSalesReturn struct {
+	DocEntry  int64                `json:"doc_entry"`
+	DocNum    int64                `json:"doc_num"`
+	DocDate   time.Time            `json:"doc_date"`
+	CardCode  string               `json:"card_code"`
+	CardName  string               `json:"card_name"`
+	DocTotal  float64              `json:"doc_total"`
+	VatSum    float64              `json:"vat_sum"`
+	DiscSum   float64              `json:"disc_sum"`
+	Canceled  string               `json:"canceled"`   // 'Y', 'C', or 'N'
+	DocSource string               `json:"doc_source"` // 'credit_memo' (ORIN) or 'return' (ORDN)
+	Comments  string               `json:"comments,omitempty"`
+	Lines     []SAPSalesReturnLine `json:"lines,omitempty"`
+}
+
+type CanonicalSalesReturnLine struct {
+	LineNumber   int                    `json:"line_number"`
+	ProductSKU   string                 `json:"product_sku"`
+	ProductName  string                 `json:"product_name"`
+	StoreCode    string                 `json:"store_code,omitempty"`
+	UOMCode      string                 `json:"uom_code,omitempty"`
+	Quantity     float64                `json:"quantity"`
+	UnitPrice    float64                `json:"unit_price"`
+	TaxAmount    float64                `json:"tax_amount"`
+	RefundAmount float64                `json:"refund_amount"`
+	Metadata     map[string]interface{} `json:"metadata"`
+}
+
+type CanonicalSalesReturn struct {
+	ReturnNumber      string                     `json:"return_number"`
+	CustomerCode      string                     `json:"customer_code"`
+	CustomerName      string                     `json:"customer_name"`
+	StoreCode         string                     `json:"store_code,omitempty"`
+	ReturnDate        time.Time                  `json:"return_date"`
+	Reason            string                     `json:"reason,omitempty"`
+	Status            string                     `json:"status"` // 'completed' or 'cancelled'
+	Subtotal          float64                    `json:"subtotal"`
+	TaxAmount         float64                    `json:"tax_amount"`
+	TotalRefundAmount float64                    `json:"total_refund_amount"`
+	DocSource         string                     `json:"doc_source"` // 'credit_memo' | 'return'
+	Lines             []CanonicalSalesReturnLine `json:"lines"`
+	Metadata          map[string]interface{}     `json:"metadata"`
+}
+
+func (sr *SAPSalesReturn) ToCanonical() CanonicalSalesReturn {
+	// 'completed' so vw_realtime_pnl.daily_returns and
+	// vw_cashier_shift_reconciliation.refunds_summary include the row;
+	// canceled documents import as 'cancelled'.
+	status := "completed"
+	if strings.ToUpper(strings.TrimSpace(sr.Canceled)) == "Y" ||
+		strings.ToUpper(strings.TrimSpace(sr.Canceled)) == "C" {
+		status = "cancelled"
+	}
+
+	primaryStore := ""
+	lines := make([]CanonicalSalesReturnLine, len(sr.Lines))
+	for i, l := range sr.Lines {
+		whs := strings.TrimSpace(l.WhsCode)
+		if primaryStore == "" && whs != "" {
+			primaryStore = whs
+		}
+		lines[i] = CanonicalSalesReturnLine{
+			LineNumber:   l.LineNum,
+			ProductSKU:   strings.TrimSpace(l.ItemCode),
+			ProductName:  strings.TrimSpace(l.Dscription),
+			StoreCode:    whs,
+			UOMCode:      strings.TrimSpace(l.UnitMsr),
+			Quantity:     l.Quantity,
+			UnitPrice:    l.Price,
+			TaxAmount:    l.VatSum,
+			RefundAmount: l.LineTotal,
+			Metadata: map[string]interface{}{
+				"sap_doc_entry":  sr.DocEntry,
+				"sap_line_num":   l.LineNum,
+				"sap_base_entry": l.BaseEntry,
+				"sap_base_type":  l.BaseType,
+			},
+		}
+	}
+
+	// ORIN → CN-SAP-{DocNum}, ORDN → RET-SAP-{DocNum}
+	prefix := "RET"
+	if sr.DocSource == "credit_memo" {
+		prefix = "CN"
+	}
+
+	subtotal := sr.DocTotal - sr.VatSum + sr.DiscSum
+	if subtotal < 0 {
+		subtotal = 0
+	}
+
+	return CanonicalSalesReturn{
+		ReturnNumber:      fmt.Sprintf("%s-SAP-%d", prefix, sr.DocNum),
+		CustomerCode:      strings.TrimSpace(sr.CardCode),
+		CustomerName:      strings.TrimSpace(sr.CardName),
+		StoreCode:         primaryStore,
+		ReturnDate:        sr.DocDate,
+		Reason:            strings.TrimSpace(sr.Comments),
+		Status:            status,
+		Subtotal:          subtotal,
+		TaxAmount:         sr.VatSum,
+		TotalRefundAmount: sr.DocTotal,
+		DocSource:         sr.DocSource,
+		Lines:             lines,
+		Metadata: map[string]interface{}{
+			"sap_doc_entry":  sr.DocEntry,
+			"sap_doc_num":    sr.DocNum,
+			"sap_card_code":  sr.CardCode,
+			"sap_doc_total":  sr.DocTotal,
+			"sap_canceled":   sr.Canceled,
+			"sap_doc_source": sr.DocSource,
+		},
+	}
+}
+
+// ----------------------------------------------------
+// Domain 13: Inventory Transfers (OWTR / WTR1) — A22
+// ----------------------------------------------------
+
+type SAPTransferLine struct {
+	DocEntry   int64   `json:"doc_entry"`
+	LineNum    int     `json:"line_num"`
+	ItemCode   string  `json:"item_code"`
+	Dscription string  `json:"dscription"`
+	Quantity   float64 `json:"quantity"`
+	WhsCode    string  `json:"whs_code"` // receiving warehouse
+	UnitMsr    string  `json:"unit_msr"`
+}
+
+type SAPTransfer struct {
+	DocEntry    int64             `json:"doc_entry"`
+	DocNum      int64             `json:"doc_num"`
+	DocDate     time.Time         `json:"doc_date"`
+	Filler      string            `json:"filler"`       // issuing warehouse
+	ToWarehouse string            `json:"to_warehouse"` // receiving warehouse
+	Comments    string            `json:"comments,omitempty"`
+	Lines       []SAPTransferLine `json:"lines,omitempty"`
+}
+
+type CanonicalTransferLine struct {
+	LineNumber  int                    `json:"line_number"`
+	ProductSKU  string                 `json:"product_sku"`
+	ProductName string                 `json:"product_name"`
+	UOMCode     string                 `json:"uom_code,omitempty"`
+	Quantity    float64                `json:"quantity"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type CanonicalTransfer struct {
+	TransferNumber string                  `json:"transfer_number"`
+	FromStoreCode  string                  `json:"from_store_code"`
+	ToStoreCode    string                  `json:"to_store_code"`
+	TransferDate   time.Time               `json:"transfer_date"`
+	Status         string                  `json:"status"` // 'completed'
+	Notes          string                  `json:"notes,omitempty"`
+	Lines          []CanonicalTransferLine `json:"lines"`
+	Metadata       map[string]interface{}  `json:"metadata"`
+}
+
+func (t *SAPTransfer) ToCanonical() CanonicalTransfer {
+	lines := make([]CanonicalTransferLine, len(t.Lines))
+	for i, l := range t.Lines {
+		lines[i] = CanonicalTransferLine{
+			LineNumber:  l.LineNum,
+			ProductSKU:  strings.TrimSpace(l.ItemCode),
+			ProductName: strings.TrimSpace(l.Dscription),
+			UOMCode:     strings.TrimSpace(l.UnitMsr),
+			Quantity:    l.Quantity,
+			Metadata: map[string]interface{}{
+				"sap_doc_entry": t.DocEntry,
+				"sap_line_num":  l.LineNum,
+				"sap_whs_code":  l.WhsCode,
+			},
+		}
+	}
+
+	return CanonicalTransfer{
+		TransferNumber: fmt.Sprintf("TR-SAP-%d", t.DocNum),
+		FromStoreCode:  strings.TrimSpace(t.Filler),
+		ToStoreCode:    strings.TrimSpace(t.ToWarehouse),
+		TransferDate:   t.DocDate,
+		Status:         "completed",
+		Notes:          strings.TrimSpace(t.Comments),
+		Lines:          lines,
+		Metadata: map[string]interface{}{
+			"sap_doc_entry": t.DocEntry,
+			"sap_doc_num":   t.DocNum,
+		},
+	}
+}
+
+// ----------------------------------------------------
+// Domain 14: Payment Terms (OCTG) — A23
+// ----------------------------------------------------
+
+type SAPPaymentTerm struct {
+	GroupNum    int64   `json:"group_num"`
+	PymGroup    string  `json:"pym_group"`
+	InstMonths  int     `json:"inst_months"`
+	InstDays    int     `json:"inst_days"`
+	ExtraMonths int     `json:"extra_months"`
+	ExtraDays   int     `json:"extra_days"`
+	DiscPrcnt   float64 `json:"disc_prcnt"`
+	DiscDays    int     `json:"disc_days"`
+}
+
+type CanonicalPaymentTerm struct {
+	Code               string                 `json:"code"`
+	Name               string                 `json:"name"`
+	DueDays            int                    `json:"due_days"`
+	DiscountDays       int                    `json:"discount_days"`
+	DiscountPercentage float64                `json:"discount_percentage"`
+	Metadata           map[string]interface{} `json:"metadata"`
+}
+
+func (pt *SAPPaymentTerm) ToCanonical() CanonicalPaymentTerm {
+	// due_days: instalment months/days plus end-of-month extra grace.
+	dueDays := pt.InstMonths*30 + pt.InstDays + pt.ExtraMonths*30 + pt.ExtraDays
+
+	return CanonicalPaymentTerm{
+		Code:               fmt.Sprintf("PT-%d", pt.GroupNum),
+		Name:               strings.TrimSpace(pt.PymGroup),
+		DueDays:            dueDays,
+		DiscountDays:       pt.DiscDays,
+		DiscountPercentage: pt.DiscPrcnt,
+		Metadata: map[string]interface{}{
+			"sap_group_num":    pt.GroupNum,
+			"sap_inst_months":  pt.InstMonths,
+			"sap_inst_days":    pt.InstDays,
+			"sap_extra_months": pt.ExtraMonths,
+			"sap_extra_days":   pt.ExtraDays,
+		},
+	}
+}
+
+// ----------------------------------------------------
+// Domain 15: Outgoing Payments (OVPM / VPM2) — A31
+// ----------------------------------------------------
+
+type SAPOutgoingPaymentDocument struct {
+	DocNum     int64   `json:"doc_num"` // Payment DocEntry
+	LineID     int     `json:"line_id"`
+	ObjType    int     `json:"obj_type"`  // 22 = Purchase Order
+	DocEntry   int64   `json:"doc_entry"` // Base document DocEntry (PO)
+	SumApplied float64 `json:"sum_applied"`
+}
+
+type SAPOutgoingPayment struct {
+	DocEntry  int64                        `json:"doc_entry"`
+	DocNum    int64                        `json:"doc_num"`
+	DocDate   time.Time                    `json:"doc_date"`
+	CardCode  string                       `json:"card_code"`
+	CardName  string                       `json:"card_name"`
+	DocCurr   string                       `json:"doc_curr"`
+	DocTotal  float64                      `json:"doc_total"`
+	CashSum   float64                      `json:"cash_sum"`
+	TrsfrSum  float64                      `json:"trsfr_sum"`
+	TrsfrRef  string                       `json:"trsfr_ref"`
+	CheckSum  float64                      `json:"check_sum"`
+	CreditSum float64                      `json:"credit_sum"`
+	Comments  string                       `json:"comments"`
+	JrnlMemo  string                       `json:"jrnl_memo"`
+	Documents []SAPOutgoingPaymentDocument `json:"documents,omitempty"`
+}
+
+type CanonicalOutgoingPayment struct {
+	PaymentNumber    string                 `json:"payment_number"`
+	SupplierCode     string                 `json:"supplier_code"`
+	SupplierName     string                 `json:"supplier_name"`
+	PODocEntry       int64                  `json:"po_doc_entry"` // 0 when not PO-allocated
+	PaymentDate      time.Time              `json:"payment_date"`
+	PaymentAmount    float64                `json:"payment_amount"`
+	PaymentMethod    string                 `json:"payment_method"`
+	PaymentReference string                 `json:"payment_reference"`
+	CurrencyCode     string                 `json:"currency_code"`
+	Notes            string                 `json:"notes,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata"`
+}
+
+func (p *SAPOutgoingPayment) ToCanonicalList() []CanonicalOutgoingPayment {
+	// A31: one canonical payment per OVPM header; the first PO allocation
+	// (VPM2.ObjType = 22) links the payment to its purchase order.
+	if p.DocTotal <= 0 {
+		return nil
+	}
+
+	paymentMethod := "other"
+	if p.CashSum > 0 && p.CashSum >= p.CreditSum && p.CashSum >= p.TrsfrSum && p.CashSum >= p.CheckSum {
+		paymentMethod = "cash"
+	} else if p.TrsfrSum > 0 && p.TrsfrSum >= p.CashSum && p.TrsfrSum >= p.CreditSum && p.TrsfrSum >= p.CheckSum {
+		paymentMethod = "bank_transfer"
+	} else if p.CheckSum > 0 {
+		paymentMethod = "check"
+	}
+
+	payRef := p.TrsfrRef
+	if payRef == "" && p.JrnlMemo != "" {
+		payRef = p.JrnlMemo
+	}
+
+	curr := strings.TrimSpace(p.DocCurr)
+	if curr == "" {
+		curr = "SAR"
+	}
+
+	return []CanonicalOutgoingPayment{
+		{
+			PaymentNumber:    fmt.Sprintf("VPM-SAP-%d", p.DocNum),
+			SupplierCode:     strings.TrimSpace(p.CardCode),
+			SupplierName:     strings.TrimSpace(p.CardName),
+			PODocEntry:       poDocEntryFor(p.Documents),
+			PaymentDate:      p.DocDate,
+			PaymentAmount:    p.DocTotal,
+			PaymentMethod:    paymentMethod,
+			PaymentReference: payRef,
+			CurrencyCode:     curr,
+			Notes:            strings.TrimSpace(p.Comments),
+			Metadata: map[string]interface{}{
+				"sap_payment_doc_entry": p.DocEntry,
+				"sap_payment_doc_num":   p.DocNum,
+				"sap_doc_total":         p.DocTotal,
+				"sap_cash_sum":          p.CashSum,
+				"sap_check_sum":         p.CheckSum,
+				"sap_transfer_sum":      p.TrsfrSum,
+				"sap_credit_sum":        p.CreditSum,
+				"sap_allocations":       len(p.Documents),
+			},
+		},
+	}
+}
+
+// poDocEntryFor returns the first PO allocation (ObjType 22) DocEntry for a payment.
+func poDocEntryFor(docs []SAPOutgoingPaymentDocument) int64 {
+	for _, d := range docs {
+		if d.ObjType == 22 {
+			return d.DocEntry
+		}
+	}
+	return 0
+}

@@ -10,23 +10,27 @@ import (
 type DomainType string
 
 const (
-	DomainStores          DomainType = "stores"
-	DomainUsers           DomainType = "users"
-	DomainUOM             DomainType = "uom"
-	DomainUOMGroups       DomainType = "uom_groups"
-	DomainCategories      DomainType = "categories"
-	DomainBrands          DomainType = "brands"
-	DomainProducts        DomainType = "products"
-	DomainBarcodes        DomainType = "barcodes"
-	DomainInventory       DomainType = "inventory"
-	DomainPartners        DomainType = "partners"
-	DomainSalesOrders     DomainType = "sales_orders"
-	DomainInvoices        DomainType = "invoices"
-	DomainPriceLists      DomainType = "price_lists"
-	DomainBPAddresses     DomainType = "bp_addresses"
-	DomainPurchaseOrders  DomainType = "purchase_orders"
-	DomainGoodsReceipts   DomainType = "goods_receipt_notes"
-	DomainStockMovements  DomainType = "stock_movements"
+	DomainStores           DomainType = "stores"
+	DomainUsers            DomainType = "users"
+	DomainUOM              DomainType = "uom"
+	DomainUOMGroups        DomainType = "uom_groups"
+	DomainCategories       DomainType = "categories"
+	DomainBrands           DomainType = "brands"
+	DomainProducts         DomainType = "products"
+	DomainBarcodes         DomainType = "barcodes"
+	DomainInventory        DomainType = "inventory"
+	DomainPartners         DomainType = "partners"
+	DomainSalesOrders      DomainType = "sales_orders"
+	DomainInvoices         DomainType = "invoices"
+	DomainPriceLists       DomainType = "price_lists"
+	DomainBPAddresses      DomainType = "bp_addresses"
+	DomainPaymentTerms     DomainType = "payment_terms" // A23: OCTG
+	DomainPurchaseOrders   DomainType = "purchase_orders"
+	DomainGoodsReceipts    DomainType = "goods_receipt_notes"
+	DomainOutgoingPayments DomainType = "outgoing_payments" // A31: OVPM
+	DomainSalesReturns     DomainType = "sales_returns"     // A21: ORIN/ORDN
+	DomainTransfers        DomainType = "transfer_requests" // A22: OWTR
+	DomainStockMovements   DomainType = "stock_movements"
 	DomainIncomingPayments DomainType = "incoming_payments"
 )
 
@@ -34,8 +38,8 @@ const (
 type MigrationMode string
 
 const (
-	MigrationModeFull        MigrationMode = "full"
-	MigrationModeIncremental MigrationMode = "incremental"
+	MigrationModeFull         MigrationMode = "full"
+	MigrationModeIncremental  MigrationMode = "incremental"
 	MigrationModeValidateOnly MigrationMode = "validate_only"
 )
 
@@ -55,38 +59,42 @@ const (
 
 // Ingestion Batch Payload dispatched from Agent to Cloud Server
 type MigrationBatchPayload struct {
-	BatchID        string                  `json:"batch_id"`
-	RunID          string                  `json:"run_id"`
-	OrganizationID int                     `json:"organization_id"`
-	Domain         DomainType              `json:"domain"`
-	SequenceNumber int                     `json:"sequence_number"`
-	IsLastBatch    bool                    `json:"is_last_batch"`
-	Timestamp      time.Time               `json:"timestamp"`
-	WatermarkFrom  string                  `json:"watermark_from,omitempty"`
-	WatermarkTo    string                  `json:"watermark_to,omitempty"`
-	
+	BatchID        string     `json:"batch_id"`
+	RunID          string     `json:"run_id"`
+	OrganizationID int        `json:"organization_id"`
+	Domain         DomainType `json:"domain"`
+	SequenceNumber int        `json:"sequence_number"`
+	IsLastBatch    bool       `json:"is_last_batch"`
+	Timestamp      time.Time  `json:"timestamp"`
+	WatermarkFrom  string     `json:"watermark_from,omitempty"`
+	WatermarkTo    string     `json:"watermark_to,omitempty"`
+
 	// Typed Payload collections (Domain-specific)
-	Stores         []mappings.CanonicalStore           `json:"stores,omitempty"`
-	Locations      []mappings.CanonicalStorageLocation `json:"locations,omitempty"`
-	Users          []mappings.CanonicalUser            `json:"users,omitempty"`
-	Cashiers       []mappings.CanonicalCashier         `json:"cashiers,omitempty"`
-	UOMs           []mappings.CanonicalUOM             `json:"uom,omitempty"`
-	UOMGroups      []mappings.CanonicalUOMGroup        `json:"uom_groups,omitempty"`
-	Categories     []mappings.CanonicalCategory        `json:"categories,omitempty"`
-	Brands         []mappings.CanonicalBrand           `json:"brands,omitempty"`
-	Products       []mappings.CanonicalProduct         `json:"products,omitempty"`
-	Barcodes       []mappings.CanonicalBarcode         `json:"barcodes,omitempty"`
-	Inventory      []mappings.CanonicalInventoryStock  `json:"inventory,omitempty"`
-	Partners       []mappings.CanonicalPartner         `json:"partners,omitempty"`
-	SalesOrders    []mappings.CanonicalSalesOrder      `json:"sales_orders,omitempty"`
-	Invoices       []mappings.CanonicalInvoice         `json:"invoices,omitempty"`
-	PriceLists     []mappings.CanonicalPriceList       `json:"price_lists,omitempty"`
-	PriceItems     []mappings.CanonicalPriceListItem   `json:"price_items,omitempty"`
-	BPAddresses    []mappings.CanonicalBPAddress       `json:"bp_addresses,omitempty"`
-	PurchaseOrders []mappings.CanonicalPurchaseOrder   `json:"purchase_orders,omitempty"`
-	GoodsReceipts  []mappings.CanonicalGoodsReceiptNote `json:"goods_receipt_notes,omitempty"`
-	StockMovements []mappings.CanonicalStockMovement   `json:"stock_movements,omitempty"`
-	IncomingPayments []mappings.CanonicalIncomingPayment `json:"incoming_payments,omitempty"`
+	Stores           []mappings.CanonicalStore            `json:"stores,omitempty"`
+	Locations        []mappings.CanonicalStorageLocation  `json:"locations,omitempty"`
+	Users            []mappings.CanonicalUser             `json:"users,omitempty"`
+	Cashiers         []mappings.CanonicalCashier          `json:"cashiers,omitempty"`
+	UOMs             []mappings.CanonicalUOM              `json:"uom,omitempty"`
+	UOMGroups        []mappings.CanonicalUOMGroup         `json:"uom_groups,omitempty"`
+	Categories       []mappings.CanonicalCategory         `json:"categories,omitempty"`
+	Brands           []mappings.CanonicalBrand            `json:"brands,omitempty"`
+	Products         []mappings.CanonicalProduct          `json:"products,omitempty"`
+	Barcodes         []mappings.CanonicalBarcode          `json:"barcodes,omitempty"`
+	Inventory        []mappings.CanonicalInventoryStock   `json:"inventory,omitempty"`
+	Partners         []mappings.CanonicalPartner          `json:"partners,omitempty"`
+	SalesOrders      []mappings.CanonicalSalesOrder       `json:"sales_orders,omitempty"`
+	Invoices         []mappings.CanonicalInvoice          `json:"invoices,omitempty"`
+	PriceLists       []mappings.CanonicalPriceList        `json:"price_lists,omitempty"`
+	PriceItems       []mappings.CanonicalPriceListItem    `json:"price_items,omitempty"`
+	BPAddresses      []mappings.CanonicalBPAddress        `json:"bp_addresses,omitempty"`
+	PaymentTerms     []mappings.CanonicalPaymentTerm      `json:"payment_terms,omitempty"`
+	PurchaseOrders   []mappings.CanonicalPurchaseOrder    `json:"purchase_orders,omitempty"`
+	GoodsReceipts    []mappings.CanonicalGoodsReceiptNote `json:"goods_receipt_notes,omitempty"`
+	OutgoingPayments []mappings.CanonicalOutgoingPayment  `json:"outgoing_payments,omitempty"`
+	SalesReturns     []mappings.CanonicalSalesReturn      `json:"sales_returns,omitempty"`
+	Transfers        []mappings.CanonicalTransfer         `json:"transfers,omitempty"`
+	StockMovements   []mappings.CanonicalStockMovement    `json:"stock_movements,omitempty"`
+	IncomingPayments []mappings.CanonicalIncomingPayment  `json:"incoming_payments,omitempty"`
 }
 
 func (p *MigrationBatchPayload) RecordCount() int {
@@ -119,10 +127,18 @@ func (p *MigrationBatchPayload) RecordCount() int {
 		return len(p.PriceLists) + len(p.PriceItems)
 	case DomainBPAddresses:
 		return len(p.BPAddresses)
+	case DomainPaymentTerms:
+		return len(p.PaymentTerms)
 	case DomainPurchaseOrders:
 		return len(p.PurchaseOrders)
 	case DomainGoodsReceipts:
 		return len(p.GoodsReceipts)
+	case DomainOutgoingPayments:
+		return len(p.OutgoingPayments)
+	case DomainSalesReturns:
+		return len(p.SalesReturns)
+	case DomainTransfers:
+		return len(p.Transfers)
 	case DomainStockMovements:
 		return len(p.StockMovements)
 	case DomainIncomingPayments:
@@ -134,41 +150,45 @@ func (p *MigrationBatchPayload) RecordCount() int {
 
 // Ingestion Response from Cloud Server to Agent
 type MigrationBatchResponse struct {
-	Success        bool      `json:"success"`
-	BatchID        string    `json:"batch_id"`
-	Domain         DomainType`json:"domain"`
-	RecordsStaged  int       `json:"records_staged"`
-	RecordsMerged  int       `json:"records_merged"`
-	RecordsFailed  int       `json:"records_failed"`
-	ErrorMessage   string    `json:"error_message,omitempty"`
-	Errors         []string  `json:"errors,omitempty"`
-	WatermarkSaved string    `json:"watermark_saved,omitempty"`
+	Success       bool       `json:"success"`
+	BatchID       string     `json:"batch_id"`
+	Domain        DomainType `json:"domain"`
+	RecordsStaged int        `json:"records_staged"`
+	RecordsMerged int        `json:"records_merged"`
+	RecordsFailed int        `json:"records_failed"`
+	// A29: rows intentionally not inserted (idempotent replay no-ops,
+	// unmatched document lookups). Reported separately so staged counts stay
+	// honest while replay runs remain quiet.
+	RecordsSkipped int      `json:"records_skipped,omitempty"`
+	ErrorMessage   string   `json:"error_message,omitempty"`
+	Errors         []string `json:"errors,omitempty"`
+	WatermarkSaved string   `json:"watermark_saved,omitempty"`
 }
 
 // Pre-migration SAP Discovery Information
 type DiscoveryResult struct {
-	CompanyName    string            `json:"company_name"`
-	SAPVersion     string            `json:"sap_version"`
-	PatchLevel     string            `json:"patch_level"`
-	Address        string            `json:"address"`
-	DatabaseName   string            `json:"database_name"`
-	ConnectedAt    time.Time         `json:"connected_at"`
-	TableCounts    map[string]int64  `json:"table_counts"`
-	Warnings       []string          `json:"warnings"`
-	IsCompatible   bool              `json:"is_compatible"`
+	CompanyName  string           `json:"company_name"`
+	SAPVersion   string           `json:"sap_version"`
+	PatchLevel   string           `json:"patch_level"`
+	Address      string           `json:"address"`
+	DatabaseName string           `json:"database_name"`
+	ConnectedAt  time.Time        `json:"connected_at"`
+	TableCounts  map[string]int64 `json:"table_counts"`
+	Warnings     []string         `json:"warnings"`
+	IsCompatible bool             `json:"is_compatible"`
 }
 
 // Post-migration Audit & Reconciliation DTO
 type DomainReconciliation struct {
-	Domain          DomainType `json:"domain"`
-	SAPSourceCount  int64      `json:"sap_source_count"`
-	TargetCount     int64      `json:"target_count"`
-	Difference      int64      `json:"difference"`
-	SAPNumericSum   float64    `json:"sap_numeric_sum,omitempty"`
-	TargetNumericSum float64   `json:"target_numeric_sum,omitempty"`
-	SumDifference   float64    `json:"sum_difference,omitempty"`
-	Status          string     `json:"status"` // "MATCH", "MISMATCH", "WARNING"
-	Notes           string     `json:"notes,omitempty"`
+	Domain           DomainType `json:"domain"`
+	SAPSourceCount   int64      `json:"sap_source_count"`
+	TargetCount      int64      `json:"target_count"`
+	Difference       int64      `json:"difference"`
+	SAPNumericSum    float64    `json:"sap_numeric_sum,omitempty"`
+	TargetNumericSum float64    `json:"target_numeric_sum,omitempty"`
+	SumDifference    float64    `json:"sum_difference,omitempty"`
+	Status           string     `json:"status"` // "MATCH", "MISMATCH", "WARNING"
+	Notes            string     `json:"notes,omitempty"`
 }
 
 type ReconciliationReport struct {

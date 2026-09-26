@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type PurchasingExtractor struct {
@@ -152,6 +152,8 @@ func (e *PurchasingExtractor) ExtractGoodsReceipts(ctx context.Context, fromDate
 	for rows.Next() {
 		var gr mappings.SAPGoodsReceipt
 		var comments sql.NullString
+		// Scan order must match QueryGoodsReceiptsHeader (11 columns,
+		// including A34: CANCELED).
 		if err := rows.Scan(
 			&gr.DocEntry,
 			&gr.DocNum,
@@ -163,6 +165,7 @@ func (e *PurchasingExtractor) ExtractGoodsReceipts(ctx context.Context, fromDate
 			&gr.VatSum,
 			&gr.DocStatus,
 			&comments,
+			&gr.Canceled,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OPDN row: %w", err)
 		}
@@ -225,6 +228,102 @@ func (e *PurchasingExtractor) ExtractGoodsReceipts(ctx context.Context, fromDate
 	for i := range receipts {
 		receipts[i].Lines = linesMap[receipts[i].DocEntry]
 		result[i] = receipts[i].ToCanonical()
+	}
+
+	return result, nil
+}
+
+// ExtractTransfers extracts inter-store inventory transfers from OWTR/WTR1
+// within the given date range — A22.
+func (e *PurchasingExtractor) ExtractTransfers(ctx context.Context, fromDate, toDate time.Time) ([]mappings.CanonicalTransfer, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+
+	if fromDate.IsZero() {
+		fromDate = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	if toDate.IsZero() {
+		toDate = time.Now()
+	}
+
+	// 1. Extract Headers (OWTR)
+	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryTransfersHeader,
+		sql.Named("FromDate", fromDate),
+		sql.Named("ToDate", toDate),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OWTR: %w", err)
+	}
+	defer rows.Close()
+
+	var transfers []mappings.SAPTransfer
+	for rows.Next() {
+		var t mappings.SAPTransfer
+		var comments sql.NullString
+		if err := rows.Scan(
+			&t.DocEntry,
+			&t.DocNum,
+			&t.DocDate,
+			&t.Filler,
+			&t.ToWarehouse,
+			&comments,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan OWTR row: %w", err)
+		}
+		t.Comments = comments.String
+		transfers = append(transfers, t)
+	}
+
+	if len(transfers) == 0 {
+		return []mappings.CanonicalTransfer{}, nil
+	}
+
+	// 2. Extract Lines (WTR1) in chunked batches by DocEntry
+	linesMap := make(map[int64][]mappings.SAPTransferLine, len(transfers))
+	const docEntryBatchSize = 500
+	for i := 0; i < len(transfers); i += docEntryBatchSize {
+		end := i + docEntryBatchSize
+		if end > len(transfers) {
+			end = len(transfers)
+		}
+		chunk := transfers[i:end]
+		var idStrs []string
+		for _, t := range chunk {
+			idStrs = append(idStrs, fmt.Sprintf("%d", t.DocEntry))
+		}
+		if len(idStrs) == 0 {
+			continue
+		}
+		query := fmt.Sprintf(schema.QueryTransferLines, strings.Join(idStrs, ","))
+		lineRows, err := e.mssql.DB.QueryContext(ctx, query)
+		if err == nil {
+			for lineRows.Next() {
+				var l mappings.SAPTransferLine
+				var whsCode, unitMsr sql.NullString
+				if err := lineRows.Scan(
+					&l.DocEntry,
+					&l.LineNum,
+					&l.ItemCode,
+					&l.Dscription,
+					&l.Quantity,
+					&whsCode,
+					&unitMsr,
+				); err == nil {
+					l.WhsCode = whsCode.String
+					l.UnitMsr = unitMsr.String
+					linesMap[l.DocEntry] = append(linesMap[l.DocEntry], l)
+				}
+			}
+			lineRows.Close()
+		}
+	}
+
+	// 3. Map to Canonical
+	result := make([]mappings.CanonicalTransfer, len(transfers))
+	for i := range transfers {
+		transfers[i].Lines = linesMap[transfers[i].DocEntry]
+		result[i] = transfers[i].ToCanonical()
 	}
 
 	return result, nil

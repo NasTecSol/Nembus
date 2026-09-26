@@ -125,7 +125,11 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 			}
 
 			// Upsert Product
-			prodID, err := s.nembusClient.UpsertProduct(ctx, item.ItemCode, item.ItemName, item.ForeignName, categoryID, baseUoMID, &taxCatID, isWeighted)
+			costPrice := item.AvgPrice
+			if costPrice <= 0 {
+				costPrice = item.MovingAveragePrice
+			}
+			prodID, err := s.nembusClient.UpsertProduct(ctx, item.ItemCode, item.ItemName, item.ForeignName, categoryID, baseUoMID, &taxCatID, isWeighted, costPrice)
 			if err != nil {
 				log.Printf("❌ Failed to upsert product SKU %s: %v", item.ItemCode, err)
 				continue

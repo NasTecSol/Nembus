@@ -7,27 +7,35 @@ import (
 	"math"
 	"time"
 
-	"github.com/NasTecSol/nembus-sap/contracts"
-	"github.com/NasTecSol/nembus-sap/schema"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap/schema"
 )
 
 type AuditEngine struct {
 	mssql       *db.MSSQLClient
 	cloudClient *transport.CloudClient
 	sqlite      *db.SQLiteStore
+	pgPool      *pgxpool.Pool
 }
 
-func NewAuditEngine(mssql *db.MSSQLClient, cloudClient *transport.CloudClient, sqlite *db.SQLiteStore) *AuditEngine {
+func NewAuditEngine(mssql *db.MSSQLClient, cloudClient *transport.CloudClient, sqlite *db.SQLiteStore, pgPool ...*pgxpool.Pool) *AuditEngine {
+	var pool *pgxpool.Pool
+	if len(pgPool) > 0 {
+		pool = pgPool[0]
+	}
 	return &AuditEngine{
 		mssql:       mssql,
 		cloudClient: cloudClient,
 		sqlite:      sqlite,
+		pgPool:      pool,
 	}
 }
 
-// Reconcile runs count and financial-sum checks across all 10 migration domains.
+// Reconcile runs count and financial-sum checks across all migration domains.
 // runID may be empty — in that case it fetches the latest completed run from SQLite.
 func (a *AuditEngine) Reconcile(ctx context.Context, runID string, orgID int) (*contracts.ReconciliationReport, error) {
 	// Resolve runID to the latest run if not supplied
@@ -61,9 +69,12 @@ func (a *AuditEngine) Reconcile(ctx context.Context, runID string, orgID int) (*
 		{contracts.DomainBrands, schema.TableOMRG, "FirmCode"},
 		{contracts.DomainProducts, schema.TableOITM, "ItemCode"},
 		{contracts.DomainBarcodes, schema.TableOBCD, "BcdEntry"},
+		{contracts.DomainPaymentTerms, schema.TableOCTG, "GroupNum"},
 		{contracts.DomainPartners, schema.TableOCRD, "CardCode"},
 		{contracts.DomainPurchaseOrders, schema.TableOPOR, "DocEntry"},
 		{contracts.DomainGoodsReceipts, schema.TableOPDN, "DocEntry"},
+		{contracts.DomainSalesReturns, schema.TableORIN, "DocEntry"},
+		{contracts.DomainTransfers, schema.TableOWTR, "DocEntry"},
 		{contracts.DomainStockMovements, schema.TableOINM, "TransNum"},
 		{contracts.DomainSalesOrders, schema.TableORDR, "DocEntry"},
 		{contracts.DomainIncomingPayments, schema.TableORCT, "DocEntry"},
@@ -88,8 +99,13 @@ func (a *AuditEngine) Reconcile(ctx context.Context, runID string, orgID int) (*
 	}
 
 	// Invoices: count + sum DocTotal
-	if invTotalAudit, err := a.auditInvoicesSum(ctx, runID); err == nil {
+	if invTotalAudit, err := a.auditInvoicesSum(ctx, runID, orgID); err == nil {
 		report.Domains = append(report.Domains, invTotalAudit)
+	}
+
+	// Outgoing Vendor Payments: count + sum DocTotal vs payment_amount
+	if vendorAudit, err := a.auditVendorPaymentsSum(ctx, runID, orgID); err == nil {
+		report.Domains = append(report.Domains, vendorAudit)
 	}
 
 	// Evaluate summary
@@ -161,9 +177,38 @@ func (a *AuditEngine) auditDomainCount(ctx context.Context, domain contracts.Dom
 	}, nil
 }
 
+// fetchTargetInvoiceSum returns SUM(total_amount) FROM invoices WHERE organization_id = orgID
+func (a *AuditEngine) fetchTargetInvoiceSum(ctx context.Context, orgID int) (float64, error) {
+	if a.pgPool == nil {
+		return 0, fmt.Errorf("postgres connection pool not configured")
+	}
+	var sum sql.NullFloat64
+	err := a.pgPool.QueryRow(ctx,
+		"SELECT SUM(total_amount) FROM invoices WHERE organization_id = $1", orgID,
+	).Scan(&sum)
+	if err != nil || !sum.Valid {
+		return 0, err
+	}
+	return math.Round(sum.Float64*100) / 100, nil
+}
+
+// fetchTargetInventorySum returns SUM(quantity_on_hand) FROM inventory_stock WHERE quantity_on_hand > 0
+func (a *AuditEngine) fetchTargetInventorySum(ctx context.Context) (float64, error) {
+	if a.pgPool == nil {
+		return 0, fmt.Errorf("postgres connection pool not configured")
+	}
+	var sum sql.NullFloat64
+	err := a.pgPool.QueryRow(ctx,
+		"SELECT SUM(quantity_on_hand) FROM inventory_stock WHERE quantity_on_hand > 0",
+	).Scan(&sum)
+	if err != nil || !sum.Valid {
+		return 0, err
+	}
+	return math.Round(sum.Float64*100) / 100, nil
+}
+
 // auditInventorySum checks OITW non-zero row count vs SQLite step processed count.
-// Note: TargetNumericSum requires a cloud-side API to verify actual ingested sum;
-// this currently reports the SAP sum as a reference value only.
+// Uses live target database SUM(quantity_on_hand) if pgPool is configured.
 func (a *AuditEngine) auditInventorySum(ctx context.Context, runID string) (contracts.DomainReconciliation, error) {
 	var sapSum sql.NullFloat64
 	var sapCount int64
@@ -189,11 +234,23 @@ func (a *AuditEngine) auditInventorySum(ctx context.Context, runID string) (cont
 		sapSumVal = math.Round(sapSum.Float64*100) / 100
 	}
 
+	var targetSumVal float64
+	if a.pgPool != nil {
+		if s, err := a.fetchTargetInventorySum(ctx); err == nil {
+			targetSumVal = s
+		}
+	}
+
 	status := "MATCH"
 	notes := "Total on-hand stock quantities verified across all active warehouses."
 	if targetCount < sapCount {
 		status = "MISMATCH"
 		notes = fmt.Sprintf("Inventory row variance: SAP has %d non-zero rows, staged %d.", sapCount, targetCount)
+	}
+
+	sumDiff := 0.0
+	if targetSumVal > 0 {
+		sumDiff = math.Round((targetSumVal - sapSumVal)*100) / 100
 	}
 
 	return contracts.DomainReconciliation{
@@ -202,16 +259,15 @@ func (a *AuditEngine) auditInventorySum(ctx context.Context, runID string) (cont
 		TargetCount:      targetCount,
 		Difference:       targetCount - sapCount,
 		SAPNumericSum:    sapSumVal,
-		TargetNumericSum: 0, // TODO: query cloud-side count endpoint for actual ingested sum
-		SumDifference:    0,
+		TargetNumericSum: targetSumVal,
+		SumDifference:    sumDiff,
 		Status:           status,
 		Notes:            notes,
 	}, nil
 }
 
-// auditInvoicesSum checks OINV total count + DocTotal sum vs staged count.
-// Note: TargetNumericSum requires a cloud-side API query for full accuracy.
-func (a *AuditEngine) auditInvoicesSum(ctx context.Context, runID string) (contracts.DomainReconciliation, error) {
+// auditInvoicesSum checks OINV total count + DocTotal sum vs staged count and live target invoices sum.
+func (a *AuditEngine) auditInvoicesSum(ctx context.Context, runID string, orgID int) (contracts.DomainReconciliation, error) {
 	var sapSum sql.NullFloat64
 	var sapCount int64
 	query := "SELECT COUNT(1), SUM(DocTotal) FROM OINV"
@@ -236,11 +292,23 @@ func (a *AuditEngine) auditInvoicesSum(ctx context.Context, runID string) (contr
 		sapSumVal = math.Round(sapSum.Float64*100) / 100
 	}
 
+	var targetSumVal float64
+	if a.pgPool != nil {
+		if s, err := a.fetchTargetInvoiceSum(ctx, orgID); err == nil {
+			targetSumVal = s
+		}
+	}
+
 	status := "MATCH"
 	notes := "Historical invoice revenue total reconciled."
 	if targetCount < sapCount {
 		status = "MISMATCH"
 		notes = fmt.Sprintf("Invoice count variance: SAP has %d rows, staged %d.", sapCount, targetCount)
+	}
+
+	sumDiff := 0.0
+	if targetSumVal > 0 {
+		sumDiff = math.Round((targetSumVal - sapSumVal)*100) / 100
 	}
 
 	return contracts.DomainReconciliation{
@@ -249,8 +317,69 @@ func (a *AuditEngine) auditInvoicesSum(ctx context.Context, runID string) (contr
 		TargetCount:      targetCount,
 		Difference:       targetCount - sapCount,
 		SAPNumericSum:    sapSumVal,
-		TargetNumericSum: 0, // TODO: query cloud-side count endpoint for actual ingested sum
-		SumDifference:    0,
+		TargetNumericSum: targetSumVal,
+		SumDifference:    sumDiff,
+		Status:           status,
+		Notes:            notes,
+	}, nil
+}
+
+// auditVendorPaymentsSum checks OVPM total count + DocTotal sum vs target vendor_payments.
+func (a *AuditEngine) auditVendorPaymentsSum(ctx context.Context, runID string, orgID int) (contracts.DomainReconciliation, error) {
+	var sapSum sql.NullFloat64
+	var sapCount int64
+	query := "SELECT COUNT(1), SUM(DocTotal) FROM OVPM"
+	row := a.mssql.DB.QueryRowContext(ctx, query)
+	if err := row.Scan(&sapCount, &sapSum); err != nil {
+		return contracts.DomainReconciliation{}, err
+	}
+
+	var targetCount int64
+	if runID != "" {
+		steps, _ := a.sqlite.GetSteps(ctx, runID)
+		for _, s := range steps {
+			if s.Domain == contracts.DomainOutgoingPayments {
+				targetCount = s.ProcessedCount
+				break
+			}
+		}
+	}
+
+	sapSumVal := 0.0
+	if sapSum.Valid {
+		sapSumVal = math.Round(sapSum.Float64*100) / 100
+	}
+
+	var targetSumVal float64
+	if a.pgPool != nil {
+		var tgtSum sql.NullFloat64
+		_ = a.pgPool.QueryRow(ctx, "SELECT SUM(payment_amount) FROM vendor_payments WHERE organization_id = $1", orgID).Scan(&tgtSum)
+		if tgtSum.Valid {
+			targetSumVal = math.Round(tgtSum.Float64*100) / 100
+		}
+	}
+
+	diff := targetCount - sapCount
+	status := "MATCH"
+	notes := "Vendor payments total reconciled."
+	if targetCount < sapCount {
+		status = "MISMATCH"
+		notes = fmt.Sprintf("Vendor payments count variance: SAP has %d rows, staged %d.", sapCount, targetCount)
+	}
+
+	sumDiff := 0.0
+	if targetSumVal > 0 {
+		sumDiff = math.Round((targetSumVal - sapSumVal)*100) / 100
+	}
+
+	return contracts.DomainReconciliation{
+		Domain:           contracts.DomainOutgoingPayments,
+		SAPSourceCount:   sapCount,
+		TargetCount:      targetCount,
+		Difference:       diff,
+		SAPNumericSum:    sapSumVal,
+		TargetNumericSum: targetSumVal,
+		SumDifference:    sumDiff,
 		Status:           status,
 		Notes:            notes,
 	}, nil

@@ -29,6 +29,15 @@ const (
 	TableOINM = "OINM" // Item Ledger / Stock Movements
 	TableORCT = "ORCT" // Incoming Payments Header
 	TableRCT2 = "RCT2" // Incoming Payments Invoices
+	TableORIN = "ORIN" // A/R Credit Memos Header
+	TableRIN1 = "RIN1" // A/R Credit Memos Lines
+	TableORDN = "ORDN" // A/R Returns Header
+	TableRDN1 = "RDN1" // A/R Returns Lines
+	TableOWTR = "OWTR" // Inventory Transfers Header
+	TableWTR1 = "WTR1" // Inventory Transfers Lines
+	TableOCTG = "OCTG" // Payment Terms Groups
+	TableOVPM = "OVPM" // Outgoing Payments Header
+	TableVPM2 = "VPM2" // Outgoing Payments - Documents Allocation
 	TableOADM = "OADM" // Company Administration / Info
 )
 
@@ -333,17 +342,42 @@ WHERE OnHand <> 0 OR IsCommited <> 0 OR OnOrder <> 0
 ORDER BY ItemCode, WhsCode;
 `
 
+// A19: CreditLine is the real SAP B1 OCRD column for the credit limit and
+// feeds business_partners.credit_limit (vw_supplier_aging_report /
+// vw_customer_aging_report). GroupNum wires OCRD payment terms to OCTG (A23).
+// A33: SAR is the deployment default currency (98_seed_currencies.sql).
 const QueryBusinessPartners = `
-SELECT 
+SELECT
     CardCode,
     ISNULL(CardName, '') AS CardName,
     ISNULL(CardType, 'C') AS CardType,
     ISNULL(LicTradNum, '') AS LicTradNum,
     ISNULL(Phone1, '') AS Phone1,
     ISNULL(E_Mail, '') AS E_Mail,
-    ISNULL(Currency, 'USD') AS Currency,
+    ISNULL(Currency, 'SAR') AS Currency,
     ISNULL(validFor, 'Y') AS validFor,
-    ISNULL(Balance, 0.0) AS Balance
+    ISNULL(Balance, 0.0) AS Balance,
+    ISNULL(CreditLine, 0.0) AS CreditLimit,
+    ISNULL(GroupNum, -1) AS GroupNum
+FROM OCRD
+ORDER BY CardCode;
+`
+
+// QueryBusinessPartnersFallback tolerates SAP B1 schemas where OCRD.CreditLine
+// is not present (very old versions / localized installs): credit limits are
+// skipped (target default 0) instead of failing the whole partners domain.
+const QueryBusinessPartnersFallback = `
+SELECT
+    CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(CardType, 'C') AS CardType,
+    ISNULL(LicTradNum, '') AS LicTradNum,
+    ISNULL(Phone1, '') AS Phone1,
+    ISNULL(E_Mail, '') AS E_Mail,
+    ISNULL(Currency, 'SAR') AS Currency,
+    ISNULL(validFor, 'Y') AS validFor,
+    ISNULL(Balance, 0.0) AS Balance,
+    ISNULL(GroupNum, -1) AS GroupNum
 FROM OCRD
 ORDER BY CardCode;
 `
@@ -416,7 +450,11 @@ SELECT
     ISNULL(DiscSum, 0.0) AS DiscSum,
     ISNULL(DocStatus, 'C') AS DocStatus,
     ISNULL(SlpCode, -1) AS SlpCode,
-    ISNULL(Comments, '') AS Comments
+    ISNULL(Comments, '') AS Comments,
+    ISNULL(DocCur, 'SAR') AS DocCur,
+    ISNULL(DocRate, 1.0) AS DocRate,
+    ISNULL(CANCELED, 'N') AS CANCELED,
+    ISNULL(DocType, 'I') AS DocType
 FROM OINV
 WHERE DocDate >= @FromDate AND DocDate <= @ToDate
 ORDER BY DocEntry;
@@ -433,7 +471,9 @@ SELECT
     ISNULL(LineTotal, 0.0) AS LineTotal,
     ISNULL(VatSum, 0.0) AS VatSum,
     ISNULL(WhsCode, '') AS WhsCode,
-    ISNULL(unitMsr, 'UNIT') AS unitMsr
+    ISNULL(unitMsr, 'UNIT') AS unitMsr,
+    ISNULL(DiscPrcnt, 0.0) AS DiscPrcnt,
+    ISNULL(PriceBefDi, Price) AS PriceBefDi
 FROM INV1
 WHERE DocEntry IN (%s)
 ORDER BY DocEntry, LineNum;
@@ -450,19 +490,20 @@ SELECT
     ISNULL(l.LineTotal, 0.0) AS LineTotal,
     ISNULL(l.VatSum, 0.0) AS VatSum,
     ISNULL(l.WhsCode, '') AS WhsCode,
-    ISNULL(l.unitMsr, 'UNIT') AS unitMsr
+    ISNULL(l.unitMsr, 'UNIT') AS unitMsr,
+    ISNULL(l.DiscPrcnt, 0.0) AS DiscPrcnt,
+    ISNULL(l.PriceBefDi, l.Price) AS PriceBefDi
 FROM INV1 l
 INNER JOIN OINV h ON l.DocEntry = h.DocEntry
 WHERE h.DocDate >= @FromDate AND h.DocDate <= @ToDate
 ORDER BY l.DocEntry, l.LineNum;
 `
 
-
 const QueryPriceLists = `
 SELECT
     ListNum,
     ISNULL(ListName, '') AS ListName,
-    ISNULL(PrimCurr, 'USD') AS Currency,
+    ISNULL(PrimCurr, 'SAR') AS Currency,
     ISNULL(Factor, 1.0) AS Factor,
     ISNULL(BASE_NUM, 0) AS BasedOn,
     ISNULL(validFor, 'Y') AS validFor
@@ -474,7 +515,7 @@ const QueryPriceListsFallback = `
 SELECT
     ListNum,
     ISNULL(ListName, '') AS ListName,
-    'USD' AS Currency,
+    'SAR' AS Currency,
     ISNULL(Factor, 1.0) AS Factor,
     0 AS BasedOn,
     'Y' AS validFor
@@ -577,7 +618,8 @@ SELECT
     ISNULL(DocTotal, 0.0) AS DocTotal,
     ISNULL(VatSum, 0.0) AS VatSum,
     ISNULL(DocStatus, 'C') AS DocStatus,
-    ISNULL(Comments, '') AS Comments
+    ISNULL(Comments, '') AS Comments,
+    ISNULL(CANCELED, 'N') AS CANCELED
 FROM OPDN
 WHERE DocDate >= @FromDate AND DocDate <= @ToDate
 ORDER BY DocEntry;
@@ -632,7 +674,7 @@ SELECT
     DocDate,
     ISNULL(CardCode, '') AS CardCode,
     ISNULL(CardName, '') AS CardName,
-    ISNULL(DocCurr, 'USD') AS DocCurr,
+    ISNULL(DocCurr, 'SAR') AS DocCurr,
     ISNULL(DocTotal, 0.0) AS DocTotal,
     ISNULL(CashSum, 0.0) AS CashSum,
     ISNULL(TrsfrSum, 0.0) AS TrsfrSum,
@@ -660,4 +702,153 @@ WHERE r.DocNum IN (%s)
 ORDER BY r.DocNum, r.LineId;
 `
 
+// A21: Sales Returns / A/R Credit Memos (ORIN / RIN1).
+const QueryCreditMemosHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    ISNULL(CardCode, '') AS CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(DocTotal, 0.0) AS DocTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(DiscSum, 0.0) AS DiscSum,
+    ISNULL(CANCELED, 'N') AS CANCELED,
+    ISNULL(Comments, '') AS Comments
+FROM ORIN
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
 
+const QueryCreditMemoLines = `
+SELECT 
+    DocEntry,
+    LineNum,
+    ISNULL(ItemCode, '') AS ItemCode,
+    ISNULL(Dscription, '') AS Dscription,
+    ISNULL(Quantity, 0.0) AS Quantity,
+    ISNULL(Price, 0.0) AS Price,
+    ISNULL(LineTotal, 0.0) AS LineTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(WhsCode, '') AS WhsCode,
+    ISNULL(unitMsr, 'UNIT') AS unitMsr,
+    ISNULL(BaseEntry, -1) AS BaseEntry,
+    ISNULL(BaseType, -1) AS BaseType
+FROM RIN1
+WHERE DocEntry IN (%s)
+ORDER BY DocEntry, LineNum;
+`
+
+// A21: A/R Returns (ORDN / RDN1) — customer returns without a credit memo.
+const QueryReturnOrdersHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    ISNULL(CardCode, '') AS CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(DocTotal, 0.0) AS DocTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(DiscSum, 0.0) AS DiscSum,
+    ISNULL(CANCELED, 'N') AS CANCELED,
+    ISNULL(Comments, '') AS Comments
+FROM ORDN
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
+
+const QueryReturnOrderLines = `
+SELECT 
+    DocEntry,
+    LineNum,
+    ISNULL(ItemCode, '') AS ItemCode,
+    ISNULL(Dscription, '') AS Dscription,
+    ISNULL(Quantity, 0.0) AS Quantity,
+    ISNULL(Price, 0.0) AS Price,
+    ISNULL(LineTotal, 0.0) AS LineTotal,
+    ISNULL(VatSum, 0.0) AS VatSum,
+    ISNULL(WhsCode, '') AS WhsCode,
+    ISNULL(unitMsr, 'UNIT') AS unitMsr,
+    ISNULL(BaseEntry, -1) AS BaseEntry,
+    ISNULL(BaseType, -1) AS BaseType
+FROM RDN1
+WHERE DocEntry IN (%s)
+ORDER BY DocEntry, LineNum;
+`
+
+// A22: Inter-store Inventory Transfers (OWTR / WTR1).
+const QueryTransfersHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    ISNULL(Filler, '') AS Filler,
+    ISNULL(ToWhsCode, '') AS ToWarehouse,
+    ISNULL(Comments, '') AS Comments
+FROM OWTR
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
+
+const QueryTransferLines = `
+SELECT 
+    DocEntry,
+    LineNum,
+    ISNULL(ItemCode, '') AS ItemCode,
+    ISNULL(Dscription, '') AS Dscription,
+    ISNULL(Quantity, 0.0) AS Quantity,
+    ISNULL(WhsCode, '') AS WhsCode,
+    ISNULL(unitMsr, 'UNIT') AS unitMsr
+FROM WTR1
+WHERE DocEntry IN (%s)
+ORDER BY DocEntry, LineNum;
+`
+
+// A23: Payment Terms Master (OCTG).
+const QueryPaymentTerms = `
+SELECT 
+    GroupNum,
+    ISNULL(PymntGroup, '') AS PymGroup,
+    ISNULL(PayDuMonth, 0) AS InstMonths,
+    0 AS InstDays,
+    ISNULL(ExtraMonth, 0) AS ExtraMonths,
+    ISNULL(ExtraDays, 0) AS ExtraDays,
+    ISNULL(DiscPrcnt, 0.0) AS DiscPrcnt,
+    ISNULL(DiscDays, 0) AS DiscDays
+FROM OCTG
+ORDER BY GroupNum;
+`
+
+// A31: Outgoing Payments (OVPM / VPM2). VPM2.ObjType 22 = Purchase Order allocation.
+const QueryOutgoingPaymentsHeader = `
+SELECT 
+    DocEntry,
+    DocNum,
+    DocDate,
+    ISNULL(CardCode, '') AS CardCode,
+    ISNULL(CardName, '') AS CardName,
+    ISNULL(DocCurr, 'SAR') AS DocCurr,
+    ISNULL(DocTotal, 0.0) AS DocTotal,
+    ISNULL(CashSum, 0.0) AS CashSum,
+    ISNULL(TrsfrSum, 0.0) AS TrsfrSum,
+    ISNULL(TrsfrRef, '') AS TrsfrRef,
+    ISNULL(CheckSum, 0.0) AS CheckSum,
+    ISNULL(CreditSum, 0.0) AS CreditSum,
+    ISNULL(Comments, '') AS Comments,
+    ISNULL(JrnlMemo, '') AS JrnlMemo
+FROM OVPM
+WHERE DocDate >= @FromDate AND DocDate <= @ToDate
+ORDER BY DocEntry;
+`
+
+const QueryOutgoingPaymentDocuments = `
+SELECT 
+    r.DocNum,
+    r.LineId,
+    r.ObjType,
+    r.DocEntry,
+    ISNULL(r.SumApplied, 0.0) AS SumApplied
+FROM VPM2 r
+WHERE r.DocNum IN (%s)
+ORDER BY r.DocNum, r.LineId;
+`

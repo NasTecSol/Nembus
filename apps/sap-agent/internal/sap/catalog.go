@@ -49,6 +49,8 @@ type SAPItem struct {
 	DefaultSalesUoMEntry        *int               `json:"DefaultSalesUoMEntry"`
 	InventoryUOM                string             `json:"InventoryUOM"`
 	BarCode                     string             `json:"BarCode"`
+	AvgPrice                    float64            `json:"AvgPrice"`
+	MovingAveragePrice          float64            `json:"MovingAveragePrice"`
 	ItemPrices                  []SAPItemPrice     `json:"ItemPrices"`
 	ItemBarCodeCollection       []SAPBarCode       `json:"ItemBarCodeCollection"`
 	ItemWarehouseInfoCollection []SAPWarehouseInfo `json:"ItemWarehouseInfoCollection"`
@@ -88,7 +90,7 @@ func (c *Client) FetchItems(ctx context.Context, updatedSince *time.Time, top, s
 	params := url.Values{}
 	params.Set("$top", fmt.Sprintf("%d", top))
 	params.Set("$skip", fmt.Sprintf("%d", skip))
-	params.Set("$select", "ItemCode,ItemName,ForeignName,ItemsGroupCode,SalesVATGroup,DefaultSalesUoMEntry,InventoryUOM,BarCode,ItemPrices,ItemBarCodeCollection,ItemWarehouseInfoCollection,UpdateDate,UpdateTime,Valid,Frozen")
+	params.Set("$select", "ItemCode,ItemName,ForeignName,ItemsGroupCode,SalesVATGroup,DefaultSalesUoMEntry,InventoryUOM,BarCode,AvgPrice,MovingAveragePrice,ItemPrices,ItemBarCodeCollection,ItemWarehouseInfoCollection,UpdateDate,UpdateTime,Valid,Frozen")
 
 	if updatedSince != nil && !updatedSince.IsZero() {
 		dateStr := updatedSince.Format("2006-01-02")

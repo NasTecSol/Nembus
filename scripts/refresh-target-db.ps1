@@ -17,7 +17,7 @@
 
 .PARAMETER Domains
     Comma-separated list of domains to sync (or 'all').
-    Domains: uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, inventory, partners, bp_addresses, sales_orders, invoices, pos, procurement
+    Domains: currencies, uom, categories, brands, stores, users, uom_groups, products, barcodes, price_lists, payment_terms, inventory, partners, bp_addresses, sales_orders, invoices, pos, procurement, outgoing_payments, sales_returns, transfer_requests, stock_movements, incoming_payments
 
 .PARAMETER Mode
     Sync mode: 'truncate_copy' (default, clean fast refresh) or 'upsert'.

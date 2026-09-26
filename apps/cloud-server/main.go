@@ -69,7 +69,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, invoiceUC *usecase.InvoiceUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, stockCountsUC *usecase.StockCountsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, purchaseOrdersUC *usecase.PurchaseOrdersUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, invoiceUC *usecase.InvoiceUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, stockCountsUC *usecase.StockCountsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, purchaseOrdersUC *usecase.PurchaseOrdersUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -122,6 +122,14 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug)
 		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
 	}
+
+	// SAP Migration Batch Ingestion (agent -> cloud)
+	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
+	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
+	apiV1 := r.Group("/api/v1")
+	router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
+	apiMigration := r.Group("/api")
+	router.RegisterSAPMigrationRoutes(apiMigration, sapMigrationHandler)
 
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuthMiddleware())
@@ -353,7 +361,7 @@ func main() {
 	}
 
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, stockCountsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, purchaseOrdersUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, cfg)
+	r := setupRouter(tenantManager, masterPool, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, stockCountsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, purchaseOrdersUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 

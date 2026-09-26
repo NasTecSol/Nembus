@@ -1,2 +1,9 @@
-h1:2nqJmlaGhyxX5kPLRX/entAZtdPmRRCObgWs+bHhb/c=
-20260918111505_initial_schema.sql h1:CHQLPjRj/mOL1v2Lk6hW85Ptob8qLPaOUtjyGAw0jwc=
+h1:j9k266jOKCsGQS7d5Dwwq4LUOCgG67VOybdEDAANQeM=
+20260815000000.sql h1:gIZB1v3/vbU2Z8vk50B3vSUTnO2o5A6TuNUrHEgBS/0=
+20260815010000.sql h1:not4feMrvEV44Q/COolZ636LtIhF1xYgs6wM3d/2XM0=
+20260815020000.sql h1:bqT91hK1wo1EANKujwFr17Jxr3xJgjfHeCf4d/kid3s=
+20260918111505_initial_schema.sql h1:6KSLSW9XCBm7lPe3ocdXwyJ8Gho9qDN7XczA7bhjZ3A=
+20260921000000_financial_inventory_reports_views.sql h1:1IV7SU6hxNH4E7tHO4QEFWDiq3zL8889wGZtO8MTmGQ=
+20260926000000_sap_migration_support.sql h1:+0PP3cKzq/Snetx6Au8MeI58xyRKcTXOFf0/AygklUk=
+20260926000001_products_cost_price.sql h1:plf1zVf8xu8tUOkJVvW2alBFCgvwccI4uhTyaoYlVWc=
+20260926000002_fix_views_business_partners.sql h1:U72FttHYNWDPOStOzG8ZLO8fFEypu+slstJcz6ckzn4=

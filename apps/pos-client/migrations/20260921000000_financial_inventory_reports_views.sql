@@ -1,13 +1,12 @@
--- =====================================================================
--- Schema 99: Financial & Inventory Operational Analytical Views
--- 
--- 1. vw_realtime_pnl                 (Real-time Gross Revenue, Returns, Discounts, COGS, Gross Profit & Margin %)
--- 2. vw_cashier_shift_reconciliation (Cashier drawer reconciliation: Cash vs Card vs Other, expected cash, variance)
--- 3. vw_stock_movement_ledger        (Item movement chronological running quantity and valuation per SKU & Store)
--- 4. vw_vendor_performance_ppv       (Purchase Price Variance & Vendor Fill Rate % / On-time tracking)
--- 5. vw_supplier_aging_report        (Accounts Payable overdue aging buckets: Current, 1-30, 31-60, 61-90, >90)
--- 6. vw_tax_vat_summary              (Tax / VAT Reconciliation: Output VAT vs Input VAT and Net VAT Payable)
--- =====================================================================
+-- +goose Up
+-- Migration: 20260921000000_financial_inventory_reports_views
+-- Description: Adds 6 core financial and inventory analytical views:
+--   1. vw_realtime_pnl
+--   2. vw_cashier_shift_reconciliation
+--   3. vw_stock_movement_ledger
+--   4. vw_vendor_performance_ppv
+--   5. vw_supplier_aging_report
+--   6. vw_tax_vat_summary
 
 -- ---------------------------------------------------------------------
 -- 1. Real-Time Operational P&L & COGS View
@@ -176,7 +175,7 @@ SELECT
     sm.product_id,
     p.sku,
     p.name AS product_name,
-    pb.barcode,
+    p.barcode,
     pc.name AS category_name,
     sm.movement_type,
     sm.reference_type,
@@ -202,7 +201,6 @@ SELECT
     sm.metadata
 FROM stock_movements sm
 JOIN products p ON p.id = sm.product_id
-LEFT JOIN product_barcodes pb ON pb.product_id = p.id AND pb.is_primary = true
 LEFT JOIN product_categories pc ON pc.id = p.category_id
 LEFT JOIN stores s ON s.id = COALESCE(sm.to_store_id, sm.from_store_id);
 
@@ -211,9 +209,9 @@ LEFT JOIN stores s ON s.id = COALESCE(sm.to_store_id, sm.from_store_id);
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_vendor_performance_ppv AS
 SELECT
-    bp.id AS supplier_id,
-    bp.code AS supplier_code,
-    bp.name AS supplier_name,
+    sup.id AS supplier_id,
+    sup.code AS supplier_code,
+    sup.name AS supplier_name,
     po.organization_id,
     po.id AS po_id,
     po.po_number,
@@ -247,7 +245,7 @@ FROM goods_receipt_notes grn
 JOIN goods_receipt_note_items grni ON grni.grn_id = grn.id
 JOIN purchase_orders po ON po.id = grn.purchase_order_id
 LEFT JOIN purchase_order_lines pol ON pol.id = grni.purchase_order_line_id
-JOIN business_partners bp ON bp.id = grn.partners_id
+JOIN suppliers sup ON sup.id = grn.supplier_id
 JOIN products p ON p.id = grni.product_id;
 
 -- ---------------------------------------------------------------------
@@ -257,7 +255,7 @@ CREATE OR REPLACE VIEW vw_supplier_aging_report AS
 WITH po_balances AS (
     SELECT
         po.id AS po_id,
-        po.partners_id,
+        po.supplier_id,
         po.organization_id,
         COALESCE(po.expected_delivery_date, (po.po_date + INTERVAL '30 days')::DATE) AS due_date,
         (
@@ -270,10 +268,13 @@ WITH po_balances AS (
     WHERE po.status IN ('partially_received', 'received', 'approved')
 )
 SELECT
-    bp.id AS supplier_id,
-    bp.code AS supplier_code,
-    bp.name AS supplier_name,
-    bp.credit_limit,
+    sup.id AS supplier_id,
+    sup.code AS supplier_code,
+    sup.name AS supplier_name,
+    sup.email,
+    sup.phone,
+    sup.payment_terms,
+    sup.credit_limit,
     pb.organization_id,
     COALESCE(SUM(CASE WHEN pb.due_date >= CURRENT_DATE THEN pb.balance_due ELSE 0 END), 0) AS current_amount,
     COALESCE(SUM(CASE WHEN pb.due_date < CURRENT_DATE AND CURRENT_DATE - pb.due_date <= 30 THEN pb.balance_due ELSE 0 END), 0) AS overdue_1_30,
@@ -283,14 +284,14 @@ SELECT
     COALESCE(SUM(CASE WHEN pb.balance_due > 0 THEN pb.balance_due ELSE 0 END), 0) AS total_outstanding,
     COUNT(CASE WHEN pb.due_date < CURRENT_DATE AND pb.balance_due > 0 THEN 1 END)::INTEGER AS overdue_po_count,
     MAX(pb.due_date) AS latest_due_date
-FROM business_partners bp
+FROM suppliers sup
 LEFT JOIN po_balances pb
-    ON pb.partners_id = bp.id
+    ON pb.supplier_id = sup.id
     AND pb.balance_due > 0
-WHERE bp.is_active = true AND bp.partner_role = 'supplier'
+WHERE sup.is_active = true
 GROUP BY
-    bp.id, bp.code, bp.name,
-    bp.credit_limit, pb.organization_id
+    sup.id, sup.code, sup.name, sup.email, sup.phone,
+    sup.payment_terms, sup.credit_limit, pb.organization_id
 ORDER BY total_outstanding DESC;
 
 -- ---------------------------------------------------------------------

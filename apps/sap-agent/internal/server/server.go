@@ -4,10 +4,13 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 
 	"github.com/NasTecSol/nembus-sap/contracts"
@@ -25,6 +28,7 @@ type Server struct {
 	sqlite      *db.SQLiteStore
 	mssql       *db.MSSQLClient
 	cloudClient *transport.CloudClient
+	pgPool      *pgxpool.Pool
 	router      *gin.Engine
 	uiFS        embed.FS
 }
@@ -260,7 +264,8 @@ func (s *Server) handleReconciliation(c *gin.Context) {
 	runID := c.Query("run_id")
 
 	cloudClient := transport.NewCloudClient(cfg.Cloud)
-	auditor := reconciliation.NewAuditEngine(mssql, cloudClient, s.sqlite)
+	pgPool := s.getPGPool(c.Request.Context())
+	auditor := reconciliation.NewAuditEngine(mssql, cloudClient, s.sqlite, pgPool)
 
 	report, err := auditor.Reconcile(c.Request.Context(), runID, cfg.Cloud.OrganizationID)
 	if err != nil {
@@ -269,6 +274,40 @@ func (s *Server) handleReconciliation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, report)
+}
+
+func (s *Server) getPGPool(ctx context.Context) *pgxpool.Pool {
+	if s.pgPool != nil {
+		return s.pgPool
+	}
+
+	dbURL := s.cfg.Cloud.DatabaseURL
+	if dbURL == "" {
+		dbURL = os.Getenv("DATABASE_URL")
+	}
+	if dbURL == "" {
+		dbURL = os.Getenv("STG_DATABASE_URL")
+	}
+	if dbURL == "" {
+		dbURL = os.Getenv("TARGET_DB_URL")
+	}
+	if dbURL == "" {
+		dbURL = os.Getenv("MASTER_DB_URL")
+	}
+	if dbURL == "" {
+		dbURL = os.Getenv("NEMBUS_DB_URL")
+	}
+	if dbURL == "" {
+		return nil
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		log.Printf("[SAP-AGENT] Warning: could not connect to PostgreSQL for audit: %v", err)
+		return nil
+	}
+	s.pgPool = pool
+	return pool
 }
 
 func (s *Server) handleGetHistory(c *gin.Context) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
@@ -107,10 +108,7 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	}
 
 	// 3. Prepare Invoice Header
-	cardCode := s.cfg.NembusDefaultCustomer
-	if cardCode == "" {
-		cardCode = "C000001"
-	}
+	cardCode := s.resolveCardCode(ctx, tx.CustomerID)
 
 	invDate := tx.TransactionDate.Format("2006-01-02")
 	invReq := &sap.SAPInvoiceRequest{
@@ -180,3 +178,21 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	// 6. Mark transaction as synced in Nembus
 	return s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
 }
+
+func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) string {
+	if customerID == nil {
+		if s.cfg.NembusDefaultCustomer != "" {
+			return s.cfg.NembusDefaultCustomer
+		}
+		return "C000001"
+	}
+	code, err := s.nembusClient.FetchCustomerSAPCode(ctx, *customerID)
+	if err != nil || strings.TrimSpace(code) == "" {
+		if s.cfg.NembusDefaultCustomer != "" {
+			return s.cfg.NembusDefaultCustomer
+		}
+		return "C000001"
+	}
+	return strings.TrimSpace(code)
+}
+

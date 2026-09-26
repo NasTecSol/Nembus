@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
-	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
 type SalesExtractor struct {
@@ -149,6 +149,10 @@ func (e *SalesExtractor) ExtractInvoices(ctx context.Context, fromDate, toDate t
 	for rows.Next() {
 		var inv mappings.SAPInvoice
 		var comments sql.NullString
+		// Scan order must match QueryInvoicesHeader exactly (17 columns):
+		// A02 (DocCur/DocRate), A03 (CANCELED), A04 (DocType) were added to the
+		// query but the scan was never extended — a mismatch makes every
+		// ExtractInvoices call fail with a Scan argument-count error.
 		if err := rows.Scan(
 			&inv.DocEntry,
 			&inv.DocNum,
@@ -163,6 +167,10 @@ func (e *SalesExtractor) ExtractInvoices(ctx context.Context, fromDate, toDate t
 			&inv.DocStatus,
 			&inv.SlpCode,
 			&comments,
+			&inv.DocCur,
+			&inv.DocRate,
+			&inv.Canceled,
+			&inv.DocType,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OINV row: %w", err)
 		}
@@ -196,6 +204,8 @@ func (e *SalesExtractor) ExtractInvoices(ctx context.Context, fromDate, toDate t
 			for lineRows.Next() {
 				var l mappings.SAPInvoiceLine
 				var whsCode, unitMsr sql.NullString
+				// Scan order must match QueryInvoiceLines exactly (12 columns),
+				// including the A01 discount evidence (DiscPrcnt, PriceBefDi).
 				if err := lineRows.Scan(
 					&l.DocEntry,
 					&l.LineNum,
@@ -207,6 +217,8 @@ func (e *SalesExtractor) ExtractInvoices(ctx context.Context, fromDate, toDate t
 					&l.VatSum,
 					&whsCode,
 					&unitMsr,
+					&l.DiscPrcnt,
+					&l.PriceBefDi,
 				); err == nil {
 					l.WhsCode = whsCode.String
 					l.UnitMsr = unitMsr.String
@@ -222,6 +234,126 @@ func (e *SalesExtractor) ExtractInvoices(ctx context.Context, fromDate, toDate t
 	for idx, inv := range invoices {
 		inv.Lines = linesMap[inv.DocEntry]
 		result[idx] = inv.ToCanonical()
+	}
+
+	return result, nil
+}
+
+// ExtractSalesReturns extracts A/R Credit Memos (ORIN/RIN1) and A/R Returns
+// (ORDN/RDN1) within the given date range — A21. docSource selects the SAP
+// document family: "credit_memo" (ORIN) or "return" (ORDN).
+func (e *SalesExtractor) ExtractSalesReturns(ctx context.Context, fromDate, toDate time.Time, docSource string) ([]mappings.CanonicalSalesReturn, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+
+	if fromDate.IsZero() {
+		fromDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	if toDate.IsZero() {
+		toDate = time.Now()
+	}
+
+	// A21: select the document family — credit memos (ORIN) or returns (ORDN)
+	var headerQuery, lineQuery, headerName string
+	switch docSource {
+	case "return":
+		headerQuery = schema.QueryReturnOrdersHeader
+		lineQuery = schema.QueryReturnOrderLines
+		headerName = "ORDN"
+	default:
+		docSource = "credit_memo"
+		headerQuery = schema.QueryCreditMemosHeader
+		lineQuery = schema.QueryCreditMemoLines
+		headerName = "ORIN"
+	}
+
+	// 1. Extract Headers
+	rows, err := e.mssql.DB.QueryContext(ctx, headerQuery,
+		sql.Named("FromDate", fromDate),
+		sql.Named("ToDate", toDate),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query %s: %w", headerName, err)
+	}
+	defer rows.Close()
+
+	var returns []mappings.SAPSalesReturn
+	for rows.Next() {
+		var sr mappings.SAPSalesReturn
+		// ISNULL(Comments,'') in the query allows scanning directly into the string field
+		if err := rows.Scan(
+			&sr.DocEntry,
+			&sr.DocNum,
+			&sr.DocDate,
+			&sr.CardCode,
+			&sr.CardName,
+			&sr.DocTotal,
+			&sr.VatSum,
+			&sr.DiscSum,
+			&sr.Canceled,
+			&sr.Comments,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan %s row: %w", headerName, err)
+		}
+		returns = append(returns, sr)
+	}
+
+	if len(returns) == 0 {
+		return []mappings.CanonicalSalesReturn{}, nil
+	}
+
+	// 2. Extract Lines in chunked batches by DocEntry
+	linesMap := make(map[int64][]mappings.SAPSalesReturnLine, len(returns))
+	const docEntryBatchSize = 500
+	for i := 0; i < len(returns); i += docEntryBatchSize {
+		end := i + docEntryBatchSize
+		if end > len(returns) {
+			end = len(returns)
+		}
+		chunk := returns[i:end]
+		var idStrs []string
+		for _, sr := range chunk {
+			idStrs = append(idStrs, fmt.Sprintf("%d", sr.DocEntry))
+		}
+		if len(idStrs) == 0 {
+			continue
+		}
+		query := fmt.Sprintf(lineQuery, strings.Join(idStrs, ","))
+		lineRows, err := e.mssql.DB.QueryContext(ctx, query)
+		if err == nil {
+			for lineRows.Next() {
+				var l mappings.SAPSalesReturnLine
+				var whsCode, unitMsr sql.NullString
+				if err := lineRows.Scan(
+					&l.DocEntry,
+					&l.LineNum,
+					&l.ItemCode,
+					&l.Dscription,
+					&l.Quantity,
+					&l.Price,
+					&l.LineTotal,
+					&l.VatSum,
+					&whsCode,
+					&unitMsr,
+					&l.BaseEntry,
+					&l.BaseType,
+				); err == nil {
+					l.WhsCode = whsCode.String
+					l.UnitMsr = unitMsr.String
+					linesMap[l.DocEntry] = append(linesMap[l.DocEntry], l)
+				}
+			}
+			lineRows.Close()
+		}
+	}
+
+	// 3. Transform to Canonical
+	result := make([]mappings.CanonicalSalesReturn, len(returns))
+	for idx := range returns {
+		returns[idx].DocSource = docSource
+		returns[idx].Lines = linesMap[returns[idx].DocEntry]
+		result[idx] = returns[idx].ToCanonical()
 	}
 
 	return result, nil

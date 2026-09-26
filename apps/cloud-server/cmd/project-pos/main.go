@@ -37,25 +37,60 @@ func main() {
 		log.Fatalf("Failed to create index on cashier_sessions: %v", err)
 	}
 
-	// 2. Resolve default IDs
-	var cashierID, terminalID, customerID int
-	_ = pool.QueryRow(ctx, `SELECT id FROM cashiers WHERE cashier_code = 'CASHIER-01' LIMIT 1`).Scan(&cashierID)
-	if cashierID == 0 {
-		cashierID = 1
+	// 2. Resolve default Store, Cashier, Terminal, and Customer
+	var storeID, orgID int
+	err = pool.QueryRow(ctx, `SELECT id, organization_id FROM stores WHERE code = '01' LIMIT 1`).Scan(&storeID, &orgID)
+	if err != nil || storeID == 0 {
+		err = pool.QueryRow(ctx, `SELECT id, organization_id FROM stores ORDER BY id ASC LIMIT 1`).Scan(&storeID, &orgID)
+		if err != nil {
+			log.Fatalf("No store found: %v", err)
+		}
 	}
 
-	_ = pool.QueryRow(ctx, `SELECT id FROM pos_terminals WHERE terminal_code = 'TERM-01' LIMIT 1`).Scan(&terminalID)
-	if terminalID == 0 {
-		terminalID = 1
+	var terminalID int
+	err = pool.QueryRow(ctx, `
+		INSERT INTO pos_terminals (store_id, terminal_code, terminal_name, is_active)
+		VALUES ($1, 'TERM-01', 'Main POS Counter 01', true)
+		ON CONFLICT (store_id, terminal_code) DO UPDATE SET is_active = true
+		RETURNING id;
+	`, storeID).Scan(&terminalID)
+	if err != nil {
+		log.Fatalf("Failed to resolve pos_terminal: %v", err)
 	}
 
-	_ = pool.QueryRow(ctx, `SELECT id FROM customers WHERE customer_code = 'C00006' LIMIT 1`).Scan(&customerID)
-	if customerID == 0 {
-		customerID = 9
+	var userID int
+	_ = pool.QueryRow(ctx, `SELECT id FROM users WHERE username IN ('manager', 'admin-1') ORDER BY id ASC LIMIT 1`).Scan(&userID)
+	if userID == 0 {
+		_ = pool.QueryRow(ctx, `SELECT id FROM users ORDER BY id ASC LIMIT 1`).Scan(&userID)
 	}
 
-	var storeID int = 1
-	log.Printf("[CONFIG] Target Store: %d | Cashier: %d | Terminal: %d | Customer: %d\n", storeID, cashierID, terminalID, customerID)
+	var cashierID int
+	err = pool.QueryRow(ctx, `
+		INSERT INTO cashiers (user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active)
+		VALUES ($1, $2, 'CASHIER-01', 50000, 10, true)
+		ON CONFLICT (store_id, cashier_code) DO UPDATE SET is_active = true
+		RETURNING id;
+	`, userID, storeID).Scan(&cashierID)
+	if err != nil {
+		log.Fatalf("Failed to resolve cashier: %v", err)
+	}
+
+	var customerID int
+	err = pool.QueryRow(ctx, `
+		INSERT INTO customers (organization_id, customer_code, name, is_active)
+		VALUES ($1, 'C00006', 'عميل نقدي', true)
+		ON CONFLICT (organization_id, customer_code) DO UPDATE SET is_active = true
+		RETURNING id;
+	`, orgID).Scan(&customerID)
+	if err != nil {
+		log.Fatalf("Failed to resolve customer: %v", err)
+	}
+
+	var defaultProductID int
+	_ = pool.QueryRow(ctx, `SELECT id FROM products ORDER BY id ASC LIMIT 1`).Scan(&defaultProductID)
+
+	log.Printf("[CONFIG] Target Store: %d | Cashier: %d | Terminal: %d | Customer: %d | Fallback Product: %d\n",
+		storeID, cashierID, terminalID, customerID, defaultProductID)
 
 	// 3. Populate Closed Daily Cashier Sessions (Z-Reports)
 	log.Println("[STEP 1/4] Creating Closed Daily Cashier Sessions (Z-Reports)...")
@@ -125,6 +160,18 @@ func main() {
 
 	log.Printf("[STEP 2/4] Discovered %d months covering %d cash invoices to project.\n", len(jobs), grandTotal)
 
+	// Disable stock deduction trigger during historical bulk copy to prevent redundant updates
+	_, err = pool.Exec(ctx, `ALTER TABLE pos_transaction_lines DISABLE TRIGGER trg_deduct_inventory_on_pos_transaction;`)
+	if err != nil {
+		log.Printf("Notice: could not disable trigger trg_deduct_inventory_on_pos_transaction: %v", err)
+	} else {
+		log.Println("✓ Temporarily disabled trg_deduct_inventory_on_pos_transaction for high-speed projection.")
+		defer func() {
+			_, _ = pool.Exec(context.Background(), `ALTER TABLE pos_transaction_lines ENABLE TRIGGER trg_deduct_inventory_on_pos_transaction;`)
+			log.Println("✓ Re-enabled trg_deduct_inventory_on_pos_transaction.")
+		}()
+	}
+
 	// 5. Project each month
 	var totalTransProjected int64
 	startTime := time.Now()
@@ -177,7 +224,7 @@ func main() {
 		)
 		SELECT 
 			pt.id,
-			COALESCE(il.product_id, 1),
+			COALESCE(il.product_id, $3),
 			il.quantity,
 			il.unit_price,
 			COALESCE(il.discount_amount, 0),
@@ -194,7 +241,7 @@ func main() {
 			  SELECT 1 FROM pos_transaction_lines ptl WHERE ptl.transaction_id = pt.id
 		  );
 		`
-		lTag, err := pool.Exec(ctx, linesQuery, job.Start, job.End)
+		lTag, err := pool.Exec(ctx, linesQuery, job.Start, job.End, defaultProductID)
 		if err != nil {
 			log.Fatalf("[%s] Failed to project transaction lines: %v", monthStr, err)
 		}

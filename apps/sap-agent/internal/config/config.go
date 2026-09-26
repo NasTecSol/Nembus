@@ -24,6 +24,7 @@ type CloudConfig struct {
 	APIKey         string `json:"api_key"`
 	OrganizationID int    `json:"organization_id"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
+	DatabaseURL    string `json:"database_url,omitempty"`
 }
 
 type AgentConfig struct {
