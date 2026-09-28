@@ -64,9 +64,13 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	}
 
 	// 2. Also check and resolve pending sync_queue records
-	queueItems, _ := s.nembusClient.FetchPendingSyncQueue(ctx, limit)
-	for _, item := range queueItems {
-		_ = s.nembusClient.UpdateSyncQueueStatus(ctx, item.ID, "synced", "")
+	queueItems, qErr := s.nembusClient.FetchPendingSyncQueue(ctx, limit)
+	if qErr == nil {
+		for _, item := range queueItems {
+			if item.ID > 0 {
+				_ = s.nembusClient.UpdateSyncQueueStatus(ctx, item.ID, "synced", "")
+			}
+		}
 	}
 
 	stats.Duration = time.Since(start)
@@ -94,6 +98,13 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 			unitPriceNet = line.Subtotal / line.Quantity
 		}
 
+		// Calculate discount percent from discount amount
+		discountPct := 0.0
+		if line.UnitPrice > 0 && line.Quantity > 0 && line.DiscountAmount > 0 {
+			gross := line.UnitPrice * line.Quantity
+			discountPct = (line.DiscountAmount / gross) * 100.0
+		}
+
 		lineNum := idx
 		docLines = append(docLines, sap.SAPDocumentLine{
 			LineNum:         &lineNum,
@@ -102,7 +113,7 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 			Quantity:        line.Quantity,
 			UnitPrice:       unitPriceNet,
 			PriceAfterVAT:   line.LineTotal / line.Quantity,
-			DiscountPercent: line.DiscountAmount,
+			DiscountPercent: discountPct,
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
 		})
 	}

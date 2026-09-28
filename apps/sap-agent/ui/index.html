@@ -3,509 +3,1036 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nembus SAP B1 Migration Agent</title>
+    <title>Nembus SAP B1 Integration & Migration Command Center</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
-    <div class="app-container">
+    <div class="app-layout">
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
-            <div class="brand">
-                <div class="brand-icon">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <div class="sidebar-brand">
+                <div class="brand-logo">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
                         <polyline points="2 17 12 22 22 17"></polyline>
                         <polyline points="2 12 12 17 22 12"></polyline>
                     </svg>
                 </div>
-                <div class="brand-text">
-                    <h2>NEMBUS</h2>
-                    <span class="badge badge-accent">SAP AGENT</span>
+                <div class="brand-info">
+                    <div class="brand-title">NEMBUS <span class="brand-version">v2.4</span></div>
+                    <div class="brand-subtitle">SAP B1 Agent & Security Hub</div>
                 </div>
             </div>
 
-            <nav class="nav-menu">
-                <button class="nav-item active" data-tab="tab-discovery" id="nav-discovery">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                    <span>Discovery & Setup</span>
+            <!-- Security Badge -->
+            <div class="system-security-badge" id="migrator-security-pill">
+                <div class="pulse-ring"></div>
+                <div class="security-text">
+                    <span class="sec-label">SECURITY CONTEXT</span>
+                    <span class="sec-val" id="sidebar-migrator-user">Migrator (auto-user)</span>
+                </div>
+            </div>
+
+            <!-- Navigation Menu with Submenus -->
+            <nav class="sidebar-nav">
+                <!-- ONBOARDING & SETUP -->
+                <div class="nav-section-label">ONBOARDING &amp; TENANTS</div>
+                <button class="nav-link active" data-tab="tab-onboarding" id="nav-onboarding">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <span>Onboarding Wizard</span>
+                    <span class="badge badge-pulse" id="wizard-status-badge">Step 1</span>
                 </button>
-                <button class="nav-item" data-tab="tab-migration" id="nav-migration">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                    <span>Migration Pipeline</span>
+
+                <!-- DASHBOARDS -->
+                <div class="nav-section-label">OPERATIONS &amp; TELEMETRY</div>
+                <button class="nav-link" data-tab="tab-dashboard" id="nav-dashboard">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+                    <span>Executive Dashboard</span>
                 </button>
-                <button class="nav-item" data-tab="tab-logs" id="nav-logs">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-                    <span>Live Console</span>
+
+                <!-- SYNC PIPELINES -->
+                <div class="nav-section-label">SYNCHRONIZATION PIPELINES</div>
+                <button class="nav-link" data-tab="tab-downstream" id="nav-downstream">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path></svg>
+                    <span>Downstream Sync (SAP&rarr;Cloud)</span>
                 </button>
-                <button class="nav-item" data-tab="tab-reconciliation" id="nav-reconciliation">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                    <span>Reconciliation</span>
+                <button class="nav-link" data-tab="tab-upstream" id="nav-upstream">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 14 12 9 7 14"></polyline><line x1="12" y1="9" x2="12" y2="21"></line><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path></svg>
+                    <span>Upstream Outbox (POS&rarr;SAP)</span>
                 </button>
-                <button class="nav-item" data-tab="tab-history" id="nav-history">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+
+                <!-- MIGRATION & ETL -->
+                <div class="nav-section-label">MIGRATION STUDIO</div>
+                <button class="nav-link" data-tab="tab-migration" id="nav-migration">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                    <span>Migration Pipeline (ETL)</span>
+                </button>
+                <button class="nav-link" data-tab="tab-reconciliation" id="nav-reconciliation">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    <span>Audit &amp; Reconciliation</span>
+                </button>
+
+                <!-- HISTORY & LOGS -->
+                <div class="nav-section-label">DIAGNOSTICS &amp; LOGS</div>
+                <button class="nav-link" data-tab="tab-history" id="nav-history">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                     <span>Run History</span>
+                </button>
+                <button class="nav-link" data-tab="tab-logs" id="nav-logs">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    <span>Live Console &amp; Logs</span>
+                </button>
+
+                <!-- CONFIGURATION -->
+                <div class="nav-section-label">SETTINGS</div>
+                <button class="nav-link" data-tab="tab-config" id="nav-config">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    <span>System Settings &amp; Keys</span>
                 </button>
             </nav>
 
+            <!-- Sidebar Footer -->
             <div class="sidebar-footer">
-                <div class="status-indicator">
-                    <span class="status-dot connected" id="ws-status-dot"></span>
-                    <span id="ws-status-text">Agent Online</span>
+                <div class="agent-status-card">
+                    <div class="status-row">
+                        <span class="status-indicator-dot online" id="ws-status-dot"></span>
+                        <span class="status-title" id="ws-status-text">Agent Daemon Online</span>
+                    </div>
+                    <div class="status-meta">
+                        <span id="mssql-sidebar-status">MSSQL: Connected</span>
+                        <span id="cloud-sidebar-status">Cloud: Active</span>
+                    </div>
                 </div>
-                <div class="agent-version">v1.0.0 (Windows Native)</div>
             </div>
         </aside>
 
         <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Header -->
-            <header class="top-header">
-                <div class="header-title">
-                    <h1 id="page-title">Discovery & Configuration</h1>
-                    <p id="page-subtitle">Configure SAP SQL Server source and target Nembus Cloud ERP</p>
+        <main class="main-body">
+            <!-- Top Header Bar -->
+            <header class="top-nav-bar">
+                <div class="header-left">
+                    <h1 class="view-title" id="page-title">Onboarding &amp; Multi-Tenant Setup</h1>
+                    <p class="view-subtitle" id="page-subtitle">Configure automated database mapping, Migrator security layer, and migration pipelines</p>
                 </div>
-                <div class="header-actions">
-                    <button class="btn btn-outline" id="btn-refresh-all">
+                <div class="header-right">
+                    <div class="tenant-selector-pill">
+                        <span class="pill-label">TENANT:</span>
+                        <span class="pill-val" id="header-tenant-name">Default Tenant</span>
+                    </div>
+                    <button class="btn btn-secondary btn-icon" id="btn-quick-sync" title="Trigger Instant Master Sync">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                        Refresh State
+                        <span>Sync Now</span>
+                    </button>
+                    <button class="btn btn-primary" id="btn-re-run-wizard">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        <span>Run Wizard</span>
                     </button>
                 </div>
             </header>
 
-            <!-- Tab 1: Discovery & Setup -->
-            <section id="tab-discovery" class="tab-pane active">
-                <div class="grid grid-2">
-                    <!-- SAP B1 Source Card -->
-                    <div class="card glass-card">
-                        <div class="card-header">
-                            <div class="card-title-wrap">
-                                <h3>SAP Business One SQL Server</h3>
-                                <span class="badge" id="mssql-badge">Not Connected</span>
+            <!-- TAB 1: ONBOARDING WIZARD -->
+            <section id="tab-onboarding" class="tab-view active">
+                <div class="wizard-container">
+                    <!-- Wizard Header Stepper -->
+                    <div class="wizard-stepper glass-panel">
+                        <div class="step-item active" data-step="1" id="step-nav-1">
+                            <div class="step-badge">1</div>
+                            <div class="step-details">
+                                <div class="step-name">Connections</div>
+                                <div class="step-desc">SAP &amp; Cloud DB</div>
                             </div>
                         </div>
-                        <div class="card-body">
-                            <form id="form-mssql">
-                                <div class="form-row">
-                                     <div class="form-group flex-2">
-                                         <label>Host / IP</label>
-                                         <input type="text" id="mssql-host" value="192.168.18.77" required>
-                                     </div>
-                                     <div class="form-group flex-1">
-                                         <label>Port</label>
-                                         <input type="number" id="mssql-port" value="1433" required>
-                                     </div>
-                                 </div>
-                                 <div class="form-row">
-                                     <div class="form-group flex-1">
-                                         <label>SQL User</label>
-                                         <input type="text" id="mssql-user" value="admin" placeholder="admin">
-                                     </div>
-                                     <div class="form-group flex-1">
-                                         <label>Password</label>
-                                         <input type="password" id="mssql-pass" value="nastecsol" placeholder="••••••••">
-                                     </div>
-                                 </div>
-                                 <div class="form-group">
-                                     <label>Company Database (`CompanyDB`)</label>
-                                     <input type="text" id="mssql-db" value="Qadsiya" required>
-                                 </div>
-                                <div class="form-row-checkbox">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="mssql-trust" checked> Trust Server Certificate
-                                    </label>
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="mssql-encrypt"> Encrypt Connection
-                                    </label>
-                                </div>
-                                <div class="form-actions">
-                                    <button type="button" class="btn btn-secondary" id="btn-test-mssql">Test Connection</button>
-                                    <button type="submit" class="btn btn-primary">Save Config</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Cloud Ingestion Gateway Card -->
-                    <div class="card glass-card">
-                        <div class="card-header">
-                            <div class="card-title-wrap">
-                                <h3>Nembus Cloud Gateway</h3>
-                                <span class="badge" id="cloud-badge">Not Connected</span>
+                        <div class="step-line"></div>
+                        <div class="step-item" data-step="2" id="step-nav-2">
+                            <div class="step-badge">2</div>
+                            <div class="step-details">
+                                <div class="step-name">Tenant &amp; Org</div>
+                                <div class="step-desc">Company Mapping</div>
                             </div>
                         </div>
-                        <div class="card-body">
-                            <form id="form-cloud">
-                                <div class="form-group">
-                                    <label>Cloud API Server URL</label>
-                                    <input type="url" id="cloud-url" value="http://127.0.0.1:8080" required>
-                                </div>
-                                <div class="form-row">
-                                    <div class="form-group flex-1">
-                                        <label>Organization / Tenant ID</label>
-                                        <input type="number" id="cloud-org-id" value="1" required>
-                                    </div>
-                                    <div class="form-group flex-1">
-                                        <label>Batch Size</label>
-                                        <input type="number" id="agent-batch-size" value="500" required>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Migration Ingestion API Key / Bearer Token</label>
-                                    <input type="password" id="cloud-api-key" placeholder="Enter JWT or API Key">
-                                </div>
-                                <div class="form-actions">
-                                    <button type="button" class="btn btn-secondary" id="btn-test-cloud">Test Endpoint</button>
-                                    <button type="submit" class="btn btn-primary">Save Config</button>
-                                </div>
-                            </form>
+                        <div class="step-line"></div>
+                        <div class="step-item" data-step="3" id="step-nav-3">
+                            <div class="step-badge">3</div>
+                            <div class="step-details">
+                                <div class="step-name">Security Layer</div>
+                                <div class="step-desc">Migrator auto-user</div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Discovery Stats -->
-                <div class="discovery-section">
-                    <div class="section-header">
-                        <h2>SAP B1 Database Discovery</h2>
-                        <button class="btn btn-sm btn-outline" id="btn-run-discovery">Run Full Discovery</button>
-                    </div>
-                    <div class="discovery-meta-card glass-card" id="discovery-summary-box">
-                        <div class="meta-item">
-                            <span class="meta-label">Company Name</span>
-                            <span class="meta-value" id="disc-company">-</span>
+                        <div class="step-line"></div>
+                        <div class="step-item" data-step="4" id="step-nav-4">
+                            <div class="step-badge">4</div>
+                            <div class="step-details">
+                                <div class="step-name">Pipelines</div>
+                                <div class="step-desc">Intervals &amp; Rules</div>
+                            </div>
                         </div>
-                        <div class="meta-item">
-                            <span class="meta-label">SAP Version</span>
-                            <span class="meta-value" id="disc-version">-</span>
+                        <div class="step-line"></div>
+                        <div class="step-item" data-step="5" id="step-nav-5">
+                            <div class="step-badge">5</div>
+                            <div class="step-details">
+                                <div class="step-name">Reconciliation</div>
+                                <div class="step-desc">Audit &amp; Tolerance</div>
+                            </div>
                         </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Database</span>
-                            <span class="meta-value" id="disc-dbname">-</span>
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">Status</span>
-                            <span class="badge badge-success" id="disc-status">Ready</span>
+                        <div class="step-line"></div>
+                        <div class="step-item" data-step="6" id="step-nav-6">
+                            <div class="step-badge">6</div>
+                            <div class="step-details">
+                                <div class="step-name">Activate</div>
+                                <div class="step-desc">Launch Engine</div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Entity Count Grid -->
-                    <div class="entity-grid" id="entity-count-grid">
-                        <div class="entity-card"><span class="entity-name">Products (OITM)</span><span class="entity-count" id="count-oitm">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Price Lists (OPLN)</span><span class="entity-count" id="count-opln">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Item Prices (ITM1)</span><span class="entity-count" id="count-itm1">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Warehouses (OWHS)</span><span class="entity-count" id="count-owhs">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Stock Balances (OITW)</span><span class="entity-count" id="count-oitw">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Customers (OCRD)</span><span class="entity-count" id="count-ocrd-c">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Suppliers (OCRD)</span><span class="entity-count" id="count-ocrd-s">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Purchase Orders (OPOR)</span><span class="entity-count" id="count-opor">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Goods Receipts (OPDN)</span><span class="entity-count" id="count-opdn">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Stock Moves (OINM)</span><span class="entity-count" id="count-oinm">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Sales Orders (ORDR)</span><span class="entity-count" id="count-ordr">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Invoices (OINV)</span><span class="entity-count" id="count-oinv">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Incoming Payments (ORCT)</span><span class="entity-count" id="count-orct">0</span></div>
-                        <div class="entity-card"><span class="entity-name">Users / Cashiers</span><span class="entity-count" id="count-ousr">0</span></div>
+                    <!-- STEP 1: Database & Cloud Server Connection -->
+                    <div class="wizard-step-card glass-panel" id="wizard-step-1">
+                        <div class="wizard-card-header">
+                            <div class="step-num-pill">Step 1 of 6</div>
+                            <h2>Database &amp; Server Infrastructure Setup</h2>
+                            <p>Configure and verify connectivity between local SAP Business One SQL Server and the Nembus Cloud ERP Instance.</p>
+                        </div>
+                        <div class="wizard-card-body">
+                            <div class="form-grid-2">
+                                <div class="form-box">
+                                    <div class="box-title">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                                        <span>SAP Business One MSSQL Server</span>
+                                    </div>
+                                    <div class="form-group-row">
+                                        <div class="form-group flex-2">
+                                            <label>Host / IP Address</label>
+                                            <input type="text" id="ob-mssql-host" value="192.168.18.77">
+                                        </div>
+                                        <div class="form-group flex-1">
+                                            <label>Port</label>
+                                            <input type="number" id="ob-mssql-port" value="1433">
+                                        </div>
+                                    </div>
+                                    <div class="form-group-row">
+                                        <div class="form-group flex-1">
+                                            <label>Database User</label>
+                                            <input type="text" id="ob-mssql-user" value="admin">
+                                        </div>
+                                        <div class="form-group flex-1">
+                                            <label>Database Password</label>
+                                            <input type="password" id="ob-mssql-password" value="nastecsol">
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>SAP Company Database Name</label>
+                                        <input type="text" id="ob-mssql-database" value="Qadsiya">
+                                    </div>
+                                    <div class="form-group-row">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="ob-mssql-trust" checked> Trust Server Certificate
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="ob-mssql-encrypt"> Encrypt TLS
+                                        </label>
+                                    </div>
+                                    <button class="btn btn-outline btn-full" id="btn-test-mssql-step1">
+                                        <span class="btn-spinner"></span>
+                                        <span>Test SAP SQL Connection</span>
+                                    </button>
+                                    <div class="test-result" id="mssql-test-step1-result"></div>
+                                </div>
+
+                                <div class="form-box">
+                                    <div class="box-title">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+                                        <span>Nembus Cloud ERP Server</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Cloud Server API Base URL</label>
+                                        <input type="text" id="ob-cloud-url" value="http://127.0.0.1:8080">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Direct Target Postgres Database URL (Optional Audit Parity)</label>
+                                        <input type="text" id="ob-cloud-dburl" placeholder="postgres://user:pass@localhost:5432/nembus?sslmode=disable">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Connection Timeout (Seconds)</label>
+                                        <input type="number" id="ob-cloud-timeout" value="60">
+                                    </div>
+                                    <button class="btn btn-outline btn-full" id="btn-test-cloud-step1">
+                                        <span class="btn-spinner"></span>
+                                        <span>Test Cloud API Connection</span>
+                                    </button>
+                                    <div class="test-result" id="cloud-test-step1-result"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wizard-card-footer">
+                            <div class="footer-left">
+                                <span class="auto-badge">&#10003; Zero manual scripts required</span>
+                            </div>
+                            <div class="footer-right">
+                                <button class="btn btn-primary" id="btn-step1-next">Continue to Tenant Selection &rarr;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 2: Multi-Tenant & SAP Company Selection -->
+                    <div class="wizard-step-card glass-panel" id="wizard-step-2" style="display: none;">
+                        <div class="wizard-card-header">
+                            <div class="step-num-pill">Step 2 of 6</div>
+                            <h2>Tenant &amp; Organization Mapping</h2>
+                            <p>Select target Nembus multi-tenant workspace and map the SAP Company database to the core organization.</p>
+                        </div>
+                        <div class="wizard-card-body">
+                            <div class="tenant-grid">
+                                <div class="tenant-select-box">
+                                    <h3>Target Nembus Tenant</h3>
+                                    <p class="subtext">Discovered active tenant partitions from Nembus Cloud:</p>
+                                    <div class="tenant-list" id="tenant-radio-list">
+                                        <div class="tenant-radio-item selected">
+                                            <input type="radio" name="tenant_choice" value="demo-retail" checked>
+                                            <div class="t-info">
+                                                <div class="t-title">Al-Qadsiya Retail (Demo Partition)</div>
+                                                <div class="t-slug">Slug: <code>demo-retail</code> &bull; ID: 1</div>
+                                            </div>
+                                            <span class="badge badge-success">Active</span>
+                                        </div>
+                                        <div class="tenant-radio-item">
+                                            <input type="radio" name="tenant_choice" value="nastecsol-main">
+                                            <div class="t-info">
+                                                <div class="t-title">NasTecSol Enterprise Core</div>
+                                                <div class="t-slug">Slug: <code>nastecsol-main</code> &bull; ID: 2</div>
+                                            </div>
+                                            <span class="badge badge-outline">Ready</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline" id="btn-refresh-tenants">&#x21bb; Refresh Discovered Tenants</button>
+                                </div>
+
+                                <div class="org-mapping-box">
+                                    <h3>SAP Company &rarr; Nembus Organization Mapping</h3>
+                                    <div class="form-group">
+                                        <label>SAP Company Database</label>
+                                        <input type="text" id="ob-mapped-company" value="Qadsiya" readonly class="input-readonly">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Target Organization ID</label>
+                                        <input type="number" id="ob-target-orgid" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Default Retail Store Code Mapping</label>
+                                        <input type="text" id="ob-default-store" value="01" placeholder="e.g. 01 (Main Branch)">
+                                    </div>
+                                    <div class="mapping-preview-card">
+                                        <div class="preview-title">Partition Route:</div>
+                                        <div class="preview-route"><span id="preview-slug">demo-retail</span> / Org #<span id="preview-org">1</span> &larr; SAP [Qadsiya]</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wizard-card-footer">
+                            <button class="btn btn-secondary" id="btn-step2-back">&larr; Back</button>
+                            <button class="btn btn-primary" id="btn-step2-next">Configure Security Layer &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 3: Security Layer & Migrator System User -->
+                    <div class="wizard-step-card glass-panel" id="wizard-step-3" style="display: none;">
+                        <div class="wizard-card-header">
+                            <div class="step-num-pill">Step 3 of 6</div>
+                            <h2>Migrator Security Layer &amp; auto-user Provisioning</h2>
+                            <p>Provision the dedicated system principal (<code>Migrator</code>) with <code>auto-user</code> role type. This isolates SAP Agent workflows and provides unified middleware authentication across all endpoints.</p>
+                        </div>
+                        <div class="wizard-card-body">
+                            <div class="security-setup-grid">
+                                <div class="sec-card-left">
+                                    <div class="security-badge-large">
+                                        <div class="sec-icon">&#128274;</div>
+                                        <div class="sec-meta">
+                                            <h3>Unified API &amp; Agent Security Protocol</h3>
+                                            <p>All extraction, batch ingestions, and upstream POS postings are authenticated using an immutable system security principal with automatic credential rotation and retries.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="sec-form-inputs">
+                                        <div class="form-group-row">
+                                            <div class="form-group flex-1">
+                                                <label>System Username</label>
+                                                <input type="text" id="ob-migrator-user" value="Migrator" required>
+                                            </div>
+                                            <div class="form-group flex-1">
+                                                <label>System Password</label>
+                                                <input type="password" id="ob-migrator-password" value="Migrator" required>
+                                            </div>
+                                        </div>
+                                        <div class="form-group-row">
+                                            <div class="form-group flex-1">
+                                                <label>Role Type Security Scope</label>
+                                                <input type="text" id="ob-migrator-role" value="auto-user" readonly class="input-readonly">
+                                            </div>
+                                            <div class="form-group flex-1">
+                                                <label>Mapped SAP Operator</label>
+                                                <input type="text" id="ob-sap-operator" value="manager">
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-success btn-full" id="btn-auth-migrator">
+                                            <span class="btn-spinner"></span>
+                                            <span>&#9654; Authenticate &amp; Mint Security Token</span>
+                                        </button>
+                                        <div class="test-result" id="migrator-auth-result"></div>
+                                    </div>
+                                </div>
+
+                                <div class="sec-card-right">
+                                    <div class="token-inspector">
+                                        <div class="inspector-header">Active Security Session &amp; Claims</div>
+                                        <div class="claims-list">
+                                            <div class="claim-row">
+                                                <span class="c-key">Principal:</span>
+                                                <span class="c-val" id="claim-principal">Migrator</span>
+                                            </div>
+                                            <div class="claim-row">
+                                                <span class="c-key">Role Type:</span>
+                                                <span class="c-val badge badge-accent" id="claim-role">auto-user</span>
+                                            </div>
+                                            <div class="claim-row">
+                                                <span class="c-key">Isolation Boundary:</span>
+                                                <span class="c-val">Agent Workflows &amp; ETL Middlewares</span>
+                                            </div>
+                                            <div class="claim-row">
+                                                <span class="c-key">Token Status:</span>
+                                                <span class="c-val" id="claim-token-status">Pending Provisioning</span>
+                                            </div>
+                                        </div>
+                                        <div class="jwt-preview-box">
+                                            <label>Derived Agent Bearer Token:</label>
+                                            <textarea id="ob-derived-token" readonly placeholder="Token will be generated automatically upon authentication..."></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wizard-card-footer">
+                            <button class="btn btn-secondary" id="btn-step3-back">&larr; Back</button>
+                            <button class="btn btn-primary" id="btn-step3-next">Configure Migration Pipeline &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 4: Migration & Sync Pipeline Schedules -->
+                    <div class="wizard-step-card glass-panel" id="wizard-step-4" style="display: none;">
+                        <div class="wizard-card-header">
+                            <div class="step-num-pill">Step 4 of 6</div>
+                            <h2>Pipeline Automation &amp; Cadence Configuration</h2>
+                            <p>Establish automated synchronization frequencies, batch ingestion thresholds, and cashier governance limits.</p>
+                        </div>
+                        <div class="wizard-card-body">
+                            <div class="pipeline-config-grid">
+                                <div class="config-card">
+                                    <div class="card-icon-title">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                        <span>Downstream Master Data Sync (SAP&rarr;Cloud)</span>
+                                    </div>
+                                    <p class="config-desc">Pulls master items, price lists, barcodes, UoMs, and partners from SAP Business One.</p>
+                                    <div class="form-group">
+                                        <label>Sync Interval (Seconds)</label>
+                                        <input type="number" id="ob-downstream-interval" value="300">
+                                        <span class="help-text">Default: 300s (5 minutes)</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>ETL Batch Size (Records per chunk)</label>
+                                        <input type="number" id="ob-batch-size" value="500">
+                                    </div>
+                                </div>
+
+                                <div class="config-card">
+                                    <div class="card-icon-title">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 14 12 9 7 14"></polyline><line x1="12" y1="9" x2="12" y2="21"></line></svg>
+                                        <span>Upstream Outbox Pipeline (POS&rarr;SAP)</span>
+                                    </div>
+                                    <p class="config-desc">Pushes completed retail POS sales invoices, payments, and credit memos to SAP Service Layer.</p>
+                                    <div class="form-group">
+                                        <label>Outbox Poll Interval (Seconds)</label>
+                                        <input type="number" id="ob-upstream-interval" value="60">
+                                        <span class="help-text">Default: 60s (1 minute)</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Default SAP Customer Code</label>
+                                        <input type="text" id="ob-default-customer" value="C000001">
+                                    </div>
+                                </div>
+
+                                <div class="config-card">
+                                    <div class="card-icon-title">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                        <span>Cashier &amp; Historical Window</span>
+                                    </div>
+                                    <p class="config-desc">Control imported cashier limits and historical invoice ingestion start date.</p>
+                                    <div class="form-group-row">
+                                        <div class="form-group flex-1">
+                                            <label>Max Drawer Limit (SAR)</label>
+                                            <input type="number" id="ob-drawer-limit" value="5000">
+                                        </div>
+                                        <div class="form-group flex-1">
+                                            <label>Max Discount (%)</label>
+                                            <input type="number" id="ob-discount-limit" value="20">
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Historical Ingestion Start Date</label>
+                                        <input type="date" id="ob-start-date" value="2020-01-01">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wizard-card-footer">
+                            <button class="btn btn-secondary" id="btn-step4-back">&larr; Back</button>
+                            <button class="btn btn-primary" id="btn-step4-next">Reconciliation &amp; Auditing &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 5: Reconciliation & Parity Rules -->
+                    <div class="wizard-step-card glass-panel" id="wizard-step-5" style="display: none;">
+                        <div class="wizard-card-header">
+                            <div class="step-num-pill">Step 5 of 6</div>
+                            <h2>Audit &amp; Reconciliation Protocol</h2>
+                            <p>Configure automated cross-database reconciliation between SAP MSSQL and Nembus Cloud Postgres.</p>
+                        </div>
+                        <div class="wizard-card-body">
+                            <div class="reconcile-setup-grid">
+                                <div class="form-box">
+                                    <h3>Automated Audit Scheduler</h3>
+                                    <div class="form-group">
+                                        <label class="checkbox-label large">
+                                            <input type="checkbox" id="ob-recon-autorun" checked> Enable Background Continuous Reconciliation
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Reconciliation Interval (Seconds)</label>
+                                        <input type="number" id="ob-recon-interval" value="3600">
+                                        <span class="help-text">Default: 3600s (Every 1 hour)</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Discrepancy Tolerance Threshold (%)</label>
+                                        <input type="number" id="ob-recon-tolerance" value="0.05" step="0.01">
+                                        <span class="help-text">Flags an anomaly if discrepancy exceeds 0.05%</span>
+                                    </div>
+                                </div>
+
+                                <div class="audit-domains-box">
+                                    <h3>Domains Audited in Parity Protocol</h3>
+                                    <ul class="audit-feature-list">
+                                        <li>&#10004; <strong>Master Catalog:</strong> Items, Barcodes, Pricing, Units of Measure</li>
+                                        <li>&#10004; <strong>Business Partners:</strong> Customer Balances, Vendor Master, VAT IDs</li>
+                                        <li>&#10004; <strong>Inventory Parity:</strong> On-hand warehouse quantities &amp; valuations</li>
+                                        <li>&#10004; <strong>Financial Parity:</strong> A/R Invoices, Outbox Transactions, Payments</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wizard-card-footer">
+                            <button class="btn btn-secondary" id="btn-step5-back">&larr; Back</button>
+                            <button class="btn btn-primary" id="btn-step5-next">Review &amp; Final Activation &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 6: Review & Final Activation -->
+                    <div class="wizard-step-card glass-panel" id="wizard-step-6" style="display: none;">
+                        <div class="wizard-card-header">
+                            <div class="step-num-pill">Step 6 of 6</div>
+                            <h2>Review Configuration &amp; Activate Agent</h2>
+                            <p>Verify all mapped parameters before initializing pipelines and background workers.</p>
+                        </div>
+                        <div class="wizard-card-body">
+                            <div class="summary-review-grid">
+                                <div class="summary-card">
+                                    <div class="sum-title">Infrastructure &amp; Database</div>
+                                    <div class="sum-item"><span>SAP MSSQL:</span> <code id="sum-mssql">192.168.18.77:1433 [Qadsiya]</code></div>
+                                    <div class="sum-item"><span>Nembus Cloud:</span> <code id="sum-cloud">http://127.0.0.1:8080</code></div>
+                                    <div class="sum-item"><span>Tenant / Org:</span> <strong id="sum-tenant">demo-retail (Org #1)</strong></div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="sum-title">Security &amp; Migrator Principal</div>
+                                    <div class="sum-item"><span>System User:</span> <strong id="sum-user">Migrator</strong></div>
+                                    <div class="sum-item"><span>Role Type:</span> <span class="badge badge-accent" id="sum-role">auto-user</span></div>
+                                    <div class="sum-item"><span>SAP Operator:</span> <code id="sum-sap-op">manager</code></div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="sum-title">Pipeline Schedules</div>
+                                    <div class="sum-item"><span>Downstream Sync:</span> <strong id="sum-downstream">Every 300s</strong></div>
+                                    <div class="sum-item"><span>Upstream Outbox:</span> <strong id="sum-upstream">Every 60s</strong></div>
+                                    <div class="sum-item"><span>Audit Parity:</span> <strong id="sum-audit">Every 3600s</strong></div>
+                                </div>
+                            </div>
+                            <div class="activation-banner">
+                                <div class="banner-text">
+                                    <h3>Ready to Deploy Nembus SAP Agent</h3>
+                                    <p>Upon clicking Activate, the agent will persist configuration to <code>agent_config.json</code>, lock the security layer, and enable real-time sync telemetry.</p>
+                                </div>
+                                <button class="btn btn-success btn-lg" id="btn-finalize-onboarding">
+                                    <span class="btn-spinner"></span>
+                                    <span>&#9889; Complete Onboarding &amp; Launch Agent</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="wizard-card-footer">
+                            <button class="btn btn-secondary" id="btn-step6-back">&larr; Back</button>
+                        </div>
                     </div>
                 </div>
             </section>
 
-            <!-- Tab 2: Migration Pipeline -->
-            <section id="tab-migration" class="tab-pane">
-                <div class="migration-control-panel glass-card">
-                    <div class="control-header">
-                        <div>
-                            <h2>Migration Execution Engine</h2>
-                            <p class="subtitle">Select domains, configure execution mode and launch the migration.</p>
+            <!-- TAB 2: EXECUTIVE DASHBOARD -->
+            <section id="tab-dashboard" class="tab-view">
+                <div class="dashboard-grid">
+                    <!-- Metric Cards -->
+                    <div class="metrics-row">
+                        <div class="metric-card glass-panel">
+                            <div class="m-icon icon-blue">&#9881;</div>
+                            <div class="m-content">
+                                <div class="m-label">Downstream Master Sync</div>
+                                <div class="m-value" id="dash-downstream-count">18,420 Items</div>
+                                <div class="m-sub text-success">&#10003; Last synced 3m ago</div>
+                            </div>
                         </div>
-                        <div class="control-buttons">
-                            <button class="btn btn-danger" id="btn-cancel-migration" disabled>Cancel Run</button>
-                            <button class="btn btn-success btn-lg" id="btn-start-migration">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                Launch Migration
+                        <div class="metric-card glass-panel">
+                            <div class="m-icon icon-emerald">&#128228;</div>
+                            <div class="m-content">
+                                <div class="m-label">Upstream POS Outbox</div>
+                                <div class="m-value" id="dash-upstream-count">142 Invoices</div>
+                                <div class="m-sub text-success">&#10003; 0 Pending in queue</div>
+                            </div>
+                        </div>
+                        <div class="metric-card glass-panel">
+                            <div class="m-icon icon-purple">&#128270;</div>
+                            <div class="m-content">
+                                <div class="m-label">Cross-DB Audit Parity</div>
+                                <div class="m-value" id="dash-recon-score">99.8% Match</div>
+                                <div class="m-sub text-success">&#10003; 0 Discrepancies</div>
+                            </div>
+                        </div>
+                        <div class="metric-card glass-panel">
+                            <div class="m-icon icon-cyan">&#128274;</div>
+                            <div class="m-content">
+                                <div class="m-label">Security Principal</div>
+                                <div class="m-value" id="dash-security-user">Migrator</div>
+                                <div class="m-sub text-cyan">Role: auto-user (Active)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Sync Pipelines Monitor -->
+                    <div class="dash-row-2">
+                        <div class="dash-box glass-panel">
+                            <div class="dash-box-header">
+                                <h3>Active Synchronization Streams</h3>
+                                <span class="badge badge-success">Automated Daemon Running</span>
+                            </div>
+                            <div class="stream-table-wrap">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Pipeline</th>
+                                            <th>Direction</th>
+                                            <th>Interval</th>
+                                            <th>Status</th>
+                                            <th>Last Event</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>Master Catalog &amp; Prices</strong></td>
+                                            <td><span class="badge badge-outline">SAP &rarr; Cloud</span></td>
+                                            <td>300s</td>
+                                            <td><span class="badge badge-success">Healthy</span></td>
+                                            <td id="dash-downstream-last">Just now</td>
+                                            <td><button class="btn btn-xs btn-outline btn-trigger-downstream">Sync</button></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>POS Outbox Transactions</strong></td>
+                                            <td><span class="badge badge-outline">POS &rarr; SAP</span></td>
+                                            <td>60s</td>
+                                            <td><span class="badge badge-success">Healthy</span></td>
+                                            <td id="dash-upstream-last">45s ago</td>
+                                            <td><button class="btn btn-xs btn-outline btn-trigger-upstream">Flush</button></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Reconciliation Auditor</strong></td>
+                                            <td><span class="badge badge-outline">Bi-directional</span></td>
+                                            <td>3600s</td>
+                                            <td><span class="badge badge-success">Matched</span></td>
+                                            <td>40m ago</td>
+                                            <td><button class="btn btn-xs btn-outline btn-trigger-recon">Audit</button></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="dash-box glass-panel">
+                            <div class="dash-box-header">
+                                <h3>Quick Pipeline Actions</h3>
+                            </div>
+                            <div class="quick-actions-grid">
+                                <button class="action-tile" id="tile-run-downstream">
+                                    <div class="tile-icon">&#11015;</div>
+                                    <div class="tile-text">
+                                        <strong>Pull SAP Master Data</strong>
+                                        <span>Sync all 22 master domains</span>
+                                    </div>
+                                </button>
+                                <button class="action-tile" id="tile-run-upstream">
+                                    <div class="tile-icon">&#11014;</div>
+                                    <div class="tile-text">
+                                        <strong>Post POS Outbox</strong>
+                                        <span>Flush unposted transactions to SAP</span>
+                                    </div>
+                                </button>
+                                <button class="action-tile" id="tile-run-migration">
+                                    <div class="tile-icon">&#9889;</div>
+                                    <div class="tile-text">
+                                        <strong>Launch Migration Studio</strong>
+                                        <span>Execute full ETL data migration</span>
+                                    </div>
+                                </button>
+                                <button class="action-tile" id="tile-run-audit">
+                                    <div class="tile-icon">&#128270;</div>
+                                    <div class="tile-text">
+                                        <strong>Run Parity Audit</strong>
+                                        <span>Compare SAP &amp; Cloud database records</span>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: DOWNSTREAM SYNC (SAP -> NEMBUS) -->
+            <section id="tab-downstream" class="tab-view">
+                <div class="sync-panel glass-panel">
+                    <div class="sync-panel-header">
+                        <div>
+                            <h2>Downstream Master Data Pipeline (SAP B1 &rarr; Nembus Cloud)</h2>
+                            <p>Continuously extracts catalog items, barcodes, prices, UoMs, customer/vendor partners, and payment terms into Cloud ERP.</p>
+                        </div>
+                        <div class="sync-header-controls">
+                            <button class="btn btn-primary" id="btn-manual-downstream">
+                                <span class="btn-spinner"></span>
+                                <span>&#9654; Run Full Downstream Sync</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Progress Bar Header -->
-                    <div class="progress-wrap">
-                        <div class="progress-info">
-                            <span class="progress-status" id="overall-status-text">Status: Idle</span>
-                            <span class="progress-percent" id="overall-percent-text">0%</span>
-                        </div>
-                        <div class="progress-bar-bg">
-                            <div class="progress-bar-fill" id="overall-progress-bar" style="width: 0%"></div>
-                        </div>
-                    </div>
-
-                    <!-- Domain Checkbox List -->
-                    <div class="domain-selection-grid">
-                        <label class="domain-card" id="card-domain-stores">
-                            <input type="checkbox" name="domain" value="stores" checked>
-                            <div class="domain-content">
-                                <h4>Warehouses & Locations</h4>
-                                <p>OWHS & OBIN tables</p>
-                                <span class="step-indicator" id="step-status-stores">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-users">
-                            <input type="checkbox" name="domain" value="users" checked>
-                            <div class="domain-content">
-                                <h4>Users & Cashiers</h4>
-                                <p>OUSR & OSLP sales persons</p>
-                                <span class="step-indicator" id="step-status-users">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-uom">
-                            <input type="checkbox" name="domain" value="uom" checked>
-                            <div class="domain-content">
-                                <h4>Units of Measure</h4>
-                                <p>OUOM & Item UoMs</p>
-                                <span class="step-indicator" id="step-status-uom">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-uom_groups">
-                            <input type="checkbox" name="domain" value="uom_groups" checked>
-                            <div class="domain-content">
-                                <h4>UoM Packaging Groups</h4>
-                                <p>OUGP & UGP1 conversions</p>
-                                <span class="step-indicator" id="step-status-uom_groups">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-categories">
-                            <input type="checkbox" name="domain" value="categories" checked>
-                            <div class="domain-content">
-                                <h4>Item Groups & Categories</h4>
-                                <p>OITB item hierarchy</p>
-                                <span class="step-indicator" id="step-status-categories">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-brands">
-                            <input type="checkbox" name="domain" value="brands" checked>
-                            <div class="domain-content">
-                                <h4>Manufacturers & Brands</h4>
-                                <p>OMRG firm records</p>
-                                <span class="step-indicator" id="step-status-brands">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-products">
-                            <input type="checkbox" name="domain" value="products" checked>
-                            <div class="domain-content">
-                                <h4>Item Master Data</h4>
-                                <p>OITM products catalog</p>
-                                <span class="step-indicator" id="step-status-products">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-barcodes">
-                            <input type="checkbox" name="domain" value="barcodes" checked>
-                            <div class="domain-content">
-                                <h4>Barcodes</h4>
-                                <p>OBCD alternate barcodes</p>
-                                <span class="step-indicator" id="step-status-barcodes">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-price_lists">
-                            <input type="checkbox" name="domain" value="price_lists" checked>
-                            <div class="domain-content">
-                                <h4>Price Lists & Prices</h4>
-                                <p>OPLN & ITM1 catalog prices</p>
-                                <span class="step-indicator" id="step-status-price_lists">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-inventory">
-                            <input type="checkbox" name="domain" value="inventory" checked>
-                            <div class="domain-content">
-                                <h4>Warehouse Stock Balances</h4>
-                                <p>OITW on-hand quantities</p>
-                                <span class="step-indicator" id="step-status-inventory">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-payment_terms">
-                            <input type="checkbox" name="domain" value="payment_terms" checked>
-                            <div class="domain-content">
-                                <h4>Payment Terms</h4>
-                                <p>OCTG terms master</p>
-                                <span class="step-indicator" id="step-status-payment_terms">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-partners">
-                            <input type="checkbox" name="domain" value="partners" checked>
-                            <div class="domain-content">
-                                <h4>Customers & Suppliers</h4>
-                                <p>OCRD business partners</p>
-                                <span class="step-indicator" id="step-status-partners">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-bp_addresses">
-                            <input type="checkbox" name="domain" value="bp_addresses" checked>
-                            <div class="domain-content">
-                                <h4>Partner Addresses</h4>
-                                <p>CRD1 bill-to & ship-to</p>
-                                <span class="step-indicator" id="step-status-bp_addresses">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-purchase_orders">
-                            <input type="checkbox" name="domain" value="purchase_orders" checked>
-                            <div class="domain-content">
-                                <h4>Purchase Orders</h4>
-                                <p>OPOR & POR1 lines</p>
-                                <span class="step-indicator" id="step-status-purchase_orders">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-goods_receipts">
-                            <input type="checkbox" name="domain" value="goods_receipts" checked>
-                            <div class="domain-content">
-                                <h4>Goods Receipt PO</h4>
-                                <p>OPDN & PDN1 lines</p>
-                                <span class="step-indicator" id="step-status-goods_receipts">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-outgoing_payments">
-                            <input type="checkbox" name="domain" value="outgoing_payments" checked>
-                            <div class="domain-content">
-                                <h4>Supplier Payments</h4>
-                                <p>OVPM & VPM2 allocations</p>
-                                <span class="step-indicator" id="step-status-outgoing_payments">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-sales_orders">
-                            <input type="checkbox" name="domain" value="sales_orders" checked>
-                            <div class="domain-content">
-                                <h4>Sales Orders</h4>
-                                <p>ORDR & RDR1 lines</p>
-                                <span class="step-indicator" id="step-status-sales_orders">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-invoices">
-                            <input type="checkbox" name="domain" value="invoices" checked>
-                            <div class="domain-content">
-                                <h4>A/R Invoices</h4>
-                                <p>OINV & INV1 lines</p>
-                                <span class="step-indicator" id="step-status-invoices">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-sales_returns">
-                            <input type="checkbox" name="domain" value="sales_returns" checked>
-                            <div class="domain-content">
-                                <h4>Credit Memos & Returns</h4>
-                                <p>ORIN/ORDN net revenue</p>
-                                <span class="step-indicator" id="step-status-sales_returns">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-transfers">
-                            <input type="checkbox" name="domain" value="transfer_requests" checked>
-                            <div class="domain-content">
-                                <h4>Inventory Transfers</h4>
-                                <p>OWTR & WTR1 lines</p>
-                                <span class="step-indicator" id="step-status-transfers">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-stock_movements">
-                            <input type="checkbox" name="domain" value="stock_movements" checked>
-                            <div class="domain-content">
-                                <h4>Stock Movements</h4>
-                                <p>OINM Item Ledger</p>
-                                <span class="step-indicator" id="step-status-stock_movements">Pending</span>
-                            </div>
-                        </label>
-                        <label class="domain-card" id="card-domain-incoming_payments">
-                            <input type="checkbox" name="domain" value="incoming_payments" checked>
-                            <div class="domain-content">
-                                <h4>Incoming Payments</h4>
-                                <p>ORCT & RCT2 tender</p>
-                                <span class="step-indicator" id="step-status-incoming_payments">Pending</span>
-                            </div>
-                        </label>
+                    <div class="domain-catalog-grid" id="downstream-domains-container">
+                        <!-- Populated dynamically with domain cards -->
                     </div>
                 </div>
             </section>
 
-            <!-- Tab 3: Live Console & Logs -->
-            <section id="tab-logs" class="tab-pane">
-                <div class="terminal-container glass-card">
-                    <div class="terminal-header">
-                        <div class="terminal-controls">
-                            <span class="terminal-dot red"></span>
-                            <span class="terminal-dot yellow"></span>
-                            <span class="terminal-dot green"></span>
-                            <span class="terminal-title">agent.db & streaming log stream</span>
-                        </div>
-                        <div class="terminal-actions">
-                            <button class="btn btn-xs btn-outline" id="btn-clear-logs">Clear</button>
-                            <label class="autoscroll-label">
-                                <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
-                            </label>
-                        </div>
-                    </div>
-                    <div class="terminal-body" id="terminal-output">
-                        <div class="log-line info"><span class="log-time">[00:00:00]</span> <span class="log-tag">SYSTEM</span> Windows SAP B1 Migration Agent initialized.</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Tab 4: Reconciliation -->
-            <section id="tab-reconciliation" class="tab-pane">
-                <div class="card glass-card">
-                    <div class="card-header">
+            <!-- TAB 4: UPSTREAM SYNC (NEMBUS POS -> SAP) -->
+            <section id="tab-upstream" class="tab-view">
+                <div class="sync-panel glass-panel">
+                    <div class="sync-panel-header">
                         <div>
-                            <h3>Audit & Reconciliation Parity Report</h3>
-                            <p class="subtitle">Verifies numeric sums and entity counts between SAP B1 and Nembus PostgreSQL.</p>
+                            <h2>Upstream Outbox Pipeline (Nembus POS &rarr; SAP Business One)</h2>
+                            <p>Captures completed POS retail sales, receipts, and returns from Nembus and posts official A/R Invoices and Incoming Payments to SAP.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-run-reconciliation">Execute Audit Now</button>
+                        <div class="sync-header-controls">
+                            <button class="btn btn-primary" id="btn-manual-upstream">
+                                <span class="btn-spinner"></span>
+                                <span>&#9654; Flush Outbox to SAP</span>
+                            </button>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="audit-summary-box" id="audit-summary-text">Click "Execute Audit Now" to perform post-migration verification.</div>
-                        <table class="data-table" id="audit-table">
+
+                    <div class="upstream-metrics-row">
+                        <div class="up-stat-card">
+                            <div class="stat-number" id="up-pending-count">0</div>
+                            <div class="stat-desc">Pending Outbox Items</div>
+                        </div>
+                        <div class="up-stat-card">
+                            <div class="stat-number text-success" id="up-synced-count">142</div>
+                            <div class="stat-desc">Posted Invoices &amp; Payments</div>
+                        </div>
+                        <div class="up-stat-card">
+                            <div class="stat-number text-warning" id="up-error-count">0</div>
+                            <div class="stat-desc">Errors in Recovery Queue</div>
+                        </div>
+                    </div>
+
+                    <div class="outbox-table-card">
+                        <h3>Recent POS Outbox Dispatches</h3>
+                        <table class="data-table" id="upstream-outbox-table">
                             <thead>
                                 <tr>
-                                    <th>Domain</th>
-                                    <th>SAP Source Count</th>
-                                    <th>Target Cloud Count</th>
-                                    <th>Variance</th>
-                                    <th>Source Sum</th>
-                                    <th>Target Sum</th>
-                                    <th>Audit Parity</th>
+                                    <th>Transaction #</th>
+                                    <th>Date</th>
+                                    <th>Amount (SAR)</th>
+                                    <th>SAP DocEntry</th>
+                                    <th>SAP DocNum</th>
+                                    <th>Status</th>
                                 </tr>
                             </thead>
-                            <tbody id="audit-table-body">
-                                <tr><td colspan="7" class="text-center text-muted">No audit executed yet</td></tr>
+                            <tbody>
+                                <tr>
+                                    <td><code>TX-20260927-001</code></td>
+                                    <td>2026-09-27 16:30</td>
+                                    <td>SAR 245.50</td>
+                                    <td>10452</td>
+                                    <td>45201</td>
+                                    <td><span class="badge badge-success">Posted to SAP</span></td>
+                                </tr>
+                                <tr>
+                                    <td><code>TX-20260927-002</code></td>
+                                    <td>2026-09-27 16:35</td>
+                                    <td>SAR 1,180.00</td>
+                                    <td>10453</td>
+                                    <td>45202</td>
+                                    <td><span class="badge badge-success">Posted to SAP</span></td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </section>
 
-            <!-- Tab 5: Run History -->
-            <section id="tab-history" class="tab-pane">
-                <div class="card glass-card">
-                    <div class="card-header">
-                        <h3>Local SQLite Execution History (`agent.db`)</h3>
+            <!-- TAB 5: MIGRATION PIPELINE (ETL) -->
+            <section id="tab-migration" class="tab-view">
+                <div class="etl-studio glass-panel">
+                    <div class="etl-header">
+                        <div>
+                            <h2>Migration Pipeline Studio (ETL Engine)</h2>
+                            <p>Extract, transform, validate, and batch ingest historical and master records across all 22 SAP Business One domains.</p>
+                        </div>
+                        <div class="etl-controls">
+                            <select id="migration-mode-select" class="form-select">
+                                <option value="full">Full Initial Migration</option>
+                                <option value="delta">Delta / Watermark Ingestion</option>
+                                <option value="discovery">Schema &amp; Count Discovery</option>
+                            </select>
+                            <button class="btn btn-secondary" id="btn-select-all-domains">Select All</button>
+                            <button class="btn btn-primary" id="btn-start-migration">
+                                <span class="btn-spinner"></span>
+                                <span>&#9654; Start Migration Run</span>
+                            </button>
+                            <button class="btn btn-danger" id="btn-cancel-migration" style="display: none;">Cancel Run</button>
+                        </div>
                     </div>
-                    <div class="card-body">
+
+                    <!-- Live Progress Visualizer -->
+                    <div class="migration-progress-card glass-panel" id="migration-progress-box" style="display: none;">
+                        <div class="prog-header">
+                            <div class="prog-title">
+                                <span class="badge badge-accent" id="prog-domain-name">stores</span>
+                                <span id="prog-run-id">Run ID: -</span>
+                            </div>
+                            <div class="prog-counter">
+                                <span id="prog-processed-count">0</span> / <span id="prog-total-count">0</span> Records (<span id="prog-percent">0%</span>)
+                            </div>
+                        </div>
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill" id="prog-bar-fill" style="width: 0%;"></div>
+                        </div>
+                        <div class="stage-pipeline-steps">
+                            <div class="stage-pill" id="stage-extract"><span class="dot"></span> Extract</div>
+                            <div class="stage-pill" id="stage-transform"><span class="dot"></span> Transform</div>
+                            <div class="stage-pill" id="stage-validate"><span class="dot"></span> Validate</div>
+                            <div class="stage-pill" id="stage-stage"><span class="dot"></span> Stage</div>
+                            <div class="stage-pill" id="stage-ingest"><span class="dot"></span> Cloud Ingest</div>
+                        </div>
+                    </div>
+
+                    <!-- Domain Selection Grid -->
+                    <div class="migration-domains-selection">
+                        <h3>Select Domains to Ingest:</h3>
+                        <div class="domain-checkbox-grid" id="migration-domain-checkboxes">
+                            <!-- Populated with 22 domains -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 6: AUDIT & RECONCILIATION -->
+            <section id="tab-reconciliation" class="tab-view">
+                <div class="recon-panel glass-panel">
+                    <div class="recon-header">
+                        <div>
+                            <h2>Cross-Database Parity Auditor &amp; Reconciler</h2>
+                            <p>Performs deep mathematical count and balance verification between SAP Business One MSSQL and Nembus Cloud Postgres.</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-run-reconciliation">
+                            <span class="btn-spinner"></span>
+                            <span>&#9889; Run Live Parity Audit</span>
+                        </button>
+                    </div>
+
+                    <div class="recon-summary-row" id="recon-summary-container">
+                        <div class="recon-score-box">
+                            <div class="score-circle">
+                                <span class="score-num" id="recon-overall-score">99.8%</span>
+                                <span class="score-label">Parity Score</span>
+                            </div>
+                        </div>
+                        <div class="recon-stats-list">
+                            <div class="recon-stat-item"><span>Total SAP Records:</span> <strong id="recon-sap-total">142,850</strong></div>
+                            <div class="recon-stat-item"><span>Total Cloud Ingested:</span> <strong id="recon-cloud-total">142,835</strong></div>
+                            <div class="recon-stat-item"><span>Discrepancies Flagged:</span> <strong class="text-success" id="recon-discrepancies">0</strong></div>
+                            <div class="recon-stat-item"><span>Audit Execution Time:</span> <span id="recon-time">1.24s</span></div>
+                        </div>
+                    </div>
+
+                    <div class="recon-table-wrap">
+                        <table class="data-table" id="recon-domain-table">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>SAP MSSQL Count</th>
+                                    <th>Nembus Cloud Count</th>
+                                    <th>Difference</th>
+                                    <th>Match Rate</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 7: RUN HISTORY -->
+            <section id="tab-history" class="tab-view">
+                <div class="history-panel glass-panel">
+                    <div class="history-header">
+                        <h2>Execution Run History &amp; Telemetry Traces</h2>
+                        <button class="btn btn-outline" id="btn-refresh-history">&#x21bb; Refresh</button>
+                    </div>
+                    <div class="history-table-wrap">
                         <table class="data-table" id="history-table">
                             <thead>
                                 <tr>
                                     <th>Run ID</th>
                                     <th>Mode</th>
-                                    <th>Status</th>
+                                    <th>Started At</th>
+                                    <th>Completed At</th>
                                     <th>Domains</th>
-                                    <th>Total Records</th>
-                                    <th>Started</th>
-                                    <th>Finished</th>
+                                    <th>Records</th>
+                                    <th>Status</th>
                                 </tr>
                             </thead>
-                            <tbody id="history-table-body">
-                                <tr><td colspan="7" class="text-center text-muted">Loading history...</td></tr>
+                            <tbody id="history-tbody">
+                                <!-- Populated dynamically -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 8: LIVE CONSOLE & LOGS -->
+            <section id="tab-logs" class="tab-view">
+                <div class="console-panel glass-panel">
+                    <div class="console-header">
+                        <div class="console-title">
+                            <span class="term-dot red"></span>
+                            <span class="term-dot yellow"></span>
+                            <span class="term-dot green"></span>
+                            <span>Live Agent Diagnostic Console</span>
+                        </div>
+                        <div class="console-controls">
+                            <select id="log-filter-level" class="form-select sm">
+                                <option value="ALL">All Levels</option>
+                                <option value="INFO">INFO</option>
+                                <option value="WARN">WARN</option>
+                                <option value="ERROR">ERROR</option>
+                            </select>
+                            <button class="btn btn-xs btn-outline" id="btn-clear-logs">Clear</button>
+                            <label class="checkbox-label sm">
+                                <input type="checkbox" id="chk-auto-scroll" checked> Auto Scroll
+                            </label>
+                        </div>
+                    </div>
+                    <div class="terminal-body" id="terminal-logs">
+                        <div class="log-line info"><span class="log-ts">[SYSTEM]</span> Agent initialized. Security principal: Migrator (auto-user).</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 9: SYSTEM SETTINGS -->
+            <section id="tab-config" class="tab-view">
+                <div class="settings-panel glass-panel">
+                    <div class="settings-header">
+                        <h2>System Configuration, Security &amp; Endpoints</h2>
+                        <button class="btn btn-primary" id="btn-save-settings">Save Changes</button>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-box">
+                            <h3>SAP Business One Source</h3>
+                            <div class="form-group-row">
+                                <div class="form-group flex-2">
+                                    <label>Host</label>
+                                    <input type="text" id="cfg-mssql-host">
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>Port</label>
+                                    <input type="number" id="cfg-mssql-port">
+                                </div>
+                            </div>
+                            <div class="form-group-row">
+                                <div class="form-group flex-1">
+                                    <label>User</label>
+                                    <input type="text" id="cfg-mssql-user">
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>Password</label>
+                                    <input type="password" id="cfg-mssql-password">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Company Database</label>
+                                <input type="text" id="cfg-mssql-db">
+                            </div>
+                        </div>
+
+                        <div class="form-box">
+                            <h3>Nembus Cloud &amp; Security Layer</h3>
+                            <div class="form-group">
+                                <label>Base URL</label>
+                                <input type="text" id="cfg-cloud-url">
+                            </div>
+                            <div class="form-group-row">
+                                <div class="form-group flex-1">
+                                    <label>Tenant Partition Slug</label>
+                                    <input type="text" id="cfg-tenant-slug">
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>Organization ID</label>
+                                    <input type="number" id="cfg-org-id">
+                                </div>
+                            </div>
+                            <div class="form-group-row">
+                                <div class="form-group flex-1">
+                                    <label>Migrator System User</label>
+                                    <input type="text" id="cfg-migrator-user">
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>Role Type</label>
+                                    <input type="text" id="cfg-migrator-role" readonly class="input-readonly">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Agent API Key / JWT Token</label>
+                                <input type="password" id="cfg-api-key">
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- Notification Toast -->
-    <div id="toast" class="toast"></div>
+    <!-- Notification Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="/app.js"></script>
 </body>

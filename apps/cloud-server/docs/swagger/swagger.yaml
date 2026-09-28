@@ -1957,7 +1957,7 @@ definitions:
         items:
           type: integer
         type: array
-      target_customer_tiers:
+      target_customer_s:
         items:
           type: string
         type: array

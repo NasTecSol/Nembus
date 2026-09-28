@@ -123,12 +123,14 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
 	}
 
-	// SAP Migration Batch Ingestion (agent -> cloud)
+	// SAP Migration Batch Ingestion (agent -> cloud) - Secured with AgentAPIKeyMiddleware
 	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
 	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
 	apiV1 := r.Group("/api/v1")
+	apiV1.Use(middleware.AgentAPIKeyMiddleware())
 	router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
 	apiMigration := r.Group("/api")
+	apiMigration.Use(middleware.AgentAPIKeyMiddleware())
 	router.RegisterSAPMigrationRoutes(apiMigration, sapMigrationHandler)
 
 	api := r.Group("/api")

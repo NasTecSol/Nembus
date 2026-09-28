@@ -2,7 +2,7 @@ package handler
 
 import (
 	"net/http"
-	
+	"os"
 
 	"github.com/NasTecSol/nembus-core/middleware"
 
@@ -30,20 +30,22 @@ func NewDevHandler() *DevHandler {
 // @Router       /api/dev/token [get]
 func (h *DevHandler) GetDevToken(c *gin.Context) {
 	// Check if we're in development mode
-	//env := os.Getenv("ENV")
-	// if env != "development" && env != "dev" {
-	// 	c.JSON(http.StatusForbidden, gin.H{"error": "dev token endpoint only available in development mode"})
-	// 	return
-	// }
+	env := os.Getenv("ENV")
+	if env != "development" && env != "dev" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "dev token endpoint only available in development mode"})
+		return
+	}
 
 	// Get dev user ID and login from environment or use defaults
-	
-	
-		devUserID := "Admin"
+	devUserID := os.Getenv("DEV_USER_ID")
+	if devUserID == "" {
+		devUserID = "Admin"
+	}
 
-	devUserLogin := "Admin"
-	
-
+	devUserLogin := os.Getenv("DEV_USER_LOGIN")
+	if devUserLogin == "" {
+		devUserLogin = "Admin"
+	}
 
 	// Generate token
 	token, err := middleware.GenerateJWTToken(devUserID, devUserLogin)
@@ -60,3 +62,4 @@ func (h *DevHandler) GetDevToken(c *gin.Context) {
 		"note":       "This is a development token. Set ENV=development to use this endpoint.",
 	})
 }
+

@@ -3,10 +3,23 @@
   "sqlite_path": "agent.db",
   "batch_size": 500,
   "max_concurrency": 4,
-  "default_store_code": "",
+  "default_store_code": "01",
   "cashier_drawer_limit": 0,
   "cashier_discount_limit": 0,
   "invoice_start_date": "2023-01-01",
+  "onboarding_completed": false,
+  "tenant_slug": "qgl",
+  "tenant_name": "default",
+  "sap_company_db": "Qadsiya",
+  "migrator_user": "admin",
+  "migrator_password": "Ali123",
+  "migrator_role": "auto-user",
+  "migrator_token": "migrator_sys_token_default_1790511038",
+  "sap_user_mapping": "manager",
+  "downstream_interval_sec": 300,
+  "upstream_interval_sec": 60,
+  "reconciliation_interval_sec": 5,
+  "reconciliation_auto_run": true,
   "mssql": {
     "host": "192.168.18.77",
     "port": 1433,
@@ -14,13 +27,13 @@
     "password": "nastecsol",
     "database": "Qadsiya",
     "encrypt": false,
-    "trust_server_certificate": true,
-    "connection_timeout_seconds": 60
+    "trust_server_certificate": false,
+    "connection_timeout_seconds": 15
   },
   "cloud": {
     "base_url": "http://127.0.0.1:8080",
-    "api_key": "",
+    "api_key": "migrator_sys_token_default_1790511038",
     "organization_id": 1,
-    "timeout_seconds": 60
+    "timeout_seconds": 0
   }
 }

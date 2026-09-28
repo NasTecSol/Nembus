@@ -42,8 +42,28 @@ type AgentConfig struct {
 	// InvoiceStartDate is the starting date for the invoice window loop (format "YYYY-MM-DD").
 	// If empty, defaults to "2000-01-01". Set e.g. to "2023-01-01" to resume an interrupted migration.
 	InvoiceStartDate     string      `json:"invoice_start_date,omitempty"`
-	MSSQL                MSSQLConfig `json:"mssql"`
-	Cloud                CloudConfig `json:"cloud"`
+
+	// Onboarding & Multi-Tenant Setup
+	OnboardingCompleted bool   `json:"onboarding_completed"`
+	TenantSlug          string `json:"tenant_slug"`
+	TenantName          string `json:"tenant_name"`
+	SAPCompanyDB        string `json:"sap_company_db"`
+
+	// Security & System User Mapping
+	MigratorUser     string `json:"migrator_user"`     // Default: "Migrator"
+	MigratorPassword string `json:"migrator_password"` // Default: "Migrator"
+	MigratorRole     string `json:"migrator_role"`     // Default: "auto-user"
+	MigratorToken    string `json:"migrator_token"`    // JWT or API Key token
+	SAPUserMapping   string `json:"sap_user_mapping"`  // SAP Operator mapped to Migrator
+
+	// Pipeline Scheduling & Automation
+	DownstreamIntervalSec     int  `json:"downstream_interval_sec"`     // Default 300s (5m)
+	UpstreamIntervalSec       int  `json:"upstream_interval_sec"`       // Default 60s (1m)
+	ReconciliationIntervalSec int  `json:"reconciliation_interval_sec"` // Default 3600s (1h)
+	ReconciliationAutoRun     bool `json:"reconciliation_auto_run"`
+
+	MSSQL MSSQLConfig `json:"mssql"`
+	Cloud CloudConfig `json:"cloud"`
 }
 
 var (
@@ -54,10 +74,27 @@ var (
 
 func DefaultConfig() *AgentConfig {
 	return &AgentConfig{
-		Port:           17890,
-		SQLitePath:     "agent.db",
-		BatchSize:      500,
-		MaxConcurrency: 4,
+		Port:                 17890,
+		SQLitePath:           "agent.db",
+		BatchSize:            500,
+		MaxConcurrency:       4,
+		DefaultStoreCode:     "01",
+		CashierDrawerLimit:   5000,
+		CashierDiscountLimit: 20,
+		InvoiceStartDate:     "2000-01-01",
+		OnboardingCompleted:  false,
+		TenantSlug:          "default",
+		TenantName:          "Default Tenant",
+		SAPCompanyDB:        "Qadsiya",
+		MigratorUser:        "Migrator",
+		MigratorPassword:    "Migrator",
+		MigratorRole:        "auto-user",
+		MigratorToken:       "",
+		SAPUserMapping:      "manager",
+		DownstreamIntervalSec:     300,
+		UpstreamIntervalSec:       60,
+		ReconciliationIntervalSec: 3600,
+		ReconciliationAutoRun:     true,
 		MSSQL: MSSQLConfig{
 			Host:                   "192.168.18.77",
 			Port:                   1433,
