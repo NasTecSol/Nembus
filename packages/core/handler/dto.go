@@ -2406,6 +2406,11 @@ type CreateStockMovementRequest struct {
 	Metadata         map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
 }
 
+// UpdateStockMovementStatusRequest represents request body for updating stock movement status.
+type UpdateStockMovementStatusRequest struct {
+	Status string `json:"status" binding:"required" example:"completed"`
+}
+
 // ApproveTransferRequestDTO represents approval request for a transfer request.
 type ApproveTransferRequestDTO struct {
 	ApprovedBy int32 `json:"approved_by" binding:"required" example:"1"`

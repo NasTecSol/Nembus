@@ -14,6 +14,8 @@ func RegisterProductCatalogRoutes(r *gin.RouterGroup, h *handler.ProductCatalogH
 		products.GET("/catalog", h.ListProductsWithVariants)
 		// Master catalog: full product details including variants, pricing, barcodes, UOMs, conversions
 		products.GET("/master-catalog", h.GetMasterProductCatalog)
+		// Master catalog by category: full product details filtered by category
+		products.GET("/master-catalog/category/:categoryID", h.GetMasterProductCatalogByCategory)
 		// Master catalog search: search products with full details by SKU, name, barcode, variant, etc.
 		products.GET("/master-catalog/search", h.SearchMasterProductCatalog)
 	}

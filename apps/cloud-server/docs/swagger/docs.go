@@ -23750,6 +23750,107 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/pos/transactions/terminal/{terminal_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns POS transactions for a specific terminal with optional pagination, date range, and status filters",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pos"
+                ],
+                "summary": "List POS transactions by terminal ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Terminal ID",
+                        "name": "terminal_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Number of records per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "From date (ISO 8601 / RFC 3339)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "To date (ISO 8601 / RFC 3339)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction status (e.g. completed, voided)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pos/transactions/{id}": {
             "get": {
                 "security": [
@@ -27592,7 +27693,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested. Supports optional search filter.",
+                "description": "Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested. Supports optional category filter and search filter.",
                 "consumes": [
                     "application/json"
                 ],
@@ -27626,6 +27727,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "integer",
+                        "description": "Optional filter by category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "Optional search query (SKU, product name, description, brand, category, barcode, variant)",
                         "name": "q",
@@ -27636,6 +27743,94 @@ const docTemplate = `{
                         "description": "Alias for search query",
                         "name": "search",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/products/master-catalog/category/{categoryID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns master product catalog with full details (variants, pricing, barcodes, UOMs, conversions, inventory) filtered by a specific category with pagination.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "products"
+                ],
+                "summary": "Master product catalog by category",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Category ID",
+                        "name": "categoryID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
                     },
                     {
                         "type": "integer",
@@ -36658,7 +36853,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "default": 50,
+                        "default": 100,
                         "description": "Number of records per page",
                         "name": "limit",
                         "in": "query"
@@ -36819,7 +37014,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "default": 50,
+                        "default": 100,
                         "description": "Number of records per page",
                         "name": "limit",
                         "in": "query"
@@ -36902,7 +37097,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "default": 50,
+                        "default": 100,
                         "description": "Number of records per page",
                         "name": "limit",
                         "in": "query"
@@ -36999,7 +37194,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "default": 50,
+                        "default": 100,
                         "description": "Number of records per page",
                         "name": "limit",
                         "in": "query"
@@ -37148,16 +37343,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
-                        }
-                    },
-                    {
-                        "description": "New status",
-                        "name": "body.status",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/handler.UpdateStockMovementStatusRequest"
                         }
                     }
                 ],
@@ -43555,6 +43741,41 @@ const docTemplate = `{
     "definitions": {
         "big.Int": {
             "type": "object"
+        },
+        "github_com_NasTecSol_nembus-core_repository.MenuItemModifier": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/pgtype.Timestamp"
+                },
+                "display_order": {
+                    "$ref": "#/definitions/pgtype.Int4"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "$ref": "#/definitions/pgtype.Bool"
+                },
+                "menu_item_id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "modifier_name": {
+                    "type": "string"
+                },
+                "modifier_type": {
+                    "type": "string"
+                },
+                "price_adjustment": {
+                    "$ref": "#/definitions/pgtype.Numeric"
+                }
+            }
         },
         "handler.AddPaymentToTransactionRequest": {
             "type": "object",
@@ -52079,6 +52300,18 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.UpdateStockMovementStatusRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "completed"
+                }
+            }
+        },
         "handler.UpdateStorageLocationRequest": {
             "type": "object",
             "properties": {
@@ -52519,41 +52752,6 @@ const docTemplate = `{
                 }
             }
         },
-        "repository.MenuItemModifier": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamp"
-                },
-                "display_order": {
-                    "$ref": "#/definitions/pgtype.Int4"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_active": {
-                    "$ref": "#/definitions/pgtype.Bool"
-                },
-                "menu_item_id": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "modifier_name": {
-                    "type": "string"
-                },
-                "modifier_type": {
-                    "type": "string"
-                },
-                "price_adjustment": {
-                    "$ref": "#/definitions/pgtype.Numeric"
-                }
-            }
-        },
         "usecase.ComboComponentWithDetailsResponse": {
             "type": "object",
             "properties": {
@@ -52868,7 +53066,7 @@ const docTemplate = `{
                 "modifiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/repository.MenuItemModifier"
+                        "$ref": "#/definitions/github_com_NasTecSol_nembus-core_repository.MenuItemModifier"
                     }
                 },
                 "name": {

@@ -2,6 +2,29 @@ basePath: /
 definitions:
   big.Int:
     type: object
+  github_com_NasTecSol_nembus-core_repository.MenuItemModifier:
+    properties:
+      created_at:
+        $ref: '#/definitions/pgtype.Timestamp'
+      display_order:
+        $ref: '#/definitions/pgtype.Int4'
+      id:
+        type: integer
+      is_active:
+        $ref: '#/definitions/pgtype.Bool'
+      menu_item_id:
+        type: integer
+      metadata:
+        items:
+          type: integer
+        type: array
+      modifier_name:
+        type: string
+      modifier_type:
+        type: string
+      price_adjustment:
+        $ref: '#/definitions/pgtype.Numeric'
+    type: object
   handler.AddPaymentToTransactionRequest:
     properties:
       amount:
@@ -6110,6 +6133,14 @@ definitions:
         example: 1
         type: integer
     type: object
+  handler.UpdateStockMovementStatusRequest:
+    properties:
+      status:
+        example: completed
+        type: string
+    required:
+    - status
+    type: object
   handler.UpdateStorageLocationRequest:
     properties:
       is_active:
@@ -6417,29 +6448,6 @@ definitions:
       valid:
         type: boolean
     type: object
-  repository.MenuItemModifier:
-    properties:
-      created_at:
-        $ref: '#/definitions/pgtype.Timestamp'
-      display_order:
-        $ref: '#/definitions/pgtype.Int4'
-      id:
-        type: integer
-      is_active:
-        $ref: '#/definitions/pgtype.Bool'
-      menu_item_id:
-        type: integer
-      metadata:
-        items:
-          type: integer
-        type: array
-      modifier_name:
-        type: string
-      modifier_type:
-        type: string
-      price_adjustment:
-        $ref: '#/definitions/pgtype.Numeric'
-    type: object
   usecase.ComboComponentWithDetailsResponse:
     properties:
       component_item:
@@ -6661,7 +6669,7 @@ definitions:
         type: integer
       modifiers:
         items:
-          $ref: '#/definitions/repository.MenuItemModifier'
+          $ref: '#/definitions/github_com_NasTecSol_nembus-core_repository.MenuItemModifier'
         type: array
       name:
         example: Cold Drink Flavours
@@ -22549,6 +22557,74 @@ paths:
       summary: List POS transactions by customer ID
       tags:
       - pos
+  /api/pos/transactions/terminal/{terminal_id}:
+    get:
+      consumes:
+      - application/json
+      description: Returns POS transactions for a specific terminal with optional
+        pagination, date range, and status filters
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Terminal ID
+        in: path
+        name: terminal_id
+        required: true
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Number of records per page
+        in: query
+        name: limit
+        type: integer
+      - description: From date (ISO 8601 / RFC 3339)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (ISO 8601 / RFC 3339)
+        in: query
+        name: to_date
+        type: string
+      - description: Transaction status (e.g. completed, voided)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List POS transactions by terminal ID
+      tags:
+      - pos
   /api/price-lists:
     get:
       consumes:
@@ -25176,7 +25252,8 @@ paths:
       consumes:
       - application/json
       description: Returns all master products with their base details, UOMs, conversions,
-        pricing, variants, and barcodes nested. Supports optional search filter.
+        pricing, variants, and barcodes nested. Supports optional category filter
+        and search filter.
       parameters:
       - description: Tenant identifier
         in: header
@@ -25192,6 +25269,10 @@ paths:
         in: query
         name: organization_id
         required: true
+        type: integer
+      - description: Optional filter by category ID
+        in: query
+        name: category_id
         type: integer
       - description: Optional search query (SKU, product name, description, brand,
           category, barcode, variant)
@@ -25232,6 +25313,66 @@ paths:
       security:
       - BearerAuth: []
       summary: Master product catalog (detailed)
+      tags:
+      - products
+  /api/products/master-catalog/category/{categoryID}:
+    get:
+      consumes:
+      - application/json
+      description: Returns master product catalog with full details (variants, pricing,
+        barcodes, UOMs, conversions, inventory) filtered by a specific category with
+        pagination.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Category ID
+        in: path
+        name: categoryID
+        required: true
+        type: integer
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Master product catalog by category
       tags:
       - products
   /api/products/master-catalog/search:
@@ -30760,7 +30901,7 @@ paths:
         in: query
         name: page
         type: integer
-      - default: 50
+      - default: 100
         description: Number of records per page
         in: query
         name: limit
@@ -30906,13 +31047,7 @@ paths:
         name: body
         required: true
         schema:
-          type: object
-      - description: New status
-        in: body
-        name: body.status
-        required: true
-        schema:
-          type: string
+          $ref: '#/definitions/handler.UpdateStockMovementStatusRequest'
       produces:
       - application/json
       responses:
@@ -30970,7 +31105,7 @@ paths:
         in: query
         name: page
         type: integer
-      - default: 50
+      - default: 100
         description: Number of records per page
         in: query
         name: limit
@@ -31025,7 +31160,7 @@ paths:
         in: query
         name: page
         type: integer
-      - default: 50
+      - default: 100
         description: Number of records per page
         in: query
         name: limit
@@ -31091,7 +31226,7 @@ paths:
         in: query
         name: page
         type: integer
-      - default: 50
+      - default: 100
         description: Number of records per page
         in: query
         name: limit
