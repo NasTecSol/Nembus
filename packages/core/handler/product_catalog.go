@@ -89,7 +89,7 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 
 // GetMasterProductCatalog handles GET /api/products/master-catalog
 // @Summary      Master product catalog (detailed)
-// @Description  Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested. Supports optional search filter.
+// @Description  Returns all master products with their base details, UOMs, conversions, pricing, variants, and barcodes nested. Supports optional category filter and search filter.
 // @Tags         products
 // @Accept       json
 // @Produce      json
@@ -97,6 +97,7 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 // @Param        x-tenant-id      header    string  true   "Tenant identifier"
 // @Param        Authorization    header    string  true   "Bearer token"
 // @Param        organization_id  query     int     true   "Organization ID"
+// @Param        category_id      query     int     false  "Optional filter by category ID"
 // @Param        q                query     string  false  "Optional search query (SKU, product name, description, brand, category, barcode, variant)"
 // @Param        search           query     string  false  "Alias for search query"
 // @Param        limit            query     int     false  "Page size (default 100)"
@@ -130,6 +131,8 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 		searchQuery = c.Query("search_term")
 	}
 
+	categoryIDStr := c.Query("category_id")
+
 	limitStr := c.DefaultQuery("limit", "100")
 	offsetStr := c.DefaultQuery("offset", "0")
 
@@ -154,9 +157,79 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 		return
 	}
 
+	if categoryIDStr != "" && categoryIDStr != "0" {
+		resp := h.useCase.GetMasterProductCatalogByCategory(
+			c.Request.Context(),
+			orgIDStr,
+			categoryIDStr,
+			int32(limit),
+			int32(offset),
+		)
+		c.JSON(resp.StatusCode, resp)
+		return
+	}
+
 	resp := h.useCase.GetMasterProductCatalog(
 		c.Request.Context(),
 		orgIDStr,
+		int32(limit),
+		int32(offset),
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMasterProductCatalogByCategory handles GET /api/products/master-catalog/category/:categoryID
+// @Summary      Master product catalog by category
+// @Description  Returns master product catalog with full details (variants, pricing, barcodes, UOMs, conversions, inventory) filtered by a specific category with pagination.
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id      header    string  true   "Tenant identifier"
+// @Param        Authorization    header    string  true   "Bearer token"
+// @Param        categoryID       path      int     true   "Category ID"
+// @Param        organization_id  query     int     true   "Organization ID"
+// @Param        limit            query     int     false  "Page size (default 100)"
+// @Param        offset           query     int     false  "Page offset (default 0)"
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /api/products/master-catalog/category/{categoryID} [get]
+func (h *ProductCatalogHandler) GetMasterProductCatalogByCategory(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	categoryIDStr := c.Param("categoryID")
+	if categoryIDStr == "" {
+		categoryIDStr = c.Param("id")
+	}
+
+	orgIDStr := c.Query("organization_id")
+	if orgIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil))
+		return
+	}
+
+	limitStr := c.DefaultQuery("limit", "100")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.ParseInt(limitStr, 10, 32)
+	if err != nil || limit <= 0 {
+		limit = 100
+	}
+	offset, err := strconv.ParseInt(offsetStr, 10, 32)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	resp := h.useCase.GetMasterProductCatalogByCategory(
+		c.Request.Context(),
+		orgIDStr,
+		categoryIDStr,
 		int32(limit),
 		int32(offset),
 	)

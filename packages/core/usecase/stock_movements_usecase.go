@@ -84,10 +84,10 @@ func calcPagination(page, limit int32) (int32, int32, int32) {
 		page = 1
 	}
 	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 100 {
 		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
 	}
 	offset := (page - 1) * limit
 	return page, limit, offset
