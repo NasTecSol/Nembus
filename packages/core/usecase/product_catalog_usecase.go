@@ -6,6 +6,8 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ProductCatalogUseCase handles the admin product catalog (products + embedded variants).
@@ -102,7 +104,7 @@ func (uc *ProductCatalogUseCase) GetMasterProductCatalog(
 	}
 
 	// 1. Get total count
-	totalCount, err := uc.repo.GetMasterProductCatalogCount(ctx)
+	totalCount, err := uc.repo.GetMasterProductCatalogCount(ctx, int32(orgID))
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog count", err.Error())
 	}
@@ -144,6 +146,84 @@ func (uc *ProductCatalogUseCase) GetMasterProductCatalog(
 	}
 
 	return utils.NewResponse(utils.CodeOK, "master product catalog fetched successfully", respData)
+}
+
+// GetMasterProductCatalogByCategory returns master products for a specific category with nested details and pagination.
+func (uc *ProductCatalogUseCase) GetMasterProductCatalogByCategory(
+	ctx context.Context,
+	orgIDStr string,
+	categoryIDStr string,
+	limit int32,
+	offset int32,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 32)
+	if err != nil || orgID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
+	}
+
+	categoryID, err := strconv.ParseInt(categoryIDStr, 10, 32)
+	if err != nil || categoryID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing category_id", nil)
+	}
+
+	if limit <= 0 {
+		limit = 100 // default 100 per page
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// 1. Get total count for category
+	countParams := repository.GetMasterProductCatalogByCategoryCountParams{
+		OrganizationID: int32(orgID),
+		CategoryID:     pgtype.Int4{Int32: int32(categoryID), Valid: true},
+	}
+	totalCount, err := uc.repo.GetMasterProductCatalogByCategoryCount(ctx, countParams)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog category count", err.Error())
+	}
+
+	// 2. Get catalog products for category
+	params := repository.GetMasterProductCatalogByCategoryParams{
+		OrganizationID: int32(orgID),
+		CategoryID:     pgtype.Int4{Int32: int32(categoryID), Valid: true},
+		Limit:          limit,
+		Offset:         offset,
+	}
+	catalog, err := uc.repo.GetMasterProductCatalogByCategory(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch master product catalog by category", err.Error())
+	}
+
+	// 3. Compute total pages
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = int32((totalCount + int64(limit) - 1) / int64(limit))
+	}
+
+	type PaginatedCategoryCatalog struct {
+		TotalCount int64                                             `json:"total_count"`
+		TotalPages int32                                             `json:"total_pages"`
+		Page       int32                                             `json:"page"`
+		Limit      int32                                             `json:"limit"`
+		Data       []repository.GetMasterProductCatalogByCategoryRow `json:"data"`
+	}
+
+	currentPage := (offset / limit) + 1
+
+	respData := PaginatedCategoryCatalog{
+		TotalCount: totalCount,
+		TotalPages: totalPages,
+		Page:       currentPage,
+		Limit:      limit,
+		Data:       catalog,
+	}
+
+	return utils.NewResponse(utils.CodeOK, "master product catalog by category fetched successfully", respData)
 }
 
 // SearchMasterProductCatalog searches master products by SKU, name, description, brand, category, barcode, or variant with pagination.
