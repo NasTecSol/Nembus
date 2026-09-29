@@ -97,6 +97,7 @@ func (h *ProductCatalogHandler) ListProductsWithVariants(c *gin.Context) {
 // @Param        x-tenant-id      header    string  true   "Tenant identifier"
 // @Param        Authorization    header    string  true   "Bearer token"
 // @Param        organization_id  query     int     true   "Organization ID"
+// @Param        product_id       query     int     false  "Optional filter by product ID"
 // @Param        category_id      query     int     false  "Optional filter by category ID"
 // @Param        q                query     string  false  "Optional search query (SKU, product name, description, brand, category, barcode, variant)"
 // @Param        search           query     string  false  "Alias for search query"
@@ -117,6 +118,20 @@ func (h *ProductCatalogHandler) GetMasterProductCatalog(c *gin.Context) {
 	orgIDStr := c.Query("organization_id")
 	if orgIDStr == "" {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil))
+		return
+	}
+
+	productIDStr := c.Query("product_id")
+	if productIDStr == "" {
+		productIDStr = c.Query("id")
+	}
+	if productIDStr != "" {
+		resp := h.useCase.GetMasterProductCatalogByID(
+			c.Request.Context(),
+			orgIDStr,
+			productIDStr,
+		)
+		c.JSON(resp.StatusCode, resp)
 		return
 	}
 
@@ -302,4 +317,51 @@ func (h *ProductCatalogHandler) SearchMasterProductCatalog(c *gin.Context) {
 	)
 	c.JSON(resp.StatusCode, resp)
 }
+
+// GetMasterProductCatalogByID handles GET /api/products/master-catalog/product/:productID
+// @Summary      Master product catalog by product ID
+// @Description  Returns master product catalog with full details (variants, pricing, barcodes, UOMs, conversions, inventory) for a single product.
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id      header    string  true   "Tenant identifier"
+// @Param        Authorization    header    string  true   "Bearer token"
+// @Param        productID        path      int     true   "Product ID"
+// @Param        organization_id  query     int     true   "Organization ID"
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /api/products/master-catalog/product/{productID} [get]
+func (h *ProductCatalogHandler) GetMasterProductCatalogByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	productIDStr := c.Param("productID")
+	if productIDStr == "" {
+		productIDStr = c.Param("product_id")
+	}
+	if productIDStr == "" {
+		productIDStr = c.Param("id")
+	}
+
+	orgIDStr := c.Query("organization_id")
+	if orgIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "organization_id is required", nil))
+		return
+	}
+
+	resp := h.useCase.GetMasterProductCatalogByID(
+		c.Request.Context(),
+		orgIDStr,
+		productIDStr,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
 
