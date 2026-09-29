@@ -193,6 +193,10 @@ ALTER TABLE discount_analytics
     ADD CONSTRAINT fk_discount_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 
+-- DB trigger trg_update_cashier_session_balance dropped in favor of explicit app-level balance updates.
+DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;
+DROP FUNCTION IF EXISTS update_cashier_session_balance();
+
 -- =====================================================
 -- TRIGGERS FOR UPDATED_AT
 -- =====================================================
