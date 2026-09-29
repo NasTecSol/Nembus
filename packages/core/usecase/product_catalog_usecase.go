@@ -299,3 +299,37 @@ func (uc *ProductCatalogUseCase) SearchMasterProductCatalog(
 	return utils.NewResponse(utils.CodeOK, "master product catalog search results fetched successfully", respData)
 }
 
+// GetMasterProductCatalogByID returns master product details for a specific product ID.
+func (uc *ProductCatalogUseCase) GetMasterProductCatalogByID(
+	ctx context.Context,
+	orgIDStr string,
+	productIDStr string,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	orgID, err := strconv.ParseInt(orgIDStr, 10, 32)
+	if err != nil || orgID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
+	}
+
+	productID, err := strconv.ParseInt(productIDStr, 10, 32)
+	if err != nil || productID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid or missing product_id", nil)
+	}
+
+	params := repository.GetMasterProductCatalogByIDParams{
+		OrganizationID: int32(orgID),
+		ProductID:      int32(productID),
+	}
+
+	product, err := uc.repo.GetMasterProductCatalogByID(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "product not found in master catalog", err.Error())
+	}
+
+	return utils.NewResponse(utils.CodeOK, "master product catalog item fetched successfully", product)
+}
+
+

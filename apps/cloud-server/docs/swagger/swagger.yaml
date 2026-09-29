@@ -25270,6 +25270,10 @@ paths:
         name: organization_id
         required: true
         type: integer
+      - description: Optional filter by product ID
+        in: query
+        name: product_id
+        type: integer
       - description: Optional filter by category ID
         in: query
         name: category_id
@@ -25373,6 +25377,61 @@ paths:
       security:
       - BearerAuth: []
       summary: Master product catalog by category
+      tags:
+      - products
+  /api/products/master-catalog/product/{productID}:
+    get:
+      consumes:
+      - application/json
+      description: Returns master product catalog with full details (variants, pricing,
+        barcodes, UOMs, conversions, inventory) for a single product.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: integer
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Master product catalog by product ID
       tags:
       - products
   /api/products/master-catalog/search:
