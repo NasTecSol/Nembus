@@ -145,3 +145,35 @@ func TestResolveDevURL(t *testing.T) {
 		t.Errorf("resolveDevURL(\"\") default = %q, want docker fallback", got)
 	}
 }
+
+func TestResolveViewsPath(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "90_views_functions.sql")
+	if err := os.WriteFile(filePath, []byte("-- views\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Direct file path
+	got, err := resolveViewsPath(filePath)
+	if err != nil {
+		t.Fatalf("resolveViewsPath(filePath) error: %v", err)
+	}
+	if got != filePath {
+		t.Errorf("resolveViewsPath(%q) = %q, want %q", filePath, got, filePath)
+	}
+
+	// 2. Directory path containing 90_views_functions.sql
+	gotDir, err := resolveViewsPath(dir)
+	if err != nil {
+		t.Fatalf("resolveViewsPath(dir) error: %v", err)
+	}
+	if gotDir != filePath {
+		t.Errorf("resolveViewsPath(%q) = %q, want %q", dir, gotDir, filePath)
+	}
+
+	// 3. Nonexistent path
+	if _, err := resolveViewsPath(filepath.Join(dir, "nonexistent.sql")); err == nil {
+		t.Errorf("resolveViewsPath(nonexistent) expected error, got nil")
+	}
+}
+

@@ -5690,6 +5690,60 @@ BEGIN
     WHERE v.organization_id = p_organization_id;
 END;
 $$;
+-- Create "search_master_product_catalog" function
+CREATE FUNCTION "public"."search_master_product_catalog" ("p_organization_id" integer, "p_search" text DEFAULT ''::text) RETURNS TABLE ("product_id" integer, "sku" character varying, "name" character varying, "description" text, "product_type" character varying, "is_serialized" boolean, "is_batch_managed" boolean, "is_active" boolean, "is_sellable" boolean, "is_purchasable" boolean, "allow_decimal_quantity" boolean, "track_inventory" boolean, "metadata" jsonb, "created_at" timestamp, "updated_at" timestamp, "category_id" integer, "category_name" character varying, "category_code" character varying, "brand_id" integer, "brand_name" character varying, "brand_code" character varying, "tax_category_id" integer, "tax_category_name" character varying, "tax_rate" numeric, "tax_inclusive" boolean, "base_uom_id" integer, "base_uom_code" character varying, "base_uom_name" character varying, "uom_conversions" jsonb, "prices" jsonb, "variants" jsonb, "barcodes" jsonb, "inventory" jsonb) LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        v.product_id,
+        v.sku,
+        v.name,
+        v.description,
+        v.product_type,
+        v.is_serialized,
+        v.is_batch_managed,
+        v.is_active,
+        v.is_sellable,
+        v.is_purchasable,
+        v.allow_decimal_quantity,
+        v.track_inventory,
+        v.metadata,
+        v.created_at,
+        v.updated_at,
+        v.category_id,
+        v.category_name,
+        v.category_code,
+        v.brand_id,
+        v.brand_name,
+        v.brand_code,
+        v.tax_category_id,
+        v.tax_category_name,
+        v.tax_rate,
+        v.tax_inclusive,
+        v.base_uom_id,
+        v.base_uom_code,
+        v.base_uom_name,
+        v.uom_conversions,
+        v.prices,
+        v.variants,
+        v.barcodes,
+        v.inventory
+    FROM v_master_product_catalog v
+    WHERE v.organization_id = p_organization_id
+      AND (
+        p_search IS NULL OR p_search = '' OR
+        v.sku ILIKE '%' || p_search || '%' OR
+        v.name ILIKE '%' || p_search || '%' OR
+        COALESCE(v.description, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_code, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_code, '') ILIKE '%' || p_search || '%' OR
+        v.barcodes::text ILIKE '%' || p_search || '%' OR
+        v.variants::text ILIKE '%' || p_search || '%'
+      );
+END;
+$$;
 -- Create "audit_logs" table
 CREATE TABLE "public"."audit_logs" (
   "id" bigserial NOT NULL,
