@@ -2,15 +2,16 @@ name: DB Declarative Schema, Lint & Tenant Apply (Junction)
 
 # Pipeline:
 #   1. PR Checks (target: junction):
-#      - Schema validation / linting (dry-run & apply to a throwaway Postgres container).
+#      - Declarative schema validation / dry-run on Postgres container (Atlas Community).
+#      - Views, triggers & functions apply to test Postgres container.
 #      - sqlc generation freshness check.
 #      - Unit & integration test suites.
 #   2. Push / Merge to junction:
 #      - Runs all validation checks.
 #      - Builds the migrate-tenants runner.
-#      - Ships the runner + schema directory to EC2 (scp).
-#      - Declaratively applies schema changes to the Master DB and all active
-#        tenant DBs with --auto-approve over SSH.
+#      - Ships the runner + schema + views/functions directory to EC2 (scp).
+#      - Declaratively applies schema changes (Atlas Community) and views/functions (pgx)
+#        to the Master DB and all active tenant DBs over SSH.
 
 on:
   pull_request:
@@ -31,8 +32,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Atlas Cloud authentication token
-      ATLAS_TOKEN: ${{ secrets.ATLAS_TOKEN }}
       # Atlas dev database used for schema calculation/diffing
       ATLAS_DEV_URL: postgres://postgres:password@localhost:5433/dev?sslmode=disable
       # Test database to verify schema applies cleanly from scratch
@@ -81,7 +80,6 @@ jobs:
         uses: ariga/setup-atlas@v0
         with:
           version: v1.3.0
-          cloud-token: ${{ secrets.ATLAS_TOKEN }}
 
       - name: Install sqlc
         run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
@@ -104,6 +102,10 @@ jobs:
             --to "file://packages/core/db/schema" \
             --dev-url "$ATLAS_DEV_URL" \
             --auto-approve
+
+      - name: Apply Views, Triggers & Functions to Test DB
+        run: |
+          PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d masterDB_test -v ON_ERROR_STOP=1 -f packages/core/db/views_functions/90_views_functions.sql
 
       # ---------------------------------------------------------------
       # 2. VERIFY — sqlc freshness + test suites
@@ -144,11 +146,12 @@ jobs:
           cd apps/cloud-server
           go build -o "${{ github.workspace }}/migrate-tenants-bin" ./cmd/migrate-tenants
 
-      - name: Package Runner + Schema
+      - name: Package Runner + Schema + Views
         run: |
           mkdir -p nembus-db-migrate
           cp migrate-tenants-bin nembus-db-migrate/
           cp -r packages/core/db/schema nembus-db-migrate/schema
+          cp -r packages/core/db/views_functions nembus-db-migrate/views_functions
           tar -czf nembus-db-migrate.tar.gz nembus-db-migrate
 
       - name: Copy Runner + Schema to EC2 Host
@@ -180,8 +183,6 @@ jobs:
             export PATH="$HOME/bin:$PATH"
             atlas version
 
-            # Export ATLAS_TOKEN for declarative features (functions, views, procedures)
-            export ATLAS_TOKEN='${{ secrets.ATLAS_TOKEN }}'
             # MASTER_DB_URL is the local URL on the EC2 host (localhost)
             export MASTER_DB_URL='${{ secrets.MASTER_DB_URL }}'
 
@@ -190,5 +191,6 @@ jobs:
             tar -xzf nembus-db-migrate.tar.gz
             cd nembus-db-migrate
 
-            # Run in declarative mode across Master DB and all active tenants
-            ./migrate-tenants-bin -declarative -schema "$PWD/schema"
+            # Run in declarative mode across Master DB and all active tenants (no Pro license required)
+            ./migrate-tenants-bin -declarative -schema "$PWD/schema" -views "$PWD/views_functions/90_views_functions.sql"
+
