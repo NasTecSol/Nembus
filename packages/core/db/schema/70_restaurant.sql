@@ -106,6 +106,7 @@ CREATE TABLE menu_items (
     store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     menu_category_id    INTEGER      NOT NULL REFERENCES menu_categories(id) ON DELETE CASCADE,
     product_id          INTEGER      REFERENCES products(id) ON DELETE SET NULL,
+    product_variant_id  INTEGER      REFERENCES product_variants(id) ON DELETE SET NULL,
     recipe_id           INTEGER,
     name                VARCHAR(255) NOT NULL,
     short_name          VARCHAR(50),
@@ -118,6 +119,7 @@ CREATE TABLE menu_items (
     is_available        BOOLEAN      DEFAULT true,
     is_active           BOOLEAN      DEFAULT true,
     display_order       INTEGER      DEFAULT 0,
+    item_type           VARCHAR(20)  NOT NULL DEFAULT 'standard' CHECK (item_type IN ('standard', 'combo')),
     metadata            JSONB        DEFAULT '{}',
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
@@ -133,6 +135,19 @@ CREATE TABLE menu_item_modifiers (
     display_order       INTEGER     DEFAULT 0,
     metadata            JSONB       DEFAULT '{}',
     created_at          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE menu_item_combo_components (
+    id                      SERIAL PRIMARY KEY,
+    parent_menu_item_id    INTEGER     NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    component_menu_item_id INTEGER     NOT NULL REFERENCES menu_items(id) ON DELETE RESTRICT,
+    group_name             VARCHAR(100) NOT NULL,
+    min_selection          INTEGER     DEFAULT 1,
+    max_selection          INTEGER     DEFAULT 1,
+    price_adjustment       DECIMAL(15,2) DEFAULT 0.00,
+    display_order          INTEGER     DEFAULT 0,
+    metadata               JSONB       DEFAULT '{}',
+    created_at             TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
 );
 -- FIX #10 (P1): New menu_modifier_groups table to enforce min/max modifier selections
 CREATE TABLE menu_modifier_groups (
@@ -162,7 +177,7 @@ CREATE TABLE promotions (
     code                  VARCHAR(50) NOT NULL,
     name                  VARCHAR(255) NOT NULL,
     description           TEXT,
-    promotion_type        VARCHAR(50) NOT NULL CHECK (promotion_type IN ('percentage_discount','fixed_discount','bogo','buy_x_get_y','free_item','bundle_price','points_multiplier','happy_hour')),
+    promotion_type        VARCHAR(50) NOT NULL CHECK (promotion_type IN ('percentage_discount','fixed_discount','bogo','buy_x_get_y','free_item','bundle_price','points_multiplier','happy_hour','bucket_combo')),
     -- FIX #16: Action metadata for complex rules
     action_metadata       JSONB DEFAULT '{}',
     -- FIX #15: Scheduling
@@ -175,6 +190,7 @@ CREATE TABLE promotions (
     target_category_ids   INTEGER[] DEFAULT '{}',
     -- FIX #17: customer segmentation
     target_customer_types TEXT[]    DEFAULT '{}',
+    target_customer_tiers TEXT[]    DEFAULT '{}',
     min_order_amount      DECIMAL(15,2),
     min_quantity          DECIMAL(15,3),
     coupon_code           VARCHAR(50),
@@ -190,6 +206,39 @@ CREATE TABLE promotions (
     created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(organization_id, code)
+);
+
+-- Dedicated restaurant promotion definition table
+CREATE TABLE restaurant_promotions (
+    id                       SERIAL PRIMARY KEY,
+    store_id                 INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    code                     VARCHAR(50) NOT NULL,
+    name                     VARCHAR(255) NOT NULL,
+    description              TEXT,
+    promotion_type           VARCHAR(50) NOT NULL CHECK (promotion_type IN ('percentage_discount','fixed_discount','bogo','buy_x_get_y','free_item','bundle_price','points_multiplier','happy_hour','bucket_combo')),
+    action_metadata          JSONB DEFAULT '{}',
+    valid_from               TIMESTAMP,
+    valid_to                 TIMESTAMP,
+    schedule_json            JSONB DEFAULT '{}',
+    applies_to               VARCHAR(50) DEFAULT 'all' CHECK (applies_to IN ('all','menu_category','menu_item')),
+    target_menu_item_ids     INTEGER[] DEFAULT '{}',
+    target_menu_category_ids INTEGER[] DEFAULT '{}',
+    target_customer_types    TEXT[]    DEFAULT '{}',
+    target_customer_tiers    TEXT[]    DEFAULT '{}',
+    min_order_amount         DECIMAL(15,2),
+    min_quantity             DECIMAL(15,3),
+    coupon_code              VARCHAR(50),
+    usage_limit              INTEGER,
+    usage_count              INTEGER DEFAULT 0,
+    usage_per_customer       INTEGER,
+    discount_value           DECIMAL(15,4),
+    is_stackable             BOOLEAN DEFAULT false,
+    is_active                BOOLEAN DEFAULT true,
+    created_by               INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    metadata                 JSONB     DEFAULT '{}',
+    created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, code)
 );
 
 

@@ -32,6 +32,35 @@ type BusinessPartnerOutput struct {
 	Contacts           []repository.PartnerContact `json:"contacts,omitempty"`
 }
 
+type BusinessPartnerListResponse struct {
+	Data       []BusinessPartnerOutput `json:"data"`
+	TotalCount int64                   `json:"total_count"`
+	Page       int32                   `json:"page"`
+	Limit      int32                   `json:"limit"`
+	TotalPages int32                   `json:"total_pages"`
+}
+
+func calcBPPage(page, limit int32) (int32, int32, int32) {
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+	return page, limit, offset
+}
+
+func calcBPTotalPages(totalCount int64, limit int32) int32 {
+	if limit <= 0 || totalCount <= 0 {
+		return 0
+	}
+	return int32((totalCount + int64(limit) - 1) / int64(limit))
+}
+
 func partnerToOutput(bp repository.BusinessPartner, addresses []repository.PartnerAddress, contacts []repository.PartnerContact) BusinessPartnerOutput {
 	return BusinessPartnerOutput{
 		ID:                 bp.ID,
@@ -256,7 +285,7 @@ func (uc *BusinessPartnerUseCase) GetBusinessPartnerByID(ctx context.Context, id
 	return utils.NewResponse(utils.CodeOK, "business partner fetched successfully", partnerToOutput(bp, addresses, contacts))
 }
 
-func (uc *BusinessPartnerUseCase) ListBusinessPartners(ctx context.Context, orgIDStr string, roleFilter string) *repository.Response {
+func (uc *BusinessPartnerUseCase) ListBusinessPartners(ctx context.Context, orgIDStr string, roleFilter string, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -266,14 +295,35 @@ func (uc *BusinessPartnerUseCase) ListBusinessPartners(ctx context.Context, orgI
 		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
 	}
 
+	p, l, offset := calcBPPage(page, limit)
+
+	var totalCount int64
 	var bps []repository.BusinessPartner
+
 	if roleFilter != "" {
-		bps, err = uc.repo.ListBusinessPartnersByRole(ctx, repository.ListBusinessPartnersByRoleParams{
+		totalCount, err = uc.repo.CountBusinessPartnersByRole(ctx, repository.CountBusinessPartnersByRoleParams{
 			OrganizationID: int32(orgID),
 			PartnerRole:    roleFilter,
 		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		bps, err = uc.repo.ListBusinessPartnersByRole(ctx, repository.ListBusinessPartnersByRoleParams{
+			OrganizationID: int32(orgID),
+			PartnerRole:    roleFilter,
+			Limit:          l,
+			Offset:         offset,
+		})
 	} else {
-		bps, err = uc.repo.ListBusinessPartners(ctx, int32(orgID))
+		totalCount, err = uc.repo.CountBusinessPartners(ctx, int32(orgID))
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		bps, err = uc.repo.ListBusinessPartners(ctx, repository.ListBusinessPartnersParams{
+			OrganizationID: int32(orgID),
+			Limit:          l,
+			Offset:         offset,
+		})
 	}
 
 	if err != nil {
@@ -287,10 +337,16 @@ func (uc *BusinessPartnerUseCase) ListBusinessPartners(ctx context.Context, orgI
 		outputs[i] = partnerToOutput(bp, addresses, contacts)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "business partners fetched successfully", outputs)
+	return utils.NewResponse(utils.CodeOK, "business partners fetched successfully", BusinessPartnerListResponse{
+		Data:       outputs,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcBPTotalPages(totalCount, l),
+	})
 }
 
-func (uc *BusinessPartnerUseCase) SearchBusinessPartners(ctx context.Context, orgIDStr string, query string, limit int32) *repository.Response {
+func (uc *BusinessPartnerUseCase) SearchBusinessPartners(ctx context.Context, orgIDStr string, query string, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -300,14 +356,21 @@ func (uc *BusinessPartnerUseCase) SearchBusinessPartners(ctx context.Context, or
 		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
 	}
 
-	if limit <= 0 {
-		limit = 10
+	p, l, offset := calcBPPage(page, limit)
+
+	totalCount, err := uc.repo.CountSearchBusinessPartners(ctx, repository.CountSearchBusinessPartnersParams{
+		OrganizationID: int32(orgID),
+		Name:           "%" + query + "%",
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
 	bps, err := uc.repo.SearchBusinessPartners(ctx, repository.SearchBusinessPartnersParams{
 		OrganizationID: int32(orgID),
 		Name:           "%" + query + "%",
-		Limit:          limit,
+		Limit:          l,
+		Offset:         offset,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -320,7 +383,13 @@ func (uc *BusinessPartnerUseCase) SearchBusinessPartners(ctx context.Context, or
 		outputs[i] = partnerToOutput(bp, addresses, contacts)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "business partners searched successfully", outputs)
+	return utils.NewResponse(utils.CodeOK, "business partners searched successfully", BusinessPartnerListResponse{
+		Data:       outputs,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcBPTotalPages(totalCount, l),
+	})
 }
 
 func (uc *BusinessPartnerUseCase) UpdateBusinessPartner(ctx context.Context, idStr string, input UpdateBusinessPartnerInput) *repository.Response {

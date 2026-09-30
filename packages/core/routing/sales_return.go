@@ -14,7 +14,7 @@ func RegisterSalesReturnRoutes(r *gin.RouterGroup, h *handler.SalesReturnHandler
 	returns := r.Group("/pos/returns")
 	{
 		returns.POST("",
-			middleware.RequireAuthorizationToken("sales_return.process"),
+			middleware.RequireAuthorizationToken("sale:refund_order"),
 			h.ProcessReturn,
 		)
 	}

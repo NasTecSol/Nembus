@@ -173,9 +173,12 @@ func (h *PurchaseOrdersHandler) ListPurchaseOrders(c *gin.Context) {
 	}
 
 	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "20")
+	limitStr := c.DefaultQuery("limit", "50")
 	page, _ := strconv.ParseInt(pageStr, 10, 32)
 	limit, _ := strconv.ParseInt(limitStr, 10, 32)
+	if limit <= 0 {
+		limit = 50
+	}
 	filter.Page = int32(page)
 	filter.Limit = int32(limit)
 

@@ -28,22 +28,37 @@ WHERE id = $1;
 SELECT * FROM business_partners
 WHERE organization_id = $1 AND code = $2;
 
+-- name: CountBusinessPartners :one
+SELECT COUNT(*) FROM business_partners
+WHERE organization_id = $1;
+
 -- name: ListBusinessPartners :many
 SELECT * FROM business_partners
 WHERE organization_id = $1
-ORDER BY name;
+ORDER BY name
+LIMIT $2 OFFSET $3;
+
+-- name: CountBusinessPartnersByRole :one
+SELECT COUNT(*) FROM business_partners
+WHERE organization_id = $1 AND partner_role = $2;
 
 -- name: ListBusinessPartnersByRole :many
 SELECT * FROM business_partners
 WHERE organization_id = $1 AND partner_role = $2
-ORDER BY name;
+ORDER BY name
+LIMIT $3 OFFSET $4;
+
+-- name: CountSearchBusinessPartners :one
+SELECT COUNT(*) FROM business_partners
+WHERE organization_id = $1 
+  AND (name ILIKE $2 OR code ILIKE $2);
 
 -- name: SearchBusinessPartners :many
 SELECT * FROM business_partners
 WHERE organization_id = $1 
   AND (name ILIKE $2 OR code ILIKE $2)
 ORDER BY name
-LIMIT $3;
+LIMIT $3 OFFSET $4;
 
 -- name: UpdateBusinessPartner :one
 UPDATE business_partners

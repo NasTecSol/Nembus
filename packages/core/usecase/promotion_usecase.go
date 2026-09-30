@@ -42,6 +42,15 @@ func (uc *PromotionUseCase) CreatePromotion(ctx context.Context, arg repository.
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
+	if arg.PromotionType == "bucket_combo" {
+		var meta BucketComboMetadata
+		if err := json.Unmarshal(arg.ActionMetadata, &meta); err != nil {
+			return utils.NewResponse(utils.CodeBadReq, "invalid action_metadata for bucket_combo", nil)
+		}
+		if err := ValidateBucketComboMetadata(meta); err != nil {
+			return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+		}
+	}
 	promotion, err := uc.repo.CreatePromotion(ctx, arg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create promotion: "+err.Error(), nil)
@@ -104,6 +113,17 @@ func (uc *PromotionUseCase) ListAllPromotions(ctx context.Context, arg repositor
 func (uc *PromotionUseCase) UpdatePromotion(ctx context.Context, arg repository.UpdatePromotionParams) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
+	}
+	if existing, err := uc.repo.GetPromotion(ctx, arg.ID); err == nil && existing.PromotionType == "bucket_combo" {
+		if len(arg.ActionMetadata) > 0 && string(arg.ActionMetadata) != "null" {
+			var meta BucketComboMetadata
+			if err := json.Unmarshal(arg.ActionMetadata, &meta); err != nil {
+				return utils.NewResponse(utils.CodeBadReq, "invalid action_metadata for bucket_combo", nil)
+			}
+			if err := ValidateBucketComboMetadata(meta); err != nil {
+				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+			}
+		}
 	}
 	promotion, err := uc.repo.UpdatePromotion(ctx, arg)
 	if err != nil {
@@ -171,6 +191,86 @@ type pointsMultiplierMetadata struct {
 	Multiplier float64 `json:"multiplier"`
 }
 
+// BucketItem represents a product (and optional variant) requirement with quantity for bucket_combo promotions.
+type BucketItem struct {
+	ProductID        int32   `json:"product_id"`
+	ProductVariantID *int32  `json:"product_variant_id,omitempty"`
+	Quantity         float64 `json:"quantity"`
+}
+
+// BucketComboMetadata is the expected shape of action_metadata for bucket_combo promotions.
+//
+//	{
+//	  "combo_type": "fixed_price", // "fixed_price" | "percentage" | "fixed_discount"
+//	  "combo_price": 50.0,
+//	  "discount_value": 20.0,
+//	  "bucket_items": [
+//	    {"product_id": 101, "product_variant_id": null, "quantity": 2},
+//	    {"product_id": 205, "product_variant_id": null, "quantity": 1}
+//	  ]
+//	}
+type BucketComboMetadata struct {
+	ComboType     string       `json:"combo_type"`
+	ComboPrice    *float64     `json:"combo_price,omitempty"`
+	DiscountValue *float64     `json:"discount_value,omitempty"`
+	BucketItems   []BucketItem `json:"bucket_items"`
+}
+
+// ValidateBucketComboMetadata checks that bucket_combo action_metadata contains at least 2 distinct products
+// with quantities >= 1 and a valid combo_type definition.
+func ValidateBucketComboMetadata(meta BucketComboMetadata) error {
+	if len(meta.BucketItems) < 2 {
+		return fmt.Errorf("bucket_combo requires bucket_items to contain at least 2 distinct products")
+	}
+
+	validComboTypes := map[string]bool{
+		"fixed_price":    true,
+		"percentage":     true,
+		"fixed_discount": true,
+	}
+	if !validComboTypes[meta.ComboType] {
+		return fmt.Errorf("invalid combo_type '%s', must be 'fixed_price', 'percentage', or 'fixed_discount'", meta.ComboType)
+	}
+
+	switch meta.ComboType {
+	case "fixed_price":
+		if meta.ComboPrice == nil || *meta.ComboPrice <= 0 {
+			return fmt.Errorf("combo_type 'fixed_price' requires combo_price > 0")
+		}
+	case "percentage":
+		val := meta.DiscountValue
+		if val == nil || *val <= 0 || *val > 100 {
+			return fmt.Errorf("combo_type 'percentage' requires discount_value between 0 and 100")
+		}
+	case "fixed_discount":
+		val := meta.DiscountValue
+		if val == nil || *val <= 0 {
+			return fmt.Errorf("combo_type 'fixed_discount' requires discount_value > 0")
+		}
+	}
+
+	distinctMap := make(map[string]bool)
+	for idx, item := range meta.BucketItems {
+		if item.ProductID <= 0 {
+			return fmt.Errorf("bucket_items[%d] must have a valid product_id > 0", idx)
+		}
+		if item.Quantity < 1 {
+			return fmt.Errorf("bucket_items[%d] quantity must be >= 1", idx)
+		}
+
+		key := fmt.Sprintf("%d", item.ProductID)
+		if item.ProductVariantID != nil && *item.ProductVariantID > 0 {
+			key = fmt.Sprintf("%d:%d", item.ProductID, *item.ProductVariantID)
+		}
+		if distinctMap[key] {
+			return fmt.Errorf("bucket_items contains duplicate product requirement (product_id %d)", item.ProductID)
+		}
+		distinctMap[key] = true
+	}
+
+	return nil
+}
+
 // ApplyCoupon validates and applies a coupon code to a cart.
 //
 // Flow:
@@ -208,6 +308,29 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 	// 2a. Check store restriction
 	if !isStoreAllowed(promo.StoreIds, cart.StoreID) {
 		return utils.NewResponse(utils.CodeBadReq, "coupon is not valid for this store", nil)
+	}
+
+	// 2b. Check target customer tiers restriction
+	if len(promo.TargetCustomerTiers) > 0 {
+		if !cart.CustomerID.Valid {
+			return utils.NewResponse(utils.CodeBadReq, "coupon is restricted to specific customer loyalty tiers, but no customer is assigned to this cart", nil)
+		}
+		cust, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+		if err != nil {
+			return utils.NewResponse(utils.CodeBadReq, "failed to fetch customer details for tier validation", nil)
+		}
+		custTier := "bronze"
+		if cust.LoyaltyTier.Valid && cust.LoyaltyTier.String != "" {
+			custTier = cust.LoyaltyTier.String
+		} else {
+			pts := numericToFloat(cust.LoyaltyPoints)
+			custTier, _ = CalculateTierAndThreshold(pts)
+		}
+		if !isTierAllowed(promo.TargetCustomerTiers, custTier) {
+			return utils.NewResponse(utils.CodeBadReq,
+				fmt.Sprintf("coupon is only available for customer loyalty tiers: %s", strings.Join(promo.TargetCustomerTiers, ", ")),
+				nil)
+		}
 	}
 
 	// 3. Fetch cart totals for constraint checks
@@ -416,6 +539,126 @@ func (uc *PromotionUseCase) ApplyCoupon(ctx context.Context, in ApplyCouponInput
 			discountFloat = subtotalFloat - discountValueFloat
 		}
 
+	// ── 7. Bucket Combo Deal ──────────────────────────────────────────────────
+	case "bucket_combo":
+		var meta BucketComboMetadata
+		if err := json.Unmarshal(promo.ActionMetadata, &meta); err != nil {
+			return utils.NewResponse(utils.CodeError, "invalid bucket_combo action_metadata", nil)
+		}
+
+		if err := ValidateBucketComboMetadata(meta); err != nil {
+			return utils.NewResponse(utils.CodeBadReq, "invalid bucket_combo setup: "+err.Error(), nil)
+		}
+
+		multiplier := -1
+		var singleSetSum float64
+
+		type matchedBucket struct {
+			bucketItem   BucketItem
+			cartItems    []repository.ListCartItemsRow
+			totalCartQty float64
+			itemSetPrice float64
+		}
+
+		matchedBuckets := make([]matchedBucket, len(meta.BucketItems))
+
+		for i, bItem := range meta.BucketItems {
+			var totalCartQty float64
+			var itemUnitPricesSum float64
+			var matchingCartItems []repository.ListCartItemsRow
+
+			for _, cItem := range items {
+				productMatch := cItem.ProductID == bItem.ProductID
+				variantMatch := true
+				if bItem.ProductVariantID != nil && *bItem.ProductVariantID > 0 {
+					variantMatch = cItem.ProductVariantID.Valid && cItem.ProductVariantID.Int32 == *bItem.ProductVariantID
+				}
+
+				if productMatch && variantMatch {
+					qty := numericToFloat(cItem.Quantity)
+					uPrice := numericToFloat(cItem.UnitPrice)
+					totalCartQty += qty
+					itemUnitPricesSum += uPrice
+					matchingCartItems = append(matchingCartItems, cItem)
+				}
+			}
+
+			if totalCartQty < bItem.Quantity {
+				return utils.NewResponse(utils.CodeBadReq,
+					fmt.Sprintf("bucket_combo requires at least %.0f unit(s) of product %d in cart (found %.0f)",
+						bItem.Quantity, bItem.ProductID, totalCartQty),
+					nil)
+			}
+
+			setsForThisItem := int(totalCartQty / bItem.Quantity)
+			if multiplier == -1 || setsForThisItem < multiplier {
+				multiplier = setsForThisItem
+			}
+
+			var avgUnitPrice float64
+			if len(matchingCartItems) > 0 {
+				avgUnitPrice = itemUnitPricesSum / float64(len(matchingCartItems))
+			}
+			singleSetPriceForItem := avgUnitPrice * bItem.Quantity
+			singleSetSum += singleSetPriceForItem
+
+			matchedBuckets[i] = matchedBucket{
+				bucketItem:   bItem,
+				cartItems:    matchingCartItems,
+				totalCartQty: totalCartQty,
+				itemSetPrice: singleSetPriceForItem,
+			}
+		}
+
+		if multiplier < 1 {
+			return utils.NewResponse(utils.CodeBadReq, "cart does not contain a complete combo set", nil)
+		}
+
+		var singleSetDiscount float64
+		switch meta.ComboType {
+		case "fixed_price":
+			comboPrice := 0.0
+			if meta.ComboPrice != nil {
+				comboPrice = *meta.ComboPrice
+			}
+			if singleSetSum > comboPrice {
+				singleSetDiscount = singleSetSum - comboPrice
+			}
+		case "percentage":
+			pct := 0.0
+			if meta.DiscountValue != nil {
+				pct = *meta.DiscountValue
+			}
+			singleSetDiscount = singleSetSum * (pct / 100.0)
+		case "fixed_discount":
+			if meta.DiscountValue != nil {
+				singleSetDiscount = *meta.DiscountValue
+			}
+		}
+
+		totalDiscount := singleSetDiscount * float64(multiplier)
+		discountFloat = totalDiscount
+
+		if singleSetSum > 0 && totalDiscount > 0 {
+			for _, mb := range matchedBuckets {
+				lineTotalDiscount := totalDiscount * (mb.itemSetPrice / singleSetSum)
+				if len(mb.cartItems) > 0 {
+					perItemDiscount := lineTotalDiscount / float64(len(mb.cartItems))
+					perItemNumeric := pgtype.Numeric{}
+					_ = perItemNumeric.Scan(fmt.Sprintf("%.2f", perItemDiscount))
+					for _, cItem := range mb.cartItems {
+						_, _ = uc.repo.ApplyDiscountToCartItem(ctx, repository.ApplyDiscountToCartItemParams{
+							ID:             cItem.ID,
+							DiscountAmount: perItemNumeric,
+							Column3:        promo.Code,
+						})
+					}
+				}
+			}
+		}
+
+		isProductTargeted = false
+
 	default:
 		discountFloat = 0
 	}
@@ -523,6 +766,29 @@ func (uc *PromotionUseCase) ValidateCoupon(ctx context.Context, in ApplyCouponIn
 
 	if !isStoreAllowed(promo.StoreIds, cart.StoreID) {
 		validationErrors = append(validationErrors, "coupon is not valid for this store")
+	}
+
+	if len(promo.TargetCustomerTiers) > 0 {
+		if !cart.CustomerID.Valid {
+			validationErrors = append(validationErrors, "coupon is restricted to specific customer loyalty tiers, but no customer is assigned to this cart")
+		} else {
+			cust, err := uc.repo.GetCustomer(ctx, cart.CustomerID.Int32)
+			if err != nil {
+				validationErrors = append(validationErrors, "failed to fetch customer details for tier validation")
+			} else {
+				custTier := "bronze"
+				if cust.LoyaltyTier.Valid && cust.LoyaltyTier.String != "" {
+					custTier = cust.LoyaltyTier.String
+				} else {
+					pts := numericToFloat(cust.LoyaltyPoints)
+					custTier, _ = CalculateTierAndThreshold(pts)
+				}
+				if !isTierAllowed(promo.TargetCustomerTiers, custTier) {
+					validationErrors = append(validationErrors,
+						fmt.Sprintf("coupon is only available for customer loyalty tiers: %s", strings.Join(promo.TargetCustomerTiers, ", ")))
+				}
+			}
+		}
 	}
 
 	if promo.MinOrderAmount.Valid {
@@ -698,3 +964,18 @@ func isStoreAllowed(storeIDs []int32, cartStoreID pgtype.Int4) bool {
 	}
 	return false
 }
+
+// isTierAllowed returns true if targetTiers is empty or contains customerTier.
+func isTierAllowed(targetTiers []string, customerTier string) bool {
+	if len(targetTiers) == 0 {
+		return true
+	}
+	customerTierLower := strings.ToLower(strings.TrimSpace(customerTier))
+	for _, tier := range targetTiers {
+		if strings.ToLower(strings.TrimSpace(tier)) == customerTierLower {
+			return true
+		}
+	}
+	return false
+}
+

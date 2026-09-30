@@ -306,5 +306,161 @@ FROM v_master_product_catalog WHERE organization_id = $1
 ORDER BY product_id ASC
 LIMIT $2 OFFSET $3;
 
+-- name: GetMasterProductCatalogByID :one
+SELECT 
+    product_id,
+    sku,
+    name,
+    description,
+    product_type,
+    is_serialized,
+    is_batch_managed,
+    is_active,
+    is_sellable,
+    is_purchasable,
+    allow_decimal_quantity,
+    track_inventory,
+    metadata,
+    created_at,
+    updated_at,
+    category_id,
+    category_name,
+    category_code,
+    brand_id,
+    brand_name,
+    brand_code,
+    tax_category_id,
+    tax_category_name,
+    tax_rate,
+    tax_inclusive,
+    base_uom_id,
+    base_uom_code,
+    base_uom_name,
+    uom_conversions,
+    prices,
+    variants,
+    barcodes,
+    inventory
+FROM v_master_product_catalog
+WHERE organization_id = sqlc.arg('organization_id')
+  AND product_id = sqlc.arg('product_id')
+LIMIT 1;
+
 -- name: GetMasterProductCatalogCount :one
-SELECT COUNT(*) FROM products;
+SELECT COUNT(*) FROM products WHERE organization_id = $1;
+
+-- name: GetMasterProductCatalogByCategory :many
+SELECT 
+    product_id,
+    sku,
+    name,
+    description,
+    product_type,
+    is_serialized,
+    is_batch_managed,
+    is_active,
+    is_sellable,
+    is_purchasable,
+    allow_decimal_quantity,
+    track_inventory,
+    metadata,
+    created_at,
+    updated_at,
+    category_id,
+    category_name,
+    category_code,
+    brand_id,
+    brand_name,
+    brand_code,
+    tax_category_id,
+    tax_category_name,
+    tax_rate,
+    tax_inclusive,
+    base_uom_id,
+    base_uom_code,
+    base_uom_name,
+    uom_conversions,
+    prices,
+    variants,
+    barcodes,
+    inventory
+FROM v_master_product_catalog
+WHERE organization_id = sqlc.arg('organization_id')
+  AND category_id = sqlc.arg('category_id')
+ORDER BY product_id ASC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: GetMasterProductCatalogByCategoryCount :one
+SELECT COUNT(*) 
+FROM v_master_product_catalog
+WHERE organization_id = sqlc.arg('organization_id')
+  AND category_id = sqlc.arg('category_id');
+
+-- name: SearchMasterProductCatalog :many
+SELECT 
+    product_id,
+    sku,
+    name,
+    description,
+    product_type,
+    is_serialized,
+    is_batch_managed,
+    is_active,
+    is_sellable,
+    is_purchasable,
+    allow_decimal_quantity,
+    track_inventory,
+    metadata,
+    created_at,
+    updated_at,
+    category_id,
+    category_name,
+    category_code,
+    brand_id,
+    brand_name,
+    brand_code,
+    tax_category_id,
+    tax_category_name,
+    tax_rate,
+    tax_inclusive,
+    base_uom_id,
+    base_uom_code,
+    base_uom_name,
+    uom_conversions,
+    prices,
+    variants,
+    barcodes,
+    inventory
+FROM v_master_product_catalog
+WHERE organization_id = sqlc.arg('organization_id')
+  AND (
+    sqlc.arg('search')::text = '' OR
+    sku ILIKE '%' || sqlc.arg('search') || '%' OR
+    name ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(description, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(category_name, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(category_code, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(brand_name, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(brand_code, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    barcodes::text ILIKE '%' || sqlc.arg('search') || '%' OR
+    variants::text ILIKE '%' || sqlc.arg('search') || '%'
+  )
+ORDER BY product_id ASC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: SearchMasterProductCatalogCount :one
+SELECT COUNT(*) 
+FROM v_master_product_catalog
+WHERE organization_id = sqlc.arg('organization_id')
+  AND (
+    sqlc.arg('search')::text = '' OR
+    sku ILIKE '%' || sqlc.arg('search') || '%' OR
+    name ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(description, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(category_name, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(category_code, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(brand_name, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    COALESCE(brand_code, '') ILIKE '%' || sqlc.arg('search') || '%' OR
+    barcodes::text ILIKE '%' || sqlc.arg('search') || '%' OR
+    variants::text ILIKE '%' || sqlc.arg('search') || '%'
+  );
