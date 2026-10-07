@@ -294,12 +294,10 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// store when the agent did not provide one.
 			var storeID *int64
 			if c.StoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, c.StoreCode)
-				_ = r.Scan(&storeID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&storeID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, c.StoreCode)
 			}
 			if storeID == nil {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 ORDER BY id LIMIT 1`, payload.OrganizationID)
-				_ = r.Scan(&storeID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&storeID) }, `SELECT id FROM stores WHERE organization_id = $1 ORDER BY id LIMIT 1`, payload.OrganizationID)
 			}
 			if storeID == nil {
 				failed++
@@ -616,10 +614,8 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// A07: Resolve product_id and store_id first, then use VALUES with ON CONFLICT.
 			// inventory_stock has no organization_id column — unique key is (product_id, store_id).
 			var productID, storeID *int64
-			row := tx.QueryRow(ctx, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, inv.ProductSKU)
-			row.Scan(&productID)
-			row2 := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, inv.StoreCode)
-			row2.Scan(&storeID)
+			_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&productID) }, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, inv.ProductSKU)
+			_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&storeID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, inv.StoreCode)
 			if productID == nil || storeID == nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("stock %s@%s: product or store not found", inv.ProductSKU, inv.StoreCode))
@@ -820,8 +816,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// arbitrary partner.
 			var partnerID *int64
 			if po.SupplierCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, po.SupplierCode)
-				_ = r.Scan(&partnerID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&partnerID) }, `SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, po.SupplierCode)
 			}
 			if partnerID == nil {
 				failed++
@@ -906,8 +901,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// instead of binding an arbitrary business partner.
 			var partnerID *int64
 			if grn.SupplierCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, grn.SupplierCode)
-				_ = r.Scan(&partnerID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&partnerID) }, `SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, grn.SupplierCode)
 			}
 			if partnerID == nil {
 				failed++
@@ -976,8 +970,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			metaBytes, _ := json.Marshal(sm.Metadata)
 			// A09: Resolve product_id and store IDs first for idempotent insert
 			var productID *int64
-			pRow := tx.QueryRow(ctx, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, sm.ProductSKU)
-			pRow.Scan(&productID)
+			_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&productID) }, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, sm.ProductSKU)
 			if productID == nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("stock movement %s: product not found", sm.ProductSKU))
@@ -985,12 +978,10 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			}
 			var fromStoreID, toStoreID *int64
 			if sm.FromStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.FromStoreCode)
-				r.Scan(&fromStoreID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&fromStoreID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.FromStoreCode)
 			}
 			if sm.ToStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.ToStoreCode)
-				r.Scan(&toStoreID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&toStoreID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.ToStoreCode)
 			}
 
 			// A27: resolve reference_id by document type so the movement ledger
@@ -1001,17 +992,13 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			if sm.ReferenceNumber != "" {
 				switch sm.ReferenceType {
 				case "goods_receipt_note":
-					r := tx.QueryRow(ctx, `SELECT id FROM goods_receipt_notes WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM goods_receipt_notes WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				case "sales_return":
-					r := tx.QueryRow(ctx, `SELECT id FROM sales_returns WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM sales_returns WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				case "transfer_request":
-					r := tx.QueryRow(ctx, `SELECT id FROM transfer_requests WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM transfer_requests WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				case "invoice":
-					r := tx.QueryRow(ctx, `SELECT id FROM invoices WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM invoices WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				}
 			}
 
@@ -1507,8 +1494,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 			var fromStoreID *int64
 			if tr.FromStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.FromStoreCode)
-				_ = r.Scan(&fromStoreID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&fromStoreID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.FromStoreCode)
 			}
 			if fromStoreID == nil {
 				failed++
@@ -1518,8 +1504,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 			var toStoreID *int64
 			if tr.ToStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.ToStoreCode)
-				_ = r.Scan(&toStoreID)
+				_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&toStoreID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.ToStoreCode)
 			}
 			if toStoreID == nil {
 				failed++

@@ -198,12 +198,48 @@ func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) s
 		return "C000001"
 	}
 	code, err := s.nembusClient.FetchCustomerSAPCode(ctx, *customerID)
-	if err != nil || strings.TrimSpace(code) == "" {
+	if err == nil && strings.TrimSpace(code) != "" {
+		return strings.TrimSpace(code)
+	}
+
+	// 1. Fetch Nembus customer details
+	cust, err := s.nembusClient.FetchCustomerDetails(ctx, *customerID)
+	if err != nil {
+		log.Printf("⚠️ Warning: Failed to fetch customer details for ID %d: %v", *customerID, err)
 		if s.cfg.NembusDefaultCustomer != "" {
 			return s.cfg.NembusDefaultCustomer
 		}
 		return "C000001"
 	}
-	return strings.TrimSpace(code)
+
+	// 2. Create BP in SAP
+	newCode := fmt.Sprintf("NMB-C%d", cust.ID)
+	bp := &sap.SAPBusinessPartner{
+		CardCode: newCode,
+		CardName: cust.Name,
+		CardType: "cCustomer",
+	}
+	if cust.Phone != nil {
+		bp.Phone1 = *cust.Phone
+	}
+	if cust.Email != nil {
+		bp.EmailAddress = *cust.Email
+	}
+
+	if _, err := s.sapClient.PostBusinessPartner(ctx, bp); err != nil {
+		log.Printf("⚠️ Warning: Failed to create SAP BP %s: %v", newCode, err)
+		// Fallback to default
+		if s.cfg.NembusDefaultCustomer != "" {
+			return s.cfg.NembusDefaultCustomer
+		}
+		return "C000001"
+	}
+
+	// 3. Save back to Nembus
+	if err := s.nembusClient.UpdateCustomerSAPCode(ctx, cust.ID, newCode); err != nil {
+		log.Printf("⚠️ Warning: Failed to update customer %d with SAP code %s: %v", cust.ID, newCode, err)
+	}
+
+	return newCode
 }
 

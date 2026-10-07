@@ -21,7 +21,6 @@ variable "dev_db_url" {
 
 # Environment for Core Database Package
 env "local" {
-  src = "file://packages/core/db/schema"
   url = var.master_db_url
   dev = var.dev_db_url
   schema {

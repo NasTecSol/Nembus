@@ -363,3 +363,35 @@ func (c *Client) FetchCustomerSAPCode(ctx context.Context, customerID int32) (st
 	return code, err
 }
 
+type NembusCustomer struct {
+	ID           int32
+	CustomerCode string
+	Name         string
+	Phone        *string
+	Email        *string
+}
+
+func (c *Client) FetchCustomerDetails(ctx context.Context, customerID int32) (*NembusCustomer, error) {
+	var cust NembusCustomer
+	query := `SELECT id, customer_code, name, phone, email FROM customers WHERE id = $1`
+	err := c.pool.QueryRow(ctx, query, customerID).Scan(&cust.ID, &cust.CustomerCode, &cust.Name, &cust.Phone, &cust.Email)
+	if err != nil {
+		return nil, err
+	}
+	return &cust, nil
+}
+
+func (c *Client) UpdateCustomerSAPCode(ctx context.Context, customerID int32, sapCardCode string) error {
+	metaPatch, _ := json.Marshal(map[string]any{
+		"sap_card_code": sapCardCode,
+	})
+	query := `
+		UPDATE customers
+		SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+		    customer_code = $2 -- Also sync it to code for convenience
+		WHERE id = $1
+	`
+	_, err := c.pool.Exec(ctx, query, customerID, metaPatch)
+	return err
+}
+

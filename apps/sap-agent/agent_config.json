@@ -21,17 +21,17 @@
   "reconciliation_interval_sec": 5,
   "reconciliation_auto_run": true,
   "mssql": {
-    "host": "192.168.18.77",
+    "host": "localhost",
     "port": 1433,
-    "user": "admin",
-    "password": "nastecsol",
-    "database": "Qadsiya",
+    "user": "",
+    "password": "",
+    "database": "Qadsiya_Dev",
     "encrypt": false,
-    "trust_server_certificate": false,
+    "trust_server_certificate": true,
     "connection_timeout_seconds": 15
   },
   "cloud": {
-    "base_url": "http://127.0.0.1:8080",
+    "base_url": "http://127.0.0.1:8081",
     "api_key": "migrator_sys_token_default_1790511038",
     "organization_id": 1,
     "timeout_seconds": 0
