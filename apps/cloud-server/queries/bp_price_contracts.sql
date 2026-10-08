@@ -17,9 +17,11 @@ INSERT INTO bp_price_contracts (
     valid_from,
     valid_to,
     is_active,
-    notes
+    notes,
+    contract_type,
+    min_order_amount
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 ) RETURNING *;
 
 -- name: GetBPPriceContract :one
@@ -35,6 +37,8 @@ SELECT
     bpc.discount_type,
     bpc.discount_amount,
     bpc.min_quantity,
+    bpc.contract_type,
+    bpc.min_order_amount,
     bpc.valid_from,
     bpc.valid_to,
     bpc.is_active,
@@ -51,7 +55,7 @@ SELECT
     uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
-INNER JOIN products p ON bpc.product_id = p.id
+LEFT JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
 LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.id = $1 LIMIT 1;
@@ -63,7 +67,11 @@ WHERE id = $1 LIMIT 1;
 -- name: GetBPPriceContractByUnique :one
 SELECT * FROM bp_price_contracts
 WHERE partner_id = $1 
-  AND product_id = $2 
+  AND (
+    (sqlc.narg(product_id)::int IS NULL AND product_id IS NULL)
+    OR
+    (product_id = sqlc.narg(product_id)::int)
+  )
   AND (
     (sqlc.narg(product_variant_id)::int IS NULL AND product_variant_id IS NULL)
     OR
@@ -89,6 +97,8 @@ SELECT
     bpc.discount_type,
     bpc.discount_amount,
     bpc.min_quantity,
+    bpc.contract_type,
+    bpc.min_order_amount,
     bpc.valid_from,
     bpc.valid_to,
     bpc.is_active,
@@ -105,7 +115,7 @@ SELECT
     uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
-INNER JOIN products p ON bpc.product_id = p.id
+LEFT JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
 LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.organization_id = $1
@@ -127,6 +137,8 @@ SELECT
     bpc.discount_type,
     bpc.discount_amount,
     bpc.min_quantity,
+    bpc.contract_type,
+    bpc.min_order_amount,
     bpc.valid_from,
     bpc.valid_to,
     bpc.is_active,
@@ -143,7 +155,7 @@ SELECT
     uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
-INNER JOIN products p ON bpc.product_id = p.id
+LEFT JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
 LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.partner_id = $1
@@ -162,6 +174,8 @@ SELECT
     bpc.discount_type,
     bpc.discount_amount,
     bpc.min_quantity,
+    bpc.contract_type,
+    bpc.min_order_amount,
     bpc.valid_from,
     bpc.valid_to,
     bpc.is_active,
@@ -178,7 +192,7 @@ SELECT
     uom.code AS uom_code
 FROM bp_price_contracts bpc
 INNER JOIN business_partners bp ON bpc.partner_id = bp.id
-INNER JOIN products p ON bpc.product_id = p.id
+LEFT JOIN products p ON bpc.product_id = p.id
 LEFT JOIN product_variants pv ON bpc.product_variant_id = pv.id
 LEFT JOIN units_of_measure uom ON bpc.uom_id = uom.id
 WHERE bpc.partner_id = $1
@@ -211,12 +225,16 @@ LIMIT 1;
 -- name: UpdateBPPriceContract :one
 UPDATE bp_price_contracts
 SET 
+    product_id = COALESCE(sqlc.narg(product_id), product_id),
+    product_variant_id = COALESCE(sqlc.narg(product_variant_id), product_variant_id),
     uom_id = COALESCE(sqlc.narg(uom_id), uom_id),
     contract_price = COALESCE(sqlc.narg(contract_price), contract_price),
     discount_percentage = COALESCE(sqlc.narg(discount_percentage), discount_percentage),
     discount_type = COALESCE(sqlc.narg(discount_type), discount_type),
     discount_amount = COALESCE(sqlc.narg(discount_amount), discount_amount),
     min_quantity = COALESCE(sqlc.narg(min_quantity), min_quantity),
+    contract_type = COALESCE(sqlc.narg(contract_type), contract_type),
+    min_order_amount = COALESCE(sqlc.narg(min_order_amount), min_order_amount),
     valid_from = COALESCE(sqlc.narg(valid_from), valid_from),
     valid_to = COALESCE(sqlc.narg(valid_to), valid_to),
     is_active = COALESCE(sqlc.narg(is_active), is_active),
