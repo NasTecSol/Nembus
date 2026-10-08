@@ -965,6 +965,49 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			}
 		}
 
+	case contracts.DomainStockCounts:
+		for _, sc := range payload.StockCounts {
+			metaBytes, _ := json.Marshal(sc.Metadata)
+			var storeID *int32
+			_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&storeID) }, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sc.StoreCode)
+
+			q := `
+			INSERT INTO stock_counts (
+				count_number, store_id, count_type, status, completed_at, metadata
+			)
+			SELECT $1::varchar, $2::integer, $3::varchar, $4::varchar, $5::timestamp, $6::jsonb
+			WHERE NOT EXISTS (
+				SELECT 1 FROM stock_counts WHERE count_number = $1
+			) RETURNING id;
+			`
+			var scID int64
+			err := queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&scID) }, q, sc.CountNumber, storeID, sc.CountType, sc.Status, sc.CompletedAt, metaBytes)
+			
+			if err == nil {
+				// Insert lines
+				for _, line := range sc.Lines {
+					var productID *int32
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&productID) }, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, line.ProductSKU)
+					
+					lq := `
+					INSERT INTO stock_count_lines (
+						stock_count_id, product_id, system_quantity, counted_quantity, variance, variance_value
+					)
+					VALUES ($1, $2, $3, $4, $5, $6)
+					`
+					_ = execWithSavepoint(ctx, tx, lq, scID, productID, line.SystemQuantity, line.CountedQuantity, line.Variance, line.VarianceValue)
+				}
+				staged++
+			} else {
+				if err == pgx.ErrNoRows {
+					skipped++
+				} else {
+					failed++
+					errs = append(errs, fmt.Sprintf("stock count %s error: %v", sc.CountNumber, err))
+				}
+			}
+		}
+
 	case contracts.DomainStockMovements:
 		for _, sm := range payload.StockMovements {
 			metaBytes, _ := json.Marshal(sm.Metadata)
@@ -1001,7 +1044,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				case "invoice", "sales_delivery":
 					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceUUID) }, `SELECT id::text FROM invoices WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				case "adjustment_positive", "adjustment_negative", "stock_count":
-					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM stock_counts WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM stock_counts WHERE metadata->>'sap_doc_num' = $1 LIMIT 1`, sm.ReferenceNumber)
 				case "purchase_invoice":
 					// Linking directly to PO as shortcut since purchase_invoices table doesn't exist
 					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM purchase_orders WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)

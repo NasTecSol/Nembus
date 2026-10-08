@@ -1440,6 +1440,25 @@ type CanonicalStockMovement struct {
 	Metadata        map[string]interface{} `json:"metadata"`
 }
 
+type CanonicalStockCountLine struct {
+	ProductSKU      string                 `json:"product_sku"`
+	SystemQuantity  float64                `json:"system_quantity"`
+	CountedQuantity float64                `json:"counted_quantity"`
+	Variance        float64                `json:"variance"`
+	VarianceValue   float64                `json:"variance_value"`
+	Metadata        map[string]interface{} `json:"metadata"`
+}
+
+type CanonicalStockCount struct {
+	CountNumber string                    `json:"count_number"`
+	StoreCode   string                    `json:"store_code"`
+	CountType   string                    `json:"count_type"`
+	Status      string                    `json:"status"`
+	CompletedAt time.Time                 `json:"completed_at"`
+	Lines       []CanonicalStockCountLine `json:"lines"`
+	Metadata    map[string]interface{}    `json:"metadata"`
+}
+
 func (sm *SAPStockMovement) ToCanonical() CanonicalStockMovement {
 	movementType := "adjustment_positive"
 	referenceType := "stock_count"

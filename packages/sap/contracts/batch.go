@@ -32,6 +32,7 @@ const (
 	DomainTransfers        DomainType = "transfer_requests" // A22: OWTR
 	DomainStockMovements   DomainType = "stock_movements"
 	DomainIncomingPayments DomainType = "incoming_payments"
+	DomainStockCounts      DomainType = "stock_counts"
 )
 
 // Migration Execution Modes
@@ -95,6 +96,7 @@ type MigrationBatchPayload struct {
 	Transfers        []mappings.CanonicalTransfer         `json:"transfers,omitempty"`
 	StockMovements   []mappings.CanonicalStockMovement    `json:"stock_movements,omitempty"`
 	IncomingPayments []mappings.CanonicalIncomingPayment  `json:"incoming_payments,omitempty"`
+	StockCounts      []mappings.CanonicalStockCount       `json:"stock_counts,omitempty"`
 }
 
 func (p *MigrationBatchPayload) RecordCount() int {
@@ -143,6 +145,8 @@ func (p *MigrationBatchPayload) RecordCount() int {
 		return len(p.StockMovements)
 	case DomainIncomingPayments:
 		return len(p.IncomingPayments)
+	case DomainStockCounts:
+		return len(p.StockCounts)
 	default:
 		return 0
 	}

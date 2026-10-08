@@ -43,6 +43,7 @@ var defaultDomainOrder = []contracts.DomainType{
 	contracts.DomainInvoices,
 	contracts.DomainSalesReturns, // A21: before stock_movements (reference_id)
 	contracts.DomainTransfers,    // A22: before stock_movements (reference_id)
+	contracts.DomainStockCounts,  // Before stock_movements (reference_id)
 	contracts.DomainStockMovements,
 	contracts.DomainIncomingPayments,
 }
@@ -776,6 +777,52 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				}
 				totalStaged += int64(resp.RecordsStaged)
 				lastWatermark = chunk[len(chunk)-1].MovementDate.Format(time.RFC3339)
+				e.broadcastProgress(runID, domain, totalStaged, -1)
+			}
+		}
+		return totalStaged, 0, lastWatermark, nil
+	case contracts.DomainStockCounts:
+		ext := extractors.NewStockCountExtractor(mssqlClient)
+		var totalStaged int64
+		var lastWatermark string
+		var seqNum int
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, win := range dateWindows(start, time.Now(), 1) {
+			select {
+			case <-ctx.Done():
+				return totalStaged, 0, lastWatermark, ctx.Err()
+			default:
+			}
+			counts, err := ext.ExtractStockCounts(ctx, win[0], win[1])
+			if err != nil {
+				return totalStaged, 0, lastWatermark, fmt.Errorf("stock_counts window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+			}
+			if len(counts) == 0 {
+				continue
+			}
+			for i := 0; i < len(counts); i += batchSize {
+				end := i + batchSize
+				if end > len(counts) {
+					end = len(counts)
+				}
+				chunk := counts[i:end]
+				payload := &contracts.MigrationBatchPayload{
+					BatchID:        uuid.New().String(),
+					RunID:          runID,
+					OrganizationID: cloudCfg.OrganizationID,
+					Domain:         domain,
+					SequenceNumber: seqNum,
+					StockCounts:    chunk,
+					IsLastBatch:    false,
+					Timestamp:      time.Now(),
+				}
+				seqNum++
+				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+				if err != nil {
+					return totalStaged, 0, lastWatermark, err
+				}
+				totalStaged += int64(resp.RecordsStaged)
+				lastWatermark = chunk[len(chunk)-1].CompletedAt.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}

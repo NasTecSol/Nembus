@@ -155,3 +155,126 @@ func TestSAPMigrationStockMovements(t *testing.T) {
 
 	t.Logf("Success! Stock movement reference_uuid perfectly matches Invoice ID: %s", *refUUID)
 }
+
+func TestSAPMigrationStockCounts(t *testing.T) {
+	ctx := context.Background()
+	connStr := "postgres://postgres:root1234@localhost:5432/nembus_migration_audit_postfix_20260929?sslmode=disable"
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping test: cannot connect to db: %v", err)
+	}
+	defer pool.Close()
+
+	var storeID int32
+	err = pool.QueryRow(ctx, `
+		INSERT INTO stores (organization_id, code, name, is_active, metadata)
+		VALUES (1, $1, 'Test Store 2', true, '{}'::jsonb) RETURNING id
+	`, fmt.Sprintf("ST2-%d", time.Now().Unix())).Scan(&storeID)
+	if err != nil {
+		t.Fatalf("Failed to insert store: %v", err)
+	}
+
+	var productID int32
+	err = pool.QueryRow(ctx, `
+		INSERT INTO products (organization_id, sku, name, is_active)
+		VALUES (1, $1, 'Test Prod 2', true) RETURNING id
+	`, fmt.Sprintf("SKU2-%d", time.Now().Unix())).Scan(&productID)
+	if err != nil {
+		t.Fatalf("Failed to insert product: %v", err)
+	}
+
+	var createdSKU, createdStoreCode string
+	pool.QueryRow(ctx, `SELECT sku FROM products WHERE id = $1`, productID).Scan(&createdSKU)
+	pool.QueryRow(ctx, `SELECT code FROM stores WHERE id = $1`, storeID).Scan(&createdStoreCode)
+
+	uc := NewSAPMigrationUseCase(pool)
+
+	// 1. Ingest a Stock Count
+	countNum := fmt.Sprintf("SC-SAP-59-%d", time.Now().Unix())
+	docNum := fmt.Sprintf("DOC-%d", time.Now().Unix())
+	batchSC := &contracts.MigrationBatchPayload{
+		Domain:         contracts.DomainStockCounts,
+		OrganizationID: 1,
+		StockCounts: []mappings.CanonicalStockCount{
+			{
+				CountNumber: countNum,
+				StoreCode:   createdStoreCode,
+				CountType:   "adjustment",
+				Status:      "completed",
+				CompletedAt: time.Now(),
+				Lines: []mappings.CanonicalStockCountLine{
+					{
+						ProductSKU:      createdSKU,
+						SystemQuantity:  0,
+						CountedQuantity: 10,
+						Variance:        10,
+						VarianceValue:   100,
+					},
+				},
+				Metadata: map[string]interface{}{
+					"sap_doc_num": docNum,
+				},
+			},
+		},
+	}
+	resSC, err := uc.IngestBatch(ctx, 1, batchSC)
+	if err != nil {
+		t.Fatalf("Failed to ingest stock count: %v", err)
+	}
+	if resSC.RecordsStaged == 0 {
+		t.Fatalf("Stock Count not staged! Errors: %v", resSC.Errors)
+	}
+
+	var countID int64
+	err = pool.QueryRow(ctx, `SELECT id FROM stock_counts WHERE count_number = $1 LIMIT 1`, countNum).Scan(&countID)
+	if err != nil {
+		t.Fatalf("Failed to fetch ingested stock count ID: %v", err)
+	}
+	t.Logf("Ingested Stock Count ID: %d", countID)
+
+	// 2. Ingest Stock Movement referencing the Stock Count
+	transNum := fmt.Sprintf("TEST-ADJ-%d", time.Now().Unix())
+	batchSm := &contracts.MigrationBatchPayload{
+		Domain:         contracts.DomainStockMovements,
+		OrganizationID: 1,
+		StockMovements: []mappings.CanonicalStockMovement{
+			{
+				MovementType:    "adjustment_positive",
+				ReferenceType:   "stock_count",
+				ReferenceNumber: docNum, // Matches the sap_doc_num of the stock count
+				ProductSKU:      createdSKU,
+				ToStoreCode:     createdStoreCode,
+				Quantity:        10,
+				MovementDate:    time.Now(),
+				Metadata: map[string]interface{}{
+					"sap_trans_num": transNum,
+					"sap_base_ref":  docNum,
+				},
+			},
+		},
+	}
+	
+	res, err := uc.IngestBatch(ctx, 1, batchSm)
+	if err != nil {
+		t.Fatalf("Failed to ingest stock movement for count: %v", err)
+	}
+	if res.RecordsStaged == 0 {
+		t.Fatalf("Expected at least 1 staged stock movement, got 0. Errors: %v", res.Errors)
+	}
+
+	// 3. Verify that the stock movement has the correct reference_id
+	var refID *int64
+	err = pool.QueryRow(ctx, `SELECT reference_id FROM stock_movements WHERE metadata->>'sap_trans_num' = $1`, transNum).Scan(&refID)
+	if err != nil {
+		t.Fatalf("Failed to fetch inserted stock movement: %v", err)
+	}
+
+	if refID == nil {
+		t.Fatalf("Expected reference_id to be populated for stock_count, got nil")
+	}
+	if *refID != countID {
+		t.Fatalf("Expected reference_id to be %d, got %d", countID, *refID)
+	}
+
+	t.Logf("Success! Stock movement reference_id perfectly matches Stock Count ID: %d", *refID)
+}
