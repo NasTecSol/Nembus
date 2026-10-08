@@ -989,16 +989,22 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// Requires sales_returns / transfer_requests / goods_receipts /
 			// invoices domains to be ingested before stock_movements.
 			var referenceID *int64
+			var referenceUUID *string
 			if sm.ReferenceNumber != "" {
 				switch sm.ReferenceType {
-				case "goods_receipt_note":
+				case "purchase_receipt", "goods_receipt_note":
 					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM goods_receipt_notes WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-				case "sales_return":
+				case "sales_return", "purchase_return", "purchase_credit_note":
 					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM sales_returns WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				case "transfer_request":
 					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM transfer_requests WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-				case "invoice":
-					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM invoices WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+				case "invoice", "sales_delivery":
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceUUID) }, `SELECT id::text FROM invoices WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+				case "adjustment_positive", "adjustment_negative", "stock_count":
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM stock_counts WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+				case "purchase_invoice":
+					// Linking directly to PO as shortcut since purchase_invoices table doesn't exist
+					_ = queryRowWithSavepoint(ctx, tx, func(row pgx.Row) error { return row.Scan(&referenceID) }, `SELECT id FROM purchase_orders WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 				}
 			}
 
@@ -1008,31 +1014,31 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				// A25: arbiter index exists — idempotent upsert via ON CONFLICT
 				q := `
 				INSERT INTO stock_movements (
-					movement_type, reference_type, reference_id, product_id,
+					movement_type, reference_type, reference_id, reference_uuid, product_id,
 					from_store_id, to_store_id, quantity,
 					movement_date, status, cost_per_unit, total_value, metadata
 				)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9, $10, $11)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'completed', $10, $11, $12)
 				ON CONFLICT ((metadata->>'sap_trans_num')) WHERE metadata ? 'sap_trans_num'
 				DO NOTHING;
 				`
-				tag, err = execWithSavepointRows(ctx, tx, q, sm.MovementType, sm.ReferenceType, referenceID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes)
+				tag, err = execWithSavepointRows(ctx, tx, q, sm.MovementType, sm.ReferenceType, referenceID, referenceUUID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes)
 			} else {
 				// Fallback for databases where the arbiter index could not be
 				// created (e.g. pre-existing duplicate sap_trans_num rows):
 				// replay-safe via WHERE NOT EXISTS, no index required.
 				q := `
 				INSERT INTO stock_movements (
-					movement_type, reference_type, reference_id, product_id,
+					movement_type, reference_type, reference_id, reference_uuid, product_id,
 					from_store_id, to_store_id, quantity,
 					movement_date, status, cost_per_unit, total_value, metadata
 				)
-				SELECT $1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9, $10, $11
+				SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, 'completed', $10, $11, $12
 				WHERE NOT EXISTS (
-					SELECT 1 FROM stock_movements WHERE metadata->>'sap_trans_num' = $12
+					SELECT 1 FROM stock_movements WHERE metadata->>'sap_trans_num' = $13
 				);
 				`
-				tag, err = execWithSavepointRows(ctx, tx, q, sm.MovementType, sm.ReferenceType, referenceID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes, fmt.Sprintf("%d", sm.Metadata["sap_trans_num"]))
+				tag, err = execWithSavepointRows(ctx, tx, q, sm.MovementType, sm.ReferenceType, referenceID, referenceUUID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes, fmt.Sprintf("%d", sm.Metadata["sap_trans_num"]))
 			}
 			if err != nil {
 				failed++
