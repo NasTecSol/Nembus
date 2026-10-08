@@ -1904,8 +1904,7 @@ CREATE TABLE "public"."pos_transaction_lines" (
 CREATE INDEX "idx_pos_transaction_lines_product_id" ON "public"."pos_transaction_lines" ("product_id");
 -- Create index "idx_pos_transaction_lines_transaction_id" to table: "pos_transaction_lines"
 CREATE INDEX "idx_pos_transaction_lines_transaction_id" ON "public"."pos_transaction_lines" ("transaction_id");
--- Create trigger "trg_deduct_inventory_on_pos_transaction"
-CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
+-- Disabled: CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
 -- Create trigger "trg_pos_transactions_updated_at"
 CREATE TRIGGER "trg_pos_transactions_updated_at" BEFORE UPDATE ON "public"."pos_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "trg_price_lists_updated_at"
