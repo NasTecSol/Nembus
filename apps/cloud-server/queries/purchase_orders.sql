@@ -17,9 +17,10 @@ INSERT INTO purchase_orders (
     total_amount,
     price_list_id,
     created_by,
-    metadata
+    metadata,
+    applied_contract_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 ) RETURNING *;
 
 -- name: CreatePurchaseOrderLine :one
@@ -55,12 +56,17 @@ SELECT
     bp.code AS partner_code,
     s.name AS store_name,
     u_created.username AS created_by_name,
-    u_approved.username AS approved_by_name
+    u_approved.username AS approved_by_name,
+    bpc.contract_type AS applied_contract_type,
+    bpc.min_order_amount AS applied_contract_min_order_amount,
+    bpc.discount_percentage AS applied_contract_discount_percentage,
+    bpc.discount_amount AS applied_contract_discount_amount
 FROM purchase_orders po
 LEFT JOIN business_partners bp ON po.partners_id = bp.id
 LEFT JOIN stores s ON po.store_id = s.id
 LEFT JOIN users u_created ON po.created_by = u_created.id
 LEFT JOIN users u_approved ON po.approved_by = u_approved.id
+LEFT JOIN bp_price_contracts bpc ON po.applied_contract_id = bpc.id
 WHERE po.id = $1;
 
 -- name: ListPurchaseOrderLines :many
@@ -135,6 +141,7 @@ SET partners_id = $2,
     total_amount = $9,
     price_list_id = $10,
     metadata = $11,
+    applied_contract_id = COALESCE(sqlc.narg('applied_contract_id'), applied_contract_id),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;

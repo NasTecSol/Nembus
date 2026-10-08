@@ -260,6 +260,9 @@ definitions:
       contract_price:
         example: "45.5000"
         type: string
+      contract_type:
+        example: ITEM
+        type: string
       created_at:
         example: "2026-01-24T21:43:00Z"
         type: string
@@ -278,6 +281,9 @@ definitions:
       is_active:
         example: true
         type: boolean
+      min_order_amount:
+        example: "0.00"
+        type: string
       min_quantity:
         example: "10.000"
         type: string
@@ -733,6 +739,9 @@ definitions:
       contract_price:
         example: 45.5
         type: number
+      contract_type:
+        example: ORDER_TOTAL
+        type: string
       discount_amount:
         example: 5
         type: number
@@ -745,6 +754,9 @@ definitions:
       is_active:
         example: true
         type: boolean
+      min_order_amount:
+        example: 5000
+        type: number
       min_quantity:
         example: 10
         type: number
@@ -773,10 +785,8 @@ definitions:
         example: "2026-12-31"
         type: string
     required:
-    - contract_price
     - organization_id
     - partner_id
-    - product_id
     type: object
   handler.CreateBrandRequest:
     properties:
@@ -2086,9 +2096,18 @@ definitions:
     type: object
   handler.CreatePurchaseOrderRequest:
     properties:
+      applied_contract_id:
+        example: 2
+        type: integer
+      bill_discount_amount:
+        example: 500
+        type: number
       created_by:
         example: 1
         type: integer
+      discount_amount:
+        example: 500
+        type: number
       expected_delivery_date:
         example: "2026-09-15"
         type: string
@@ -4139,11 +4158,29 @@ definitions:
     type: object
   handler.PurchaseOrderResponse:
     properties:
+      applied_contract_discount_amount:
+        example: "0.00"
+        type: string
+      applied_contract_discount_percentage:
+        example: "10.00"
+        type: string
+      applied_contract_id:
+        example: 2
+        type: integer
+      applied_contract_min_order_amount:
+        example: "5000.00"
+        type: string
+      applied_contract_type:
+        example: ORDER_TOTAL
+        type: string
       approved_by:
         example: 1
         type: integer
       approved_by_name:
         example: manager
+        type: string
+      bill_discount_amount:
+        example: "500.00"
         type: string
       created_at:
         example: "2026-09-08T10:00:00Z"
@@ -4992,6 +5029,9 @@ definitions:
       contract_price:
         example: 42
         type: number
+      contract_type:
+        example: ORDER_TOTAL
+        type: string
       discount_amount:
         example: 10
         type: number
@@ -5004,12 +5044,18 @@ definitions:
       is_active:
         example: true
         type: boolean
+      min_order_amount:
+        example: 5000
+        type: number
       min_quantity:
         example: 15
         type: number
       notes:
         example: Updated price for Q2
         type: string
+      product_id:
+        example: 10
+        type: integer
       uom_id:
         example: 2
         type: integer
@@ -5890,6 +5936,15 @@ definitions:
     type: object
   handler.UpdatePurchaseOrderRequest:
     properties:
+      applied_contract_id:
+        example: 2
+        type: integer
+      bill_discount_amount:
+        example: 500
+        type: number
+      discount_amount:
+        example: 500
+        type: number
       expected_delivery_date:
         example: "2026-09-15"
         type: string

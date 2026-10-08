@@ -499,7 +499,7 @@ type BpPriceContract struct {
 	ID                 int32            `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`
 	PartnerID          int32            `json:"partner_id"`
-	ProductID          int32            `json:"product_id"`
+	ProductID          pgtype.Int4      `json:"product_id"`
 	ProductVariantID   pgtype.Int4      `json:"product_variant_id"`
 	UomID              pgtype.Int4      `json:"uom_id"`
 	ContractPrice      pgtype.Numeric   `json:"contract_price"`
@@ -507,6 +507,8 @@ type BpPriceContract struct {
 	DiscountType       pgtype.Text      `json:"discount_type"`
 	DiscountAmount     pgtype.Numeric   `json:"discount_amount"`
 	MinQuantity        pgtype.Numeric   `json:"min_quantity"`
+	ContractType       pgtype.Text      `json:"contract_type"`
+	MinOrderAmount     pgtype.Numeric   `json:"min_order_amount"`
 	ValidFrom          pgtype.Date      `json:"valid_from"`
 	ValidTo            pgtype.Date      `json:"valid_to"`
 	IsActive           pgtype.Bool      `json:"is_active"`
@@ -1617,6 +1619,7 @@ type PurchaseOrder struct {
 	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
 	TotalAmount          pgtype.Numeric   `json:"total_amount"`
 	PriceListID          pgtype.Int4      `json:"price_list_id"`
+	AppliedContractID    pgtype.Int4      `json:"applied_contract_id"`
 	CreatedBy            pgtype.Int4      `json:"created_by"`
 	ApprovedBy           pgtype.Int4      `json:"approved_by"`
 	Metadata             json.RawMessage  `json:"metadata"`
