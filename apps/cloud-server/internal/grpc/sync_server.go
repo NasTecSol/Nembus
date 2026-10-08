@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -118,16 +117,16 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	// Dynamic ingestion routing by entity type
 	switch event.EntityType {
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
-		"sales_orders_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
+		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
 		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
-		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.PayloadJson); err != nil {
-			log.Printf("[gRPC SyncServer] Ingestion error for %s (ID %d): %v", event.EntityType, event.EntityId, err)
+		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.Action, event.PayloadJson); err != nil {
+			log.Printf("[gRPC SyncServer] Ingestion error for %s (action=%s, ID %d): %v", event.EntityType, event.Action, event.EntityId, err)
 			return err
 		}
-		log.Printf("[gRPC SyncServer] Successfully ingested %s entity ID %d (Correlation: %s) for store %d",
-			event.EntityType, event.EntityId, event.CorrelationId, event.StoreId)
+		log.Printf("[gRPC SyncServer] Successfully ingested %s entity ID %d (action=%s, Correlation: %s) for store %d",
+			event.EntityType, event.EntityId, event.Action, event.CorrelationId, event.StoreId)
 	default:
-		log.Printf("[gRPC SyncServer] Processed generic entity %s ID %d", event.EntityType, event.EntityId)
+		return fmt.Errorf("unsupported sync entity type: %s", event.EntityType)
 	}
 
 	// Insert into raw sync log / store outbox log for processing
@@ -152,77 +151,67 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	return nil
 }
 
-var tableColumnsCache sync.Map
-
-func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) string {
-	if val, ok := tableColumnsCache.Load(table); ok {
-		return val.(string)
-	}
-
+func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) (string, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT column_name 
 		FROM information_schema.columns 
-		WHERE table_name = $1 AND column_name NOT IN ('id', 'created_at')
+		WHERE table_schema = current_schema() AND table_name = $1
+		  AND column_name NOT IN ('id', 'created_at') AND is_generated = 'NEVER'
 		ORDER BY ordinal_position;
 	`, table)
 	if err != nil {
-		return "id = EXCLUDED.id"
+		return "", fmt.Errorf("read columns for %s: %w", table, err)
 	}
 	defer rows.Close()
 
 	var sets []string
 	for rows.Next() {
 		var col string
-		if err := rows.Scan(&col); err == nil {
-			sets = append(sets, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
+		if err := rows.Scan(&col); err != nil {
+			return "", err
 		}
+		sets = append(sets, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
 	}
 
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
 	clause := strings.Join(sets, ", ")
 	if clause == "" {
 		clause = "id = EXCLUDED.id"
 	}
-	tableColumnsCache.Store(table, clause)
-	return clause
+	return clause, nil
 }
 
-// upsertEntityJSON executes PostgreSQL json_populate_record upsert
-func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, entityType string, payload []byte) error {
+// upsertEntityJSON preserves FK checks. The client sends checkout parents
+// before POS rows; bypassing constraints would leave orphaned sales behind.
+func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, entityType, action string, payload []byte) error {
 	if len(payload) == 0 {
-		return nil
+		return fmt.Errorf("empty sync payload for %s", entityType)
 	}
-
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
-		"cashier_sessions": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
+		"cashier_sessions": true, "carts": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
 		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
 		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
 	}
-
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
 	}
-
-	updateClause := getTableUpdateClause(ctx, pool, entityType)
-
+	updateClause, err := getTableUpdateClause(ctx, pool, entityType)
+	if err != nil {
+		return err
+	}
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
 		ON CONFLICT (id) DO UPDATE SET %s;
 	`, entityType, entityType, updateClause)
-
-	_, err := pool.Exec(ctx, query, string(payload))
-	if err != nil {
-		fallbackQuery := fmt.Sprintf(`
-			INSERT INTO %s
-			SELECT * FROM json_populate_record(NULL::%s, $1::json)
-			ON CONFLICT (id) DO NOTHING;
-		`, entityType, entityType)
-		if _, err2 := pool.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
-			return fmt.Errorf("failed to upsert %s: %w (fallback: %v)", entityType, err, err2)
-		}
+	if _, err := pool.Exec(ctx, query, string(payload)); err != nil {
+		// Return the original constraint and SQLSTATE. A DO NOTHING fallback
+		// can hide rejected updates, or replace the cause with SQLSTATE 25P02.
+		return fmt.Errorf("failed to upsert %s (action=%s): %w", entityType, action, err)
 	}
-
 	return nil
 }
 
