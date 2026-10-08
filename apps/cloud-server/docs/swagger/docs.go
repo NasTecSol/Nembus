@@ -44200,6 +44200,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "45.5000"
                 },
+                "contract_type": {
+                    "type": "string",
+                    "example": "ITEM"
+                },
                 "created_at": {
                     "type": "string",
                     "example": "2026-01-24T21:43:00Z"
@@ -44223,6 +44227,10 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean",
                     "example": true
+                },
+                "min_order_amount": {
+                    "type": "string",
+                    "example": "0.00"
                 },
                 "min_quantity": {
                     "type": "string",
@@ -44859,15 +44867,17 @@ const docTemplate = `{
         "handler.CreateBPPriceContractRequest": {
             "type": "object",
             "required": [
-                "contract_price",
                 "organization_id",
-                "partner_id",
-                "product_id"
+                "partner_id"
             ],
             "properties": {
                 "contract_price": {
                     "type": "number",
                     "example": 45.5
+                },
+                "contract_type": {
+                    "type": "string",
+                    "example": "ORDER_TOTAL"
                 },
                 "discount_amount": {
                     "type": "number",
@@ -44884,6 +44894,10 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean",
                     "example": true
+                },
+                "min_order_amount": {
+                    "type": "number",
+                    "example": 5000
                 },
                 "min_quantity": {
                     "type": "number",
@@ -46752,9 +46766,21 @@ const docTemplate = `{
                 "supplier_id"
             ],
             "properties": {
+                "applied_contract_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "bill_discount_amount": {
+                    "type": "number",
+                    "example": 500
+                },
                 "created_by": {
                     "type": "integer",
                     "example": 1
+                },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 500
                 },
                 "expected_delivery_date": {
                     "type": "string",
@@ -49587,6 +49613,26 @@ const docTemplate = `{
         "handler.PurchaseOrderResponse": {
             "type": "object",
             "properties": {
+                "applied_contract_discount_amount": {
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "applied_contract_discount_percentage": {
+                    "type": "string",
+                    "example": "10.00"
+                },
+                "applied_contract_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "applied_contract_min_order_amount": {
+                    "type": "string",
+                    "example": "5000.00"
+                },
+                "applied_contract_type": {
+                    "type": "string",
+                    "example": "ORDER_TOTAL"
+                },
                 "approved_by": {
                     "type": "integer",
                     "example": 1
@@ -49594,6 +49640,10 @@ const docTemplate = `{
                 "approved_by_name": {
                     "type": "string",
                     "example": "manager"
+                },
+                "bill_discount_amount": {
+                    "type": "string",
+                    "example": "500.00"
                 },
                 "created_at": {
                     "type": "string",
@@ -50777,6 +50827,10 @@ const docTemplate = `{
                     "type": "number",
                     "example": 42
                 },
+                "contract_type": {
+                    "type": "string",
+                    "example": "ORDER_TOTAL"
+                },
                 "discount_amount": {
                     "type": "number",
                     "example": 10
@@ -50793,6 +50847,10 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": true
                 },
+                "min_order_amount": {
+                    "type": "number",
+                    "example": 5000
+                },
                 "min_quantity": {
                     "type": "number",
                     "example": 15
@@ -50800,6 +50858,10 @@ const docTemplate = `{
                 "notes": {
                     "type": "string",
                     "example": "Updated price for Q2"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 10
                 },
                 "uom_id": {
                     "type": "integer",
@@ -52045,6 +52107,18 @@ const docTemplate = `{
         "handler.UpdatePurchaseOrderRequest": {
             "type": "object",
             "properties": {
+                "applied_contract_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "bill_discount_amount": {
+                    "type": "number",
+                    "example": 500
+                },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 500
+                },
                 "expected_delivery_date": {
                     "type": "string",
                     "example": "2026-09-15"

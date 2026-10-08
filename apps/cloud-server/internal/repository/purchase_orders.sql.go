@@ -70,10 +70,11 @@ INSERT INTO purchase_orders (
     total_amount,
     price_list_id,
     created_by,
-    metadata
+    metadata,
+    applied_contract_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
-) RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, created_by, approved_by, metadata, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+) RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
 `
 
 type CreatePurchaseOrderParams struct {
@@ -91,6 +92,7 @@ type CreatePurchaseOrderParams struct {
 	PriceListID          pgtype.Int4     `json:"price_list_id"`
 	CreatedBy            pgtype.Int4     `json:"created_by"`
 	Metadata             json.RawMessage `json:"metadata"`
+	AppliedContractID    pgtype.Int4     `json:"applied_contract_id"`
 }
 
 // =====================================================
@@ -112,6 +114,7 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 		arg.PriceListID,
 		arg.CreatedBy,
 		arg.Metadata,
+		arg.AppliedContractID,
 	)
 	var i PurchaseOrder
 	err := row.Scan(
@@ -128,6 +131,7 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.PriceListID,
+		&i.AppliedContractID,
 		&i.CreatedBy,
 		&i.ApprovedBy,
 		&i.Metadata,
@@ -241,7 +245,7 @@ func (q *Queries) DeletePurchaseOrderLines(ctx context.Context, purchaseOrderID 
 }
 
 const getPurchaseOrderByID = `-- name: GetPurchaseOrderByID :one
-SELECT id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders WHERE id = $1
+SELECT id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders WHERE id = $1
 `
 
 func (q *Queries) GetPurchaseOrderByID(ctx context.Context, id int32) (PurchaseOrder, error) {
@@ -261,6 +265,7 @@ func (q *Queries) GetPurchaseOrderByID(ctx context.Context, id int32) (PurchaseO
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.PriceListID,
+		&i.AppliedContractID,
 		&i.CreatedBy,
 		&i.ApprovedBy,
 		&i.Metadata,
@@ -271,7 +276,7 @@ func (q *Queries) GetPurchaseOrderByID(ctx context.Context, id int32) (PurchaseO
 }
 
 const getPurchaseOrderByNumber = `-- name: GetPurchaseOrderByNumber :one
-SELECT id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders 
+SELECT id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders 
 WHERE organization_id = $1 AND po_number = $2
 `
 
@@ -297,6 +302,7 @@ func (q *Queries) GetPurchaseOrderByNumber(ctx context.Context, arg GetPurchaseO
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.PriceListID,
+		&i.AppliedContractID,
 		&i.CreatedBy,
 		&i.ApprovedBy,
 		&i.Metadata,
@@ -378,44 +384,54 @@ func (q *Queries) GetPurchaseOrderLineByID(ctx context.Context, id int32) (GetPu
 
 const getPurchaseOrderWithDetails = `-- name: GetPurchaseOrderWithDetails :one
 SELECT 
-    po.id, po.organization_id, po.po_number, po.partners_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
+    po.id, po.organization_id, po.po_number, po.partners_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.applied_contract_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
     bp.name AS partner_name,
     bp.code AS partner_code,
     s.name AS store_name,
     u_created.username AS created_by_name,
-    u_approved.username AS approved_by_name
+    u_approved.username AS approved_by_name,
+    bpc.contract_type AS applied_contract_type,
+    bpc.min_order_amount AS applied_contract_min_order_amount,
+    bpc.discount_percentage AS applied_contract_discount_percentage,
+    bpc.discount_amount AS applied_contract_discount_amount
 FROM purchase_orders po
 LEFT JOIN business_partners bp ON po.partners_id = bp.id
 LEFT JOIN stores s ON po.store_id = s.id
 LEFT JOIN users u_created ON po.created_by = u_created.id
 LEFT JOIN users u_approved ON po.approved_by = u_approved.id
+LEFT JOIN bp_price_contracts bpc ON po.applied_contract_id = bpc.id
 WHERE po.id = $1
 `
 
 type GetPurchaseOrderWithDetailsRow struct {
-	ID                   int32            `json:"id"`
-	OrganizationID       int32            `json:"organization_id"`
-	PoNumber             string           `json:"po_number"`
-	PartnersID           int32            `json:"partners_id"`
-	StoreID              int32            `json:"store_id"`
-	PoDate               pgtype.Date      `json:"po_date"`
-	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
-	Status               pgtype.Text      `json:"status"`
-	Subtotal             pgtype.Numeric   `json:"subtotal"`
-	DiscountAmount       pgtype.Numeric   `json:"discount_amount"`
-	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
-	TotalAmount          pgtype.Numeric   `json:"total_amount"`
-	PriceListID          pgtype.Int4      `json:"price_list_id"`
-	CreatedBy            pgtype.Int4      `json:"created_by"`
-	ApprovedBy           pgtype.Int4      `json:"approved_by"`
-	Metadata             json.RawMessage  `json:"metadata"`
-	CreatedAt            pgtype.Timestamp `json:"created_at"`
-	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
-	PartnerName          pgtype.Text      `json:"partner_name"`
-	PartnerCode          pgtype.Text      `json:"partner_code"`
-	StoreName            pgtype.Text      `json:"store_name"`
-	CreatedByName        pgtype.Text      `json:"created_by_name"`
-	ApprovedByName       pgtype.Text      `json:"approved_by_name"`
+	ID                                int32            `json:"id"`
+	OrganizationID                    int32            `json:"organization_id"`
+	PoNumber                          string           `json:"po_number"`
+	PartnersID                        int32            `json:"partners_id"`
+	StoreID                           int32            `json:"store_id"`
+	PoDate                            pgtype.Date      `json:"po_date"`
+	ExpectedDeliveryDate              pgtype.Date      `json:"expected_delivery_date"`
+	Status                            pgtype.Text      `json:"status"`
+	Subtotal                          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount                    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount                         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount                       pgtype.Numeric   `json:"total_amount"`
+	PriceListID                       pgtype.Int4      `json:"price_list_id"`
+	AppliedContractID                 pgtype.Int4      `json:"applied_contract_id"`
+	CreatedBy                         pgtype.Int4      `json:"created_by"`
+	ApprovedBy                        pgtype.Int4      `json:"approved_by"`
+	Metadata                          json.RawMessage  `json:"metadata"`
+	CreatedAt                         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt                         pgtype.Timestamp `json:"updated_at"`
+	PartnerName                       pgtype.Text      `json:"partner_name"`
+	PartnerCode                       pgtype.Text      `json:"partner_code"`
+	StoreName                         pgtype.Text      `json:"store_name"`
+	CreatedByName                     pgtype.Text      `json:"created_by_name"`
+	ApprovedByName                    pgtype.Text      `json:"approved_by_name"`
+	AppliedContractType               pgtype.Text      `json:"applied_contract_type"`
+	AppliedContractMinOrderAmount     pgtype.Numeric   `json:"applied_contract_min_order_amount"`
+	AppliedContractDiscountPercentage pgtype.Numeric   `json:"applied_contract_discount_percentage"`
+	AppliedContractDiscountAmount     pgtype.Numeric   `json:"applied_contract_discount_amount"`
 }
 
 func (q *Queries) GetPurchaseOrderWithDetails(ctx context.Context, id int32) (GetPurchaseOrderWithDetailsRow, error) {
@@ -435,6 +451,7 @@ func (q *Queries) GetPurchaseOrderWithDetails(ctx context.Context, id int32) (Ge
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.PriceListID,
+		&i.AppliedContractID,
 		&i.CreatedBy,
 		&i.ApprovedBy,
 		&i.Metadata,
@@ -445,6 +462,10 @@ func (q *Queries) GetPurchaseOrderWithDetails(ctx context.Context, id int32) (Ge
 		&i.StoreName,
 		&i.CreatedByName,
 		&i.ApprovedByName,
+		&i.AppliedContractType,
+		&i.AppliedContractMinOrderAmount,
+		&i.AppliedContractDiscountPercentage,
+		&i.AppliedContractDiscountAmount,
 	)
 	return i, err
 }
@@ -608,7 +629,7 @@ func (q *Queries) ListPurchaseOrderLines(ctx context.Context, purchaseOrderID in
 
 const listPurchaseOrders = `-- name: ListPurchaseOrders :many
 SELECT 
-    po.id, po.organization_id, po.po_number, po.partners_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
+    po.id, po.organization_id, po.po_number, po.partners_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.applied_contract_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
     bp.name AS partner_name,
     bp.code AS partner_code,
     s.name AS store_name,
@@ -660,6 +681,7 @@ type ListPurchaseOrdersRow struct {
 	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
 	TotalAmount          pgtype.Numeric   `json:"total_amount"`
 	PriceListID          pgtype.Int4      `json:"price_list_id"`
+	AppliedContractID    pgtype.Int4      `json:"applied_contract_id"`
 	CreatedBy            pgtype.Int4      `json:"created_by"`
 	ApprovedBy           pgtype.Int4      `json:"approved_by"`
 	Metadata             json.RawMessage  `json:"metadata"`
@@ -705,6 +727,7 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 			&i.TaxAmount,
 			&i.TotalAmount,
 			&i.PriceListID,
+			&i.AppliedContractID,
 			&i.CreatedBy,
 			&i.ApprovedBy,
 			&i.Metadata,
@@ -738,9 +761,10 @@ SET partners_id = $2,
     total_amount = $9,
     price_list_id = $10,
     metadata = $11,
+    applied_contract_id = COALESCE($12, applied_contract_id),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, created_by, approved_by, metadata, created_at, updated_at
+RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
 `
 
 type UpdatePurchaseOrderHeaderParams struct {
@@ -755,6 +779,7 @@ type UpdatePurchaseOrderHeaderParams struct {
 	TotalAmount          pgtype.Numeric  `json:"total_amount"`
 	PriceListID          pgtype.Int4     `json:"price_list_id"`
 	Metadata             json.RawMessage `json:"metadata"`
+	AppliedContractID    pgtype.Int4     `json:"applied_contract_id"`
 }
 
 func (q *Queries) UpdatePurchaseOrderHeader(ctx context.Context, arg UpdatePurchaseOrderHeaderParams) (PurchaseOrder, error) {
@@ -770,6 +795,7 @@ func (q *Queries) UpdatePurchaseOrderHeader(ctx context.Context, arg UpdatePurch
 		arg.TotalAmount,
 		arg.PriceListID,
 		arg.Metadata,
+		arg.AppliedContractID,
 	)
 	var i PurchaseOrder
 	err := row.Scan(
@@ -786,6 +812,7 @@ func (q *Queries) UpdatePurchaseOrderHeader(ctx context.Context, arg UpdatePurch
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.PriceListID,
+		&i.AppliedContractID,
 		&i.CreatedBy,
 		&i.ApprovedBy,
 		&i.Metadata,
@@ -869,7 +896,7 @@ SET status = $2,
     approved_by = $3,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, created_by, approved_by, metadata, created_at, updated_at
+RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
 `
 
 type UpdatePurchaseOrderStatusParams struct {
@@ -895,6 +922,7 @@ func (q *Queries) UpdatePurchaseOrderStatus(ctx context.Context, arg UpdatePurch
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.PriceListID,
+		&i.AppliedContractID,
 		&i.CreatedBy,
 		&i.ApprovedBy,
 		&i.Metadata,
