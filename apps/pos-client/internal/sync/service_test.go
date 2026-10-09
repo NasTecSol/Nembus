@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -39,9 +40,11 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	defer pool.Close()
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE carts (id uuid PRIMARY KEY);
-		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id));
+		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
+CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
 		INSERT INTO carts VALUES ('00000000-0000-0000-0000-000000000001');
-		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
+		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
+INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
 		CREATE TABLE sync_queue (id bigint PRIMARY KEY, entity_type text, entity_id bigint, action text,
 			payload jsonb, created_at timestamp DEFAULT now(), correlation_id text, status text);
 		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
@@ -63,9 +66,25 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		t.Fatalf("expected one cart before order, got %+v", parents)
 	}
 	for _, p := range parents {
-		if p.ID != item.ID || p.Action != "INSERT" || !json.Valid(p.Payload) {
+		if p.ID != item.ID || (p.EntityType == "carts" && p.Action != "INSERT") || (p.EntityType == "sales_orders_v2" && p.Action != "POS_CHECKOUT") || !json.Valid(p.Payload) {
 			t.Fatalf("invalid parent event: %+v", p)
 		}
+	}
+	var snapshot struct {
+		Order json.RawMessage   `json:"order"`
+		Lines []json.RawMessage `json:"lines"`
+	}
+	if err := json.Unmarshal(parents[1].Payload, &snapshot); err != nil || len(snapshot.Lines) != 1 {
+		t.Fatalf("missing checkout lines: %s", parents[1].Payload)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sales_orders_v2 SET fulfillment_status='unfulfilled'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.transactionParents(item); !errors.Is(err, errCheckoutNotReady) {
+		t.Fatalf("expected unfinished checkout to wait, got %v", err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sales_orders_v2 SET fulfillment_status='fulfilled'"); err != nil {
+		t.Fatal(err)
 	}
 	// The order's source cart must also be sent if an older POS payload omits it.
 	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002"}`)

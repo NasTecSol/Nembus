@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -191,6 +192,9 @@ func (s *SyncService) drainOutboxGRPC() {
 		// first, including for older failed entries being retried.
 		parents, err := s.transactionParents(item)
 		if err != nil {
+			if errors.Is(err, errCheckoutNotReady) {
+				continue // Checkout is still completing locally; no retry is consumed.
+			}
 			s.recordOutboxFailure([]OutboxItem{item}, err.Error())
 			continue
 		}
@@ -228,6 +232,8 @@ func (s *SyncService) drainOutboxGRPC() {
 // transactionParents returns the local cart and order referenced by a POS
 // transaction in FK order. UUID identities stay in the JSON payload; EntityID
 // is only a numeric diagnostic field in the current protocol.
+var errCheckoutNotReady = errors.New("checkout is not fulfilled locally yet")
+
 func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) {
 	if item.EntityType != "pos_transactions" {
 		return nil, nil
@@ -250,7 +256,11 @@ func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) 
 				SELECT source_cart_id FROM sales_orders_v2 WHERE id = $1::uuid
 			)
 			UNION ALL
-			SELECT 2 AS seq, 'sales_orders_v2', row_to_json(o)::text
+			SELECT 2 AS seq, 'sales_orders_v2', json_build_object(
+				'order', row_to_json(o),
+				'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
+					FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
+			)::text
 			FROM sales_orders_v2 o WHERE o.id = $1::uuid
 		) parents ORDER BY seq;
 	`, refs.SalesOrderID, refs.SourceCartID)
@@ -266,6 +276,21 @@ func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) 
 			return nil, fmt.Errorf("read transaction parent: %w", err)
 		}
 		parent.Payload = json.RawMessage(payload)
+		if parent.EntityType == "sales_orders_v2" {
+			var checkout struct {
+				Order struct {
+					FulfillmentStatus string `json:"fulfillment_status"`
+					OrderStatus       string `json:"order_status"`
+				} `json:"order"`
+			}
+			if err := json.Unmarshal(parent.Payload, &checkout); err != nil {
+				return nil, err
+			}
+			if checkout.Order.FulfillmentStatus != "fulfilled" || checkout.Order.OrderStatus != "fulfilled" {
+				return nil, errCheckoutNotReady
+			}
+			parent.Action = "POS_CHECKOUT"
+		}
 		parents = append(parents, parent)
 	}
 	return parents, rows.Err()
