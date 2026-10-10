@@ -7,6 +7,9 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getWasteDailySummaryView = `-- name: GetWasteDailySummaryView :many
@@ -140,20 +143,107 @@ func (q *Queries) ListRecipeBomView(ctx context.Context, recipeID int32) ([]VwRe
 }
 
 const listRestaurantMenuView = `-- name: ListRestaurantMenuView :many
-SELECT menu_item_id, store_id, item_name, short_name, description, image_url, base_price, cost_price, preparation_time_min, is_available, is_active, display_order, item_type, item_metadata, category_id, category_name, category_code, parent_category_id, category_display_order, category_image_url, parent_category_name, tax_category_id, tax_rate, tax_is_inclusive, recipe_id, recipe_name, recipe_yield, product_id, product_variant_id, product_sku, active_modifier_count, margin_percent FROM vw_restaurant_menu
-WHERE store_id = $1
-ORDER BY category_display_order, display_order
+SELECT vm.menu_item_id, vm.store_id, vm.item_name, vm.short_name, vm.description,
+       vm.image_url, vm.base_price, vm.cost_price, vm.preparation_time_min,
+       vm.is_available, vm.is_active, vm.display_order, vm.item_type,
+       vm.item_metadata, vm.category_id, vm.category_name, vm.category_code,
+       vm.parent_category_id, vm.category_display_order, vm.category_image_url,
+       vm.parent_category_name, vm.tax_category_id, vm.tax_rate,
+       vm.tax_is_inclusive, vm.recipe_id, vm.recipe_name, vm.recipe_yield,
+       vm.product_id, vm.product_variant_id, vm.product_sku,
+       vm.active_modifier_count, vm.margin_percent,
+       promo.promo_price,
+       COALESCE(promo.promo_price, vm.base_price) AS effective_price,
+       (promo.promotion_name IS NOT NULL) AS has_promotion,
+       COALESCE(promo.promotion_name, '') AS promotion_name,
+       promo.discount_percent, promo.promo_min_quantity
+FROM vw_restaurant_menu vm
+LEFT JOIN LATERAL (
+    SELECT
+        CASE
+            WHEN pr.promotion_type = 'percentage_discount' AND vm.base_price IS NOT NULL
+                THEN ROUND(vm.base_price * (1 - pr.discount_value / 100), 2)
+            WHEN pr.promotion_type = 'fixed_discount' AND vm.base_price IS NOT NULL
+                THEN GREATEST(0, vm.base_price - pr.discount_value)
+            ELSE vm.base_price
+        END AS promo_price,
+        pr.name AS promotion_name,
+        CASE WHEN pr.promotion_type = 'percentage_discount'
+             THEN CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM pr.discount_value::text)), '%')
+             ELSE NULL END AS discount_percent,
+        pr.min_quantity AS promo_min_quantity
+    FROM (
+        SELECT rp.id, rp.name, rp.promotion_type, rp.discount_value,
+               rp.min_quantity, rp.valid_from
+        FROM restaurant_promotions rp
+        WHERE rp.store_id = vm.store_id
+          AND rp.is_active = true
+          AND (rp.valid_from IS NULL OR rp.valid_from <= CURRENT_TIMESTAMP)
+          AND (rp.valid_to IS NULL OR rp.valid_to >= CURRENT_TIMESTAMP)
+          AND (rp.usage_limit IS NULL OR rp.usage_count < rp.usage_limit)
+          AND (
+              COALESCE(rp.applies_to, 'all') = 'all'
+              OR (rp.applies_to = 'menu_item' AND vm.menu_item_id = ANY(rp.target_menu_item_ids))
+              OR (rp.applies_to = 'menu_category' AND vm.category_id = ANY(rp.target_menu_category_ids))
+          )
+    ) pr
+    ORDER BY pr.valid_from DESC NULLS LAST, pr.id DESC
+    LIMIT 1
+) promo ON true
+WHERE vm.store_id = $1
+ORDER BY vm.category_display_order, vm.display_order
 `
 
-func (q *Queries) ListRestaurantMenuView(ctx context.Context, storeID int32) ([]VwRestaurantMenu, error) {
+type ListRestaurantMenuViewRow struct {
+	MenuItemID           int32           `json:"menu_item_id"`
+	StoreID              int32           `json:"store_id"`
+	ItemName             string          `json:"item_name"`
+	ShortName            pgtype.Text     `json:"short_name"`
+	Description          pgtype.Text     `json:"description"`
+	ImageUrl             pgtype.Text     `json:"image_url"`
+	BasePrice            pgtype.Numeric  `json:"base_price"`
+	CostPrice            pgtype.Numeric  `json:"cost_price"`
+	PreparationTimeMin   pgtype.Int4     `json:"preparation_time_min"`
+	IsAvailable          pgtype.Bool     `json:"is_available"`
+	IsActive             pgtype.Bool     `json:"is_active"`
+	DisplayOrder         pgtype.Int4     `json:"display_order"`
+	ItemType             string          `json:"item_type"`
+	ItemMetadata         json.RawMessage `json:"item_metadata"`
+	CategoryID           int32           `json:"category_id"`
+	CategoryName         string          `json:"category_name"`
+	CategoryCode         string          `json:"category_code"`
+	ParentCategoryID     pgtype.Int4     `json:"parent_category_id"`
+	CategoryDisplayOrder pgtype.Int4     `json:"category_display_order"`
+	CategoryImageUrl     pgtype.Text     `json:"category_image_url"`
+	ParentCategoryName   pgtype.Text     `json:"parent_category_name"`
+	TaxCategoryID        pgtype.Int4     `json:"tax_category_id"`
+	TaxRate              pgtype.Numeric  `json:"tax_rate"`
+	TaxIsInclusive       pgtype.Bool     `json:"tax_is_inclusive"`
+	RecipeID             pgtype.Int4     `json:"recipe_id"`
+	RecipeName           pgtype.Text     `json:"recipe_name"`
+	RecipeYield          pgtype.Numeric  `json:"recipe_yield"`
+	ProductID            pgtype.Int4     `json:"product_id"`
+	ProductVariantID     pgtype.Int4     `json:"product_variant_id"`
+	ProductSku           pgtype.Text     `json:"product_sku"`
+	ActiveModifierCount  int32           `json:"active_modifier_count"`
+	MarginPercent        interface{}     `json:"margin_percent"`
+	PromoPrice           interface{}     `json:"promo_price"`
+	EffectivePrice       interface{}     `json:"effective_price"`
+	HasPromotion         interface{}     `json:"has_promotion"`
+	PromotionName        string          `json:"promotion_name"`
+	DiscountPercent      interface{}     `json:"discount_percent"`
+	PromoMinQuantity     pgtype.Numeric  `json:"promo_min_quantity"`
+}
+
+func (q *Queries) ListRestaurantMenuView(ctx context.Context, storeID int32) ([]ListRestaurantMenuViewRow, error) {
 	rows, err := q.db.Query(ctx, listRestaurantMenuView, storeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []VwRestaurantMenu
+	var items []ListRestaurantMenuViewRow
 	for rows.Next() {
-		var i VwRestaurantMenu
+		var i ListRestaurantMenuViewRow
 		if err := rows.Scan(
 			&i.MenuItemID,
 			&i.StoreID,
@@ -187,6 +277,12 @@ func (q *Queries) ListRestaurantMenuView(ctx context.Context, storeID int32) ([]
 			&i.ProductSku,
 			&i.ActiveModifierCount,
 			&i.MarginPercent,
+			&i.PromoPrice,
+			&i.EffectivePrice,
+			&i.HasPromotion,
+			&i.PromotionName,
+			&i.DiscountPercent,
+			&i.PromoMinQuantity,
 		); err != nil {
 			return nil, err
 		}
