@@ -346,12 +346,11 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 	// Delta entity target categories
 	targetEntities := req.EntityTypes
 	if len(targetEntities) == 0 {
-		targetEntities = []string{
-			"product_barcodes", "product_prices", "promotions",
-			"customers",
-			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
-			"inventory_stock", "stock_movements",
-			"zatca_device_configs",
+		targetEntities = syncpb.PullEntityTypes()
+	}
+	for _, entityType := range targetEntities {
+		if !syncpb.IsPullEntity(entityType) {
+			return status.Errorf(codes.InvalidArgument, "unsupported pull entity: %s", entityType)
 		}
 	}
 
@@ -364,7 +363,7 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 
 		if err := s.streamEntityDeltas(ctx, pool, req, entityType, sinceTime, limit, stream); err != nil {
 			log.Printf("[gRPC SyncServer] Error streaming deltas for %s: %v", entityType, err)
-			continue
+			return status.Errorf(codes.Internal, "stream %s: %v", entityType, err)
 		}
 	}
 
@@ -381,12 +380,13 @@ func (s *SyncServer) streamEntityDeltas(
 	stream syncpb.SyncService_StreamPullServer,
 ) error {
 	// Query modified entities updated after watermark using PostgreSQL row_to_json
-	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`, entityType)
+	// Include the entire timestamp boundary so the next request's strict >
+	// predicate cannot skip rows sharing the last timestamp in this page.
+	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC FETCH FIRST ($2) ROWS WITH TIES`, pgx.Identifier{entityType}.Sanitize())
 
 	rows, err := pool.Query(ctx, query, since, limit)
 	if err != nil {
-		// Table might not exist in target schema, log warning and skip
-		return nil
+		return fmt.Errorf("query %s: %w", entityType, err)
 	}
 	defer rows.Close()
 
@@ -396,7 +396,7 @@ func (s *SyncServer) streamEntityDeltas(
 		var updatedAt time.Time
 
 		if err := rows.Scan(&id, &jsonStr, &updatedAt); err != nil {
-			continue
+			return fmt.Errorf("scan %s: %w", entityType, err)
 		}
 
 		payloadBytes := []byte(jsonStr)
@@ -422,5 +422,5 @@ func (s *SyncServer) streamEntityDeltas(
 		}
 	}
 
-	return nil
+	return rows.Err()
 }
