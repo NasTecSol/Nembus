@@ -320,7 +320,7 @@ func (uc *RestaurantUseCase) GetFullMenu(ctx context.Context, storeID int32, cat
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	var result []repository.VwRestaurantMenu
+	var result []repository.ListRestaurantMenuViewRow
 	for _, item := range menu {
 		if categoryID != nil && item.CategoryID != *categoryID {
 			continue
