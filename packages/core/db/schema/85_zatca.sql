@@ -72,7 +72,7 @@ CREATE TABLE invoices (
     recurrence_pattern VARCHAR(50), -- monthly, quarterly, annually
     next_invoice_date DATE,
     
-    -- Document management
+    -- Document management  
     pdf_url TEXT,
     document_hash VARCHAR(255), -- For integrity verification
     

@@ -758,7 +758,7 @@ func (uc *StockCountsUseCase) ReconcileStockCount(ctx context.Context, id int32)
 			_, _ = uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 				MovementType:     "stock_adjustment",
 				ReferenceType:    pgtype.Text{String: "stock_count", Valid: true},
-				ReferenceID:      pgtype.Int4{Int32: id, Valid: true},
+				ReferenceID:      pgtype.Text{String: fmt.Sprintf("%d", id), Valid: true},
 				ProductID:        l.ProductID,
 				ProductVariantID: l.ProductVariantID,
 				FromStoreID:      pgtype.Int4{Int32: current.StoreID, Valid: true},

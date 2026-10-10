@@ -19,7 +19,7 @@ type StockMovementOutput struct {
 	ID               int32            `json:"id"`
 	MovementType     string           `json:"movement_type"`
 	ReferenceType    pgtype.Text      `json:"reference_type"`
-	ReferenceID      pgtype.Int4      `json:"reference_id"`
+	ReferenceID      pgtype.Text      `json:"reference_id"`
 	ProductID        int32            `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	FromStoreID      pgtype.Int4      `json:"from_store_id"`
@@ -132,7 +132,7 @@ func stockMovementBasicToOutput(m repository.StockMovement) StockMovementOutput 
 type CreateStockMovementInput struct {
 	MovementType     string                 `json:"movement_type"`
 	ReferenceType    *string                `json:"reference_type"`
-	ReferenceID      *int32                 `json:"reference_id"`
+	ReferenceID      *string                `json:"reference_id"`
 	ProductID        int32                  `json:"product_id"`
 	ProductVariantID *int32                 `json:"product_variant_id"`
 	FromStoreID      *int32                 `json:"from_store_id"`
@@ -263,7 +263,7 @@ func (uc *StockMovementsUseCase) CreateStockMovement(ctx context.Context, in *Cr
 	row, err := uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 		MovementType:     strings.TrimSpace(in.MovementType),
 		ReferenceType:    pgText(in.ReferenceType),
-		ReferenceID:      pgInt4(in.ReferenceID),
+		ReferenceID:      pgText(in.ReferenceID),
 		ProductID:        in.ProductID,
 		ProductVariantID: pgInt4(in.ProductVariantID),
 		FromStoreID:      pgInt4(in.FromStoreID),
@@ -346,7 +346,7 @@ func (uc *StockMovementsUseCase) CreateStockMovementFromSalesOrder(ctx context.C
 	}
 
 	row, err := uc.repo.CreateStockMovementFromSalesOrder(ctx, repository.CreateStockMovementFromSalesOrderParams{
-		ReferenceID:      pgtype.Int4{Int32: in.ReferenceID, Valid: true},
+		ReferenceID:      pgtype.Text{String: strconv.Itoa(int(in.ReferenceID)), Valid: true},
 		ProductID:        in.ProductID,
 		ProductVariantID: pgInt4(in.ProductVariantID),
 		FromStoreID:      pgInt4(in.FromStoreID),
@@ -426,7 +426,7 @@ func (uc *StockMovementsUseCase) CreateStockMovementFromPurchaseOrder(ctx contex
 	}
 
 	row, err := uc.repo.CreateStockMovementFromPurchaseOrder(ctx, repository.CreateStockMovementFromPurchaseOrderParams{
-		ReferenceID:      pgtype.Int4{Int32: in.ReferenceID, Valid: true},
+		ReferenceID:      pgtype.Text{String: strconv.Itoa(int(in.ReferenceID)), Valid: true},
 		ProductID:        in.ProductID,
 		ProductVariantID: pgInt4(in.ProductVariantID),
 		ToStoreID:        pgInt4(in.ToStoreID),
@@ -623,21 +623,20 @@ func (uc *StockMovementsUseCase) ListStockMovementsByReference(ctx context.Conte
 	if strings.TrimSpace(referenceType) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "reference_type is required", nil)
 	}
-	refID, err := strconv.ParseInt(referenceID, 10, 32)
-	if err != nil {
-		return utils.NewResponse(utils.CodeBadReq, "invalid reference_id", nil)
+	if strings.TrimSpace(referenceID) == "" {
+		return utils.NewResponse(utils.CodeBadReq, "reference_id is required", nil)
 	}
 	p, l, offset := calcPagination(page, limit)
 	totalCount, err := uc.repo.CountStockMovementsByReference(ctx, repository.CountStockMovementsByReferenceParams{
 		ReferenceType: pgtype.Text{String: strings.TrimSpace(referenceType), Valid: true},
-		ReferenceID:   pgtype.Int4{Int32: int32(refID), Valid: true},
+		ReferenceID:   pgtype.Text{String: strings.TrimSpace(referenceID), Valid: true},
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	rows, err := uc.repo.ListStockMovementsByReference(ctx, repository.ListStockMovementsByReferenceParams{
 		ReferenceType: pgtype.Text{String: strings.TrimSpace(referenceType), Valid: true},
-		ReferenceID:   pgtype.Int4{Int32: int32(refID), Valid: true},
+		ReferenceID:   pgtype.Text{String: strings.TrimSpace(referenceID), Valid: true},
 		Limit:         l,
 		Offset:        offset,
 	})
@@ -731,11 +730,10 @@ func (uc *StockMovementsUseCase) GetStockMovementsBySalesOrder(ctx context.Conte
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
-	refID, err := strconv.ParseInt(referenceID, 10, 32)
-	if err != nil {
+	if strings.TrimSpace(referenceID) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "invalid reference_id", nil)
 	}
-	rows, err := uc.repo.GetStockMovementsBySalesOrder(ctx, pgtype.Int4{Int32: int32(refID), Valid: true})
+	rows, err := uc.repo.GetStockMovementsBySalesOrder(ctx, pgtype.Text{String: strings.TrimSpace(referenceID), Valid: true})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -751,11 +749,10 @@ func (uc *StockMovementsUseCase) GetStockMovementsByPurchaseOrder(ctx context.Co
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
-	refID, err := strconv.ParseInt(referenceID, 10, 32)
-	if err != nil {
+	if strings.TrimSpace(referenceID) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "invalid reference_id", nil)
 	}
-	rows, err := uc.repo.GetStockMovementsByPurchaseOrder(ctx, pgtype.Int4{Int32: int32(refID), Valid: true})
+	rows, err := uc.repo.GetStockMovementsByPurchaseOrder(ctx, pgtype.Text{String: strings.TrimSpace(referenceID), Valid: true})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}

@@ -250,11 +250,15 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 		limit = 100
 	}
 
-	// Delta entity target categories
+	// Delta entity target categories (in strict FK dependency order)
 	targetEntities := req.EntityTypes
 	if len(targetEntities) == 0 {
 		targetEntities = []string{
-			"product_barcodes", "product_prices", "promotions",
+			"units_of_measure", "product_categories", "brands",
+			"products", "product_variants",
+			"price_lists", "product_prices",
+			"product_barcodes", "product_uom_conversions",
+			"promotions", "restaurant_promotions",
 			"customers",
 			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
 			"inventory_stock", "stock_movements",

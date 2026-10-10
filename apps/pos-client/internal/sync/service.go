@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -234,16 +235,54 @@ func (s *SyncService) recordOutboxFailure(items []OutboxItem, errMsg string) {
 	`, errMsg, ids)
 }
 
-// fetchDeltaGRPC pulls updated entities from Cloud via gRPC StreamPull using sync_watermarks
+var clientTableColumnsCache sync.Map
+
+func (s *SyncService) getTableUpdateClause(ctx context.Context, table string) string {
+	if val, ok := clientTableColumnsCache.Load(table); ok {
+		return val.(string)
+	}
+
+	rows, err := s.masterPool.Query(ctx, `
+		SELECT column_name 
+		FROM information_schema.columns 
+		WHERE table_name = $1 AND column_name NOT IN ('id', 'created_at')
+		ORDER BY ordinal_position;
+	`, table)
+	if err != nil {
+		return "updated_at = NOW()"
+	}
+	defer rows.Close()
+
+	var sets []string
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err == nil {
+			sets = append(sets, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
+		}
+	}
+
+	clause := strings.Join(sets, ", ")
+	if clause == "" {
+		clause = "updated_at = NOW()"
+	}
+	clientTableColumnsCache.Store(table, clause)
+	return clause
+}
+
+// fetchDeltaGRPC pulls updated entities from Cloud via gRPC StreamPull using granular watermarks
 func (s *SyncService) fetchDeltaGRPC() {
 	var storeID int32
-	var lastSyncAt time.Time
+	var lastCatalogSyncAt, lastPriceSyncAt, lastPromoSyncAt time.Time
 
 	err := s.masterPool.QueryRow(s.ctx, `
-		SELECT store_id, COALESCE(last_zatca_sync_at, '1970-01-01 00:00:00+00')
+		SELECT 
+			store_id, 
+			COALESCE(last_catalog_sync_at, last_zatca_sync_at, '1970-01-01 00:00:00+00'),
+			COALESCE(last_price_sync_at, last_zatca_sync_at, '1970-01-01 00:00:00+00'),
+			COALESCE(last_promo_sync_at, last_zatca_sync_at, '1970-01-01 00:00:00+00')
 		FROM local_device_config
 		LIMIT 1;
-	`).Scan(&storeID, &lastSyncAt)
+	`).Scan(&storeID, &lastCatalogSyncAt, &lastPriceSyncAt, &lastPromoSyncAt)
 	if err != nil {
 		return
 	}
@@ -255,12 +294,26 @@ func (s *SyncService) fetchDeltaGRPC() {
 	defer conn.Close()
 
 	client := syncpb.NewSyncServiceClient(conn)
+
+	// Determine the earliest watermark across catalog, pricing, and promotions
+	earliestSync := lastCatalogSyncAt
+	if lastPriceSyncAt.Before(earliestSync) {
+		earliestSync = lastPriceSyncAt
+	}
+	if lastPromoSyncAt.Before(earliestSync) {
+		earliestSync = lastPromoSyncAt
+	}
+
 	req := &syncpb.PullRequest{
 		TenantSlug: s.tenantSlug,
 		StoreId:    storeID,
-		Since:      timestamppb.New(lastSyncAt),
+		Since:      timestamppb.New(earliestSync),
 		EntityTypes: []string{
-			"product_barcodes", "product_prices", "promotions",
+			"units_of_measure", "product_categories", "brands",
+			"products", "product_variants",
+			"price_lists", "product_prices",
+			"product_barcodes", "product_uom_conversions",
+			"promotions", "restaurant_promotions",
 			"customers",
 			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
 			"inventory_stock", "stock_movements",
@@ -276,7 +329,9 @@ func (s *SyncService) fetchDeltaGRPC() {
 	}
 
 	pulledCount := 0
-	now := time.Now()
+	maxCatalogTime := lastCatalogSyncAt
+	maxPriceTime := lastPriceSyncAt
+	maxPromoTime := lastPromoSyncAt
 
 	for {
 		event, err := stream.Recv()
@@ -300,13 +355,34 @@ func (s *SyncService) fetchDeltaGRPC() {
 
 		s.applyPulledEntity(event)
 		pulledCount++
+
+		if event.EventTime != nil {
+			t := event.EventTime.AsTime()
+			switch event.EntityType {
+			case "products", "product_variants", "product_categories", "units_of_measure", "brands", "product_barcodes", "product_uom_conversions":
+				if t.After(maxCatalogTime) {
+					maxCatalogTime = t
+				}
+			case "price_lists", "product_prices":
+				if t.After(maxPriceTime) {
+					maxPriceTime = t
+				}
+			case "promotions", "restaurant_promotions":
+				if t.After(maxPromoTime) {
+					maxPromoTime = t
+				}
+			}
+		}
 	}
 
 	if pulledCount > 0 {
 		_, _ = s.masterPool.Exec(s.ctx, `
 			UPDATE local_device_config
-			SET last_zatca_sync_at = $1;
-		`, now)
+			SET last_catalog_sync_at = $1,
+			    last_price_sync_at   = $2,
+			    last_promo_sync_at   = $3,
+			    last_zatca_sync_at   = GREATEST(last_zatca_sync_at, $1, $2, $3);
+		`, maxCatalogTime, maxPriceTime, maxPromoTime)
 		log.Printf("[gRPC SYNC] Pulled & verified %d delta updates from Cloud via gRPC", pulledCount)
 	}
 }
@@ -318,7 +394,11 @@ func (s *SyncService) applyPulledEntity(event *syncpb.SyncEvent) {
 
 	// Supported catalog, pricing, menu, promotion, and compliance entities
 	validTables := map[string]bool{
-		"product_barcodes": true, "product_prices": true, "promotions": true,
+		"units_of_measure": true, "product_categories": true, "brands": true,
+		"products": true, "product_variants": true,
+		"price_lists": true, "product_prices": true,
+		"product_barcodes": true, "product_uom_conversions": true,
+		"promotions": true, "restaurant_promotions": true,
 		"menu_items": true, "menu_modifier_groups": true, "combo_bundles": true,
 		"recipes": true, "menu_item_availability_schedules": true,
 		"customers": true, "inventory_stock": true, "zatca_device_configs": true,
@@ -329,11 +409,13 @@ func (s *SyncService) applyPulledEntity(event *syncpb.SyncEvent) {
 		return
 	}
 
+	updateClause := s.getTableUpdateClause(s.ctx, event.EntityType)
+
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
-		ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
-	`, event.EntityType, event.EntityType)
+		ON CONFLICT (id) DO UPDATE SET %s;
+	`, event.EntityType, event.EntityType, updateClause)
 
 	_, err := s.masterPool.Exec(s.ctx, query, string(event.PayloadJson))
 	if err != nil {

@@ -26,7 +26,7 @@ CREATE TABLE stock_movements (
     id SERIAL PRIMARY KEY,
     movement_type VARCHAR(50) NOT NULL,
     reference_type VARCHAR(50),
-    reference_id INTEGER,
+    reference_id TEXT,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
     from_store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,

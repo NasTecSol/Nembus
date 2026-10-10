@@ -508,6 +508,13 @@ func (a *App) InitializeSync() {
 	}
 }
 
+// TriggerSyncNow initiates an immediate background outbox drain and delta pull
+func (a *App) TriggerSyncNow() {
+	if a.syncService != nil {
+		a.syncService.SyncNow()
+	}
+}
+
 func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	// reuse the pool
 	a.tenantManager = manager.NewManager(a.masterRepo)

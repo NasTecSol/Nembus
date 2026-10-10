@@ -4293,3 +4293,64 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- =====================================================
+-- AUTO-LINK STOCK MOVEMENT REFERENCES
+-- Automatically resolves reference_id from metadata->>'sap_base_ref'
+-- for SAP migrations and background sync batches
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION fn_auto_link_stock_movement_reference()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.reference_id IS NULL AND NEW.metadata ? 'sap_base_ref' THEN
+        CASE NEW.reference_type
+            WHEN 'invoice' THEN
+                SELECT id::text INTO NEW.reference_id
+                FROM invoices
+                WHERE invoice_number = 'INV-SAP-' || (NEW.metadata->>'sap_base_ref')
+                LIMIT 1;
+
+            WHEN 'goods_receipt_note' THEN
+                SELECT id::text INTO NEW.reference_id
+                FROM goods_receipt_notes
+                WHERE grn_number = 'GRN-' || (NEW.metadata->>'sap_base_ref')
+                LIMIT 1;
+
+            WHEN 'purchase_credit_note' THEN
+                SELECT id::text INTO NEW.reference_id
+                FROM sales_returns
+                WHERE return_number = 'CN-SAP-' || (NEW.metadata->>'sap_base_ref')
+                LIMIT 1;
+
+            WHEN 'goods_return' THEN
+                SELECT id::text INTO NEW.reference_id
+                FROM goods_returns
+                WHERE return_number = 'GRTN-SAP-' || (NEW.metadata->>'sap_base_ref')
+                LIMIT 1;
+
+            WHEN 'purchase_invoice' THEN
+                SELECT id::text INTO NEW.reference_id
+                FROM purchase_invoices
+                WHERE invoice_number = 'PI-SAP-' || (NEW.metadata->>'sap_base_ref')
+                LIMIT 1;
+
+            WHEN 'stock_count' THEN
+                SELECT id::text INTO NEW.reference_id
+                FROM stock_counts
+                WHERE count_number = 'SC-SAP-' || (NEW.metadata->>'sap_base_ref')
+                LIMIT 1;
+
+            ELSE
+                -- no-op
+        END CASE;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_auto_link_stock_movement_reference ON stock_movements;
+CREATE TRIGGER trg_auto_link_stock_movement_reference
+BEFORE INSERT OR UPDATE ON stock_movements
+FOR EACH ROW
+EXECUTE FUNCTION fn_auto_link_stock_movement_reference();
+

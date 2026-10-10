@@ -257,6 +257,35 @@ CREATE TABLE goods_receipt_note_items (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS goods_returns (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+    return_number VARCHAR(50) UNIQUE NOT NULL,
+    grn_id INTEGER REFERENCES goods_receipt_notes(id) ON DELETE SET NULL,
+    partners_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL,
+    store_id INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+    return_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(50) DEFAULT 'completed',
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS purchase_invoices (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+    invoice_number VARCHAR(50) UNIQUE NOT NULL,
+    partners_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL,
+    store_id INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+    invoice_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(50) DEFAULT 'posted',
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE sales_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
