@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -34,7 +36,13 @@ func (s *SyncService) fetchDeltaGRPC() {
 	defer conn.Close()
 	client := syncpb.NewSyncServiceClient(conn)
 	for _, entity := range syncpb.PullEntityTypes() {
+		if s.ctx.Err() != nil {
+			return
+		}
 		if err := s.pullEntity(client, storeID, entity); err != nil {
+			if s.ctx.Err() != nil {
+				return
+			}
 			log.Printf("[gRPC SYNC] Delta fetch failed for %s: %v", entity, err)
 			metadata, _ := json.Marshal(map[string]any{"direction": "pull", "status": "error", "last_error": err.Error(), "last_attempt_at": time.Now().UTC()})
 			_, recordErr := s.masterPool.Exec(s.ctx, `INSERT INTO sync_watermarks(entity_type,store_id,metadata)
@@ -49,21 +57,34 @@ func (s *SyncService) fetchDeltaGRPC() {
 
 func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32, entity string) error {
 	since := time.Unix(0, 0).UTC()
-	err := s.masterPool.QueryRow(s.ctx, `SELECT last_sync_at FROM sync_watermarks WHERE entity_type=$1 AND store_id=$2`, entity, storeID).Scan(&since)
+	var afterID int64
+	err := s.masterPool.QueryRow(s.ctx, `SELECT last_sync_at, COALESCE((metadata->>'cursor_id')::bigint,0)
+		FROM sync_watermarks WHERE entity_type=$1 AND store_id=$2`, entity, storeID).Scan(&since, &afterID)
 	if err != nil && err != pgx.ErrNoRows {
 		return fmt.Errorf("read watermark: %w", err)
 	}
 	total := 0
 	for {
 		ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+		ctx = metadata.AppendToOutgoingContext(ctx, syncpb.PullCursorKey, strconv.FormatInt(afterID, 10))
 		stream, err := client.StreamPull(ctx, &syncpb.PullRequest{TenantSlug: s.tenantSlug, StoreId: storeID,
-			Since: timestamppb.New(since), EntityTypes: []string{entity}, Limit: 200})
+			Since: timestamppb.New(since), EntityTypes: []string{entity}, Limit: syncpb.PullPageLimit})
 		if err != nil {
 			cancel()
 			return err
 		}
+		headers, err := stream.Header()
+		if err != nil {
+			cancel()
+			return err
+		}
+		if versions := headers.Get(syncpb.PullCursorVersionKey); len(versions) != 1 || versions[0] != "1" {
+			cancel()
+			return fmt.Errorf("cloud server must be updated to support bounded delta pagination")
+		}
 		var events []*syncpb.SyncEvent
 		next := since
+		nextID := afterID
 		for {
 			event, recvErr := stream.Recv()
 			if recvErr == io.EOF {
@@ -74,13 +95,12 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 				return recvErr
 			}
 			hash := sha256.Sum256(event.PayloadJson)
-			if event.EntityType != entity || event.Sha256 != hex.EncodeToString(hash[:]) || event.EventTime == nil || event.EventTime.CheckValid() != nil || !event.EventTime.AsTime().After(since) {
+			if len(events) >= syncpb.PullPageLimit || event.EntityType != entity || event.Sha256 != hex.EncodeToString(hash[:]) || event.EventTime == nil || event.EventTime.CheckValid() != nil || !cursorAfter(event.EventTime.AsTime(), event.EntityId, next, nextID) {
 				cancel()
 				return fmt.Errorf("invalid delta payload, checksum or timestamp for %s", entity)
 			}
-			if event.EventTime.AsTime().After(next) {
-				next = event.EventTime.AsTime()
-			}
+			next = event.EventTime.AsTime()
+			nextID = event.EntityId
 			events = append(events, event)
 		}
 		cancel()
@@ -93,7 +113,12 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 			return nil
 		}
 		since = next
+		afterID = nextID
 	}
+}
+
+func cursorAfter(timestamp time.Time, id int64, since time.Time, afterID int64) bool {
+	return timestamp.After(since) || (timestamp.Equal(since) && id > afterID)
 }
 
 // Data and its checkpoint commit together. Failed pages remain retryable.
@@ -121,6 +146,7 @@ func (s *SyncService) saveDeltaPage(storeID int32, entity string, since time.Tim
 		metadata["last_success_at"] = time.Now().UTC()
 	} else {
 		metadata["last_entity_id"] = events[len(events)-1].EntityId
+		metadata["cursor_id"] = events[len(events)-1].EntityId
 	}
 	data, _ := json.Marshal(metadata)
 	_, err = tx.Exec(s.ctx, `INSERT INTO sync_watermarks(entity_type,store_id,last_sync_at,metadata)

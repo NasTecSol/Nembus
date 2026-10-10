@@ -27,8 +27,16 @@ Status is `syncing` while pages commit, `synced` after the final empty page, or
 `error` on failure. `records_applied` counts committed records in the current
 attempt; `last_entity_id` identifies the final row of the latest committed page.
 Failed pages roll back their data and checkpoint together. Other entities can
-continue. Each page includes all rows at its final timestamp to avoid skipping
-timestamp ties. Deploy the updated cloud server before the updated POS client.
+continue. Updated clients use a timestamp and row-ID cursor (`metadata.cursor_id`)
+with a strict 200-record page limit, including when thousands of rows share a
+timestamp. The cursor travels in gRPC metadata; the server confirms support in
+its response headers. Clients refuse to checkpoint against an older server.
+Legacy clients retain the previous timestamp-only behavior.
+Deploy the updated cloud server before the updated POS client.
+
+Cloning stops the local background worker until backup download and restore
+finish. Replacing a worker cancels and waits for the old one instead of leaving
+it running. A failed clone resumes the previous tenant worker.
 
 The cloud's existing watermark writes describe upstream push ingestion; they
 do not prove a terminal applied a pull. Pull status is recorded locally.
