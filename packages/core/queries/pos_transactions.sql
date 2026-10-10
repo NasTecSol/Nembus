@@ -76,6 +76,14 @@ WHERE t.id = $1
 ORDER BY tl.line_number;
 
 
+-- name: CountPosTransactionsByCashierSession :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
+  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
+  AND ($4::timestamp IS NULL OR t.transaction_date <= $4);
+
 -- name: ListPosTransactionsByCashierSession :many
 SELECT 
     t.id,
@@ -144,8 +152,8 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
-WHERE ($1 = 0 OR t.cashier_id = $1)
-  AND ($2 = 0 OR t.cashier_session_id = $2)
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
   AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
   AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
 GROUP BY
@@ -178,7 +186,13 @@ GROUP BY
     term.terminal_name,
     sess.session_number,
     cust.name
-ORDER BY t.transaction_date DESC, t.id;
+ORDER BY t.transaction_date DESC, t.id
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountTodaysPosTransactions :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.store_id = $1;
 
 -- name: ListTodaysPosTransactions :many
 SELECT 
@@ -211,6 +225,11 @@ SET
 WHERE id = $1
   AND status = 'completed'
   AND voided_at IS NULL;
+
+-- name: CountPosTransactionsByCustomerID :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.customer_id = $1;
 
 -- name: ListPosTransactionsByCustomerID :many
 SELECT 
@@ -313,4 +332,119 @@ GROUP BY
     cust.name
 ORDER BY t.transaction_date DESC, t.id DESC
 LIMIT $2 OFFSET $3;
+
+-- name: CountPosTransactionsByTerminalID :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.pos_terminal_id = $1
+  AND (sqlc.narg('from_date')::timestamp IS NULL OR t.transaction_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::timestamp IS NULL OR t.transaction_date <= sqlc.narg('to_date'))
+  AND (sqlc.narg('status')::varchar IS NULL OR sqlc.narg('status') = '' OR t.status = sqlc.narg('status'));
+
+-- name: ListPosTransactionsByTerminalID :many
+SELECT 
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
+    COALESCE(term.terminal_name, '') AS terminal_name,
+    COALESCE(sess.session_number, '') AS session_number,
+    COALESCE(cust.name, '') AS customer_name,
+    COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', tl.id,
+                'transaction_id', tl.transaction_id,
+                'line_number', tl.line_number,
+                'product_id', tl.product_id,
+                'product_variant_id', tl.product_variant_id,
+                'serial_number', tl.serial_number,
+                'batch_number', tl.batch_number,
+                'quantity', tl.quantity,
+                'uom_id', tl.uom_id,
+                'unit_price', tl.unit_price,
+                'discount_amount', tl.discount_amount,
+                'tax_amount', tl.tax_amount,
+                'subtotal', tl.subtotal,
+                'line_total', tl.line_total,
+                'cost_price', tl.cost_price,
+                'metadata', tl.metadata,
+                'product_sku', p.sku,
+                'product_name', p.name,
+                'scanned_barcode', COALESCE(pb.barcode, '')
+            ) ORDER BY tl.line_number
+        ) FILTER (WHERE tl.id IS NOT NULL),
+        '[]'::jsonb
+    ) AS lines
+FROM pos_transactions t
+LEFT JOIN cashiers          cshr   ON t.cashier_id         = cshr.id
+LEFT JOIN users             cashier ON cshr.user_id        = cashier.id
+LEFT JOIN pos_terminals     term   ON t.pos_terminal_id    = term.id
+LEFT JOIN cashier_sessions  sess   ON t.cashier_session_id = sess.id
+LEFT JOIN customers    cust   ON t.customer_id        = cust.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id    = t.id
+LEFT JOIN products          p      ON tl.product_id        = p.id
+LEFT JOIN product_barcodes pb 
+    ON pb.product_id = p.id 
+   AND pb.is_primary = true
+   AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+WHERE t.pos_terminal_id = $1
+  AND (sqlc.narg('from_date')::timestamp IS NULL OR t.transaction_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::timestamp IS NULL OR t.transaction_date <= sqlc.narg('to_date'))
+  AND (sqlc.narg('status')::varchar IS NULL OR sqlc.narg('status') = '' OR t.status = sqlc.narg('status'))
+GROUP BY
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name,
+    cashier.last_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+
 

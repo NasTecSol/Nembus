@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	clientbackup "github.com/NasTecSol/nembus-client/client"
 	"github.com/NasTecSol/nembus-client/internal/config"
@@ -216,6 +217,25 @@ func (a *App) migrate(dbURL string) error {
 	}
 	defer sqlDB.Close()
 
+	// Wait for the database to be ready and not in recovery mode (e.g. after a bulk restore or WAL replay)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var inRecovery bool
+		err := sqlDB.QueryRow("SELECT pg_is_in_recovery()").Scan(&inRecovery)
+		if err == nil && !inRecovery {
+			log.Printf("Database [%s] is ready for migrations", dbURL)
+			break
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("database not ready after 30s: %w", err)
+			}
+			return fmt.Errorf("database still in recovery mode after 30s")
+		}
+		log.Printf("Waiting for database to finish recovery / accept connections... (status: %v)", err)
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	// If the database was restored from a Cloud backup, the base schema tables (e.g. organizations)
 	// already exist, but goose_db_version may not be initialized. Mark initial baseline as applied
 	// so Goose skips 20260813124500.sql and proceeds to apply POS extensions.
@@ -236,22 +256,14 @@ func (a *App) migrate(dbURL string) error {
 				tstamp timestamp NULL default now()
 			);
 			INSERT INTO goose_db_version (version_id, is_applied)
+			SELECT 20260918111505, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260918111505);
 
-			SELECT 20260813124500, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260813124500);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260821060910, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260821060910);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260829102802, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260829102802);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260829112654, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260829112654);
-
+			DELETE FROM goose_db_version WHERE version_id IN (
+				20260813124500, 20260821060910, 20260829102802,
+				20260829112654, 20260916085642, 20260917120000,
+				20260918140000, 20261001153500
+			);
 		`)
 	}
 
@@ -265,9 +277,11 @@ func (a *App) migrate(dbURL string) error {
 		return fmt.Errorf("failed to run migrations: %v", err)
 	}
 
-	// Ensure legacy DB triggers that double-count cashier session balances are dropped
+	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
 	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
+	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;")
 	_, _ = sqlDB.Exec("DROP FUNCTION IF EXISTS update_cashier_session_balance();")
+	_, _ = sqlDB.Exec("ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;")
 
 	return nil
 }
@@ -434,12 +448,7 @@ func (a *App) CloneTenant(slug string) string {
 		a.tenantManager.EvictPool(tenant.Slug)
 	}
 
-	// 6. Finalize setup
-	markerPath := filepath.Join(home, ".nembus", ".setup_done")
-	_ = os.MkdirAll(filepath.Dir(markerPath), 0755)
-	_ = os.WriteFile(markerPath, []byte("done"), 0644)
-
-	// 7. Start sync service for this tenant
+	// 6. Start sync service for this tenant
 	a.StartSyncService(tenant.Slug)
 
 	return "Success"
@@ -474,6 +483,15 @@ func (a *App) StartSyncService(slug string) {
 		}
 	}
 	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
+
+	// Reset any sync_queue items that previously hit max_retries (e.g. due to
+	// transient cloud errors or FK constraint issues that have since been fixed)
+	// so they are retried on the next sync cycle.
+	if count, err := a.syncService.ResetFailedItems(); err != nil {
+		log.Printf("[SyncService] Warning: could not reset failed sync_queue items: %v", err)
+	} else if count > 0 {
+		log.Printf("[SyncService] Reset %d previously-failed sync_queue items to pending — will retry shortly", count)
+	}
 	a.syncService.Start()
 }
 
@@ -541,8 +559,9 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	printUC := usecase.NewPrintUseCase()
 	paymentTermsUC := usecase.NewPaymentTermsUseCase()
 	purchaseOrdersUC := usecase.NewPurchaseOrdersUseCase()
+	invoiceUC := usecase.NewInvoiceUseCase()
 
-	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.cfg)
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.cfg)
 	r.Static("/images", "./images")
 
 	log.Printf("Starting Gin HTTP server on port %s (Swagger: http://localhost:%s/swagger/index.html)", a.cfg.Port, a.cfg.Port)
@@ -674,6 +693,10 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 		return fmt.Sprintf("Error: cannot write config: %v", err)
 	}
 	log.Printf("SaveDeviceConfig: config saved to %s", path)
+
+	// Write marker file to indicate setup is complete now that device (store & terminal) is configured
+	markerPath := filepath.Join(dir, ".setup_done")
+	_ = os.WriteFile(markerPath, []byte("done"), 0644)
 
 	// Also persist store_id and pos_terminal_id into tenant DB local_device_config table
 	var parsed map[string]interface{}

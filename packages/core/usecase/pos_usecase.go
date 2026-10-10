@@ -801,38 +801,72 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 
 }
 
+type PosTransactionListResponse struct {
+	Data       interface{} `json:"data"`
+	TotalCount int64       `json:"total_count"`
+	Page       int32       `json:"page"`
+	Limit      int32       `json:"limit"`
+	TotalPages int32       `json:"total_pages"`
+}
+
+func calcPosPagination(page, limit int32) (int32, int32, int32) {
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+	return page, limit, offset
+}
+
+func calcPosTotalPages(totalCount int64, limit int32) int32 {
+	if limit <= 0 || totalCount <= 0 {
+		return 0
+	}
+	return int32((totalCount + int64(limit) - 1) / int64(limit))
+}
+
 // ListTodaysTransactions returns POS transactions for a store with pagination.
-func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32, limit *int32, offset *int32) *repository.Response {
+func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32, page, limit int32) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	l := int32(20)
-	if limit != nil && *limit > 0 {
-		l = *limit
-	}
-	o := int32(0)
-	if offset != nil && *offset >= 0 {
-		o = *offset
+	p, l, offset := calcPosPagination(page, limit)
+
+	totalCount, err := uc.repo.CountTodaysPosTransactions(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
 	rows, err := uc.repo.ListTodaysPosTransactions(ctx, repository.ListTodaysPosTransactionsParams{
 		StoreID: storeID,
 		Limit:   l,
-		Offset:  o,
+		Offset:  offset,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	return utils.NewResponse(utils.CodeOK, "transactions fetched", rows)
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", PosTransactionListResponse{
+		Data:       rows,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcPosTotalPages(totalCount, l),
+	})
 }
 
-// ListTransactionsByCashierSession returns POS transactions for a cashier and session (optional date range).
+// ListTransactionsByCashierSession returns POS transactions for a cashier and session (optional date range) with pagination.
 func (uc *PosUseCase) ListTransactionsByCashierSession(
 	ctx context.Context,
 	cashierID *int32,
 	cashierSessionID *int32,
 	startDate *time.Time,
 	endDate *time.Time,
+	page, limit int32,
 ) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
@@ -841,26 +875,45 @@ func (uc *PosUseCase) ListTransactionsByCashierSession(
 		return utils.NewResponse(utils.CodeBadReq, "at least one filter is required", nil)
 	}
 
-	arg := repository.ListPosTransactionsByCashierSessionParams{
-		Column1:          0,
-		Column2:          0,
-		Column3:          pgtype.Timestamp{},
-		Column4:          pgtype.Timestamp{},
+	p, l, offset := calcPosPagination(page, limit)
+
+	countArg := repository.CountPosTransactionsByCashierSessionParams{
+		Column1: 0,
+		Column2: 0,
+		Column3: pgtype.Timestamp{},
+		Column4: pgtype.Timestamp{},
+	}
+	listArg := repository.ListPosTransactionsByCashierSessionParams{
+		Column1: 0,
+		Column2: 0,
+		Column3: pgtype.Timestamp{},
+		Column4: pgtype.Timestamp{},
+		Limit:   l,
+		Offset:  offset,
 	}
 	if cashierID != nil && *cashierID > 0 {
-		arg.Column1 = *cashierID
+		countArg.Column1 = *cashierID
+		listArg.Column1 = *cashierID
 	}
 	if cashierSessionID != nil && *cashierSessionID > 0 {
-		arg.Column2 = *cashierSessionID
+		countArg.Column2 = *cashierSessionID
+		listArg.Column2 = *cashierSessionID
 	}
 	if startDate != nil {
-		arg.Column3 = pgtype.Timestamp{Time: *startDate, Valid: true}
+		countArg.Column3 = pgtype.Timestamp{Time: *startDate, Valid: true}
+		listArg.Column3 = pgtype.Timestamp{Time: *startDate, Valid: true}
 	}
 	if endDate != nil {
-		arg.Column4 = pgtype.Timestamp{Time: *endDate, Valid: true}
+		countArg.Column4 = pgtype.Timestamp{Time: *endDate, Valid: true}
+		listArg.Column4 = pgtype.Timestamp{Time: *endDate, Valid: true}
 	}
 
-	rows, err := uc.repo.ListPosTransactionsByCashierSession(ctx, arg)
+	totalCount, err := uc.repo.CountPosTransactionsByCashierSession(ctx, countArg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	rows, err := uc.repo.ListPosTransactionsByCashierSession(ctx, listArg)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -896,36 +949,38 @@ func (uc *PosUseCase) ListTransactionsByCashierSession(
 		})
 	}
 
-	return utils.NewResponse(utils.CodeOK, "transactions fetched", out)
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", PosTransactionListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcPosTotalPages(totalCount, l),
+	})
 }
 
 // ListTransactionsByCustomer returns POS transactions for a specific customer ID with pagination.
 func (uc *PosUseCase) ListTransactionsByCustomer(
 	ctx context.Context,
 	customerID int32,
-	limit *int32,
-	offset *int32,
+	page, limit int32,
 ) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	l := int32(20)
-	if limit != nil && *limit > 0 {
-		l = *limit
-	}
-	o := int32(0)
-	if offset != nil && *offset >= 0 {
-		o = *offset
+	p, l, offset := calcPosPagination(page, limit)
+	custIDParam := pgtype.Int4{Int32: customerID, Valid: true}
+
+	totalCount, err := uc.repo.CountPosTransactionsByCustomerID(ctx, custIDParam)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	arg := repository.ListPosTransactionsByCustomerIDParams{
-		CustomerID: pgtype.Int4{Int32: customerID, Valid: true},
+	rows, err := uc.repo.ListPosTransactionsByCustomerID(ctx, repository.ListPosTransactionsByCustomerIDParams{
+		CustomerID: custIDParam,
 		Limit:      l,
-		Offset:     o,
-	}
-
-	rows, err := uc.repo.ListPosTransactionsByCustomerID(ctx, arg)
+		Offset:     offset,
+	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
@@ -961,7 +1016,103 @@ func (uc *PosUseCase) ListTransactionsByCustomer(
 		})
 	}
 
-	return utils.NewResponse(utils.CodeOK, "transactions fetched", out)
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", PosTransactionListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcPosTotalPages(totalCount, l),
+	})
+}
+
+// ListTransactionsByTerminal returns POS transactions for a specific terminal ID with pagination and optional date/status filters.
+func (uc *PosUseCase) ListTransactionsByTerminal(
+	ctx context.Context,
+	terminalID int32,
+	page, limit int32,
+	fromDate, toDate *time.Time,
+	status string,
+) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	p, l, offset := calcPosPagination(page, limit)
+	termIDParam := pgtype.Int4{Int32: terminalID, Valid: true}
+
+	var fromDateParam, toDateParam pgtype.Timestamp
+	if fromDate != nil {
+		fromDateParam = pgtype.Timestamp{Time: *fromDate, Valid: true}
+	}
+	if toDate != nil {
+		toDateParam = pgtype.Timestamp{Time: *toDate, Valid: true}
+	}
+
+	var statusParam pgtype.Text
+	if status != "" {
+		statusParam = pgtype.Text{String: status, Valid: true}
+	}
+
+	totalCount, err := uc.repo.CountPosTransactionsByTerminalID(ctx, repository.CountPosTransactionsByTerminalIDParams{
+		PosTerminalID: termIDParam,
+		FromDate:      fromDateParam,
+		ToDate:        toDateParam,
+		Status:        statusParam,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	rows, err := uc.repo.ListPosTransactionsByTerminalID(ctx, repository.ListPosTransactionsByTerminalIDParams{
+		PosTerminalID: termIDParam,
+		FromDate:      fromDateParam,
+		ToDate:        toDateParam,
+		Status:        statusParam,
+		Limit:         l,
+		Offset:        offset,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	out := make([]PosTransactionWithLinesOutput, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PosTransactionWithLinesOutput{
+			ID:                row.ID,
+			StoreID:           row.StoreID,
+			CashierID:         row.CashierID,
+			CashierSessionID:  row.CashierSessionID,
+			CustomerID:        row.CustomerID,
+			PosTerminalID:     row.PosTerminalID,
+			TransactionNumber: row.TransactionNumber,
+			TransactionDate:   row.TransactionDate,
+			TransactionType:   row.TransactionType,
+			Subtotal:          row.Subtotal,
+			DiscountAmount:    row.DiscountAmount,
+			TaxAmount:         row.TaxAmount,
+			TotalAmount:       row.TotalAmount,
+			TotalCost:         row.TotalCost,
+			AmountPaid:        row.AmountPaid,
+			ChangeGiven:       row.ChangeGiven,
+			Status:            row.Status,
+			PriceListID:       row.PriceListID,
+			SalesOrderID:      row.SalesOrderID,
+			SourceCartID:      row.SourceCartID,
+			VoidedBy:          row.VoidedBy,
+			VoidedAt:          row.VoidedAt,
+			Metadata:          utils.BytesToJSONRawMessage(row.Metadata),
+			CreatedAt:         row.CreatedAt,
+			Lines:             linesToJSONRawMessage(row.Lines),
+		})
+	}
+
+	return utils.NewResponse(utils.CodeOK, "transactions fetched", PosTransactionListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcPosTotalPages(totalCount, l),
+	})
 }
 
 // GetTransaction returns a single POS transaction by ID.

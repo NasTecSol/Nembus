@@ -118,6 +118,12 @@ func TestJWTAuthMiddleware(t *testing.T) {
 	}
 	testRegistry.Clients[2].Token = whitelistedToken
 
+	// Create user token with organization_id
+	userToken, err := GenerateJWTToken("42", "testuser", 7)
+	if err != nil {
+		t.Fatalf("failed to generate user token: %v", err)
+	}
+
 	// Save test registry
 	registryData, _ := json.Marshal(testRegistry)
 	err = os.WriteFile("config/m2m_clients.json", registryData, 0644)
@@ -133,13 +139,18 @@ func TestJWTAuthMiddleware(t *testing.T) {
 		clientID, _ := c.Get("client_id")
 		clientName, _ := c.Get("client_name")
 		tenantID := c.GetHeader("x-tenant-id")
+		userID, _ := GetUserIDFromContext(c)
+		orgID, _ := GetOrganizationIDFromContext(c)
 		c.JSON(http.StatusOK, gin.H{
-			"is_m2m":      isM2M,
-			"client_id":   clientID,
-			"client_name": clientName,
-			"tenant_id":   tenantID,
+			"is_m2m":          isM2M,
+			"client_id":       clientID,
+			"client_name":     clientName,
+			"tenant_id":       tenantID,
+			"user_id":         userID,
+			"organization_id": orgID,
 		})
 	})
+
 
 	// Run test cases
 	tests := []struct {
@@ -163,6 +174,24 @@ func TestJWTAuthMiddleware(t *testing.T) {
 				}
 				if body["tenant_id"] != "tenant-test" {
 					t.Errorf("expected tenant_id tenant-test, got %v", body["tenant_id"])
+				}
+			},
+		},
+		{
+			name:           "Valid User Token with Organization ID",
+			authHeader:     "Bearer " + userToken,
+			expectedStatus: http.StatusOK,
+			verifyResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var body map[string]interface{}
+				json.Unmarshal(w.Body.Bytes(), &body)
+				if body["is_m2m"] != false {
+					t.Errorf("expected is_m2m to be false, got %v", body["is_m2m"])
+				}
+				if body["user_id"] != "42" {
+					t.Errorf("expected user_id 42, got %v", body["user_id"])
+				}
+				if orgID, ok := body["organization_id"].(float64); !ok || int32(orgID) != 7 {
+					t.Errorf("expected organization_id 7, got %v", body["organization_id"])
 				}
 			},
 		},

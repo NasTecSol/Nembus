@@ -30,6 +30,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS calculate_order_totals_trigger ON sales_order_lines_v2;
 CREATE TRIGGER calculate_order_totals_trigger
     AFTER INSERT OR UPDATE OR DELETE ON sales_order_lines_v2
     FOR EACH ROW
@@ -67,6 +68,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS calculate_invoice_totals_trigger ON invoice_lines;
 CREATE TRIGGER calculate_invoice_totals_trigger
     AFTER INSERT OR UPDATE OR DELETE ON invoice_lines
     FOR EACH ROW
@@ -104,6 +106,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_invoice_payment_trigger ON invoice_payments;
 CREATE TRIGGER update_invoice_payment_trigger
     AFTER INSERT OR UPDATE OR DELETE ON invoice_payments
     FOR EACH ROW
@@ -130,68 +133,87 @@ COMMENT ON TABLE quotes IS 'Sales quotations with approval workflow';
 
 -- Sales Analytics
 ALTER TABLE sales_analytics 
+    DROP CONSTRAINT IF EXISTS fk_sales_analytics_store,
     ADD CONSTRAINT fk_sales_analytics_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;
 
 ALTER TABLE sales_analytics 
+    DROP CONSTRAINT IF EXISTS fk_sales_analytics_product,
     ADD CONSTRAINT fk_sales_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 
 ALTER TABLE sales_analytics 
+    DROP CONSTRAINT IF EXISTS fk_sales_analytics_category,
     ADD CONSTRAINT fk_sales_analytics_category 
     FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
 
 ALTER TABLE sales_analytics 
+    DROP CONSTRAINT IF EXISTS fk_sales_analytics_customer,
     ADD CONSTRAINT fk_sales_analytics_customer 
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
 
 -- Purchase Analytics
 ALTER TABLE purchase_analytics 
+    DROP CONSTRAINT IF EXISTS fk_purchase_analytics_store,
     ADD CONSTRAINT fk_purchase_analytics_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;
 
 ALTER TABLE purchase_analytics 
+    DROP CONSTRAINT IF EXISTS fk_purchase_analytics_supplier,
     ADD CONSTRAINT fk_purchase_analytics_supplier 
     FOREIGN KEY (supplier_id) REFERENCES business_partners(id) ON DELETE SET NULL;
 
 ALTER TABLE purchase_analytics 
+    DROP CONSTRAINT IF EXISTS fk_purchase_analytics_product,
     ADD CONSTRAINT fk_purchase_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 
 ALTER TABLE purchase_analytics
-    ADD CONSTRAINT fk_purchase_analytics_category
+    DROP CONSTRAINT IF EXISTS fk_purchase_analytics_category,
+    ADD CONSTRAINT fk_purchase_analytics_category 
     FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
 
 -- Inventory Analytics
 ALTER TABLE inventory_analytics 
+    DROP CONSTRAINT IF EXISTS fk_inventory_analytics_store,
     ADD CONSTRAINT fk_inventory_analytics_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;
 
 ALTER TABLE inventory_analytics 
+    DROP CONSTRAINT IF EXISTS fk_inventory_analytics_product,
     ADD CONSTRAINT fk_inventory_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 
 ALTER TABLE inventory_analytics
-    ADD CONSTRAINT fk_inventory_analytics_category
+    DROP CONSTRAINT IF EXISTS fk_inventory_analytics_category,
+    ADD CONSTRAINT fk_inventory_analytics_category 
     FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
 
 -- Profit Loss Analytics
 ALTER TABLE profit_loss_analytics 
+    DROP CONSTRAINT IF EXISTS fk_profit_loss_analytics_store,
     ADD CONSTRAINT fk_profit_loss_analytics_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;
 
 -- Discount Analytics
 ALTER TABLE discount_analytics 
+    DROP CONSTRAINT IF EXISTS fk_discount_analytics_store,
     ADD CONSTRAINT fk_discount_analytics_store 
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL;
 
 ALTER TABLE discount_analytics 
+    DROP CONSTRAINT IF EXISTS fk_discount_analytics_cashier,
     ADD CONSTRAINT fk_discount_analytics_cashier 
     FOREIGN KEY (cashier_id) REFERENCES cashiers(id) ON DELETE SET NULL;
 
 ALTER TABLE discount_analytics 
+    DROP CONSTRAINT IF EXISTS fk_discount_analytics_product,
     ADD CONSTRAINT fk_discount_analytics_product 
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+
+-- DB trigger trg_update_cashier_session_balance dropped in favor of explicit app-level balance updates.
+DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;
+DROP FUNCTION IF EXISTS update_cashier_session_balance();
 
 -- =====================================================
 -- TRIGGERS FOR UPDATED_AT
@@ -292,331 +314,331 @@ CREATE TRIGGER trg_restaurant_order_items_updated_at BEFORE UPDATE ON restaurant
 -- =====================================================
 
 -- Organizations
-CREATE INDEX idx_organizations_code ON organizations(code);
-CREATE INDEX idx_organizations_is_active ON organizations(is_active);
+CREATE INDEX IF NOT EXISTS idx_organizations_code ON organizations(code);
+CREATE INDEX IF NOT EXISTS idx_organizations_is_active ON organizations(is_active);
 
 -- Tenants
-CREATE INDEX idx_tenants_slug ON tenants(slug);
-CREATE INDEX idx_tenants_is_active ON tenants(is_active);
+CREATE INDEX IF NOT EXISTS idx_tenants_slug ON tenants(slug);
+CREATE INDEX IF NOT EXISTS idx_tenants_is_active ON tenants(is_active);
 
 -- Modules
-CREATE INDEX idx_modules_code ON modules(code);
-CREATE INDEX idx_modules_is_active ON modules(is_active);
-CREATE INDEX idx_modules_display_order ON modules(display_order);
+CREATE INDEX IF NOT EXISTS idx_modules_code ON modules(code);
+CREATE INDEX IF NOT EXISTS idx_modules_is_active ON modules(is_active);
+CREATE INDEX IF NOT EXISTS idx_modules_display_order ON modules(display_order);
 
 -- Menus
-CREATE INDEX idx_menus_module_id ON menus(module_id);
-CREATE INDEX idx_menus_parent_menu_id ON menus(parent_menu_id);
-CREATE INDEX idx_menus_is_active ON menus(is_active);
-CREATE INDEX idx_menus_display_order ON menus(display_order);
+CREATE INDEX IF NOT EXISTS idx_menus_module_id ON menus(module_id);
+CREATE INDEX IF NOT EXISTS idx_menus_parent_menu_id ON menus(parent_menu_id);
+CREATE INDEX IF NOT EXISTS idx_menus_is_active ON menus(is_active);
+CREATE INDEX IF NOT EXISTS idx_menus_display_order ON menus(display_order);
 
 -- Submenus
-CREATE INDEX idx_submenus_menu_id ON submenus(menu_id);
-CREATE INDEX idx_submenus_parent_submenu_id ON submenus(parent_submenu_id);
-CREATE INDEX idx_submenus_is_active ON submenus(is_active);
-CREATE INDEX idx_submenus_display_order ON submenus(display_order);
+CREATE INDEX IF NOT EXISTS idx_submenus_menu_id ON submenus(menu_id);
+CREATE INDEX IF NOT EXISTS idx_submenus_parent_submenu_id ON submenus(parent_submenu_id);
+CREATE INDEX IF NOT EXISTS idx_submenus_is_active ON submenus(is_active);
+CREATE INDEX IF NOT EXISTS idx_submenus_display_order ON submenus(display_order);
 
 -- Permissions
-CREATE INDEX idx_permissions_code ON permissions(code);
+CREATE INDEX IF NOT EXISTS idx_permissions_code ON permissions(code);
 
 -- Roles
-CREATE INDEX idx_roles_code ON roles(code);
-CREATE INDEX idx_roles_is_active ON roles(is_active);
+CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
+CREATE INDEX IF NOT EXISTS idx_roles_is_active ON roles(is_active);
 
 -- Role Permissions
-CREATE INDEX idx_role_permissions_role_id ON role_permissions(role_id);
-CREATE INDEX idx_role_permissions_permission_id ON role_permissions(permission_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id);
 
 -- Stores
-CREATE INDEX idx_stores_organization_id ON stores(organization_id);
-CREATE INDEX idx_stores_parent_store_id ON stores(parent_store_id);
-CREATE INDEX idx_stores_code ON stores(code);
-CREATE INDEX idx_stores_is_active ON stores(is_active);
-CREATE INDEX idx_stores_store_type ON stores(store_type);
+CREATE INDEX IF NOT EXISTS idx_stores_organization_id ON stores(organization_id);
+CREATE INDEX IF NOT EXISTS idx_stores_parent_store_id ON stores(parent_store_id);
+CREATE INDEX IF NOT EXISTS idx_stores_code ON stores(code);
+CREATE INDEX IF NOT EXISTS idx_stores_is_active ON stores(is_active);
+CREATE INDEX IF NOT EXISTS idx_stores_store_type ON stores(store_type);
 
 -- Storage Locations
-CREATE INDEX idx_storage_locations_store_id ON storage_locations(store_id);
-CREATE INDEX idx_storage_locations_parent_location_id ON storage_locations(parent_location_id);
-CREATE INDEX idx_storage_locations_code ON storage_locations(code);
+CREATE INDEX IF NOT EXISTS idx_storage_locations_store_id ON storage_locations(store_id);
+CREATE INDEX IF NOT EXISTS idx_storage_locations_parent_location_id ON storage_locations(parent_location_id);
+CREATE INDEX IF NOT EXISTS idx_storage_locations_code ON storage_locations(code);
 
 -- Users
-CREATE INDEX idx_users_organization_id ON users(organization_id);
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_employee_code ON users(employee_code);
-CREATE INDEX idx_users_is_active ON users(is_active);
+CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_employee_code ON users(employee_code);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
 -- User Roles
-CREATE INDEX idx_user_roles_user_id ON user_roles(user_id);
-CREATE INDEX idx_user_roles_role_id ON user_roles(role_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
 
 -- User Store Access
-CREATE INDEX idx_user_store_access_user_id ON user_store_access(user_id);
-CREATE INDEX idx_user_store_access_store_id ON user_store_access(store_id);
+CREATE INDEX IF NOT EXISTS idx_user_store_access_user_id ON user_store_access(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_store_access_store_id ON user_store_access(store_id);
 
 -- Cashiers
-CREATE INDEX idx_cashiers_user_id ON cashiers(user_id);
-CREATE INDEX idx_cashiers_store_id ON cashiers(store_id);
-CREATE INDEX idx_cashiers_is_active ON cashiers(is_active);
+CREATE INDEX IF NOT EXISTS idx_cashiers_user_id ON cashiers(user_id);
+CREATE INDEX IF NOT EXISTS idx_cashiers_store_id ON cashiers(store_id);
+CREATE INDEX IF NOT EXISTS idx_cashiers_is_active ON cashiers(is_active);
 
 -- POS Terminals
-CREATE INDEX idx_pos_terminals_store_id ON pos_terminals(store_id);
-CREATE INDEX idx_pos_terminals_is_active ON pos_terminals(is_active);
+CREATE INDEX IF NOT EXISTS idx_pos_terminals_store_id ON pos_terminals(store_id);
+CREATE INDEX IF NOT EXISTS idx_pos_terminals_is_active ON pos_terminals(is_active);
 
 -- Cashier Sessions
-CREATE INDEX idx_cashier_sessions_cashier_id ON cashier_sessions(cashier_id);
-CREATE INDEX idx_cashier_sessions_pos_terminal_id ON cashier_sessions(pos_terminal_id);
-CREATE INDEX idx_cashier_sessions_status ON cashier_sessions(status);
-CREATE INDEX idx_cashier_sessions_opening_time ON cashier_sessions(opening_time);
+CREATE INDEX IF NOT EXISTS idx_cashier_sessions_cashier_id ON cashier_sessions(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_sessions_pos_terminal_id ON cashier_sessions(pos_terminal_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_sessions_status ON cashier_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_cashier_sessions_opening_time ON cashier_sessions(opening_time);
 
 -- Product Categories
-CREATE INDEX idx_product_categories_parent_category_id ON product_categories(parent_category_id);
-CREATE INDEX idx_product_categories_code ON product_categories(code);
-CREATE INDEX idx_product_categories_is_active ON product_categories(is_active);
+CREATE INDEX IF NOT EXISTS idx_product_categories_parent_category_id ON product_categories(parent_category_id);
+CREATE INDEX IF NOT EXISTS idx_product_categories_code ON product_categories(code);
+CREATE INDEX IF NOT EXISTS idx_product_categories_is_active ON product_categories(is_active);
 
 -- Brands
-CREATE INDEX idx_brands_code ON brands(code);
-CREATE INDEX idx_brands_is_active ON brands(is_active);
+CREATE INDEX IF NOT EXISTS idx_brands_code ON brands(code);
+CREATE INDEX IF NOT EXISTS idx_brands_is_active ON brands(is_active);
 
 -- Units of Measure
-CREATE INDEX idx_units_of_measure_code ON units_of_measure(code);
-CREATE INDEX idx_units_of_measure_uom_type ON units_of_measure(uom_type);
+CREATE INDEX IF NOT EXISTS idx_units_of_measure_code ON units_of_measure(code);
+CREATE INDEX IF NOT EXISTS idx_units_of_measure_uom_type ON units_of_measure(uom_type);
 
 -- UOM Packaging Templates
-CREATE INDEX idx_uom_packaging_templates_organization_id ON uom_packaging_templates(organization_id);
-CREATE INDEX idx_uom_packaging_templates_code ON uom_packaging_templates(code);
-CREATE INDEX idx_uom_pkg_template_levels_template_id ON uom_packaging_template_levels(template_id);
-CREATE INDEX idx_uom_pkg_template_levels_uom_id ON uom_packaging_template_levels(uom_id);
+CREATE INDEX IF NOT EXISTS idx_uom_packaging_templates_organization_id ON uom_packaging_templates(organization_id);
+CREATE INDEX IF NOT EXISTS idx_uom_packaging_templates_code ON uom_packaging_templates(code);
+CREATE INDEX IF NOT EXISTS idx_uom_pkg_template_levels_template_id ON uom_packaging_template_levels(template_id);
+CREATE INDEX IF NOT EXISTS idx_uom_pkg_template_levels_uom_id ON uom_packaging_template_levels(uom_id);
 
 -- Price Lists
-CREATE INDEX idx_price_lists_code ON price_lists(code);
-CREATE INDEX idx_price_lists_is_active ON price_lists(is_active);
-CREATE INDEX idx_price_lists_valid_from ON price_lists(valid_from);
-CREATE INDEX idx_price_lists_valid_to ON price_lists(valid_to);
+CREATE INDEX IF NOT EXISTS idx_price_lists_code ON price_lists(code);
+CREATE INDEX IF NOT EXISTS idx_price_lists_is_active ON price_lists(is_active);
+CREATE INDEX IF NOT EXISTS idx_price_lists_valid_from ON price_lists(valid_from);
+CREATE INDEX IF NOT EXISTS idx_price_lists_valid_to ON price_lists(valid_to);
 
 -- Tax Categories
-CREATE INDEX idx_tax_categories_code ON tax_categories(code);
-CREATE INDEX idx_tax_categories_is_active ON tax_categories(is_active);
+CREATE INDEX IF NOT EXISTS idx_tax_categories_code ON tax_categories(code);
+CREATE INDEX IF NOT EXISTS idx_tax_categories_is_active ON tax_categories(is_active);
 
 -- Products
-CREATE INDEX idx_products_organization_id ON products(organization_id);
-CREATE INDEX idx_products_sku ON products(sku);
-CREATE INDEX idx_products_category_id ON products(category_id);
-CREATE INDEX idx_products_brand_id ON products(brand_id);
-CREATE INDEX idx_products_is_active ON products(is_active);
-CREATE INDEX idx_products_is_sellable ON products(is_sellable);
-CREATE INDEX idx_products_is_purchasable ON products(is_purchasable);
-CREATE INDEX idx_products_product_type ON products(product_type);
+CREATE INDEX IF NOT EXISTS idx_products_organization_id ON products(organization_id);
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_brand_id ON products(brand_id);
+CREATE INDEX IF NOT EXISTS idx_products_is_active ON products(is_active);
+CREATE INDEX IF NOT EXISTS idx_products_is_sellable ON products(is_sellable);
+CREATE INDEX IF NOT EXISTS idx_products_is_purchasable ON products(is_purchasable);
+CREATE INDEX IF NOT EXISTS idx_products_product_type ON products(product_type);
 
 -- Product Variants
-CREATE INDEX idx_product_variants_product_id ON product_variants(product_id);
-CREATE INDEX idx_product_variants_variant_sku ON product_variants(variant_sku);
-CREATE INDEX idx_product_variants_is_active ON product_variants(is_active);
+CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_variants_variant_sku ON product_variants(variant_sku);
+CREATE INDEX IF NOT EXISTS idx_product_variants_is_active ON product_variants(is_active);
 
 -- Product Barcodes
-CREATE INDEX idx_product_barcodes_product_id ON product_barcodes(product_id);
-CREATE INDEX idx_product_barcodes_product_variant_id ON product_barcodes(product_variant_id);
-CREATE INDEX idx_product_barcodes_barcode ON product_barcodes(barcode);
+CREATE INDEX IF NOT EXISTS idx_product_barcodes_product_id ON product_barcodes(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_barcodes_product_variant_id ON product_barcodes(product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode ON product_barcodes(barcode);
 
 -- Product Prices
-CREATE INDEX idx_product_prices_product_id ON product_prices(product_id);
-CREATE INDEX idx_product_prices_product_variant_id ON product_prices(product_variant_id);
-CREATE INDEX idx_product_prices_price_list_id ON product_prices(price_list_id);
-CREATE INDEX idx_product_prices_is_active ON product_prices(is_active);
+CREATE INDEX IF NOT EXISTS idx_product_prices_product_id ON product_prices(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_prices_product_variant_id ON product_prices(product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_product_prices_price_list_id ON product_prices(price_list_id);
+CREATE INDEX IF NOT EXISTS idx_product_prices_is_active ON product_prices(is_active);
 
 -- Product Serial Numbers
-CREATE INDEX idx_product_serial_numbers_product_id ON product_serial_numbers(product_id);
-CREATE INDEX idx_product_serial_numbers_serial_number ON product_serial_numbers(serial_number);
-CREATE INDEX idx_product_serial_numbers_status ON product_serial_numbers(status);
-CREATE INDEX idx_product_serial_numbers_current_store_id ON product_serial_numbers(current_store_id);
+CREATE INDEX IF NOT EXISTS idx_product_serial_numbers_product_id ON product_serial_numbers(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_serial_numbers_serial_number ON product_serial_numbers(serial_number);
+CREATE INDEX IF NOT EXISTS idx_product_serial_numbers_status ON product_serial_numbers(status);
+CREATE INDEX IF NOT EXISTS idx_product_serial_numbers_current_store_id ON product_serial_numbers(current_store_id);
 
 -- Product Batches
-CREATE INDEX idx_product_batches_product_id ON product_batches(product_id);
-CREATE INDEX idx_product_batches_batch_number ON product_batches(batch_number);
-CREATE INDEX idx_product_batches_store_id ON product_batches(store_id);
-CREATE INDEX idx_product_batches_status ON product_batches(status);
-CREATE INDEX idx_product_batches_expiry_date ON product_batches(expiry_date);
+CREATE INDEX IF NOT EXISTS idx_product_batches_product_id ON product_batches(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_batches_batch_number ON product_batches(batch_number);
+CREATE INDEX IF NOT EXISTS idx_product_batches_store_id ON product_batches(store_id);
+CREATE INDEX IF NOT EXISTS idx_product_batches_status ON product_batches(status);
+CREATE INDEX IF NOT EXISTS idx_product_batches_expiry_date ON product_batches(expiry_date);
 
 -- Inventory Stock
-CREATE INDEX idx_inventory_stock_product_id ON inventory_stock(product_id);
-CREATE INDEX idx_inventory_stock_product_variant_id ON inventory_stock(product_variant_id);
-CREATE INDEX idx_inventory_stock_store_id ON inventory_stock(store_id);
-CREATE INDEX idx_inventory_stock_storage_location_id ON inventory_stock(storage_location_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_stock_unique_product_variant_store ON inventory_stock(product_id, COALESCE(product_variant_id, -1), store_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_product_id ON inventory_stock(product_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_product_variant_id ON inventory_stock(product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_store_id ON inventory_stock(store_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_storage_location_id ON inventory_stock(storage_location_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_product_variant_store ON inventory_stock(product_id, COALESCE(product_variant_id, -1), store_id);
 
 -- Stock Movements
-CREATE INDEX idx_stock_movements_product_id ON stock_movements(product_id);
-CREATE INDEX idx_stock_movements_from_store_id ON stock_movements(from_store_id);
-CREATE INDEX idx_stock_movements_to_store_id ON stock_movements(to_store_id);
-CREATE INDEX idx_stock_movements_movement_type ON stock_movements(movement_type);
-CREATE INDEX idx_stock_movements_movement_date ON stock_movements(movement_date);
-CREATE INDEX idx_stock_movements_reference_type_id ON stock_movements(reference_type, reference_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_product_id ON stock_movements(product_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_from_store_id ON stock_movements(from_store_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_to_store_id ON stock_movements(to_store_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_movement_type ON stock_movements(movement_type);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_movement_date ON stock_movements(movement_date);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_reference_type_id ON stock_movements(reference_type, reference_id);
 
 -- Stock Counts
-CREATE INDEX idx_stock_counts_store_id ON stock_counts(store_id);
-CREATE INDEX idx_stock_counts_status ON stock_counts(status);
-CREATE INDEX idx_stock_counts_count_number ON stock_counts(count_number);
+CREATE INDEX IF NOT EXISTS idx_stock_counts_store_id ON stock_counts(store_id);
+CREATE INDEX IF NOT EXISTS idx_stock_counts_status ON stock_counts(status);
+CREATE INDEX IF NOT EXISTS idx_stock_counts_count_number ON stock_counts(count_number);
 
 -- Stock Count Lines
-CREATE INDEX idx_stock_count_lines_stock_count_id ON stock_count_lines(stock_count_id);
-CREATE INDEX idx_stock_count_lines_product_id ON stock_count_lines(product_id);
+CREATE INDEX IF NOT EXISTS idx_stock_count_lines_stock_count_id ON stock_count_lines(stock_count_id);
+CREATE INDEX IF NOT EXISTS idx_stock_count_lines_product_id ON stock_count_lines(product_id);
 
 -- Suppliers
 -- Indexes for suppliers table removed (replaced by business_partners in 50_purchasing_suppliers.sql)
 
 -- Customers
-CREATE INDEX idx_customers_organization_id ON customers(organization_id);
-CREATE INDEX idx_customers_customer_code ON customers(customer_code);
-CREATE INDEX idx_customers_is_active ON customers(is_active);
-CREATE INDEX idx_customers_customer_type ON customers(customer_type);
+CREATE INDEX IF NOT EXISTS idx_customers_organization_id ON customers(organization_id);
+CREATE INDEX IF NOT EXISTS idx_customers_customer_code ON customers(customer_code);
+CREATE INDEX IF NOT EXISTS idx_customers_is_active ON customers(is_active);
+CREATE INDEX IF NOT EXISTS idx_customers_customer_type ON customers(customer_type);
 
 -- Purchase Orders
-CREATE INDEX idx_purchase_orders_organization_id ON purchase_orders(organization_id);
-CREATE INDEX idx_purchase_orders_partners_id ON purchase_orders(partners_id);
-CREATE INDEX idx_purchase_orders_store_id ON purchase_orders(store_id);
-CREATE INDEX idx_purchase_orders_po_number ON purchase_orders(po_number);
-CREATE INDEX idx_purchase_orders_status ON purchase_orders(status);
-CREATE INDEX idx_purchase_orders_po_date ON purchase_orders(po_date);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_organization_id ON purchase_orders(organization_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_partners_id ON purchase_orders(partners_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_store_id ON purchase_orders(store_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_po_number ON purchase_orders(po_number);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_po_date ON purchase_orders(po_date);
 
 -- Purchase Order Lines
-CREATE INDEX idx_purchase_order_lines_purchase_order_id ON purchase_order_lines(purchase_order_id);
-CREATE INDEX idx_purchase_order_lines_product_id ON purchase_order_lines(product_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_order_lines_purchase_order_id ON purchase_order_lines(purchase_order_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_order_lines_product_id ON purchase_order_lines(product_id);
 
 -- Sales Orders
-CREATE INDEX idx_sales_orders_organization_id ON sales_orders(organization_id);
-CREATE INDEX idx_sales_orders_customer_id ON sales_orders(customer_id);
-CREATE INDEX idx_sales_orders_store_id ON sales_orders(store_id);
-CREATE INDEX idx_sales_orders_order_number ON sales_orders(order_number);
-CREATE INDEX idx_sales_orders_status ON sales_orders(status);
-CREATE INDEX idx_sales_orders_order_date ON sales_orders(order_date);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_organization_id ON sales_orders(organization_id);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_customer_id ON sales_orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_store_id ON sales_orders(store_id);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_order_number ON sales_orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_status ON sales_orders(status);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_order_date ON sales_orders(order_date);
 
 -- Sales Order Lines
-CREATE INDEX idx_sales_order_lines_sales_order_id ON sales_order_lines(sales_order_id);
-CREATE INDEX idx_sales_order_lines_product_id ON sales_order_lines(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_order_lines_sales_order_id ON sales_order_lines(sales_order_id);
+CREATE INDEX IF NOT EXISTS idx_sales_order_lines_product_id ON sales_order_lines(product_id);
 
 -- POS Transactions
-CREATE INDEX idx_pos_transactions_store_id ON pos_transactions(store_id);
-CREATE INDEX idx_pos_transactions_cashier_id ON pos_transactions(cashier_id);
-CREATE INDEX idx_pos_transactions_cashier_session_id ON pos_transactions(cashier_session_id);
-CREATE INDEX idx_pos_transactions_customer_id ON pos_transactions(customer_id);
-CREATE INDEX idx_pos_transactions_transaction_number ON pos_transactions(transaction_number);
-CREATE INDEX idx_pos_transactions_transaction_date ON pos_transactions(transaction_date);
-CREATE INDEX idx_pos_transactions_status ON pos_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_store_id ON pos_transactions(store_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_cashier_id ON pos_transactions(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_cashier_session_id ON pos_transactions(cashier_session_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_customer_id ON pos_transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_transaction_number ON pos_transactions(transaction_number);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_transaction_date ON pos_transactions(transaction_date);
+CREATE INDEX IF NOT EXISTS idx_pos_transactions_status ON pos_transactions(status);
 
 -- POS Transaction Lines
-CREATE INDEX idx_pos_transaction_lines_transaction_id ON pos_transaction_lines(transaction_id);
-CREATE INDEX idx_pos_transaction_lines_product_id ON pos_transaction_lines(product_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transaction_lines_transaction_id ON pos_transaction_lines(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transaction_lines_product_id ON pos_transaction_lines(product_id);
 
 -- FIX #7: returns indexes
-CREATE INDEX idx_sales_returns_store_id              ON sales_returns(store_id);
-CREATE INDEX idx_sales_returns_original_transaction  ON sales_returns(original_transaction_id);
-CREATE INDEX idx_sales_returns_status                ON sales_returns(status);
-CREATE INDEX idx_sales_return_lines_return_id        ON sales_return_lines(return_id);
+CREATE INDEX IF NOT EXISTS idx_sales_returns_store_id              ON sales_returns(store_id);
+CREATE INDEX IF NOT EXISTS idx_sales_returns_original_transaction  ON sales_returns(original_transaction_id);
+CREATE INDEX IF NOT EXISTS idx_sales_returns_status                ON sales_returns(status);
+CREATE INDEX IF NOT EXISTS idx_sales_return_lines_return_id        ON sales_return_lines(return_id);
 
 -- POS Payments
-CREATE INDEX idx_pos_payments_transaction_id ON pos_payments(transaction_id);
-CREATE INDEX idx_pos_payments_payment_method ON pos_payments(payment_method);
+CREATE INDEX IF NOT EXISTS idx_pos_payments_transaction_id ON pos_payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_pos_payments_payment_method ON pos_payments(payment_method);
 
 -- Sales Analytics
-CREATE INDEX idx_sales_analytics_organization_id ON sales_analytics(organization_id);
-CREATE INDEX idx_sales_analytics_store_id ON sales_analytics(store_id);
-CREATE INDEX idx_sales_analytics_product_id ON sales_analytics(product_id);
-CREATE INDEX idx_sales_analytics_category_id ON sales_analytics(category_id);
-CREATE INDEX idx_sales_analytics_customer_id ON sales_analytics(customer_id);
-CREATE INDEX idx_sales_analytics_date ON sales_analytics(date);
-CREATE INDEX idx_sales_analytics_year_month ON sales_analytics(year, month);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_organization_id ON sales_analytics(organization_id);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_store_id ON sales_analytics(store_id);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_product_id ON sales_analytics(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_category_id ON sales_analytics(category_id);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_customer_id ON sales_analytics(customer_id);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_date ON sales_analytics(date);
+CREATE INDEX IF NOT EXISTS idx_sales_analytics_year_month ON sales_analytics(year, month);
 
 -- Purchase Analytics
-CREATE INDEX idx_purchase_analytics_organization_id ON purchase_analytics(organization_id);
-CREATE INDEX idx_purchase_analytics_store_id ON purchase_analytics(store_id);
-CREATE INDEX idx_purchase_analytics_supplier_id ON purchase_analytics(supplier_id);
-CREATE INDEX idx_purchase_analytics_product_id ON purchase_analytics(product_id);
-CREATE INDEX idx_purchase_analytics_date ON purchase_analytics(date);
+CREATE INDEX IF NOT EXISTS idx_purchase_analytics_organization_id ON purchase_analytics(organization_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_analytics_store_id ON purchase_analytics(store_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_analytics_supplier_id ON purchase_analytics(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_analytics_product_id ON purchase_analytics(product_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_analytics_date ON purchase_analytics(date);
 
 -- Inventory Analytics
-CREATE INDEX idx_inventory_analytics_organization_id ON inventory_analytics(organization_id);
-CREATE INDEX idx_inventory_analytics_store_id ON inventory_analytics(store_id);
-CREATE INDEX idx_inventory_analytics_product_id ON inventory_analytics(product_id);
-CREATE INDEX idx_inventory_analytics_date ON inventory_analytics(date);
+CREATE INDEX IF NOT EXISTS idx_inventory_analytics_organization_id ON inventory_analytics(organization_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_analytics_store_id ON inventory_analytics(store_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_analytics_product_id ON inventory_analytics(product_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_analytics_date ON inventory_analytics(date);
 
 -- FIX #1: stock reservations indexes
-CREATE INDEX idx_stock_reservations_product_id         ON stock_reservations(product_id);
-CREATE INDEX idx_stock_reservations_product_variant_id ON stock_reservations(product_variant_id);
-CREATE INDEX idx_stock_reservations_store_id           ON stock_reservations(store_id);
-CREATE INDEX idx_stock_reservations_reference          ON stock_reservations(reference_type, reference_id);
-CREATE INDEX idx_stock_reservations_status             ON stock_reservations(status);
-CREATE INDEX idx_stock_reservations_expires_at         ON stock_reservations(expires_at);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_product_id         ON stock_reservations(product_id);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_product_variant_id ON stock_reservations(product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_store_id           ON stock_reservations(store_id);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_reference          ON stock_reservations(reference_type, reference_id);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_status             ON stock_reservations(status);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_expires_at         ON stock_reservations(expires_at);
 
 -- Profit Loss Analytics
-CREATE INDEX idx_profit_loss_analytics_organization_id ON profit_loss_analytics(organization_id);
-CREATE INDEX idx_profit_loss_analytics_store_id ON profit_loss_analytics(store_id);
-CREATE INDEX idx_profit_loss_analytics_date ON profit_loss_analytics(date);
-CREATE INDEX idx_profit_loss_analytics_period_type ON profit_loss_analytics(period_type);
+CREATE INDEX IF NOT EXISTS idx_profit_loss_analytics_organization_id ON profit_loss_analytics(organization_id);
+CREATE INDEX IF NOT EXISTS idx_profit_loss_analytics_store_id ON profit_loss_analytics(store_id);
+CREATE INDEX IF NOT EXISTS idx_profit_loss_analytics_date ON profit_loss_analytics(date);
+CREATE INDEX IF NOT EXISTS idx_profit_loss_analytics_period_type ON profit_loss_analytics(period_type);
 
 -- Discount Analytics
-CREATE INDEX idx_discount_analytics_organization_id ON discount_analytics(organization_id);
-CREATE INDEX idx_discount_analytics_store_id ON discount_analytics(store_id);
-CREATE INDEX idx_discount_analytics_cashier_id ON discount_analytics(cashier_id);
-CREATE INDEX idx_discount_analytics_date ON discount_analytics(date);
+CREATE INDEX IF NOT EXISTS idx_discount_analytics_organization_id ON discount_analytics(organization_id);
+CREATE INDEX IF NOT EXISTS idx_discount_analytics_store_id ON discount_analytics(store_id);
+CREATE INDEX IF NOT EXISTS idx_discount_analytics_cashier_id ON discount_analytics(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_discount_analytics_date ON discount_analytics(date);
 
 -- Restaurant Module Indexes
-CREATE INDEX idx_restaurant_tables_store_id         ON restaurant_tables(store_id);
-CREATE INDEX idx_restaurant_tables_is_active        ON restaurant_tables(is_active);
-CREATE INDEX idx_restaurant_tables_section          ON restaurant_tables(section);
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_store_id         ON restaurant_tables(store_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_is_active        ON restaurant_tables(is_active);
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_section          ON restaurant_tables(section);
 
-CREATE INDEX idx_menu_categories_store_id           ON menu_categories(store_id);
-CREATE INDEX idx_menu_categories_parent_id          ON menu_categories(parent_category_id);
-CREATE INDEX idx_menu_categories_is_active          ON menu_categories(is_active);
-CREATE INDEX idx_menu_categories_display_order      ON menu_categories(display_order);
+CREATE INDEX IF NOT EXISTS idx_menu_categories_store_id           ON menu_categories(store_id);
+CREATE INDEX IF NOT EXISTS idx_menu_categories_parent_id          ON menu_categories(parent_category_id);
+CREATE INDEX IF NOT EXISTS idx_menu_categories_is_active          ON menu_categories(is_active);
+CREATE INDEX IF NOT EXISTS idx_menu_categories_display_order      ON menu_categories(display_order);
 
-CREATE INDEX idx_menu_items_store_id                ON menu_items(store_id);
-CREATE INDEX idx_menu_items_category_id             ON menu_items(menu_category_id);
-CREATE INDEX idx_menu_items_product_id              ON menu_items(product_id);
-CREATE INDEX idx_menu_items_recipe_id               ON menu_items(recipe_id);
-CREATE INDEX idx_menu_items_is_active               ON menu_items(is_active);
-CREATE INDEX idx_menu_items_is_available            ON menu_items(is_available);
-CREATE INDEX idx_menu_items_display_order           ON menu_items(display_order);
+CREATE INDEX IF NOT EXISTS idx_menu_items_store_id                ON menu_items(store_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_category_id             ON menu_items(menu_category_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_product_id              ON menu_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_recipe_id               ON menu_items(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_is_active               ON menu_items(is_active);
+CREATE INDEX IF NOT EXISTS idx_menu_items_is_available            ON menu_items(is_available);
+CREATE INDEX IF NOT EXISTS idx_menu_items_display_order           ON menu_items(display_order);
 
-CREATE INDEX idx_menu_item_modifiers_item_id        ON menu_item_modifiers(menu_item_id);
-CREATE INDEX idx_menu_item_modifiers_is_active      ON menu_item_modifiers(is_active);
+CREATE INDEX IF NOT EXISTS idx_menu_item_modifiers_item_id        ON menu_item_modifiers(menu_item_id);
+CREATE INDEX IF NOT EXISTS idx_menu_item_modifiers_is_active      ON menu_item_modifiers(is_active);
 
-CREATE INDEX idx_recipes_organization_id            ON recipes(organization_id);
-CREATE INDEX idx_recipes_finished_product_id        ON recipes(finished_product_id);
-CREATE INDEX idx_recipes_is_active                  ON recipes(is_active);
-CREATE INDEX idx_recipes_code                       ON recipes(recipe_code);
+CREATE INDEX IF NOT EXISTS idx_recipes_organization_id            ON recipes(organization_id);
+CREATE INDEX IF NOT EXISTS idx_recipes_finished_product_id        ON recipes(finished_product_id);
+CREATE INDEX IF NOT EXISTS idx_recipes_is_active                  ON recipes(is_active);
+CREATE INDEX IF NOT EXISTS idx_recipes_code                       ON recipes(recipe_code);
 
-CREATE INDEX idx_recipe_ingredients_recipe_id       ON recipe_ingredients(recipe_id);
-CREATE INDEX idx_recipe_ingredients_product_id      ON recipe_ingredients(product_id);
-CREATE INDEX idx_recipe_ingredients_variant_id      ON recipe_ingredients(product_variant_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe_id       ON recipe_ingredients(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_product_id      ON recipe_ingredients(product_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_variant_id      ON recipe_ingredients(product_variant_id);
 
-CREATE INDEX idx_restaurant_orders_store_id         ON restaurant_orders(store_id);
-CREATE INDEX idx_restaurant_orders_table_id         ON restaurant_orders(table_id);
-CREATE INDEX idx_restaurant_orders_cashier_id       ON restaurant_orders(cashier_id);
-CREATE INDEX idx_restaurant_orders_session_id       ON restaurant_orders(cashier_session_id);
-CREATE INDEX idx_restaurant_orders_customer_id      ON restaurant_orders(customer_id);
-CREATE INDEX idx_restaurant_orders_status           ON restaurant_orders(status);
-CREATE INDEX idx_restaurant_orders_source           ON restaurant_orders(order_source);
-CREATE INDEX idx_restaurant_orders_ordered_at       ON restaurant_orders(ordered_at);
-CREATE INDEX idx_restaurant_orders_pos_txn_id       ON restaurant_orders(pos_transaction_id);
-CREATE INDEX idx_restaurant_orders_store_status_time ON restaurant_orders(store_id, status, ordered_at);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_store_id         ON restaurant_orders(store_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_table_id         ON restaurant_orders(table_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_cashier_id       ON restaurant_orders(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_session_id       ON restaurant_orders(cashier_session_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_customer_id      ON restaurant_orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_status           ON restaurant_orders(status);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_source           ON restaurant_orders(order_source);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_ordered_at       ON restaurant_orders(ordered_at);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_pos_txn_id       ON restaurant_orders(pos_transaction_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_store_status_time ON restaurant_orders(store_id, status, ordered_at);
 
-CREATE INDEX idx_restaurant_order_items_order_id    ON restaurant_order_items(order_id);
-CREATE INDEX idx_restaurant_order_items_menu_item   ON restaurant_order_items(menu_item_id);
-CREATE INDEX idx_restaurant_order_items_status      ON restaurant_order_items(status);
+CREATE INDEX IF NOT EXISTS idx_restaurant_order_items_order_id    ON restaurant_order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_order_items_menu_item   ON restaurant_order_items(menu_item_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_order_items_status      ON restaurant_order_items(status);
 
-CREATE INDEX idx_waste_logs_store_id                ON waste_logs(store_id);
-CREATE INDEX idx_waste_logs_product_id              ON waste_logs(product_id);
-CREATE INDEX idx_waste_logs_menu_item_id            ON waste_logs(menu_item_id);
-CREATE INDEX idx_waste_logs_recipe_id               ON waste_logs(recipe_id);
-CREATE INDEX idx_waste_logs_waste_source            ON waste_logs(waste_source);
-CREATE INDEX idx_waste_logs_wasted_at               ON waste_logs(wasted_at);
-CREATE INDEX idx_waste_logs_order_id                ON waste_logs(order_id);
-CREATE INDEX idx_waste_logs_store_source_date       ON waste_logs(store_id, waste_source, wasted_at);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_store_id                ON waste_logs(store_id);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_product_id              ON waste_logs(product_id);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_menu_item_id            ON waste_logs(menu_item_id);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_recipe_id               ON waste_logs(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_waste_source            ON waste_logs(waste_source);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_wasted_at               ON waste_logs(wasted_at);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_order_id                ON waste_logs(order_id);
+CREATE INDEX IF NOT EXISTS idx_waste_logs_store_source_date       ON waste_logs(store_id, waste_source, wasted_at);
 
-CREATE INDEX idx_kiosk_sessions_terminal_id         ON kiosk_sessions(pos_terminal_id);
-CREATE INDEX idx_kiosk_sessions_store_id            ON kiosk_sessions(store_id);
-CREATE INDEX idx_kiosk_sessions_status              ON kiosk_sessions(status);
-CREATE INDEX idx_kiosk_sessions_token               ON kiosk_sessions(session_token);
+CREATE INDEX IF NOT EXISTS idx_kiosk_sessions_terminal_id         ON kiosk_sessions(pos_terminal_id);
+CREATE INDEX IF NOT EXISTS idx_kiosk_sessions_store_id            ON kiosk_sessions(store_id);
+CREATE INDEX IF NOT EXISTS idx_kiosk_sessions_status              ON kiosk_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_kiosk_sessions_token               ON kiosk_sessions(session_token);
 
 
 -- FIX #11 index
@@ -637,9 +659,9 @@ CREATE INDEX idx_kiosk_sessions_token               ON kiosk_sessions(session_to
 -- CREATE INDEX idx_restaurant_order_items_menu_item ON restaurant_order_items(menu_item_id);
 -- CREATE INDEX idx_restaurant_order_items_status   ON restaurant_order_items(status);
 -- FIX #13 indexes
-CREATE INDEX idx_combo_bundles_store_id  ON combo_bundles(store_id);
-CREATE INDEX idx_combo_bundles_is_active ON combo_bundles(is_active);
-CREATE INDEX idx_combo_bundle_items_bundle_id ON combo_bundle_items(combo_bundle_id);
+CREATE INDEX IF NOT EXISTS idx_combo_bundles_store_id  ON combo_bundles(store_id);
+CREATE INDEX IF NOT EXISTS idx_combo_bundles_is_active ON combo_bundles(is_active);
+CREATE INDEX IF NOT EXISTS idx_combo_bundle_items_bundle_id ON combo_bundle_items(combo_bundle_id);
 -- CREATE INDEX idx_waste_logs_store_id     ON waste_logs(store_id);
 -- CREATE INDEX idx_waste_logs_wasted_at    ON waste_logs(wasted_at);
 -- CREATE INDEX idx_kiosk_sessions_token    ON kiosk_sessions(session_token);
@@ -1666,6 +1688,8 @@ ORDER BY
 -- RESTAURANT MODULE VIEWS
 -- =====================================================
 
+DROP VIEW IF EXISTS vw_restaurant_menu CASCADE;
+
 CREATE OR REPLACE VIEW vw_restaurant_menu AS
 SELECT
     mi.id                       AS menu_item_id,
@@ -1680,6 +1704,7 @@ SELECT
     mi.is_available,
     mi.is_active,
     mi.display_order,
+    mi.item_type,
     mi.metadata                 AS item_metadata,
     mc.id                       AS category_id,
     mc.name                     AS category_name,
@@ -1695,6 +1720,7 @@ SELECT
     r.recipe_name,
     r.yield_quantity            AS recipe_yield,
     mi.product_id,
+    mi.product_variant_id,
     p.sku                       AS product_sku,
     (SELECT COUNT(*) FROM menu_item_modifiers m WHERE m.menu_item_id = mi.id AND m.is_active = true)::INTEGER
                                 AS active_modifier_count,
@@ -1788,6 +1814,8 @@ GROUP BY wl.store_id, DATE(wl.wasted_at), wl.waste_source;
 -- RESTAURANT MODULE FUNCTIONS
 -- =====================================================
 
+DROP FUNCTION IF EXISTS fn_get_restaurant_menu CASCADE;
+
 CREATE OR REPLACE FUNCTION fn_get_restaurant_menu(
     p_store_id          INTEGER,
     p_category_id       INTEGER  DEFAULT NULL,
@@ -1809,6 +1837,7 @@ RETURNS TABLE (
     tax_is_inclusive        BOOLEAN,
     recipe_id               INTEGER,
     product_id              INTEGER,
+    product_variant_id      INTEGER,
     active_modifier_count   INTEGER,
     margin_percent          NUMERIC
 ) AS $$
@@ -1830,6 +1859,7 @@ BEGIN
         vm.tax_is_inclusive,
         vm.recipe_id,
         vm.product_id,
+        vm.product_variant_id,
         vm.active_modifier_count,
         vm.margin_percent
     FROM vw_restaurant_menu vm
@@ -3052,11 +3082,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Disabled POS transaction line deduction trigger to prevent double deduction.
+-- Stock deduction occurs only when order fulfillment_status becomes 'fulfilled' via trg_deduct_inventory_on_fulfillment.
 DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;
-CREATE TRIGGER trg_deduct_inventory_on_pos_transaction
-    AFTER INSERT ON pos_transaction_lines
-    FOR EACH ROW
-    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_pos_transaction();
 
 -- =====================================================
 -- Trigger for order line insertion: allocate stock when order is pending/confirmed
@@ -3125,6 +3153,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_allocate_inventory_on_order_line_insert ON sales_order_lines_v2;
 CREATE TRIGGER trg_allocate_inventory_on_order_line_insert
     AFTER INSERT ON sales_order_lines_v2
     FOR EACH ROW
@@ -4078,6 +4107,100 @@ BEGIN
     WHERE v.organization_id = p_organization_id;
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION search_master_product_catalog(
+    p_organization_id INT,
+    p_search TEXT DEFAULT ''
+)
+RETURNS TABLE (
+    product_id INT,
+    sku VARCHAR(100),
+    name VARCHAR(255),
+    description TEXT,
+    product_type VARCHAR(50),
+    is_serialized BOOLEAN,
+    is_batch_managed BOOLEAN,
+    is_active BOOLEAN,
+    is_sellable BOOLEAN,
+    is_purchasable BOOLEAN,
+    allow_decimal_quantity BOOLEAN,
+    track_inventory BOOLEAN,
+    metadata JSONB,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    category_id INT,
+    category_name VARCHAR(255),
+    category_code VARCHAR(50),
+    brand_id INT,
+    brand_name VARCHAR(255),
+    brand_code VARCHAR(50),
+    tax_category_id INT,
+    tax_category_name VARCHAR(100),
+    tax_rate DECIMAL(5,2),
+    tax_inclusive BOOLEAN,
+    base_uom_id INT,
+    base_uom_code VARCHAR(20),
+    base_uom_name VARCHAR(50),
+    uom_conversions JSONB,
+    prices JSONB,
+    variants JSONB,
+    barcodes JSONB,
+    inventory JSONB
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        v.product_id,
+        v.sku,
+        v.name,
+        v.description,
+        v.product_type,
+        v.is_serialized,
+        v.is_batch_managed,
+        v.is_active,
+        v.is_sellable,
+        v.is_purchasable,
+        v.allow_decimal_quantity,
+        v.track_inventory,
+        v.metadata,
+        v.created_at,
+        v.updated_at,
+        v.category_id,
+        v.category_name,
+        v.category_code,
+        v.brand_id,
+        v.brand_name,
+        v.brand_code,
+        v.tax_category_id,
+        v.tax_category_name,
+        v.tax_rate,
+        v.tax_inclusive,
+        v.base_uom_id,
+        v.base_uom_code,
+        v.base_uom_name,
+        v.uom_conversions,
+        v.prices,
+        v.variants,
+        v.barcodes,
+        v.inventory
+    FROM v_master_product_catalog v
+    WHERE v.organization_id = p_organization_id
+      AND (
+        p_search IS NULL OR p_search = '' OR
+        v.sku ILIKE '%' || p_search || '%' OR
+        v.name ILIKE '%' || p_search || '%' OR
+        COALESCE(v.description, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_code, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_code, '') ILIKE '%' || p_search || '%' OR
+        v.barcodes::text ILIKE '%' || p_search || '%' OR
+        v.variants::text ILIKE '%' || p_search || '%'
+      );
+END;
+$$ LANGUAGE plpgsql;
+
 
 -- =====================================================
 -- SALES RETURN & WASTE PROCESSING TRIGGER

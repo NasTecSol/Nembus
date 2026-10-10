@@ -12,6 +12,88 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countPosTransactionsByCashierSession = `-- name: CountPosTransactionsByCashierSession :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
+  AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
+  AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
+`
+
+type CountPosTransactionsByCashierSessionParams struct {
+	Column1 int32            `json:"column_1"`
+	Column2 int32            `json:"column_2"`
+	Column3 pgtype.Timestamp `json:"column_3"`
+	Column4 pgtype.Timestamp `json:"column_4"`
+}
+
+func (q *Queries) CountPosTransactionsByCashierSession(ctx context.Context, arg CountPosTransactionsByCashierSessionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPosTransactionsByCashierSession,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPosTransactionsByCustomerID = `-- name: CountPosTransactionsByCustomerID :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.customer_id = $1
+`
+
+func (q *Queries) CountPosTransactionsByCustomerID(ctx context.Context, customerID pgtype.Int4) (int64, error) {
+	row := q.db.QueryRow(ctx, countPosTransactionsByCustomerID, customerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPosTransactionsByTerminalID = `-- name: CountPosTransactionsByTerminalID :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.pos_terminal_id = $1
+  AND ($2::timestamp IS NULL OR t.transaction_date >= $2)
+  AND ($3::timestamp IS NULL OR t.transaction_date <= $3)
+  AND ($4::varchar IS NULL OR $4 = '' OR t.status = $4)
+`
+
+type CountPosTransactionsByTerminalIDParams struct {
+	PosTerminalID pgtype.Int4      `json:"pos_terminal_id"`
+	FromDate      pgtype.Timestamp `json:"from_date"`
+	ToDate        pgtype.Timestamp `json:"to_date"`
+	Status        pgtype.Text      `json:"status"`
+}
+
+func (q *Queries) CountPosTransactionsByTerminalID(ctx context.Context, arg CountPosTransactionsByTerminalIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPosTransactionsByTerminalID,
+		arg.PosTerminalID,
+		arg.FromDate,
+		arg.ToDate,
+		arg.Status,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTodaysPosTransactions = `-- name: CountTodaysPosTransactions :one
+SELECT COUNT(*)
+FROM pos_transactions t
+WHERE t.store_id = $1
+`
+
+func (q *Queries) CountTodaysPosTransactions(ctx context.Context, storeID int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countTodaysPosTransactions, storeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createPosTransaction = `-- name: CreatePosTransaction :one
 INSERT INTO pos_transactions (
     transaction_number,
@@ -394,8 +476,8 @@ LEFT JOIN product_barcodes pb
     ON pb.product_id = p.id 
    AND pb.is_primary = true
    AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
-WHERE ($1 = 0 OR t.cashier_id = $1)
-  AND ($2 = 0 OR t.cashier_session_id = $2)
+WHERE ($1::int = 0 OR t.cashier_id = $1::int)
+  AND ($2::int = 0 OR t.cashier_session_id = $2::int)
   AND ($3::timestamp IS NULL OR t.transaction_date >= $3)
   AND ($4::timestamp IS NULL OR t.transaction_date <= $4)
 GROUP BY
@@ -429,13 +511,16 @@ GROUP BY
     sess.session_number,
     cust.name
 ORDER BY t.transaction_date DESC, t.id
+LIMIT $6 OFFSET $5
 `
 
 type ListPosTransactionsByCashierSessionParams struct {
-	Column1 interface{}      `json:"column_1"`
-	Column2 interface{}      `json:"column_2"`
+	Column1 int32            `json:"column_1"`
+	Column2 int32            `json:"column_2"`
 	Column3 pgtype.Timestamp `json:"column_3"`
 	Column4 pgtype.Timestamp `json:"column_4"`
+	Offset  int32            `json:"offset"`
+	Limit   int32            `json:"limit"`
 }
 
 type ListPosTransactionsByCashierSessionRow struct {
@@ -476,6 +561,8 @@ func (q *Queries) ListPosTransactionsByCashierSession(ctx context.Context, arg L
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
+		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
@@ -675,6 +762,210 @@ func (q *Queries) ListPosTransactionsByCustomerID(ctx context.Context, arg ListP
 	var items []ListPosTransactionsByCustomerIDRow
 	for rows.Next() {
 		var i ListPosTransactionsByCustomerIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.PosTerminalID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.TransactionType,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.TotalCost,
+			&i.AmountPaid,
+			&i.ChangeGiven,
+			&i.Status,
+			&i.PriceListID,
+			&i.SalesOrderID,
+			&i.SourceCartID,
+			&i.VoidedBy,
+			&i.VoidedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.CashierName,
+			&i.TerminalName,
+			&i.SessionNumber,
+			&i.CustomerName,
+			&i.Lines,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPosTransactionsByTerminalID = `-- name: ListPosTransactionsByTerminalID :many
+SELECT 
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
+    COALESCE(term.terminal_name, '') AS terminal_name,
+    COALESCE(sess.session_number, '') AS session_number,
+    COALESCE(cust.name, '') AS customer_name,
+    COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'id', tl.id,
+                'transaction_id', tl.transaction_id,
+                'line_number', tl.line_number,
+                'product_id', tl.product_id,
+                'product_variant_id', tl.product_variant_id,
+                'serial_number', tl.serial_number,
+                'batch_number', tl.batch_number,
+                'quantity', tl.quantity,
+                'uom_id', tl.uom_id,
+                'unit_price', tl.unit_price,
+                'discount_amount', tl.discount_amount,
+                'tax_amount', tl.tax_amount,
+                'subtotal', tl.subtotal,
+                'line_total', tl.line_total,
+                'cost_price', tl.cost_price,
+                'metadata', tl.metadata,
+                'product_sku', p.sku,
+                'product_name', p.name,
+                'scanned_barcode', COALESCE(pb.barcode, '')
+            ) ORDER BY tl.line_number
+        ) FILTER (WHERE tl.id IS NOT NULL),
+        '[]'::jsonb
+    ) AS lines
+FROM pos_transactions t
+LEFT JOIN cashiers          cshr   ON t.cashier_id         = cshr.id
+LEFT JOIN users             cashier ON cshr.user_id        = cashier.id
+LEFT JOIN pos_terminals     term   ON t.pos_terminal_id    = term.id
+LEFT JOIN cashier_sessions  sess   ON t.cashier_session_id = sess.id
+LEFT JOIN customers    cust   ON t.customer_id        = cust.id
+LEFT JOIN pos_transaction_lines tl ON tl.transaction_id    = t.id
+LEFT JOIN products          p      ON tl.product_id        = p.id
+LEFT JOIN product_barcodes pb 
+    ON pb.product_id = p.id 
+   AND pb.is_primary = true
+   AND (pb.product_variant_id = tl.product_variant_id OR tl.product_variant_id IS NULL)
+WHERE t.pos_terminal_id = $1
+  AND ($2::timestamp IS NULL OR t.transaction_date >= $2)
+  AND ($3::timestamp IS NULL OR t.transaction_date <= $3)
+  AND ($4::varchar IS NULL OR $4 = '' OR t.status = $4)
+GROUP BY
+    t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    t.pos_terminal_id,
+    t.transaction_number,
+    t.transaction_date,
+    t.transaction_type,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
+    t.total_amount,
+    t.total_cost,
+    t.amount_paid,
+    t.change_given,
+    t.status,
+    t.price_list_id,
+    t.sales_order_id,
+    t.source_cart_id,
+    t.voided_by,
+    t.voided_at,
+    t.metadata,
+    t.created_at,
+    cashier.first_name,
+    cashier.last_name,
+    term.terminal_name,
+    sess.session_number,
+    cust.name
+ORDER BY t.transaction_date DESC, t.id DESC
+LIMIT $6 OFFSET $5
+`
+
+type ListPosTransactionsByTerminalIDParams struct {
+	PosTerminalID pgtype.Int4      `json:"pos_terminal_id"`
+	FromDate      pgtype.Timestamp `json:"from_date"`
+	ToDate        pgtype.Timestamp `json:"to_date"`
+	Status        pgtype.Text      `json:"status"`
+	Offset        int32            `json:"offset"`
+	Limit         int32            `json:"limit"`
+}
+
+type ListPosTransactionsByTerminalIDRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	CashierName       interface{}      `json:"cashier_name"`
+	TerminalName      string           `json:"terminal_name"`
+	SessionNumber     string           `json:"session_number"`
+	CustomerName      string           `json:"customer_name"`
+	Lines             interface{}      `json:"lines"`
+}
+
+func (q *Queries) ListPosTransactionsByTerminalID(ctx context.Context, arg ListPosTransactionsByTerminalIDParams) ([]ListPosTransactionsByTerminalIDRow, error) {
+	rows, err := q.db.Query(ctx, listPosTransactionsByTerminalID,
+		arg.PosTerminalID,
+		arg.FromDate,
+		arg.ToDate,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPosTransactionsByTerminalIDRow
+	for rows.Next() {
+		var i ListPosTransactionsByTerminalIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.StoreID,

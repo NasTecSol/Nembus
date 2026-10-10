@@ -868,15 +868,28 @@ WHERE id = $1;
 SELECT * FROM invoices
 WHERE invoice_number = $1;
 
+-- name: CountInvoices :one
+SELECT COUNT(*) FROM invoices
+WHERE organization_id = $1
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('invoice_status')::invoice_status IS NULL OR invoice_status = sqlc.narg('invoice_status'))
+  AND (sqlc.narg('from_date')::date IS NULL OR invoice_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR invoice_date <= sqlc.narg('to_date'));
+
 -- name: ListInvoices :many
 SELECT * FROM invoices
 WHERE organization_id = $1
-  AND ($2::int IS NULL OR store_id = $2)
-  AND ($3::invoice_status IS NULL OR invoice_status = $3)
-  AND ($4::date IS NULL OR invoice_date >= $4)
-  AND ($5::date IS NULL OR invoice_date <= $5)
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('invoice_status')::invoice_status IS NULL OR invoice_status = sqlc.narg('invoice_status'))
+  AND (sqlc.narg('from_date')::date IS NULL OR invoice_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR invoice_date <= sqlc.narg('to_date'))
 ORDER BY invoice_date DESC, created_at DESC
-LIMIT $6 OFFSET $7;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountCustomerInvoices :one
+SELECT COUNT(*) FROM invoices
+WHERE customer_id = $1
+  AND organization_id = $2;
 
 -- name: ListCustomerInvoices :many
 SELECT * FROM invoices
@@ -884,6 +897,14 @@ WHERE customer_id = $1
   AND organization_id = $2
 ORDER BY invoice_date DESC
 LIMIT $3 OFFSET $4;
+
+-- name: CountOverdueInvoices :one
+SELECT COUNT(*)
+FROM invoices i
+WHERE i.store_id = $1
+  AND i.invoice_status IN ('sent', 'viewed', 'partially_paid')
+  AND i.due_date < CURRENT_DATE
+  AND i.balance_due > 0;
 
 -- name: ListOverdueInvoices :many
 SELECT i.*, c.name as customer_name_full, c.email as customer_email_full
@@ -990,9 +1011,10 @@ SELECT
     COALESCE(SUM(paid_amount), 0) as total_paid,
     COALESCE(SUM(balance_due), 0) as total_outstanding
 FROM invoices
-WHERE store_id = $1
-  AND invoice_date >= $2
-  AND invoice_date <= $3;
+WHERE organization_id = $1
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('from_date')::date IS NULL OR invoice_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR invoice_date <= sqlc.narg('to_date'));
 
 -- =====================================================
 -- INVOICE LINES

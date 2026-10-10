@@ -267,10 +267,15 @@ CREATE TABLE "public"."bp_price_contracts" (
   "id" serial NOT NULL,
   "organization_id" integer NOT NULL,
   "partner_id" integer NOT NULL,
-  "product_id" integer NOT NULL,
+  "product_id" integer NULL,
   "product_variant_id" integer NULL,
-  "contract_price" numeric(15,4) NOT NULL,
+  "uom_id" integer NULL,
+  "contract_price" numeric(15,4) NULL DEFAULT 0.0000,
+  "contract_type" character varying(20) NULL DEFAULT 'ITEM',
+  "min_order_amount" numeric(15,2) NULL DEFAULT 0.00,
   "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
+  "discount_type" character varying(20) NULL DEFAULT 'percentage',
+  "discount_amount" numeric(15,2) NULL DEFAULT 0.00,
   "min_quantity" numeric(15,3) NULL DEFAULT 1,
   "valid_from" date NULL,
   "valid_to" date NULL,
@@ -279,11 +284,12 @@ CREATE TABLE "public"."bp_price_contracts" (
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
-  CONSTRAINT "bp_price_contracts_partner_id_product_id_product_variant_id_key" UNIQUE ("partner_id", "product_id", "product_variant_id"),
+  CONSTRAINT "bp_price_contracts_partner_id_product_id_product_variant_id_key" UNIQUE ("partner_id", "product_id", "product_variant_id", "uom_id"),
   CONSTRAINT "bp_price_contracts_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "bp_price_contracts_partner_id_fkey" FOREIGN KEY ("partner_id") REFERENCES "public"."business_partners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "bp_price_contracts_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
-  CONSTRAINT "bp_price_contracts_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+  CONSTRAINT "bp_price_contracts_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "bp_price_contracts_uom_id_fkey" FOREIGN KEY ("uom_id") REFERENCES "public"."units_of_measure" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
 -- Create index "idx_bp_price_contracts_bp_product" to table: "bp_price_contracts"
 CREATE INDEX "idx_bp_price_contracts_bp_product" ON "public"."bp_price_contracts" ("partner_id", "product_id");
@@ -794,6 +800,7 @@ CREATE TABLE "public"."purchase_orders" (
   "tax_amount" numeric(15,2) NULL DEFAULT 0,
   "total_amount" numeric(15,2) NULL DEFAULT 0,
   "price_list_id" integer NULL,
+  "applied_contract_id" integer NULL,
   "created_by" integer NULL,
   "approved_by" integer NULL,
   "metadata" jsonb NULL DEFAULT '{}',
@@ -801,6 +808,7 @@ CREATE TABLE "public"."purchase_orders" (
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "purchase_orders_po_number_key" UNIQUE ("po_number"),
+  CONSTRAINT "purchase_orders_applied_contract_id_fkey" FOREIGN KEY ("applied_contract_id") REFERENCES "public"."bp_price_contracts" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "purchase_orders_approved_by_fkey" FOREIGN KEY ("approved_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "purchase_orders_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "purchase_orders_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -944,14 +952,13 @@ CREATE TABLE "public"."inventory_stock" (
 CREATE INDEX "idx_inventory_stock_product_id" ON "public"."inventory_stock" ("product_id");
 -- Create index "idx_inventory_stock_product_variant_id" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_product_variant_id" ON "public"."inventory_stock" ("product_variant_id");
+CREATE INDEX "idx_inventory_stock_product_variant_store" ON "public"."inventory_stock" ("product_id", (COALESCE("product_variant_id", -1)), "store_id");
 -- Create index "idx_inventory_stock_storage_location_id" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_storage_location_id" ON "public"."inventory_stock" ("storage_location_id");
 -- Create index "idx_inventory_stock_store_id" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_store_id" ON "public"."inventory_stock" ("store_id");
 -- Create index "idx_inventory_stock_store_product_qty" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_store_product_qty" ON "public"."inventory_stock" ("store_id", "product_id", "quantity_available");
--- Create index "idx_inventory_stock_unique_product_variant_store" to table: "inventory_stock"
-CREATE UNIQUE INDEX "idx_inventory_stock_unique_product_variant_store" ON "public"."inventory_stock" ("product_id", (COALESCE(product_variant_id, '-1'::integer)), "store_id");
 -- Create trigger "trg_inventory_stock_updated_at"
 CREATE TRIGGER "trg_inventory_stock_updated_at" BEFORE UPDATE ON "public"."inventory_stock" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "update_inventory_stock_updated_at"
@@ -1419,6 +1426,7 @@ CREATE TABLE "public"."menu_items" (
   "store_id" integer NOT NULL,
   "menu_category_id" integer NOT NULL,
   "product_id" integer NULL,
+  "product_variant_id" integer NULL,
   "recipe_id" integer NULL,
   "name" character varying(255) NOT NULL,
   "short_name" character varying(50) NULL,
@@ -1431,13 +1439,16 @@ CREATE TABLE "public"."menu_items" (
   "is_available" boolean NULL DEFAULT true,
   "is_active" boolean NULL DEFAULT true,
   "display_order" integer NULL DEFAULT 0,
+  "item_type" character varying(20) NOT NULL DEFAULT 'standard',
   "metadata" jsonb NULL DEFAULT '{}',
   "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_menu_items_recipe" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_menu_category_id_fkey" FOREIGN KEY ("menu_category_id") REFERENCES "public"."menu_categories" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "menu_items_item_type_check" CHECK (item_type IN ('standard', 'combo')),
   CONSTRAINT "menu_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "menu_items_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "menu_items_tax_category_id_fkey" FOREIGN KEY ("tax_category_id") REFERENCES "public"."tax_categories" ("id") ON UPDATE NO ACTION ON DELETE SET NULL
 );
@@ -1457,6 +1468,22 @@ CREATE INDEX "idx_menu_items_recipe_id" ON "public"."menu_items" ("recipe_id");
 CREATE INDEX "idx_menu_items_store_id" ON "public"."menu_items" ("store_id");
 -- Create trigger "trg_menu_items_updated_at"
 CREATE TRIGGER "trg_menu_items_updated_at" BEFORE UPDATE ON "public"."menu_items" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create "menu_item_combo_components" table
+CREATE TABLE "public"."menu_item_combo_components" (
+  "id" serial NOT NULL,
+  "parent_menu_item_id" integer NOT NULL,
+  "component_menu_item_id" integer NOT NULL,
+  "group_name" character varying(100) NOT NULL,
+  "min_selection" integer NULL DEFAULT 1,
+  "max_selection" integer NULL DEFAULT 1,
+  "price_adjustment" numeric(15,2) NULL DEFAULT 0.00,
+  "display_order" integer NULL DEFAULT 0,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "fk_parent_menu_item" FOREIGN KEY ("parent_menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "fk_component_menu_item" FOREIGN KEY ("component_menu_item_id") REFERENCES "public"."menu_items" ("id") ON UPDATE NO ACTION ON DELETE RESTRICT
+);
 -- Create "menu_modifier_groups" table
 CREATE TABLE "public"."menu_modifier_groups" (
   "id" serial NOT NULL,
@@ -1877,8 +1904,7 @@ CREATE TABLE "public"."pos_transaction_lines" (
 CREATE INDEX "idx_pos_transaction_lines_product_id" ON "public"."pos_transaction_lines" ("product_id");
 -- Create index "idx_pos_transaction_lines_transaction_id" to table: "pos_transaction_lines"
 CREATE INDEX "idx_pos_transaction_lines_transaction_id" ON "public"."pos_transaction_lines" ("transaction_id");
--- Create trigger "trg_deduct_inventory_on_pos_transaction"
-CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
+-- Disabled: CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
 -- Create trigger "trg_pos_transactions_updated_at"
 CREATE TRIGGER "trg_pos_transactions_updated_at" BEFORE UPDATE ON "public"."pos_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "trg_price_lists_updated_at"
@@ -2259,6 +2285,45 @@ CREATE TABLE "public"."promotions" (
 CREATE TRIGGER "trg_sync_promotion_to_product_prices" AFTER DELETE OR INSERT OR UPDATE ON "public"."promotions" FOR EACH ROW EXECUTE FUNCTION "public"."fn_sync_promotion_to_product_prices"();
 -- Create trigger "trg_promotions_updated_at"
 CREATE TRIGGER "trg_promotions_updated_at" BEFORE UPDATE ON "public"."promotions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+-- Create "restaurant_promotions" table
+CREATE TABLE "public"."restaurant_promotions" (
+  "id" serial NOT NULL,
+  "store_id" integer NOT NULL,
+  "code" character varying(50) NOT NULL,
+  "name" character varying(255) NOT NULL,
+  "description" text NULL,
+  "promotion_type" character varying(50) NOT NULL,
+  "action_metadata" jsonb NULL DEFAULT '{}',
+  "valid_from" timestamp NULL,
+  "valid_to" timestamp NULL,
+  "schedule_json" jsonb NULL DEFAULT '{}',
+  "applies_to" character varying(50) NULL DEFAULT 'all',
+  "target_menu_item_ids" integer[] NULL DEFAULT '{}',
+  "target_menu_category_ids" integer[] NULL DEFAULT '{}',
+  "target_customer_types" text[] NULL DEFAULT '{}',
+  "target_customer_tiers" text[] NULL DEFAULT '{}',
+  "min_order_amount" numeric(15,2) NULL,
+  "min_quantity" numeric(15,3) NULL,
+  "coupon_code" character varying(50) NULL,
+  "usage_limit" integer NULL,
+  "usage_count" integer NULL DEFAULT 0,
+  "usage_per_customer" integer NULL,
+  "discount_value" numeric(15,4) NULL,
+  "is_stackable" boolean NULL DEFAULT false,
+  "is_active" boolean NULL DEFAULT true,
+  "created_by" integer NULL,
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "restaurant_promotions_store_id_code_key" UNIQUE ("store_id", "code"),
+  CONSTRAINT "restaurant_promotions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
+  CONSTRAINT "restaurant_promotions_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "restaurant_promotions_applies_to_check" CHECK ((applies_to)::text = ANY ((ARRAY['all'::character varying, 'menu_category'::character varying, 'menu_item'::character varying])::text[])),
+  CONSTRAINT "restaurant_promotions_promotion_type_check" CHECK ((promotion_type)::text = ANY ((ARRAY['percentage_discount'::character varying, 'fixed_discount'::character varying, 'bogo'::character varying, 'buy_x_get_y'::character varying, 'free_item'::character varying, 'bundle_price'::character varying, 'points_multiplier'::character varying, 'happy_hour'::character varying, 'bucket_combo'::character varying])::text[]))
+);
+-- Create trigger "trg_restaurant_promotions_updated_at"
+CREATE TRIGGER "trg_restaurant_promotions_updated_at" BEFORE UPDATE ON "public"."restaurant_promotions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create "purchase_analytics" table
 CREATE TABLE "public"."purchase_analytics" (
   "id" serial NOT NULL,
@@ -3885,6 +3950,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
   "is_available",
   "is_active",
   "display_order",
+  "item_type",
   "item_metadata",
   "category_id",
   "category_name",
@@ -3900,6 +3966,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
   "recipe_name",
   "recipe_yield",
   "product_id",
+  "product_variant_id",
   "product_sku",
   "active_modifier_count",
   "margin_percent"
@@ -3915,6 +3982,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
     mi.is_available,
     mi.is_active,
     mi.display_order,
+    mi.item_type,
     mi.metadata AS item_metadata,
     mc.id AS category_id,
     mc.name AS category_name,
@@ -3930,6 +3998,7 @@ CREATE VIEW "public"."vw_restaurant_menu" (
     r.recipe_name,
     r.yield_quantity AS recipe_yield,
     mi.product_id,
+    mi.product_variant_id,
     p.sku AS product_sku,
     (( SELECT count(*) AS count
            FROM public.menu_item_modifiers m
@@ -3946,7 +4015,8 @@ CREATE VIEW "public"."vw_restaurant_menu" (
      LEFT JOIN public.products p ON mi.product_id = p.id
   WHERE mi.is_active = true;
 -- Create "fn_get_restaurant_menu" function
-CREATE FUNCTION "public"."fn_get_restaurant_menu" ("p_store_id" integer, "p_category_id" integer DEFAULT NULL::integer, "p_include_unavail" boolean DEFAULT false) RETURNS TABLE ("menu_item_id" integer, "item_name" character varying, "short_name" character varying, "description" text, "image_url" text, "base_price" numeric, "preparation_time_min" integer, "is_available" boolean, "category_id" integer, "category_name" character varying, "parent_category_name" character varying, "tax_rate" numeric, "tax_is_inclusive" boolean, "recipe_id" integer, "product_id" integer, "active_modifier_count" integer, "margin_percent" numeric) LANGUAGE plpgsql AS $$
+DROP FUNCTION IF EXISTS "public"."fn_get_restaurant_menu" CASCADE;
+CREATE FUNCTION "public"."fn_get_restaurant_menu" ("p_store_id" integer, "p_category_id" integer DEFAULT NULL::integer, "p_include_unavail" boolean DEFAULT false) RETURNS TABLE ("menu_item_id" integer, "item_name" character varying, "short_name" character varying, "description" text, "image_url" text, "base_price" numeric, "preparation_time_min" integer, "is_available" boolean, "category_id" integer, "category_name" character varying, "parent_category_name" character varying, "tax_rate" numeric, "tax_is_inclusive" boolean, "recipe_id" integer, "product_id" integer, "product_variant_id" integer, "active_modifier_count" integer, "margin_percent" numeric) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY
     SELECT
@@ -3965,6 +4035,7 @@ BEGIN
         vm.tax_is_inclusive,
         vm.recipe_id,
         vm.product_id,
+        vm.product_variant_id,
         vm.active_modifier_count,
         vm.margin_percent
     FROM vw_restaurant_menu vm
@@ -5620,6 +5691,60 @@ BEGIN
         v.inventory
     FROM v_master_product_catalog v
     WHERE v.organization_id = p_organization_id;
+END;
+$$;
+-- Create "search_master_product_catalog" function
+CREATE FUNCTION "public"."search_master_product_catalog" ("p_organization_id" integer, "p_search" text DEFAULT ''::text) RETURNS TABLE ("product_id" integer, "sku" character varying, "name" character varying, "description" text, "product_type" character varying, "is_serialized" boolean, "is_batch_managed" boolean, "is_active" boolean, "is_sellable" boolean, "is_purchasable" boolean, "allow_decimal_quantity" boolean, "track_inventory" boolean, "metadata" jsonb, "created_at" timestamp, "updated_at" timestamp, "category_id" integer, "category_name" character varying, "category_code" character varying, "brand_id" integer, "brand_name" character varying, "brand_code" character varying, "tax_category_id" integer, "tax_category_name" character varying, "tax_rate" numeric, "tax_inclusive" boolean, "base_uom_id" integer, "base_uom_code" character varying, "base_uom_name" character varying, "uom_conversions" jsonb, "prices" jsonb, "variants" jsonb, "barcodes" jsonb, "inventory" jsonb) LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        v.product_id,
+        v.sku,
+        v.name,
+        v.description,
+        v.product_type,
+        v.is_serialized,
+        v.is_batch_managed,
+        v.is_active,
+        v.is_sellable,
+        v.is_purchasable,
+        v.allow_decimal_quantity,
+        v.track_inventory,
+        v.metadata,
+        v.created_at,
+        v.updated_at,
+        v.category_id,
+        v.category_name,
+        v.category_code,
+        v.brand_id,
+        v.brand_name,
+        v.brand_code,
+        v.tax_category_id,
+        v.tax_category_name,
+        v.tax_rate,
+        v.tax_inclusive,
+        v.base_uom_id,
+        v.base_uom_code,
+        v.base_uom_name,
+        v.uom_conversions,
+        v.prices,
+        v.variants,
+        v.barcodes,
+        v.inventory
+    FROM v_master_product_catalog v
+    WHERE v.organization_id = p_organization_id
+      AND (
+        p_search IS NULL OR p_search = '' OR
+        v.sku ILIKE '%' || p_search || '%' OR
+        v.name ILIKE '%' || p_search || '%' OR
+        COALESCE(v.description, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.category_code, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_name, '') ILIKE '%' || p_search || '%' OR
+        COALESCE(v.brand_code, '') ILIKE '%' || p_search || '%' OR
+        v.barcodes::text ILIKE '%' || p_search || '%' OR
+        v.variants::text ILIKE '%' || p_search || '%'
+      );
 END;
 $$;
 -- Create "audit_logs" table

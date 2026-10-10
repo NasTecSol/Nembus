@@ -63,9 +63,9 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 		return utils.NewResponse(utils.CodeError, "invalid credentials", nil)
 	}
 
-	// Generate JWT token - convert user ID from int32 to string
+	// Generate JWT token - convert user ID from int32 to string and include organization ID
 	userIDStr := strconv.FormatInt(int64(user.ID), 10)
-	token, err := middleware.GenerateJWTToken(userIDStr, userLogin)
+	token, err := middleware.GenerateJWTToken(userIDStr, userLogin, user.OrganizationID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to generate token", nil)
 	}

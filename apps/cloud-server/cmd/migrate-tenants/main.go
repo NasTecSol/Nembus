@@ -27,6 +27,7 @@ func main() {
 	includeMaster := flag.Bool("master", true, "Also run migrations on the master database")
 	declarativeMode := flag.Bool("declarative", false, "Use declarative schema sync (atlas schema apply) instead of versioned migrations")
 	schemaDir := flag.String("schema", "", "Directory containing Atlas SQL schema files (for declarative mode; default: auto-detected packages/core/db/schema)")
+	viewsPath := flag.String("views", "", "Path to SQL file or directory containing views, functions, and triggers to apply after schema apply (default: auto-detected packages/core/db/views_functions/90_views_functions.sql)")
 	devDBURL := flag.String("dev-url", "", "Dev database URL for Atlas schema calculation (default: ATLAS_DEV_URL env var or docker://postgres/16/dev)")
 	migrationsDir := flag.String("dir", "", "Directory containing Atlas migration files (default: auto-detected packages/core/db/migrations)")
 	baselineVer := flag.String("baseline", "", "Baseline migration version. Leave empty (default) to AUTO-DETECT per database: empty DBs and DBs already tracked by Atlas (atlas_schema_revisions) get no baseline; DBs that have schema but no revisions table get the first migration version. Set it explicitly to force the same baseline for every database (e.g. -baseline 20260813124500) — a baseline that does not exist in the migration directory is a hard error.")
@@ -81,7 +82,7 @@ func main() {
 		log.Fatalf("❌ Invalid MASTER_DB_URL: %v", err)
 	}
 
-	var absSchemaPath, devURL string
+	var absSchemaPath, devURL, absViewsPath string
 	var absMigPath, firstMig string
 
 	if *declarativeMode {
@@ -92,6 +93,13 @@ func main() {
 		log.Printf("✓ Declarative mode active. Using schema directory: %s\n", absSchemaPath)
 		devURL = resolveDevURL(*devDBURL)
 		log.Printf("✓ Using dev database: %s\n", devURL)
+		absViewsPath, err = resolveViewsPath(*viewsPath)
+		if err != nil {
+			log.Fatalf("Failed to resolve views/functions path: %v", err)
+		}
+		if absViewsPath != "" {
+			log.Printf("✓ Using views/functions file: %s\n", absViewsPath)
+		}
 	} else {
 		// Resolve migrations directory
 		migPath := *migrationsDir
@@ -155,6 +163,13 @@ func main() {
 			if err := executeAtlasDeclarative(atlasBin, masterURL, absSchemaPath, devURL, *statusOnly); err != nil {
 				log.Fatalf("❌ Master database declarative schema sync failed: %v", err)
 			}
+			if !*statusOnly && absViewsPath != "" {
+				log.Printf("⚡ Applying views, functions and triggers to Master Database from %s...\n", absViewsPath)
+				if err := applySQLScript(ctx, masterURL, absViewsPath); err != nil {
+					log.Fatalf("❌ Master database views/functions apply failed: %v", err)
+				}
+				log.Println("✅ Master database views, functions and triggers applied successfully!")
+			}
 		} else {
 			baseline, err := resolveBaseline(ctx, masterURL, *baselineVer, firstMig)
 			if err != nil {
@@ -217,6 +232,13 @@ func main() {
 				log.Printf("❌ Failed to apply declarative schema to tenant %s: %v\n", tenant.Slug, err)
 				failedCount++
 				continue
+			}
+			if !*statusOnly && absViewsPath != "" {
+				if err := applySQLScript(ctx, tenantURL, absViewsPath); err != nil {
+					log.Printf("❌ Failed to apply views and functions to tenant %s: %v\n", tenant.Slug, err)
+					failedCount++
+					continue
+				}
 			}
 			log.Printf("✅ Successfully synced declarative schema for tenant: %s\n", tenant.Slug)
 			successCount++
@@ -549,3 +571,61 @@ func getAllActiveTenants(ctx context.Context, pool *pgxpool.Pool) ([]repository.
 
 	return tenants, nil
 }
+
+// resolveViewsPath determines the absolute path to the SQL file containing views, functions, and triggers.
+func resolveViewsPath(customPath string) (string, error) {
+	if customPath != "" {
+		abs, err := filepath.Abs(customPath)
+		if err != nil {
+			return "", fmt.Errorf("resolve views path: %w", err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return "", fmt.Errorf("views path %q does not exist: %w", customPath, err)
+		}
+		if info.IsDir() {
+			candidate := filepath.Join(abs, "90_views_functions.sql")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+			return abs, nil
+		}
+		return abs, nil
+	}
+
+	candidates := []string{
+		"../../packages/core/db/views_functions/90_views_functions.sql",
+		"../packages/core/db/views_functions/90_views_functions.sql",
+		"packages/core/db/views_functions/90_views_functions.sql",
+		"./views_functions/90_views_functions.sql",
+		"/app/views_functions/90_views_functions.sql",
+		"./schema/views_functions/90_views_functions.sql",
+		"./90_views_functions.sql",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return filepath.Abs(c)
+		}
+	}
+	return "", nil
+}
+
+// applySQLScript executes raw SQL statements from a file against the target database using pgxpool.
+func applySQLScript(ctx context.Context, dbURL, filePath string) error {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read sql file %s: %w", filePath, err)
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect to db for script execution: %w", err)
+	}
+	defer pool.Close()
+
+	if _, err := pool.Exec(ctx, string(content)); err != nil {
+		return fmt.Errorf("execute sql script %s: %w", filePath, err)
+	}
+	return nil
+}
+

@@ -33,11 +33,18 @@ SELECT stock_movements.*
 FROM stock_movements
 WHERE stock_movements.id = $1;
 
+-- name: CountStockMovements :one
+SELECT COUNT(*) FROM stock_movements;
+
 -- name: ListStockMovements :many
 SELECT stock_movements.*
 FROM stock_movements
 ORDER BY stock_movements.movement_date DESC
 LIMIT $1 OFFSET $2;
+
+-- name: CountStockMovementsByProduct :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.product_id = $1;
 
 -- name: ListStockMovementsByProduct :many
 SELECT stock_movements.*
@@ -45,6 +52,13 @@ FROM stock_movements
 WHERE stock_movements.product_id = $1
 ORDER BY stock_movements.movement_date DESC
 LIMIT $2 OFFSET $3;
+
+-- name: CountStockMovementsByProductWithDateRange :one
+SELECT COUNT(*)
+FROM stock_movements sm
+WHERE sm.product_id = $1
+  AND ($2::timestamp IS NULL OR sm.movement_date >= $2)
+  AND ($3::timestamp IS NULL OR sm.movement_date <= $3);
 
 -- name: ListStockMovementsByProductWithDateRange :many
 SELECT
@@ -59,7 +73,12 @@ LEFT JOIN units_of_measure uom ON sm.uom_id = uom.id
 WHERE sm.product_id = $1
   AND ($2::timestamp IS NULL OR sm.movement_date >= $2)
   AND ($3::timestamp IS NULL OR sm.movement_date <= $3)
-ORDER BY sm.movement_date DESC;
+ORDER BY sm.movement_date DESC
+LIMIT $4 OFFSET $5;
+
+-- name: CountStockMovementsByStore :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.from_store_id = $1 OR stock_movements.to_store_id = $1;
 
 -- name: ListStockMovementsByStore :many
 SELECT stock_movements.*
@@ -68,6 +87,10 @@ WHERE stock_movements.from_store_id = $1 OR stock_movements.to_store_id = $1
 ORDER BY stock_movements.movement_date DESC
 LIMIT $2 OFFSET $3;
 
+-- name: CountStockMovementsByType :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.movement_type = $1;
+
 -- name: ListStockMovementsByType :many
 SELECT stock_movements.*
 FROM stock_movements
@@ -75,17 +98,27 @@ WHERE stock_movements.movement_type = $1
 ORDER BY stock_movements.movement_date DESC
 LIMIT $2 OFFSET $3;
 
+-- name: CountStockMovementsByReference :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.reference_type = $1 AND stock_movements.reference_id = $2;
+
 -- name: ListStockMovementsByReference :many
 SELECT stock_movements.*
 FROM stock_movements
 WHERE stock_movements.reference_type = $1 AND stock_movements.reference_id = $2
-ORDER BY stock_movements.movement_date DESC;
+ORDER BY stock_movements.movement_date DESC
+LIMIT $3 OFFSET $4;
+
+-- name: CountStockMovementsByDateRange :one
+SELECT COUNT(*) FROM stock_movements
+WHERE stock_movements.movement_date >= $1 AND stock_movements.movement_date <= $2;
 
 -- name: ListStockMovementsByDateRange :many
 SELECT stock_movements.*
 FROM stock_movements
 WHERE stock_movements.movement_date >= $1 AND stock_movements.movement_date <= $2
-ORDER BY stock_movements.movement_date DESC;
+ORDER BY stock_movements.movement_date DESC
+LIMIT $3 OFFSET $4;
 
 -- name: GetStockMovementsByProductAndStore :many
 SELECT stock_movements.*

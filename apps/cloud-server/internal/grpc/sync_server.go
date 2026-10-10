@@ -9,12 +9,12 @@ import (
 	"io"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -118,16 +118,16 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	// Dynamic ingestion routing by entity type
 	switch event.EntityType {
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
-		"sales_orders_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
+		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
 		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
-		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.PayloadJson); err != nil {
-			log.Printf("[gRPC SyncServer] Ingestion error for %s (ID %d): %v", event.EntityType, event.EntityId, err)
+		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.Action, event.PayloadJson); err != nil {
+			log.Printf("[gRPC SyncServer] Ingestion error for %s (action=%s, ID %d): %v", event.EntityType, event.Action, event.EntityId, err)
 			return err
 		}
-		log.Printf("[gRPC SyncServer] Successfully ingested %s entity ID %d (Correlation: %s) for store %d",
-			event.EntityType, event.EntityId, event.CorrelationId, event.StoreId)
+		log.Printf("[gRPC SyncServer] Successfully ingested %s entity ID %d (action=%s, Correlation: %s) for store %d",
+			event.EntityType, event.EntityId, event.Action, event.CorrelationId, event.StoreId)
 	default:
-		log.Printf("[gRPC SyncServer] Processed generic entity %s ID %d", event.EntityType, event.EntityId)
+		return fmt.Errorf("unsupported sync entity type: %s", event.EntityType)
 	}
 
 	// Insert into raw sync log / store outbox log for processing
@@ -152,78 +152,171 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	return nil
 }
 
-var tableColumnsCache sync.Map
-
-func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) string {
-	if val, ok := tableColumnsCache.Load(table); ok {
-		return val.(string)
-	}
-
+func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) (string, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT column_name 
 		FROM information_schema.columns 
-		WHERE table_name = $1 AND column_name NOT IN ('id', 'created_at')
+		WHERE table_schema = current_schema() AND table_name = $1
+		  AND column_name NOT IN ('id', 'created_at') AND is_generated = 'NEVER'
 		ORDER BY ordinal_position;
 	`, table)
 	if err != nil {
-		return "id = EXCLUDED.id"
+		return "", fmt.Errorf("read columns for %s: %w", table, err)
 	}
 	defer rows.Close()
 
 	var sets []string
 	for rows.Next() {
 		var col string
-		if err := rows.Scan(&col); err == nil {
-			sets = append(sets, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
+		if err := rows.Scan(&col); err != nil {
+			return "", err
 		}
+		sets = append(sets, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
 	}
 
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
 	clause := strings.Join(sets, ", ")
 	if clause == "" {
 		clause = "id = EXCLUDED.id"
 	}
-	tableColumnsCache.Store(table, clause)
-	return clause
+	return clause, nil
 }
 
-// upsertEntityJSON executes PostgreSQL json_populate_record upsert
-func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, entityType string, payload []byte) error {
-	if len(payload) == 0 {
-		return nil
+// upsertEntityJSON preserves FK checks. The client sends checkout parents
+// before POS rows; bypassing constraints would leave orphaned sales behind.
+func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, entityType, action string, payload []byte) error {
+	if entityType == "sales_orders_v2" && action == "POS_CHECKOUT" {
+		return s.applyPOSCheckout(ctx, pool, payload)
 	}
-
+	if len(payload) == 0 {
+		return fmt.Errorf("empty sync payload for %s", entityType)
+	}
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
-		"cashier_sessions": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
+		"cashier_sessions": true, "carts": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
 		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
 		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
 	}
-
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
 	}
-
-	updateClause := getTableUpdateClause(ctx, pool, entityType)
-
+	updateClause, err := getTableUpdateClause(ctx, pool, entityType)
+	if err != nil {
+		return err
+	}
+	if entityType == "sales_orders_v2" {
+		// Legacy header events must not undo a completed inventory transition.
+		updateClause = strings.ReplaceAll(updateClause, "fulfillment_status = EXCLUDED.fulfillment_status",
+			"fulfillment_status = CASE WHEN sales_orders_v2.fulfillment_status = 'fulfilled' THEN sales_orders_v2.fulfillment_status ELSE EXCLUDED.fulfillment_status END")
+	}
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
 		ON CONFLICT (id) DO UPDATE SET %s;
 	`, entityType, entityType, updateClause)
+	if _, err := pool.Exec(ctx, query, string(payload)); err != nil {
+		// Return the original constraint and SQLSTATE. A DO NOTHING fallback
+		// can hide rejected updates, or replace the cause with SQLSTATE 25P02.
+		return fmt.Errorf("failed to upsert %s (action=%s): %w", entityType, action, err)
+	}
+	return nil
+}
 
-	_, err := pool.Exec(ctx, query, string(payload))
-	if err != nil {
-		fallbackQuery := fmt.Sprintf(`
-			INSERT INTO %s
-			SELECT * FROM json_populate_record(NULL::%s, $1::json)
-			ON CONFLICT (id) DO NOTHING;
-		`, entityType, entityType)
-		if _, err2 := pool.Exec(ctx, fallbackQuery, string(payload)); err2 != nil {
-			return fmt.Errorf("failed to upsert %s: %w (fallback: %v)", entityType, err, err2)
+// applyPOSCheckout saves the complete order before the fulfillment transition.
+// Stock changes and fulfilled status commit together; retries never reset it.
+func (s *SyncServer) applyPOSCheckout(ctx context.Context, pool *pgxpool.Pool, payload []byte) error {
+	var checkout struct {
+		Order map[string]json.RawMessage `json:"order"`
+		Lines []json.RawMessage          `json:"lines"`
+	}
+	if err := json.Unmarshal(payload, &checkout); err != nil {
+		return fmt.Errorf("invalid checkout: %w", err)
+	}
+	var orderID, status string
+	if err := json.Unmarshal(checkout.Order["id"], &orderID); err != nil {
+		return fmt.Errorf("checkout order ID is required")
+	}
+	if err := json.Unmarshal(checkout.Order["fulfillment_status"], &status); err != nil || status != "fulfilled" {
+		return fmt.Errorf("checkout must be fulfilled locally")
+	}
+	if len(checkout.Lines) == 0 {
+		return fmt.Errorf("checkout has no order lines")
+	}
+	for _, line := range checkout.Lines {
+		var ref struct {
+			OrderID string `json:"sales_order_id"`
+		}
+		if err := json.Unmarshal(line, &ref); err != nil || ref.OrderID != orderID {
+			return fmt.Errorf("checkout line does not belong to order %s", orderID)
 		}
 	}
-
-	return nil
+	orderClause, err := getTableUpdateClause(ctx, pool, "sales_orders_v2")
+	if err != nil {
+		return err
+	}
+	lineClause, err := getTableUpdateClause(ctx, pool, "sales_order_lines_v2")
+	if err != nil {
+		return err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Also serialize simultaneous first inserts, when there is no row to lock.
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", orderID); err != nil {
+		return err
+	}
+	var existingStatus string
+	err = tx.QueryRow(ctx, "SELECT fulfillment_status::text FROM sales_orders_v2 WHERE id=$1::uuid FOR UPDATE", orderID).Scan(&existingStatus)
+	if err != nil && err != pgx.ErrNoRows {
+		return err
+	}
+	if err == nil && existingStatus == "fulfilled" {
+		return tx.Commit(ctx)
+	}
+	var triggerEnabled bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_trigger WHERE tgrelid='sales_orders_v2'::regclass
+		AND tgname='trg_deduct_inventory_on_fulfillment' AND tgenabled IN ('O','A')
+	) AND NOT EXISTS (
+		SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('pos_transaction_lines')
+		AND tgname='trg_deduct_inventory_on_pos_transaction' AND tgenabled IN ('O','A')
+	) AND current_setting('session_replication_role') <> 'replica'`).Scan(&triggerEnabled); err != nil {
+		return err
+	}
+	if !triggerEnabled {
+		return fmt.Errorf("cloud inventory requires the fulfillment trigger enabled and the legacy POS deduction trigger disabled")
+	}
+	checkout.Order["fulfillment_status"] = json.RawMessage(`"unfulfilled"`)
+	orderJSON, err := json.Marshal(checkout.Order)
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`INSERT INTO sales_orders_v2 SELECT * FROM json_populate_record(NULL::sales_orders_v2,$1::json)
+		ON CONFLICT(id) DO UPDATE SET %s`, orderClause)
+	if _, err := tx.Exec(ctx, query, string(orderJSON)); err != nil {
+		return fmt.Errorf("save checkout order: %w", err)
+	}
+	query = fmt.Sprintf(`INSERT INTO sales_order_lines_v2 SELECT * FROM json_populate_record(NULL::sales_order_lines_v2,$1::json)
+		ON CONFLICT(id) DO UPDATE SET %s WHERE sales_order_lines_v2.sales_order_id=EXCLUDED.sales_order_id`, lineClause)
+	for _, line := range checkout.Lines {
+		tag, err := tx.Exec(ctx, query, string(line))
+		if err != nil {
+			return fmt.Errorf("save checkout line: %w", err)
+		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("checkout line ID belongs to another order")
+		}
+	}
+	// The existing trigger performs deduction with all lines present. Its writes
+	// roll back with this transaction if any part of fulfillment fails.
+	if _, err := tx.Exec(ctx, "UPDATE sales_orders_v2 SET fulfillment_status='fulfilled' WHERE id=$1::uuid", orderID); err != nil {
+		return fmt.Errorf("fulfill checkout: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 // StreamPull handles Cloud -> Local Terminal delta updates based on sync watermarks.

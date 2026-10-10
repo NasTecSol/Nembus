@@ -68,9 +68,14 @@ func (h *BPPriceContractHandler) CreateBPPriceContract(c *gin.Context) {
 			PartnerID:          req.PartnerID,
 			ProductID:          req.ProductID,
 			ProductVariantID:   req.ProductVariantID,
+			UomID:              req.UomID,
 			ContractPrice:      req.ContractPrice,
 			DiscountPercentage: req.DiscountPercentage,
+			DiscountType:       req.DiscountType,
+			DiscountAmount:     req.DiscountAmount,
 			MinQuantity:        req.MinQuantity,
+			ContractType:       req.ContractType,
+			MinOrderAmount:     req.MinOrderAmount,
 			ValidFrom:          req.ValidFrom,
 			ValidTo:            req.ValidTo,
 			IsActive:           req.IsActive,
@@ -171,7 +176,7 @@ func (h *BPPriceContractHandler) ListBPPriceContractsByPartner(c *gin.Context) {
 
 // GetEffectiveBPPriceContract handles GET /api/bp-price-contracts/effective
 // @Summary      Get effective price contract
-// @Description  Get the currently active contract price for a partner, product, and optional variant/quantity
+// @Description  Get the currently active contract price for a partner, product, optional variant, uom, and quantity
 // @Tags         bp-price-contracts
 // @Accept       json
 // @Produce      json
@@ -181,6 +186,7 @@ func (h *BPPriceContractHandler) ListBPPriceContractsByPartner(c *gin.Context) {
 // @Param        partner_id           query     int     true   "Business partner ID"
 // @Param        product_id           query     int     true   "Product ID"
 // @Param        product_variant_id   query     int     false  "Product variant ID"
+// @Param        uom_id               query     int     false  "UOM ID"
 // @Param        quantity             query     number  false  "Quantity (default 1)"
 // @Success      200                  {object}  BPPriceContractResponse
 // @Failure      400                  {object}  ErrorResponse
@@ -198,9 +204,10 @@ func (h *BPPriceContractHandler) GetEffectiveBPPriceContract(c *gin.Context) {
 	partnerIDStr := c.Query("partner_id")
 	productIDStr := c.Query("product_id")
 	variantIDStr := c.Query("product_variant_id")
+	uomIDStr := c.Query("uom_id")
 	quantityStr := c.Query("quantity")
 
-	resp := h.useCase.GetEffectiveBPPriceContract(c.Request.Context(), partnerIDStr, productIDStr, variantIDStr, quantityStr)
+	resp := h.useCase.GetEffectiveBPPriceContract(c.Request.Context(), partnerIDStr, productIDStr, variantIDStr, uomIDStr, quantityStr)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -240,9 +247,15 @@ func (h *BPPriceContractHandler) UpdateBPPriceContract(c *gin.Context) {
 		c.Request.Context(),
 		idStr,
 		usecase.UpdateBPPriceContractInput{
+			ProductID:          req.ProductID,
+			UomID:              req.UomID,
 			ContractPrice:      req.ContractPrice,
 			DiscountPercentage: req.DiscountPercentage,
+			DiscountType:       req.DiscountType,
+			DiscountAmount:     req.DiscountAmount,
 			MinQuantity:        req.MinQuantity,
+			ContractType:       req.ContractType,
+			MinOrderAmount:     req.MinOrderAmount,
 			ValidFrom:          req.ValidFrom,
 			ValidTo:            req.ValidTo,
 			IsActive:           req.IsActive,

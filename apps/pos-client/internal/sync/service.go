@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -25,6 +27,7 @@ type SyncService struct {
 	cloudURL   string
 	tenantSlug string
 	grpcAddr   string
+	syncMu     sync.Mutex
 }
 
 type OutboxItem struct {
@@ -101,6 +104,12 @@ func (s *SyncService) SyncNow() {
 }
 
 func (s *SyncService) performSync() {
+	// Startup, the timer and SyncNow can overlap. Only one worker may drain
+	// the queue, otherwise the same failure consumes several retries at once.
+	if !s.syncMu.TryLock() {
+		return
+	}
+	defer s.syncMu.Unlock()
 	if s.masterPool == nil {
 		return
 	}
@@ -113,14 +122,25 @@ func (s *SyncService) performSync() {
 }
 
 // drainOutboxGRPC streams pending sync_queue items to Cloud via gRPC StreamPush with SHA-256 checksums
+const pendingOutboxSQL = `
+	SELECT q.id, q.entity_type, q.entity_id, q.action, q.payload, q.created_at, q.correlation_id
+	FROM sync_queue q
+	WHERE q.status = 'pending'
+	  AND NOT EXISTS (
+		SELECT 1 FROM sync_queue parent
+		WHERE q.entity_type IN ('pos_transaction_lines', 'pos_payments')
+		  AND parent.entity_type = 'pos_transactions'
+		  AND parent.entity_id = (q.payload->>'transaction_id')::bigint
+		  AND parent.status IN ('pending', 'failed')
+	  )
+	ORDER BY q.id ASC
+	LIMIT 50;
+`
+
 func (s *SyncService) drainOutboxGRPC() {
-	rows, err := s.masterPool.Query(s.ctx, `
-		SELECT id, entity_type, entity_id, action, payload, created_at, correlation_id
-		FROM sync_queue
-		WHERE status = 'pending'
-		ORDER BY priority DESC, created_at ASC
-		LIMIT 50;
-	`)
+	// Child events stay pending without consuming retries while their parent
+	// is pending or failed. They become eligible after its success is saved.
+	rows, err := s.masterPool.Query(s.ctx, pendingOutboxSQL)
 	if err != nil {
 		log.Printf("[gRPC SYNC] Failed to query local sync_queue: %v", err)
 		return
@@ -135,6 +155,11 @@ func (s *SyncService) drainOutboxGRPC() {
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[gRPC SYNC] Failed to read local sync_queue: %v", err)
+		return
+	}
+	rows.Close()
 
 	if len(items) == 0 {
 		return
@@ -162,49 +187,34 @@ func (s *SyncService) drainOutboxGRPC() {
 	var syncedIDs []int64
 
 	for _, item := range items {
-		payloadBytes := []byte(item.Payload)
-		hasher := sha256.New()
-		hasher.Write(payloadBytes)
-		shaHex := hex.EncodeToString(hasher.Sum(nil))
-
-		var corrID string
-		if item.CorrelationID != nil {
-			corrID = *item.CorrelationID
-		}
-
-		event := &syncpb.SyncEvent{
-			Id:            item.ID,
-			EntityType:    item.EntityType,
-			EntityId:      item.EntityID,
-			Action:        item.Action,
-			PayloadJson:   payloadBytes,
-			StoreId:       storeID,
-			TenantSlug:    s.tenantSlug,
-			EventTime:     timestamppb.New(item.CreatedAt),
-			Sha256:        shaHex,
-			IsLastChunk:   true,
-			CorrelationId: corrID,
-		}
-
-		if err := stream.Send(event); err != nil {
-			log.Printf("[gRPC SYNC] Failed to send SyncEvent item %d: %v", item.ID, err)
-			s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("send error: %v", err))
+		// Checkout creates a UUID sales order and cart locally, but the outbox
+		// only contains the resulting POS rows. Send those referenced parents
+		// first, including for older failed entries being retried.
+		parents, err := s.transactionParents(item)
+		if err != nil {
+			if errors.Is(err, errCheckoutNotReady) {
+				continue // Checkout is still completing locally; no retry is consumed.
+			}
+			s.recordOutboxFailure([]OutboxItem{item}, err.Error())
 			continue
 		}
-
-		ack, err := stream.Recv()
-		if err != nil {
-			log.Printf("[gRPC SYNC] Failed to receive SyncAck for item %d: %v", item.ID, err)
-			s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("recv error: %v", err))
-			break
+		parentFailed := false
+		for _, parent := range parents {
+			if err := pushOutboxItem(stream, parent, storeID, s.tenantSlug); err != nil {
+				s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("parent %s: %v", parent.EntityType, err))
+				parentFailed = true
+				break
+			}
 		}
-
-		if ack.Success && ack.Sha256 == shaHex {
-			syncedIDs = append(syncedIDs, ack.Id)
-		} else {
-			log.Printf("[gRPC SYNC] Server rejected item %d: %s", ack.Id, ack.ErrorMessage)
-			s.recordOutboxFailure([]OutboxItem{item}, fmt.Sprintf("server rejected: %s", ack.ErrorMessage))
+		if parentFailed {
+			continue
 		}
+		if err := pushOutboxItem(stream, item, storeID, s.tenantSlug); err != nil {
+			log.Printf("[gRPC SYNC] Failed to push %s item %d: %v", item.EntityType, item.ID, err)
+			s.recordOutboxFailure([]OutboxItem{item}, err.Error())
+			continue
+		}
+		syncedIDs = append(syncedIDs, item.ID)
 	}
 
 	_ = stream.CloseSend()
@@ -212,11 +222,106 @@ func (s *SyncService) drainOutboxGRPC() {
 	if len(syncedIDs) > 0 {
 		_, _ = s.masterPool.Exec(s.ctx, `
 			UPDATE sync_queue
-			SET status = 'synced', synced_at = NOW()
+			SET status = 'synced', synced_at = NOW(), last_error = NULL
 			WHERE id = ANY($1);
 		`, syncedIDs)
 		log.Printf("[gRPC SYNC] Pushed %d items upstream to Cloud via gRPC stream", len(syncedIDs))
 	}
+}
+
+// transactionParents returns the local cart and order referenced by a POS
+// transaction in FK order. UUID identities stay in the JSON payload; EntityID
+// is only a numeric diagnostic field in the current protocol.
+var errCheckoutNotReady = errors.New("checkout is not fulfilled locally yet")
+
+func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) {
+	if item.EntityType != "pos_transactions" {
+		return nil, nil
+	}
+	var refs struct {
+		SalesOrderID *string `json:"sales_order_id"`
+		SourceCartID *string `json:"source_cart_id"`
+	}
+	if err := json.Unmarshal(item.Payload, &refs); err != nil {
+		return nil, fmt.Errorf("invalid transaction payload: %w", err)
+	}
+	if refs.SalesOrderID == nil && refs.SourceCartID == nil {
+		return nil, nil
+	}
+	rows, err := s.masterPool.Query(s.ctx, `
+		SELECT entity_type, payload FROM (
+			SELECT 1 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
+			FROM carts c
+			WHERE c.id = $2::uuid OR c.id = (
+				SELECT source_cart_id FROM sales_orders_v2 WHERE id = $1::uuid
+			)
+			UNION ALL
+			SELECT 2 AS seq, 'sales_orders_v2', json_build_object(
+				'order', row_to_json(o),
+				'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
+					FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
+			)::text
+			FROM sales_orders_v2 o WHERE o.id = $1::uuid
+		) parents ORDER BY seq;
+	`, refs.SalesOrderID, refs.SourceCartID)
+	if err != nil {
+		return nil, fmt.Errorf("read transaction parents: %w", err)
+	}
+	defer rows.Close()
+	var parents []OutboxItem
+	for rows.Next() {
+		parent := OutboxItem{ID: item.ID, Action: "INSERT", CreatedAt: item.CreatedAt, CorrelationID: item.CorrelationID}
+		var payload string
+		if err := rows.Scan(&parent.EntityType, &payload); err != nil {
+			return nil, fmt.Errorf("read transaction parent: %w", err)
+		}
+		parent.Payload = json.RawMessage(payload)
+		if parent.EntityType == "sales_orders_v2" {
+			var checkout struct {
+				Order struct {
+					FulfillmentStatus string `json:"fulfillment_status"`
+					OrderStatus       string `json:"order_status"`
+				} `json:"order"`
+			}
+			if err := json.Unmarshal(parent.Payload, &checkout); err != nil {
+				return nil, err
+			}
+			if checkout.Order.FulfillmentStatus != "fulfilled" || checkout.Order.OrderStatus != "fulfilled" {
+				return nil, errCheckoutNotReady
+			}
+			parent.Action = "POS_CHECKOUT"
+		}
+		parents = append(parents, parent)
+	}
+	return parents, rows.Err()
+}
+
+func pushOutboxItem(stream syncpb.SyncService_StreamPushClient, item OutboxItem, storeID int32, tenantSlug string) error {
+	hash := sha256.Sum256(item.Payload)
+	checksum := hex.EncodeToString(hash[:])
+	event := &syncpb.SyncEvent{
+		Id: item.ID, EntityType: item.EntityType, EntityId: item.EntityID,
+		Action: item.Action, PayloadJson: item.Payload, StoreId: storeID,
+		TenantSlug: tenantSlug, EventTime: timestamppb.New(item.CreatedAt),
+		Sha256: checksum, IsLastChunk: true,
+	}
+	if item.CorrelationID != nil {
+		event.CorrelationId = *item.CorrelationID
+	}
+	if err := stream.Send(event); err != nil {
+		return fmt.Errorf("send error: %w", err)
+	}
+	ack, err := stream.Recv()
+	if err != nil {
+		return fmt.Errorf("receive error: %w", err)
+	}
+	if ack.Id != item.ID || ack.EntityType != item.EntityType || ack.Sha256 != checksum {
+		return fmt.Errorf("acknowledgment does not match %s", item.EntityType)
+	}
+	if !ack.Success {
+		return fmt.Errorf("server rejected: %s", ack.ErrorMessage)
+	}
+	return nil
 }
 
 func (s *SyncService) recordOutboxFailure(items []OutboxItem, errMsg string) {
@@ -232,6 +337,27 @@ func (s *SyncService) recordOutboxFailure(items []OutboxItem, errMsg string) {
 		    status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'pending' END
 		WHERE id = ANY($2);
 	`, errMsg, ids)
+}
+
+// ResetFailedItems resets all 'failed' sync_queue entries back to 'pending' so they are
+// retried on the next sync cycle. Call this after deploying a cloud-side fix that was
+// causing legitimate INSERT events to be rejected (e.g. FK constraint violations).
+func (s *SyncService) ResetFailedItems() (int64, error) {
+	tag, err := s.masterPool.Exec(s.ctx, `
+		UPDATE sync_queue
+		SET status      = 'pending',
+		    retry_count = 0,
+		    last_error  = NULL
+		WHERE status = 'failed';
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to reset failed sync_queue items: %w", err)
+	}
+	count := tag.RowsAffected()
+	if count > 0 {
+		log.Printf("[gRPC SYNC] Reset %d failed sync_queue items to pending for retry", count)
+	}
+	return count, nil
 }
 
 // fetchDeltaGRPC pulls updated entities from Cloud via gRPC StreamPull using sync_watermarks

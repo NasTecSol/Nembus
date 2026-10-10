@@ -44,6 +44,53 @@ func (q *Queries) ClearPrimaryPartnerContacts(ctx context.Context, arg ClearPrim
 	return err
 }
 
+const countBusinessPartners = `-- name: CountBusinessPartners :one
+SELECT COUNT(*) FROM business_partners
+WHERE organization_id = $1
+`
+
+func (q *Queries) CountBusinessPartners(ctx context.Context, organizationID int32) (int64, error) {
+	row := q.db.QueryRow(ctx, countBusinessPartners, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countBusinessPartnersByRole = `-- name: CountBusinessPartnersByRole :one
+SELECT COUNT(*) FROM business_partners
+WHERE organization_id = $1 AND partner_role = $2
+`
+
+type CountBusinessPartnersByRoleParams struct {
+	OrganizationID int32  `json:"organization_id"`
+	PartnerRole    string `json:"partner_role"`
+}
+
+func (q *Queries) CountBusinessPartnersByRole(ctx context.Context, arg CountBusinessPartnersByRoleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countBusinessPartnersByRole, arg.OrganizationID, arg.PartnerRole)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSearchBusinessPartners = `-- name: CountSearchBusinessPartners :one
+SELECT COUNT(*) FROM business_partners
+WHERE organization_id = $1 
+  AND (name ILIKE $2 OR code ILIKE $2)
+`
+
+type CountSearchBusinessPartnersParams struct {
+	OrganizationID int32  `json:"organization_id"`
+	Name           string `json:"name"`
+}
+
+func (q *Queries) CountSearchBusinessPartners(ctx context.Context, arg CountSearchBusinessPartnersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSearchBusinessPartners, arg.OrganizationID, arg.Name)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBusinessPartner = `-- name: CreateBusinessPartner :one
 
 INSERT INTO business_partners (
@@ -373,10 +420,17 @@ const listBusinessPartners = `-- name: ListBusinessPartners :many
 SELECT id, organization_id, code, name, partner_role, tax_id, currency_code, credit_limit, outstanding_balance, payment_terms_id, sales_rep_user_id, is_active, metadata, created_at, updated_at FROM business_partners
 WHERE organization_id = $1
 ORDER BY name
+LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListBusinessPartners(ctx context.Context, organizationID int32) ([]BusinessPartner, error) {
-	rows, err := q.db.Query(ctx, listBusinessPartners, organizationID)
+type ListBusinessPartnersParams struct {
+	OrganizationID int32 `json:"organization_id"`
+	Limit          int32 `json:"limit"`
+	Offset         int32 `json:"offset"`
+}
+
+func (q *Queries) ListBusinessPartners(ctx context.Context, arg ListBusinessPartnersParams) ([]BusinessPartner, error) {
+	rows, err := q.db.Query(ctx, listBusinessPartners, arg.OrganizationID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -415,15 +469,23 @@ const listBusinessPartnersByRole = `-- name: ListBusinessPartnersByRole :many
 SELECT id, organization_id, code, name, partner_role, tax_id, currency_code, credit_limit, outstanding_balance, payment_terms_id, sales_rep_user_id, is_active, metadata, created_at, updated_at FROM business_partners
 WHERE organization_id = $1 AND partner_role = $2
 ORDER BY name
+LIMIT $3 OFFSET $4
 `
 
 type ListBusinessPartnersByRoleParams struct {
 	OrganizationID int32  `json:"organization_id"`
 	PartnerRole    string `json:"partner_role"`
+	Limit          int32  `json:"limit"`
+	Offset         int32  `json:"offset"`
 }
 
 func (q *Queries) ListBusinessPartnersByRole(ctx context.Context, arg ListBusinessPartnersByRoleParams) ([]BusinessPartner, error) {
-	rows, err := q.db.Query(ctx, listBusinessPartnersByRole, arg.OrganizationID, arg.PartnerRole)
+	rows, err := q.db.Query(ctx, listBusinessPartnersByRole,
+		arg.OrganizationID,
+		arg.PartnerRole,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -537,17 +599,23 @@ SELECT id, organization_id, code, name, partner_role, tax_id, currency_code, cre
 WHERE organization_id = $1 
   AND (name ILIKE $2 OR code ILIKE $2)
 ORDER BY name
-LIMIT $3
+LIMIT $3 OFFSET $4
 `
 
 type SearchBusinessPartnersParams struct {
 	OrganizationID int32  `json:"organization_id"`
 	Name           string `json:"name"`
 	Limit          int32  `json:"limit"`
+	Offset         int32  `json:"offset"`
 }
 
 func (q *Queries) SearchBusinessPartners(ctx context.Context, arg SearchBusinessPartnersParams) ([]BusinessPartner, error) {
-	rows, err := q.db.Query(ctx, searchBusinessPartners, arg.OrganizationID, arg.Name, arg.Limit)
+	rows, err := q.db.Query(ctx, searchBusinessPartners,
+		arg.OrganizationID,
+		arg.Name,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}

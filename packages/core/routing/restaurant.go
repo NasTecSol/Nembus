@@ -28,6 +28,8 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 	rest.PUT("/menu-items/:item_id", h.UpdateMenuItem)
 	rest.DELETE("/menu-items/:item_id", h.DeleteMenuItem)
 	rest.GET("/menu-items/:item_id/modifiers", h.ListModifiers)
+	rest.GET("/menu-items/:item_id/combo-components", h.ListComboComponents)
+	rest.GET("/menu-items/:item_id/details", h.GetMenuItemFullDetails)
 
 	// Modifiers
 	rest.POST("/modifiers", h.CreateModifier)
@@ -41,7 +43,18 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 	rest.PUT("/menu-modifier-groups/:id", h.UpdateMenuModifierGroup)
 	rest.DELETE("/menu-modifier-groups/:id", h.DeleteMenuModifierGroup)
 
+	// Restaurant Promotions
+	rest.POST("/promotions", h.CreateRestaurantPromotion)
+	rest.GET("/promotions", h.ListAllRestaurantPromotions)
+	rest.GET("/promotions/active", h.ListActiveRestaurantPromotions)
+	rest.GET("/promotions/code/:code", h.GetRestaurantPromotionByCode)
+	rest.GET("/promotions/:id", h.GetRestaurantPromotion)
+	rest.PUT("/promotions/:id", h.UpdateRestaurantPromotion)
+	rest.PATCH("/promotions/:id/status", h.UpdateRestaurantPromotionStatus)
+	rest.DELETE("/promotions/:id", h.DeleteRestaurantPromotion)
+
 	// Orders
+	rest.GET("/orders", h.ListOrders)
 	rest.POST("/orders", h.CreateOrder)
 	rest.POST("/orders/online", h.CreateOnlineOrder)
 	rest.GET("/orders/:order_id", h.GetOrder)
@@ -84,6 +97,7 @@ func RegisterRestaurantRoutes(r *gin.RouterGroup, h *handler.RestaurantHandler) 
 	stores := rest.Group("/stores/:store_id")
 	{
 		stores.GET("/tables", h.ListTables)
+		stores.GET("/orders", h.ListStoreOrders)
 		stores.GET("/menu-categories", h.ListMenuCategories)
 		stores.GET("/menu", h.GetFullMenu)
 		stores.GET("/kds", h.GetKdsOrders)

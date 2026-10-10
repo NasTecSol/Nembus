@@ -16,11 +16,16 @@ type BPPriceContractOutput struct {
 	ID                 int32   `json:"id"`
 	OrganizationID     int32   `json:"organization_id"`
 	PartnerID          int32   `json:"partner_id"`
-	ProductID          int32   `json:"product_id"`
+	ProductID          *int32  `json:"product_id,omitempty"`
 	ProductVariantID   *int32  `json:"product_variant_id,omitempty"`
+	UOMID              *int32  `json:"uom_id,omitempty"`
 	ContractPrice      string  `json:"contract_price"`
 	DiscountPercentage string  `json:"discount_percentage"`
+	DiscountType       *string `json:"discount_type,omitempty"`
+	DiscountAmount     *string `json:"discount_amount,omitempty"`
 	MinQuantity        string  `json:"min_quantity"`
+	ContractType       string  `json:"contract_type"`
+	MinOrderAmount     string  `json:"min_order_amount"`
 	ValidFrom          *string `json:"valid_from,omitempty"`
 	ValidTo            *string `json:"valid_to,omitempty"`
 	IsActive           bool    `json:"is_active"`
@@ -33,29 +38,59 @@ type BPPriceContractOutput struct {
 	ProductSku         *string `json:"product_sku,omitempty"`
 	VariantName        *string `json:"variant_name,omitempty"`
 	VariantSku         *string `json:"variant_sku,omitempty"`
+	UOMName            *string `json:"uom_name,omitempty"`
+	UOMCode            *string `json:"uom_code,omitempty"`
 }
 
 func bpPriceContractRowToOutput(row repository.GetBPPriceContractRow) BPPriceContractOutput {
+	contractType := "ITEM"
+	if row.ContractType.Valid && row.ContractType.String != "" {
+		contractType = row.ContractType.String
+	}
+
 	out := BPPriceContractOutput{
 		ID:                 row.ID,
 		OrganizationID:     row.OrganizationID,
 		PartnerID:          row.PartnerID,
-		ProductID:          row.ProductID,
 		ContractPrice:      numericToString(row.ContractPrice),
 		DiscountPercentage: numericToString(row.DiscountPercentage),
 		MinQuantity:        numericToString(row.MinQuantity),
+		ContractType:       contractType,
+		MinOrderAmount:     numericToString(row.MinOrderAmount),
 		IsActive:           row.IsActive.Bool,
 		CreatedAt:          utils.FormatTimestamp(row.CreatedAt),
 		UpdatedAt:          utils.FormatTimestamp(row.UpdatedAt),
 		PartnerName:        &row.PartnerName,
 		PartnerCode:        &row.PartnerCode,
-		ProductName:        &row.ProductName,
-		ProductSku:         &row.ProductSku,
+	}
+
+	if row.ProductID.Valid {
+		pID := row.ProductID.Int32
+		out.ProductID = &pID
+	}
+	if row.ProductName.Valid {
+		out.ProductName = &row.ProductName.String
+	}
+	if row.ProductSku.Valid {
+		out.ProductSku = &row.ProductSku.String
+	}
+
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
 	}
 
 	if row.ProductVariantID.Valid {
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
+	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
 	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
@@ -73,32 +108,66 @@ func bpPriceContractRowToOutput(row repository.GetBPPriceContractRow) BPPriceCon
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
 }
 
 func bpPriceContractListRowToOutput(row repository.ListBPPriceContractsRow) BPPriceContractOutput {
+	contractType := "ITEM"
+	if row.ContractType.Valid && row.ContractType.String != "" {
+		contractType = row.ContractType.String
+	}
+
 	out := BPPriceContractOutput{
 		ID:                 row.ID,
 		OrganizationID:     row.OrganizationID,
 		PartnerID:          row.PartnerID,
-		ProductID:          row.ProductID,
 		ContractPrice:      numericToString(row.ContractPrice),
 		DiscountPercentage: numericToString(row.DiscountPercentage),
 		MinQuantity:        numericToString(row.MinQuantity),
+		ContractType:       contractType,
+		MinOrderAmount:     numericToString(row.MinOrderAmount),
 		IsActive:           row.IsActive.Bool,
 		CreatedAt:          utils.FormatTimestamp(row.CreatedAt),
 		UpdatedAt:          utils.FormatTimestamp(row.UpdatedAt),
 		PartnerName:        &row.PartnerName,
 		PartnerCode:        &row.PartnerCode,
-		ProductName:        &row.ProductName,
-		ProductSku:         &row.ProductSku,
+	}
+
+	if row.ProductID.Valid {
+		pID := row.ProductID.Int32
+		out.ProductID = &pID
+	}
+	if row.ProductName.Valid {
+		out.ProductName = &row.ProductName.String
+	}
+	if row.ProductSku.Valid {
+		out.ProductSku = &row.ProductSku.String
+	}
+
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
 	}
 
 	if row.ProductVariantID.Valid {
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
+	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
 	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
@@ -116,32 +185,66 @@ func bpPriceContractListRowToOutput(row repository.ListBPPriceContractsRow) BPPr
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
 }
 
 func bpPriceContractPartnerRowToOutput(row repository.ListBPPriceContractsByPartnerRow) BPPriceContractOutput {
+	contractType := "ITEM"
+	if row.ContractType.Valid && row.ContractType.String != "" {
+		contractType = row.ContractType.String
+	}
+
 	out := BPPriceContractOutput{
 		ID:                 row.ID,
 		OrganizationID:     row.OrganizationID,
 		PartnerID:          row.PartnerID,
-		ProductID:          row.ProductID,
 		ContractPrice:      numericToString(row.ContractPrice),
 		DiscountPercentage: numericToString(row.DiscountPercentage),
 		MinQuantity:        numericToString(row.MinQuantity),
+		ContractType:       contractType,
+		MinOrderAmount:     numericToString(row.MinOrderAmount),
 		IsActive:           row.IsActive.Bool,
 		CreatedAt:          utils.FormatTimestamp(row.CreatedAt),
 		UpdatedAt:          utils.FormatTimestamp(row.UpdatedAt),
 		PartnerName:        &row.PartnerName,
 		PartnerCode:        &row.PartnerCode,
-		ProductName:        &row.ProductName,
-		ProductSku:         &row.ProductSku,
+	}
+
+	if row.ProductID.Valid {
+		pID := row.ProductID.Int32
+		out.ProductID = &pID
+	}
+	if row.ProductName.Valid {
+		out.ProductName = &row.ProductName.String
+	}
+	if row.ProductSku.Valid {
+		out.ProductSku = &row.ProductSku.String
+	}
+
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
 	}
 
 	if row.ProductVariantID.Valid {
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
+	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
 	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
@@ -159,32 +262,66 @@ func bpPriceContractPartnerRowToOutput(row repository.ListBPPriceContractsByPart
 	}
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
+	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
 	}
 
 	return out
 }
 
 func bpPriceContractEffectiveRowToOutput(row repository.GetEffectiveBPPriceContractRow) BPPriceContractOutput {
+	contractType := "ITEM"
+	if row.ContractType.Valid && row.ContractType.String != "" {
+		contractType = row.ContractType.String
+	}
+
 	out := BPPriceContractOutput{
 		ID:                 row.ID,
 		OrganizationID:     row.OrganizationID,
 		PartnerID:          row.PartnerID,
-		ProductID:          row.ProductID,
 		ContractPrice:      numericToString(row.ContractPrice),
 		DiscountPercentage: numericToString(row.DiscountPercentage),
 		MinQuantity:        numericToString(row.MinQuantity),
+		ContractType:       contractType,
+		MinOrderAmount:     numericToString(row.MinOrderAmount),
 		IsActive:           row.IsActive.Bool,
 		CreatedAt:          utils.FormatTimestamp(row.CreatedAt),
 		UpdatedAt:          utils.FormatTimestamp(row.UpdatedAt),
 		PartnerName:        &row.PartnerName,
 		PartnerCode:        &row.PartnerCode,
-		ProductName:        &row.ProductName,
-		ProductSku:         &row.ProductSku,
+	}
+
+	if row.ProductID.Valid {
+		pID := row.ProductID.Int32
+		out.ProductID = &pID
+	}
+	if row.ProductName.Valid {
+		out.ProductName = &row.ProductName.String
+	}
+	if row.ProductSku.Valid {
+		out.ProductSku = &row.ProductSku.String
+	}
+
+	if row.DiscountType.Valid {
+		dt := row.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if row.DiscountAmount.Valid {
+		da := numericToString(row.DiscountAmount)
+		out.DiscountAmount = &da
 	}
 
 	if row.ProductVariantID.Valid {
 		vID := row.ProductVariantID.Int32
 		out.ProductVariantID = &vID
+	}
+	if row.UomID.Valid {
+		uID := row.UomID.Int32
+		out.UOMID = &uID
 	}
 	if row.ValidFrom.Valid {
 		vf := utils.FormatDate(row.ValidFrom)
@@ -203,27 +340,57 @@ func bpPriceContractEffectiveRowToOutput(row repository.GetEffectiveBPPriceContr
 	if row.VariantSku.Valid {
 		out.VariantSku = &row.VariantSku.String
 	}
+	if row.UomName.Valid {
+		out.UOMName = &row.UomName.String
+	}
+	if row.UomCode.Valid {
+		out.UOMCode = &row.UomCode.String
+	}
 
 	return out
 }
 
 func bpPriceContractRawToOutput(c repository.BpPriceContract) BPPriceContractOutput {
+	contractType := "ITEM"
+	if c.ContractType.Valid && c.ContractType.String != "" {
+		contractType = c.ContractType.String
+	}
+
 	out := BPPriceContractOutput{
 		ID:                 c.ID,
 		OrganizationID:     c.OrganizationID,
 		PartnerID:          c.PartnerID,
-		ProductID:          c.ProductID,
 		ContractPrice:      numericToString(c.ContractPrice),
 		DiscountPercentage: numericToString(c.DiscountPercentage),
 		MinQuantity:        numericToString(c.MinQuantity),
+		ContractType:       contractType,
+		MinOrderAmount:     numericToString(c.MinOrderAmount),
 		IsActive:           c.IsActive.Bool,
 		CreatedAt:          utils.FormatTimestamp(c.CreatedAt),
 		UpdatedAt:          utils.FormatTimestamp(c.UpdatedAt),
 	}
 
+	if c.ProductID.Valid {
+		pID := c.ProductID.Int32
+		out.ProductID = &pID
+	}
+
+	if c.DiscountType.Valid {
+		dt := c.DiscountType.String
+		out.DiscountType = &dt
+	}
+	if c.DiscountAmount.Valid {
+		da := numericToString(c.DiscountAmount)
+		out.DiscountAmount = &da
+	}
+
 	if c.ProductVariantID.Valid {
 		vID := c.ProductVariantID.Int32
 		out.ProductVariantID = &vID
+	}
+	if c.UomID.Valid {
+		uID := c.UomID.Int32
+		out.UOMID = &uID
 	}
 	if c.ValidFrom.Valid {
 		vf := utils.FormatDate(c.ValidFrom)
@@ -243,11 +410,16 @@ func bpPriceContractRawToOutput(c repository.BpPriceContract) BPPriceContractOut
 type CreateBPPriceContractInput struct {
 	OrganizationID     int32    `json:"organization_id"`
 	PartnerID          int32    `json:"partner_id"`
-	ProductID          int32    `json:"product_id"`
+	ProductID          *int32   `json:"product_id"`
 	ProductVariantID   *int32   `json:"product_variant_id"`
+	UomID              *int32   `json:"uom_id"`
 	ContractPrice      float64  `json:"contract_price"`
 	DiscountPercentage *float64 `json:"discount_percentage"`
+	DiscountType       *string  `json:"discount_type"`
+	DiscountAmount     *float64 `json:"discount_amount"`
 	MinQuantity        *float64 `json:"min_quantity"`
+	ContractType       *string  `json:"contract_type"`
+	MinOrderAmount     *float64 `json:"min_order_amount"`
 	ValidFrom          *string  `json:"valid_from"`
 	ValidTo            *string  `json:"valid_to"`
 	IsActive           *bool    `json:"is_active"`
@@ -255,9 +427,15 @@ type CreateBPPriceContractInput struct {
 }
 
 type UpdateBPPriceContractInput struct {
+	ProductID          *int32   `json:"product_id"`
+	UomID              *int32   `json:"uom_id"`
 	ContractPrice      *float64 `json:"contract_price"`
 	DiscountPercentage *float64 `json:"discount_percentage"`
+	DiscountType       *string  `json:"discount_type"`
+	DiscountAmount     *float64 `json:"discount_amount"`
 	MinQuantity        *float64 `json:"min_quantity"`
+	ContractType       *string  `json:"contract_type"`
+	MinOrderAmount     *float64 `json:"min_order_amount"`
 	ValidFrom          *string  `json:"valid_from"`
 	ValidTo            *string  `json:"valid_to"`
 	IsActive           *bool    `json:"is_active"`
@@ -278,7 +456,7 @@ func (uc *BPPriceContractUseCase) SetRepository(repo *repository.Queries) {
 
 func (uc *BPPriceContractUseCase) repoOrErr() *repository.Response {
 	if uc.repo == nil {
-		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+		return utils.NewResponse(utils.CodeError, "repository not initialized", nil)
 	}
 	return nil
 }
@@ -294,11 +472,45 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 	if input.PartnerID <= 0 {
 		return utils.NewResponse(utils.CodeBadReq, "partner_id is required", nil)
 	}
-	if input.ProductID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "product_id is required", nil)
-	}
 	if input.ContractPrice < 0 {
 		return utils.NewResponse(utils.CodeBadReq, "contract_price must be non-negative", nil)
+	}
+
+	var prodID pgtype.Int4
+	if input.ProductID != nil && *input.ProductID > 0 {
+		prodID = pgtype.Int4{Int32: *input.ProductID, Valid: true}
+	}
+
+	contractType := "ITEM"
+	if input.ContractType != nil && *input.ContractType != "" {
+		contractType = *input.ContractType
+	} else if !prodID.Valid {
+		contractType = "ORDER_TOTAL"
+	}
+
+	minOrderAmt := 0.00
+	if input.MinOrderAmount != nil && *input.MinOrderAmount > 0 {
+		minOrderAmt = *input.MinOrderAmount
+	}
+
+	discountType := "percentage"
+	if input.DiscountType != nil && *input.DiscountType != "" {
+		discountType = *input.DiscountType
+	}
+	if discountType != "percentage" && discountType != "fixed" {
+		return utils.NewResponse(utils.CodeBadReq, "discount_type must be either 'percentage' or 'fixed'", nil)
+	}
+
+	discountAmount := 0.00
+	if input.DiscountAmount != nil {
+		discountAmount = *input.DiscountAmount
+	}
+	if discountAmount < 0 {
+		return utils.NewResponse(utils.CodeBadReq, "discount_amount must be non-negative", nil)
+	}
+
+	if discountType == "fixed" && discountAmount > input.ContractPrice && contractType == "ITEM" {
+		return utils.NewResponse(utils.CodeBadReq, "fixed discount amount cannot exceed contract price", nil)
 	}
 
 	// Check if unique contract already exists
@@ -307,13 +519,19 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 		pvID = pgtype.Int4{Int32: *input.ProductVariantID, Valid: true}
 	}
 
+	var uomID pgtype.Int4
+	if input.UomID != nil && *input.UomID > 0 {
+		uomID = pgtype.Int4{Int32: *input.UomID, Valid: true}
+	}
+
 	existing, err := uc.repo.GetBPPriceContractByUnique(ctx, repository.GetBPPriceContractByUniqueParams{
 		PartnerID:        input.PartnerID,
-		ProductID:        input.ProductID,
+		ProductID:        prodID,
 		ProductVariantID: pvID,
+		UomID:            uomID,
 	})
 	if err == nil && existing.ID > 0 {
-		return utils.NewResponse(utils.CodeBadReq, "a price contract already exists for this business partner, product, and variant combination", nil)
+		return utils.NewResponse(utils.CodeBadReq, "a price contract already exists for this business partner, product, variant, and uom combination", nil)
 	}
 
 	var fromDate pgtype.Date
@@ -357,11 +575,16 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 	created, err := uc.repo.CreateBPPriceContract(ctx, repository.CreateBPPriceContractParams{
 		OrganizationID:     input.OrganizationID,
 		PartnerID:          input.PartnerID,
-		ProductID:          input.ProductID,
+		ProductID:          prodID,
 		ProductVariantID:   pvID,
+		UomID:              uomID,
 		ContractPrice:      utils.Float64ToPgNumeric(input.ContractPrice),
 		DiscountPercentage: utils.Float64ToPgNumeric(discount),
+		DiscountType:       pgtype.Text{String: discountType, Valid: true},
+		DiscountAmount:     utils.Float64ToPgNumeric(discountAmount),
 		MinQuantity:        utils.Float64ToPgNumeric(minQty),
+		ContractType:       pgtype.Text{String: contractType, Valid: true},
+		MinOrderAmount:     utils.Float64ToPgNumeric(minOrderAmt),
 		ValidFrom:          fromDate,
 		ValidTo:            toDate,
 		IsActive:           pgtype.Bool{Bool: isActive, Valid: true},
@@ -371,12 +594,10 @@ func (uc *BPPriceContractUseCase) CreateBPPriceContract(ctx context.Context, inp
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	// Fetch full details with join names
 	fullRow, err := uc.repo.GetBPPriceContract(ctx, created.ID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeCreated, "price contract created successfully", bpPriceContractRawToOutput(created))
 	}
-
 	return utils.NewResponse(utils.CodeCreated, "price contract created successfully", bpPriceContractRowToOutput(fullRow))
 }
 
@@ -405,26 +626,29 @@ func (uc *BPPriceContractUseCase) ListBPPriceContracts(ctx context.Context, orgI
 
 	orgID, err := strconv.ParseInt(orgIDStr, 10, 32)
 	if err != nil || orgID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "invalid or missing organization_id", nil)
+		return utils.NewResponse(utils.CodeBadReq, "invalid organization ID", nil)
 	}
 
 	var partnerID pgtype.Int4
 	if partnerIDStr != "" {
-		if pID, err := strconv.ParseInt(partnerIDStr, 10, 32); err == nil && pID > 0 {
+		pID, err := strconv.ParseInt(partnerIDStr, 10, 32)
+		if err == nil && pID > 0 {
 			partnerID = pgtype.Int4{Int32: int32(pID), Valid: true}
 		}
 	}
 
 	var productID pgtype.Int4
 	if productIDStr != "" {
-		if prID, err := strconv.ParseInt(productIDStr, 10, 32); err == nil && prID > 0 {
+		prID, err := strconv.ParseInt(productIDStr, 10, 32)
+		if err == nil && prID > 0 {
 			productID = pgtype.Int4{Int32: int32(prID), Valid: true}
 		}
 	}
 
 	var isActive pgtype.Bool
 	if isActiveStr != "" {
-		if act, err := strconv.ParseBool(isActiveStr); err == nil {
+		act, err := strconv.ParseBool(isActiveStr)
+		if err == nil {
 			isActive = pgtype.Bool{Bool: act, Valid: true}
 		}
 	}
@@ -444,7 +668,7 @@ func (uc *BPPriceContractUseCase) ListBPPriceContracts(ctx context.Context, orgI
 		outputs[i] = bpPriceContractListRowToOutput(r)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "price contracts listed successfully", outputs)
+	return utils.NewResponse(utils.CodeOK, "price contracts fetched successfully", outputs)
 }
 
 func (uc *BPPriceContractUseCase) ListBPPriceContractsByPartner(ctx context.Context, partnerIDStr string) *repository.Response {
@@ -454,7 +678,7 @@ func (uc *BPPriceContractUseCase) ListBPPriceContractsByPartner(ctx context.Cont
 
 	partnerID, err := strconv.ParseInt(partnerIDStr, 10, 32)
 	if err != nil || partnerID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "invalid or missing partner_id", nil)
+		return utils.NewResponse(utils.CodeBadReq, "invalid partner ID", nil)
 	}
 
 	rows, err := uc.repo.ListBPPriceContractsByPartner(ctx, int32(partnerID))
@@ -467,46 +691,57 @@ func (uc *BPPriceContractUseCase) ListBPPriceContractsByPartner(ctx context.Cont
 		outputs[i] = bpPriceContractPartnerRowToOutput(r)
 	}
 
-	return utils.NewResponse(utils.CodeOK, "partner price contracts listed successfully", outputs)
+	return utils.NewResponse(utils.CodeOK, "price contracts fetched successfully", outputs)
 }
 
-func (uc *BPPriceContractUseCase) GetEffectiveBPPriceContract(ctx context.Context, partnerIDStr string, productIDStr string, variantIDStr string, quantityStr string) *repository.Response {
+func (uc *BPPriceContractUseCase) GetEffectiveBPPriceContract(ctx context.Context, partnerIDStr string, productIDStr string, variantIDStr string, uomIDStr string, quantityStr string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
 
 	partnerID, err := strconv.ParseInt(partnerIDStr, 10, 32)
 	if err != nil || partnerID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "invalid or missing partner_id", nil)
+		return utils.NewResponse(utils.CodeBadReq, "invalid partner ID", nil)
 	}
 
 	productID, err := strconv.ParseInt(productIDStr, 10, 32)
 	if err != nil || productID <= 0 {
-		return utils.NewResponse(utils.CodeBadReq, "invalid or missing product_id", nil)
+		return utils.NewResponse(utils.CodeBadReq, "invalid product ID", nil)
 	}
 
 	var variantID pgtype.Int4
 	if variantIDStr != "" {
-		if vID, err := strconv.ParseInt(variantIDStr, 10, 32); err == nil && vID > 0 {
+		vID, err := strconv.ParseInt(variantIDStr, 10, 32)
+		if err == nil && vID > 0 {
 			variantID = pgtype.Int4{Int32: int32(vID), Valid: true}
 		}
 	}
 
-	qty := 1.0
+	var uomID pgtype.Int4
+	if uomIDStr != "" {
+		uID, err := strconv.ParseInt(uomIDStr, 10, 32)
+		if err == nil && uID > 0 {
+			uomID = pgtype.Int4{Int32: int32(uID), Valid: true}
+		}
+	}
+
+	var qty pgtype.Numeric
 	if quantityStr != "" {
-		if q, err := strconv.ParseFloat(quantityStr, 64); err == nil && q > 0 {
-			qty = q
+		q, err := strconv.ParseFloat(quantityStr, 64)
+		if err == nil && q > 0 {
+			qty = utils.Float64ToPgNumeric(q)
 		}
 	}
 
 	row, err := uc.repo.GetEffectiveBPPriceContract(ctx, repository.GetEffectiveBPPriceContractParams{
 		PartnerID:        int32(partnerID),
-		ProductID:        int32(productID),
+		ProductID:        pgtype.Int4{Int32: int32(productID), Valid: true},
 		ProductVariantID: variantID,
-		Quantity:         utils.Float64ToPgNumeric(qty),
+		UomID:            uomID,
+		Quantity:         qty,
 	})
 	if err != nil {
-		return utils.NewResponse(utils.CodeNotFound, "no effective price contract found for the specified criteria", nil)
+		return utils.NewResponse(utils.CodeNotFound, "no active price contract found for this partner and product combination", nil)
 	}
 
 	return utils.NewResponse(utils.CodeOK, "effective price contract fetched successfully", bpPriceContractEffectiveRowToOutput(row))
@@ -527,11 +762,34 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 		return utils.NewResponse(utils.CodeNotFound, "price contract not found", nil)
 	}
 
+	prodID := existing.ProductID
+	if input.ProductID != nil {
+		if *input.ProductID <= 0 {
+			prodID = pgtype.Int4{Valid: false}
+		} else {
+			prodID = pgtype.Int4{Int32: *input.ProductID, Valid: true}
+		}
+	}
+
+	uomID := existing.UomID
+	if input.UomID != nil {
+		if *input.UomID <= 0 {
+			uomID = pgtype.Int4{Valid: false}
+		} else {
+			uomID = pgtype.Int4{Int32: *input.UomID, Valid: true}
+		}
+	}
+
 	contractPrice := existing.ContractPrice
+	contractPriceFloat := 0.0
+	if cpVal, err := existing.ContractPrice.Float64Value(); err == nil && cpVal.Valid {
+		contractPriceFloat = cpVal.Float64
+	}
 	if input.ContractPrice != nil {
 		if *input.ContractPrice < 0 {
 			return utils.NewResponse(utils.CodeBadReq, "contract_price must be non-negative", nil)
 		}
+		contractPriceFloat = *input.ContractPrice
 		contractPrice = utils.Float64ToPgNumeric(*input.ContractPrice)
 	}
 
@@ -540,9 +798,51 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 		discountPercentage = utils.Float64ToPgNumeric(*input.DiscountPercentage)
 	}
 
+	discountTypeStr := "percentage"
+	if existing.DiscountType.Valid && existing.DiscountType.String != "" {
+		discountTypeStr = existing.DiscountType.String
+	}
+	if input.DiscountType != nil && *input.DiscountType != "" {
+		discountTypeStr = *input.DiscountType
+	}
+	if discountTypeStr != "percentage" && discountTypeStr != "fixed" {
+		return utils.NewResponse(utils.CodeBadReq, "discount_type must be either 'percentage' or 'fixed'", nil)
+	}
+
+	discountAmountFloat := 0.0
+	if daVal, err := existing.DiscountAmount.Float64Value(); err == nil && daVal.Valid {
+		discountAmountFloat = daVal.Float64
+	}
+	if input.DiscountAmount != nil {
+		discountAmountFloat = *input.DiscountAmount
+	}
+	if discountAmountFloat < 0 {
+		return utils.NewResponse(utils.CodeBadReq, "discount_amount must be non-negative", nil)
+	}
+
+	contractTypeStr := "ITEM"
+	if existing.ContractType.Valid && existing.ContractType.String != "" {
+		contractTypeStr = existing.ContractType.String
+	}
+	if input.ContractType != nil && *input.ContractType != "" {
+		contractTypeStr = *input.ContractType
+	}
+
+	if discountTypeStr == "fixed" && discountAmountFloat > contractPriceFloat && contractTypeStr == "ITEM" {
+		return utils.NewResponse(utils.CodeBadReq, "fixed discount amount cannot exceed contract price", nil)
+	}
+
+	discountType := pgtype.Text{String: discountTypeStr, Valid: true}
+	discountAmount := utils.Float64ToPgNumeric(discountAmountFloat)
+
 	minQuantity := existing.MinQuantity
 	if input.MinQuantity != nil {
 		minQuantity = utils.Float64ToPgNumeric(*input.MinQuantity)
+	}
+
+	minOrderAmt := existing.MinOrderAmount
+	if input.MinOrderAmount != nil {
+		minOrderAmt = utils.Float64ToPgNumeric(*input.MinOrderAmount)
 	}
 
 	validFrom := existing.ValidFrom
@@ -583,9 +883,15 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 
 	updated, err := uc.repo.UpdateBPPriceContract(ctx, repository.UpdateBPPriceContractParams{
 		ID:                 int32(id),
+		ProductID:          prodID,
+		UomID:              uomID,
 		ContractPrice:      contractPrice,
 		DiscountPercentage: discountPercentage,
+		DiscountType:       discountType,
+		DiscountAmount:     discountAmount,
 		MinQuantity:        minQuantity,
+		ContractType:       pgtype.Text{String: contractTypeStr, Valid: true},
+		MinOrderAmount:     minOrderAmt,
 		ValidFrom:          validFrom,
 		ValidTo:            validTo,
 		IsActive:           isActive,
@@ -599,7 +905,6 @@ func (uc *BPPriceContractUseCase) UpdateBPPriceContract(ctx context.Context, idS
 	if err != nil {
 		return utils.NewResponse(utils.CodeOK, "price contract updated successfully", bpPriceContractRawToOutput(updated))
 	}
-
 	return utils.NewResponse(utils.CodeOK, "price contract updated successfully", bpPriceContractRowToOutput(fullRow))
 }
 
@@ -651,8 +956,7 @@ func (uc *BPPriceContractUseCase) ToggleBPPriceContractActive(ctx context.Contex
 
 	fullRow, err := uc.repo.GetBPPriceContract(ctx, updated.ID)
 	if err != nil {
-		return utils.NewResponse(utils.CodeOK, "price contract status updated successfully", bpPriceContractRawToOutput(updated))
+		return utils.NewResponse(utils.CodeOK, "price contract active status updated successfully", bpPriceContractRawToOutput(updated))
 	}
-
-	return utils.NewResponse(utils.CodeOK, "price contract status updated successfully", bpPriceContractRowToOutput(fullRow))
+	return utils.NewResponse(utils.CodeOK, "price contract active status updated successfully", bpPriceContractRowToOutput(fullRow))
 }
