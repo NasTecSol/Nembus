@@ -80,18 +80,47 @@ func TestDeltaDataAndWatermarkCommitTogether(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT last_sync_at FROM sync_watermarks WHERE entity_type='inventory_stock'").Scan(&saved); err != nil || saved.Equal(checkpoint) {
 		t.Fatalf("promotion changed inventory watermark: %v %v", saved, err)
 	}
-	// Timestamp ties must all be delivered before advancing a timestamp cursor.
-	rows, err := pool.Query(ctx, `SELECT id FROM (VALUES(1,'2026-01-01'::timestamp),(2,'2026-01-01'::timestamp),
-		(3,'2026-01-02'::timestamp)) AS t(id,updated_at) ORDER BY updated_at FETCH FIRST ($1) ROWS WITH TIES`, 1)
-	if err != nil {
-		t.Fatal(err)
+	var cursorID int64
+	if err := pool.QueryRow(ctx, "SELECT (metadata->>'cursor_id')::bigint FROM sync_watermarks WHERE entity_type='promotions'").Scan(&cursorID); err != nil || cursorID != 1 {
+		t.Fatalf("cursor not preserved after empty page: %d %v", cursorID, err)
 	}
-	defer rows.Close()
-	count := 0
-	for rows.Next() {
-		count++
+}
+
+func TestCursorTimestampTies(t *testing.T) {
+	now := time.Now()
+	for _, test := range []struct {
+		timestamp time.Time
+		id        int64
+		want      bool
+	}{
+		{now, 10, false}, {now, 11, true}, {now, 9, false},
+		{now.Add(time.Second), 1, true}, {now.Add(-time.Second), 100, false},
+	} {
+		if got := cursorAfter(test.timestamp, test.id, now, 10); got != test.want {
+			t.Fatalf("cursor timestamp=%s id=%d got=%v want=%v", test.timestamp, test.id, got, test.want)
+		}
 	}
-	if rows.Err() != nil || count != 2 {
-		t.Fatalf("timestamp boundary lost: count=%d err=%v", count, rows.Err())
+}
+
+func TestStopWaitsForCanceledWorker(t *testing.T) {
+	s := NewSyncService(context.Background(), nil, "localhost:50051", "test")
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		s.syncMu.Lock()
+		defer s.syncMu.Unlock()
+		close(started)
+		<-s.ctx.Done()
+		close(finished)
+	}()
+	<-started
+	s.Stop()
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Stop returned before worker exited")
+	}
+	if s.ctx.Err() == nil {
+		t.Fatal("worker context was not canceled")
 	}
 }
