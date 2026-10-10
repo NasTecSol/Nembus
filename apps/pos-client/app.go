@@ -163,35 +163,10 @@ func (a *App) StartDatabase(username, password, database string, port uint32) st
 	// Initialize master repo
 	ctx := context.Background()
 
-	// Run migrations before connecting with pgxpool.
-	// If migration fails (e.g. due to a stale/partial previous install), wipe the
-	// data directory and retry once from a clean DB.
+	// Run migrations before connecting with pgxpool. Preserve local databases
+	// on failure: a storage or migration error must never trigger a data reset.
 	if err := a.migrate(a.cfg.MasterDBURL); err != nil {
-		log.Printf("Migration failed: %v — wiping data dir and retrying from scratch", err)
-
-		// Stop the embedded DB so we can delete the data dir.
-		_ = a.dbManager.Stop()
-
-		// Wipe the data directory.
-		home, _ := os.UserHomeDir()
-		dataPath := filepath.Join(home, ".nembus", "data")
-		if removeErr := os.RemoveAll(dataPath); removeErr != nil {
-			return fmt.Sprintf("Error cleaning data dir: %v", removeErr)
-		}
-
-		// Also remove the setup marker so the wizard starts fresh.
-		_ = os.Remove(filepath.Join(home, ".nembus", ".setup_done"))
-
-		// Start a fresh embedded DB.
-		a.dbManager = db.NewDBManager(dbCfg)
-		if startErr := a.dbManager.Start(); startErr != nil {
-			return fmt.Sprintf("Error restarting DB after wipe: %v", startErr)
-		}
-
-		// Retry migration on the clean DB.
-		if retryErr := a.migrate(a.cfg.MasterDBURL); retryErr != nil {
-			return fmt.Sprintf("Error running migrations (after reset): %v", retryErr)
-		}
+		return fmt.Sprintf("Error running migrations (local data preserved): %v", db.WithStorageHint(err))
 	}
 
 	pool, repo, err := setupDatabase(ctx, a.cfg)
@@ -223,7 +198,11 @@ func (a *App) migrate(dbURL string) error {
 		var inRecovery bool
 		err := sqlDB.QueryRow("SELECT pg_is_in_recovery()").Scan(&inRecovery)
 		if err == nil && !inRecovery {
-			log.Printf("Database [%s] is ready for migrations", dbURL)
+			var databaseName string
+			if err := sqlDB.QueryRow("SELECT current_database()").Scan(&databaseName); err != nil {
+				return fmt.Errorf("failed to identify migration database: %w", err)
+			}
+			log.Printf("Database [%s] is ready for migrations", databaseName)
 			break
 		}
 		if time.Now().After(deadline) {
@@ -238,17 +217,19 @@ func (a *App) migrate(dbURL string) error {
 
 	// If the database was restored from a Cloud backup, the base schema tables (e.g. organizations)
 	// already exist, but goose_db_version may not be initialized. Mark initial baseline as applied
-	// so Goose skips 20260813124500.sql and proceeds to apply POS extensions.
+	// so Goose skips the initial schema and proceeds to apply POS extensions.
 	var baseSchemaExists bool
-	_ = sqlDB.QueryRow(`
+	if err := sqlDB.QueryRow(`
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables 
 			WHERE table_schema = 'public' AND table_name = 'organizations'
 		);
-	`).Scan(&baseSchemaExists)
+	`).Scan(&baseSchemaExists); err != nil {
+		return fmt.Errorf("failed to check restored schema: %w", err)
+	}
 
 	if baseSchemaExists {
-		_, _ = sqlDB.Exec(`
+		if _, err := sqlDB.Exec(`
 			CREATE TABLE IF NOT EXISTS goose_db_version (
 				id serial PRIMARY KEY,
 				version_id bigint NOT NULL,
@@ -264,7 +245,9 @@ func (a *App) migrate(dbURL string) error {
 				20260829112654, 20260916085642, 20260917120000,
 				20260918140000, 20261001153500
 			);
-		`)
+		`); err != nil {
+			return fmt.Errorf("failed to initialize restored migration baseline: %w", db.WithStorageHint(err))
+		}
 	}
 
 	goose.SetBaseFS(migrations)
@@ -274,14 +257,20 @@ func (a *App) migrate(dbURL string) error {
 	}
 
 	if err := goose.Up(sqlDB, "migrations"); err != nil {
-		return fmt.Errorf("failed to run migrations: %v", err)
+		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
 
 	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
-	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
-	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;")
-	_, _ = sqlDB.Exec("DROP FUNCTION IF EXISTS update_cashier_session_balance();")
-	_, _ = sqlDB.Exec("ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;")
+	for _, statement := range []string{
+		"DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;",
+		"DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;",
+		"DROP FUNCTION IF EXISTS update_cashier_session_balance();",
+		"ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;",
+	} {
+		if _, err := sqlDB.Exec(statement); err != nil {
+			return fmt.Errorf("failed to finalize POS schema: %w", db.WithStorageHint(err))
+		}
+	}
 
 	return nil
 }
@@ -382,7 +371,7 @@ func (a *App) CloneTenant(slug string) string {
 	if err != nil {
 		// Ignore error if database already exists
 		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Sprintf("Error creating tenant database: %v", err)
+			return fmt.Sprintf("Error creating tenant database: %v", db.WithStorageHint(err))
 		}
 		log.Printf("Database %s already exists, proceeding...", tenantDBName)
 	}
@@ -412,7 +401,7 @@ func (a *App) CloneTenant(slug string) string {
 	)
 	if err != nil {
 		log.Printf("CloneTenant Backup Error: %v", err)
-		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", err)
+		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", db.WithStorageHint(err))
 	}
 	log.Printf("Tenant backup restored from: %s", backupPath)
 
