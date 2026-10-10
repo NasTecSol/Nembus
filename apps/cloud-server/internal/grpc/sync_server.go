@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -342,6 +344,19 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 	if limit <= 0 {
 		limit = 100
 	}
+	if limit > syncpb.PullPageLimit {
+		limit = syncpb.PullPageLimit
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(syncpb.PullCursorKey)) > 0 {
+		values := md.Get(syncpb.PullCursorKey)
+		afterID, err := strconv.ParseInt(values[0], 10, 64)
+		if err != nil || afterID < 0 || len(req.EntityTypes) != 1 {
+			return status.Error(codes.InvalidArgument, "pull cursor requires a nonnegative ID and exactly one entity")
+		}
+		if err := stream.SendHeader(metadata.Pairs(syncpb.PullCursorVersionKey, "1")); err != nil {
+			return err
+		}
+	}
 
 	// Delta entity target categories
 	targetEntities := req.EntityTypes
@@ -383,8 +398,19 @@ func (s *SyncServer) streamEntityDeltas(
 	// Include the entire timestamp boundary so the next request's strict >
 	// predicate cannot skip rows sharing the last timestamp in this page.
 	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC FETCH FIRST ($2) ROWS WITH TIES`, pgx.Identifier{entityType}.Sanitize())
+	args := []any{since, limit}
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(syncpb.PullCursorKey)) > 0 {
+		afterID, err := strconv.ParseInt(md.Get(syncpb.PullCursorKey)[0], 10, 64)
+		if err != nil || afterID < 0 {
+			return status.Error(codes.InvalidArgument, "invalid pull cursor")
+		}
+		query = fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t
+			WHERE updated_at > $1 OR (updated_at = $1 AND id > $3)
+			ORDER BY updated_at, id LIMIT $2`, pgx.Identifier{entityType}.Sanitize())
+		args = append(args, afterID)
+	}
 
-	rows, err := pool.Query(ctx, query, since, limit)
+	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("query %s: %w", entityType, err)
 	}

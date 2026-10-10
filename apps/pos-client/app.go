@@ -138,6 +138,9 @@ func (a *App) beforeClose(ctx context.Context) (prevent bool) {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	if a.syncService != nil {
+		a.syncService.Stop()
+	}
 	if a.dbManager != nil {
 		_ = a.dbManager.Stop()
 	}
@@ -312,6 +315,18 @@ func (a *App) CloneTenant(slug string) string {
 	if a.masterRepo == nil {
 		return "Error: Local database not started"
 	}
+	previousSync := a.syncService
+	if previousSync != nil {
+		log.Printf("CloneTenant: stopping background sync during backup and restore")
+		previousSync.Stop()
+		defer func() {
+			// A failed clone resumes the previous tenant worker. A successful
+			// clone starts a fresh worker after restore and migrations.
+			if a.syncService == previousSync {
+				a.StartSyncService(previousSync.TenantSlug())
+			}
+		}()
+	}
 
 	// 1. Fetch Tenant details from cloud
 	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
@@ -445,6 +460,9 @@ func (a *App) CloneTenant(slug string) string {
 
 // StartSyncService starts the background synchronization worker
 func (a *App) StartSyncService(slug string) {
+	if a.syncService != nil {
+		a.syncService.Stop()
+	}
 	if a.masterPool == nil {
 		log.Println("Warning: Cannot start sync service without master pool")
 		return

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
 	"log"
 	"net/url"
 	"strings"
@@ -23,6 +22,7 @@ import (
 
 type SyncService struct {
 	ctx        context.Context
+	cancel     context.CancelFunc
 	masterPool *pgxpool.Pool
 	cloudURL   string
 	tenantSlug string
@@ -43,9 +43,14 @@ type OutboxItem struct {
 func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug string) *SyncService {
 	// Resolve gRPC target address from cloudURL or environment default
 	grpcTarget := extractGRPCTarget(cloudURL)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	workerCtx, cancel := context.WithCancel(ctx)
 
 	return &SyncService{
-		ctx:        context.Background(),
+		ctx:        workerCtx,
+		cancel:     cancel,
 		masterPool: pool,
 		cloudURL:   cloudURL,
 		tenantSlug: slug,
@@ -86,6 +91,7 @@ func (s *SyncService) Start() {
 
 	ticker := time.NewTicker(15 * time.Second)
 	go func() {
+		defer ticker.Stop()
 		for {
 			select {
 			case <-s.ctx.Done():
@@ -97,6 +103,15 @@ func (s *SyncService) Start() {
 	}()
 	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s, interval: 15s)", s.tenantSlug, s.grpcAddr)
 }
+
+// Stop cancels in-flight RPCs and waits for the worker to leave the database.
+func (s *SyncService) Stop() {
+	s.cancel()
+	s.syncMu.Lock()
+	s.syncMu.Unlock()
+}
+
+func (s *SyncService) TenantSlug() string { return s.tenantSlug }
 
 // SyncNow triggers immediate outbox draining and delta fetch
 func (s *SyncService) SyncNow() {
@@ -110,7 +125,7 @@ func (s *SyncService) performSync() {
 		return
 	}
 	defer s.syncMu.Unlock()
-	if s.masterPool == nil {
+	if s.masterPool == nil || s.ctx.Err() != nil {
 		return
 	}
 
