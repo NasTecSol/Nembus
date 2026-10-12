@@ -98,6 +98,7 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 		// POS & Sales transactions
 		"pos_transactions",
 		"pos_transaction_lines",
+		"pos_payments",
 		"sales_orders",
 		"sales_order_lines",
 		"sales_orders_v2",
