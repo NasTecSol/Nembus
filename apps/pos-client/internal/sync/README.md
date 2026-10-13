@@ -34,12 +34,28 @@ its response headers. Clients refuse to checkpoint against an older server.
 Legacy clients retain the previous timestamp-only behavior.
 Deploy the updated cloud server before the updated POS client.
 
+Each cycle processes at most five pages (1,000 rows) per entity before moving
+to the next entity. Large initial backlogs resume from their committed cursor
+on the next cycle instead of delaying every later entity indefinitely.
+`syncing` can therefore mean a backlog is partially processed. Push RPCs and
+local page writes each have a 60-second timeout; checkpoint reads and failure
+records have a 15-second timeout. Logs identify cycle starts, entity checks,
+page application, and overlapping timer ticks. The 15-second timer does not
+guarantee a complete sync every 15 seconds while a backlog is being processed.
+
 Cloning stops the local background worker until backup download and restore
 finish. Replacing a worker cancels and waits for the old one instead of leaving
 it running. A failed clone resumes the previous tenant worker.
 
 The cloud's existing watermark writes describe upstream push ingestion; they
 do not prove a terminal applied a pull. Pull status is recorded locally.
+
+Delta fetch requires a row in the local tenant's `local_device_config` table
+with a valid store ID. Setup saves this row transactionally and reports database
+errors instead of reporting success. Startup restores a missing identity from
+the saved `.nembus/device_config.json` file, validating store/terminal references.
+If that file has no store selection, complete store and terminal setup in POS.
+Sync never falls back to writing checkpoints in the master database.
 
 This remains timestamp-based replication: hard deletes are not propagated,
 catalog dependencies outside the pull list may cause foreign-key failures,
