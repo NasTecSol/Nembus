@@ -20,11 +20,15 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const maxDeltaPagesPerEntity = 5
+
 // Every entity has its own source timestamp; the legacy ZATCA timestamp is
 // deliberately not imported because older fetches advanced it on failed writes.
 func (s *SyncService) fetchDeltaGRPC() {
 	var storeID int32
-	if err := s.masterPool.QueryRow(s.ctx, `SELECT store_id FROM local_device_config LIMIT 1`).Scan(&storeID); err != nil || storeID <= 0 {
+	configCtx, cancelConfig := context.WithTimeout(s.ctx, 15*time.Second)
+	defer cancelConfig()
+	if err := s.masterPool.QueryRow(configCtx, `SELECT store_id FROM local_device_config ORDER BY id LIMIT 1`).Scan(&storeID); err != nil || storeID <= 0 {
 		log.Printf("[gRPC SYNC] Delta fetch requires a valid local store: %v", err)
 		return
 	}
@@ -45,9 +49,11 @@ func (s *SyncService) fetchDeltaGRPC() {
 			}
 			log.Printf("[gRPC SYNC] Delta fetch failed for %s: %v", entity, err)
 			metadata, _ := json.Marshal(map[string]any{"direction": "pull", "status": "error", "last_error": err.Error(), "last_attempt_at": time.Now().UTC()})
-			_, recordErr := s.masterPool.Exec(s.ctx, `INSERT INTO sync_watermarks(entity_type,store_id,metadata)
+			recordCtx, cancelRecord := context.WithTimeout(s.ctx, 15*time.Second)
+			_, recordErr := s.masterPool.Exec(recordCtx, `INSERT INTO sync_watermarks(entity_type,store_id,metadata)
 				VALUES($1,$2,$3::jsonb) ON CONFLICT(entity_type,store_id) DO UPDATE
 				SET metadata=COALESCE(sync_watermarks.metadata,'{}'::jsonb)||EXCLUDED.metadata`, entity, storeID, string(metadata))
+			cancelRecord()
 			if recordErr != nil {
 				log.Printf("[gRPC SYNC] Could not record %s failure: %v", entity, recordErr)
 			}
@@ -56,15 +62,18 @@ func (s *SyncService) fetchDeltaGRPC() {
 }
 
 func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32, entity string) error {
+	log.Printf("[gRPC SYNC] Checking %s for tenant %s, store %d", entity, s.tenantSlug, storeID)
+	readCtx, cancelRead := context.WithTimeout(s.ctx, 15*time.Second)
+	defer cancelRead()
 	since := time.Unix(0, 0).UTC()
 	var afterID int64
-	err := s.masterPool.QueryRow(s.ctx, `SELECT last_sync_at, COALESCE((metadata->>'cursor_id')::bigint,0)
+	err := s.masterPool.QueryRow(readCtx, `SELECT last_sync_at, COALESCE((metadata->>'cursor_id')::bigint,0)
 		FROM sync_watermarks WHERE entity_type=$1 AND store_id=$2`, entity, storeID).Scan(&since, &afterID)
 	if err != nil && err != pgx.ErrNoRows {
 		return fmt.Errorf("read watermark: %w", err)
 	}
 	total := 0
-	for {
+	for page := 0; page < maxDeltaPagesPerEntity; page++ {
 		ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, syncpb.PullCursorKey, strconv.FormatInt(afterID, 10))
 		stream, err := client.StreamPull(ctx, &syncpb.PullRequest{TenantSlug: s.tenantSlug, StoreId: storeID,
@@ -104,6 +113,7 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 			events = append(events, event)
 		}
 		cancel()
+		log.Printf("[gRPC SYNC] Applying %s page %d (%d rows)", entity, page+1, len(events))
 		if err := s.saveDeltaPage(storeID, entity, next, events, total); err != nil {
 			return err
 		}
@@ -115,6 +125,8 @@ func (s *SyncService) pullEntity(client syncpb.SyncServiceClient, storeID int32,
 		since = next
 		afterID = nextID
 	}
+	log.Printf("[gRPC SYNC] %s: applied %d updates; remaining pages resume next cycle", entity, total)
+	return nil
 }
 
 func cursorAfter(timestamp time.Time, id int64, since time.Time, afterID int64) bool {
@@ -123,18 +135,28 @@ func cursorAfter(timestamp time.Time, id int64, since time.Time, afterID int64) 
 
 // Data and its checkpoint commit together. Failed pages remain retryable.
 func (s *SyncService) saveDeltaPage(storeID int32, entity string, since time.Time, events []*syncpb.SyncEvent, previousCount int) error {
-	tx, err := s.masterPool.Begin(s.ctx)
+	ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+	defer cancel()
+	return s.saveDeltaPageContext(ctx, storeID, entity, since, events, previousCount)
+}
+
+func (s *SyncService) saveDeltaPageContext(ctx context.Context, storeID int32, entity string, since time.Time, events []*syncpb.SyncEvent, previousCount int) error {
+	tx, err := s.masterPool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(s.ctx)
+	defer func() {
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tx.Rollback(rollbackCtx)
+	}()
 	if len(events) > 0 {
-		query, err := deltaUpsertSQL(s.ctx, tx, entity)
+		query, err := deltaUpsertSQL(ctx, tx, entity)
 		if err != nil {
 			return err
 		}
 		for _, event := range events {
-			if _, err := tx.Exec(s.ctx, query, string(event.PayloadJson)); err != nil {
+			if _, err := tx.Exec(ctx, query, string(event.PayloadJson)); err != nil {
 				return fmt.Errorf("apply %s ID %d: %w", entity, event.EntityId, err)
 			}
 		}
@@ -149,14 +171,14 @@ func (s *SyncService) saveDeltaPage(storeID int32, entity string, since time.Tim
 		metadata["cursor_id"] = events[len(events)-1].EntityId
 	}
 	data, _ := json.Marshal(metadata)
-	_, err = tx.Exec(s.ctx, `INSERT INTO sync_watermarks(entity_type,store_id,last_sync_at,metadata)
+	_, err = tx.Exec(ctx, `INSERT INTO sync_watermarks(entity_type,store_id,last_sync_at,metadata)
 		VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(entity_type,store_id) DO UPDATE SET
 		last_sync_at=EXCLUDED.last_sync_at,
 		metadata=COALESCE(sync_watermarks.metadata,'{}'::jsonb)||EXCLUDED.metadata`, entity, storeID, since, string(data))
 	if err != nil {
 		return err
 	}
-	return tx.Commit(s.ctx)
+	return tx.Commit(ctx)
 }
 
 func deltaUpsertSQL(ctx context.Context, tx pgx.Tx, entity string) (string, error) {

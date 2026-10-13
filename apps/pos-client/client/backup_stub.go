@@ -51,7 +51,8 @@ func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string)
 
 	client := backuppb.NewBackupServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	// Large tenant backups (around 5 GB) can take well over 30 minutes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 	defer cancel()
 
 	// 2. Start streaming backup

@@ -122,12 +122,16 @@ func (s *SyncService) performSync() {
 	// Startup, the timer and SyncNow can overlap. Only one worker may drain
 	// the queue, otherwise the same failure consumes several retries at once.
 	if !s.syncMu.TryLock() {
+		log.Printf("[gRPC SYNC] Previous cycle is still running for tenant %s", s.tenantSlug)
 		return
 	}
 	defer s.syncMu.Unlock()
 	if s.masterPool == nil || s.ctx.Err() != nil {
 		return
 	}
+	started := time.Now()
+	log.Printf("[gRPC SYNC] Starting cycle for tenant %s (target %s)", s.tenantSlug, s.grpcAddr)
+	defer func() { log.Printf("[gRPC SYNC] Cycle finished in %s", time.Since(started).Round(time.Millisecond)) }()
 
 	// 1. gRPC Push Strategy (Local Outbox -> Cloud)
 	s.drainOutboxGRPC()
@@ -153,9 +157,11 @@ const pendingOutboxSQL = `
 `
 
 func (s *SyncService) drainOutboxGRPC() {
+	ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+	defer cancel()
 	// Child events stay pending without consuming retries while their parent
 	// is pending or failed. They become eligible after its success is saved.
-	rows, err := s.masterPool.Query(s.ctx, pendingOutboxSQL)
+	rows, err := s.masterPool.Query(ctx, pendingOutboxSQL)
 	if err != nil {
 		log.Printf("[gRPC SYNC] Failed to query local sync_queue: %v", err)
 		return
@@ -179,9 +185,10 @@ func (s *SyncService) drainOutboxGRPC() {
 	if len(items) == 0 {
 		return
 	}
+	log.Printf("[gRPC SYNC] Pushing %d pending outbox entries", len(items))
 
 	var storeID int32
-	_ = s.masterPool.QueryRow(s.ctx, `SELECT store_id FROM local_device_config LIMIT 1;`).Scan(&storeID)
+	_ = s.masterPool.QueryRow(ctx, `SELECT store_id FROM local_device_config ORDER BY id LIMIT 1;`).Scan(&storeID)
 
 	conn, err := grpc.NewClient(s.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -192,7 +199,7 @@ func (s *SyncService) drainOutboxGRPC() {
 	defer conn.Close()
 
 	client := syncpb.NewSyncServiceClient(conn)
-	stream, err := client.StreamPush(s.ctx)
+	stream, err := client.StreamPush(ctx)
 	if err != nil {
 		log.Printf("[gRPC SYNC] StreamPush initialization error: %v", err)
 		s.recordOutboxFailure(items, err.Error())
@@ -202,11 +209,18 @@ func (s *SyncService) drainOutboxGRPC() {
 	var syncedIDs []int64
 
 	for _, item := range items {
+		if ctx.Err() != nil {
+			log.Printf("[gRPC SYNC] Push deadline reached; remaining entries will retry next cycle")
+			break
+		}
 		// Checkout creates a UUID sales order and cart locally, but the outbox
 		// only contains the resulting POS rows. Send those referenced parents
 		// first, including for older failed entries being retried.
-		parents, err := s.transactionParents(item)
+		parents, err := s.transactionParentsContext(ctx, item)
 		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
 			if errors.Is(err, errCheckoutNotReady) {
 				continue // Checkout is still completing locally; no retry is consumed.
 			}
@@ -235,11 +249,17 @@ func (s *SyncService) drainOutboxGRPC() {
 	_ = stream.CloseSend()
 
 	if len(syncedIDs) > 0 {
-		_, _ = s.masterPool.Exec(s.ctx, `
+		saveCtx, cancelSave := context.WithTimeout(s.ctx, 15*time.Second)
+		defer cancelSave()
+		_, err := s.masterPool.Exec(saveCtx, `
 			UPDATE sync_queue
 			SET status = 'synced', synced_at = NOW(), last_error = NULL
 			WHERE id = ANY($1);
 		`, syncedIDs)
+		if err != nil {
+			log.Printf("[gRPC SYNC] Could not save push acknowledgments: %v", err)
+			return
+		}
 		log.Printf("[gRPC SYNC] Pushed %d items upstream to Cloud via gRPC stream", len(syncedIDs))
 	}
 }
@@ -250,6 +270,12 @@ func (s *SyncService) drainOutboxGRPC() {
 var errCheckoutNotReady = errors.New("checkout is not fulfilled locally yet")
 
 func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+	defer cancel()
+	return s.transactionParentsContext(ctx, item)
+}
+
+func (s *SyncService) transactionParentsContext(ctx context.Context, item OutboxItem) ([]OutboxItem, error) {
 	if item.EntityType != "pos_transactions" {
 		return nil, nil
 	}
@@ -263,7 +289,7 @@ func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) 
 	if refs.SalesOrderID == nil && refs.SourceCartID == nil {
 		return nil, nil
 	}
-	rows, err := s.masterPool.Query(s.ctx, `
+	rows, err := s.masterPool.Query(ctx, `
 		SELECT entity_type, payload FROM (
 			SELECT 1 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
 			FROM carts c
@@ -340,18 +366,23 @@ func pushOutboxItem(stream syncpb.SyncService_StreamPushClient, item OutboxItem,
 }
 
 func (s *SyncService) recordOutboxFailure(items []OutboxItem, errMsg string) {
+	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+	defer cancel()
 	ids := make([]int64, len(items))
 	for i, item := range items {
 		ids[i] = item.ID
 	}
 
-	_, _ = s.masterPool.Exec(s.ctx, `
+	_, err := s.masterPool.Exec(ctx, `
 		UPDATE sync_queue
 		SET retry_count = retry_count + 1,
 		    last_error = $1,
 		    status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'pending' END
 		WHERE id = ANY($2);
 	`, errMsg, ids)
+	if err != nil {
+		log.Printf("[gRPC SYNC] Could not record outbox failure: %v", err)
+	}
 }
 
 // ResetFailedItems resets all 'failed' sync_queue entries back to 'pending' so they are
