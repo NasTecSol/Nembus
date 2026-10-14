@@ -709,6 +709,74 @@ func (q *Queries) ListGoodsReceiptNotesByPurchaseOrder(ctx context.Context, arg 
 	return items, nil
 }
 
+const rejectGoodsReceiptNoteApproval = `-- name: RejectGoodsReceiptNoteApproval :execrows
+UPDATE goods_receipt_notes
+SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'pending_approval'
+`
+
+func (q *Queries) RejectGoodsReceiptNoteApproval(ctx context.Context, id int32) (int64, error) {
+	result, err := q.db.Exec(ctx, rejectGoodsReceiptNoteApproval, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const stageGoodsReceiptNoteForApproval = `-- name: StageGoodsReceiptNoteForApproval :one
+WITH staged_grn AS (
+    UPDATE goods_receipt_notes
+    SET status = 'pending_approval', updated_at = CURRENT_TIMESTAMP
+    WHERE goods_receipt_notes.id = $1
+      AND goods_receipt_notes.organization_id = $2
+      AND goods_receipt_notes.status = 'draft'
+    RETURNING id
+), created_request AS (
+    INSERT INTO approval_requests (
+        organization_id, domain, action, entity_type, entity_id,
+        requested_by, required_permission, summary, payload, submission_notes, metadata
+    )
+    SELECT $2, 'goods_receipt_note', 'post', 'goods_receipt_note', staged_grn.id::text,
+           $3, $4, $5, $6, $7, '{}'::jsonb
+    FROM staged_grn
+    RETURNING id
+), created_log AS (
+    INSERT INTO approval_request_logs (approval_request_id, user_id, action, notes, metadata)
+    SELECT created_request.id, $3, 'submitted', $7, '{}'::jsonb
+    FROM created_request
+    RETURNING id
+)
+SELECT created_request.id
+FROM created_request
+CROSS JOIN (SELECT COUNT(*) FROM created_log) AS ensured_log
+`
+
+type StageGoodsReceiptNoteForApprovalParams struct {
+	ID                 int32           `json:"id"`
+	OrganizationID     int32           `json:"organization_id"`
+	RequestedBy        pgtype.Int4     `json:"requested_by"`
+	RequiredPermission string          `json:"required_permission"`
+	Summary            string          `json:"summary"`
+	Payload            json.RawMessage `json:"payload"`
+	SubmissionNotes    pgtype.Text     `json:"submission_notes"`
+}
+
+// Atomically hold the GRN, create its approval request, and add the submission log.
+func (q *Queries) StageGoodsReceiptNoteForApproval(ctx context.Context, arg StageGoodsReceiptNoteForApprovalParams) (int64, error) {
+	row := q.db.QueryRow(ctx, stageGoodsReceiptNoteForApproval,
+		arg.ID,
+		arg.OrganizationID,
+		arg.RequestedBy,
+		arg.RequiredPermission,
+		arg.Summary,
+		arg.Payload,
+		arg.SubmissionNotes,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const updateGoodsReceiptNoteHeader = `-- name: UpdateGoodsReceiptNoteHeader :one
 UPDATE goods_receipt_notes
 SET partners_id = $2,

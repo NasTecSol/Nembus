@@ -59,6 +59,11 @@ func (h *GoodsReceiptNotesHandler) CreateGoodsReceiptNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("invalid request body: %v", err), nil))
 		return
 	}
+	if userID, ok := middleware.GetUserIDFromContext(c); ok {
+		if parsedID, err := strconv.ParseInt(userID, 10, 32); err == nil && parsedID > 0 {
+			req.RequestedBy = int32(parsedID)
+		}
+	}
 
 	resp := h.useCase.CreateGoodsReceiptNote(c.Request.Context(), req)
 	c.JSON(resp.StatusCode, resp)
@@ -297,4 +302,3 @@ func (h *GoodsReceiptNotesHandler) DeleteGoodsReceiptNote(c *gin.Context) {
 	resp := h.useCase.DeleteGoodsReceiptNote(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
-
