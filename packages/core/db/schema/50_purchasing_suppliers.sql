@@ -144,6 +144,30 @@ CREATE TABLE customers (
 -- PURCHASE & SALES ORDERS
 -- =====================================================
 
+-- This table must precede purchase_orders because purchase_orders references it.
+CREATE TABLE IF NOT EXISTS bp_price_contracts (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    contract_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    discount_type VARCHAR(20) DEFAULT 'percentage',
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    min_quantity DECIMAL(15,3) DEFAULT 1,
+    contract_type VARCHAR(20) DEFAULT 'ITEM',
+    min_order_amount DECIMAL(15,2) DEFAULT 0.00,
+    valid_from DATE,
+    valid_to DATE,
+    is_active BOOLEAN DEFAULT true,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(partner_id, product_id, product_variant_id, uom_id)
+);
+
 CREATE TABLE purchase_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -158,6 +182,7 @@ CREATE TABLE purchase_orders (
     tax_amount DECIMAL(15,2) DEFAULT 0,
     total_amount DECIMAL(15,2) DEFAULT 0,
     price_list_id INTEGER REFERENCES price_lists(id) ON DELETE SET NULL,
+    applied_contract_id INTEGER REFERENCES bp_price_contracts(id) ON DELETE SET NULL,
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     metadata JSONB DEFAULT '{}',
@@ -437,29 +462,8 @@ CREATE TABLE cart_activity_log (
 );
 
 -- =====================================================
--- BP PRICE CONTRACTS, JOURNAL ENTRIES & LINES
+-- JOURNAL ENTRIES & LINES
 -- =====================================================
-
-CREATE TABLE IF NOT EXISTS bp_price_contracts (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
-    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
-    contract_price DECIMAL(15,4) NOT NULL,
-    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
-    discount_type VARCHAR(20) DEFAULT 'percentage',
-    discount_amount DECIMAL(15,2) DEFAULT 0.00,
-    min_quantity DECIMAL(15,3) DEFAULT 1,
-    valid_from DATE,
-    valid_to DATE,
-    is_active BOOLEAN DEFAULT true,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(partner_id, product_id, product_variant_id, uom_id)
-);
 
 CREATE TABLE IF NOT EXISTS journal_entries (
     id BIGSERIAL PRIMARY KEY,

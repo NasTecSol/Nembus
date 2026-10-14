@@ -270,10 +270,12 @@ CREATE TABLE "public"."bp_price_contracts" (
   "id" serial NOT NULL,
   "organization_id" integer NOT NULL,
   "partner_id" integer NOT NULL,
-  "product_id" integer NOT NULL,
+  "product_id" integer NULL,
   "product_variant_id" integer NULL,
   "uom_id" integer NULL,
-  "contract_price" numeric(15,4) NOT NULL,
+  "contract_price" numeric(15,4) NULL DEFAULT 0.0000,
+  "contract_type" character varying(20) NULL DEFAULT 'ITEM',
+  "min_order_amount" numeric(15,2) NULL DEFAULT 0.00,
   "discount_percentage" numeric(5,2) NULL DEFAULT 0.00,
   "discount_type" character varying(20) NULL DEFAULT 'percentage',
   "discount_amount" numeric(15,2) NULL DEFAULT 0.00,
@@ -805,6 +807,7 @@ CREATE TABLE "public"."purchase_orders" (
   "tax_amount" numeric(15,2) NULL DEFAULT 0,
   "total_amount" numeric(15,2) NULL DEFAULT 0,
   "price_list_id" integer NULL,
+  "applied_contract_id" integer NULL,
   "created_by" integer NULL,
   "approved_by" integer NULL,
   "metadata" jsonb NULL DEFAULT '{}',
@@ -812,6 +815,7 @@ CREATE TABLE "public"."purchase_orders" (
   "updated_at" timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id"),
   CONSTRAINT "purchase_orders_po_number_key" UNIQUE ("po_number"),
+  CONSTRAINT "purchase_orders_applied_contract_id_fkey" FOREIGN KEY ("applied_contract_id") REFERENCES "public"."bp_price_contracts" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "purchase_orders_approved_by_fkey" FOREIGN KEY ("approved_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "purchase_orders_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "purchase_orders_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -955,14 +959,13 @@ CREATE TABLE "public"."inventory_stock" (
 CREATE INDEX "idx_inventory_stock_product_id" ON "public"."inventory_stock" ("product_id");
 -- Create index "idx_inventory_stock_product_variant_id" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_product_variant_id" ON "public"."inventory_stock" ("product_variant_id");
+CREATE INDEX "idx_inventory_stock_product_variant_store" ON "public"."inventory_stock" ("product_id", (COALESCE("product_variant_id", -1)), "store_id");
 -- Create index "idx_inventory_stock_storage_location_id" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_storage_location_id" ON "public"."inventory_stock" ("storage_location_id");
 -- Create index "idx_inventory_stock_store_id" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_store_id" ON "public"."inventory_stock" ("store_id");
 -- Create index "idx_inventory_stock_store_product_qty" to table: "inventory_stock"
 CREATE INDEX "idx_inventory_stock_store_product_qty" ON "public"."inventory_stock" ("store_id", "product_id", "quantity_available");
--- Create index "idx_inventory_stock_unique_product_variant_store" to table: "inventory_stock"
-CREATE UNIQUE INDEX "idx_inventory_stock_unique_product_variant_store" ON "public"."inventory_stock" ("product_id", (COALESCE(product_variant_id, '-1'::integer)), "store_id");
 -- Create trigger "trg_inventory_stock_updated_at"
 CREATE TRIGGER "trg_inventory_stock_updated_at" BEFORE UPDATE ON "public"."inventory_stock" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "update_inventory_stock_updated_at"
@@ -1454,6 +1457,7 @@ CREATE TABLE "public"."menu_items" (
   PRIMARY KEY ("id"),
   CONSTRAINT "fk_menu_items_recipe" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_menu_category_id_fkey" FOREIGN KEY ("menu_category_id") REFERENCES "public"."menu_categories" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "menu_items_item_type_check" CHECK (item_type IN ('standard', 'combo')),
   CONSTRAINT "menu_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_product_variant_id_fkey" FOREIGN KEY ("product_variant_id") REFERENCES "public"."product_variants" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "menu_items_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "public"."stores" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -1915,8 +1919,7 @@ CREATE TABLE "public"."pos_transaction_lines" (
 CREATE INDEX "idx_pos_transaction_lines_product_id" ON "public"."pos_transaction_lines" ("product_id");
 -- Create index "idx_pos_transaction_lines_transaction_id" to table: "pos_transaction_lines"
 CREATE INDEX "idx_pos_transaction_lines_transaction_id" ON "public"."pos_transaction_lines" ("transaction_id");
--- Create trigger "trg_deduct_inventory_on_pos_transaction"
-CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
+-- Disabled: CREATE TRIGGER "trg_deduct_inventory_on_pos_transaction" AFTER INSERT ON "public"."pos_transaction_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_trigger_deduct_inventory_on_pos_transaction"();
 -- Create trigger "trg_pos_transactions_updated_at"
 CREATE TRIGGER "trg_pos_transactions_updated_at" BEFORE UPDATE ON "public"."pos_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 -- Create trigger "trg_price_lists_updated_at"
@@ -6755,3 +6758,49 @@ CREATE VIEW "public"."vw_waste_daily_summary" (
     avg(total_cost) AS avg_cost_per_entry
    FROM public.waste_logs wl
   GROUP BY store_id, (date(wasted_at)), waste_source;
+
+-- Approvals schema
+CREATE TABLE approval_policies (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    domain VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL DEFAULT 'submit',
+    is_enabled BOOLEAN NOT NULL DEFAULT true,
+    requires_approval BOOLEAN NOT NULL DEFAULT true,
+    required_permission VARCHAR(100) NOT NULL,
+    rules JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (organization_id, domain, action)
+);
+CREATE TABLE approval_requests (
+    id BIGSERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    domain VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(80) NOT NULL,
+    entity_id VARCHAR(100),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','approved','rejected','cancelled')),
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    required_permission VARCHAR(100) NOT NULL,
+    summary TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}',
+    submission_notes TEXT,
+    decision_notes TEXT,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMP,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX approval_requests_queue_idx ON approval_requests (organization_id, status, created_at DESC);
+CREATE INDEX approval_requests_entity_idx ON approval_requests (organization_id, domain, entity_type, entity_id);
+CREATE TABLE approval_request_logs (
+    id BIGSERIAL PRIMARY KEY,
+    approval_request_id BIGINT NOT NULL REFERENCES approval_requests(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(30) NOT NULL,
+    notes TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

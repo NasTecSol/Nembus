@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 
 	clientbackup "github.com/NasTecSol/nembus-client/client"
 	"github.com/NasTecSol/nembus-client/internal/config"
@@ -137,6 +138,9 @@ func (a *App) beforeClose(ctx context.Context) (prevent bool) {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	if a.syncService != nil {
+		a.syncService.Stop()
+	}
 	if a.dbManager != nil {
 		_ = a.dbManager.Stop()
 	}
@@ -162,35 +166,10 @@ func (a *App) StartDatabase(username, password, database string, port uint32) st
 	// Initialize master repo
 	ctx := context.Background()
 
-	// Run migrations before connecting with pgxpool.
-	// If migration fails (e.g. due to a stale/partial previous install), wipe the
-	// data directory and retry once from a clean DB.
+	// Run migrations before connecting with pgxpool. Preserve local databases
+	// on failure: a storage or migration error must never trigger a data reset.
 	if err := a.migrate(a.cfg.MasterDBURL); err != nil {
-		log.Printf("Migration failed: %v — wiping data dir and retrying from scratch", err)
-
-		// Stop the embedded DB so we can delete the data dir.
-		_ = a.dbManager.Stop()
-
-		// Wipe the data directory.
-		home, _ := os.UserHomeDir()
-		dataPath := filepath.Join(home, ".nembus", "data")
-		if removeErr := os.RemoveAll(dataPath); removeErr != nil {
-			return fmt.Sprintf("Error cleaning data dir: %v", removeErr)
-		}
-
-		// Also remove the setup marker so the wizard starts fresh.
-		_ = os.Remove(filepath.Join(home, ".nembus", ".setup_done"))
-
-		// Start a fresh embedded DB.
-		a.dbManager = db.NewDBManager(dbCfg)
-		if startErr := a.dbManager.Start(); startErr != nil {
-			return fmt.Sprintf("Error restarting DB after wipe: %v", startErr)
-		}
-
-		// Retry migration on the clean DB.
-		if retryErr := a.migrate(a.cfg.MasterDBURL); retryErr != nil {
-			return fmt.Sprintf("Error running migrations (after reset): %v", retryErr)
-		}
+		return fmt.Sprintf("Error running migrations (local data preserved): %v", db.WithStorageHint(err))
 	}
 
 	pool, repo, err := setupDatabase(ctx, a.cfg)
@@ -216,19 +195,44 @@ func (a *App) migrate(dbURL string) error {
 	}
 	defer sqlDB.Close()
 
+	// Wait for the database to be ready and not in recovery mode (e.g. after a bulk restore or WAL replay)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var inRecovery bool
+		err := sqlDB.QueryRow("SELECT pg_is_in_recovery()").Scan(&inRecovery)
+		if err == nil && !inRecovery {
+			var databaseName string
+			if err := sqlDB.QueryRow("SELECT current_database()").Scan(&databaseName); err != nil {
+				return fmt.Errorf("failed to identify migration database: %w", err)
+			}
+			log.Printf("Database [%s] is ready for migrations", databaseName)
+			break
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("database not ready after 30s: %w", err)
+			}
+			return fmt.Errorf("database still in recovery mode after 30s")
+		}
+		log.Printf("Waiting for database to finish recovery / accept connections... (status: %v)", err)
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	// If the database was restored from a Cloud backup, the base schema tables (e.g. organizations)
 	// already exist, but goose_db_version may not be initialized. Mark initial baseline as applied
-	// so Goose skips 20260813124500.sql and proceeds to apply POS extensions.
+	// so Goose skips the initial schema and proceeds to apply POS extensions.
 	var baseSchemaExists bool
-	_ = sqlDB.QueryRow(`
+	if err := sqlDB.QueryRow(`
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables 
 			WHERE table_schema = 'public' AND table_name = 'organizations'
 		);
-	`).Scan(&baseSchemaExists)
+	`).Scan(&baseSchemaExists); err != nil {
+		return fmt.Errorf("failed to check restored schema: %w", err)
+	}
 
 	if baseSchemaExists {
-		_, _ = sqlDB.Exec(`
+		if _, err := sqlDB.Exec(`
 			CREATE TABLE IF NOT EXISTS goose_db_version (
 				id serial PRIMARY KEY,
 				version_id bigint NOT NULL,
@@ -236,34 +240,17 @@ func (a *App) migrate(dbURL string) error {
 				tstamp timestamp NULL default now()
 			);
 			INSERT INTO goose_db_version (version_id, is_applied)
+			SELECT 20260918111505, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260918111505);
 
-			SELECT 20260813124500, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260813124500);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260821060910, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260821060910);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260829102802, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260829102802);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260829112654, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260829112654);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260916085642, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260916085642);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260917120000, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260917120000);
-
-			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 20260918140000, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260918140000);
-		`)
+			DELETE FROM goose_db_version WHERE version_id IN (
+				20260813124500, 20260821060910, 20260829102802,
+				20260829112654, 20260916085642, 20260917120000,
+				20260918140000, 20261001153500
+			);
+		`); err != nil {
+			return fmt.Errorf("failed to initialize restored migration baseline: %w", db.WithStorageHint(err))
+		}
 	}
 
 	goose.SetBaseFS(migrations)
@@ -273,13 +260,20 @@ func (a *App) migrate(dbURL string) error {
 	}
 
 	if err := goose.Up(sqlDB, "migrations"); err != nil {
-		return fmt.Errorf("failed to run migrations: %v", err)
+		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
 
-	// Ensure legacy DB triggers that double-count cashier session balances are dropped
-	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
-	_, _ = sqlDB.Exec("DROP FUNCTION IF EXISTS update_cashier_session_balance();")
-	_, _ = sqlDB.Exec("ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;")
+	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
+	for _, statement := range []string{
+		"DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;",
+		"DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;",
+		"DROP FUNCTION IF EXISTS update_cashier_session_balance();",
+		"ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;",
+	} {
+		if _, err := sqlDB.Exec(statement); err != nil {
+			return fmt.Errorf("failed to finalize POS schema: %w", db.WithStorageHint(err))
+		}
+	}
 
 	return nil
 }
@@ -320,6 +314,18 @@ func (a *App) FetchCloudTenants(slug string) interface{} {
 func (a *App) CloneTenant(slug string) string {
 	if a.masterRepo == nil {
 		return "Error: Local database not started"
+	}
+	previousSync := a.syncService
+	if previousSync != nil {
+		log.Printf("CloneTenant: stopping background sync during backup and restore")
+		previousSync.Stop()
+		defer func() {
+			// A failed clone resumes the previous tenant worker. A successful
+			// clone starts a fresh worker after restore and migrations.
+			if a.syncService == previousSync {
+				a.StartSyncService(previousSync.TenantSlug())
+			}
+		}()
 	}
 
 	// 1. Fetch Tenant details from cloud
@@ -380,7 +386,7 @@ func (a *App) CloneTenant(slug string) string {
 	if err != nil {
 		// Ignore error if database already exists
 		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Sprintf("Error creating tenant database: %v", err)
+			return fmt.Sprintf("Error creating tenant database: %v", db.WithStorageHint(err))
 		}
 		log.Printf("Database %s already exists, proceeding...", tenantDBName)
 	}
@@ -410,7 +416,7 @@ func (a *App) CloneTenant(slug string) string {
 	)
 	if err != nil {
 		log.Printf("CloneTenant Backup Error: %v", err)
-		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", err)
+		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", db.WithStorageHint(err))
 	}
 	log.Printf("Tenant backup restored from: %s", backupPath)
 
@@ -446,12 +452,7 @@ func (a *App) CloneTenant(slug string) string {
 		a.tenantManager.EvictPool(tenant.Slug)
 	}
 
-	// 6. Finalize setup
-	markerPath := filepath.Join(home, ".nembus", ".setup_done")
-	_ = os.MkdirAll(filepath.Dir(markerPath), 0755)
-	_ = os.WriteFile(markerPath, []byte("done"), 0644)
-
-	// 7. Start sync service for this tenant
+	// 6. Start sync service for this tenant
 	a.StartSyncService(tenant.Slug)
 
 	return "Success"
@@ -459,22 +460,43 @@ func (a *App) CloneTenant(slug string) string {
 
 // StartSyncService starts the background synchronization worker
 func (a *App) StartSyncService(slug string) {
+	if a.syncService != nil {
+		a.syncService.Stop()
+	}
 	if a.masterPool == nil {
 		log.Println("Warning: Cannot start sync service without master pool")
 		return
 	}
 
 	bgCtx := context.Background()
-	tenantPool := a.masterPool
 	if a.tenantManager == nil && a.masterRepo != nil {
 		a.tenantManager = manager.NewManager(a.masterRepo)
 	}
-	if a.tenantManager != nil {
-		pool, err := a.tenantManager.GetPool(bgCtx, slug)
-		if err == nil && pool != nil {
-			tenantPool = pool
-		} else {
-			log.Printf("[SyncService] Could not resolve pool for tenant [%s]: %v (falling back to masterPool)", slug, err)
+	if a.tenantManager == nil {
+		log.Printf("[SyncService] Cannot resolve tenant database for [%s]", slug)
+		return
+	}
+	tenantPool, err := a.tenantManager.GetPool(bgCtx, slug)
+	if err != nil || tenantPool == nil {
+		log.Printf("[SyncService] Cannot resolve tenant database for [%s]: %v", slug, err)
+		return
+	}
+	var configured bool
+	deviceCtx, cancelDevice := context.WithTimeout(bgCtx, 15*time.Second)
+	defer cancelDevice()
+	if err := tenantPool.QueryRow(deviceCtx, `SELECT COALESCE((SELECT store_id FROM local_device_config ORDER BY id LIMIT 1),0) > 0`).Scan(&configured); err != nil {
+		log.Printf("[SyncService] Cannot check device configuration: %v", err)
+	} else if !configured {
+		if raw := a.LoadDeviceConfig(); raw != "" {
+			identity, err := sync.ParseDeviceIdentity(raw)
+			if err == nil {
+				err = sync.SaveDeviceIdentity(deviceCtx, tenantPool, identity)
+			}
+			if err != nil {
+				log.Printf("[SyncService] Cannot restore saved device configuration: %v", err)
+			} else {
+				log.Printf("[SyncService] Restored local device configuration for store %d", identity.StoreID)
+			}
 		}
 	}
 
@@ -486,6 +508,15 @@ func (a *App) StartSyncService(slug string) {
 		}
 	}
 	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
+
+	// Reset any sync_queue items that previously hit max_retries (e.g. due to
+	// transient cloud errors or FK constraint issues that have since been fixed)
+	// so they are retried on the next sync cycle.
+	if count, err := a.syncService.ResetFailedItems(); err != nil {
+		log.Printf("[SyncService] Warning: could not reset failed sync_queue items: %v", err)
+	} else if count > 0 {
+		log.Printf("[SyncService] Reset %d previously-failed sync_queue items to pending — will retry shortly", count)
+	}
 	a.syncService.Start()
 }
 
@@ -674,6 +705,42 @@ func (a *App) LoadDeviceConfig() string {
 // SaveDeviceConfig writes the device configuration to disk so it persists
 // across Wails restarts and clean builds, and updates local_device_config in the tenant DB.
 func (a *App) SaveDeviceConfig(configJSON string) string {
+	identity, identityErr := sync.ParseDeviceIdentity(configJSON)
+	if identityErr != nil && !errors.Is(identityErr, sync.ErrDeviceConfigIncomplete) {
+		return fmt.Sprintf("Error: %v", identityErr)
+	}
+	if identityErr == nil {
+		if a.masterRepo == nil {
+			return "Error: local database is not ready to save device configuration"
+		}
+		if a.tenantManager == nil {
+			a.tenantManager = manager.NewManager(a.masterRepo)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var slug string
+		if a.syncService != nil {
+			slug = a.syncService.TenantSlug()
+		} else {
+			tenants, err := a.masterRepo.ListActiveTenants(ctx)
+			if err != nil {
+				return fmt.Sprintf("Error: cannot resolve configured tenant: %v", err)
+			}
+			if len(tenants) != 1 {
+				return "Error: device configuration requires one active local tenant"
+			}
+			slug = tenants[0].Slug
+		}
+		pool, err := a.tenantManager.GetPool(ctx, slug)
+		if err != nil {
+			return fmt.Sprintf("Error: cannot open tenant database: %v", err)
+		}
+		if err := sync.SaveDeviceIdentity(ctx, pool, identity); err != nil {
+			log.Printf("SaveDeviceConfig: database save failed: %v", err)
+			return fmt.Sprintf("Error: %v", err)
+		}
+		log.Printf("SaveDeviceConfig: saved local_device_config for tenant %s, store %d", slug, identity.StoreID)
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Sprintf("Error: cannot get home dir: %v", err)
@@ -688,39 +755,13 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 	}
 	log.Printf("SaveDeviceConfig: config saved to %s", path)
 
-	// Also persist store_id and pos_terminal_id into tenant DB local_device_config table
-	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(configJSON), &parsed); err == nil {
-		var storeID, terminalID int
-		if s, ok := parsed["store_id"].(string); ok {
-			storeID, _ = strconv.Atoi(s)
-		} else if s, ok := parsed["store_id"].(float64); ok {
-			storeID = int(s)
+	if identityErr == nil {
+		markerPath := filepath.Join(dir, ".setup_done")
+		if err := os.WriteFile(markerPath, []byte("done"), 0644); err != nil {
+			return fmt.Sprintf("Error: cannot save setup marker: %v", err)
 		}
-		if t, ok := parsed["terminal_id"].(string); ok {
-			terminalID, _ = strconv.Atoi(t)
-		} else if t, ok := parsed["terminal_id"].(float64); ok {
-			terminalID = int(t)
-		}
-		termName, _ := parsed["terminal_name"].(string)
-		if termName == "" {
-			termName = "POS Terminal"
-		}
-
-		if a.tenantManager != nil && a.masterRepo != nil {
-			ctx := context.Background()
-			tenants, err := a.masterRepo.ListActiveTenants(ctx)
-			if err == nil && len(tenants) > 0 {
-				pool, err := a.tenantManager.GetPool(ctx, tenants[0].Slug)
-				if err == nil && pool != nil {
-					_, _ = pool.Exec(ctx, `
-						DELETE FROM local_device_config;
-						INSERT INTO local_device_config (device_name, store_id, pos_terminal_id)
-						VALUES ($1, $2, $3);
-					`, termName, storeID, terminalID)
-					log.Printf("SaveDeviceConfig: updated local_device_config (store_id=%d, terminal_id=%d)", storeID, terminalID)
-				}
-			}
+		if a.syncService != nil {
+			a.syncService.SyncNow()
 		}
 	}
 

@@ -3082,11 +3082,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Disabled POS transaction line deduction trigger to prevent double deduction.
+-- Stock deduction occurs only when order fulfillment_status becomes 'fulfilled' via trg_deduct_inventory_on_fulfillment.
 DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;
-CREATE TRIGGER trg_deduct_inventory_on_pos_transaction
-    AFTER INSERT ON pos_transaction_lines
-    FOR EACH ROW
-    EXECUTE FUNCTION fn_trigger_deduct_inventory_on_pos_transaction();
 
 -- =====================================================
 -- Trigger for order line insertion: allocate stock when order is pending/confirmed

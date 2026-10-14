@@ -69,6 +69,28 @@ func (q *Queries) CheckRoleHasPermission(ctx context.Context, arg CheckRoleHasPe
 	return has_permission, err
 }
 
+const checkUserHasPermissionCode = `-- name: CheckUserHasPermissionCode :one
+SELECT EXISTS (
+    SELECT 1 FROM user_roles ur
+    JOIN role_permissions rp ON ur.role_id = rp.role_id
+    JOIN permissions p ON rp.permission_id = p.id
+    JOIN roles r ON ur.role_id = r.id
+    WHERE ur.user_id = $1 AND p.code = $2 AND r.is_active = true
+) AS has_permission
+`
+
+type CheckUserHasPermissionCodeParams struct {
+	UserID int32  `json:"user_id"`
+	Code   string `json:"code"`
+}
+
+func (q *Queries) CheckUserHasPermissionCode(ctx context.Context, arg CheckUserHasPermissionCodeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkUserHasPermissionCode, arg.UserID, arg.Code)
+	var has_permission bool
+	err := row.Scan(&has_permission)
+	return has_permission, err
+}
+
 const createRole = `-- name: CreateRole :one
 INSERT INTO roles (
     name,

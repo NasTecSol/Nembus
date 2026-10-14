@@ -34,6 +34,9 @@ type CreatePurchaseOrderInput struct {
 	ExpectedDeliveryDate *string                  `json:"expected_delivery_date,omitempty"`
 	Status               *string                  `json:"status,omitempty"` // default 'draft'
 	PriceListID          *int32                   `json:"price_list_id,omitempty"`
+	AppliedContractID    *int32                   `json:"applied_contract_id,omitempty"`
+	DiscountAmount       *float64                 `json:"discount_amount,omitempty"`
+	BillDiscountAmount   *float64                 `json:"bill_discount_amount,omitempty"`
 	CreatedBy            *int32                   `json:"created_by,omitempty"`
 	Metadata             map[string]interface{}   `json:"metadata,omitempty"`
 	Items                []PurchaseOrderLineInput `json:"items"`
@@ -45,6 +48,9 @@ type UpdatePurchaseOrderInput struct {
 	PoDate               *string                  `json:"po_date,omitempty"`
 	ExpectedDeliveryDate *string                  `json:"expected_delivery_date,omitempty"`
 	PriceListID          *int32                   `json:"price_list_id,omitempty"`
+	AppliedContractID    *int32                   `json:"applied_contract_id,omitempty"`
+	DiscountAmount       *float64                 `json:"discount_amount,omitempty"`
+	BillDiscountAmount   *float64                 `json:"bill_discount_amount,omitempty"`
 	Metadata             map[string]interface{}   `json:"metadata,omitempty"`
 	Items                []PurchaseOrderLineInput `json:"items,omitempty"`
 }
@@ -91,30 +97,36 @@ type PurchaseOrderLineOutput struct {
 }
 
 type PurchaseOrderOutput struct {
-	ID                   int32                     `json:"id"`
-	OrganizationID       int32                     `json:"organization_id"`
-	PoNumber             string                    `json:"po_number"`
-	SupplierID           int32                     `json:"supplier_id"`
-	SupplierName         pgtype.Text               `json:"supplier_name"`
-	SupplierCode         pgtype.Text               `json:"supplier_code"`
-	StoreID              int32                     `json:"store_id"`
-	StoreName            pgtype.Text               `json:"store_name"`
-	PoDate               pgtype.Date               `json:"po_date"`
-	ExpectedDeliveryDate pgtype.Date               `json:"expected_delivery_date"`
-	Status               string                    `json:"status"`
-	Subtotal             pgtype.Numeric            `json:"subtotal"`
-	DiscountAmount       pgtype.Numeric            `json:"discount_amount"`
-	TaxAmount            pgtype.Numeric            `json:"tax_amount"`
-	TotalAmount          pgtype.Numeric            `json:"total_amount"`
-	PriceListID          pgtype.Int4               `json:"price_list_id"`
-	CreatedBy            pgtype.Int4               `json:"created_by"`
-	CreatedByName        pgtype.Text               `json:"created_by_name"`
-	ApprovedBy           pgtype.Int4               `json:"approved_by"`
-	ApprovedByName       pgtype.Text               `json:"approved_by_name"`
-	Metadata             json.RawMessage           `json:"metadata"`
-	CreatedAt            pgtype.Timestamp          `json:"created_at"`
-	UpdatedAt            pgtype.Timestamp          `json:"updated_at"`
-	Items                []PurchaseOrderLineOutput `json:"items,omitempty"`
+	ID                               int32                     `json:"id"`
+	OrganizationID                   int32                     `json:"organization_id"`
+	PoNumber                         string                    `json:"po_number"`
+	SupplierID                       int32                     `json:"supplier_id"`
+	SupplierName                     pgtype.Text               `json:"supplier_name"`
+	SupplierCode                     pgtype.Text               `json:"supplier_code"`
+	StoreID                          int32                     `json:"store_id"`
+	StoreName                        pgtype.Text               `json:"store_name"`
+	PoDate                           pgtype.Date               `json:"po_date"`
+	ExpectedDeliveryDate             pgtype.Date               `json:"expected_delivery_date"`
+	Status                           string                    `json:"status"`
+	Subtotal                         pgtype.Numeric            `json:"subtotal"`
+	DiscountAmount                   pgtype.Numeric            `json:"discount_amount"`
+	BillDiscountAmount               *string                   `json:"bill_discount_amount,omitempty"`
+	TaxAmount                        pgtype.Numeric            `json:"tax_amount"`
+	TotalAmount                      pgtype.Numeric            `json:"total_amount"`
+	PriceListID                      pgtype.Int4               `json:"price_list_id"`
+	AppliedContractID                *int32                    `json:"applied_contract_id,omitempty"`
+	AppliedContractType              *string                   `json:"applied_contract_type,omitempty"`
+	AppliedContractMinOrderAmount   *string                   `json:"applied_contract_min_order_amount,omitempty"`
+	AppliedContractDiscountPercentage *string                   `json:"applied_contract_discount_percentage,omitempty"`
+	AppliedContractDiscountAmount   *string                   `json:"applied_contract_discount_amount,omitempty"`
+	CreatedBy                        pgtype.Int4               `json:"created_by"`
+	CreatedByName                    pgtype.Text               `json:"created_by_name"`
+	ApprovedBy                       pgtype.Int4               `json:"approved_by"`
+	ApprovedByName                   pgtype.Text               `json:"approved_by_name"`
+	Metadata                         json.RawMessage           `json:"metadata"`
+	CreatedAt                        pgtype.Timestamp          `json:"created_at"`
+	UpdatedAt                        pgtype.Timestamp          `json:"updated_at"`
+	Items                            []PurchaseOrderLineOutput `json:"items,omitempty"`
 }
 
 type PurchaseOrderSummaryOutput struct {
@@ -287,6 +299,70 @@ func (uc *PurchaseOrdersUseCase) CreatePurchaseOrder(ctx context.Context, input 
 		calculatedTotal += lineTotal
 	}
 
+	var appliedContractID pgtype.Int4
+	billDiscount := 0.0
+
+	if input.BillDiscountAmount != nil && *input.BillDiscountAmount > 0 {
+		billDiscount = *input.BillDiscountAmount
+	} else if input.DiscountAmount != nil && *input.DiscountAmount > 0 {
+		billDiscount = *input.DiscountAmount
+	}
+
+	if input.AppliedContractID != nil && *input.AppliedContractID > 0 {
+		appliedContractID = pgtype.Int4{Int32: *input.AppliedContractID, Valid: true}
+
+		contract, err := uc.repo.GetBPPriceContractRaw(ctx, *input.AppliedContractID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("applied contract ID %d not found", *input.AppliedContractID), nil)
+		}
+		if contract.IsActive.Valid && !contract.IsActive.Bool {
+			return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("applied contract ID %d is inactive", *input.AppliedContractID), nil)
+		}
+		if contract.PartnerID != input.SupplierID {
+			return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("applied contract ID %d belongs to partner %d, not supplier %d", *input.AppliedContractID, contract.PartnerID, input.SupplierID), nil)
+		}
+		if contract.ValidFrom.Valid && contract.ValidFrom.Time.After(poDate) {
+			return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("applied contract ID %d is not valid yet (valid from %s)", *input.AppliedContractID, utils.FormatDate(contract.ValidFrom)), nil)
+		}
+		if contract.ValidTo.Valid && contract.ValidTo.Time.Before(poDate) {
+			return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("applied contract ID %d has expired (valid to %s)", *input.AppliedContractID, utils.FormatDate(contract.ValidTo)), nil)
+		}
+
+		var minOrderAmt float64
+		if moVal, err := contract.MinOrderAmount.Float64Value(); err == nil && moVal.Valid {
+			minOrderAmt = moVal.Float64
+		}
+
+		if calculatedSubtotal < minOrderAmt {
+			return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("purchase order items subtotal (%.2f) does not meet minimum order threshold (%.2f) for contract %d", calculatedSubtotal, minOrderAmt, *input.AppliedContractID), nil)
+		}
+
+		if billDiscount == 0 {
+			discType := "percentage"
+			if contract.DiscountType.Valid && contract.DiscountType.String != "" {
+				discType = contract.DiscountType.String
+			}
+
+			if discType == "percentage" {
+				var discPct float64
+				if dpVal, err := contract.DiscountPercentage.Float64Value(); err == nil && dpVal.Valid {
+					discPct = dpVal.Float64
+				}
+				billDiscount = calculatedSubtotal * (discPct / 100.0)
+			} else if discType == "fixed" {
+				if daVal, err := contract.DiscountAmount.Float64Value(); err == nil && daVal.Valid {
+					billDiscount = daVal.Float64
+				}
+			}
+		}
+	}
+
+	headerDiscount := calculatedDiscount + billDiscount
+	calculatedTotal = calculatedSubtotal - billDiscount + calculatedTax
+	if calculatedTotal < 0 {
+		calculatedTotal = 0
+	}
+
 	metaBytes, _ := json.Marshal(input.Metadata)
 
 	poRow, err := uc.repo.CreatePurchaseOrder(ctx, repository.CreatePurchaseOrderParams{
@@ -298,12 +374,13 @@ func (uc *PurchaseOrdersUseCase) CreatePurchaseOrder(ctx context.Context, input 
 		ExpectedDeliveryDate: utils.TimeToPgDate(expectedDeliveryDate),
 		Status:               pgtype.Text{String: status, Valid: true},
 		Subtotal:             utils.Float64ToPgNumeric(calculatedSubtotal),
-		DiscountAmount:       utils.Float64ToPgNumeric(calculatedDiscount),
+		DiscountAmount:       utils.Float64ToPgNumeric(headerDiscount),
 		TaxAmount:            utils.Float64ToPgNumeric(calculatedTax),
 		TotalAmount:          utils.Float64ToPgNumeric(calculatedTotal),
 		PriceListID:          utils.Int32ToPgInt4(input.PriceListID),
 		CreatedBy:            utils.Int32ToPgInt4(input.CreatedBy),
 		Metadata:             metaBytes,
+		AppliedContractID:    appliedContractID,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create purchase order: %v", err), nil)
@@ -382,31 +459,73 @@ func (uc *PurchaseOrdersUseCase) GetPurchaseOrder(ctx context.Context, id int32)
 		statusStr = poRow.Status.String
 	}
 
+	var appContractID *int32
+	if poRow.AppliedContractID.Valid {
+		cID := poRow.AppliedContractID.Int32
+		appContractID = &cID
+	}
+
+	var appContractType *string
+	if poRow.AppliedContractType.Valid && poRow.AppliedContractType.String != "" {
+		st := poRow.AppliedContractType.String
+		appContractType = &st
+	}
+
+	var appMinOrderAmt *string
+	if poRow.AppliedContractMinOrderAmount.Valid {
+		s := numericToString(poRow.AppliedContractMinOrderAmount)
+		appMinOrderAmt = &s
+	}
+
+	var appDiscPct *string
+	if poRow.AppliedContractDiscountPercentage.Valid {
+		s := numericToString(poRow.AppliedContractDiscountPercentage)
+		appDiscPct = &s
+	}
+
+	var appDiscAmt *string
+	if poRow.AppliedContractDiscountAmount.Valid {
+		s := numericToString(poRow.AppliedContractDiscountAmount)
+		appDiscAmt = &s
+	}
+
+	var billDiscountStr *string
+	if poRow.DiscountAmount.Valid {
+		s := numericToString(poRow.DiscountAmount)
+		billDiscountStr = &s
+	}
+
 	out := PurchaseOrderOutput{
-		ID:                   poRow.ID,
-		OrganizationID:       poRow.OrganizationID,
-		PoNumber:             poRow.PoNumber,
-		SupplierID:           poRow.PartnersID,
-		SupplierName:         poRow.PartnerName,
-		SupplierCode:         poRow.PartnerCode,
-		StoreID:              poRow.StoreID,
-		StoreName:            poRow.StoreName,
-		PoDate:               poRow.PoDate,
-		ExpectedDeliveryDate: poRow.ExpectedDeliveryDate,
-		Status:               statusStr,
-		Subtotal:             poRow.Subtotal,
-		DiscountAmount:       poRow.DiscountAmount,
-		TaxAmount:            poRow.TaxAmount,
-		TotalAmount:          poRow.TotalAmount,
-		PriceListID:          poRow.PriceListID,
-		CreatedBy:            poRow.CreatedBy,
-		CreatedByName:        poRow.CreatedByName,
-		ApprovedBy:           poRow.ApprovedBy,
-		ApprovedByName:       poRow.ApprovedByName,
-		Metadata:             poRow.Metadata,
-		CreatedAt:            poRow.CreatedAt,
-		UpdatedAt:            poRow.UpdatedAt,
-		Items:                items,
+		ID:                               poRow.ID,
+		OrganizationID:                   poRow.OrganizationID,
+		PoNumber:                         poRow.PoNumber,
+		SupplierID:                       poRow.PartnersID,
+		SupplierName:                     poRow.PartnerName,
+		SupplierCode:                     poRow.PartnerCode,
+		StoreID:                          poRow.StoreID,
+		StoreName:                        poRow.StoreName,
+		PoDate:                           poRow.PoDate,
+		ExpectedDeliveryDate:             poRow.ExpectedDeliveryDate,
+		Status:                           statusStr,
+		Subtotal:                         poRow.Subtotal,
+		DiscountAmount:                   poRow.DiscountAmount,
+		BillDiscountAmount:               billDiscountStr,
+		TaxAmount:                        poRow.TaxAmount,
+		TotalAmount:                      poRow.TotalAmount,
+		PriceListID:                      poRow.PriceListID,
+		AppliedContractID:                appContractID,
+		AppliedContractType:              appContractType,
+		AppliedContractMinOrderAmount:   appMinOrderAmt,
+		AppliedContractDiscountPercentage: appDiscPct,
+		AppliedContractDiscountAmount:   appDiscAmt,
+		CreatedBy:                        poRow.CreatedBy,
+		CreatedByName:                    poRow.CreatedByName,
+		ApprovedBy:                       poRow.ApprovedBy,
+		ApprovedByName:                   poRow.ApprovedByName,
+		Metadata:                         poRow.Metadata,
+		CreatedAt:                        poRow.CreatedAt,
+		UpdatedAt:                        poRow.UpdatedAt,
+		Items:                            items,
 	}
 
 	return utils.NewResponse(utils.CodeOK, "purchase order retrieved successfully", out)

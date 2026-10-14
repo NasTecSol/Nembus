@@ -1879,14 +1879,16 @@ type BusinessPartnerResponse struct {
 type CreateBPPriceContractRequest struct {
 	OrganizationID     int32    `json:"organization_id" binding:"required" example:"1"`
 	PartnerID          int32    `json:"partner_id" binding:"required" example:"1"`
-	ProductID          int32    `json:"product_id" binding:"required" example:"10"`
+	ProductID          *int32   `json:"product_id,omitempty" example:"10"`
 	ProductVariantID   *int32   `json:"product_variant_id,omitempty" example:"5"`
 	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
-	ContractPrice      float64  `json:"contract_price" binding:"required" example:"45.5000"`
+	ContractPrice      float64  `json:"contract_price" example:"45.5000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"5.00"`
 	DiscountType       *string  `json:"discount_type,omitempty" example:"percentage"`
 	DiscountAmount     *float64 `json:"discount_amount,omitempty" example:"5.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"10.000"`
+	ContractType       *string  `json:"contract_type,omitempty" example:"ORDER_TOTAL"`
+	MinOrderAmount     *float64 `json:"min_order_amount,omitempty" example:"5000.00"`
 	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
 	IsActive           *bool    `json:"is_active,omitempty" example:"true"`
@@ -1894,12 +1896,15 @@ type CreateBPPriceContractRequest struct {
 }
 
 type UpdateBPPriceContractRequest struct {
+	ProductID          *int32   `json:"product_id,omitempty" example:"10"`
 	UomID              *int32   `json:"uom_id,omitempty" example:"2"`
 	ContractPrice      *float64 `json:"contract_price,omitempty" example:"42.0000"`
 	DiscountPercentage *float64 `json:"discount_percentage,omitempty" example:"7.50"`
 	DiscountType       *string  `json:"discount_type,omitempty" example:"fixed"`
 	DiscountAmount     *float64 `json:"discount_amount,omitempty" example:"10.00"`
 	MinQuantity        *float64 `json:"min_quantity,omitempty" example:"15.000"`
+	ContractType       *string  `json:"contract_type,omitempty" example:"ORDER_TOTAL"`
+	MinOrderAmount     *float64 `json:"min_order_amount,omitempty" example:"5000.00"`
 	ValidFrom          *string  `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string  `json:"valid_to,omitempty" example:"2026-12-31"`
 	IsActive           *bool    `json:"is_active,omitempty" example:"true"`
@@ -1914,13 +1919,15 @@ type BPPriceContractResponse struct {
 	ID                 int32   `json:"id" example:"1"`
 	OrganizationID     int32   `json:"organization_id" example:"1"`
 	PartnerID          int32   `json:"partner_id" example:"1"`
-	ProductID          int32   `json:"product_id" example:"10"`
+	ProductID          *int32  `json:"product_id,omitempty" example:"10"`
 	ProductVariantID   *int32  `json:"product_variant_id,omitempty" example:"5"`
 	ContractPrice      string  `json:"contract_price" example:"45.5000"`
 	DiscountPercentage string  `json:"discount_percentage" example:"5.00"`
 	DiscountType       *string `json:"discount_type,omitempty" example:"percentage"`
 	DiscountAmount     *string `json:"discount_amount,omitempty" example:"5.00"`
 	MinQuantity        string  `json:"min_quantity" example:"10.000"`
+	ContractType       string  `json:"contract_type" example:"ITEM"`
+	MinOrderAmount     string  `json:"min_order_amount" example:"0.00"`
 	ValidFrom          *string `json:"valid_from,omitempty" example:"2026-01-01"`
 	ValidTo            *string `json:"valid_to,omitempty" example:"2026-12-31"`
 	IsActive           bool    `json:"is_active" example:"true"`
@@ -2060,6 +2067,9 @@ type CreatePurchaseOrderRequest struct {
 	ExpectedDeliveryDate *string                `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
 	Status               *string                `json:"status,omitempty" example:"draft"`
 	PriceListID          *int32                 `json:"price_list_id,omitempty" example:"1"`
+	AppliedContractID    *int32                 `json:"applied_contract_id,omitempty" example:"2"`
+	DiscountAmount       *float64               `json:"discount_amount,omitempty" example:"500.00"`
+	BillDiscountAmount   *float64               `json:"bill_discount_amount,omitempty" example:"500.00"`
 	CreatedBy            *int32                 `json:"created_by,omitempty" example:"1"`
 	Metadata             map[string]interface{} `json:"metadata,omitempty"`
 	Items                []PurchaseOrderLineDTO `json:"items" binding:"required"`
@@ -2072,6 +2082,9 @@ type UpdatePurchaseOrderRequest struct {
 	PoDate               *string                `json:"po_date,omitempty" example:"2026-09-08"`
 	ExpectedDeliveryDate *string                `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
 	PriceListID          *int32                 `json:"price_list_id,omitempty" example:"1"`
+	AppliedContractID    *int32                 `json:"applied_contract_id,omitempty" example:"2"`
+	DiscountAmount       *float64               `json:"discount_amount,omitempty" example:"500.00"`
+	BillDiscountAmount   *float64               `json:"bill_discount_amount,omitempty" example:"500.00"`
 	Metadata             map[string]interface{} `json:"metadata,omitempty"`
 	Items                []PurchaseOrderLineDTO `json:"items,omitempty"`
 }
@@ -2109,30 +2122,36 @@ type PurchaseOrderLineResponse struct {
 
 // PurchaseOrderResponse represents the full purchase order response.
 type PurchaseOrderResponse struct {
-	ID                   int32                       `json:"id" example:"1"`
-	OrganizationID       int32                       `json:"organization_id" example:"1"`
-	PoNumber             string                      `json:"po_number" example:"PO-20260908-0001"`
-	SupplierID           int32                       `json:"supplier_id" example:"5"`
-	SupplierName         *string                     `json:"supplier_name,omitempty" example:"Almarai Dairy Co."`
-	SupplierCode         *string                     `json:"supplier_code,omitempty" example:"SUPP001"`
-	StoreID              int32                       `json:"store_id" example:"1"`
-	StoreName            *string                     `json:"store_name,omitempty" example:"Main Supermarket Branch"`
-	PoDate               string                      `json:"po_date" example:"2026-09-08"`
-	ExpectedDeliveryDate *string                     `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
-	Status               string                      `json:"status" example:"draft"`
-	Subtotal             string                      `json:"subtotal" example:"477.75"`
-	DiscountAmount       string                      `json:"discount_amount" example:"5.00"`
-	TaxAmount            string                      `json:"tax_amount" example:"6.08"`
-	TotalAmount          string                      `json:"total_amount" example:"478.83"`
-	PriceListID          *int32                      `json:"price_list_id,omitempty" example:"1"`
-	CreatedBy            *int32                      `json:"created_by,omitempty" example:"1"`
-	CreatedByName        *string                     `json:"created_by_name,omitempty" example:"admin"`
-	ApprovedBy           *int32                      `json:"approved_by,omitempty" example:"1"`
-	ApprovedByName       *string                     `json:"approved_by_name,omitempty" example:"manager"`
-	Metadata             json.RawMessage             `json:"metadata,omitempty" swaggertype:"object"`
-	CreatedAt            string                      `json:"created_at" example:"2026-09-08T10:00:00Z"`
-	UpdatedAt            string                      `json:"updated_at" example:"2026-09-08T10:00:00Z"`
-	Items                []PurchaseOrderLineResponse `json:"items,omitempty"`
+	ID                               int32                       `json:"id" example:"1"`
+	OrganizationID                   int32                       `json:"organization_id" example:"1"`
+	PoNumber                         string                      `json:"po_number" example:"PO-20260908-0001"`
+	SupplierID                       int32                       `json:"supplier_id" example:"5"`
+	SupplierName                     *string                     `json:"supplier_name,omitempty" example:"Almarai Dairy Co."`
+	SupplierCode                     *string                     `json:"supplier_code,omitempty" example:"SUPP001"`
+	StoreID                          int32                       `json:"store_id" example:"1"`
+	StoreName                        *string                     `json:"store_name,omitempty" example:"Main Supermarket Branch"`
+	PoDate                           string                      `json:"po_date" example:"2026-09-08"`
+	ExpectedDeliveryDate             *string                     `json:"expected_delivery_date,omitempty" example:"2026-09-15"`
+	Status                           string                      `json:"status" example:"draft"`
+	Subtotal                         string                      `json:"subtotal" example:"477.75"`
+	DiscountAmount                   string                      `json:"discount_amount" example:"5.00"`
+	BillDiscountAmount               *string                     `json:"bill_discount_amount,omitempty" example:"500.00"`
+	TaxAmount                        string                      `json:"tax_amount" example:"6.08"`
+	TotalAmount                      string                      `json:"total_amount" example:"478.83"`
+	PriceListID                      *int32                      `json:"price_list_id,omitempty" example:"1"`
+	AppliedContractID                *int32                      `json:"applied_contract_id,omitempty" example:"2"`
+	AppliedContractType              *string                     `json:"applied_contract_type,omitempty" example:"ORDER_TOTAL"`
+	AppliedContractMinOrderAmount   *string                     `json:"applied_contract_min_order_amount,omitempty" example:"5000.00"`
+	AppliedContractDiscountPercentage *string                     `json:"applied_contract_discount_percentage,omitempty" example:"10.00"`
+	AppliedContractDiscountAmount   *string                     `json:"applied_contract_discount_amount,omitempty" example:"0.00"`
+	CreatedBy                        *int32                      `json:"created_by,omitempty" example:"1"`
+	CreatedByName                    *string                     `json:"created_by_name,omitempty" example:"admin"`
+	ApprovedBy                       *int32                      `json:"approved_by,omitempty" example:"1"`
+	ApprovedByName                   *string                     `json:"approved_by_name,omitempty" example:"manager"`
+	Metadata                         json.RawMessage             `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt                        string                      `json:"created_at" example:"2026-09-08T10:00:00Z"`
+	UpdatedAt                        string                      `json:"updated_at" example:"2026-09-08T10:00:00Z"`
+	Items                            []PurchaseOrderLineResponse `json:"items,omitempty"`
 }
 
 // PurchaseOrderSummaryResponse represents a purchase order summary in list responses.
