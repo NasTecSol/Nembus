@@ -479,6 +479,50 @@ func (ns NullZatcaDocStatus) Value() (driver.Value, error) {
 	return string(ns.ZatcaDocStatus), nil
 }
 
+type ApprovalPolicy struct {
+	ID                 int32            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	Domain             string           `json:"domain"`
+	Action             string           `json:"action"`
+	IsEnabled          bool             `json:"is_enabled"`
+	RequiresApproval   bool             `json:"requires_approval"`
+	RequiredPermission string           `json:"required_permission"`
+	Rules              json.RawMessage  `json:"rules"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+}
+
+type ApprovalRequest struct {
+	ID                 int64            `json:"id"`
+	OrganizationID     int32            `json:"organization_id"`
+	Domain             string           `json:"domain"`
+	Action             string           `json:"action"`
+	EntityType         string           `json:"entity_type"`
+	EntityID           pgtype.Text      `json:"entity_id"`
+	Status             string           `json:"status"`
+	RequestedBy        pgtype.Int4      `json:"requested_by"`
+	RequiredPermission string           `json:"required_permission"`
+	Summary            string           `json:"summary"`
+	Payload            json.RawMessage  `json:"payload"`
+	SubmissionNotes    pgtype.Text      `json:"submission_notes"`
+	DecisionNotes      pgtype.Text      `json:"decision_notes"`
+	ReviewedBy         pgtype.Int4      `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamp `json:"reviewed_at"`
+	Metadata           json.RawMessage  `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+}
+
+type ApprovalRequestLog struct {
+	ID                int64            `json:"id"`
+	ApprovalRequestID int64            `json:"approval_request_id"`
+	UserID            pgtype.Int4      `json:"user_id"`
+	Action            string           `json:"action"`
+	Notes             pgtype.Text      `json:"notes"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+}
+
 type AuditLog struct {
 	ID             int64            `json:"id"`
 	OrganizationID pgtype.Int4      `json:"organization_id"`

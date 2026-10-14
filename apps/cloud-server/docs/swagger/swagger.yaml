@@ -148,6 +148,29 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.ApprovalDecisionRequest:
+    properties:
+      notes:
+        example: Reviewed and approved
+        type: string
+    type: object
+  handler.ApprovalPolicyRequest:
+    properties:
+      action:
+        example: post
+        type: string
+      is_enabled:
+        example: true
+        type: boolean
+      required_permission:
+        example: goods_receipt_notes:approve
+        type: string
+      requires_approval:
+        example: true
+        type: boolean
+      rules:
+        type: object
+    type: object
   handler.ApproveStockCountRequest:
     properties:
       approved_by:
@@ -6503,6 +6526,37 @@ definitions:
       valid:
         type: boolean
     type: object
+  usecase.ApprovalInput:
+    properties:
+      action:
+        type: string
+      domain:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      notes:
+        type: string
+      organization_id:
+        type: integer
+      payload:
+        items:
+          type: integer
+        type: array
+      requested_by:
+        type: integer
+      summary:
+        type: string
+    required:
+    - action
+    - domain
+    - entity_type
+    - organization_id
+    - payload
+    - requested_by
+    - summary
+    type: object
   usecase.ComboComponentWithDetailsResponse:
     properties:
       component_item:
@@ -6818,6 +6872,386 @@ info:
   title: NEMBUS API
   version: "1.0"
 paths:
+  /api/approvals:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Filter by domain
+        in: query
+        name: domain
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List approval requests
+      tags:
+      - approvals
+  /api/approvals/{id}:
+    delete:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an approval request
+      tags:
+      - approvals
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get an approval request
+      tags:
+      - approvals
+  /api/approvals/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Decision notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.ApprovalDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve an approval request
+      tags:
+      - approvals
+  /api/approvals/{id}/cancel:
+    post:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel an approval request
+      tags:
+      - approvals
+  /api/approvals/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Decision notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.ApprovalDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject an approval request
+      tags:
+      - approvals
+  /api/approvals/policies:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List approval policies
+      tags:
+      - approvals
+  /api/approvals/policies/{domain}:
+    delete:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval domain
+        in: path
+        name: domain
+        required: true
+        type: string
+      - default: submit
+        description: Action
+        in: query
+        name: action
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an approval policy
+      tags:
+      - approvals
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval domain
+        in: path
+        name: domain
+        required: true
+        type: string
+      - default: submit
+        description: Action
+        in: query
+        name: action
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get an approval policy
+      tags:
+      - approvals
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval domain
+        in: path
+        name: domain
+        required: true
+        type: string
+      - description: Policy configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ApprovalPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Save an approval policy
+      tags:
+      - approvals
+  /api/approvals/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.ApprovalInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit an approval request
+      tags:
+      - approvals
   /api/auth/authorize-action:
     post:
       consumes:
