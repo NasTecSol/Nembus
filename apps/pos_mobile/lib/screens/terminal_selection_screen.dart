@@ -14,6 +14,7 @@ class TerminalSelectionScreen extends StatefulWidget {
   final int storeId;
   final String storeName;
   final String storeCode;
+  final String? storeType;
 
   const TerminalSelectionScreen({
     super.key,
@@ -23,6 +24,7 @@ class TerminalSelectionScreen extends StatefulWidget {
     required this.storeId,
     required this.storeName,
     required this.storeCode,
+    this.storeType,
   });
 
   @override
@@ -199,6 +201,7 @@ class _TerminalSelectionScreenState extends State<TerminalSelectionScreen> {
       terminalId: terminalId,
       terminalName: terminalName,
       terminalCode: terminalCode,
+      storeType: widget.storeType ?? SingletonClass().activeStoreType,
     );
 
     if (mounted) {
@@ -211,6 +214,7 @@ class _TerminalSelectionScreenState extends State<TerminalSelectionScreen> {
             storeName: widget.storeName,
             posTerminalId: terminalId,
             posTerminalName: terminalName,
+            storeType: widget.storeType ?? SingletonClass().activeStoreType,
           ),
         ),
       );

@@ -1075,6 +1075,9 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 	}
 	if cid := getParam("category_id", "categoryId"); cid != "" {
 		c.Params = append(c.Params, gin.Param{Key: "category_id", Value: cid})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: cid})
+		}
 	}
 	if plid := getParam("price_list_id", "priceListId"); plid != "" {
 		c.Params = append(c.Params, gin.Param{Key: "price_list_id", Value: plid})
@@ -1096,6 +1099,15 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 	}
 	if itemId := getParam("item_id", "itemId"); itemId != "" {
 		c.Params = append(c.Params, gin.Param{Key: "item_id", Value: itemId})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: itemId})
+		}
+	}
+	if modifId := getParam("modifier_id", "modifierId"); modifId != "" {
+		c.Params = append(c.Params, gin.Param{Key: "modifier_id", Value: modifId})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: modifId})
+		}
 	}
 	if orderId := getParam("order_id", "orderId"); orderId != "" {
 		c.Params = append(c.Params, gin.Param{Key: "order_id", Value: orderId})
@@ -1106,6 +1118,7 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 	}
 	if csid := getParam("cashier_session_id", "cashierSessionId", "session_id", "sessionId"); csid != "" {
 		c.Params = append(c.Params, gin.Param{Key: "cashier_session_id", Value: csid})
+		c.Params = append(c.Params, gin.Param{Key: "session_id", Value: csid})
 		c.Params = append(c.Params, gin.Param{Key: "id", Value: csid})
 	}
 	if cashId := getParam("cashier_id", "cashierId"); cashId != "" {
@@ -1120,6 +1133,36 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 	}
 	if lineId := getParam("stock_count_line_id", "line_id", "lineId"); lineId != "" {
 		c.Params = append(c.Params, gin.Param{Key: "line_id", Value: lineId})
+	}
+	if tid := getParam("table_id", "tableId"); tid != "" {
+		c.Params = append(c.Params, gin.Param{Key: "table_id", Value: tid})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: tid})
+		}
+	}
+	if oiId := getParam("order_item_id", "orderItemId"); oiId != "" {
+		c.Params = append(c.Params, gin.Param{Key: "order_item_id", Value: oiId})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: oiId})
+		}
+	}
+	if recId := getParam("recipe_id", "recipeId"); recId != "" {
+		c.Params = append(c.Params, gin.Param{Key: "recipe_id", Value: recId})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: recId})
+		}
+	}
+	if riId := getParam("recipe_ingredient_id", "recipeIngredientId"); riId != "" {
+		c.Params = append(c.Params, gin.Param{Key: "recipe_ingredient_id", Value: riId})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: riId})
+		}
+	}
+	if wId := getParam("waste_log_id", "wasteLogId"); wId != "" {
+		c.Params = append(c.Params, gin.Param{Key: "waste_log_id", Value: wId})
+		if getParam("id") == "" {
+			c.Params = append(c.Params, gin.Param{Key: "id", Value: wId})
+		}
 	}
 
 	// Forward query string parameters from payloadMap
@@ -1608,6 +1651,154 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 			return map[string]interface{}{
 				"success": false,
 				"error":   fmt.Sprintf("Action '%s' not supported on cashier handler", action),
+			}
+		}
+
+	case "restaurant", "cafe":
+		restaurantHandler := handler.NewRestaurantHandler(usecase.NewRestaurantUseCase())
+		switch action {
+		case "listTables":
+			restaurantHandler.ListTables(c)
+		case "getTable":
+			restaurantHandler.GetTable(c)
+		case "createTable":
+			restaurantHandler.CreateTable(c)
+		case "updateTable":
+			restaurantHandler.UpdateTable(c)
+		case "deleteTable":
+			restaurantHandler.DeleteTable(c)
+		case "listMenuCategories":
+			restaurantHandler.ListMenuCategories(c)
+		case "getMenuCategory":
+			restaurantHandler.GetMenuCategory(c)
+		case "createMenuCategory":
+			restaurantHandler.CreateMenuCategory(c)
+		case "updateMenuCategory":
+			restaurantHandler.UpdateMenuCategory(c)
+		case "deleteMenuCategory":
+			restaurantHandler.DeleteMenuCategory(c)
+		case "listMenuItems":
+			restaurantHandler.ListMenuItems(c)
+		case "getMenuItem":
+			restaurantHandler.GetMenuItem(c)
+		case "getMenuItemFullDetails":
+			restaurantHandler.GetMenuItemFullDetails(c)
+		case "createMenuItem":
+			restaurantHandler.CreateMenuItem(c)
+		case "updateMenuItem":
+			restaurantHandler.UpdateMenuItem(c)
+		case "deleteMenuItem":
+			restaurantHandler.DeleteMenuItem(c)
+		case "listComboComponents":
+			restaurantHandler.ListComboComponents(c)
+		case "listModifiers":
+			restaurantHandler.ListModifiers(c)
+		case "listStoreModifiers":
+			restaurantHandler.ListStoreModifiers(c)
+		case "getModifier":
+			restaurantHandler.GetModifier(c)
+		case "createModifier":
+			restaurantHandler.CreateModifier(c)
+		case "updateModifier":
+			restaurantHandler.UpdateModifier(c)
+		case "deleteModifier":
+			restaurantHandler.DeleteModifier(c)
+		case "getFullMenu", "getMenu":
+			restaurantHandler.GetFullMenu(c)
+		case "getKdsOrders":
+			restaurantHandler.GetKdsOrders(c)
+		case "createOrder":
+			restaurantHandler.CreateOrder(c)
+		case "updateOrder":
+			restaurantHandler.UpdateOrder(c)
+		case "deleteOrder":
+			restaurantHandler.DeleteOrder(c)
+		case "listOrders", "listBills":
+			restaurantHandler.ListOrders(c)
+		case "listStoreOrders":
+			restaurantHandler.ListStoreOrders(c)
+		case "getOrder":
+			restaurantHandler.GetOrder(c)
+		case "updateOrderStatus":
+			restaurantHandler.UpdateOrderStatus(c)
+		case "settleOrder":
+			restaurantHandler.SettleOrder(c)
+		case "createOnlineOrder":
+			restaurantHandler.CreateOnlineOrder(c)
+		case "getOrderItem":
+			restaurantHandler.GetOrderItem(c)
+		case "updateOrderItem":
+			restaurantHandler.UpdateOrderItem(c)
+		case "deleteOrderItem":
+			restaurantHandler.DeleteOrderItem(c)
+		case "createMenuModifierGroup":
+			restaurantHandler.CreateMenuModifierGroup(c)
+		case "getMenuModifierGroup":
+			restaurantHandler.GetMenuModifierGroup(c)
+		case "listMenuModifierGroupsByStore":
+			restaurantHandler.ListMenuModifierGroupsByStore(c)
+		case "updateMenuModifierGroup":
+			restaurantHandler.UpdateMenuModifierGroup(c)
+		case "deleteMenuModifierGroup":
+			restaurantHandler.DeleteMenuModifierGroup(c)
+		case "createRestaurantPromotion":
+			restaurantHandler.CreateRestaurantPromotion(c)
+		case "getRestaurantPromotion":
+			restaurantHandler.GetRestaurantPromotion(c)
+		case "getRestaurantPromotionByCode":
+			restaurantHandler.GetRestaurantPromotionByCode(c)
+		case "listActiveRestaurantPromotions":
+			restaurantHandler.ListActiveRestaurantPromotions(c)
+		case "listAllRestaurantPromotions":
+			restaurantHandler.ListAllRestaurantPromotions(c)
+		case "updateRestaurantPromotion":
+			restaurantHandler.UpdateRestaurantPromotion(c)
+		case "updateRestaurantPromotionStatus":
+			restaurantHandler.UpdateRestaurantPromotionStatus(c)
+		case "deleteRestaurantPromotion":
+			restaurantHandler.DeleteRestaurantPromotion(c)
+		case "createRecipe":
+			restaurantHandler.CreateRecipe(c)
+		case "getRecipe":
+			restaurantHandler.GetRecipe(c)
+		case "updateRecipe":
+			restaurantHandler.UpdateRecipe(c)
+		case "deleteRecipe":
+			restaurantHandler.DeleteRecipe(c)
+		case "addRecipeIngredient":
+			restaurantHandler.AddRecipeIngredient(c)
+		case "listRecipes":
+			restaurantHandler.ListRecipes(c)
+		case "getRecipeIngredient":
+			restaurantHandler.GetRecipeIngredient(c)
+		case "updateRecipeIngredient":
+			restaurantHandler.UpdateRecipeIngredient(c)
+		case "deleteRecipeIngredient":
+			restaurantHandler.DeleteRecipeIngredient(c)
+		case "createWasteLog":
+			restaurantHandler.CreateWasteLog(c)
+		case "getWasteLog":
+			restaurantHandler.GetWasteLog(c)
+		case "updateWasteLog":
+			restaurantHandler.UpdateWasteLog(c)
+		case "deleteWasteLog":
+			restaurantHandler.DeleteWasteLog(c)
+		case "getWasteReport":
+			restaurantHandler.GetWasteReport(c)
+		case "createKioskSession":
+			restaurantHandler.CreateKioskSession(c)
+		case "updateKioskSession":
+			restaurantHandler.UpdateKioskSession(c)
+		case "deleteKioskSession":
+			restaurantHandler.DeleteKioskSession(c)
+		case "getKioskSession":
+			restaurantHandler.GetKioskSession(c)
+		case "getKioskSessionByID":
+			restaurantHandler.GetKioskSessionByID(c)
+		default:
+			return map[string]interface{}{
+				"success": false,
+				"error":   fmt.Sprintf("Action '%s' not supported on restaurant handler", action),
 			}
 		}
 

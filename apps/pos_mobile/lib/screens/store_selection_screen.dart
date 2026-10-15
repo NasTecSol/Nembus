@@ -122,6 +122,16 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     final storeName = _selectedStore!['name']?.toString() ?? 'Store #$storeId';
     final storeCode = _selectedStore!['code']?.toString() ?? 'STR-$storeId';
 
+    // Store Type Check: dynamically determine whether store type is a cafe or restaurant from SQLite stores row
+    final rawStoreType = (_selectedStore!['store_type'] ?? '').toString().toLowerCase().trim();
+    final isCafe = rawStoreType.contains('cafe');
+    final isRestaurant = rawStoreType.contains('restaurant');
+    final storeType = isCafe ? 'cafe' : (isRestaurant ? 'restaurant' : (rawStoreType.isNotEmpty ? rawStoreType : 'retail'));
+
+    // Local Storage: Store the retrieved store type locally on the device
+    SingletonClass().activeStoreType = storeType;
+    SingletonClass().saveStoreType(storeType);
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TerminalSelectionScreen(
@@ -131,6 +141,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           storeId: storeId,
           storeName: storeName,
           storeCode: storeCode,
+          storeType: storeType,
         ),
       ),
     );
@@ -459,8 +470,6 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
                                 },
                               ),
               ),
-
-              const SizedBox(height: 16),
 
               // Proceed Action Button
               ElevatedButton(

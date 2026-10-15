@@ -56,6 +56,22 @@ class SingletonClass {
   /// The active store Code.
   String? activeStoreCode;
 
+  /// The active store type (e.g. 'restaurant', 'cafe', 'retail').
+  String? activeStoreType;
+
+  /// Returns true if the active store is a restaurant or cafe.
+  bool get isRestaurantOrCafe {
+    if (activeStoreType == null) return false;
+    final t = activeStoreType!.toLowerCase();
+    return t == 'restaurant' || t == 'cafe' || t.contains('restaurant') || t.contains('cafe');
+  }
+
+  /// Persists the store type locally on device.
+  Future<void> saveStoreType(String storeType) async {
+    activeStoreType = storeType;
+    await _persistCurrentState();
+  }
+
   /// The active POS Terminal ID selected by the user.
   int? activeTerminalId;
 
@@ -291,6 +307,7 @@ class SingletonClass {
         'store_id': activeStoreId,
         'store_name': activeStoreName,
         'store_code': activeStoreCode,
+        'store_type': activeStoreType,
         'terminal_id': activeTerminalId,
         'terminal_name': activeTerminalName,
         'terminal_code': activeTerminalCode,
@@ -312,6 +329,7 @@ class SingletonClass {
     required int terminalId,
     required String terminalName,
     required String terminalCode,
+    String? storeType,
   }) async {
     activeStoreId = storeId;
     activeStoreName = storeName;
@@ -319,6 +337,7 @@ class SingletonClass {
     activeTerminalId = terminalId;
     activeTerminalName = terminalName;
     activeTerminalCode = terminalCode;
+    if (storeType != null) activeStoreType = storeType;
 
     if (activeTenantSlug != null) {
       await saveTenantState(
@@ -357,6 +376,7 @@ class SingletonClass {
         if (data['store_id'] != null) activeStoreId = (data['store_id'] as num).toInt();
         activeStoreName = data['store_name'] as String?;
         activeStoreCode = data['store_code'] as String?;
+        activeStoreType = data['store_type'] as String?;
         if (data['terminal_id'] != null) activeTerminalId = (data['terminal_id'] as num).toInt();
         activeTerminalName = data['terminal_name'] as String?;
         activeTerminalCode = data['terminal_code'] as String?;
@@ -370,7 +390,7 @@ class SingletonClass {
         }
         activeCashierCode = data['cashier_code'] as String?;
         appMode = AppMode.offline;
-        developer.log('Tenant configuration restored: $slug ($activeTenantName), Store: $activeStoreName ($activeStoreId), Terminal: $activeTerminalName ($activeTerminalId), ActiveSession=$activeCashierSessionStatus', name: 'SingletonClass');
+        developer.log('Tenant configuration restored: $slug ($activeTenantName), Store: $activeStoreName ($activeStoreId), Type: $activeStoreType, Terminal: $activeTerminalName ($activeTerminalId), ActiveSession=$activeCashierSessionStatus', name: 'SingletonClass');
         return true;
       }
     } catch (e) {
@@ -387,6 +407,7 @@ class SingletonClass {
     activeStoreId = null;
     activeStoreName = null;
     activeStoreCode = null;
+    activeStoreType = null;
     activeTerminalId = null;
     activeTerminalName = null;
     activeTerminalCode = null;

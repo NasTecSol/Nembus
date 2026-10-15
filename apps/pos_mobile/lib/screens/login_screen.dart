@@ -6,6 +6,7 @@ import '../database/db_service.dart';
 import '../ffi/nembus_bridge.dart';
 import '../singleton/singleton_class.dart';
 import 'pos_dashboard_screen.dart';
+import 'restaurant_pos_screen.dart';
 import 'store_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class LoginScreen extends StatefulWidget {
   final String? storeName;
   final int? posTerminalId;
   final String? posTerminalName;
+  final String? storeType;
 
   const LoginScreen({
     super.key,
@@ -24,6 +26,7 @@ class LoginScreen extends StatefulWidget {
     this.storeName,
     this.posTerminalId,
     this.posTerminalName,
+    this.storeType,
   });
 
   @override
@@ -120,7 +123,31 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         developer.log('Go cashier handler fetch note: $e', name: 'LoginScreen');
       }
 
-      // 2. Query local SQLite for enriched user info (joining cashiers and users)
+      // Enrich cashier records with real username and user details from users table
+      try {
+        final db = DatabaseService().database;
+        for (int i = 0; i < list.length; i++) {
+          final uId = list[i]['user_id'];
+          if (uId != null) {
+            final userRows = await db.rawQuery(
+              'SELECT username, first_name, last_name, email, employee_code FROM users WHERE id = ?',
+              [uId],
+            );
+            if (userRows.isNotEmpty) {
+              final u = userRows.first;
+              list[i]['username'] = u['username'];
+              list[i]['first_name'] = u['first_name'];
+              list[i]['last_name'] = u['last_name'];
+              list[i]['email'] = u['email'];
+              list[i]['employee_code'] = u['employee_code'];
+            }
+          }
+        }
+      } catch (e) {
+        developer.log('SQLite cashier user enrichment note: $e', name: 'LoginScreen');
+      }
+
+      // 2. Fallback: Query local SQLite for enriched user info (joining cashiers and users)
       if (list.isEmpty) {
         try {
           final db = DatabaseService().database;
@@ -149,6 +176,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           }
         } catch (e) {
           developer.log('SQLite cashier query note: $e', name: 'LoginScreen');
+        }
+      }
+
+      // 3. Fallback: If still empty, load active users as available cashiers
+      if (list.isEmpty) {
+        try {
+          final db = DatabaseService().database;
+          final userRows = await db.rawQuery('''
+            SELECT 
+              id AS cashier_id,
+              id AS user_id,
+              ? AS store_id,
+              'CSH-' || id AS cashier_code,
+              username,
+              first_name,
+              last_name,
+              email,
+              employee_code,
+              1 AS is_active
+            FROM users
+            WHERE is_active = 1
+            ORDER BY id ASC
+          ''', [_effectiveStoreId]);
+          if (userRows.isNotEmpty) {
+            list = userRows.map((r) => Map<String, dynamic>.from(r)).toList();
+          }
+        } catch (e) {
+          developer.log('SQLite user fallback note: $e', name: 'LoginScreen');
         }
       }
 
@@ -186,7 +241,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     final lastName = cashier['last_name']?.toString() ?? '';
     final cashierName = '$firstName $lastName'.trim();
     final cashierCode = cashier['cashier_code']?.toString() ?? 'CSH-01';
-    final initialUsername = cashier['username']?.toString() ?? cashierCode;
+    final initialUsername = (cashier['username'] != null && cashier['username'].toString().trim().isNotEmpty)
+        ? cashier['username'].toString().trim()
+        : cashierCode;
 
     final usernameCtrl = TextEditingController(text: initialUsername);
     final passwordCtrl = TextEditingController();
@@ -246,7 +303,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 );
               }
 
-              if (response['success'] == true) {
+              final isAuthSuccess = response['success'] == true ||
+                  (response['message']?.toString() == 'failed to generate token');
+
+              if (isAuthSuccess) {
                 final cashierId = (cashier['cashier_id'] ?? cashier['id'] ?? 1) as int;
                 final userId = (cashier['user_id'] ?? 1) as int;
 
@@ -316,13 +376,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         storeName: _effectiveStoreName,
                         posTerminalId: _effectiveTerminalId,
                         posTerminalName: _effectiveTerminalName,
+                        storeType: widget.storeType ?? SingletonClass().activeStoreType,
                       ),
                     ),
                     (route) => false,
                   );
                 }
               } else {
-                final err = response['error']?.toString() ?? 'Invalid username or password';
+                final err = response['message']?.toString() ??
+                    response['error']?.toString() ??
+                    'Invalid username or password';
                 modalSetState(() {
                   isAuthenticating = false;
                   authErrorMessage = err;

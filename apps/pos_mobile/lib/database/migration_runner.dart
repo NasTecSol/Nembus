@@ -38,13 +38,15 @@ class MigrationRunner {
 
     // 2. Remove PostgreSQL-specific routines and constructs unsupported in SQLite
     text = text
-        .replaceAll(RegExp(r'CREATE\s+(OR\s+REPLACE\s+)?FUNCTION[\s\S]*?\$\$;?', caseSensitive: false), '')
+        .replaceAll(RegExp(r'CREATE\s+(OR\s+REPLACE\s+)?FUNCTION[\s\S]*?AS\s+(\$\w*\$)[\s\S]*?\2\s*;?', caseSensitive: false), '')
+        .replaceAll(RegExp(r'CREATE\s+(OR\s+REPLACE\s+)?FUNCTION[\s\S]*?;', caseSensitive: false), '')
         .replaceAll(RegExp(r'CREATE\s+TRIGGER[\s\S]*?;', caseSensitive: false), '')
         .replaceAll(RegExp(r'CREATE\s+EXTENSION[\s\S]*?;', caseSensitive: false), '')
         .replaceAll(RegExp(r'CREATE\s+TYPE[\s\S]*?;', caseSensitive: false), '')
         .replaceAll(RegExp(r'DROP\s+TYPE[\s\S]*?;', caseSensitive: false), '')
         .replaceAll(RegExp(r'ALTER\s+TABLE\s+\w+\s+ADD\s+CONSTRAINT[\s\S]*?;', caseSensitive: false), '')
-        .replaceAll(RegExp(r'DEFAULT\s+uuid_generate_v4\(\)', caseSensitive: false), '');
+        .replaceAll(RegExp(r'DEFAULT\s+uuid_generate_v4\(\)', caseSensitive: false), '')
+        .replaceAll(RegExp(r'"public"\.|\bpublic\.', caseSensitive: false), '');
 
     // 3. Replace PostgreSQL enum type columns
     const enumTypes = [
@@ -61,7 +63,10 @@ class MigrationRunner {
       'zatca_doc_status',
     ];
     for (final et in enumTypes) {
-      text = text.replaceAll(RegExp(r'(\b\w+\s+)' + et + r'\b', caseSensitive: false), r'$1VARCHAR(50)');
+      text = text.replaceAllMapped(
+        RegExp(r'(\b(?!AS\b)\w+\s+)' + et + r'\b', caseSensitive: false),
+        (match) => '${match[1]}VARCHAR(50)',
+      );
     }
 
     // 4. Map PostgreSQL column types to SQLite equivalents
@@ -70,7 +75,9 @@ class MigrationRunner {
         .replaceAll(RegExp(r'\bJSONB\b', caseSensitive: false), 'TEXT')
         .replaceAll(RegExp(r'\bJSON\b', caseSensitive: false), 'TEXT')
         .replaceAll(RegExp(r'\bSERIAL\s+PRIMARY\s+KEY\b', caseSensitive: false), 'INTEGER PRIMARY KEY AUTOINCREMENT')
-        .replaceAll(RegExp(r'\bBIGSERIAL\s+PRIMARY\s+KEY\b', caseSensitive: false), 'INTEGER PRIMARY KEY AUTOINCREMENT');
+        .replaceAll(RegExp(r'\bBIGSERIAL\s+PRIMARY\s+KEY\b', caseSensitive: false), 'INTEGER PRIMARY KEY AUTOINCREMENT')
+        .replaceAll(RegExp(r'\bSERIAL\b', caseSensitive: false), 'INTEGER')
+        .replaceAll(RegExp(r'\bBIGSERIAL\b', caseSensitive: false), 'INTEGER');
 
     // 5. Split statements and execute
     final statements = text
@@ -82,6 +89,16 @@ class MigrationRunner {
     await db.execute('PRAGMA foreign_keys = OFF;');
     final batch = db.batch();
     for (final stmt in statements) {
+      final upper = stmt.toUpperCase();
+      if (upper == 'BEGIN' ||
+          upper == 'END' ||
+          upper == 'COMMIT' ||
+          upper == 'ROLLBACK' ||
+          upper == '\$\$' ||
+          upper.startsWith('RETURN ') ||
+          upper.startsWith('\$\$')) {
+        continue;
+      }
       batch.execute(stmt);
     }
     await batch.commit(noResult: true);

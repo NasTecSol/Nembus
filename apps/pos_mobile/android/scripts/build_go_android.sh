@@ -1,16 +1,36 @@
 #!/usr/bin/env bash
 set -e
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 BRIDGE_DIR="$PROJECT_ROOT/packages/core/bridge"
-OUTPUT_BASE="$(cd "$(dirname "$0")/../app/src/main/jniLibs" && pwd)"
+OUTPUT_BASE="$SCRIPT_DIR/../app/src/main/jniLibs"
+mkdir -p "$OUTPUT_BASE"
 
-if [ -z "$ANDROID_NDK_HOME" ] && [ -n "$ANDROID_SDK_ROOT" ]; then
-    ANDROID_NDK_HOME=$(find "$ANDROID_SDK_ROOT/ndk" -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+# Resolve SDK root if not set
+if [ -z "$ANDROID_SDK_ROOT" ]; then
+    if [ -n "$ANDROID_HOME" ]; then
+        ANDROID_SDK_ROOT="$ANDROID_HOME"
+    elif [ -f "$SCRIPT_DIR/../local.properties" ]; then
+        SDK_FROM_PROP=$(grep '^sdk.dir=' "$SCRIPT_DIR/../local.properties" | cut -d'=' -f2-)
+        if [ -n "$SDK_FROM_PROP" ]; then
+            ANDROID_SDK_ROOT="$SDK_FROM_PROP"
+        fi
+    fi
 fi
 
-if [ -z "$ANDROID_NDK_HOME" ]; then
+# Resolve NDK home if not set
+if [ -z "$ANDROID_NDK_HOME" ] && [ -n "$ANDROID_SDK_ROOT" ] && [ -d "$ANDROID_SDK_ROOT/ndk" ]; then
+    ANDROID_NDK_HOME=$(find "$ANDROID_SDK_ROOT/ndk" -maxdepth 1 -mindepth 1 2>/dev/null | sort -V | tail -n 1)
+fi
+
+if [ -z "$ANDROID_NDK_HOME" ] || [ ! -d "$ANDROID_NDK_HOME" ]; then
     echo "[GoBuild] WARNING: ANDROID_NDK_HOME not found. Skipping native Android Go build."
+    exit 0
+fi
+
+if ! command -v go &> /dev/null; then
+    echo "[GoBuild] WARNING: 'go' command not found in PATH. Skipping native Android Go build."
     exit 0
 fi
 
@@ -20,6 +40,18 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 fi
 
 TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_OS/bin"
+if [ ! -d "$TOOLCHAIN" ]; then
+    PREBUILT_DIR=$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 2>/dev/null | head -n 1)
+    if [ -n "$PREBUILT_DIR" ] && [ -d "$PREBUILT_DIR/bin" ]; then
+        TOOLCHAIN="$PREBUILT_DIR/bin"
+    fi
+fi
+
+if [ ! -d "$TOOLCHAIN" ]; then
+    echo "[GoBuild] WARNING: Toolchain not found at $TOOLCHAIN. Skipping native Android Go build."
+    exit 0
+fi
+
 API_LEVEL=21
 
 build_abi() {

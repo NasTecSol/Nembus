@@ -7,6 +7,7 @@ import '../ffi/nembus_bridge.dart';
 import '../singleton/singleton_class.dart';
 import 'login_screen.dart';
 import 'pos_product_list_screen.dart';
+import 'restaurant_pos_screen.dart';
 import 'stock_count_list_screen.dart';
 
 class PosDashboardScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class PosDashboardScreen extends StatefulWidget {
   final String? storeName;
   final int? posTerminalId;
   final String? posTerminalName;
+  final String? storeType;
 
   const PosDashboardScreen({
     super.key,
@@ -31,6 +33,7 @@ class PosDashboardScreen extends StatefulWidget {
     this.storeName,
     this.posTerminalId,
     this.posTerminalName,
+    this.storeType,
   });
 
   @override
@@ -43,6 +46,13 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
   List<Map<String, dynamic>> _assignedMenus = [];
   Map<String, dynamic>? _rbacDiagnostics;
   String _searchQuery = '';
+  String? _storeType;
+
+  /// Returns true if the store type is cafe or restaurant
+  bool get _isRestaurantOrCafe {
+    final t = (_storeType ?? SingletonClass().activeStoreType ?? '').toLowerCase().trim();
+    return t == 'restaurant' || t == 'cafe' || t.contains('restaurant') || t.contains('cafe');
+  }
 
   // Outbox Sync & Queue State
   int _pendingOutboxCount = 0;
@@ -64,9 +74,37 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _storeType = widget.storeType ?? SingletonClass().activeStoreType;
+    _resolveStoreTypeFromDb();
     _restoreActiveCashierSession();
     _fetchUserAssignedMenus();
     _fetchSyncQueueStatus();
+  }
+
+  /// Dynamically queries the local SQLite stores table to resolve store_type for the active store
+  Future<void> _resolveStoreTypeFromDb() async {
+    try {
+      final db = DatabaseService().database;
+      final sId = widget.storeId ?? SingletonClass().activeStoreId;
+      if (sId != null) {
+        final rows = await db.query('stores', where: 'id = ?', whereArgs: [sId], limit: 1);
+        if (rows.isNotEmpty) {
+          final rawType = (rows.first['store_type'] ?? '').toString().toLowerCase().trim();
+          final isCafe = rawType.contains('cafe');
+          final isRestaurant = rawType.contains('restaurant');
+          final dynamicType = isCafe ? 'cafe' : (isRestaurant ? 'restaurant' : (rawType.isNotEmpty ? rawType : 'retail'));
+          if (mounted && dynamicType != _storeType) {
+            setState(() {
+              _storeType = dynamicType;
+            });
+            SingletonClass().activeStoreType = dynamicType;
+            SingletonClass().saveStoreType(dynamicType);
+          }
+        }
+      }
+    } catch (e) {
+      developer.log('Error resolving store type: $e', name: 'PosDashboardScreen');
+    }
   }
 
   /// Restores any ongoing active open cashier session if one was started in the current runtime session or stored in SQLite
@@ -421,7 +459,7 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
   }
 
   /// Dialog to confirm and optionally specify opening float
-  void _showStartSessionDialog() {
+  void _showStartSessionDialog({VoidCallback? onStarted}) {
     final floatController = TextEditingController(text: '0.00');
     showDialog(
       context: context,
@@ -491,10 +529,11 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
             child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white54)),
           ),
           ElevatedButton.icon(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
               final floatVal = double.tryParse(floatController.text.trim()) ?? 0.0;
-              _startCashierSession(openingBalance: floatVal);
+              await _startCashierSession(openingBalance: floatVal);
+              if (onStarted != null) onStarted();
             },
             icon: const Icon(Icons.play_arrow_rounded, size: 18),
             label: const Text('Start Shift'),
@@ -507,6 +546,78 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
         ],
       ),
     );
+  }
+
+  void _openRetailSaleFlow() {
+    if (_activeSessionStatus != 'open') {
+      _showStartSessionDialog(onStarted: () {
+        _navigateToRetailPos();
+      });
+      return;
+    }
+    _navigateToRetailPos();
+  }
+
+  void _navigateToRetailPos() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PosProductListScreen(
+          userId: widget.userId,
+          username: widget.username,
+          initialStoreId: widget.storeId ?? SingletonClass().activeStoreId,
+          initialStoreName: widget.storeName ?? SingletonClass().activeStoreName,
+          posTerminalId: widget.posTerminalId ?? SingletonClass().activeTerminalId,
+          posTerminalName: widget.posTerminalName ?? SingletonClass().activeTerminalName,
+          initialSaleType: 'retail',
+        ),
+      ),
+    ).then((_) {
+      _restoreActiveCashierSession();
+      _fetchSyncQueueStatus();
+    });
+  }
+
+  void _openDiningFlow() {
+    if (_activeSessionStatus != 'open') {
+      _showStartSessionDialog(onStarted: () {
+        _navigateToRestaurant(initialView: 'tables', orderSource: 'dining');
+      });
+      return;
+    }
+    _navigateToRestaurant(initialView: 'tables', orderSource: 'dining');
+  }
+
+  void _openTakeawayFlow() {
+    if (_activeSessionStatus != 'open') {
+      _showStartSessionDialog(onStarted: () {
+        _navigateToRestaurant(initialView: 'menu', orderSource: 'takeaway');
+      });
+      return;
+    }
+    _navigateToRestaurant(initialView: 'menu', orderSource: 'takeaway');
+  }
+
+  void _navigateToRestaurant({required String initialView, required String orderSource}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RestaurantPosScreen(
+          tenantSlug: widget.tenantSlug,
+          tenantName: widget.tenantName,
+          userId: widget.userId,
+          username: widget.username,
+          roleName: widget.roleName,
+          storeId: widget.storeId ?? SingletonClass().activeStoreId ?? 1,
+          storeName: widget.storeName ?? SingletonClass().activeStoreName ?? 'Main Branch',
+          posTerminalId: widget.posTerminalId ?? SingletonClass().activeTerminalId ?? 1,
+          posTerminalName: widget.posTerminalName ?? SingletonClass().activeTerminalName ?? 'Register 1',
+          initialView: initialView,
+          initialOrderSource: orderSource,
+        ),
+      ),
+    ).then((_) {
+      _restoreActiveCashierSession();
+      _fetchSyncQueueStatus();
+    });
   }
 
   /// Dialog to confirm closing the active session with live expected balance and variance calculation
@@ -1635,11 +1746,223 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
               childAspectRatio = 1.25;
             }
 
-            return Padding(
+            final isWideScreen = screenWidth >= 700;
+
+            return SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
               padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Welcome Hero Banner with Dine-In, Take-Away, and Session Controls (Screenshot 2)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: EdgeInsets.symmetric(horizontal: isTablet ? 20 : 16, vertical: isTablet ? 18 : 14),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x33000000), blurRadius: 10, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: isWideScreen
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Welcome, ${widget.username}',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Manage your retail and wholesale sales operations today',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white70,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isRestaurantOrCafe) ...[
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFF59E0B),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      icon: const Icon(Icons.restaurant, size: 16),
+                                      label: const Text('Dine-In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                      onPressed: _openDiningFlow,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF06B6D4),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      icon: const Icon(Icons.shopping_bag_outlined, size: 16),
+                                      label: const Text('Take-Away', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                      onPressed: _openTakeawayFlow,
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ] else ...[
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF38BDF8),
+                                        foregroundColor: Colors.black,
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      icon: const Icon(Icons.point_of_sale_rounded, size: 16),
+                                      label: const Text('New Sale', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                      onPressed: _openRetailSaleFlow,
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _activeSessionStatus == 'open' ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    icon: Icon(_activeSessionStatus == 'open' ? Icons.logout : Icons.play_arrow, size: 16),
+                                    label: Text(_activeSessionStatus == 'open' ? 'Close Session' : 'Start Session', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                                    onPressed: _activeSessionStatus == 'open' ? _showStopSessionDialog : _showStartSessionDialog,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Welcome, ${widget.username}',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Manage your retail and wholesale sales operations today',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  if (_isRestaurantOrCafe) ...[
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFF59E0B),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          elevation: 2,
+                                        ),
+                                        icon: const Icon(Icons.restaurant, size: 15),
+                                        label: const Text(
+                                          'Dine-In',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onPressed: _openDiningFlow,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF06B6D4),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          elevation: 2,
+                                        ),
+                                        icon: const Icon(Icons.shopping_bag_outlined, size: 15),
+                                        label: const Text(
+                                          'Take-Away',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onPressed: _openTakeawayFlow,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ] else ...[
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF38BDF8),
+                                          foregroundColor: Colors.black,
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          elevation: 2,
+                                        ),
+                                        icon: const Icon(Icons.point_of_sale_rounded, size: 15),
+                                        label: const Text(
+                                          'New Sale',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onPressed: _openRetailSaleFlow,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _activeSessionStatus == 'open' ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        elevation: 2,
+                                      ),
+                                      icon: Icon(_activeSessionStatus == 'open' ? Icons.logout : Icons.play_arrow, size: 15),
+                                      label: Text(
+                                        _activeSessionStatus == 'open' ? 'Close' : 'Start',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      onPressed: _activeSessionStatus == 'open' ? _showStopSessionDialog : _showStartSessionDialog,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                  ),
+
                   // 3D Cashier Session Hero Card (Play / Stop Controls)
                   Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -1803,6 +2126,300 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                     ),
                   ),
 
+                  // Dedicated Fast Operations Card (Below Cashier Session)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: cardBgColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _isRestaurantOrCafe ? Icons.local_cafe_rounded : Icons.storefront_rounded,
+                                    color: primarySky,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      _isRestaurantOrCafe
+                                          ? 'CAFE & RESTAURANT FAST ORDERING'
+                                          : 'RETAIL POS QUICK ACTIONS',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                        letterSpacing: 0.8,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_activeSessionStatus != 'open') ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Session Required',
+                                  style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFFF59E0B), fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (_isRestaurantOrCafe)
+                          Row(
+                            children: [
+                              // Dining Button
+                              Expanded(
+                                child: InkWell(
+                                  onTap: _openDiningFlow,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFFD97706), Color(0xFFB45309)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: const [
+                                        BoxShadow(color: Color(0x33D97706), blurRadius: 6, offset: Offset(0, 2)),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.table_restaurant_rounded, color: Colors.white, size: 22),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Dine-In',
+                                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                                              ),
+                                              Text(
+                                                'Table Selection & Floor Plan',
+                                                style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 14),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              // Take-Away Button
+                              Expanded(
+                                child: InkWell(
+                                  onTap: _openTakeawayFlow,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFF0891B2), Color(0xFF0E7490)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: const [
+                                        BoxShadow(color: Color(0x330891B2), blurRadius: 6, offset: Offset(0, 2)),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 22),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Take-Away',
+                                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                                              ),
+                                              Text(
+                                                'Direct Menu Catalog & Cart',
+                                                style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 14),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              // New Sale Button
+                              Expanded(
+                                child: InkWell(
+                                  onTap: _openRetailSaleFlow,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: const [
+                                        BoxShadow(color: Color(0x330284C7), blurRadius: 6, offset: Offset(0, 2)),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.point_of_sale_rounded, color: Colors.white, size: 22),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'New Sale',
+                                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                                              ),
+                                              Text(
+                                                'Products & Barcode Scan',
+                                                style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 14),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              // Stock Counts Button
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => StockCountListScreen(
+                                          userId: widget.userId,
+                                          username: widget.username,
+                                          initialStoreId: widget.storeId ?? SingletonClass().activeStoreId,
+                                          initialStoreName: widget.storeName ?? SingletonClass().activeStoreName,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFF4F46E5), Color(0xFF4338CA)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: const [
+                                        BoxShadow(color: Color(0x334F46E5), blurRadius: 6, offset: Offset(0, 2)),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.inventory_2_rounded, color: Colors.white, size: 22),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Stock Counts',
+                                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                                              ),
+                                              Text(
+                                                'Inventory Audits & Counts',
+                                                style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 14),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+
                   // Search & Filter Header
                   Row(
                     children: [
@@ -1849,12 +2466,13 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                           border: Border.all(color: primarySky.withValues(alpha: 0.3)),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.verified_user_rounded,
                                 size: 16, color: primarySky),
                             const SizedBox(width: 6),
                             Text(
-                              '${_assignedMenus.length} Authorized',
+                              '${_assignedMenus.length}',
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -1898,9 +2516,10 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                   const SizedBox(height: 12),
 
                   // Content Area
-                  Expanded(
-                    child: _isLoading
-                        ? const Center(
+                  _isLoading
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -1919,44 +2538,47 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                                 ),
                               ],
                             ),
-                          )
-                        : _errorMessage != null && _assignedMenus.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24.0),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(
-                                        Icons.error_outline_rounded,
-                                        color: Color(0xFFEF4444),
-                                        size: 48,
+                          ),
+                        )
+                      : _errorMessage != null && _assignedMenus.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline_rounded,
+                                      color: Color(0xFFEF4444),
+                                      size: 48,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _errorMessage!,
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white70,
+                                        fontSize: 14,
                                       ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        _errorMessage!,
-                                        textAlign: TextAlign.center,
-                                        style: GoogleFonts.inter(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton.icon(
+                                      onPressed: _fetchUserAssignedMenus,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Retry Menu Query'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: primarySky,
+                                        foregroundColor: Colors.black87,
                                       ),
-                                      const SizedBox(height: 16),
-                                      ElevatedButton.icon(
-                                        onPressed: _fetchUserAssignedMenus,
-                                        icon: const Icon(Icons.refresh),
-                                        label: const Text('Retry Menu Query'),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: primarySky,
-                                          foregroundColor: Colors.black87,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              )
-                            : filteredMenus.isEmpty
-                                ? Center(
+                              ),
+                            )
+                          : filteredMenus.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+                                  child: Center(
                                     child: Column(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
@@ -1999,142 +2621,143 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                                         ),
                                       ],
                                     ),
-                                  )
-                                : GridView.builder(
-                                    physics: const BouncingScrollPhysics(),
-                                    gridDelegate:
-                                        SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: crossAxisCount,
-                                      crossAxisSpacing: isTablet ? 16 : 12,
-                                      mainAxisSpacing: isTablet ? 16 : 12,
-                                      childAspectRatio: childAspectRatio,
-                                    ),
-                                    itemCount: filteredMenus.length,
-                                    itemBuilder: (context, index) {
-                                      final menu = filteredMenus[index];
-                                      final name =
-                                          menu['name']?.toString() ?? 'Menu Item';
-                                      final code =
-                                          menu['code']?.toString() ?? 'menu_code';
-                                      final iconKey = menu['icon']?.toString();
-                                      final routePath =
-                                          menu['route_path']?.toString() ?? '';
-                                      final iconData =
-                                          _resolveMenuIcon(iconKey, code, name);
-                                      final gradientColors =
-                                          _resolveCardGradient(index);
+                                  ),
+                                )
+                              : GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    crossAxisSpacing: isTablet ? 16 : 12,
+                                    mainAxisSpacing: isTablet ? 16 : 12,
+                                    childAspectRatio: childAspectRatio,
+                                  ),
+                                  itemCount: filteredMenus.length,
+                                  itemBuilder: (context, index) {
+                                    final menu = filteredMenus[index];
+                                    final name =
+                                        menu['name']?.toString() ?? 'Menu Item';
+                                    final code =
+                                        menu['code']?.toString() ?? 'menu_code';
+                                    final iconKey = menu['icon']?.toString();
+                                    final routePath =
+                                        menu['route_path']?.toString() ?? '';
+                                    final iconData =
+                                        _resolveMenuIcon(iconKey, code, name);
+                                    final gradientColors =
+                                        _resolveCardGradient(index);
 
-                                      return Material(
-                                        color: Colors.transparent,
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(16),
-                                          onTap: () => _openSubmenus(menu, gradientColors[0]),
-                                          child: Container(
-                                            padding: EdgeInsets.all(isTablet ? 16 : 14),
-                                            decoration: BoxDecoration(
-                                              color: cardBgColor,
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              border: Border.all(
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.08),
+                                    return Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () => _openSubmenus(menu, gradientColors[0]),
+                                        child: Container(
+                                          padding: EdgeInsets.all(isTablet ? 16 : 14),
+                                          decoration: BoxDecoration(
+                                            color: cardBgColor,
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            border: Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.08),
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.3),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 4),
                                               ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black
-                                                      .withValues(alpha: 0.3),
-                                                  blurRadius: 10,
-                                                  offset: const Offset(0, 4),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Container(
-                                                      padding:
-                                                          const EdgeInsets.all(9),
-                                                      decoration: BoxDecoration(
-                                                        gradient: LinearGradient(
-                                                          colors: gradientColors,
-                                                          begin: Alignment.topLeft,
-                                                          end: Alignment
-                                                              .bottomRight,
-                                                        ),
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                                12),
-                                                        boxShadow: [
-                                                          BoxShadow(
-                                                            color: gradientColors[0]
-                                                                .withValues(
-                                                                    alpha: 0.3),
-                                                            blurRadius: 8,
-                                                            offset:
-                                                                const Offset(0, 2),
-                                                          ),
-                                                        ],
+                                            ],
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(9),
+                                                    decoration: BoxDecoration(
+                                                      gradient: LinearGradient(
+                                                        colors: gradientColors,
+                                                        begin: Alignment.topLeft,
+                                                        end: Alignment
+                                                            .bottomRight,
                                                       ),
-                                                      child: Icon(
-                                                        iconData,
-                                                        color: Colors.white,
-                                                        size: 22,
-                                                      ),
-                                                    ),
-                                                    Icon(
-                                                      Icons.arrow_forward_ios_rounded,
-                                                      size: 13,
-                                                      color: primarySky.withValues(alpha: 0.7),
-                                                    ),
-                                                  ],
-                                                ),
-                                                Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      name,
-                                                      maxLines: 2,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.w700,
-                                                        fontSize: isTablet ? 14.5 : 13.5,
-                                                        color: Colors.white,
-                                                        height: 1.2,
-                                                      ),
-                                                    ),
-                                                    if (routePath.isNotEmpty) ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        routePath,
-                                                        style: GoogleFonts.inter(
-                                                          fontSize: isTablet ? 11 : 10.5,
-                                                          color: primarySky
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: gradientColors[0]
                                                               .withValues(
-                                                                  alpha: 0.8),
-                                                          fontWeight:
-                                                              FontWeight.w500,
+                                                                  alpha: 0.3),
+                                                          blurRadius: 8,
+                                                          offset:
+                                                              const Offset(0, 2),
                                                         ),
+                                                      ],
+                                                    ),
+                                                    child: Icon(
+                                                      iconData,
+                                                      color: Colors.white,
+                                                      size: 22,
+                                                    ),
+                                                  ),
+                                                  Icon(
+                                                    Icons.arrow_forward_ios_rounded,
+                                                    size: 13,
+                                                    color: primarySky.withValues(alpha: 0.7),
+                                                  ),
+                                                ],
+                                              ),
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    name,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: GoogleFonts.inter(
+                                                      fontWeight: FontWeight.w700,
+                                                      fontSize: isTablet ? 14.5 : 13.5,
+                                                      color: Colors.white,
+                                                      height: 1.2,
+                                                    ),
+                                                  ),
+                                                  if (routePath.isNotEmpty) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      routePath,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: isTablet ? 11 : 10.5,
+                                                        color: primarySky
+                                                            .withValues(
+                                                                alpha: 0.8),
+                                                        fontWeight:
+                                                            FontWeight.w500,
                                                       ),
-                                                    ],
+                                                    ),
                                                   ],
-                                                ),
-                                              ],
-                                            ),
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                      );
-                                    },
-                                  ),
-                  ),
+                                      ),
+                                    );
+                                  },
+                                ),
                 ],
               ),
             );

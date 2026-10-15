@@ -69,7 +69,7 @@ func LoadConfig(env string) *Config {
 		Port:          getEnv("PORT", "8080"),
 		GRPCPort:      getEnv("GRPC_PORT", "50051"),
 		MasterDBURL:   getEnv("MASTER_DB_URL", ""),
-		JWTSecret:     getEnv("JWT_SECRET", ""),
+		JWTSecret:     getEnv("JWT_SECRET", "nembus-pos-mobile-secure-jwt-secret-key-2026"),
 		DevUserID:     getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
 		DevUserLogin:  getEnv("DEV_USER_LOGIN", "dev_user"),
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
