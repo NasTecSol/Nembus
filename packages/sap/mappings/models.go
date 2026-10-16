@@ -391,6 +391,7 @@ type SAPProduct struct {
 	VatGourpSa string  `json:"vat_group_sa,omitempty"`
 	AssetItem  string  `json:"asset_item,omitempty"`
 	ItemType   string  `json:"item_type,omitempty"`
+	AvgPrice   float64 `json:"avg_price"`
 }
 
 type CanonicalProduct struct {
@@ -413,6 +414,7 @@ type CanonicalProduct struct {
 	IsSellable         bool                            `json:"is_sellable"`
 	IsPurchasable      bool                            `json:"is_purchasable"`
 	TrackInventory     bool                            `json:"track_inventory"`
+	CostPrice          float64                         `json:"cost_price"`
 	PrimaryBarcode     string                          `json:"primary_barcode,omitempty"`
 	UOMConversions     []CanonicalProductUOMConversion `json:"uom_conversions,omitempty"`
 	Metadata           map[string]interface{}          `json:"metadata"`
@@ -516,6 +518,7 @@ func (p *SAPProduct) ToCanonical() CanonicalProduct {
 		IsSellable:     SAPBool(p.SellItem, true),
 		IsPurchasable:  SAPBool(p.PrchseItem, true),
 		TrackInventory: SAPBool(p.InvntItem, true),
+		CostPrice:      p.AvgPrice,
 		PrimaryBarcode: strings.TrimSpace(p.CodeBars),
 		UOMConversions: conversions,
 		Metadata: map[string]interface{}{
@@ -1422,6 +1425,7 @@ type SAPStockMovement struct {
 	InQty      float64   `json:"in_qty"`
 	OutQty     float64   `json:"out_qty"`
 	Price      float64   `json:"price"`
+	CalcPrice  float64   `json:"calc_price"`
 	TransValue float64   `json:"trans_value"`
 }
 
@@ -1526,6 +1530,14 @@ func (sm *SAPStockMovement) ToCanonical() CanonicalStockMovement {
 		qty = sm.OutQty
 	}
 
+	costPerUnit := sm.CalcPrice
+	if costPerUnit == 0 && qty > 0 && sm.TransValue != 0 {
+		costPerUnit = math.Abs(sm.TransValue) / qty
+	}
+	if costPerUnit == 0 {
+		costPerUnit = sm.Price
+	}
+
 	return CanonicalStockMovement{
 		MovementType:    movementType,
 		ReferenceType:   referenceType,
@@ -1535,7 +1547,7 @@ func (sm *SAPStockMovement) ToCanonical() CanonicalStockMovement {
 		ToStoreCode:     toStore,
 		Quantity:        qty,
 		MovementDate:    sm.DocDate,
-		CostPerUnit:     sm.Price,
+		CostPerUnit:     costPerUnit,
 		TotalValue:      sm.TransValue,
 		Metadata: map[string]interface{}{
 			"sap_trans_num":  sm.TransNum,

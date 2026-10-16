@@ -107,6 +107,7 @@ func (e *CatalogExtractor) ExtractProducts(ctx context.Context) ([]mappings.Cano
 			&vatGroup,
 			&assetItem,
 			&itemType,
+			&p.AvgPrice,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OITM row: %w", err)
 		}

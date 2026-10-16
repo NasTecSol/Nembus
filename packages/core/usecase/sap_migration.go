@@ -472,14 +472,14 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			q := `
 			INSERT INTO products (
 				organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type,
-				is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, track_inventory, metadata
+				is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, track_inventory, cost_price, metadata
 			)
 			VALUES (
 				$1, $2, $3, $4,
 				(SELECT id FROM product_categories WHERE code = $5),
 				(SELECT id FROM brands WHERE code = $6),
 				(SELECT id FROM units_of_measure WHERE code = $7 LIMIT 1),
-				$8, $9, $10, $11, $12, $13, $14, $15
+				$8, $9, $10, $11, $12, $13, $14, $15, $16
 			)
 			ON CONFLICT(organization_id, sku) DO UPDATE SET
 				name = excluded.name,
@@ -491,9 +491,10 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				is_active = excluded.is_active,
 				is_sellable = excluded.is_sellable,
 				track_inventory = excluded.track_inventory,
+				cost_price = excluded.cost_price,
 				metadata = excluded.metadata;
 			`
-			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, metaBytes); err != nil {
+			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, p.CostPrice, metaBytes); err != nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("product %s error: %v", p.SKU, err))
 			} else {
@@ -1001,16 +1002,46 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			if sm.ReferenceNumber != "" {
 				switch sm.ReferenceType {
 				case "goods_receipt_note":
-					r := tx.QueryRow(ctx, `SELECT id FROM goods_receipt_notes WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+					r := tx.QueryRow(ctx, `
+						SELECT id FROM goods_receipt_notes 
+						WHERE organization_id = $1 
+						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR grn_number = 'GRN-' || $2 OR grn_number = $2)
+						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 					_ = r.Scan(&referenceID)
+				case "purchase_invoice":
+					r := tx.QueryRow(ctx, `
+						SELECT id FROM goods_receipt_notes 
+						WHERE organization_id = $1 
+						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2)
+						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+					if err := r.Scan(&referenceID); err != nil {
+						r2 := tx.QueryRow(ctx, `
+							SELECT id FROM purchase_orders 
+							WHERE organization_id = $1 
+							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR po_number = 'PO-' || $2)
+							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+						_ = r2.Scan(&referenceID)
+					}
 				case "sales_return":
-					r := tx.QueryRow(ctx, `SELECT id FROM sales_returns WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+					r := tx.QueryRow(ctx, `
+						SELECT id FROM sales_returns 
+						WHERE organization_id = $1 
+						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR return_number = 'RET-SAP-' || $2 OR return_number = 'CN-SAP-' || $2 OR return_number = $2)
+						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 					_ = r.Scan(&referenceID)
 				case "transfer_request":
-					r := tx.QueryRow(ctx, `SELECT id FROM transfer_requests WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+					r := tx.QueryRow(ctx, `
+						SELECT id FROM transfer_requests 
+						WHERE organization_id = $1 
+						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR transfer_number = 'TR-SAP-' || $2 OR transfer_number = $2)
+						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 					_ = r.Scan(&referenceID)
 				case "invoice":
-					r := tx.QueryRow(ctx, `SELECT id FROM invoices WHERE organization_id = $1 AND metadata->>'sap_doc_num' = $2 LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+					r := tx.QueryRow(ctx, `
+						SELECT id FROM invoices 
+						WHERE organization_id = $1 
+						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR invoice_number = 'INV-SAP-' || $2 OR invoice_number = $2)
+						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
 					_ = r.Scan(&referenceID)
 				}
 			}

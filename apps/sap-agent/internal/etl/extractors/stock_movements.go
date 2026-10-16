@@ -59,6 +59,7 @@ func (e *StockMovementExtractor) ExtractStockMovements(ctx context.Context, from
 			&sm.InQty,
 			&sm.OutQty,
 			&sm.Price,
+			&sm.CalcPrice,
 			&sm.TransValue,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OINM row: %w", err)

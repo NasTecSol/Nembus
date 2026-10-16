@@ -311,7 +311,8 @@ SELECT
     ISNULL(ManBtchNum, 'N') AS ManBtchNum,
     ISNULL(VatGourpSa, '') AS VatGourpSa,
     ISNULL(AssetItem, 'N') AS AssetItem,
-    ISNULL(ItemType, 'I') AS ItemType
+    ISNULL(ItemType, 'I') AS ItemType,
+    ISNULL(AvgPrice, 0.0) AS AvgPrice
 FROM OITM
 ORDER BY ItemCode;
 `
@@ -659,6 +660,7 @@ SELECT
     ISNULL(InQty, 0.0) AS InQty,
     ISNULL(OutQty, 0.0) AS OutQty,
     ISNULL(Price, 0.0) AS Price,
+    ISNULL(CalcPrice, Price) AS CalcPrice,
     ISNULL(TransValue, 0.0) AS TransValue
 FROM OINM WITH (NOLOCK)
 WHERE DocDate >= @FromDate AND DocDate < @ToDate

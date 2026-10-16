@@ -31,9 +31,9 @@
     "connection_timeout_seconds": 15
   },
   "cloud": {
-    "base_url": "http://127.0.0.1:8080",
+    "base_url": "https://nembus.nashrms.com",
     "api_key": "migrator_sys_token_default_1790511038",
     "organization_id": 1,
-    "timeout_seconds": 0
+    "timeout_seconds": 60
   }
 }
