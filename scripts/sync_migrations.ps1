@@ -70,19 +70,29 @@ if (Test-Path $CoreMigrations) {
 # 4. Recalculate Atlas hashes if atlas CLI is installed
 if (Get-Command atlas -ErrorAction SilentlyContinue) {
     Write-Host "Recalculating Atlas migration hash sums..." -ForegroundColor Yellow
-    if (Test-Path "$CoreDir\atlas.hcl") {
-        Push-Location "$CoreDir"
-        atlas migrate hash | Out-Null
-        Pop-Location
+    Push-Location "$CoreDir"
+    atlas migrate hash --env local | Out-Null
+    Pop-Location
+    # Ensure recalculated atlas.sum is copied to apps/cloud-server/migrations
+    if (Test-Path "$CoreMigrations\atlas.sum") {
+        Copy-Item -Path "$CoreMigrations\atlas.sum" -Destination "$ServerMigrations\atlas.sum" -Force
     }
 }
 
-# 5. Run sqlc generate in packages/core if sqlc is installed
+# 5. Run sqlc generate in packages/core and apps/cloud-server if sqlc is installed
 if (Get-Command sqlc -ErrorAction SilentlyContinue) {
     Write-Host "Running sqlc generate in packages/core..." -ForegroundColor Yellow
     Push-Location "$CoreDir"
     sqlc generate
     Pop-Location
+
+    $ServerDir = Join-Path $RepoRoot "apps\cloud-server"
+    if (Test-Path "$ServerDir\sqlc.yaml") {
+        Write-Host "Running sqlc generate in apps/cloud-server..." -ForegroundColor Yellow
+        Push-Location "$ServerDir"
+        sqlc generate
+        Pop-Location
+    }
 } else {
     Write-Host "sqlc command not found in PATH, skipping sqlc generate step." -ForegroundColor Gray
 }
