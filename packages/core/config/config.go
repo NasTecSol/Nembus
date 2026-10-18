@@ -23,6 +23,13 @@ type Config struct {
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
+
+	// gRPC Sync Security & TLS
+	SyncJWTSecret   string // SYNC_JWT_SECRET (min 32 bytes)
+	SyncTLSEnabled  bool   // SYNC_TLS_ENABLED
+	SyncTLSCertFile string // SYNC_TLS_CERT_FILE
+	SyncTLSKeyFile  string // SYNC_TLS_KEY_FILE
+	SyncEnforceAuth bool   // SYNC_ENFORCE_AUTH
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -64,20 +71,33 @@ func LoadConfig(env string) *Config {
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
 	}
 
+	syncSecret := getEnv("SYNC_JWT_SECRET", "")
+	if syncSecret == "" {
+		// Fallback to JWT_SECRET if long enough
+		if jwtSec := getEnv("JWT_SECRET", ""); len(jwtSec) >= 32 {
+			syncSecret = jwtSec
+		}
+	}
+
 	return &Config{
-		Env:           getEnv("ENV", envValue),
-		Port:          getEnv("PORT", "8080"),
-		GRPCPort:      getEnv("GRPC_PORT", "50051"),
-		MasterDBURL:   getEnv("MASTER_DB_URL", ""),
-		JWTSecret:     getEnv("JWT_SECRET", ""),
-		DevUserID:     getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
-		DevUserLogin:  getEnv("DEV_USER_LOGIN", "dev_user"),
-		LogLevel:      getEnv("LOG_LEVEL", "info"),
-		PGDumpPath:    getEnv("PG_DUMP_PATH", "pg_dump"),
-		ZatcaEnabled:  getEnv("ZATCA_ENABLED", "false") == "true",
-		ZatcaEnv:      zatcaEnv,
-		ZatcaBaseURL:  zatcaBaseURL,
-		ZatcaOrgVATID: getEnv("ZATCA_ORG_VAT_ID", ""),
+		Env:             getEnv("ENV", envValue),
+		Port:            getEnv("PORT", "8080"),
+		GRPCPort:        getEnv("GRPC_PORT", "50051"),
+		MasterDBURL:     getEnv("MASTER_DB_URL", ""),
+		JWTSecret:       getEnv("JWT_SECRET", ""),
+		DevUserID:       getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
+		DevUserLogin:    getEnv("DEV_USER_LOGIN", "dev_user"),
+		LogLevel:        getEnv("LOG_LEVEL", "info"),
+		PGDumpPath:      getEnv("PG_DUMP_PATH", "pg_dump"),
+		ZatcaEnabled:    getEnv("ZATCA_ENABLED", "false") == "true",
+		ZatcaEnv:        zatcaEnv,
+		ZatcaBaseURL:    zatcaBaseURL,
+		ZatcaOrgVATID:   getEnv("ZATCA_ORG_VAT_ID", ""),
+		SyncJWTSecret:   syncSecret,
+		SyncTLSEnabled:  getEnv("SYNC_TLS_ENABLED", "false") == "true",
+		SyncTLSCertFile: getEnv("SYNC_TLS_CERT_FILE", ""),
+		SyncTLSKeyFile:  getEnv("SYNC_TLS_KEY_FILE", ""),
+		SyncEnforceAuth: getEnv("SYNC_ENFORCE_AUTH", "false") == "true" || syncSecret != "",
 	}
 }
 

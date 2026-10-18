@@ -17,12 +17,16 @@ import (
 	clientbackup "github.com/NasTecSol/nembus-client/client"
 	"github.com/NasTecSol/nembus-client/internal/config"
 	"github.com/NasTecSol/nembus-client/internal/db"
+	"github.com/NasTecSol/nembus-client/internal/payments"
+	"github.com/NasTecSol/nembus-client/internal/payments/fake"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
+	corepayments "github.com/NasTecSol/nembus-core/payments"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,16 +39,18 @@ var migrations embed.FS
 
 // App struct
 type App struct {
-	ctx           context.Context
-	dbManager     *db.DBManager
-	masterRepo    *repository.Queries
-	masterPool    *pgxpool.Pool
-	tenantManager *manager.Manager
-	syncService   *sync.SyncService
-	cfg           *config.Config
-	version       string
-	ghToken       string
-	ghRepo        string
+	ctx                context.Context
+	dbManager          *db.DBManager
+	masterRepo         *repository.Queries
+	masterPool         *pgxpool.Pool
+	tenantManager      *manager.Manager
+	syncService        *sync.SyncService
+	paymentCoordinator *payments.PaymentCoordinator
+	paymentStore       payments.Store
+	cfg                *config.Config
+	version            string
+	ghToken            string
+	ghRepo             string
 }
 
 // NewApp creates a new App application struct
@@ -507,7 +513,17 @@ func (a *App) StartSyncService(slug string) {
 			grpcAddr = a.cfg.CloudURL
 		}
 	}
-	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
+	var syncOpts []sync.Option
+	if a.cfg != nil {
+		syncOpts = append(syncOpts, sync.WithSecurity(sync.SecurityConfig{
+			Token:              a.cfg.SyncDeviceToken,
+			TLSEnabled:         a.cfg.SyncTLSEnabled,
+			TLSCAFile:          a.cfg.SyncTLSCAFile,
+			TLSServerName:      a.cfg.SyncTLSServerName,
+			AllowInsecureToken: a.cfg.SyncAllowInsecureToken,
+		}))
+	}
+	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug, syncOpts...)
 
 	// Reset any sync_queue items that previously hit max_retries (e.g. due to
 	// transient cloud errors or FK constraint issues that have since been fixed)
@@ -586,7 +602,17 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	purchaseOrdersUC := usecase.NewPurchaseOrdersUseCase()
 	invoiceUC := usecase.NewInvoiceUseCase()
 
-	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.cfg)
+	// Initialize Local Payment Store & Crash Recovery
+	a.paymentStore = payments.NewPgxStore(masterPool)
+	if _, err := payments.StartupRecovery(context.Background(), a.paymentStore); err != nil {
+		log.Printf("[PaymentRecovery] Warning: startup recovery failed: %v", err)
+	}
+
+	// Pluggable Terminal Provider (defaults to deterministic fake provider for dev/testing until official Geidea ECR SDK is plugged in)
+	terminalProvider := fake.NewFakeTerminalProvider("geidea")
+	a.paymentCoordinator = payments.NewPaymentCoordinator(a.paymentStore, terminalProvider)
+
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.paymentCoordinator, a.paymentStore, a.cfg)
 	r.Static("/images", "./images")
 
 	log.Printf("Starting Gin HTTP server on port %s (Swagger: http://localhost:%s/swagger/index.html)", a.cfg.Port, a.cfg.Port)
@@ -776,4 +802,85 @@ func (a *App) GetDevToken() string {
 		return ""
 	}
 	return token
+}
+
+// InitiateTerminalSale exposes card terminal sale directly to Wails frontend.
+func (a *App) InitiateTerminalSale(reqJSON string) string {
+	if a.paymentCoordinator == nil {
+		return `{"error":"payment coordinator not initialized"}`
+	}
+	var req payments.InitiateSaleRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		return fmt.Sprintf(`{"error":"invalid request json: %s"}`, err.Error())
+	}
+	attempt, err := a.paymentCoordinator.InitiateSale(context.Background(), payments.InitiateSaleParams{
+		IdempotencyKey:   req.IdempotencyKey,
+		StoreID:          req.StoreID,
+		PosTerminalID:    req.PosTerminalID,
+		CashierSessionID: req.CashierSessionID,
+		TransactionID:    req.TransactionID,
+		SalesOrderID:     req.SalesOrderID,
+		InvoiceRef:       req.InvoiceRef,
+		AmountMinor:      req.AmountMinor,
+		Currency:         req.Currency,
+		DeviceID:         req.DeviceID,
+	})
+	res := map[string]any{"attempt": attempt}
+	if err != nil {
+		res["error"] = err.Error()
+	} else {
+		res["status"] = "success"
+	}
+	out, _ := json.Marshal(res)
+	return string(out)
+}
+
+// GetTerminalAttempt returns the current status of an attempt to Wails frontend.
+func (a *App) GetTerminalAttempt(attemptID string) string {
+	if a.paymentStore == nil {
+		return `{"error":"payment store not initialized"}`
+	}
+	id, err := uuid.Parse(attemptID)
+	if err != nil {
+		return `{"error":"invalid attempt id"}`
+	}
+	attempt, err := a.paymentStore.GetAttempt(context.Background(), id)
+	if err != nil {
+		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+	}
+	out, _ := json.Marshal(map[string]any{"attempt": attempt})
+	return string(out)
+}
+
+// ListUnresolvedTerminalAttempts returns attempts in 'unknown' state to Wails frontend.
+func (a *App) ListUnresolvedTerminalAttempts(storeID int32) string {
+	if a.paymentStore == nil {
+		return `{"error":"payment store not initialized"}`
+	}
+	attempts, err := a.paymentStore.ListUnresolvedAttempts(context.Background(), storeID)
+	if err != nil {
+		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+	}
+	out, _ := json.Marshal(map[string]any{"attempts": attempts})
+	return string(out)
+}
+
+// ResolveTerminalAttempt resolves an unknown attempt from Wails frontend.
+func (a *App) ResolveTerminalAttempt(attemptID, resolution, reason, manualRef string) string {
+	if a.paymentCoordinator == nil {
+		return `{"error":"payment coordinator not initialized"}`
+	}
+	id, err := uuid.Parse(attemptID)
+	if err != nil {
+		return `{"error":"invalid attempt id"}`
+	}
+	attempt, err := a.paymentCoordinator.ResolveAttempt(context.Background(), id, corepayments.Status(resolution), reason, manualRef)
+	res := map[string]any{"attempt": attempt}
+	if err != nil {
+		res["error"] = err.Error()
+	} else {
+		res["status"] = "resolved"
+	}
+	out, _ := json.Marshal(res)
+	return string(out)
 }

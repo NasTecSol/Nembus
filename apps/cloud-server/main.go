@@ -8,6 +8,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+	"github.com/NasTecSol/nembus-core/grpc/syncauth"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -360,23 +361,57 @@ func main() {
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
-	// ── gRPC Backup Service ────────────────────────────────────────────────
+	// ── gRPC Backup & Sync Service ────────────────────────────────────────
 	go func() {
 		grpcAddr := ":" + cfg.GRPCPort
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
 			log.Fatalf("gRPC: failed to listen on %s: %v", grpcAddr, err)
 		}
-		grpcServer := grpc.NewServer()
+
+		var serverOpts []grpc.ServerOption
+
+		// TLS configuration
+		if cfg.SyncTLSEnabled {
+			if cfg.SyncTLSCertFile == "" || cfg.SyncTLSKeyFile == "" {
+				log.Fatalf("gRPC TLS enabled but cert or key file not specified")
+			}
+			tlsCreds, err := syncauth.ServerTLS(cfg.SyncTLSCertFile, cfg.SyncTLSKeyFile)
+			if err != nil {
+				log.Fatalf("gRPC TLS initialization error: %v", err)
+			}
+			serverOpts = append(serverOpts, grpc.Creds(tlsCreds))
+			log.Printf("🔒 gRPC TLS enabled with cert %s", cfg.SyncTLSCertFile)
+		}
+
+		// Sync auth interceptor
+		if cfg.SyncEnforceAuth && cfg.SyncJWTSecret != "" {
+			verifier, err := syncauth.NewVerifier(cfg.SyncJWTSecret, nil)
+			if err != nil {
+				log.Fatalf("gRPC sync auth verifier error: %v", err)
+			}
+			serverOpts = append(serverOpts,
+				grpc.ChainStreamInterceptor(syncauth.StreamInterceptor(verifier)),
+				grpc.ChainUnaryInterceptor(syncauth.UnaryInterceptor(verifier)),
+			)
+			log.Printf("🔐 gRPC Sync authentication enforced via device JWT")
+		} else {
+			log.Printf("⚠️ gRPC Sync running without authentication enforcement")
+		}
+
+		grpcServer := grpc.NewServer(serverOpts...)
 		backupSrv := grpcbackup.NewBackupServer(tenantManager, cfg.JWTSecret, cfg.PGDumpPath)
 		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
 
 		syncSrv := grpcbackup.NewSyncServer(tenantManager, masterPool)
 		syncpb.RegisterSyncServiceServer(grpcServer, syncSrv)
 
-		// Enable reflection so grpcurl/Postman can discover services at runtime
-		reflection.Register(grpcServer)
-		log.Printf("✅ gRPC Backup & Sync Service listening on %s (reflection enabled)", grpcAddr)
+		if cfg.Env != "production" && cfg.Env != "prod" {
+			reflection.Register(grpcServer)
+			log.Printf("ℹ️ gRPC reflection enabled (non-production)")
+		}
+
+		log.Printf("✅ gRPC Backup & Sync Service listening on %s", grpcAddr)
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("gRPC: serve error: %v", err)
 		}

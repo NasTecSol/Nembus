@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/NasTecSol/nembus-core/payments"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
@@ -157,9 +158,17 @@ func (uc *PosPaymentUseCase) UpdatePayment(ctx context.Context, in *UpdatePosPay
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	_, err := uc.repo.GetPosPayment(ctx, in.ID)
+	existing, err := uc.repo.GetPosPayment(ctx, in.ID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "payment not found", nil)
+	}
+	policy := payments.DefaultPolicy()
+	gateway := ""
+	if existing.PaymentGateway.Valid {
+		gateway = existing.PaymentGateway.String
+	}
+	if policy.RequiresAttempt(existing.PaymentMethod, gateway) {
+		return utils.NewResponse(utils.CodeBadReq, "terminal and card payments are immutable and cannot be updated directly; use a refund or reversal", nil)
 	}
 	params := repository.UpdatePosPaymentParams{
 		ID:               in.ID,
@@ -191,9 +200,17 @@ func (uc *PosPaymentUseCase) DeletePayment(ctx context.Context, id int32) *repos
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	_, err := uc.repo.GetPosPayment(ctx, id)
+	existing, err := uc.repo.GetPosPayment(ctx, id)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "payment not found", nil)
+	}
+	policy := payments.DefaultPolicy()
+	gateway := ""
+	if existing.PaymentGateway.Valid {
+		gateway = existing.PaymentGateway.String
+	}
+	if policy.RequiresAttempt(existing.PaymentMethod, gateway) {
+		return utils.NewResponse(utils.CodeBadReq, "terminal and card payments are immutable and cannot be deleted; use a refund or reversal", nil)
 	}
 	err = uc.repo.DeletePosPayment(ctx, id)
 	if err != nil {

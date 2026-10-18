@@ -52,16 +52,23 @@ RETURNS TRIGGER AS $$
 DECLARE
     entity_name VARCHAR(50);
     prio INTEGER := 5;
+    eid BIGINT := 0;
 BEGIN
     entity_name := TG_ARGV[0];
-    IF entity_name = 'pos_transactions' OR entity_name = 'pos_payments' THEN
+    IF entity_name = 'pos_transactions' OR entity_name = 'pos_payments' OR entity_name = 'payment_attempts' THEN
         prio := 10;
     END IF;
+
+    BEGIN
+        eid := NEW.id::text::bigint;
+    EXCEPTION WHEN OTHERS THEN
+        eid := 0;
+    END;
 
     INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority)
     VALUES (
         entity_name,
-        NEW.id,
+        eid,
         TG_OP,
         row_to_json(NEW)::jsonb,
         'pending',
@@ -93,6 +100,13 @@ CREATE TRIGGER trg_sync_pos_payments
     FOR EACH ROW
     EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_payments');
 
+-- Automatically enqueue payment attempts into sync_queue on INSERT and UPDATE
+DROP TRIGGER IF EXISTS trg_sync_payment_attempts ON payment_attempts;
+CREATE TRIGGER trg_sync_payment_attempts
+    AFTER INSERT OR UPDATE ON payment_attempts
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('payment_attempts');
+
 -- Automatically enqueue cashier sessions into sync_queue
 DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
 CREATE TRIGGER trg_sync_cashier_sessions
@@ -102,6 +116,7 @@ CREATE TRIGGER trg_sync_cashier_sessions
 
 -- +goose Down
 DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
+DROP TRIGGER IF EXISTS trg_sync_payment_attempts ON payment_attempts;
 DROP TRIGGER IF EXISTS trg_sync_pos_payments ON pos_payments;
 DROP TRIGGER IF EXISTS trg_sync_pos_transaction_lines ON pos_transaction_lines;
 DROP TRIGGER IF EXISTS trg_sync_pos_transactions ON pos_transactions;

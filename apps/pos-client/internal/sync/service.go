@@ -13,12 +13,32 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/grpc/syncauth"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// SecurityConfig holds client TLS and token credentials for gRPC sync.
+type SecurityConfig struct {
+	Token              string
+	TLSEnabled         bool
+	TLSCAFile          string
+	TLSServerName      string
+	AllowInsecureToken bool
+}
+
+// Option configures a SyncService.
+type Option func(*SyncService)
+
+// WithSecurity configures sync TLS and device authentication token.
+func WithSecurity(sec SecurityConfig) Option {
+	return func(s *SyncService) {
+		s.sec = sec
+	}
+}
 
 type SyncService struct {
 	ctx        context.Context
@@ -27,6 +47,7 @@ type SyncService struct {
 	cloudURL   string
 	tenantSlug string
 	grpcAddr   string
+	sec        SecurityConfig
 	syncMu     sync.Mutex
 }
 
@@ -40,7 +61,7 @@ type OutboxItem struct {
 	CorrelationID *string         `json:"correlation_id"`
 }
 
-func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug string) *SyncService {
+func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug string, opts ...Option) *SyncService {
 	// Resolve gRPC target address from cloudURL or environment default
 	grpcTarget := extractGRPCTarget(cloudURL)
 	if ctx == nil {
@@ -48,7 +69,7 @@ func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug stri
 	}
 	workerCtx, cancel := context.WithCancel(ctx)
 
-	return &SyncService{
+	s := &SyncService{
 		ctx:        workerCtx,
 		cancel:     cancel,
 		masterPool: pool,
@@ -56,6 +77,34 @@ func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug stri
 		tenantSlug: slug,
 		grpcAddr:   grpcTarget,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// dialGRPC connects to the gRPC server using configured TLS and token credentials.
+func (s *SyncService) dialGRPC() (*grpc.ClientConn, error) {
+	var dialOpts []grpc.DialOption
+
+	if s.sec.TLSEnabled {
+		creds, err := syncauth.ClientTLS(s.sec.TLSCAFile, s.sec.TLSServerName)
+		if err != nil {
+			return nil, fmt.Errorf("sync tls client credentials: %w", err)
+		}
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
+	} else {
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	if s.sec.Token != "" {
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(syncauth.TokenCredentials{
+			Token:         s.sec.Token,
+			AllowInsecure: !s.sec.TLSEnabled && s.sec.AllowInsecureToken,
+		}))
+	}
+
+	return grpc.NewClient(s.grpcAddr, dialOpts...)
 }
 
 func extractGRPCTarget(target string) string {
@@ -190,7 +239,7 @@ func (s *SyncService) drainOutboxGRPC() {
 	var storeID int32
 	_ = s.masterPool.QueryRow(ctx, `SELECT store_id FROM local_device_config ORDER BY id LIMIT 1;`).Scan(&storeID)
 
-	conn, err := grpc.NewClient(s.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := s.dialGRPC()
 	if err != nil {
 		log.Printf("[gRPC SYNC] Connection failed to %s: %v", s.grpcAddr, err)
 		s.recordOutboxFailure(items, err.Error())

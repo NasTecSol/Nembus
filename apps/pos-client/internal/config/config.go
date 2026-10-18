@@ -28,6 +28,13 @@ type Config struct {
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
+
+	// gRPC Sync Security Configuration
+	SyncDeviceToken        string // SYNC_DEVICE_TOKEN or SYNC_AUTH_TOKEN
+	SyncTLSEnabled         bool   // SYNC_TLS_ENABLED (true in staging/production)
+	SyncTLSCAFile          string // SYNC_TLS_CA_FILE (custom CA certificate)
+	SyncTLSServerName      string // SYNC_TLS_SERVER_NAME (override SNI / cert host)
+	SyncAllowInsecureToken bool   // SYNC_ALLOW_INSECURE_TOKEN (permits token over cleartext in dev)
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -89,7 +96,12 @@ func LoadConfig(env string) *Config {
 		ZatcaEnabled:    getEnv("ZATCA_ENABLED", "false") == "true",
 		ZatcaEnv:        zatcaEnv,
 		ZatcaBaseURL:    zatcaBaseURL,
-		ZatcaOrgVATID:   getEnv("ZATCA_ORG_VAT_ID", ""),
+		ZatcaOrgVATID:          getEnv("ZATCA_ORG_VAT_ID", ""),
+		SyncDeviceToken:        getEnv("SYNC_DEVICE_TOKEN", getEnv("SYNC_AUTH_TOKEN", "")),
+		SyncTLSEnabled:         getEnv("SYNC_TLS_ENABLED", "false") == "true",
+		SyncTLSCAFile:          getEnv("SYNC_TLS_CA_FILE", ""),
+		SyncTLSServerName:      getEnv("SYNC_TLS_SERVER_NAME", ""),
+		SyncAllowInsecureToken: getEnv("SYNC_ALLOW_INSECURE_TOKEN", "false") == "true",
 	}
 
 	// Propagate resolved secrets back into the OS environment so that any

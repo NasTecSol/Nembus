@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/grpc/syncauth"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/NasTecSol/nembus-core/payments"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -112,6 +114,13 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 		return fmt.Errorf("tenant_slug is required")
 	}
 
+	// Enforce token authorization if caller authenticated via syncauth
+	if claims, ok := syncauth.FromContext(ctx); ok {
+		if err := syncauth.Authorize(claims, event.TenantSlug, event.StoreId); err != nil {
+			return err
+		}
+	}
+
 	pool, err := s.tenantManager.GetPool(ctx, event.TenantSlug)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant pool: %w", err)
@@ -119,6 +128,13 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 
 	// Dynamic ingestion routing by entity type
 	switch event.EntityType {
+	case "payment_attempts":
+		if err := s.applyPaymentAttempt(ctx, pool, event.Action, event.PayloadJson); err != nil {
+			log.Printf("[gRPC SyncServer] Ingestion error for payment_attempts (action=%s, ID %d): %v", event.Action, event.EntityId, err)
+			return err
+		}
+		log.Printf("[gRPC SyncServer] Successfully ingested payment_attempts entity ID %d (action=%s, Correlation: %s) for store %d",
+			event.EntityId, event.Action, event.CorrelationId, event.StoreId)
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
 		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
 		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
@@ -321,6 +337,174 @@ func (s *SyncServer) applyPOSCheckout(ctx context.Context, pool *pgxpool.Pool, p
 	return tx.Commit(ctx)
 }
 
+// applyPaymentAttempt validates and persists a payment_attempts event.
+// When an attempt succeeds, it authoritatively creates or reconciles
+// the corresponding pos_payments record and updates transaction state.
+func (s *SyncServer) applyPaymentAttempt(ctx context.Context, pool *pgxpool.Pool, action string, payload []byte) error {
+	var in payments.Attempt
+	if err := json.Unmarshal(payload, &in); err != nil {
+		return fmt.Errorf("invalid payment attempt payload: %w", err)
+	}
+	if err := in.Validate(); err != nil {
+		return fmt.Errorf("payment attempt validation failed: %w", err)
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction for payment attempt: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Advisory lock on attempt UUID to serialize concurrent submissions
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", in.ID.String()); err != nil {
+		return fmt.Errorf("lock payment attempt: %w", err)
+	}
+
+	var stored payments.Attempt
+	var storedStatusStr string
+	var storedTypeStr string
+	var providerRefsBytes, rawRedactedBytes []byte
+
+	row := tx.QueryRow(ctx, `
+		SELECT id, idempotency_key, attempt_type, original_attempt_id, store_id,
+		       pos_terminal_id, cashier_session_id, transaction_id, sales_order_id,
+		       invoice_ref, amount_minor, currency, status, provider, provider_refs,
+		       masked_pan, raw_redacted, device_id
+		FROM payment_attempts
+		WHERE id = $1 FOR UPDATE
+	`, in.ID)
+
+	err = row.Scan(
+		&stored.ID, &stored.IdempotencyKey, &storedTypeStr, &stored.OriginalAttemptID, &stored.StoreID,
+		&stored.PosTerminalID, &stored.CashierSessionID, &stored.TransactionID, &stored.SalesOrderID,
+		&stored.InvoiceRef, &stored.AmountMinor, &stored.Currency, &storedStatusStr, &stored.Provider,
+		&providerRefsBytes, &stored.MaskedPAN, &rawRedactedBytes, &stored.DeviceID,
+	)
+
+	if err != nil && err != pgx.ErrNoRows {
+		return fmt.Errorf("query existing payment attempt: %w", err)
+	}
+
+	targetStatus := in.Status
+
+	if err == pgx.ErrNoRows {
+		// New attempt
+		refsJSON, _ := json.Marshal(in.ProviderRefs)
+		if len(refsJSON) == 0 {
+			refsJSON = []byte("{}")
+		}
+		rawJSON := in.RawRedacted
+		if len(rawJSON) == 0 {
+			rawJSON = []byte("{}")
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO payment_attempts (
+				id, idempotency_key, attempt_type, original_attempt_id, store_id,
+				pos_terminal_id, cashier_session_id, transaction_id, sales_order_id,
+				invoice_ref, amount_minor, currency, status, provider, provider_refs,
+				masked_pan, raw_redacted, device_id, reconciled_at, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+				CASE WHEN $13 = 'succeeded' THEN NOW() ELSE NULL END, NOW(), NOW()
+			)
+		`, in.ID, in.IdempotencyKey, string(in.AttemptType), in.OriginalAttemptID, in.StoreID,
+			in.PosTerminalID, in.CashierSessionID, in.TransactionID, in.SalesOrderID,
+			in.InvoiceRef, in.AmountMinor, in.Currency, string(in.Status), in.Provider,
+			refsJSON, in.MaskedPAN, rawJSON, in.DeviceID)
+		if err != nil {
+			return fmt.Errorf("insert payment attempt: %w", err)
+		}
+	} else {
+		// Existing attempt: enforce immutability & monotonic status merge
+		stored.Status = payments.Status(storedStatusStr)
+		stored.AttemptType = payments.Type(storedTypeStr)
+		if len(providerRefsBytes) > 0 {
+			_ = json.Unmarshal(providerRefsBytes, &stored.ProviderRefs)
+		}
+		if err := payments.ImmutableMatches(&stored, &in); err != nil {
+			return fmt.Errorf("immutable property mismatch on payment attempt %s: %w", in.ID, err)
+		}
+		decision := payments.Merge(stored.Status, in.Status)
+		switch decision {
+		case payments.Conflict:
+			return fmt.Errorf("conflict: cannot change payment attempt status from %s to %s", stored.Status, in.Status)
+		case payments.Ignore:
+			targetStatus = stored.Status
+		case payments.Apply:
+			targetStatus = in.Status
+			refsJSON, _ := json.Marshal(in.ProviderRefs)
+			if len(refsJSON) == 0 {
+				refsJSON = []byte("{}")
+			}
+			rawJSON := in.RawRedacted
+			if len(rawJSON) == 0 {
+				rawJSON = []byte("{}")
+			}
+			_, err = tx.Exec(ctx, `
+				UPDATE payment_attempts
+				SET status = $2,
+				    provider_refs = $3,
+				    raw_redacted = $4,
+				    reconciled_at = CASE WHEN $2 = 'succeeded' THEN COALESCE(reconciled_at, NOW()) ELSE reconciled_at END,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, in.ID, string(in.Status), refsJSON, rawJSON)
+			if err != nil {
+				return fmt.Errorf("update payment attempt: %w", err)
+			}
+		}
+	}
+
+	// If the attempt is succeeded, authoritatively record pos_payments and update pos_transactions
+	if targetStatus == payments.StatusSucceeded {
+		if in.TransactionID != nil && *in.TransactionID > 0 {
+			var exists bool
+			_ = tx.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM pos_payments 
+					WHERE payment_attempt_id = $1 OR payment_reference = $2
+				)
+			`, in.ID, in.ID.String()).Scan(&exists)
+
+			if !exists {
+				amountDecimal := payments.MinorToDecimal(in.AmountMinor)
+				var refNum string
+				if rrn, ok := in.ProviderRefs["rrn"]; ok && rrn != "" {
+					refNum = rrn
+				} else if auth, ok := in.ProviderRefs["approval_code"]; ok && auth != "" {
+					refNum = auth
+				}
+				meta, _ := json.Marshal(map[string]interface{}{
+					"payment_attempt_id": in.ID,
+					"masked_pan":         in.MaskedPAN,
+					"provider_refs":      in.ProviderRefs,
+				})
+				_, err = tx.Exec(ctx, `
+					INSERT INTO pos_payments (
+						transaction_id, payment_attempt_id, payment_method, payment_gateway,
+						amount, payment_reference, reference_number, metadata, payment_date
+					) VALUES (
+						$1, $2, 'card', $3, $4::numeric, $5, $6, $7::jsonb, NOW()
+					)
+				`, *in.TransactionID, in.ID, in.Provider, amountDecimal, in.ID.String(), refNum, meta)
+				if err != nil {
+					return fmt.Errorf("create pos_payment from attempt: %w", err)
+				}
+
+				// Update transaction amount_paid
+				_, _ = tx.Exec(ctx, `
+					UPDATE pos_transactions
+					SET amount_paid = COALESCE(amount_paid, 0) + $2::numeric,
+					    updated_at = NOW()
+					WHERE id = $1
+				`, *in.TransactionID, amountDecimal)
+			}
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
 // StreamPull handles Cloud -> Local Terminal delta updates based on sync watermarks.
 func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncService_StreamPullServer) error {
 	if req.TenantSlug == "" {
@@ -328,6 +512,12 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 	}
 
 	ctx := stream.Context()
+	if claims, ok := syncauth.FromContext(ctx); ok {
+		if err := syncauth.Authorize(claims, req.TenantSlug, req.StoreId); err != nil {
+			return err
+		}
+	}
+
 	pool, err := s.tenantManager.GetPool(ctx, req.TenantSlug)
 	if err != nil {
 		return status.Errorf(codes.NotFound, "tenant DB pool unavailable: %v", err)

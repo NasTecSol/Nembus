@@ -138,3 +138,24 @@ INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003',
 		t.Fatalf("children must become eligible in order after transaction sync; eligible=%v", ids)
 	}
 }
+
+func TestSyncServiceSecurityOption(t *testing.T) {
+	sec := SecurityConfig{
+		Token:              "test-token",
+		TLSEnabled:         false,
+		AllowInsecureToken: true,
+	}
+	s := NewSyncService(context.Background(), nil, "localhost:50051", "test-tenant", WithSecurity(sec))
+	if s.sec.Token != "test-token" {
+		t.Fatalf("expected token %q, got %q", "test-token", s.sec.Token)
+	}
+	if !s.sec.AllowInsecureToken {
+		t.Fatal("expected AllowInsecureToken to be true")
+	}
+
+	conn, err := s.dialGRPC()
+	if err != nil {
+		t.Fatalf("unexpected dial error: %v", err)
+	}
+	defer conn.Close()
+}

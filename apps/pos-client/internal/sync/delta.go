@@ -14,8 +14,6 @@ import (
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/jackc/pgx/v5"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -32,7 +30,7 @@ func (s *SyncService) fetchDeltaGRPC() {
 		log.Printf("[gRPC SYNC] Delta fetch requires a valid local store: %v", err)
 		return
 	}
-	conn, err := grpc.NewClient(s.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := s.dialGRPC()
 	if err != nil {
 		log.Printf("[gRPC SYNC] Delta connection error: %v", err)
 		return
