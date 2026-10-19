@@ -30925,6 +30925,101 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/reports/z-report": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Recalculates from existing records. finalized is true only for a closed session with a closing time. Requires user store access. Does not close a session or save a snapshot.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Calculate a cashier session Z-report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Cashier session ID",
+                        "name": "cashier_session_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Must match the session store",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Must match the session terminal",
+                        "name": "pos_terminal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Must match the session cashier",
+                        "name": "cashier_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/repository.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/usecase.ZReport"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/restaurant/kiosk/sessions": {
             "post": {
                 "security": [
@@ -53539,6 +53634,22 @@ const docTemplate = `{
                 }
             }
         },
+        "repository.Response": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "can hold any type of data"
+                },
+                "message": {
+                    "description": "descriptive message",
+                    "type": "string"
+                },
+                "statusCode": {
+                    "description": "e.g., 200, 500",
+                    "type": "integer"
+                }
+            }
+        },
         "usecase.ApprovalInput": {
             "type": "object",
             "required": [
@@ -54011,6 +54122,278 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "usecase.ZReport": {
+            "type": "object",
+            "properties": {
+                "calculation_version": {
+                    "type": "integer"
+                },
+                "cashier": {
+                    "$ref": "#/definitions/usecase.ZReportIdentity"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "drawer": {
+                    "$ref": "#/definitions/usecase.ZReportDrawer"
+                },
+                "finalized": {
+                    "type": "boolean"
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "net": {
+                    "$ref": "#/definitions/usecase.ZReportNet"
+                },
+                "payment_totals": {
+                    "$ref": "#/definitions/usecase.ZReportPaymentTotals"
+                },
+                "payments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.ZReportPayment"
+                    }
+                },
+                "reconciliation": {
+                    "$ref": "#/definitions/usecase.ZReportReconciliation"
+                },
+                "report_type": {
+                    "type": "string"
+                },
+                "returns": {
+                    "$ref": "#/definitions/usecase.ZReportReturns"
+                },
+                "sales": {
+                    "$ref": "#/definitions/usecase.ZReportSales"
+                },
+                "session": {
+                    "$ref": "#/definitions/usecase.ZReportSession"
+                },
+                "store": {
+                    "$ref": "#/definitions/usecase.ZReportStore"
+                },
+                "terminal": {
+                    "$ref": "#/definitions/usecase.ZReportIdentity"
+                },
+                "voids": {
+                    "$ref": "#/definitions/usecase.ZReportVoids"
+                }
+            }
+        },
+        "usecase.ZReportDrawer": {
+            "type": "object",
+            "properties": {
+                "calculated_expected_cash": {
+                    "type": "string"
+                },
+                "cash_received": {
+                    "type": "string"
+                },
+                "cash_refunded": {
+                    "type": "string"
+                },
+                "change_given": {
+                    "type": "string"
+                },
+                "counted_closing_cash": {
+                    "type": "string"
+                },
+                "manual_movements_included": {
+                    "type": "boolean"
+                },
+                "opening_cash": {
+                    "type": "string"
+                },
+                "recorded_expected_cash": {
+                    "type": "string"
+                },
+                "variance": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportIdentity": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportNet": {
+            "type": "object",
+            "properties": {
+                "sales_excluding_tax": {
+                    "type": "string"
+                },
+                "tax": {
+                    "type": "string"
+                },
+                "total_including_tax": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportPayment": {
+            "type": "object",
+            "properties": {
+                "change_given": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "net": {
+                    "type": "string"
+                },
+                "payment_count": {
+                    "type": "integer"
+                },
+                "received": {
+                    "type": "string"
+                },
+                "refunded": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportPaymentTotals": {
+            "type": "object",
+            "properties": {
+                "change_given": {
+                    "type": "string"
+                },
+                "net": {
+                    "type": "string"
+                },
+                "received": {
+                    "type": "string"
+                },
+                "refunded": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportReconciliation": {
+            "type": "object",
+            "properties": {
+                "expected_cash_difference": {
+                    "type": "string"
+                },
+                "sales_payment_difference": {
+                    "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.ZReportWarning"
+                    }
+                }
+            }
+        },
+        "usecase.ZReportReturns": {
+            "type": "object",
+            "properties": {
+                "excluding_tax": {
+                    "type": "string"
+                },
+                "return_count": {
+                    "type": "integer"
+                },
+                "tax": {
+                    "type": "string"
+                },
+                "total_refunded": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportSales": {
+            "type": "object",
+            "properties": {
+                "after_discount_excluding_tax": {
+                    "type": "string"
+                },
+                "before_discount_excluding_tax": {
+                    "type": "string"
+                },
+                "discounts": {
+                    "type": "string"
+                },
+                "tax": {
+                    "type": "string"
+                },
+                "total_including_tax": {
+                    "type": "string"
+                },
+                "transaction_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "usecase.ZReportSession": {
+            "type": "object",
+            "properties": {
+                "closed_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportStore": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                }
+            }
+        },
+        "usecase.ZReportVoids": {
+            "type": "object",
+            "properties": {
+                "total_including_tax": {
+                    "type": "string"
+                },
+                "transaction_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "usecase.ZReportWarning": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
                 }
             }
         }
