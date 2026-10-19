@@ -6526,6 +6526,17 @@ definitions:
       valid:
         type: boolean
     type: object
+  repository.Response:
+    properties:
+      data:
+        description: can hold any type of data
+      message:
+        description: descriptive message
+        type: string
+      statusCode:
+        description: e.g., 200, 500
+        type: integer
+    type: object
   usecase.ApprovalInput:
     properties:
       action:
@@ -6857,6 +6868,183 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  usecase.ZReport:
+    properties:
+      calculation_version:
+        type: integer
+      cashier:
+        $ref: '#/definitions/usecase.ZReportIdentity'
+      currency:
+        type: string
+      drawer:
+        $ref: '#/definitions/usecase.ZReportDrawer'
+      finalized:
+        type: boolean
+      generated_at:
+        type: string
+      net:
+        $ref: '#/definitions/usecase.ZReportNet'
+      payment_totals:
+        $ref: '#/definitions/usecase.ZReportPaymentTotals'
+      payments:
+        items:
+          $ref: '#/definitions/usecase.ZReportPayment'
+        type: array
+      reconciliation:
+        $ref: '#/definitions/usecase.ZReportReconciliation'
+      report_type:
+        type: string
+      returns:
+        $ref: '#/definitions/usecase.ZReportReturns'
+      sales:
+        $ref: '#/definitions/usecase.ZReportSales'
+      session:
+        $ref: '#/definitions/usecase.ZReportSession'
+      store:
+        $ref: '#/definitions/usecase.ZReportStore'
+      terminal:
+        $ref: '#/definitions/usecase.ZReportIdentity'
+      voids:
+        $ref: '#/definitions/usecase.ZReportVoids'
+    type: object
+  usecase.ZReportDrawer:
+    properties:
+      calculated_expected_cash:
+        type: string
+      cash_received:
+        type: string
+      cash_refunded:
+        type: string
+      change_given:
+        type: string
+      counted_closing_cash:
+        type: string
+      manual_movements_included:
+        type: boolean
+      opening_cash:
+        type: string
+      recorded_expected_cash:
+        type: string
+      variance:
+        type: string
+    type: object
+  usecase.ZReportIdentity:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  usecase.ZReportNet:
+    properties:
+      sales_excluding_tax:
+        type: string
+      tax:
+        type: string
+      total_including_tax:
+        type: string
+    type: object
+  usecase.ZReportPayment:
+    properties:
+      change_given:
+        type: string
+      method:
+        type: string
+      net:
+        type: string
+      payment_count:
+        type: integer
+      received:
+        type: string
+      refunded:
+        type: string
+    type: object
+  usecase.ZReportPaymentTotals:
+    properties:
+      change_given:
+        type: string
+      net:
+        type: string
+      received:
+        type: string
+      refunded:
+        type: string
+    type: object
+  usecase.ZReportReconciliation:
+    properties:
+      expected_cash_difference:
+        type: string
+      sales_payment_difference:
+        type: string
+      warnings:
+        items:
+          $ref: '#/definitions/usecase.ZReportWarning'
+        type: array
+    type: object
+  usecase.ZReportReturns:
+    properties:
+      excluding_tax:
+        type: string
+      return_count:
+        type: integer
+      tax:
+        type: string
+      total_refunded:
+        type: string
+    type: object
+  usecase.ZReportSales:
+    properties:
+      after_discount_excluding_tax:
+        type: string
+      before_discount_excluding_tax:
+        type: string
+      discounts:
+        type: string
+      tax:
+        type: string
+      total_including_tax:
+        type: string
+      transaction_count:
+        type: integer
+    type: object
+  usecase.ZReportSession:
+    properties:
+      closed_at:
+        type: string
+      id:
+        type: integer
+      number:
+        type: string
+      opened_at:
+        type: string
+      status:
+        type: string
+    type: object
+  usecase.ZReportStore:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      timezone:
+        type: string
+    type: object
+  usecase.ZReportVoids:
+    properties:
+      total_including_tax:
+        type: string
+      transaction_count:
+        type: integer
+    type: object
+  usecase.ZReportWarning:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
     type: object
 host: localhost:8080
 info:
@@ -27147,6 +27335,67 @@ paths:
       summary: Update Purchase Order Status
       tags:
       - purchase-orders
+  /api/reports/z-report:
+    get:
+      description: Recalculates from existing records. finalized is true only for
+        a closed session with a closing time. Requires user store access. Does not
+        close a session or save a snapshot.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cashier session ID
+        in: query
+        name: cashier_session_id
+        required: true
+        type: integer
+      - description: Must match the session store
+        in: query
+        name: store_id
+        type: integer
+      - description: Must match the session terminal
+        in: query
+        name: pos_terminal_id
+        type: integer
+      - description: Must match the session cashier
+        in: query
+        name: cashier_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/repository.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/usecase.ZReport'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Calculate a cashier session Z-report
+      tags:
+      - reports
   /api/restaurant/kiosk/sessions:
     post:
       consumes:
