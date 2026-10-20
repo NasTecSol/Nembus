@@ -114,16 +114,3 @@ CREATE INDEX IF NOT EXISTS idx_invoices_sap_doc_num ON invoices ((metadata->>'sa
 CREATE INDEX IF NOT EXISTS idx_sales_returns_sap_doc_num ON sales_returns ((metadata->>'sap_doc_num'));
 CREATE INDEX IF NOT EXISTS idx_transfer_requests_sap_doc_num ON transfer_requests ((metadata->>'sap_doc_num'));
 CREATE INDEX IF NOT EXISTS idx_sales_orders_v2_sap_doc_num ON sales_orders_v2 ((metadata->>'sap_doc_num'));
-
--- ---------------------------------------------------------------------
--- Ensure partner_addresses unique constraint for idempotent address upserts
--- ---------------------------------------------------------------------
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'uq_partner_addresses_type_name'
-    ) THEN
-        ALTER TABLE partner_addresses ADD CONSTRAINT uq_partner_addresses_type_name 
-            UNIQUE (partner_id, address_type, address_name);
-    END IF;
-END $$;

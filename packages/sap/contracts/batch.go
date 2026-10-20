@@ -34,6 +34,18 @@ const (
 	DomainIncomingPayments DomainType = "incoming_payments"
 )
 
+// NormalizeDomain maps legacy/UI shorthand domain names to their canonical DomainType.
+func NormalizeDomain(d DomainType) DomainType {
+	switch string(d) {
+	case "goods_receipts":
+		return DomainGoodsReceipts
+	case "transfers":
+		return DomainTransfers
+	default:
+		return d
+	}
+}
+
 // Migration Execution Modes
 type MigrationMode string
 
@@ -131,13 +143,13 @@ func (p *MigrationBatchPayload) RecordCount() int {
 		return len(p.PaymentTerms)
 	case DomainPurchaseOrders:
 		return len(p.PurchaseOrders)
-	case DomainGoodsReceipts:
+	case DomainGoodsReceipts, "goods_receipts":
 		return len(p.GoodsReceipts)
 	case DomainOutgoingPayments:
 		return len(p.OutgoingPayments)
 	case DomainSalesReturns:
 		return len(p.SalesReturns)
-	case DomainTransfers:
+	case DomainTransfers, "transfers":
 		return len(p.Transfers)
 	case DomainStockMovements:
 		return len(p.StockMovements)

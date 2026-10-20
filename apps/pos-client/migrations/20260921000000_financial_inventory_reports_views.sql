@@ -8,6 +8,8 @@
 --   5. vw_supplier_aging_report
 --   6. vw_tax_vat_summary
 
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price DECIMAL(15,4) DEFAULT 0.0000;
+
 -- ---------------------------------------------------------------------
 -- 1. Real-Time Operational P&L & COGS View
 -- ---------------------------------------------------------------------
@@ -175,7 +177,7 @@ SELECT
     sm.product_id,
     p.sku,
     p.name AS product_name,
-    p.barcode,
+    pb.barcode,
     pc.name AS category_name,
     sm.movement_type,
     sm.reference_type,
@@ -201,6 +203,7 @@ SELECT
     sm.metadata
 FROM stock_movements sm
 JOIN products p ON p.id = sm.product_id
+LEFT JOIN product_barcodes pb ON pb.product_id = p.id AND pb.is_primary = true
 LEFT JOIN product_categories pc ON pc.id = p.category_id
 LEFT JOIN stores s ON s.id = COALESCE(sm.to_store_id, sm.from_store_id);
 
@@ -209,9 +212,9 @@ LEFT JOIN stores s ON s.id = COALESCE(sm.to_store_id, sm.from_store_id);
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_vendor_performance_ppv AS
 SELECT
-    sup.id AS supplier_id,
-    sup.code AS supplier_code,
-    sup.name AS supplier_name,
+    bp.id AS supplier_id,
+    bp.code AS supplier_code,
+    bp.name AS supplier_name,
     po.organization_id,
     po.id AS po_id,
     po.po_number,
@@ -245,7 +248,7 @@ FROM goods_receipt_notes grn
 JOIN goods_receipt_note_items grni ON grni.grn_id = grn.id
 JOIN purchase_orders po ON po.id = grn.purchase_order_id
 LEFT JOIN purchase_order_lines pol ON pol.id = grni.purchase_order_line_id
-JOIN suppliers sup ON sup.id = grn.supplier_id
+JOIN business_partners bp ON bp.id = grn.partners_id
 JOIN products p ON p.id = grni.product_id;
 
 -- ---------------------------------------------------------------------
@@ -255,7 +258,7 @@ CREATE OR REPLACE VIEW vw_supplier_aging_report AS
 WITH po_balances AS (
     SELECT
         po.id AS po_id,
-        po.supplier_id,
+        po.partners_id,
         po.organization_id,
         COALESCE(po.expected_delivery_date, (po.po_date + INTERVAL '30 days')::DATE) AS due_date,
         (
@@ -268,13 +271,10 @@ WITH po_balances AS (
     WHERE po.status IN ('partially_received', 'received', 'approved')
 )
 SELECT
-    sup.id AS supplier_id,
-    sup.code AS supplier_code,
-    sup.name AS supplier_name,
-    sup.email,
-    sup.phone,
-    sup.payment_terms,
-    sup.credit_limit,
+    bp.id AS supplier_id,
+    bp.code AS supplier_code,
+    bp.name AS supplier_name,
+    bp.credit_limit,
     pb.organization_id,
     COALESCE(SUM(CASE WHEN pb.due_date >= CURRENT_DATE THEN pb.balance_due ELSE 0 END), 0) AS current_amount,
     COALESCE(SUM(CASE WHEN pb.due_date < CURRENT_DATE AND CURRENT_DATE - pb.due_date <= 30 THEN pb.balance_due ELSE 0 END), 0) AS overdue_1_30,
@@ -284,14 +284,14 @@ SELECT
     COALESCE(SUM(CASE WHEN pb.balance_due > 0 THEN pb.balance_due ELSE 0 END), 0) AS total_outstanding,
     COUNT(CASE WHEN pb.due_date < CURRENT_DATE AND pb.balance_due > 0 THEN 1 END)::INTEGER AS overdue_po_count,
     MAX(pb.due_date) AS latest_due_date
-FROM suppliers sup
+FROM business_partners bp
 LEFT JOIN po_balances pb
-    ON pb.supplier_id = sup.id
+    ON pb.partners_id = bp.id
     AND pb.balance_due > 0
-WHERE sup.is_active = true
+WHERE bp.is_active = true AND bp.partner_role = 'supplier'
 GROUP BY
-    sup.id, sup.code, sup.name, sup.email, sup.phone,
-    sup.payment_terms, sup.credit_limit, pb.organization_id
+    bp.id, bp.code, bp.name,
+    bp.credit_limit, pb.organization_id
 ORDER BY total_outstanding DESC;
 
 -- ---------------------------------------------------------------------

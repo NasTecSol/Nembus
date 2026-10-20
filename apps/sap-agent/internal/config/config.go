@@ -41,7 +41,10 @@ type AgentConfig struct {
 	CashierDiscountLimit float64     `json:"cashier_discount_limit"`
 	// InvoiceStartDate is the starting date for the invoice window loop (format "YYYY-MM-DD").
 	// If empty, defaults to "2000-01-01". Set e.g. to "2023-01-01" to resume an interrupted migration.
-	InvoiceStartDate     string      `json:"invoice_start_date,omitempty"`
+	InvoiceStartDate       string      `json:"invoice_start_date,omitempty"`
+	// StockMovementStartDate is the starting date for the stock movement window loop (format "YYYY-MM-DD").
+	// If empty, defaults to "2024-01-01". Set e.g. to "2024-03-01" to resume an interrupted migration.
+	StockMovementStartDate string      `json:"stock_movement_start_date,omitempty"`
 
 	// Onboarding & Multi-Tenant Setup
 	OnboardingCompleted bool   `json:"onboarding_completed"`

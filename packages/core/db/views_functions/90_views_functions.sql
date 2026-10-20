@@ -3096,10 +3096,19 @@ DECLARE
     v_order RECORD;
     v_quantity DECIMAL(15,3);
 BEGIN
+    -- Skip historical SAP migration records (inventory is already snapshotted from OITW and movements from OINM)
+    IF NEW.metadata IS NOT NULL AND NEW.metadata ? 'sap_line_num' THEN
+        RETURN NEW;
+    END IF;
+
     -- Get the parent order
-    SELECT order_status, store_id INTO v_order
+    SELECT order_status, store_id, metadata INTO v_order
     FROM sales_orders_v2
     WHERE id = NEW.sales_order_id;
+
+    IF v_order.metadata IS NOT NULL AND v_order.metadata ? 'sap_doc_entry' THEN
+        RETURN NEW;
+    END IF;
 
     -- Only process if order status is 'pending' or 'confirmed'
     IF v_order.order_status IN ('pending', 'confirmed') AND v_order.store_id IS NOT NULL THEN
@@ -4213,12 +4222,18 @@ DECLARE
     v_cost_price NUMERIC(15,4);
     v_uom_id INT;
     v_reason TEXT;
+    v_ret_metadata JSONB;
 BEGIN
-    -- Get store_id and return_reason from parent sales_returns header
-    SELECT store_id, COALESCE(return_reason, 'POS Sales Return') 
-    INTO v_store_id, v_reason 
+    -- Get store_id, return_reason, and metadata from parent sales_returns header
+    SELECT store_id, COALESCE(return_reason, 'POS Sales Return'), metadata
+    INTO v_store_id, v_reason, v_ret_metadata
     FROM sales_returns 
     WHERE id = NEW.return_id;
+
+    -- Skip historical SAP migration returns (inventory is snapshotted from OITW and movements come from OINM TransType 14/16)
+    IF v_ret_metadata IS NOT NULL AND (v_ret_metadata ? 'sap_doc_entry' OR v_ret_metadata ? 'sap_doc_num') THEN
+        RETURN NEW;
+    END IF;
 
     -- Fetch cost_price and uom_id from original pos_transaction_lines if available
     IF NEW.original_line_id IS NOT NULL THEN

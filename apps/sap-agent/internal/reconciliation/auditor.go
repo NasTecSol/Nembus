@@ -151,7 +151,7 @@ func (a *AuditEngine) auditDomainCount(ctx context.Context, domain contracts.Dom
 		steps, err := a.sqlite.GetSteps(ctx, runID)
 		if err == nil {
 			for _, s := range steps {
-				if s.Domain == domain {
+				if contracts.NormalizeDomain(s.Domain) == contracts.NormalizeDomain(domain) {
 					targetCount = s.ProcessedCount
 					break
 				}

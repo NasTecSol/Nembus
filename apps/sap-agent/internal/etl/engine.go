@@ -266,6 +266,8 @@ func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, doma
 			e.sqlite.Log(ctx, run.ID, string(domain), "ERROR", fmt.Sprintf("Failed step %s: %v", domain, err))
 
 			failedDomains++
+			totalProcessed += processed
+			totalFailed += failed
 			e.broadcast(ProgressEvent{
 				Type:           "error",
 				RunID:          run.ID,
@@ -273,6 +275,8 @@ func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, doma
 				Status:         contracts.StatusFailed,
 				TotalDomains:   len(domains),
 				CompletedSteps: completedSteps,
+				ProcessedCount: totalProcessed,
+				FailedCount:    totalFailed,
 				Message:        fmt.Sprintf("Error in %s: %v — continuing to next domain", domain, err),
 				Timestamp:      time.Now(),
 			})
@@ -335,6 +339,7 @@ func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, doma
 // Returns (processed, failed, watermark, error).
 // watermark is a string cursor (e.g. last DocDate, last ItemCode) enabling delta runs.
 func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain contracts.DomainType) (int64, int64, string, error) {
+	domain = contracts.NormalizeDomain(domain)
 	mssqlClient, err := e.getMSSQLClient()
 	if err != nil {
 		return 0, 0, "", err
@@ -642,19 +647,25 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 
 	case contracts.DomainPurchaseOrders:
 		ext := extractors.NewPurchasingExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		for _, win := range dateWindows(start, time.Now().AddDate(0, 3, 0), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			orders, err := ext.ExtractPurchaseOrders(ctx, win[0], win[1])
+			var orders []mappings.CanonicalPurchaseOrder
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("purchase_orders window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewPurchasingExtractor(c)
+				var eErr error
+				orders, eErr = ext.ExtractPurchaseOrders(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("purchase_orders window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("purchase_orders window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(orders) == 0 {
 				continue
@@ -678,30 +689,37 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].PODate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainGoodsReceipts, "goods_receipts":
 		ext := extractors.NewPurchasingExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		for _, win := range dateWindows(start, time.Now(), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			receipts, err := ext.ExtractGoodsReceipts(ctx, win[0], win[1])
+			var receipts []mappings.CanonicalGoodsReceiptNote
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("goods_receipt_notes window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewPurchasingExtractor(c)
+				var eErr error
+				receipts, eErr = ext.ExtractGoodsReceipts(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("goods_receipts window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("goods_receipt_notes window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(receipts) == 0 {
 				continue
@@ -716,7 +734,7 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 					BatchID:        uuid.New().String(),
 					RunID:          runID,
 					OrganizationID: cloudCfg.OrganizationID,
-					Domain:         domain,
+					Domain:         contracts.DomainGoodsReceipts,
 					SequenceNumber: seqNum,
 					GoodsReceipts:  chunk,
 					IsLastBatch:    false,
@@ -725,30 +743,43 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].ReceiptDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainStockMovements:
 		ext := extractors.NewStockMovementExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		if e.cfg != nil && e.cfg.StockMovementStartDate != "" {
+			if parsed, pErr := time.Parse("2006-01-02", e.cfg.StockMovementStartDate); pErr == nil {
+				start = parsed
+				log.Printf("[ETL] Resuming stock_movements from configured start date: %s", start.Format("2006-01-02"))
+			}
+		}
 		for _, win := range dateWindows(start, time.Now(), 1) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			moves, err := ext.ExtractStockMovements(ctx, win[0], win[1])
+			var moves []mappings.CanonicalStockMovement
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("stock_movements window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewStockMovementExtractor(c)
+				var eErr error
+				moves, eErr = ext.ExtractStockMovements(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("stock_movements window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("stock_movements window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(moves) == 0 {
 				continue
@@ -772,30 +803,37 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].MovementDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainSalesOrders:
 		ext := extractors.NewSalesExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		// Stream in 3-month windows to avoid loading the entire history into memory.
 		for _, win := range dateWindows(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Now(), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			orders, err := ext.ExtractSalesOrders(ctx, win[0], win[1])
+			var orders []mappings.CanonicalSalesOrder
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("sales_orders window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewSalesExtractor(c)
+				var eErr error
+				orders, eErr = ext.ExtractSalesOrders(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("sales_orders window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("sales_orders window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(orders) == 0 {
 				continue
@@ -819,18 +857,19 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].OrderDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainInvoices:
 		ext := extractors.NewSalesExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -840,36 +879,24 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				log.Printf("[ETL] Resuming invoices from configured start date: %s", start.Format("2006-01-02"))
 			}
 		}
-		// Stream in 3-month windows to bound memory usage.
+		// Stream in 1-month windows to bound memory usage and avoid MSSQL timeouts on OINV.
 		// Each window extracts headers+lines for that period only, sends batches,
 		// then releases memory before the next window starts.
-		for _, win := range dateWindows(start, time.Now(), 3) {
+		for _, win := range dateWindows(start, time.Now(), 1) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
 			var invoices []mappings.CanonicalInvoice
-			var extErr error
-			for attempt := 1; attempt <= 5; attempt++ {
-				invoices, extErr = ext.ExtractInvoices(ctx, win[0], win[1])
-				if extErr == nil {
-					break
-				}
-				log.Printf("[ETL] Warning: invoices window %s–%s attempt %d/5 failed: %v. Retrying in %ds...",
-					win[0].Format("2006-01"), win[1].Format("2006-01"), attempt, extErr, attempt*10)
-				select {
-				case <-ctx.Done():
-					return totalStaged, 0, lastWatermark, ctx.Err()
-				case <-time.After(time.Duration(attempt*10) * time.Second):
-				}
-				// Refresh MSSQL client connection in case of network reset
-				if refreshed, rErr := e.getMSSQLClient(); rErr == nil {
-					ext = extractors.NewSalesExtractor(refreshed)
-				}
-			}
+			extErr := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("invoices window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewSalesExtractor(c)
+				var eErr error
+				invoices, eErr = ext.ExtractInvoices(ctx, win[0], win[1])
+				return eErr
+			})
 			if extErr != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("invoices window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), extErr)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("invoices window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), extErr)
 			}
 			if len(invoices) == 0 {
 				continue
@@ -893,30 +920,37 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].InvoiceDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainIncomingPayments:
 		ext := extractors.NewPaymentExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		for _, win := range dateWindows(start, time.Now(), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			payments, err := ext.ExtractIncomingPayments(ctx, win[0], win[1])
+			var payments []mappings.CanonicalIncomingPayment
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("incoming_payments window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewPaymentExtractor(c)
+				var eErr error
+				payments, eErr = ext.ExtractIncomingPayments(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("incoming_payments window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("incoming_payments window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(payments) == 0 {
 				continue
@@ -940,31 +974,38 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].PaymentDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainOutgoingPayments:
 		// A31: supplier payments (OVPM/VPM2) → vendor_payments + PO amount_paid.
 		ext := extractors.NewPaymentExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		for _, win := range dateWindows(start, time.Now(), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			payments, err := ext.ExtractOutgoingPayments(ctx, win[0], win[1])
+			var payments []mappings.CanonicalOutgoingPayment
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("outgoing_payments window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewPaymentExtractor(c)
+				var eErr error
+				payments, eErr = ext.ExtractOutgoingPayments(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("outgoing_payments window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("outgoing_payments window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(payments) == 0 {
 				continue
@@ -988,42 +1029,44 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].PaymentDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainSalesReturns:
 		// A21: A/R Credit Memos (ORIN) + A/R Returns (ORDN) → sales_returns.
-		// Uses the configured InvoiceStartDate so returns align with the
-		// migrated invoice window.
+		// Start from 2024-01-01 (do not couple to InvoiceStartDate, which may be
+		// advanced manually to resume mid-migration invoice windows).
 		ext := extractors.NewSalesExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
-		start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-		if e.cfg != nil && e.cfg.InvoiceStartDate != "" {
-			if parsed, pErr := time.Parse("2006-01-02", e.cfg.InvoiceStartDate); pErr == nil {
-				start = parsed
-			}
-		}
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		for _, win := range dateWindows(start, time.Now(), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			creditMemos, err := ext.ExtractSalesReturns(ctx, win[0], win[1], "credit_memo")
+			var creditMemos, returnOrders []mappings.CanonicalSalesReturn
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("sales_returns window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewSalesExtractor(c)
+				var eErr error
+				creditMemos, eErr = ext.ExtractSalesReturns(ctx, win[0], win[1], "credit_memo")
+				if eErr != nil {
+					return eErr
+				}
+				returnOrders, eErr = ext.ExtractSalesReturns(ctx, win[0], win[1], "return")
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("sales_returns credit memos window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
-			}
-			returnOrders, err := ext.ExtractSalesReturns(ctx, win[0], win[1], "return")
-			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("sales_returns returns window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("sales_returns window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			returns := append(creditMemos, returnOrders...)
 			if len(returns) == 0 {
@@ -1048,32 +1091,39 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].ReturnDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
-	case contracts.DomainTransfers:
+	case contracts.DomainTransfers, "transfers":
 		// A22: inventory transfers (OWTR/WTR1) → transfer_requests. Must
 		// precede stock_movements so TransType 67 movements resolve reference_id.
 		ext := extractors.NewPurchasingExtractor(mssqlClient)
-		var totalStaged int64
+		var totalStaged, totalFailed int64
 		var lastWatermark string
 		var seqNum int
 		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		for _, win := range dateWindows(start, time.Now(), 3) {
 			select {
 			case <-ctx.Done():
-				return totalStaged, 0, lastWatermark, ctx.Err()
+				return totalStaged, totalFailed, lastWatermark, ctx.Err()
 			default:
 			}
-			transfers, err := ext.ExtractTransfers(ctx, win[0], win[1])
+			var transfers []mappings.CanonicalTransfer
+			err := e.retryMSSQLExtract(ctx, runID, domain, fmt.Sprintf("transfer_requests window %s–%s", win[0].Format("2006-01"), win[1].Format("2006-01")), totalStaged, func(c *db.MSSQLClient) error {
+				ext = extractors.NewPurchasingExtractor(c)
+				var eErr error
+				transfers, eErr = ext.ExtractTransfers(ctx, win[0], win[1])
+				return eErr
+			})
 			if err != nil {
-				return totalStaged, 0, lastWatermark, fmt.Errorf("transfer_requests window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
+				return totalStaged, totalFailed, lastWatermark, fmt.Errorf("transfer_requests window %s–%s: %w", win[0].Format("2006-01"), win[1].Format("2006-01"), err)
 			}
 			if len(transfers) == 0 {
 				continue
@@ -1088,7 +1138,7 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 					BatchID:        uuid.New().String(),
 					RunID:          runID,
 					OrganizationID: cloudCfg.OrganizationID,
-					Domain:         domain,
+					Domain:         contracts.DomainTransfers,
 					SequenceNumber: seqNum,
 					Transfers:      chunk,
 					IsLastBatch:    false,
@@ -1097,14 +1147,15 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 				seqNum++
 				resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
 				if err != nil {
-					return totalStaged, 0, lastWatermark, err
+					return totalStaged, totalFailed, lastWatermark, err
 				}
 				totalStaged += int64(resp.RecordsStaged)
+				totalFailed += int64(resp.RecordsFailed)
 				lastWatermark = chunk[len(chunk)-1].TransferDate.Format(time.RFC3339)
 				e.broadcastProgress(runID, domain, totalStaged, -1)
 			}
 		}
-		return totalStaged, 0, lastWatermark, nil
+		return totalStaged, totalFailed, lastWatermark, nil
 
 	case contracts.DomainPriceLists:
 		ext := extractors.NewCatalogExtractor(mssqlClient)
@@ -1210,6 +1261,7 @@ func normalizeDomainOrder(selected []contracts.DomainType) []contracts.DomainTyp
 	ordered := make([]contracts.DomainType, 0, len(selected))
 	var unknown []contracts.DomainType
 	for _, d := range selected {
+		d = contracts.NormalizeDomain(d)
 		if seen[d] {
 			continue
 		}
@@ -1224,6 +1276,45 @@ func normalizeDomainOrder(selected []contracts.DomainType) []contracts.DomainTyp
 		return position[ordered[i]] < position[ordered[j]]
 	})
 	return append(ordered, unknown...)
+}
+
+// retryMSSQLExtract executes an MSSQL extraction function with up to 5 attempts,
+// refreshing the MSSQL client connection between retries to recover from transient
+// network resets (wsarecv) or query timeouts.
+func (e *Engine) retryMSSQLExtract(ctx context.Context, runID string, domain contracts.DomainType, label string, processedSoFar int64, fn func(*db.MSSQLClient) error) error {
+	client, err := e.getMSSQLClient()
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		lastErr = fn(client)
+		if lastErr == nil {
+			return nil
+		}
+		warnMsg := fmt.Sprintf("%s attempt %d/5 failed: %v. Retrying in %ds...", label, attempt, lastErr, attempt*10)
+		log.Printf("[ETL] Warning: %s", warnMsg)
+		e.sqlite.Log(ctx, runID, string(domain), "WARN", warnMsg)
+		e.broadcast(ProgressEvent{
+			Type:           "step_progress",
+			RunID:          runID,
+			Domain:         domain,
+			Status:         contracts.StatusRunning,
+			ProcessedCount: processedSoFar,
+			TotalRecords:   -1,
+			Message:        "WARN: " + warnMsg,
+			Timestamp:      time.Now(),
+		})
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt*10) * time.Second):
+		}
+		if refreshed, rErr := e.getMSSQLClient(); rErr == nil {
+			client = refreshed
+		}
+	}
+	return lastErr
 }
 
 // broadcastProgress sends a step_progress event during chunked batch processing.

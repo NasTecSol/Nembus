@@ -70,7 +70,7 @@ var syncTables = []TableSyncConfig{
 	{Domain: "partners", Schema: "public", Table: "business_partners", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "code"},
 	{Domain: "partners", Schema: "public", Table: "customers", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "organization_id, customer_code"},
 	{Domain: "bp_addresses", Schema: "public", Table: "partner_addresses", HasOrgScope: false, PKColumn: "id", ConflictKey: "partner_id, address_type, address_name"},
-	{Domain: "bp_addresses", Schema: "public", Table: "customer_addresses", HasOrgScope: false, PKColumn: "id", ConflictKey: "customer_id, address_type, address_line"},
+	{Domain: "bp_addresses", Schema: "public", Table: "partner_contacts", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 
 	// 9. Warehouse Inventory Stock
 	// DedupKey deduplicates source rows on (product_id, store_id) to satisfy the unique index on target.
@@ -91,8 +91,7 @@ var syncTables = []TableSyncConfig{
 	{Domain: "pos", Schema: "public", Table: "pos_transaction_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 	{Domain: "pos", Schema: "public", Table: "pos_payments", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 
-	// 13. Procurement: Suppliers, Purchase Orders & Goods Receipt Notes (GRN)
-	{Domain: "procurement", Schema: "public", Table: "suppliers", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "organization_id, code"},
+	// 13. Procurement: Purchase Orders & Goods Receipt Notes (GRN)
 	{Domain: "procurement", Schema: "public", Table: "purchase_orders", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "po_number"},
 	{Domain: "procurement", Schema: "public", Table: "purchase_order_lines", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 	{Domain: "procurement", Schema: "public", Table: "goods_receipt_notes", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "grn_number"},
@@ -112,7 +111,8 @@ var syncTables = []TableSyncConfig{
 	// 17. Stock Movements (A: OINM — must follow sales_returns & transfers)
 	{Domain: "stock_movements", Schema: "public", Table: "stock_movements", HasOrgScope: false, PKColumn: "id", ConflictKey: "id"},
 
-	// 18. Incoming Payments (ORCT) — on-account ledger (A20)
+	// 18. Incoming Payments (ORCT) — invoice_payments + on-account ledger (A20)
+	{Domain: "incoming_payments", Schema: "public", Table: "invoice_payments", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "payment_number"},
 	{Domain: "incoming_payments", Schema: "public", Table: "customer_payments", HasOrgScope: true, OrgColumn: "organization_id", PKColumn: "id", ConflictKey: "payment_number"},
 }
 

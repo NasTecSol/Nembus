@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +106,34 @@ func ensureMigrationSchema(pool *pgxpool.Pool) {
 			`CREATE INDEX IF NOT EXISTS idx_sales_returns_sap_doc_num ON sales_returns ((metadata->>'sap_doc_num'));`,
 			`CREATE INDEX IF NOT EXISTS idx_transfer_requests_sap_doc_num ON transfer_requests ((metadata->>'sap_doc_num'));`,
 			`CREATE INDEX IF NOT EXISTS idx_sales_orders_v2_sap_doc_num ON sales_orders_v2 ((metadata->>'sap_doc_num'));`,
+			`DO $$
+			BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_partner_addresses_type_name') THEN
+					ALTER TABLE partner_addresses ADD CONSTRAINT uq_partner_addresses_type_name UNIQUE (partner_id, address_type, address_name);
+				END IF;
+			END $$;`,
+			// Self-heal customers table from business_partners where partner_role = 'customer'
+			`INSERT INTO customers (organization_id, customer_code, name, email, phone, is_active, credit_limit, outstanding_balance, metadata)
+			SELECT
+				bp.organization_id,
+				bp.code,
+				bp.name,
+				NULLIF(bp.metadata->>'email', ''),
+				NULLIF(bp.metadata->>'phone', ''),
+				bp.is_active,
+				bp.credit_limit,
+				bp.outstanding_balance,
+				bp.metadata
+			FROM business_partners bp
+			WHERE bp.partner_role = 'customer'
+			ON CONFLICT (organization_id, customer_code) DO UPDATE SET
+				name = EXCLUDED.name,
+				email = COALESCE(EXCLUDED.email, customers.email),
+				phone = COALESCE(EXCLUDED.phone, customers.phone),
+				is_active = EXCLUDED.is_active,
+				credit_limit = EXCLUDED.credit_limit,
+				outstanding_balance = EXCLUDED.outstanding_balance,
+				metadata = EXCLUDED.metadata;`,
 		}
 
 		for _, stmt := range stmts {
@@ -174,6 +203,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 	if payload.OrganizationID <= 0 {
 		payload.OrganizationID = orgID
 	}
+	payload.Domain = contracts.NormalizeDomain(payload.Domain)
 
 	// Best-effort self-heal of the migration support schema (staging audit
 	// tables, payment audit tables, arbiter indexes). Missing objects used to
@@ -185,6 +215,11 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 		return nil, fmt.Errorf("failed to begin postgres transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Suppress operational side-effect triggers (e.g. calculate_invoice_totals_trigger,
+	// trg_process_sales_return, trg_allocate_inventory_on_order_line_insert) during bulk
+	// historical SAP ingestion when the DB connection has superuser privileges.
+	_ = execWithSavepoint(ctx, tx, "SET LOCAL session_replication_role = 'replica';")
 
 	staged := 0
 	failed := 0
@@ -294,12 +329,12 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// store when the agent did not provide one.
 			var storeID *int64
 			if c.StoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, c.StoreCode)
-				_ = r.Scan(&storeID)
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&storeID) },
+					`SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, c.StoreCode)
 			}
 			if storeID == nil {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 ORDER BY id LIMIT 1`, payload.OrganizationID)
-				_ = r.Scan(&storeID)
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&storeID) },
+					`SELECT id FROM stores WHERE organization_id = $1 ORDER BY id LIMIT 1`, payload.OrganizationID)
 			}
 			if storeID == nil {
 				failed++
@@ -617,10 +652,10 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// A07: Resolve product_id and store_id first, then use VALUES with ON CONFLICT.
 			// inventory_stock has no organization_id column — unique key is (product_id, store_id).
 			var productID, storeID *int64
-			row := tx.QueryRow(ctx, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, inv.ProductSKU)
-			row.Scan(&productID)
-			row2 := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, inv.StoreCode)
-			row2.Scan(&storeID)
+			_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&productID) },
+				`SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, inv.ProductSKU)
+			_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&storeID) },
+				`SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, inv.StoreCode)
 			if productID == nil || storeID == nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("stock %s@%s: product or store not found", inv.ProductSKU, inv.StoreCode))
@@ -728,30 +763,28 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			}
 
 			if pt.PartnerType == "customer" {
-				// A30: the business_partner lookup is now organization-scoped so a
-				// shared SAP CardCode can never bind to another org's partner.
-				// A19: customers.credit_limit / outstanding_balance feed
-				// vw_customer_aging_report.
+				// A19/A30: mirror customer business partners into the customers table
+				// (which has no business_partner_id column; keyed by (organization_id, customer_code)).
 				custQ := `
-				INSERT INTO customers (organization_id, customer_code, name, is_active, business_partner_id, credit_limit, outstanding_balance, metadata)
-				VALUES ($1, $2, $3, $4,
-					(SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1),
-					$5, $6, $7)
+				INSERT INTO customers (organization_id, customer_code, name, email, phone, is_active, credit_limit, outstanding_balance, metadata)
+				VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $9)
 				ON CONFLICT(organization_id, customer_code) DO UPDATE SET
 					name = excluded.name,
+					email = COALESCE(excluded.email, customers.email),
+					phone = COALESCE(excluded.phone, customers.phone),
 					is_active = excluded.is_active,
-					business_partner_id = excluded.business_partner_id,
 					credit_limit = excluded.credit_limit,
 					outstanding_balance = excluded.outstanding_balance,
 					metadata = excluded.metadata;
 				`
-				_ = execWithSavepoint(ctx, tx, custQ, payload.OrganizationID, pt.Code, pt.Name, pt.IsActive, pt.CreditLimit, pt.Balance, metaBytes)
+				if err := execWithSavepoint(ctx, tx, custQ, payload.OrganizationID, pt.Code, pt.Name, pt.Email, pt.Phone, pt.IsActive, pt.CreditLimit, pt.Balance, metaBytes); err != nil {
+					errs = append(errs, fmt.Sprintf("customer %s mirror error: %v", pt.Code, err))
+				}
 			}
 		}
 
 	case contracts.DomainBPAddresses:
 		for _, addr := range payload.BPAddresses {
-			metaBytes, _ := json.Marshal(addr.Metadata)
 			addrType := "ship_to"
 			if addr.AddressType == "billing" {
 				addrType = "bill_to"
@@ -776,29 +809,25 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				zip_code = excluded.zip_code,
 				country_code = excluded.country_code;
 			`
-			if err := execWithSavepoint(ctx, tx, bpAddrQ, payload.OrganizationID, addrName, addrType, addr.Street, addr.City, addr.State, addr.PostalCode, addr.Country, addr.PartnerCode); err != nil {
-				custAddrQ := `
-				INSERT INTO customer_addresses (customer_id, address_type, address_line, street, city, country, postal_code, state, phone, metadata)
-				SELECT c.id, $2, $3, $4, $5, $6, $7, $8, $9, $10
-				FROM customers c
-				WHERE c.organization_id = $1 AND c.customer_code = $11
-				ON CONFLICT(customer_id, address_type, address_line) DO UPDATE SET
-					street = excluded.street,
-					city = excluded.city,
-					country = excluded.country,
-					postal_code = excluded.postal_code,
-					state = excluded.state,
-					phone = excluded.phone,
-					metadata = excluded.metadata;
-				`
-				if custErr := execWithSavepoint(ctx, tx, custAddrQ, payload.OrganizationID, addr.AddressType, addr.AddressLine, addr.Street, addr.City, addr.Country, addr.PostalCode, addr.State, addr.Phone, metaBytes, addr.PartnerCode); custErr != nil {
-					failed++
-					errs = append(errs, fmt.Sprintf("bp_address %s error: %v", addr.PartnerCode, err))
-				} else {
-					staged++
-				}
+			tag, err := execWithSavepointRows(ctx, tx, bpAddrQ, payload.OrganizationID, addrName, addrType, addr.Street, addr.City, addr.State, addr.PostalCode, addr.Country, addr.PartnerCode)
+			if err != nil {
+				failed++
+				errs = append(errs, fmt.Sprintf("bp_address %s error: %v", addr.PartnerCode, err))
+			} else if tag.RowsAffected() == 0 {
+				skipped++
 			} else {
 				staged++
+				// Also populate customers.address text field when the partner is a customer
+				formattedAddr := strings.TrimSpace(strings.Join([]string{addr.Street, addr.City, addr.State, addr.PostalCode, addr.Country}, ", "))
+				formattedAddr = strings.Trim(formattedAddr, ", ")
+				if formattedAddr != "" {
+					_ = execWithSavepoint(ctx, tx, `
+						UPDATE customers
+						SET address = COALESCE(NULLIF(address, ''), $3),
+						    phone   = COALESCE(NULLIF(phone, ''), NULLIF($4, ''))
+						WHERE organization_id = $1 AND customer_code = $2;
+					`, payload.OrganizationID, addr.PartnerCode, formattedAddr, addr.Phone)
+				}
 			}
 		}
 
@@ -821,8 +850,8 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// arbitrary partner.
 			var partnerID *int64
 			if po.SupplierCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, po.SupplierCode)
-				_ = r.Scan(&partnerID)
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&partnerID) },
+					`SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, po.SupplierCode)
 			}
 			if partnerID == nil {
 				failed++
@@ -907,8 +936,8 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			// instead of binding an arbitrary business partner.
 			var partnerID *int64
 			if grn.SupplierCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, grn.SupplierCode)
-				_ = r.Scan(&partnerID)
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&partnerID) },
+					`SELECT id FROM business_partners WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, grn.SupplierCode)
 			}
 			if partnerID == nil {
 				failed++
@@ -973,83 +1002,134 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 		}
 
 	case contracts.DomainStockMovements:
-		for _, sm := range payload.StockMovements {
+		productCache := make(map[string]*int64)
+		storeCache := make(map[string]*int64)
+		refIDCache := make(map[string]*int64)
+		invIDCache := make(map[string]string)
+
+		for idx, sm := range payload.StockMovements {
+			spItem := fmt.Sprintf("sp_sm_%d", idx)
+			if _, sErr := tx.Exec(ctx, "SAVEPOINT "+spItem); sErr != nil {
+				failed++
+				errs = append(errs, fmt.Sprintf("stock movement item %s savepoint error: %v", sm.ProductSKU, sErr))
+				continue
+			}
+
 			metaBytes, _ := json.Marshal(sm.Metadata)
 			// A09: Resolve product_id and store IDs first for idempotent insert
-			var productID *int64
-			pRow := tx.QueryRow(ctx, `SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, sm.ProductSKU)
-			pRow.Scan(&productID)
+			productID, pCached := productCache[sm.ProductSKU]
+			if !pCached {
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&productID) },
+					`SELECT id FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, sm.ProductSKU)
+				productCache[sm.ProductSKU] = productID
+			}
 			if productID == nil {
+				_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT "+spItem)
 				failed++
 				errs = append(errs, fmt.Sprintf("stock movement %s: product not found", sm.ProductSKU))
 				continue
 			}
 			var fromStoreID, toStoreID *int64
 			if sm.FromStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.FromStoreCode)
-				r.Scan(&fromStoreID)
+				var sCached bool
+				fromStoreID, sCached = storeCache[sm.FromStoreCode]
+				if !sCached {
+					_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&fromStoreID) },
+						`SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.FromStoreCode)
+					storeCache[sm.FromStoreCode] = fromStoreID
+				}
 			}
 			if sm.ToStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.ToStoreCode)
-				r.Scan(&toStoreID)
+				var sCached bool
+				toStoreID, sCached = storeCache[sm.ToStoreCode]
+				if !sCached {
+					_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&toStoreID) },
+						`SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, sm.ToStoreCode)
+					storeCache[sm.ToStoreCode] = toStoreID
+				}
 			}
 
 			// A27: resolve reference_id by document type so the movement ledger
 			// (vw_stock_movement_ledger) is not left with dangling references.
-			// Requires sales_returns / transfer_requests / goods_receipts /
-			// invoices domains to be ingested before stock_movements.
 			var referenceID *int64
 			if sm.ReferenceNumber != "" {
+				cacheKey := sm.ReferenceType + ":" + sm.ReferenceNumber
 				switch sm.ReferenceType {
 				case "goods_receipt_note":
-					r := tx.QueryRow(ctx, `
-						SELECT id FROM goods_receipt_notes 
-						WHERE organization_id = $1 
-						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR grn_number = 'GRN-' || $2 OR grn_number = $2)
-						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
-				case "purchase_invoice":
-					r := tx.QueryRow(ctx, `
-						SELECT id FROM goods_receipt_notes 
-						WHERE organization_id = $1 
-						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2)
-						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					if err := r.Scan(&referenceID); err != nil {
-						r2 := tx.QueryRow(ctx, `
-							SELECT id FROM purchase_orders 
+					var rCached bool
+					referenceID, rCached = refIDCache[cacheKey]
+					if !rCached {
+						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
+							SELECT id FROM goods_receipt_notes 
 							WHERE organization_id = $1 
-							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR po_number = 'PO-' || $2)
+							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR grn_number = 'GRN-' || $2 OR grn_number = $2)
 							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-						_ = r2.Scan(&referenceID)
+						refIDCache[cacheKey] = referenceID
+					}
+				case "purchase_invoice":
+					var rCached bool
+					referenceID, rCached = refIDCache[cacheKey]
+					if !rCached {
+						err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
+							SELECT id FROM goods_receipt_notes 
+							WHERE organization_id = $1 
+							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2)
+							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+						if err != nil || referenceID == nil {
+							_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
+								SELECT id FROM purchase_orders 
+								WHERE organization_id = $1 
+								  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR po_number = 'PO-' || $2)
+								LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+						}
+						refIDCache[cacheKey] = referenceID
 					}
 				case "sales_return":
-					r := tx.QueryRow(ctx, `
-						SELECT id FROM sales_returns 
-						WHERE organization_id = $1 
-						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR return_number = 'RET-SAP-' || $2 OR return_number = 'CN-SAP-' || $2 OR return_number = $2)
-						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					var rCached bool
+					referenceID, rCached = refIDCache[cacheKey]
+					if !rCached {
+						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
+							SELECT sr.id FROM sales_returns sr
+							JOIN stores s ON s.id = sr.store_id
+							WHERE s.organization_id = $1 
+							  AND (sr.metadata->>'sap_doc_num' = $2 OR sr.metadata->>'sap_doc_entry' = $2 OR sr.return_number = 'RET-SAP-' || $2 OR sr.return_number = 'CN-SAP-' || $2 OR sr.return_number = $2)
+							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+						refIDCache[cacheKey] = referenceID
+					}
 				case "transfer_request":
-					r := tx.QueryRow(ctx, `
-						SELECT id FROM transfer_requests 
-						WHERE organization_id = $1 
-						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR transfer_number = 'TR-SAP-' || $2 OR transfer_number = $2)
-						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					var rCached bool
+					referenceID, rCached = refIDCache[cacheKey]
+					if !rCached {
+						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&referenceID) }, `
+							SELECT id FROM transfer_requests 
+							WHERE organization_id = $1 
+							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR transfer_number = 'TR-SAP-' || $2 OR transfer_number = $2)
+							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+						refIDCache[cacheKey] = referenceID
+					}
 				case "invoice":
-					r := tx.QueryRow(ctx, `
-						SELECT id FROM invoices 
-						WHERE organization_id = $1 
-						  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR invoice_number = 'INV-SAP-' || $2 OR invoice_number = $2)
-						LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
-					_ = r.Scan(&referenceID)
+					invID, iCached := invIDCache[sm.ReferenceNumber]
+					if !iCached {
+						_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&invID) }, `
+							SELECT id::text FROM invoices 
+							WHERE organization_id = $1 
+							  AND (metadata->>'sap_doc_num' = $2 OR metadata->>'sap_doc_entry' = $2 OR invoice_number = 'INV-SAP-' || $2 OR invoice_number = $2)
+							LIMIT 1`, payload.OrganizationID, sm.ReferenceNumber)
+						invIDCache[sm.ReferenceNumber] = invID
+					}
+					if invID != "" {
+						if sm.Metadata == nil {
+							sm.Metadata = make(map[string]interface{})
+						}
+						sm.Metadata["invoice_id"] = invID
+						metaBytes, _ = json.Marshal(sm.Metadata)
+					}
 				}
 			}
 
 			var tag pgconn.CommandTag
 			var err error
 			if stockMovementConflictOK {
-				// A25: arbiter index exists — idempotent upsert via ON CONFLICT
 				q := `
 				INSERT INTO stock_movements (
 					movement_type, reference_type, reference_id, product_id,
@@ -1058,13 +1138,14 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9, $10, $11)
 				ON CONFLICT ((metadata->>'sap_trans_num')) WHERE metadata ? 'sap_trans_num'
-				DO NOTHING;
+				DO UPDATE SET
+					reference_id  = COALESCE(EXCLUDED.reference_id, stock_movements.reference_id),
+					cost_per_unit = COALESCE(EXCLUDED.cost_per_unit, stock_movements.cost_per_unit),
+					total_value   = COALESCE(EXCLUDED.total_value, stock_movements.total_value),
+					metadata      = COALESCE(stock_movements.metadata, '{}'::jsonb) || EXCLUDED.metadata;
 				`
-				tag, err = execWithSavepointRows(ctx, tx, q, sm.MovementType, sm.ReferenceType, referenceID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes)
+				tag, err = tx.Exec(ctx, q, sm.MovementType, sm.ReferenceType, referenceID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes)
 			} else {
-				// Fallback for databases where the arbiter index could not be
-				// created (e.g. pre-existing duplicate sap_trans_num rows):
-				// replay-safe via WHERE NOT EXISTS, no index required.
 				q := `
 				INSERT INTO stock_movements (
 					movement_type, reference_type, reference_id, product_id,
@@ -1076,16 +1157,19 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					SELECT 1 FROM stock_movements WHERE metadata->>'sap_trans_num' = $12
 				);
 				`
-				tag, err = execWithSavepointRows(ctx, tx, q, sm.MovementType, sm.ReferenceType, referenceID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes, fmt.Sprintf("%d", sm.Metadata["sap_trans_num"]))
+				tag, err = tx.Exec(ctx, q, sm.MovementType, sm.ReferenceType, referenceID, *productID, fromStoreID, toStoreID, sm.Quantity, sm.MovementDate, sm.CostPerUnit, sm.TotalValue, metaBytes, fmt.Sprintf("%v", sm.Metadata["sap_trans_num"]))
 			}
 			if err != nil {
+				_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT "+spItem)
 				failed++
 				errs = append(errs, fmt.Sprintf("stock movement item %s error: %v", sm.ProductSKU, err))
-			} else if tag.RowsAffected() == 0 {
-				// A29: idempotent replay no-op (movement already present)
-				skipped++
 			} else {
-				staged++
+				_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT "+spItem)
+				if tag.RowsAffected() == 0 {
+					skipped++
+				} else {
+					staged++
+				}
 			}
 		}
 
@@ -1538,8 +1622,8 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 			var fromStoreID *int64
 			if tr.FromStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.FromStoreCode)
-				_ = r.Scan(&fromStoreID)
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&fromStoreID) },
+					`SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.FromStoreCode)
 			}
 			if fromStoreID == nil {
 				failed++
@@ -1549,8 +1633,8 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 			var toStoreID *int64
 			if tr.ToStoreCode != "" {
-				r := tx.QueryRow(ctx, `SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.ToStoreCode)
-				_ = r.Scan(&toStoreID)
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error { return r.Scan(&toStoreID) },
+					`SELECT id FROM stores WHERE organization_id = $1 AND code = $2 LIMIT 1`, payload.OrganizationID, tr.ToStoreCode)
 			}
 			if toStoreID == nil {
 				failed++
@@ -1614,20 +1698,32 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 	}
 
 	// Update batch record — advisory only
+	allFailed := failed > 0 && staged == 0 && skipped == 0
 	status := "merged"
-	if failed > 0 && staged == 0 {
+	if allFailed {
 		status = "failed"
 	}
-	if err := execWithSavepoint(ctx, tx, `UPDATE staging.sap_migration_batches SET status = $1 WHERE batch_id = $2;`, status, payload.BatchID); err != nil {
+	var errSummary *string
+	if len(errs) > 0 {
+		joined := strings.Join(errs, "; ")
+		if len(joined) > 2000 {
+			joined = joined[:2000]
+		}
+		errSummary = &joined
+	}
+	if err := execWithSavepoint(ctx, tx, `UPDATE staging.sap_migration_batches SET status = $1, error_message = COALESCE($2, error_message) WHERE batch_id = $3;`, status, errSummary, payload.BatchID); err != nil {
 		errs = append(errs, fmt.Sprintf("staging batch status update (advisory): %v", err))
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		if len(errs) > 0 {
+			return nil, fmt.Errorf("failed to commit batch transaction: %w (underlying error: %s)", err, errs[0])
+		}
 		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
 	}
 
 	return &contracts.MigrationBatchResponse{
-		Success:        failed == 0 || staged > 0,
+		Success:        !allFailed,
 		BatchID:        payload.BatchID,
 		Domain:         payload.Domain,
 		RecordsStaged:  staged,

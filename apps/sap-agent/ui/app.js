@@ -52,6 +52,8 @@
         setupMigrationListeners();
         setupSettingsListeners();
         startTelemetryPolling();
+        syncRunState();
+        setInterval(syncRunState, 4000);
     });
 
     // -------------------------------------------------------------
@@ -384,7 +386,11 @@
                 body: JSON.stringify({ base_url: getVal('ob-cloud-url') })
             });
             const data = await res.json();
-            const tenants = data.tenants || [];
+            let raw = data.tenants;
+            if (raw && !Array.isArray(raw)) {
+                raw = raw.tenants || raw.data || raw.items || [];
+            }
+            const tenants = Array.isArray(raw) ? raw : [];
             state.onboarding.tenants = tenants;
 
             listContainer.innerHTML = '';
@@ -666,6 +672,7 @@
             state.ws.onopen = () => {
                 if (elements.wsStatusDot) elements.wsStatusDot.className = 'status-indicator-dot online';
                 if (elements.wsStatusText) elements.wsStatusText.textContent = 'Agent Daemon Online';
+                syncRunState();
             };
 
             state.ws.onmessage = (event) => {
@@ -687,30 +694,98 @@
         }
     }
 
+    function showRunControls(active, runId) {
+        const box = document.getElementById('migration-progress-box');
+        const startBtn = document.getElementById('btn-start-migration');
+        const cancelBtn = document.getElementById('btn-cancel-migration');
+        if (active) {
+            if (box) box.style.display = 'block';
+            if (startBtn) startBtn.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+        } else {
+            if (startBtn) startBtn.style.display = 'inline-flex';
+            if (cancelBtn) cancelBtn.style.display = 'none';
+        }
+        if (runId) setTxt('prog-run-id', `Run ID: ${runId}`);
+    }
+
+    function renderProgress(processed, total, overallPct) {
+        setTxt('prog-processed-count', processed);
+        setTxt('prog-total-count', total > 0 ? total : '?');
+        // Streaming/windowed domains report no total: fall back to overall domain progress.
+        const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : Math.round(overallPct || 0);
+        setTxt('prog-percent', `${pct}%`);
+        const bar = document.getElementById('prog-bar-fill');
+        if (bar) bar.style.width = `${pct}%`;
+    }
+
     function handleProgressEvent(ev) {
         if (!ev) return;
 
-        // Update progress visualizer
-        if (ev.domain) {
-            setTxt('prog-domain-name', ev.domain);
+        if (ev.domain) setTxt('prog-domain-name', ev.domain);
+
+        const overall = ev.total_domains > 0 ? (ev.completed_steps / ev.total_domains) * 100 : 0;
+        if (ev.type === 'run_started') {
+            showRunControls(true, ev.run_id);
         }
-        if (ev.total_records !== undefined && ev.processed_count !== undefined) {
-            setTxt('prog-processed-count', ev.processed_count);
-            setTxt('prog-total-count', ev.total_records);
-            const pct = ev.total_records > 0 ? Math.round((ev.processed_count / ev.total_records) * 100) : 0;
-            setTxt('prog-percent', `${pct}%`);
-            const bar = document.getElementById('prog-bar-fill');
-            if (bar) bar.style.width = `${pct}%`;
+        if (ev.processed_count !== undefined) {
+            renderProgress(ev.processed_count, ev.total_records, ev.type === 'step_progress' && ev.total_records > 0 ? 0 : overall);
+        }
+
+        const level = ev.type === 'error' ? 'ERROR' : 'INFO';
+        if (ev.type === 'error') {
+            appendLog('ERROR', `Pipeline error in domain ${ev.domain}: ${ev.error || ev.message || 'Failed step'}`);
+        } else if (ev.message) {
+            appendLog(level, ev.domain ? `[${ev.domain}] ${ev.message}` : ev.message);
         }
 
         if (ev.type === 'run_completed') {
-            showToast('Migration Pipeline Run Completed Successfully!', 'success');
-            document.getElementById('btn-start-migration').style.display = 'inline-flex';
-            document.getElementById('btn-cancel-migration').style.display = 'none';
+            showToast('Migration Pipeline Run Completed!', 'success');
+            showRunControls(false);
         }
+    }
 
-        if (ev.type === 'error') {
-            appendLog('ERROR', `Pipeline error in domain ${ev.domain}: ${ev.error || 'Failed step'}`);
+    // Rehydrate progress + logs from the REST API (page reload, WS reconnect, missed events).
+    let lastLogKey = '';
+    async function syncRunState() {
+        try {
+            const res = await fetch('/api/v1/migration/status');
+            const data = await res.json();
+            if (data && data.run) {
+                const run = data.run;
+                const steps = data.steps || [];
+                showRunControls(!!data.active, run.id);
+                if (data.active || !document.getElementById('prog-domain-name')?.textContent) {
+                    const running = steps.find(s => s.status === 'running') || steps[steps.length - 1];
+                    if (running) setTxt('prog-domain-name', running.domain);
+                    const processed = steps.reduce((a, s) => a + (s.processed_count || 0), 0);
+                    renderProgress(processed, 0, run.total_domains > 0 ? (steps.filter(s => s.status === 'completed' || s.status === 'failed').length / run.total_domains) * 100 : 0);
+                }
+                if (!data.active) showRunControls(false);
+            }
+            const lr = await fetch('/api/v1/logs');
+            const ld = await lr.json();
+            const logs = (ld && ld.logs) || [];
+            if (logs.length && elements.terminalLogs) {
+                const key = `${logs[logs.length - 1].id}`;
+                if (key !== lastLogKey) {
+                    lastLogKey = key;
+                    elements.terminalLogs.innerHTML = '';
+                    logs.forEach(l => {
+                        const line = document.createElement('div');
+                        const lvl = (l.log_level || 'INFO').toUpperCase();
+                        const ts = l.created_at ? new Date(l.created_at).toLocaleTimeString() : '';
+                        line.className = `log-line ${lvl.toLowerCase()}`;
+                        line.innerHTML = `<span class="log-ts">[${ts}]</span> [${lvl}] ${escapeHtml((l.domain ? `[${l.domain}] ` : '') + l.message)}`;
+                        elements.terminalLogs.appendChild(line);
+                    });
+                    if (document.getElementById('chk-auto-scroll')?.checked) {
+                        elements.terminalLogs.scrollTop = elements.terminalLogs.scrollHeight;
+                    }
+                }
+            }
+        } catch (e) {
+            // agent restarting; retry on next tick
         }
     }
 

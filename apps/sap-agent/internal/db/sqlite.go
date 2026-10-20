@@ -278,10 +278,16 @@ func (s *SQLiteStore) UpdateRunStatus(ctx context.Context, runID string, status 
 
 	query := `
 	UPDATE migration_runs 
-	SET status = ?, error_message = ?, finished_at = COALESCE(?, finished_at)
+	SET status = ?,
+	    error_message = ?,
+	    finished_at = COALESCE(?, finished_at),
+	    completed_steps = (SELECT COUNT(1) FROM migration_steps WHERE run_id = ? AND status = 'completed'),
+	    total_records = (SELECT COALESCE(SUM(total_records), 0) FROM migration_steps WHERE run_id = ?),
+	    processed_count = (SELECT COALESCE(SUM(processed_count), 0) FROM migration_steps WHERE run_id = ?),
+	    failed_count = (SELECT COALESCE(SUM(failed_count), 0) FROM migration_steps WHERE run_id = ?)
 	WHERE id = ?;
 	`
-	_, err := s.db.ExecContext(ctx, query, string(status), errMsg, finishedAt, runID)
+	_, err := s.db.ExecContext(ctx, query, string(status), errMsg, finishedAt, runID, runID, runID, runID, runID)
 	return err
 }
 

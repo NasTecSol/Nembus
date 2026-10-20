@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS business_partners (
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    partner_role VARCHAR(20) NOT NULL CHECK (partner_role IN ('supplier','vendor','special_customer','corporate_group')),
+    partner_role VARCHAR(20) NOT NULL CHECK (partner_role IN ('supplier','vendor','customer','special_customer','corporate_group')),
     tax_id VARCHAR(50),
     currency_code VARCHAR(3) REFERENCES currencies(code) DEFAULT 'SAR',
     credit_limit DECIMAL(15,2) DEFAULT 0.00,
@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS partner_addresses (
     zip_code VARCHAR(20),
     country_code VARCHAR(3) DEFAULT 'SA',
     is_default BOOLEAN DEFAULT false,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_partner_addresses_type_name UNIQUE (partner_id, address_type, address_name)
 );
 
 CREATE TABLE IF NOT EXISTS partner_contacts (
