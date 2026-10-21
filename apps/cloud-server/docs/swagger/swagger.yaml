@@ -26183,6 +26183,81 @@ paths:
       summary: Search master product catalog
       tags:
       - products
+  /api/products/master-catalog/stock:
+    get:
+      description: Returns inventory-tracked products with full catalog details. Stock
+        is summed across variants and inventory rows within the selected store/location
+        scope. Low means strictly below the threshold; non_low means at or above it.
+        Only scoped inventory is embedded. Without a scope, products without inventory
+        have zero stock; with a scope, products must have an inventory row in that
+        scope.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Low stock threshold (default 20, non-negative)
+        in: query
+        name: low_stock_threshold
+        type: number
+      - description: Stock filter (default low)
+        enum:
+        - low
+        - non_low
+        - all
+        in: query
+        name: stock_status
+        type: string
+      - description: Category ID (omit or 0 for all)
+        in: query
+        name: category_id
+        type: integer
+      - description: Store ID (omit or 0 for all)
+        in: query
+        name: store_id
+        type: integer
+      - description: Storage location ID (omit or 0 for all)
+        in: query
+        name: storage_location_id
+        type: integer
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Master product catalog by stock level
+      tags:
+      - products
   /api/promotions:
     get:
       consumes:
