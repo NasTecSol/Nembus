@@ -332,7 +332,7 @@ func (uc *InvoiceUseCase) CreateInvoice(ctx context.Context, input CreateInvoice
 		InvoiceNumber:     strings.TrimSpace(input.InvoiceNumber),
 		OrganizationID:    input.OrganizationID,
 		StoreID:           pgInt4(input.StoreID),
-		CustomerID:        pgtype.Int4{Int32: input.CustomerID, Valid: true},
+		CustomerID:        pgtype.Int4{Int32: input.CustomerID, Valid: input.CustomerID > 0},
 		CustomerName:      strings.TrimSpace(input.CustomerName),
 		CustomerEmail:     pgText(input.CustomerEmail),
 		CustomerPhone:     pgText(input.CustomerPhone),

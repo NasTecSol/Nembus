@@ -41,11 +41,18 @@ build-client:
 	@echo "==> Building POS client (Wails)..."
 	@cd apps/pos-client && wails build
 
+build-agent:
+	@echo "==> Building SAP agent..."
+	@cd apps/sap-agent && go build -o bin/sap-agent cmd/main.go
+
 dev-server:
 	@cd apps/cloud-server && go run main.go dev
 
 dev-client:
 	@cd apps/pos-client && wails dev
+
+dev-agent:
+	@cd apps/sap-agent && go run cmd/main.go daemon
 
 sync-notebook:
 	@echo "==> Bundling NotebookLM context sources..."
@@ -56,6 +63,7 @@ tidy:
 	@cd packages/core && go mod tidy
 	@cd apps/cloud-server && go mod tidy
 	@cd apps/pos-client && go mod tidy
+	@cd apps/sap-agent && go mod tidy
 
 swagger:
 	@echo "==> Generating Swagger documentation..."
