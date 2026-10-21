@@ -28658,6 +28658,112 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/products/master-catalog/stock": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns inventory-tracked products with full catalog details. Stock is summed across variants and inventory rows within the selected store/location scope. Low means strictly below the threshold; non_low means at or above it. Only scoped inventory is embedded. Without a scope, products without inventory have zero stock; with a scope, products must have an inventory row in that scope.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "products"
+                ],
+                "summary": "Master product catalog by stock level",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Low stock threshold (default 20, non-negative)",
+                        "name": "low_stock_threshold",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "low",
+                            "non_low",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "Stock filter (default low)",
+                        "name": "stock_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Category ID (omit or 0 for all)",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID (omit or 0 for all)",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Storage location ID (omit or 0 for all)",
+                        "name": "storage_location_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/products/{product_id}/barcodes": {
             "get": {
                 "security": [
