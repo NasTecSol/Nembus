@@ -947,7 +947,7 @@ type Invoice struct {
 	InvoiceNumber      string           `json:"invoice_number"`
 	OrganizationID     int32            `json:"organization_id"`
 	StoreID            pgtype.Int4      `json:"store_id"`
-	CustomerID         int32            `json:"customer_id"`
+	CustomerID         pgtype.Int4      `json:"customer_id"`
 	CustomerName       string           `json:"customer_name"`
 	CustomerEmail      pgtype.Text      `json:"customer_email"`
 	CustomerPhone      pgtype.Text      `json:"customer_phone"`
