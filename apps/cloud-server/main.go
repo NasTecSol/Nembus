@@ -236,6 +236,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		purchaseOrdersHandler := handler.NewPurchaseOrdersHandler(purchaseOrdersUC)
 		router.RegisterPurchaseOrderRoutes(api, purchaseOrdersHandler)
 
+		rfqHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
+		router.RegisterRFQRoutes(api, rfqHandler)
+
 		approvalsUC := usecase.NewApprovalsUseCase()
 		approvalsUC.RegisterAccommodator("goods_receipt_note", usecase.NewGoodsReceiptNoteApprovalAccommodator())
 		approvalsHandler := handler.NewApprovalsHandler(approvalsUC)
@@ -253,6 +256,10 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 	}
+
+	publicRFQHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
+	publicRFQRoutes := r.Group("/api/public")
+	router.RegisterPublicRFQRoutes(publicRFQRoutes, publicRFQHandler)
 
 	return r
 }

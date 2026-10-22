@@ -4065,6 +4065,14 @@ definitions:
         example: "2026-08-31T23:59:59Z"
         type: string
     type: object
+  handler.PublishRFQInput:
+    properties:
+      expires_at:
+        example: "2026-11-30T00:00:00Z"
+        type: string
+    required:
+    - expires_at
+    type: object
   handler.PurchaseOrderLineDTO:
     properties:
       discount_amount:
@@ -6709,6 +6717,33 @@ definitions:
       uom_id:
         type: integer
     type: object
+  usecase.CreateRFQInput:
+    properties:
+      description:
+        example: Please quote the requested ALMARAI-MILK-FW-1L for delivery next month.
+        type: string
+      invited_partner_id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/usecase.RFQItemInput'
+        type: array
+      organization_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      title:
+        example: 500 ALMARAI-MILK-FW-1L SAUDIYA BRANCH
+        type: string
+      vendor_name:
+        example: Example Vendor Co.
+        type: string
+    required:
+    - organization_id
+    - vendor_name
+    type: object
   usecase.MenuItemFullDetailsResponse:
     properties:
       base_price:
@@ -6801,6 +6836,59 @@ definitions:
         example: 6
         type: integer
     type: object
+  usecase.RFQItemInput:
+    properties:
+      item_description:
+        example: ALMARAI-MILK-FW-1L lumbar support
+        type: string
+      item_name:
+        example: ALMARAI-MILK-FW-1L
+        type: string
+      notes:
+        example: Black preferred
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        type: integer
+      quantity:
+        example: 20
+        type: number
+      target_price:
+        example: 25000
+        type: number
+      uom_id:
+        example: 3
+        type: integer
+    type: object
+  usecase.RFQQuoteItemInput:
+    properties:
+      delivery_lead_time_days:
+        example: 21
+        type: integer
+      notes:
+        example: Price per Liter
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      quantity:
+        example: 20
+        type: number
+      rfq_item_id:
+        example: 362d4816-773b-4f0c-9b0d-f7660b5a4e2f
+        type: string
+      tax_amount:
+        example: 1
+        type: number
+      unit_price:
+        example: 22000
+        type: number
+      uom_id:
+        example: 3
+        type: integer
+    type: object
   usecase.RecordInvoicePaymentInput:
     properties:
       bank_account_id:
@@ -6830,6 +6918,28 @@ definitions:
         type: string
       received_by_user_id:
         type: integer
+    type: object
+  usecase.SubmitRFQResponseInput:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/usecase.RFQQuoteItemInput'
+        type: array
+      notes:
+        example: We can deliver in two shipments.
+        type: string
+      supplier_email:
+        example: quotes@example.com
+        type: string
+      supplier_name:
+        example: Example Supply Co.
+        type: string
+      supplier_phone:
+        example: +92-300-1234567
+        type: string
+      valid_until:
+        example: "2026-11-30"
+        type: string
     type: object
   usecase.UpdateInvoiceInput:
     properties:
@@ -26764,6 +26874,73 @@ paths:
       summary: Validate coupon (read-only)
       tags:
       - promotions
+  /api/public/rfqs/{token}:
+    get:
+      parameters:
+      - description: Supplier access token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: Tenant identifier
+        in: query
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get public RFQ details
+      tags:
+      - Public RFQs
+  /api/public/rfqs/{token}/responses:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Supplier access token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: Tenant identifier
+        in: query
+        name: tenant
+        required: true
+        type: string
+      - description: Copy rfq_item_id, product_id, and uom_id from the public RFQ
+          GET response; include one quote for each requested item.
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.SubmitRFQResponseInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Submit supplier quotation
+      tags:
+      - Public RFQs
   /api/purchase-order-lines:
     get:
       consumes:
@@ -30383,6 +30560,226 @@ paths:
       summary: Update waste log
       tags:
       - restaurant
+  /api/rfqs:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - description: RFQ status
+        in: query
+        name: status
+        type: string
+      - description: Timeline status
+        in: query
+        name: timeline_status
+        type: string
+      - description: Search RFQ number or title
+        in: query
+        name: search
+        type: string
+      - description: Filter by response presence
+        in: query
+        name: has_response
+        type: string
+      - description: Filter by supplier type
+        in: query
+        name: supplier_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List RFQs
+      tags:
+      - RFQs
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: 'Example: organization_id must match the authenticated organization;
+          provide vendor_name and at least one product item.'
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateRFQInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create RFQ draft
+      tags:
+      - RFQs
+  /api/rfqs/{id}:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/close:
+    post:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Publication expiry; example expires_at is 2026-11-30T00:00:00Z.
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PublishRFQInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Publish RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/responses:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List supplier responses
+      tags:
+      - RFQs
   /api/roles:
     get:
       consumes:
