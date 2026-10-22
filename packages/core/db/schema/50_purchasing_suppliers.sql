@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS payment_terms (
     discount_percentage DECIMAL(5,2) DEFAULT 0.00,
     late_fee_percentage DECIMAL(5,2) DEFAULT 0.00,
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS cost_centers (
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS business_partners (
     currency_code VARCHAR(3) REFERENCES currencies(code) DEFAULT 'SAR',
     credit_limit DECIMAL(15,2) DEFAULT 0.00,
     outstanding_balance DECIMAL(15,2) DEFAULT 0.00,
-    payment_terms_id INTEGER,
+    payment_terms_id INTEGER REFERENCES payment_terms(id) ON DELETE SET NULL,
     sales_rep_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
@@ -93,7 +94,7 @@ CREATE TABLE IF NOT EXISTS partner_addresses (
     id SERIAL PRIMARY KEY,
     partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     address_name VARCHAR(100) NOT NULL,
-    address_type VARCHAR(20) NOT NULL CHECK (address_type IN ('bill_to','ship_to','both')),
+    address_type VARCHAR(20) NOT NULL CHECK (address_type IN ('bill_to','ship_to','both','billing','shipping')),
     street TEXT,
     city VARCHAR(100),
     state VARCHAR(100),
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS partner_addresses (
     country_code VARCHAR(3) DEFAULT 'SA',
     is_default BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_partner_addresses_type_name UNIQUE (partner_id, address_type, address_name)
 );
 
@@ -173,7 +175,7 @@ CREATE TABLE purchase_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     po_number VARCHAR(50) UNIQUE NOT NULL,
-    partners_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     po_date DATE NOT NULL,
     expected_delivery_date DATE,

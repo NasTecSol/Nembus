@@ -12,13 +12,31 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 )
 
-type UpstreamSync struct {
-	cfg          *config.Config
-	sapClient    *sap.Client
-	nembusClient *nembus.Client
+type SAPClient interface {
+	PostInvoice(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
+	PostIncomingPayment(ctx context.Context, payment *sap.SAPPaymentRequest) (*sap.SAPPaymentResponse, error)
+	PostCreditMemo(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
 }
 
-func NewUpstreamSync(cfg *config.Config, sapClient *sap.Client, nembusClient *nembus.Client) *UpstreamSync {
+type NembusClient interface {
+	FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error)
+	FetchTransactionLines(ctx context.Context, transactionID int64) ([]nembus.POSTransactionLine, error)
+	FetchTransactionPayments(ctx context.Context, transactionID int64) ([]nembus.POSPayment, error)
+	MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error
+	FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error)
+	FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]nembus.SalesReturn, error)
+	FetchSalesReturnLines(ctx context.Context, returnID int64) ([]nembus.SalesReturnLine, error)
+	MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error
+	FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error)
+}
+
+type UpstreamSync struct {
+	cfg          *config.Config
+	sapClient    SAPClient
+	nembusClient NembusClient
+}
+
+func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient NembusClient) *UpstreamSync {
 	return &UpstreamSync{
 		cfg:          cfg,
 		sapClient:    sapClient,
@@ -27,48 +45,53 @@ func NewUpstreamSync(cfg *config.Config, sapClient *sap.Client, nembusClient *ne
 }
 
 type UpstreamStats struct {
-	TransactionsPosted int
-	PaymentsPosted     int
-	Errors             int
-	Duration           time.Duration
+	TransactionsPosted int           `json:"transactions_posted"`
+	ReturnsPosted      int           `json:"returns_posted"`
+	PaymentsPosted     int           `json:"payments_posted,omitempty"`
+	Errors             int           `json:"errors"`
+	Duration           time.Duration `json:"duration"`
 }
 
 func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error) {
 	start := time.Now()
 	stats := &UpstreamStats{}
 
-	// 1. Fetch unposted completed POS transactions from Nembus
 	limit := s.cfg.BatchSize
 	if limit <= 0 {
 		limit = 50
 	}
 
+	// 1. Fetch unposted completed POS transactions from Nembus
 	txs, err := s.nembusClient.FetchUnpostedPOSTransactions(ctx, limit)
 	if err != nil {
 		return stats, fmt.Errorf("failed to fetch unposted transactions: %w", err)
 	}
 
-	if len(txs) == 0 {
-		return stats, nil
-	}
-
-	log.Printf("⬆️ [Nembus POS -> SAP] Found %d unposted transaction(s). Processing...", len(txs))
-
-	for _, tx := range txs {
-		if err := s.postTransactionToSAP(ctx, &tx); err != nil {
-			log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
-			stats.Errors++
-		} else {
-			stats.TransactionsPosted++
+	if len(txs) > 0 {
+		log.Printf("⬆️ [Nembus POS -> SAP] Found %d unposted transaction(s). Processing...", len(txs))
+		for _, tx := range txs {
+			if err := s.postTransactionToSAP(ctx, &tx); err != nil {
+				log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+				stats.Errors++
+			} else if !s.cfg.DryRun {
+				stats.TransactionsPosted++
+			}
 		}
 	}
 
-	// 2. Also check and resolve pending sync_queue records
-	queueItems, qErr := s.nembusClient.FetchPendingSyncQueue(ctx, limit)
-	if qErr == nil {
-		for _, item := range queueItems {
-			if item.ID > 0 {
-				_ = s.nembusClient.UpdateSyncQueueStatus(ctx, item.ID, "synced", "")
+	// 2. Fetch unposted completed sales returns from Nembus
+	returns, rErr := s.nembusClient.FetchUnpostedSalesReturns(ctx, limit)
+	if rErr != nil {
+		log.Printf("⚠️ Failed to fetch unposted sales returns: %v", rErr)
+		stats.Errors++
+	} else if len(returns) > 0 {
+		log.Printf("⬆️ [Nembus POS -> SAP] Found %d unposted return(s). Processing...", len(returns))
+		for _, ret := range returns {
+			if err := s.postSalesReturnToSAP(ctx, &ret); err != nil {
+				log.Printf("❌ Failed to post sales return %s (ID: %d) to SAP: %v", ret.ReturnNumber, ret.ID, err)
+				stats.Errors++
+			} else if !s.cfg.DryRun {
+				stats.ReturnsPosted++
 			}
 		}
 	}
@@ -205,5 +228,85 @@ func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) s
 		return "C000001"
 	}
 	return strings.TrimSpace(code)
+}
+
+func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.SalesReturn) error {
+	lines, err := s.nembusClient.FetchSalesReturnLines(ctx, ret.ID)
+	if err != nil {
+		return fmt.Errorf("failed fetching return lines: %w", err)
+	}
+	if len(lines) == 0 {
+		return fmt.Errorf("sales return %s has no line items", ret.ReturnNumber)
+	}
+
+	// Lookup original invoice DocEntry in SAP if linked
+	var baseDocEntry *int
+	if ret.OriginalTransactionID != nil && *ret.OriginalTransactionID > 0 {
+		if entry, err := s.nembusClient.FetchOriginalSAPDocEntry(ctx, *ret.OriginalTransactionID); err == nil && entry > 0 {
+			baseDocEntry = &entry
+		} else {
+			log.Printf("⚠️ [SalesReturn %s] Original transaction ID %d has no SAP DocEntry (err: %v); posting as standalone credit memo", ret.ReturnNumber, *ret.OriginalTransactionID, err)
+		}
+	}
+
+	var docLines []sap.SAPDocumentLine
+	for idx, line := range lines {
+		if line.Quantity <= 0 {
+			return fmt.Errorf("sales return %s line %d has invalid quantity: %.3f", ret.ReturnNumber, idx, line.Quantity)
+		}
+		if line.RefundAmount < 0 {
+			return fmt.Errorf("sales return %s line %d has negative refund amount: %.2f", ret.ReturnNumber, idx, line.RefundAmount)
+		}
+		lineNum := idx
+		priceAfterVAT := line.RefundAmount / line.Quantity
+		docLine := sap.SAPDocumentLine{
+			LineNum:         &lineNum,
+			ItemCode:        line.ProductSKU,
+			ItemDescription: line.ProductName,
+			Quantity:        line.Quantity,
+			UnitPrice:       line.UnitPrice,
+			PriceAfterVAT:   priceAfterVAT,
+			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
+		}
+		if baseDocEntry != nil {
+			baseType := 13 // 13 = A/R Invoice
+			docLine.BaseEntry = baseDocEntry
+			docLine.BaseType = &baseType
+		}
+		docLines = append(docLines, docLine)
+	}
+
+	cardCode := s.resolveCardCode(ctx, ret.CustomerID)
+	retDate := ret.ReturnDate.Format("2006-01-02")
+	comments := fmt.Sprintf("Nembus POS Return: %s", ret.ReturnNumber)
+	if ret.ReturnReason != nil && *ret.ReturnReason != "" {
+		comments = fmt.Sprintf("%s (Reason: %s)", comments, *ret.ReturnReason)
+	}
+
+	memoReq := &sap.SAPInvoiceRequest{
+		CardCode:      cardCode,
+		DocDate:       retDate,
+		DocDueDate:    retDate,
+		TaxDate:       retDate,
+		NumAtCard:     ret.ReturnNumber,
+		Reference2:    ret.ReturnNumber,
+		Comments:      comments,
+		DocumentLines: docLines,
+	}
+
+	if s.cfg.DryRun {
+		log.Printf("[DRY-RUN] Would post Credit Note for %s ($%.2f) to SAP", ret.ReturnNumber, ret.TotalRefundAmount)
+		return nil
+	}
+
+	sapMemo, err := s.sapClient.PostCreditMemo(ctx, memoReq)
+	if err != nil {
+		return err
+	}
+
+	log.Printf(" Credit Note created in SAP B1! DocEntry: %d, DocNum: %d (Ref: %s)",
+		sapMemo.DocEntry, sapMemo.DocNum, ret.ReturnNumber)
+
+	return s.nembusClient.MarkSalesReturnPostedToSAP(ctx, ret.ID, sapMemo.DocEntry, sapMemo.DocNum)
 }
 

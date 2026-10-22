@@ -15,10 +15,11 @@ The **SAP Sync Agent** is a bidirectional synchronization service between **SAP 
    - **Inventory**: Syncs warehouse stock levels to Nembus `inventory_stock`.
 
 2. **Upstream Pipeline (Nembus POS $\rightarrow$ SAP B1 Invoices & Payments)**
-   - **Outbox Watcher**: Monitors completed POS transactions and outbox items (`sync_queue`).
+   - **Outbox Watcher**: Monitors completed POS transactions and sales returns.
    - **AR Invoices (`OINV`)**: Automatically creates official SAP AR Invoices with line items, VAT calculations, and POS transaction references.
+   - **AR Credit Memos (`ORIN`)**: Posts sales returns back to SAP B1 with links to original invoices (`BaseEntry`, `BaseType = 13`).
    - **Incoming Payments (`ORCT`)**: Posts cash and card payments linked directly to the created SAP AR Invoice.
-   - **Idempotency**: Tags Nembus transactions with SAP `DocEntry` and `DocNum` to prevent duplicate postings.
+   - **Idempotency**: Tags Nembus transactions and returns with SAP `DocEntry` and `DocNum` to prevent duplicate postings.
 
 ---
 

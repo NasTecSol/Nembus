@@ -16,7 +16,8 @@ import (
 )
 
 type PosUseCase struct {
-	repo *repository.Queries
+	repo    *repository.Queries
+	zatcaUC *ZatcaUseCase
 }
 
 func NewPosUseCase() *PosUseCase {
@@ -25,6 +26,10 @@ func NewPosUseCase() *PosUseCase {
 
 func (uc *PosUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
+}
+
+func (uc *PosUseCase) SetZatcaUseCase(zuc *ZatcaUseCase) {
+	uc.zatcaUC = zuc
 }
 
 // ListProductsForStore returns POS products with stock for a store (categories, prices, barcode).
@@ -787,19 +792,186 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		createdLines = append(createdLines, createdLine)
 	}
 
-	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
+	// 1. F2.1: Decrement inventory stock & create stock movements for each line
+	for _, line := range in.Lines {
+		var variantID pgtype.Int4
+		if line.ProductVariantID != nil {
+			variantID = pgtype.Int4{Int32: *line.ProductVariantID, Valid: true}
+		}
 
-	type transactionResult struct {
-		repository.PosTransaction
-		Lines []repository.PosTransactionLine `json:"lines"`
+		negQty := line.Quantity
+		if negQty.Valid && negQty.Int != nil {
+			absInt := new(big.Int).Abs(negQty.Int)
+			negQty = pgtype.Numeric{
+				Int:   new(big.Int).Neg(absInt),
+				Exp:   negQty.Exp,
+				Valid: true,
+			}
+		}
+
+		_, _ = uc.repo.AdjustInventoryStockByProductAndStore(ctx, repository.AdjustInventoryStockByProductAndStoreParams{
+			ProductID:         line.ProductID,
+			ProductVariantID:  variantID,
+			StoreID:           in.StoreID,
+			QuantityOnHand:    negQty,
+			QuantityAvailable: negQty,
+		})
+
+		var uomID pgtype.Int4
+		if line.UomID != nil {
+			uomID = pgtype.Int4{Int32: *line.UomID, Valid: true}
+		}
+		var batchNum pgtype.Text
+		if line.BatchNumber != nil && strings.TrimSpace(*line.BatchNumber) != "" {
+			batchNum = pgtype.Text{String: strings.TrimSpace(*line.BatchNumber), Valid: true}
+		}
+		var serialNum pgtype.Text
+		if line.SerialNumber != nil && strings.TrimSpace(*line.SerialNumber) != "" {
+			serialNum = pgtype.Text{String: strings.TrimSpace(*line.SerialNumber), Valid: true}
+		}
+
+		_, _ = uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
+			MovementType:     "pos_sale",
+			ReferenceType:    pgtype.Text{String: "pos_transaction", Valid: true},
+			ReferenceID:      pgtype.Int4{Int32: header.ID, Valid: true},
+			ProductID:        line.ProductID,
+			ProductVariantID: variantID,
+			FromStoreID:      pgtype.Int4{Int32: in.StoreID, Valid: true},
+			Quantity:         line.Quantity,
+			UomID:            uomID,
+			BatchNumber:      batchNum,
+			SerialNumber:     serialNum,
+			MovementDate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
+			Status:           pgtype.Text{String: "completed", Valid: true},
+			CostPerUnit:      line.CostPrice,
+			TotalValue:       line.LineTotal,
+			Metadata:         json.RawMessage([]byte("{}")),
+		})
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "transaction created", transactionResult{
+	// 2. F2.5: Dual Order Harmonization: Create sales_orders_v2 record and link
+	store, _ := uc.repo.GetStore(ctx, in.StoreID)
+	orderNum := fmt.Sprintf("SO-%s", header.TransactionNumber)
+	counterAddress := json.RawMessage([]byte(fmt.Sprintf(`{"type":"pos_counter","store_id":%d}`, in.StoreID)))
+	orderArg := repository.CreateSalesOrderV2Params{
+		OrderNumber:       orderNum,
+		OrganizationID:    store.OrganizationID,
+		StoreID:           pgtype.Int4{Int32: in.StoreID, Valid: true},
+		OrderType:         repository.OrderTypeStandard,
+		OrderStatus:       repository.OrderStatusV2Fulfilled,
+		PaymentStatus:     repository.PaymentStatusPaid,
+		FulfillmentStatus: repository.FulfillmentStatusFulfilled,
+		SalesChannel:      pgtype.Text{String: "pos", Valid: true},
+		OrderSource:       pgtype.Text{String: "pos_terminal", Valid: true},
+		OrderDate:         transactionDate,
+		ShippingAddress:   counterAddress,
+		BillingAddress:    counterAddress,
+		PosTerminalID:     pgtype.Int4{Int32: in.PosTerminalID, Valid: true},
+		CashierID:         pgtype.Int4{Int32: in.CashierID, Valid: true},
+		Metadata:          header.Metadata,
+	}
+	if in.CustomerID != nil {
+		orderArg.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
+	}
+	soV2, err := uc.repo.CreateSalesOrderV2(ctx, orderArg)
+	if err != nil {
+		fmt.Printf("Warning: failed to create sales_orders_v2 for pos transaction: %v\n", err)
+	} else {
+		_, _ = uc.repo.UpdateOrderTotals(ctx, repository.UpdateOrderTotalsParams{
+			ID:             soV2.ID,
+			Subtotal:       in.Subtotal,
+			DiscountAmount: in.DiscountAmount,
+			TaxAmount:      in.TaxAmount,
+			TotalAmount:    in.TotalAmount,
+		})
+
+		for idx, l := range createdLines {
+			_, _ = uc.repo.CreateSalesOrderLineV2(ctx, repository.CreateSalesOrderLineV2Params{
+				SalesOrderID:     soV2.ID,
+				OrganizationID:   store.OrganizationID,
+				LineNumber:       int32(idx + 1),
+				ProductID:        l.ProductID,
+				ProductVariantID: l.ProductVariantID,
+				ProductName:      fmt.Sprintf("Product #%d", l.ProductID),
+				QuantityOrdered:  l.Quantity,
+				UnitPrice:        l.UnitPrice,
+				DiscountAmount:   l.DiscountAmount,
+				TaxAmount:        l.TaxAmount,
+				LineTotal:        l.LineTotal,
+				LineStatus:       pgtype.Text{String: "fulfilled", Valid: true},
+				UnitCost:         l.CostPrice,
+			})
+		}
+
+		_ = uc.repo.LinkPosTransactionToSalesOrder(ctx, repository.LinkPosTransactionToSalesOrderParams{
+			ID:           header.ID,
+			SalesOrderID: pgtype.UUID{Bytes: soV2.ID, Valid: true},
+		})
+		header.SalesOrderID = pgtype.UUID{Bytes: soV2.ID, Valid: true}
+	}
+
+	// 3. F2.2: ZATCA Phase 2 POS Integration
+	var qrCode string
+	var zatcaUUID string
+	if uc.zatcaUC != nil && uc.zatcaUC.GetConfig() != nil && uc.zatcaUC.GetConfig().Enabled {
+		org, orgErr := uc.repo.GetOrganization(ctx, store.OrganizationID)
+		if orgErr == nil {
+			device, devErr := uc.repo.GetActivePosDevice(ctx, repository.GetActivePosDeviceParams{
+				OrganizationID: store.OrganizationID,
+				PosTerminalID:  pgtype.Int4{Int32: in.PosTerminalID, Valid: true},
+			})
+			if devErr != nil {
+				device, devErr = uc.repo.GetActiveCloudDevice(ctx, store.OrganizationID)
+			}
+			if devErr == nil {
+				signedDoc, _, signErr := uc.zatcaUC.SignPosTransaction(ctx, &header, createdLines, &org, &device)
+				if signErr == nil && signedDoc != nil {
+					qrCode = signedDoc.QRCode
+					zatcaUUID = signedDoc.ZatcaUUID
+
+					var metaMap map[string]interface{}
+					if len(header.Metadata) > 0 {
+						_ = json.Unmarshal(header.Metadata, &metaMap)
+					}
+					if metaMap == nil {
+						metaMap = make(map[string]interface{})
+					}
+					metaMap["qr_code_base64"] = signedDoc.QRCode
+					metaMap["icv"] = signedDoc.ICV
+					metaMap["zatca_uuid"] = signedDoc.ZatcaUUID
+					if updatedMeta, mErr := json.Marshal(metaMap); mErr == nil {
+						header.Metadata = updatedMeta
+						if uErr := uc.repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
+							ID:       header.ID,
+							Metadata: updatedMeta,
+						}); uErr != nil {
+							fmt.Printf("Warning: failed to persist pos_transaction metadata: %v\n", uErr)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
+
+	return utils.NewResponse(utils.CodeCreated, "transaction created", CreateTransactionOutput{
 		PosTransaction: header,
 		Lines:          createdLines,
+		QRCode:         qrCode,
+		ZatcaUUID:      zatcaUUID,
 	})
-
 }
+
+// CreateTransactionOutput is the output response payload for CreateTransaction.
+type CreateTransactionOutput struct {
+	repository.PosTransaction
+	Lines     []repository.PosTransactionLine `json:"lines"`
+	QRCode    string                          `json:"qr_code,omitempty"`
+	ZatcaUUID string                          `json:"zatca_uuid,omitempty"`
+}
+
+type PosTransactionResult = CreateTransactionOutput
 
 type PosTransactionListResponse struct {
 	Data       interface{} `json:"data"`

@@ -58,14 +58,34 @@ type POSPayment struct {
 	PaymentDate   time.Time `json:"payment_date"`
 }
 
-type SyncQueueItem struct {
-	ID            int64           `json:"id"`
-	EntityType    string          `json:"entity_type"`
-	EntityID      int64           `json:"entity_id"`
-	Action        string          `json:"action"`
-	Payload       json.RawMessage `json:"payload"`
-	Status        string          `json:"status"`
-	CorrelationID *string         `json:"correlation_id"`
+type SalesReturn struct {
+	ID                    int64           `json:"id"`
+	ReturnNumber          string          `json:"return_number"`
+	StoreID               int32           `json:"store_id"`
+	CashierID             *int32          `json:"cashier_id"`
+	CustomerID            *int32          `json:"customer_id"`
+	OriginalTransactionID *int32          `json:"original_transaction_id"`
+	ReturnDate            time.Time       `json:"return_date"`
+	ReturnReason          *string         `json:"return_reason"`
+	Status                string          `json:"status"`
+	Subtotal              float64         `json:"subtotal"`
+	TaxAmount             float64         `json:"tax_amount"`
+	TotalRefundAmount     float64         `json:"total_refund_amount"`
+	Metadata              json.RawMessage `json:"metadata"`
+}
+
+type SalesReturnLine struct {
+	ID             int64   `json:"id"`
+	ReturnID       int64   `json:"return_id"`
+	ProductID      int32   `json:"product_id"`
+	ProductSKU     string  `json:"product_sku"`
+	ProductName    string  `json:"product_name"`
+	OriginalLineID *int32  `json:"original_line_id"`
+	Quantity       float64 `json:"quantity"`
+	UnitPrice      float64 `json:"unit_price"`
+	RefundAmount   float64 `json:"refund_amount"`
+	ReturnToStock  bool    `json:"return_to_stock"`
+	LineNumber     int     `json:"line_number"`
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -308,45 +328,91 @@ func (c *Client) MarkTransactionPostedToSAP(ctx context.Context, transactionID i
 	return err
 }
 
-func (c *Client) FetchPendingSyncQueue(ctx context.Context, limit int) ([]SyncQueueItem, error) {
+func (c *Client) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]SalesReturn, error) {
 	query := `
-		SELECT id, entity_type, entity_id, action, payload, status, correlation_id
-		FROM sync_queue
-		WHERE status = 'pending' AND entity_type IN ('pos_transactions', 'pos_payments')
-		ORDER BY priority DESC, created_at ASC
+		SELECT id, return_number, store_id, cashier_id, customer_id,
+		       original_transaction_id, return_date, return_reason, status,
+		       subtotal, tax_amount, total_refund_amount, metadata
+		FROM sales_returns
+		WHERE status = 'completed'
+		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
+		ORDER BY id ASC
 		LIMIT $1
 	`
 	rows, err := c.pool.Query(ctx, query, limit)
 	if err != nil {
-		// Table might not exist yet if goose migration hasn't run
-		return nil, nil
+		return nil, err
 	}
 	defer rows.Close()
 
-	var items []SyncQueueItem
+	var list []SalesReturn
 	for rows.Next() {
-		var item SyncQueueItem
+		var r SalesReturn
 		if err := rows.Scan(
-			&item.ID, &item.EntityType, &item.EntityID, &item.Action,
-			&item.Payload, &item.Status, &item.CorrelationID,
+			&r.ID, &r.ReturnNumber, &r.StoreID, &r.CashierID, &r.CustomerID,
+			&r.OriginalTransactionID, &r.ReturnDate, &r.ReturnReason, &r.Status,
+			&r.Subtotal, &r.TaxAmount, &r.TotalRefundAmount, &r.Metadata,
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, item)
+		list = append(list, r)
 	}
-	return items, rows.Err()
+	return list, rows.Err()
 }
 
-func (c *Client) UpdateSyncQueueStatus(ctx context.Context, id int64, status string, lastErr string) error {
-	var query string
-	if status == "synced" {
-		query = `UPDATE sync_queue SET status = $2, synced_at = NOW() WHERE id = $1`
-		_, err := c.pool.Exec(ctx, query, id, status)
-		return err
+func (c *Client) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]SalesReturnLine, error) {
+	query := `
+		SELECT l.id, l.return_id, l.product_id, p.sku, p.name,
+		       l.original_line_id, l.quantity, l.unit_price, l.refund_amount,
+		       l.return_to_stock, COALESCE(l.line_number, 0)
+		FROM sales_return_lines l
+		JOIN products p ON p.id = l.product_id
+		WHERE l.return_id = $1
+		ORDER BY l.id ASC
+	`
+	rows, err := c.pool.Query(ctx, query, returnID)
+	if err != nil {
+		return nil, err
 	}
-	query = `UPDATE sync_queue SET status = $2, retry_count = retry_count + 1, last_error = $3 WHERE id = $1`
-	_, err := c.pool.Exec(ctx, query, id, status, lastErr)
+	defer rows.Close()
+
+	var lines []SalesReturnLine
+	for rows.Next() {
+		var l SalesReturnLine
+		if err := rows.Scan(
+			&l.ID, &l.ReturnID, &l.ProductID, &l.ProductSKU, &l.ProductName,
+			&l.OriginalLineID, &l.Quantity, &l.UnitPrice, &l.RefundAmount,
+			&l.ReturnToStock, &l.LineNumber,
+		); err != nil {
+			return nil, err
+		}
+		lines = append(lines, l)
+	}
+	return lines, rows.Err()
+}
+
+func (c *Client) MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error {
+	metaPatch, _ := json.Marshal(map[string]any{
+		"sap_doc_entry":  sapDocEntry,
+		"sap_doc_num":    sapDocNum,
+		"sap_posted_at":  time.Now().Format(time.RFC3339),
+		"sap_sync_state": "synced",
+	})
+
+	query := `
+		UPDATE sales_returns
+		SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+		WHERE id = $1
+	`
+	_, err := c.pool.Exec(ctx, query, returnID, metaPatch)
 	return err
+}
+
+func (c *Client) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error) {
+	var docEntry int
+	query := `SELECT COALESCE(NULLIF(metadata->>'sap_doc_entry', '')::int, 0) FROM pos_transactions WHERE id = $1`
+	err := c.pool.QueryRow(ctx, query, originalTxID).Scan(&docEntry)
+	return docEntry, err
 }
 
 // FetchCustomerSAPCode looks up the SAP CardCode for a given Nembus customer ID.

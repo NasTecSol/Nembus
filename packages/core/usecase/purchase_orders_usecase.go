@@ -28,7 +28,7 @@ type PurchaseOrderLineInput struct {
 type CreatePurchaseOrderInput struct {
 	OrganizationID       int32                    `json:"organization_id"`
 	PoNumber             *string                  `json:"po_number,omitempty"`
-	SupplierID           int32                    `json:"supplier_id"` // maps to partners_id
+	SupplierID           int32                    `json:"supplier_id"` // maps to partner_id
 	StoreID              int32                    `json:"store_id"`
 	PoDate               *string                  `json:"po_date,omitempty"`
 	ExpectedDeliveryDate *string                  `json:"expected_delivery_date,omitempty"`
@@ -368,7 +368,7 @@ func (uc *PurchaseOrdersUseCase) CreatePurchaseOrder(ctx context.Context, input 
 	poRow, err := uc.repo.CreatePurchaseOrder(ctx, repository.CreatePurchaseOrderParams{
 		OrganizationID:       input.OrganizationID,
 		PoNumber:             poNumber,
-		PartnersID:           input.SupplierID,
+		PartnerID:            input.SupplierID,
 		StoreID:              input.StoreID,
 		PoDate:               utils.TimeToPgDate(&poDate),
 		ExpectedDeliveryDate: utils.TimeToPgDate(expectedDeliveryDate),
@@ -499,7 +499,7 @@ func (uc *PurchaseOrdersUseCase) GetPurchaseOrder(ctx context.Context, id int32)
 		ID:                               poRow.ID,
 		OrganizationID:                   poRow.OrganizationID,
 		PoNumber:                         poRow.PoNumber,
-		SupplierID:                       poRow.PartnersID,
+		SupplierID:                       poRow.PartnerID,
 		SupplierName:                     poRow.PartnerName,
 		SupplierCode:                     poRow.PartnerCode,
 		StoreID:                          poRow.StoreID,
@@ -617,7 +617,7 @@ func (uc *PurchaseOrdersUseCase) ListPurchaseOrders(ctx context.Context, filter 
 			ID:                   r.ID,
 			OrganizationID:       r.OrganizationID,
 			PoNumber:             r.PoNumber,
-			SupplierID:           r.PartnersID,
+			SupplierID:           r.PartnerID,
 			SupplierName:         r.PartnerName,
 			SupplierCode:         r.PartnerCode,
 			StoreID:              r.StoreID,
@@ -668,7 +668,7 @@ func (uc *PurchaseOrdersUseCase) UpdatePurchaseOrder(ctx context.Context, id int
 		return utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("cannot update purchase order with status '%s'; only 'draft' orders can be edited", currentStatus), nil)
 	}
 
-	supplierID := existing.PartnersID
+	supplierID := existing.PartnerID
 	if input.SupplierID != nil && *input.SupplierID > 0 {
 		supplierID = *input.SupplierID
 	}
@@ -805,7 +805,7 @@ func (uc *PurchaseOrdersUseCase) UpdatePurchaseOrder(ctx context.Context, id int
 
 	_, err = uc.repo.UpdatePurchaseOrderHeader(ctx, repository.UpdatePurchaseOrderHeaderParams{
 		ID:                   id,
-		PartnersID:           supplierID,
+		PartnerID:            supplierID,
 		StoreID:              storeID,
 		PoDate:               poDate,
 		ExpectedDeliveryDate: expectedDeliveryDate,
@@ -1179,7 +1179,7 @@ func (uc *PurchaseOrdersUseCase) recalculatePOTotals(ctx context.Context, poID i
 
 	_, err = uc.repo.UpdatePurchaseOrderHeader(ctx, repository.UpdatePurchaseOrderHeaderParams{
 		ID:                   poID,
-		PartnersID:           po.PartnersID,
+		PartnerID:            po.PartnerID,
 		StoreID:              po.StoreID,
 		PoDate:               po.PoDate,
 		ExpectedDeliveryDate: po.ExpectedDeliveryDate,

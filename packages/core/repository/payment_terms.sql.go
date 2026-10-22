@@ -35,7 +35,7 @@ INSERT INTO payment_terms (
     discount_percentage, late_fee_percentage, is_active
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8
-) RETURNING id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at
+) RETURNING id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at, updated_at
 `
 
 type CreatePaymentTermParams struct {
@@ -72,6 +72,7 @@ func (q *Queries) CreatePaymentTerm(ctx context.Context, arg CreatePaymentTermPa
 		&i.LateFeePercentage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -86,7 +87,7 @@ func (q *Queries) DeletePaymentTerm(ctx context.Context, id int32) error {
 }
 
 const getPaymentTerm = `-- name: GetPaymentTerm :one
-SELECT id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at FROM payment_terms 
+SELECT id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at, updated_at FROM payment_terms 
 WHERE id = $1 LIMIT 1
 `
 
@@ -104,12 +105,13 @@ func (q *Queries) GetPaymentTerm(ctx context.Context, id int32) (PaymentTerm, er
 		&i.LateFeePercentage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getPaymentTermByCode = `-- name: GetPaymentTermByCode :one
-SELECT id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at FROM payment_terms 
+SELECT id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at, updated_at FROM payment_terms 
 WHERE organization_id = $1 AND code = $2 LIMIT 1
 `
 
@@ -132,12 +134,13 @@ func (q *Queries) GetPaymentTermByCode(ctx context.Context, arg GetPaymentTermBy
 		&i.LateFeePercentage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listPaymentTerms = `-- name: ListPaymentTerms :many
-SELECT id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at FROM payment_terms
+SELECT id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at, updated_at FROM payment_terms
 WHERE organization_id = $1
   AND ($4::boolean IS NULL OR is_active = $4)
 ORDER BY name
@@ -176,6 +179,7 @@ func (q *Queries) ListPaymentTerms(ctx context.Context, arg ListPaymentTermsPara
 			&i.LateFeePercentage,
 			&i.IsActive,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -198,7 +202,7 @@ SET
     late_fee_percentage = COALESCE($6, late_fee_percentage),
     is_active = COALESCE($7, is_active)
 WHERE id = $8
-RETURNING id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at
+RETURNING id, organization_id, code, name, due_days, discount_days, discount_percentage, late_fee_percentage, is_active, created_at, updated_at
 `
 
 type UpdatePaymentTermParams struct {
@@ -235,6 +239,7 @@ func (q *Queries) UpdatePaymentTerm(ctx context.Context, arg UpdatePaymentTermPa
 		&i.LateFeePercentage,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

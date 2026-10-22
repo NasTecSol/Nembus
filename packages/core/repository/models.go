@@ -678,6 +678,7 @@ type Cashier struct {
 	IsActive      pgtype.Bool      `json:"is_active"`
 	Metadata      json.RawMessage  `json:"metadata"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 }
 
 type CashierSession struct {
@@ -1350,6 +1351,7 @@ type PartnerAddress struct {
 	CountryCode pgtype.Text      `json:"country_code"`
 	IsDefault   pgtype.Bool      `json:"is_default"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
 type PartnerContact struct {
@@ -1375,6 +1377,7 @@ type PaymentTerm struct {
 	LateFeePercentage  pgtype.Numeric   `json:"late_fee_percentage"`
 	IsActive           pgtype.Bool      `json:"is_active"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 }
 
 type Permission struct {
@@ -1688,7 +1691,7 @@ type PurchaseOrder struct {
 	ID                   int32            `json:"id"`
 	OrganizationID       int32            `json:"organization_id"`
 	PoNumber             string           `json:"po_number"`
-	PartnersID           int32            `json:"partners_id"`
+	PartnerID            int32            `json:"partner_id"`
 	StoreID              int32            `json:"store_id"`
 	PoDate               pgtype.Date      `json:"po_date"`
 	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`

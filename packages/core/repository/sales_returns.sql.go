@@ -330,3 +330,17 @@ func (q *Queries) UpdatePOSTransactionStatus(ctx context.Context, arg UpdatePOST
 	_, err := q.db.Exec(ctx, updatePOSTransactionStatus, arg.ID, arg.Status)
 	return err
 }
+
+const updateSalesReturnMetadata = `-- name: UpdateSalesReturnMetadata :exec
+UPDATE sales_returns SET metadata = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+`
+
+type UpdateSalesReturnMetadataParams struct {
+	ID       int32           `json:"id"`
+	Metadata json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) UpdateSalesReturnMetadata(ctx context.Context, arg UpdateSalesReturnMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateSalesReturnMetadata, arg.ID, arg.Metadata)
+	return err
+}

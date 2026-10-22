@@ -844,7 +844,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 			}
 			metaBytes, _ := json.Marshal(po.Metadata)
 
-			// A16: purchase_orders.partners_id (NOT NULL) references
+			// A16: purchase_orders.partner_id (NOT NULL) references
 			// business_partners — the legacy `suppliers` table no longer exists.
 			// Fail the row with a clear error instead of silently binding an
 			// arbitrary partner.
@@ -861,7 +861,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 			q := `
 			INSERT INTO purchase_orders (
-				organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date,
+				organization_id, po_number, partner_id, store_id, po_date, expected_delivery_date,
 				status, subtotal, discount_amount, tax_amount, total_amount, metadata
 			)
 			SELECT

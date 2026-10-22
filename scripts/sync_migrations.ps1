@@ -28,6 +28,17 @@ if (-not (Test-Path $ClientMigrations)) {
     New-Item -ItemType Directory -Path $ClientMigrations -Force | Out-Null
 }
 
+# Ensure Core migration SQL files have Unix LF line endings and UTF-8 without BOM
+if (Test-Path $CoreMigrations) {
+    Get-ChildItem -Path $CoreMigrations -Filter "*.sql" | ForEach-Object {
+        $c = [System.IO.File]::ReadAllText($_.FullName)
+        if ($c.Contains("`r")) {
+            $c = $c -replace "`r`n", "`n" -replace "`r", "`n"
+            [System.IO.File]::WriteAllText($_.FullName, $c, $Utf8NoBom)
+        }
+    }
+}
+
 # 2. Sync Core migrations to apps/cloud-server/migrations (Atlas format)
 if (Test-Path $CoreMigrations) {
     Write-Host "Syncing Core migrations -> apps/cloud-server/migrations..." -ForegroundColor Yellow
@@ -53,8 +64,11 @@ if (Test-Path $CoreMigrations) {
         $targetPath = Join-Path $ClientMigrations $targetName
         $content = [System.IO.File]::ReadAllText($_.FullName)
 
+        # Normalize to Unix LF line endings
+        $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
+
         # Wrap PL/pgSQL CREATE FUNCTION blocks with -- +goose StatementBegin and -- +goose StatementEnd
-        $funcPattern = '(?ms)(CREATE (?:OR REPLACE )?FUNCTION "public"\."[^"]+" \([^\)]*\) [^\$]*?\$\$.*?\$\$;)'
+        $funcPattern = '(?ms)(CREATE (?:OR REPLACE )?FUNCTION (?:(?:"public"|public)\.)?"?[^"\(]+"?[ ]*\([^\)]*\)[^\$]*?\$\$.*?\$\$;)'
         $content = [System.Text.RegularExpressions.Regex]::Replace($content, $funcPattern, "-- +goose StatementBegin`n`$1`n-- +goose StatementEnd")
 
         # Add Goose Up header if not present
@@ -62,8 +76,21 @@ if (Test-Path $CoreMigrations) {
             $content = "-- +goose Up`n" + $content
         }
 
+        # Ensure strict Unix LF line endings across the entire file
+        $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
+
         # Write without UTF-8 BOM so Goose parses '-- +goose Up' cleanly
         [System.IO.File]::WriteAllText($targetPath, $content, $Utf8NoBom)
+    }
+
+    # Also ensure POS client extensions use Unix LF without BOM
+    $posExtPath = Join-Path $ClientMigrations "99999999999999_pos_extensions.sql"
+    if (Test-Path $posExtPath) {
+        $extContent = [System.IO.File]::ReadAllText($posExtPath)
+        if ($extContent.Contains("`r")) {
+            $extContent = $extContent -replace "`r`n", "`n" -replace "`r", "`n"
+            [System.IO.File]::WriteAllText($posExtPath, $extContent, $Utf8NoBom)
+        }
     }
 }
 
@@ -73,10 +100,18 @@ if (Get-Command atlas -ErrorAction SilentlyContinue) {
     Push-Location "$CoreDir"
     atlas migrate hash --env local | Out-Null
     Pop-Location
-    # Ensure recalculated atlas.sum is copied to apps/cloud-server/migrations
-    if (Test-Path "$CoreMigrations\atlas.sum") {
-        Copy-Item -Path "$CoreMigrations\atlas.sum" -Destination "$ServerMigrations\atlas.sum" -Force
+} else {
+    Write-Host "atlas command not found in PATH, skipping atlas migrate hash execution." -ForegroundColor Gray
+}
+
+# Ensure atlas.sum is normalized to Unix LF and copied to apps/cloud-server/migrations
+if (Test-Path "$CoreMigrations\atlas.sum") {
+    $sumContent = [System.IO.File]::ReadAllText("$CoreMigrations\atlas.sum")
+    if ($sumContent.Contains("`r")) {
+        $sumContent = $sumContent -replace "`r`n", "`n" -replace "`r", "`n"
+        [System.IO.File]::WriteAllText("$CoreMigrations\atlas.sum", $sumContent, $Utf8NoBom)
     }
+    Copy-Item -Path "$CoreMigrations\atlas.sum" -Destination "$ServerMigrations\atlas.sum" -Force
 }
 
 # 5. Run sqlc generate in packages/core and apps/cloud-server if sqlc is installed

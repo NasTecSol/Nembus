@@ -154,7 +154,8 @@ CREATE TABLE product_prices (
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_product_prices_product_price_list UNIQUE (product_id, price_list_id)
 );
 
 CREATE TABLE product_uom_conversions (

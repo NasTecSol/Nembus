@@ -294,6 +294,12 @@ DROP TRIGGER IF EXISTS trg_business_partners_updated_at ON business_partners;
 CREATE TRIGGER trg_business_partners_updated_at BEFORE UPDATE ON business_partners FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS trg_bp_price_contracts_updated_at ON bp_price_contracts;
 CREATE TRIGGER trg_bp_price_contracts_updated_at BEFORE UPDATE ON bp_price_contracts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_payment_terms_updated_at ON payment_terms;
+CREATE TRIGGER update_payment_terms_updated_at BEFORE UPDATE ON payment_terms FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_partner_addresses_updated_at ON partner_addresses;
+CREATE TRIGGER update_partner_addresses_updated_at BEFORE UPDATE ON partner_addresses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_cashiers_updated_at ON cashiers;
+CREATE TRIGGER update_cashiers_updated_at BEFORE UPDATE ON cashiers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Restaurant triggers
 DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;
@@ -494,7 +500,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_customer_type ON customers(customer_typ
 
 -- Purchase Orders
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_organization_id ON purchase_orders(organization_id);
-CREATE INDEX IF NOT EXISTS idx_purchase_orders_partners_id ON purchase_orders(partners_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_partner_id ON purchase_orders(partner_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_store_id ON purchase_orders(store_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_po_number ON purchase_orders(po_number);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
@@ -1092,7 +1098,7 @@ SELECT
     po.created_at
 FROM purchase_orders po
 JOIN stores s    ON s.id = po.store_id
-JOIN business_partners sup ON sup.id = po.partners_id
+JOIN business_partners sup ON sup.id = po.partner_id
 LEFT JOIN users u_created  ON u_created.id  = po.created_by
 LEFT JOIN users u_approved ON u_approved.id = po.approved_by
 WHERE po.status <> 'received' AND po.status <> 'cancelled' AND po.status <> 'closed'
@@ -1165,7 +1171,7 @@ SELECT
     po.created_at
 FROM purchase_orders po
 JOIN organizations org ON org.id = po.organization_id
-JOIN business_partners sup ON sup.id = po.partners_id
+JOIN business_partners sup ON sup.id = po.partner_id
 JOIN stores        s   ON s.id   = po.store_id
 WHERE po.status = 'partially_received' OR po.status = 'received' OR po.status = 'approved'
 ORDER BY po.po_date;
@@ -4283,10 +4289,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Disabled sales return line trigger to prevent double-restocking.
+-- Restocking and movement tracking is managed directly in Go application logic (SalesReturnUseCase).
 DROP TRIGGER IF EXISTS trg_process_sales_return ON sales_return_lines;
-CREATE TRIGGER trg_process_sales_return
-AFTER INSERT ON sales_return_lines
-FOR EACH ROW EXECUTE FUNCTION fn_trigger_process_sales_return();
 
 -- Helper function to calculate remaining returnable quantity for a pos_transaction_line
 CREATE OR REPLACE FUNCTION fn_get_returnable_quantity(p_original_line_id INT)
@@ -4569,7 +4574,7 @@ CREATE OR REPLACE VIEW vw_supplier_aging_report AS
 WITH po_balances AS (
     SELECT
         po.id AS po_id,
-        po.partners_id,
+        po.partner_id,
         po.organization_id,
         COALESCE(po.expected_delivery_date, (po.po_date + INTERVAL '30 days')::DATE) AS due_date,
         (
@@ -4597,7 +4602,7 @@ SELECT
     MAX(pb.due_date) AS latest_due_date
 FROM business_partners bp
 LEFT JOIN po_balances pb
-    ON pb.partners_id = bp.id
+    ON pb.partner_id = bp.id
     AND pb.balance_due > 0
 WHERE bp.is_active = true AND bp.partner_role = 'supplier'
 GROUP BY

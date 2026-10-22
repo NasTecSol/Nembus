@@ -17,6 +17,9 @@ type SAPDocumentLine struct {
 	TaxCode         string   `json:"TaxCode,omitempty"`
 	UoMEntry        *int     `json:"UoMEntry,omitempty"`
 	WarehouseCode   string   `json:"WarehouseCode,omitempty"`
+	BaseEntry       *int     `json:"BaseEntry,omitempty"`
+	BaseLine        *int     `json:"BaseLine,omitempty"`
+	BaseType        *int     `json:"BaseType,omitempty"`
 }
 
 type SAPInvoiceRequest struct {
@@ -111,6 +114,25 @@ func (c *Client) PostIncomingPayment(ctx context.Context, payment *SAPPaymentReq
 	var resp SAPPaymentResponse
 	if err := c.DoRequest(ctx, "POST", "IncomingPayments", payment, &resp); err != nil {
 		return nil, fmt.Errorf("failed to post payment to SAP: %w", err)
+	}
+
+	return &resp, nil
+}
+
+func (c *Client) PostCreditMemo(ctx context.Context, memo *SAPInvoiceRequest) (*SAPInvoiceResponse, error) {
+	if memo.DocDate == "" {
+		memo.DocDate = time.Now().Format("2006-01-02")
+	}
+	if memo.DocDueDate == "" {
+		memo.DocDueDate = memo.DocDate
+	}
+	if memo.TaxDate == "" {
+		memo.TaxDate = memo.DocDate
+	}
+
+	var resp SAPInvoiceResponse
+	if err := c.DoRequest(ctx, "POST", "CreditNotes", memo, &resp); err != nil {
+		return nil, fmt.Errorf("failed to post credit memo to SAP: %w", err)
 	}
 
 	return &resp, nil

@@ -29,8 +29,8 @@ generate-core:
 	@cd packages/core && sqlc generate
 
 sync-core:
-	@echo "==> Syncing core schema & queries into pos-client..."
-	@cd apps/pos-client && powershell -ExecutionPolicy Bypass -File scripts/sync_core.ps1
+	@echo "==> Syncing core schema & migrations..."
+	@powershell -ExecutionPolicy Bypass -File scripts/sync_migrations.ps1
 
 # Build & Run Commands
 build-server:
