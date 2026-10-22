@@ -20,7 +20,7 @@ build_errors.txt
 scratch/
 *.db-shm
 *.db-wal
-
+.agents
 # Go & Build Artifacts
 *.o
 *.a
