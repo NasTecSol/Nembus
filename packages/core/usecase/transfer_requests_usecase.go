@@ -96,7 +96,7 @@ type TransferRequestOutput struct {
 	Metadata             json.RawMessage             `json:"metadata"`
 	CreatedAt            pgtype.Timestamp            `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp            `json:"updated_at"`
-	Items                []TransferRequestItemOutput `json:"items,omitempty"`
+	Items                []TransferRequestItemOutput `json:"items"`
 }
 
 type TransferRequestsUseCase struct {
@@ -306,7 +306,43 @@ func (uc *TransferRequestsUseCase) ListTransferRequestsByOrganization(ctx contex
 	}
 
 	out := make([]TransferRequestOutput, len(rows))
+	requestIDs := make([]int32, len(rows))
 	for i, r := range rows {
+		requestIDs[i] = r.ID
+	}
+	itemsByRequest := make(map[int32][]TransferRequestItemOutput, len(rows))
+	if len(requestIDs) > 0 {
+		itemRows, err := uc.repo.ListTransferRequestItemsByRequestIDs(ctx, requestIDs)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		for _, r := range itemRows {
+			itemsByRequest[r.TransferRequestID] = append(itemsByRequest[r.TransferRequestID], TransferRequestItemOutput{
+				ID:                r.ID,
+				TransferRequestID: r.TransferRequestID,
+				ProductID:         r.ProductID,
+				ProductName:       pgtype.Text{String: r.ProductName, Valid: true},
+				ProductSKU:        pgtype.Text{String: r.ProductSku, Valid: true},
+				ProductVariantID:  r.ProductVariantID,
+				FromLocationID:    r.FromLocationID,
+				ToLocationID:      r.ToLocationID,
+				RequestedQuantity: r.RequestedQuantity,
+				ApprovedQuantity:  r.ApprovedQuantity,
+				ShippedQuantity:   r.ShippedQuantity,
+				ReceivedQuantity:  r.ReceivedQuantity,
+				UomID:             r.UomID,
+				UomName:           r.UomName,
+				BatchNumber:       r.BatchNumber,
+				Notes:             r.Notes,
+				CreatedAt:         r.CreatedAt,
+			})
+		}
+	}
+	for i, r := range rows {
+		items := itemsByRequest[r.ID]
+		if items == nil {
+			items = make([]TransferRequestItemOutput, 0)
+		}
 		out[i] = TransferRequestOutput{
 			ID:                   r.ID,
 			OrganizationID:       r.OrganizationID,
@@ -318,7 +354,9 @@ func (uc *TransferRequestsUseCase) ListTransferRequestsByOrganization(ctx contex
 			Status:               r.Status,
 			IsStockReserved:      r.IsStockReserved,
 			RequestedBy:          r.RequestedBy,
+			RequestedByName:      r.RequestedByName,
 			ApprovedBy:           r.ApprovedBy,
+			ApprovedByName:       r.ApprovedByName,
 			ShippedBy:            r.ShippedBy,
 			ReceivedBy:           r.ReceivedBy,
 			RequestDate:          r.RequestDate,
@@ -329,6 +367,7 @@ func (uc *TransferRequestsUseCase) ListTransferRequestsByOrganization(ctx contex
 			Metadata:             utils.BytesToJSONRawMessage(r.Metadata),
 			CreatedAt:            r.CreatedAt,
 			UpdatedAt:            r.UpdatedAt,
+			Items:                items,
 		}
 	}
 
