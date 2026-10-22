@@ -875,3 +875,4 @@ collection.item.forEach(folder => {
 const outPath = path.join(__dirname, 'Nembus-API.postman_collection.json');
 fs.writeFileSync(outPath, JSON.stringify(collection, null, 2), 'utf8');
 console.log('Written:', outPath);
+console.log('API folders included:', collection.item.length);
