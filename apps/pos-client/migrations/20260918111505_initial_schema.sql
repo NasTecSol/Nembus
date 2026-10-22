@@ -6804,3 +6804,84 @@ CREATE TABLE approval_request_logs (
     metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =====================================================
+-- REQUEST FOR QUOTATIONS (RFQ) & SUPPLIER RESPONSES
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS rfqs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    rfq_number VARCHAR(50) UNIQUE NOT NULL,
+    vendor_name VARCHAR(255) NOT NULL DEFAULT '',
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    token VARCHAR(255) UNIQUE NOT NULL,
+    token_valid_from TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    token_expires_at TIMESTAMP NOT NULL,
+    invited_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL,
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfq_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfq_id UUID NOT NULL REFERENCES rfqs(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    item_name VARCHAR(255) NOT NULL,
+    item_description TEXT,
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    target_price DECIMAL(15,4),
+    line_number INTEGER NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfq_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfq_id UUID NOT NULL REFERENCES rfqs(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL,
+    is_registered_supplier BOOLEAN NOT NULL DEFAULT false,
+    supplier_name VARCHAR(255) NOT NULL,
+    supplier_email VARCHAR(255),
+    supplier_phone VARCHAR(50),
+    response_status VARCHAR(50) NOT NULL DEFAULT 'submitted',
+    total_quoted_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    valid_until DATE,
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfq_response_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfq_response_id UUID NOT NULL REFERENCES rfq_responses(id) ON DELETE CASCADE,
+    rfq_item_id UUID REFERENCES rfq_items(id) ON DELETE SET NULL,
+    uom_id INTEGER NOT NULL REFERENCES units_of_measure(id) ON DELETE RESTRICT,
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    unit_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    delivery_lead_time_days INTEGER,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rfqs_organization_id ON rfqs(organization_id);
+CREATE INDEX IF NOT EXISTS idx_rfqs_status ON rfqs(status);
+CREATE INDEX IF NOT EXISTS idx_rfqs_token ON rfqs(token);
+CREATE INDEX IF NOT EXISTS idx_rfqs_token_expires_at ON rfqs(token_expires_at);
+CREATE INDEX IF NOT EXISTS idx_rfq_items_rfq_id ON rfq_items(rfq_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_responses_rfq_id ON rfq_responses(rfq_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_responses_partner_id ON rfq_responses(partner_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_responses_is_registered ON rfq_responses(is_registered_supplier);
+CREATE INDEX IF NOT EXISTS idx_rfq_response_items_response_id ON rfq_response_items(rfq_response_id);
