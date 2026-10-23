@@ -32153,7 +32153,9 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get paginated list of all stock movements
+      description: Get paginated stock movements, optionally filtered by a reference
+        type from /api/stock-movements/reference-types. Pagination totals reflect
+        the selected reference type.
       parameters:
       - description: Tenant identifier
         in: header
@@ -32175,6 +32177,11 @@ paths:
         in: query
         name: limit
         type: integer
+      - description: Reference type (omit for all types)
+        example: sales_order
+        in: query
+        name: reference_type
+        type: string
       produces:
       - application/json
       responses:
@@ -32339,6 +32346,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Update stock movement status
+      tags:
+      - stock-movements
+  /api/stock-movements/by-reference-type:
+    get:
+      description: Return stock movements matching the required reference_type, with
+        total_count, page, limit and total_pages for the matching records. Unknown
+        reference types return an empty list.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Reference type from /api/stock-movements/reference-types
+        example: sales_order
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: Records per page (maximum 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movements by reference type
       tags:
       - stock-movements
   /api/stock-movements/daterange:
@@ -32522,6 +32585,105 @@ paths:
       security:
       - BearerAuth: []
       summary: List stock movements for product in date range
+      tags:
+      - stock-movements
+  /api/stock-movements/reference-type:
+    get:
+      description: Return stock movements matching the required reference_type, with
+        total_count, page, limit and total_pages for the matching records. Unknown
+        reference types return an empty list.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Reference type from /api/stock-movements/reference-types
+        example: sales_order
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: Records per page (maximum 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movements by reference type
+      tags:
+      - stock-movements
+  /api/stock-movements/reference-types:
+    get:
+      description: Return sorted distinct nonempty reference types present in the
+        tenant's stock movements. Use a returned value as reference_type when listing
+        stock movements.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movement reference types
       tags:
       - stock-movements
   /api/storage-locations:

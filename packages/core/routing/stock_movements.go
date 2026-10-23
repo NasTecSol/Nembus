@@ -13,6 +13,9 @@ func RegisterStockMovementRoutes(r *gin.RouterGroup, h *handler.StockMovementHan
 		// Stock movement operations
 		stock.POST("", h.CreateStockMovement)
 		stock.GET("", h.ListStockMovements)
+		stock.GET("/reference-types", h.ListStockMovementReferenceTypes)
+		stock.GET("/reference-type", h.ListStockMovementsByReferenceType)
+		stock.GET("/by-reference-type", h.ListStockMovementsByReferenceType)
 		stock.GET("/:id", h.GetStockMovement)
 		stock.PATCH("/:id/status", h.UpdateStockMovementStatus)
 
