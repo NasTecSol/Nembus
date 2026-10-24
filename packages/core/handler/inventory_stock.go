@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -38,7 +40,7 @@ type CreateInventoryStockRequest struct {
 	StoreID           int32                  `json:"store_id" binding:"required"`
 	StorageLocationID *int32                 `json:"storage_location_id,omitempty"`
 	QuantityOnHand    *string                `json:"quantity_on_hand,omitempty"`
-	QuantityAllocated  *string                `json:"quantity_allocated,omitempty"`
+	QuantityAllocated *string                `json:"quantity_allocated,omitempty"`
 	QuantityAvailable *string                `json:"quantity_available,omitempty"`
 	QuantityOnOrder   *string                `json:"quantity_on_order,omitempty"`
 	QuantityInTransit *string                `json:"quantity_in_transit,omitempty"`
@@ -614,4 +616,93 @@ func (h *InventoryStockHandler) GetInventoryStockSummary(c *gin.Context) {
 	storeID := c.Param("store_id")
 	resp := h.useCase.GetInventoryStockSummary(c.Request.Context(), storeID)
 	c.JSON(resp.StatusCode, resp)
+}
+
+// InventoryStoreTotals documents totals for one store. Values use on-hand base units.
+type InventoryStoreTotals struct {
+	StoreID               int32   `json:"store_id"`
+	StoreName             string  `json:"store_name"`
+	ProductCount          int64   `json:"product_count"`
+	TotalUnits            float64 `json:"total_units"`
+	TotalAvailableUnits   float64 `json:"total_available_units"`
+	TotalCostValue        float64 `json:"total_cost_value"`
+	TotalSaleValue        float64 `json:"total_sale_value"`
+	UnitsMissingCostPrice float64 `json:"units_missing_cost_price"`
+	UnitsMissingSalePrice float64 `json:"units_missing_sale_price"`
+}
+
+// InventoryTotalsData documents the JSON produced with PostgreSQL decimal arithmetic.
+type InventoryTotalsData struct {
+	OrganizationID        int32                  `json:"organization_id"`
+	StoreID               *int32                 `json:"store_id"`
+	StorageLocationID     *int32                 `json:"storage_location_id"`
+	PriceListID           int32                  `json:"price_list_id"`
+	CurrencyCode          string                 `json:"currency_code"`
+	QuantityBasis         string                 `json:"quantity_basis"`
+	ProductCount          int64                  `json:"product_count"`
+	StoreCount            int64                  `json:"store_count"`
+	TotalUnits            float64                `json:"total_units"`
+	TotalAvailableUnits   float64                `json:"total_available_units"`
+	TotalCostValue        float64                `json:"total_cost_value"`
+	TotalSaleValue        float64                `json:"total_sale_value"`
+	UnitsMissingCostPrice float64                `json:"units_missing_cost_price"`
+	UnitsMissingSalePrice float64                `json:"units_missing_sale_price"`
+	Stores                []InventoryStoreTotals `json:"stores"`
+}
+
+// GetInventoryTotals handles GET /api/inventory-stock/totals.
+// @Summary      Inventory units and valuation across stores
+// @Description  Returns combined totals and per-store totals for inventory-tracked products in one organization. total_units sums quantity_on_hand in base units, including allocated stock and signed negative quantities; available units are returned separately. Cost value is on-hand quantity times current products.cost_price. Sale value is on-hand quantity times one currently active base-UOM (or unspecified-UOM) unit price from the selected price list; variant-specific prices take precedence over product prices. Quantity tiers must apply to one unit. Prices are used as stored, without tax adjustments or discounts. Missing costs/prices contribute zero value and are reported as absolute units_missing_*_price. Price List 01 (ID 1) is the default. No pagination: totals cover every matching inventory row. Omit store/location for all stores; specify store_id for one store; specify both store_id and storage_location_id for one location. Empty stores return zero totals. The price list must use the organization's currency. On databases without products.cost_price, costs are reported as missing.
+// @Tags         inventory-stock
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id header string true "Tenant identifier"
+// @Param        organization_id query int true "Organization ID" minimum(1)
+// @Param        store_id query int false "Store ID (omit or 0 for all stores)" minimum(0)
+// @Param        storage_location_id query int false "Storage location ID; requires store_id (omit or 0 for all locations)" minimum(0)
+// @Param        price_list_id query int false "Selling price list" default(1) minimum(1)
+// @Success      200 {object} SuccessResponse{data=InventoryTotalsData}
+// @Failure      400 {object} ErrorResponse
+// @Failure      401 {object} ErrorResponse
+// @Failure      404 {object} ErrorResponse
+// @Failure      500 {object} ErrorResponse
+// @Router       /api/inventory-stock/totals [get]
+func (h *InventoryStockHandler) GetInventoryTotals(c *gin.Context) {
+	params, err := parseInventoryTotalsParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	uc := usecase.NewInventoryStockUseCase()
+	uc.SetRepository(repo)
+	resp := uc.GetInventoryTotals(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+func parseInventoryTotalsParams(c *gin.Context) (repository.GetInventoryTotalsParams, error) {
+	var params repository.GetInventoryTotalsParams
+	for _, field := range []struct {
+		name, fallback string
+		minimum        int64
+		dest           *int32
+	}{
+		{"organization_id", "", 1, &params.OrganizationID},
+		{"store_id", "0", 0, &params.StoreID},
+		{"storage_location_id", "0", 0, &params.StorageLocationID},
+		{"price_list_id", "1", 1, &params.PriceListID},
+	} {
+		value, err := strconv.ParseInt(c.DefaultQuery(field.name, field.fallback), 10, 32)
+		if err != nil || value < field.minimum {
+			return params, fmt.Errorf("invalid or missing %s", field.name)
+		}
+		*field.dest = int32(value)
+	}
+	if params.StorageLocationID != 0 && params.StoreID == 0 {
+		return params, fmt.Errorf("store_id is required with storage_location_id")
+	}
+	return params, nil
 }

@@ -12722,6 +12722,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/inventory-stock/totals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns combined totals and per-store totals for inventory-tracked products in one organization. total_units sums quantity_on_hand in base units, including allocated stock and signed negative quantities; available units are returned separately. Cost value is on-hand quantity times current products.cost_price. Sale value is on-hand quantity times one currently active base-UOM (or unspecified-UOM) unit price from the selected price list; variant-specific prices take precedence over product prices. Quantity tiers must apply to one unit. Prices are used as stored, without tax adjustments or discounts. Missing costs/prices contribute zero value and are reported as absolute units_missing_*_price. Price List 01 (ID 1) is the default. No pagination: totals cover every matching inventory row. Omit store/location for all stores; specify store_id for one store; specify both store_id and storage_location_id for one location. Empty stores return zero totals. The price list must use the organization's currency. On databases without products.cost_price, costs are reported as missing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "inventory-stock"
+                ],
+                "summary": "Inventory units and valuation across stores",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Store ID (omit or 0 for all stores)",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Storage location ID; requires store_id (omit or 0 for all locations)",
+                        "name": "storage_location_id",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Selling price list",
+                        "name": "price_list_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/handler.InventoryTotalsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/inventory-stock/upsert": {
             "post": {
                 "security": [
@@ -49972,6 +50072,91 @@ const docTemplate = `{
                 "store_id": {
                     "description": "ID of the store to grant access",
                     "type": "integer"
+                }
+            }
+        },
+        "handler.InventoryStoreTotals": {
+            "type": "object",
+            "properties": {
+                "product_count": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "integer"
+                },
+                "store_name": {
+                    "type": "string"
+                },
+                "total_available_units": {
+                    "type": "number"
+                },
+                "total_cost_value": {
+                    "type": "number"
+                },
+                "total_sale_value": {
+                    "type": "number"
+                },
+                "total_units": {
+                    "type": "number"
+                },
+                "units_missing_cost_price": {
+                    "type": "number"
+                },
+                "units_missing_sale_price": {
+                    "type": "number"
+                }
+            }
+        },
+        "handler.InventoryTotalsData": {
+            "type": "object",
+            "properties": {
+                "currency_code": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer"
+                },
+                "price_list_id": {
+                    "type": "integer"
+                },
+                "product_count": {
+                    "type": "integer"
+                },
+                "quantity_basis": {
+                    "type": "string"
+                },
+                "storage_location_id": {
+                    "type": "integer"
+                },
+                "store_count": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "integer"
+                },
+                "stores": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.InventoryStoreTotals"
+                    }
+                },
+                "total_available_units": {
+                    "type": "number"
+                },
+                "total_cost_value": {
+                    "type": "number"
+                },
+                "total_sale_value": {
+                    "type": "number"
+                },
+                "total_units": {
+                    "type": "number"
+                },
+                "units_missing_cost_price": {
+                    "type": "number"
+                },
+                "units_missing_sale_price": {
+                    "type": "number"
                 }
             }
         },
