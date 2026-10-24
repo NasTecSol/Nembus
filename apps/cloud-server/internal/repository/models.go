@@ -1397,6 +1397,16 @@ type PosPayment struct {
 	Amount           pgtype.Numeric   `json:"amount"`
 	PaymentReference pgtype.Text      `json:"payment_reference"`
 	ReferenceNumber  pgtype.Text      `json:"reference_number"`
+	Status           pgtype.Text      `json:"status"`
+	EcrReferenceID   pgtype.Text      `json:"ecr_reference_id"`
+	Rrn              pgtype.Text      `json:"rrn"`
+	AuthCode         pgtype.Text      `json:"auth_code"`
+	Tid              pgtype.Text      `json:"tid"`
+	Mid              pgtype.Text      `json:"mid"`
+	CardScheme       pgtype.Text      `json:"card_scheme"`
+	MaskedPan        pgtype.Text      `json:"masked_pan"`
+	Aid              pgtype.Text      `json:"aid"`
+	RawResponse      json.RawMessage  `json:"raw_response"`
 	PaymentDate      pgtype.Timestamp `json:"payment_date"`
 	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
@@ -2134,6 +2144,98 @@ type SalesReturnLine struct {
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
+type StagingSapBpAddress struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	OrganizationID int32            `json:"organization_id"`
+	PartnerCode    string           `json:"partner_code"`
+	AddressName    pgtype.Text      `json:"address_name"`
+	AddressType    string           `json:"address_type"`
+	Street         pgtype.Text      `json:"street"`
+	City           pgtype.Text      `json:"city"`
+	State          pgtype.Text      `json:"state"`
+	ZipCode        pgtype.Text      `json:"zip_code"`
+	CountryCode    pgtype.Text      `json:"country_code"`
+	Phone          pgtype.Text      `json:"phone"`
+	IsDefault      pgtype.Bool      `json:"is_default"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapBusinessPartner struct {
+	ID                 int32            `json:"id"`
+	BatchID            string           `json:"batch_id"`
+	OrganizationID     int32            `json:"organization_id"`
+	Code               string           `json:"code"`
+	Name               string           `json:"name"`
+	PartnerType        pgtype.Text      `json:"partner_type"`
+	TaxID              pgtype.Text      `json:"tax_id"`
+	CurrencyCode       pgtype.Text      `json:"currency_code"`
+	Email              pgtype.Text      `json:"email"`
+	Phone              pgtype.Text      `json:"phone"`
+	CreditLimit        pgtype.Numeric   `json:"credit_limit"`
+	OutstandingBalance pgtype.Numeric   `json:"outstanding_balance"`
+	PaymentTermCode    pgtype.Text      `json:"payment_term_code"`
+	IsActive           pgtype.Bool      `json:"is_active"`
+	Metadata           json.RawMessage  `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapGoodsReceiptItem struct {
+	ID               int32            `json:"id"`
+	BatchID          string           `json:"batch_id"`
+	OrganizationID   int32            `json:"organization_id"`
+	GrnNumber        string           `json:"grn_number"`
+	LineNumber       int32            `json:"line_number"`
+	ProductSku       string           `json:"product_sku"`
+	ProductName      pgtype.Text      `json:"product_name"`
+	StoreCode        pgtype.Text      `json:"store_code"`
+	QuantityReceived pgtype.Numeric   `json:"quantity_received"`
+	QuantityRejected pgtype.Numeric   `json:"quantity_rejected"`
+	UomCode          pgtype.Text      `json:"uom_code"`
+	UnitCost         pgtype.Numeric   `json:"unit_cost"`
+	SourcePoLineNum  pgtype.Int4      `json:"source_po_line_num"`
+	Notes            pgtype.Text      `json:"notes"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapGoodsReceiptNote struct {
+	ID                 int32            `json:"id"`
+	BatchID            string           `json:"batch_id"`
+	OrganizationID     int32            `json:"organization_id"`
+	GrnNumber          string           `json:"grn_number"`
+	PoNumber           pgtype.Text      `json:"po_number"`
+	SupplierCode       string           `json:"supplier_code"`
+	SupplierName       pgtype.Text      `json:"supplier_name"`
+	StoreCode          pgtype.Text      `json:"store_code"`
+	ReceiptDate        pgtype.Timestamp `json:"receipt_date"`
+	DeliveryNoteNumber pgtype.Text      `json:"delivery_note_number"`
+	Status             pgtype.Text      `json:"status"`
+	Notes              pgtype.Text      `json:"notes"`
+	Metadata           json.RawMessage  `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapIncomingPayment struct {
+	ID               int32            `json:"id"`
+	BatchID          string           `json:"batch_id"`
+	OrganizationID   int32            `json:"organization_id"`
+	PaymentNumber    string           `json:"payment_number"`
+	InvoiceNumber    pgtype.Text      `json:"invoice_number"`
+	CustomerCode     string           `json:"customer_code"`
+	CustomerName     pgtype.Text      `json:"customer_name"`
+	PaymentDate      pgtype.Date      `json:"payment_date"`
+	PaymentAmount    pgtype.Numeric   `json:"payment_amount"`
+	PaymentMethod    pgtype.Text      `json:"payment_method"`
+	PaymentReference pgtype.Text      `json:"payment_reference"`
+	CurrencyCode     pgtype.Text      `json:"currency_code"`
+	IsOnAccount      pgtype.Bool      `json:"is_on_account"`
+	Notes            pgtype.Text      `json:"notes"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
 type StagingSapInventory struct {
 	ID                int32            `json:"id"`
 	BatchID           string           `json:"batch_id"`
@@ -2162,6 +2264,64 @@ type StagingSapMigrationBatch struct {
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 }
 
+type StagingSapOutgoingPayment struct {
+	ID               int32            `json:"id"`
+	BatchID          string           `json:"batch_id"`
+	OrganizationID   int32            `json:"organization_id"`
+	PaymentNumber    string           `json:"payment_number"`
+	SupplierCode     string           `json:"supplier_code"`
+	SupplierName     pgtype.Text      `json:"supplier_name"`
+	PoDocEntry       pgtype.Int8      `json:"po_doc_entry"`
+	PaymentDate      pgtype.Date      `json:"payment_date"`
+	PaymentAmount    pgtype.Numeric   `json:"payment_amount"`
+	PaymentMethod    pgtype.Text      `json:"payment_method"`
+	PaymentReference pgtype.Text      `json:"payment_reference"`
+	CurrencyCode     pgtype.Text      `json:"currency_code"`
+	Notes            pgtype.Text      `json:"notes"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapPaymentTerm struct {
+	ID                 int32            `json:"id"`
+	BatchID            string           `json:"batch_id"`
+	OrganizationID     int32            `json:"organization_id"`
+	Code               string           `json:"code"`
+	Name               string           `json:"name"`
+	DueDays            int32            `json:"due_days"`
+	DiscountDays       pgtype.Int4      `json:"discount_days"`
+	DiscountPercentage pgtype.Numeric   `json:"discount_percentage"`
+	Metadata           json.RawMessage  `json:"metadata"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapPriceList struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	OrganizationID int32            `json:"organization_id"`
+	Code           string           `json:"code"`
+	Name           string           `json:"name"`
+	CurrencyCode   pgtype.Text      `json:"currency_code"`
+	Factor         pgtype.Numeric   `json:"factor"`
+	BasedOnCode    pgtype.Text      `json:"based_on_code"`
+	IsActive       pgtype.Bool      `json:"is_active"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapPriceListItem struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	OrganizationID int32            `json:"organization_id"`
+	PriceListCode  string           `json:"price_list_code"`
+	ProductSku     string           `json:"product_sku"`
+	UomCode        pgtype.Text      `json:"uom_code"`
+	Price          pgtype.Numeric   `json:"price"`
+	CurrencyCode   pgtype.Text      `json:"currency_code"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
 type StagingSapProduct struct {
 	ID             int32            `json:"id"`
 	BatchID        string           `json:"batch_id"`
@@ -2182,6 +2342,103 @@ type StagingSapProduct struct {
 	PrimaryBarcode pgtype.Text      `json:"primary_barcode"`
 	Metadata       json.RawMessage  `json:"metadata"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapPurchaseOrder struct {
+	ID                   int32            `json:"id"`
+	BatchID              string           `json:"batch_id"`
+	OrganizationID       int32            `json:"organization_id"`
+	PoNumber             string           `json:"po_number"`
+	SupplierCode         string           `json:"supplier_code"`
+	SupplierName         pgtype.Text      `json:"supplier_name"`
+	StoreCode            pgtype.Text      `json:"store_code"`
+	PoDate               pgtype.Timestamp `json:"po_date"`
+	ExpectedDeliveryDate pgtype.Timestamp `json:"expected_delivery_date"`
+	Status               pgtype.Text      `json:"status"`
+	Subtotal             pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount       pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount          pgtype.Numeric   `json:"total_amount"`
+	Notes                pgtype.Text      `json:"notes"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapPurchaseOrderLine struct {
+	ID               int32            `json:"id"`
+	BatchID          string           `json:"batch_id"`
+	OrganizationID   int32            `json:"organization_id"`
+	PoNumber         string           `json:"po_number"`
+	LineNumber       int32            `json:"line_number"`
+	ProductSku       string           `json:"product_sku"`
+	ProductName      pgtype.Text      `json:"product_name"`
+	StoreCode        pgtype.Text      `json:"store_code"`
+	Quantity         pgtype.Numeric   `json:"quantity"`
+	ReceivedQuantity pgtype.Numeric   `json:"received_quantity"`
+	UomCode          pgtype.Text      `json:"uom_code"`
+	UnitPrice        pgtype.Numeric   `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
+	Subtotal         pgtype.Numeric   `json:"subtotal"`
+	LineTotal        pgtype.Numeric   `json:"line_total"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapSalesReturn struct {
+	ID                int32            `json:"id"`
+	BatchID           string           `json:"batch_id"`
+	OrganizationID    int32            `json:"organization_id"`
+	ReturnNumber      string           `json:"return_number"`
+	CustomerCode      string           `json:"customer_code"`
+	CustomerName      pgtype.Text      `json:"customer_name"`
+	StoreCode         pgtype.Text      `json:"store_code"`
+	ReturnDate        pgtype.Timestamp `json:"return_date"`
+	Reason            pgtype.Text      `json:"reason"`
+	Status            pgtype.Text      `json:"status"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalRefundAmount pgtype.Numeric   `json:"total_refund_amount"`
+	DocSource         pgtype.Text      `json:"doc_source"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapSalesReturnLine struct {
+	ID             int32            `json:"id"`
+	BatchID        string           `json:"batch_id"`
+	OrganizationID int32            `json:"organization_id"`
+	ReturnNumber   string           `json:"return_number"`
+	LineNumber     int32            `json:"line_number"`
+	ProductSku     string           `json:"product_sku"`
+	ProductName    pgtype.Text      `json:"product_name"`
+	StoreCode      pgtype.Text      `json:"store_code"`
+	UomCode        pgtype.Text      `json:"uom_code"`
+	Quantity       pgtype.Numeric   `json:"quantity"`
+	UnitPrice      pgtype.Numeric   `json:"unit_price"`
+	TaxAmount      pgtype.Numeric   `json:"tax_amount"`
+	RefundAmount   pgtype.Numeric   `json:"refund_amount"`
+	Metadata       json.RawMessage  `json:"metadata"`
+	CreatedAt      pgtype.Timestamp `json:"created_at"`
+}
+
+type StagingSapStockMovement struct {
+	ID              int32            `json:"id"`
+	BatchID         string           `json:"batch_id"`
+	OrganizationID  int32            `json:"organization_id"`
+	MovementType    string           `json:"movement_type"`
+	ReferenceType   pgtype.Text      `json:"reference_type"`
+	ReferenceNumber pgtype.Text      `json:"reference_number"`
+	ProductSku      string           `json:"product_sku"`
+	FromStoreCode   pgtype.Text      `json:"from_store_code"`
+	ToStoreCode     pgtype.Text      `json:"to_store_code"`
+	Quantity        pgtype.Numeric   `json:"quantity"`
+	UomCode         pgtype.Text      `json:"uom_code"`
+	MovementDate    pgtype.Timestamp `json:"movement_date"`
+	CostPerUnit     pgtype.Numeric   `json:"cost_per_unit"`
+	TotalValue      pgtype.Numeric   `json:"total_value"`
+	Metadata        json.RawMessage  `json:"metadata"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
 }
 
 type StagingSapStore struct {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/google/uuid"
@@ -807,7 +806,7 @@ func TestDualOrderHarmonization(t *testing.T) {
 	store, _ := repo.GetStore(context.Background(), 1)
 	dashboardRows, err := repo.ListSalesOrdersDashboard(context.Background(), repository.ListSalesOrdersDashboardParams{
 		OrgID:        store.OrganizationID,
-		SalesChannel: pgtype.Text{String: "pos", Valid: true},
+		SalesChannel: "pos",
 	})
 	if err != nil {
 		t.Fatalf("ListSalesOrdersDashboard failed: %v", err)

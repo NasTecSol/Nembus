@@ -289,8 +289,8 @@ type ListSalesOrdersDashboardParams struct {
 	OrgID        int32            `json:"org_id"`
 	FromDate     pgtype.Timestamp `json:"from_date"`
 	ToDate       pgtype.Timestamp `json:"to_date"`
-	Status       pgtype.Text      `json:"status"`
-	SalesChannel pgtype.Text      `json:"sales_channel"`
+	Status       string           `json:"status"`
+	SalesChannel string           `json:"sales_channel"`
 }
 
 type ListSalesOrdersDashboardRow struct {

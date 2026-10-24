@@ -17,6 +17,8 @@ import (
 	clientbackup "github.com/NasTecSol/nembus-client/client"
 	"github.com/NasTecSol/nembus-client/internal/config"
 	"github.com/NasTecSol/nembus-client/internal/db"
+	"github.com/NasTecSol/nembus-client/internal/payment/geidea"
+	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -28,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed migrations/*.sql
@@ -41,6 +44,7 @@ type App struct {
 	masterPool    *pgxpool.Pool
 	tenantManager *manager.Manager
 	syncService   *sync.SyncService
+	geideaClient  *geidea.Client
 	cfg           *config.Config
 	version       string
 	ghToken       string
@@ -777,3 +781,106 @@ func (a *App) GetDevToken() string {
 	}
 	return token
 }
+
+// GeideaConfigure configures or updates the terminal parameters (TCP or Serial COM).
+func (a *App) GeideaConfigure(cfg geidea.TerminalConfig) string {
+	if a.geideaClient == nil {
+		a.geideaClient = geidea.NewClient(cfg)
+	} else {
+		a.geideaClient.UpdateConfig(cfg)
+	}
+	log.Printf("[GEIDEA] Terminal configured: mode=%s, ip=%s:%s, com=%s, baud=%d",
+		cfg.Mode, cfg.IP, cfg.Port, cfg.SerialPort, cfg.BaudRate)
+	return "OK"
+}
+
+// GeideaCheckStatus tests connectivity to the physical terminal.
+func (a *App) GeideaCheckStatus() (bool, error) {
+	if a.geideaClient == nil {
+		return false, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.CheckStatus(a.ctx)
+}
+
+// GeideaPurchase initiates a card purchase with live status event streaming to the frontend.
+func (a *App) GeideaPurchase(req geidea.PurchaseRequest) (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Purchase(a.ctx, req, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaRefund initiates a refund using original transaction RRN.
+func (a *App) GeideaRefund(req geidea.RefundRequest) (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Refund(a.ctx, req, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaReconcile triggers End of Day settlement and reconciliation with SAMA.
+func (a *App) GeideaReconcile() (*geidea.ReconciliationResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Reconcile(a.ctx, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaCancel sends the abort signal to cancel an in-flight transaction.
+func (a *App) GeideaCancel() error {
+	if a.geideaClient == nil {
+		return fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Cancel(a.ctx)
+}
+
+// GeideaRepeatLast queries the terminal for the last transaction result.
+func (a *App) GeideaRepeatLast() (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.RepeatLast(a.ctx)
+}
+
+// StartGeideaPayment initiates the payment through Wails runtime with status streaming (backward-compatible).
+func (a *App) StartGeideaPayment(terminalID int, amount float64, ecrRef string) (string, error) {
+	if a.geideaClient == nil {
+		a.geideaClient = geidea.NewClient(geidea.TerminalConfig{
+			Mode: "network",
+			IP:   "127.0.0.1",
+			Port: "80",
+		})
+	}
+	res, err := a.GeideaPurchase(geidea.PurchaseRequest{
+		Amount:        amount,
+		InvoiceNumber: ecrRef,
+	})
+	if err != nil {
+		return "", err
+	}
+	resJSON, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	return string(resJSON), nil
+}
+
+// PrintMadaReceipt builds an ESC/POS formatted mada transaction receipt and sends it to the printer.
+func (a *App) PrintMadaReceipt(data printing.MadaReceiptData, cfg printing.PrinterConfig) error {
+	rawBytes := printing.BuildMadaReceipt(data)
+	return printing.Print(cfg, rawBytes)
+}
+
+
