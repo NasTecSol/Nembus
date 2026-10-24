@@ -3355,6 +3355,62 @@ definitions:
     required:
     - store_id
     type: object
+  handler.InventoryStoreTotals:
+    properties:
+      product_count:
+        type: integer
+      store_id:
+        type: integer
+      store_name:
+        type: string
+      total_available_units:
+        type: number
+      total_cost_value:
+        type: number
+      total_sale_value:
+        type: number
+      total_units:
+        type: number
+      units_missing_cost_price:
+        type: number
+      units_missing_sale_price:
+        type: number
+    type: object
+  handler.InventoryTotalsData:
+    properties:
+      currency_code:
+        type: string
+      organization_id:
+        type: integer
+      price_list_id:
+        type: integer
+      product_count:
+        type: integer
+      quantity_basis:
+        type: string
+      storage_location_id:
+        type: integer
+      store_count:
+        type: integer
+      store_id:
+        type: integer
+      stores:
+        items:
+          $ref: '#/definitions/handler.InventoryStoreTotals'
+        type: array
+      total_available_units:
+        type: number
+      total_cost_value:
+        type: number
+      total_sale_value:
+        type: number
+      total_units:
+        type: number
+      units_missing_cost_price:
+        type: number
+      units_missing_sale_price:
+        type: number
+    type: object
   handler.LevelPayload:
     properties:
       level_order:
@@ -15690,6 +15746,83 @@ paths:
       summary: Get inventory stock summary
       tags:
       - inventory_stock
+  /api/inventory-stock/totals:
+    get:
+      description: 'Returns combined totals and per-store totals for inventory-tracked
+        products in one organization. total_units sums quantity_on_hand in base units,
+        including allocated stock and signed negative quantities; available units
+        are returned separately. Cost value is on-hand quantity times current products.cost_price.
+        Sale value is on-hand quantity times one currently active base-UOM (or unspecified-UOM)
+        unit price from the selected price list; variant-specific prices take precedence
+        over product prices. Quantity tiers must apply to one unit. Prices are used
+        as stored, without tax adjustments or discounts. Missing costs/prices contribute
+        zero value and are reported as absolute units_missing_*_price. Price List
+        01 (ID 1) is the default. No pagination: totals cover every matching inventory
+        row. Omit store/location for all stores; specify store_id for one store; specify
+        both store_id and storage_location_id for one location. Empty stores return
+        zero totals. The price list must use the organization''s currency. On databases
+        without products.cost_price, costs are reported as missing.'
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        minimum: 1
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID (omit or 0 for all stores)
+        in: query
+        minimum: 0
+        name: store_id
+        type: integer
+      - description: Storage location ID; requires store_id (omit or 0 for all locations)
+        in: query
+        minimum: 0
+        name: storage_location_id
+        type: integer
+      - default: 1
+        description: Selling price list
+        in: query
+        minimum: 1
+        name: price_list_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.InventoryTotalsData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Inventory units and valuation across stores
+      tags:
+      - inventory-stock
   /api/inventory-stock/upsert:
     post:
       consumes:
