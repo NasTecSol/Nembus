@@ -248,6 +248,8 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 		approvalsUC := usecase.NewApprovalsUseCase()
 		approvalsUC.RegisterAccommodator("goods_receipt_note", usecase.NewGoodsReceiptNoteApprovalAccommodator())
+		approvalsUC.RegisterAccommodator("catalog", usecase.NewCatalogPriceAccommodator())
+		approvalsUC.RegisterAccommodator("sap_invoice", usecase.NewSAPInvoiceStockAccommodator())
 		approvalsHandler := handler.NewApprovalsHandler(approvalsUC)
 		router.RegisterApprovalsRoutes(api, approvalsHandler)
 

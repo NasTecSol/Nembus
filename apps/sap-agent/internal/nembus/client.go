@@ -88,6 +88,14 @@ type SalesReturnLine struct {
 	LineNumber     int     `json:"line_number"`
 }
 
+type ShortageItem struct {
+	ProductID   int32   `json:"product_id"`
+	ProductSKU  string  `json:"product_sku"`
+	ProductName string  `json:"product_name"`
+	Quantity    float64 `json:"quantity"`
+	SAPOnHand   float64 `json:"sap_on_hand"`
+}
+
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 	poolConfig, err := pgxpool.ParseConfig(cfg.NembusDBURL)
 	if err != nil {
@@ -233,6 +241,7 @@ func (c *Client) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([
 		FROM pos_transactions
 		WHERE status = 'completed'
 		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
+		  AND (metadata->>'sap_sync_state' IS NULL OR metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force'))
 		ORDER BY id ASC
 		LIMIT $1
 	`
@@ -427,5 +436,118 @@ func (c *Client) FetchCustomerSAPCode(ctx context.Context, customerID int32) (st
 	`
 	err := c.pool.QueryRow(ctx, query, customerID).Scan(&code)
 	return code, err
+}
+
+// HoldTransactionForStockReview marks a transaction as held in Nembus and submits an approval request.
+func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
+	metaPatch, _ := json.Marshal(map[string]any{
+		"sap_sync_state": "held_stock",
+		"held_reason":    summary,
+		"held_at":        time.Now().Format(time.RFC3339),
+	})
+	_, err := c.pool.Exec(ctx, `
+		UPDATE pos_transactions
+		SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+		WHERE id = $1
+	`, txID, metaPatch)
+	if err != nil {
+		return fmt.Errorf("failed updating transaction metadata: %w", err)
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"transaction_id":     txID,
+		"transaction_number": txNum,
+		"store_id":           storeID,
+		"warehouse_code":     whCode,
+		"total_amount":       totalAmount,
+		"shortage_items":     shortageItems,
+		"reason":             summary,
+	})
+
+	entityID := fmt.Sprintf("%d", txID)
+	query := `
+		INSERT INTO approval_requests (
+			organization_id, domain, action, entity_type, entity_id,
+			status, required_permission, summary, payload, metadata
+		) VALUES (
+			$1, 'sap_invoice', 'stock_hold', 'pos_transaction', $2,
+			'pending', 'sap:invoice:override', $3, $4, '{}'::jsonb
+		)
+		ON CONFLICT DO NOTHING
+	`
+	_, err = c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	return err
+}
+
+// GetActiveProductPrice looks up the currently active price for a product on a price list.
+func (c *Client) GetActiveProductPrice(ctx context.Context, productID, priceListID int32) (float64, bool, error) {
+	var price float64
+	err := c.pool.QueryRow(ctx, `
+		SELECT price FROM product_prices
+		WHERE product_id = $1 AND price_list_id = $2 AND is_active = true
+		LIMIT 1
+	`, productID, priceListID).Scan(&price)
+	if err != nil {
+		return 0, false, nil
+	}
+	return price, true, nil
+}
+
+// GetProductCostPrice returns the current cost price stored on the product header.
+func (c *Client) GetProductCostPrice(ctx context.Context, productID int32) (float64, error) {
+	var cost float64
+	err := c.pool.QueryRow(ctx, `SELECT COALESCE(cost_price, 0) FROM products WHERE id = $1`, productID).Scan(&cost)
+	return cost, err
+}
+
+// GetApprovalPolicyRules retrieves the JSON rules for a specific domain & action policy.
+func (c *Client) GetApprovalPolicyRules(ctx context.Context, domain, action string) (map[string]any, bool, error) {
+	var rawRules []byte
+	var requiresApproval bool
+	err := c.pool.QueryRow(ctx, `
+		SELECT requires_approval, rules FROM approval_policies
+		WHERE organization_id = $1 AND domain = $2 AND action = $3 AND is_enabled = true
+		LIMIT 1
+	`, c.cfg.NembusOrganizationID, domain, action).Scan(&requiresApproval, &rawRules)
+	if err != nil {
+		return nil, false, nil
+	}
+	if !requiresApproval {
+		return nil, false, nil
+	}
+	rules := make(map[string]any)
+	if len(rawRules) > 0 {
+		_ = json.Unmarshal(rawRules, &rules)
+	}
+	return rules, true, nil
+}
+
+// SubmitPriceApprovalRequest creates a pending price/cost review request.
+func (c *Client) SubmitPriceApprovalRequest(ctx context.Context, productID int32, sku string, priceListID int32, uomID *int32, oldPrice, newPrice, oldCost, newCost *float64, reason string) error {
+	payload, _ := json.Marshal(map[string]any{
+		"product_id":     productID,
+		"product_sku":    sku,
+		"price_list_id":  priceListID,
+		"uom_id":         uomID,
+		"old_price":      oldPrice,
+		"new_price":      newPrice,
+		"old_cost_price": oldCost,
+		"new_cost_price": newCost,
+		"reason":         reason,
+	})
+	entityID := fmt.Sprintf("%d", productID)
+	summary := fmt.Sprintf("Price/Cost revision for SKU %s: %s", sku, reason)
+	query := `
+		INSERT INTO approval_requests (
+			organization_id, domain, action, entity_type, entity_id,
+			status, required_permission, summary, payload, metadata
+		) VALUES (
+			$1, 'catalog', 'price_change', 'product', $2,
+			'pending', 'catalog:pricing:approve', $3, $4, '{}'::jsonb
+		)
+		ON CONFLICT DO NOTHING
+	`
+	_, err := c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	return err
 }
 

@@ -172,3 +172,13 @@ LEFT JOIN product_prices pp ON pl.id = pp.price_list_id
     AND pp.is_active = true
 WHERE pl.is_active = true
 ORDER BY pl.name;
+
+-- name: UpsertProductPrice :one
+INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, updated_at)
+VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP)
+ON CONFLICT (product_id, price_list_id) DO UPDATE
+SET price = EXCLUDED.price,
+    uom_id = COALESCE(EXCLUDED.uom_id, product_prices.uom_id),
+    is_active = true,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;

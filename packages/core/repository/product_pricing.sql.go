@@ -674,3 +674,48 @@ func (q *Queries) UpdateProductPrice(ctx context.Context, arg UpdateProductPrice
 	)
 	return i, err
 }
+
+const upsertProductPrice = `-- name: UpsertProductPrice :one
+INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, updated_at)
+VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP)
+ON CONFLICT (product_id, price_list_id) DO UPDATE
+SET price = EXCLUDED.price,
+    uom_id = COALESCE(EXCLUDED.uom_id, product_prices.uom_id),
+    is_active = true,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, product_id, product_variant_id, price_list_id, uom_id, price, min_quantity, max_quantity, valid_from, valid_to, is_active, metadata, created_at, updated_at
+`
+
+type UpsertProductPriceParams struct {
+	ProductID   int32          `json:"product_id"`
+	PriceListID int32          `json:"price_list_id"`
+	UomID       pgtype.Int4    `json:"uom_id"`
+	Price       pgtype.Numeric `json:"price"`
+}
+
+func (q *Queries) UpsertProductPrice(ctx context.Context, arg UpsertProductPriceParams) (ProductPrice, error) {
+	row := q.db.QueryRow(ctx, upsertProductPrice,
+		arg.ProductID,
+		arg.PriceListID,
+		arg.UomID,
+		arg.Price,
+	)
+	var i ProductPrice
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.PriceListID,
+		&i.UomID,
+		&i.Price,
+		&i.MinQuantity,
+		&i.MaxQuantity,
+		&i.ValidFrom,
+		&i.ValidTo,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

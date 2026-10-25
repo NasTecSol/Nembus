@@ -124,11 +124,12 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 				continue
 			}
 
-			// Upsert Product
+			// Upsert Product Header
 			costPrice := item.AvgPrice
 			if costPrice <= 0 {
 				costPrice = item.MovingAveragePrice
 			}
+
 			prodID, err := s.nembusClient.UpsertProduct(ctx, item.ItemCode, item.ItemName, item.ForeignName, categoryID, baseUoMID, &taxCatID, isWeighted, costPrice)
 			if err != nil {
 				log.Printf("❌ Failed to upsert product SKU %s: %v", item.ItemCode, err)
@@ -152,7 +153,36 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 				}
 			}
 
-			// Sync Prices
+			// Query approval policy rules for catalog price changes
+			rules, requiresApproval, _ := s.nembusClient.GetApprovalPolicyRules(ctx, "catalog", "price_change")
+			priceDropRequiresApproval := true
+			costIncreaseThresholdPct := 10.0
+			belowCostRequiresApproval := true
+
+			if requiresApproval && rules != nil {
+				if v, ok := rules["price_drop_requires_approval"].(bool); ok {
+					priceDropRequiresApproval = v
+				}
+				if v, ok := rules["cost_increase_threshold_pct"].(float64); ok {
+					costIncreaseThresholdPct = v
+				}
+				if v, ok := rules["below_cost_requires_approval"].(bool); ok {
+					belowCostRequiresApproval = v
+				}
+			}
+
+			// Check Cost Price Governance
+			currentCost, _ := s.nembusClient.GetProductCostPrice(ctx, prodID)
+			if requiresApproval && currentCost > 0 && costPrice > currentCost {
+				pctIncrease := ((costPrice - currentCost) / currentCost) * 100.0
+				if pctIncrease >= costIncreaseThresholdPct {
+					reason := fmt.Sprintf("Cost price increased by %.1f%% (from %.2f to %.2f, threshold: %.1f%%)", pctIncrease, currentCost, costPrice, costIncreaseThresholdPct)
+					log.Printf("⚠️ %s for SKU %s. Routing to approval review...", reason, item.ItemCode)
+					_ = s.nembusClient.SubmitPriceApprovalRequest(ctx, prodID, item.ItemCode, s.cfg.NembusPriceListID, nil, nil, nil, &currentCost, &costPrice, reason)
+				}
+			}
+
+			// Sync Prices with Governance
 			for _, price := range item.ItemPrices {
 				if price.PriceList == int(s.cfg.NembusPriceListID) && price.Price > 0 {
 					var uomEntry *int32
@@ -161,11 +191,33 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 							uomEntry = &uid
 						}
 					}
-					if err := s.nembusClient.UpsertProductPrice(ctx, prodID, s.cfg.NembusPriceListID, uomEntry, price.Price); err == nil {
-						stats.Prices++
+
+					oldPrice, priceExists, _ := s.nembusClient.GetActiveProductPrice(ctx, prodID, s.cfg.NembusPriceListID)
+
+					priceReviewTriggered := false
+					var priceReviewReason string
+
+					if requiresApproval && priceExists && oldPrice > 0 {
+						if priceDropRequiresApproval && price.Price < oldPrice {
+							priceReviewTriggered = true
+							priceReviewReason = fmt.Sprintf("Selling price dropped from %.2f to %.2f", oldPrice, price.Price)
+						} else if belowCostRequiresApproval && costPrice > 0 && price.Price < costPrice {
+							priceReviewTriggered = true
+							priceReviewReason = fmt.Sprintf("Selling price %.2f is below cost price %.2f", price.Price, costPrice)
+						}
+					}
+
+					if priceReviewTriggered {
+						log.Printf("⚠️ %s for SKU %s. Holding active POS price at %.2f and routing to approval review...", priceReviewReason, item.ItemCode, oldPrice)
+						_ = s.nembusClient.SubmitPriceApprovalRequest(ctx, prodID, item.ItemCode, s.cfg.NembusPriceListID, uomEntry, &oldPrice, &price.Price, &currentCost, &costPrice, priceReviewReason)
+					} else {
+						if err := s.nembusClient.UpsertProductPrice(ctx, prodID, s.cfg.NembusPriceListID, uomEntry, price.Price); err == nil {
+							stats.Prices++
+						}
 					}
 				}
 			}
+
 		}
 
 		if !hasNext || len(items) < top {

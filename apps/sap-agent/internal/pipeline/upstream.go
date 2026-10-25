@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -16,6 +17,7 @@ type SAPClient interface {
 	PostInvoice(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
 	PostIncomingPayment(ctx context.Context, payment *sap.SAPPaymentRequest) (*sap.SAPPaymentResponse, error)
 	PostCreditMemo(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
+	CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error)
 }
 
 type NembusClient interface {
@@ -28,6 +30,7 @@ type NembusClient interface {
 	FetchSalesReturnLines(ctx context.Context, returnID int64) ([]nembus.SalesReturnLine, error)
 	MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error
 	FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error)
+	HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error
 }
 
 type UpstreamSync struct {
@@ -44,8 +47,11 @@ func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient Nembu
 	}
 }
 
+var ErrTransactionHeldForReview = errors.New("transaction held for stock review")
+
 type UpstreamStats struct {
 	TransactionsPosted int           `json:"transactions_posted"`
+	TransactionsHeld   int           `json:"transactions_held,omitempty"`
 	ReturnsPosted      int           `json:"returns_posted"`
 	PaymentsPosted     int           `json:"payments_posted,omitempty"`
 	Errors             int           `json:"errors"`
@@ -71,6 +77,10 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 		log.Printf("⬆️ [Nembus POS -> SAP] Found %d unposted transaction(s). Processing...", len(txs))
 		for _, tx := range txs {
 			if err := s.postTransactionToSAP(ctx, &tx); err != nil {
+				if errors.Is(err, ErrTransactionHeldForReview) {
+					stats.TransactionsHeld++
+					continue
+				}
 				log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
 				stats.Errors++
 			} else if !s.cfg.DryRun {
@@ -156,14 +166,56 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 		DocumentLines: docLines,
 	}
 
+	whCode := s.cfg.NembusDefaultWarehouse
+
+	// 2. Pre-flight stock check against SAP to avoid overselling
+	var shortages []nembus.ShortageItem
+	for _, line := range lines {
+		onHand, err := s.sapClient.CheckItemWarehouseStock(ctx, line.ProductSKU, whCode)
+		if err == nil && onHand < line.Quantity {
+			shortages = append(shortages, nembus.ShortageItem{
+				ProductID:   line.ProductID,
+				ProductSKU:  line.ProductSKU,
+				ProductName: line.ProductName,
+				Quantity:    line.Quantity,
+				SAPOnHand:   onHand,
+			})
+		}
+	}
+
+	if len(shortages) > 0 {
+		summary := fmt.Sprintf("SAP Stock Shortage on %s: %d item(s) below required quantity in warehouse %s", tx.TransactionNumber, len(shortages), whCode)
+		log.Printf("⚠️ %s. Routing to Approval Review Queue...", summary)
+		if err := s.nembusClient.HoldTransactionForStockReview(ctx, tx.ID, tx.TransactionNumber, tx.StoreID, whCode, tx.TotalAmount, shortages, summary); err != nil {
+			return fmt.Errorf("failed holding transaction for review: %w", err)
+		}
+		return ErrTransactionHeldForReview
+	}
+
 	if s.cfg.DryRun {
 		log.Printf("[DRY-RUN] Would post invoice for %s ($%.2f) to SAP", tx.TransactionNumber, tx.TotalAmount)
 		return nil
 	}
 
-	// 4. Post Invoice to SAP
+	// 4. Post Invoice to SAP (with reactive negative inventory interception)
 	sapInv, err := s.sapClient.PostInvoice(ctx, invReq)
 	if err != nil {
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "fall below zero") || strings.Contains(errStr, "negative inventory") || strings.Contains(errStr, "code -10") || strings.Contains(errStr, "code 10") {
+			summary := fmt.Sprintf("SAP Negative Inventory Rejection on %s: %v", tx.TransactionNumber, err)
+			log.Printf("⚠️ %s. Intercepted and routing to Approval Review Queue...", summary)
+			var fallbackShortages []nembus.ShortageItem
+			for _, l := range lines {
+				fallbackShortages = append(fallbackShortages, nembus.ShortageItem{
+					ProductID:   l.ProductID,
+					ProductSKU:  l.ProductSKU,
+					ProductName: l.ProductName,
+					Quantity:    l.Quantity,
+					SAPOnHand:   0,
+				})
+			}
+			_ = s.nembusClient.HoldTransactionForStockReview(ctx, tx.ID, tx.TransactionNumber, tx.StoreID, whCode, tx.TotalAmount, fallbackShortages, summary)
+		}
 		return err
 	}
 

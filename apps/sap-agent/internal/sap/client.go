@@ -235,6 +235,34 @@ func (c *Client) GetSQLDB() *sql.DB {
 	return c.sqlDB
 }
 
+// CheckItemWarehouseStock retrieves the current OnHand stock for an item in a specific warehouse.
+func (c *Client) CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error) {
+	if c.sqlDB != nil {
+		var onHand float64
+		err := c.sqlDB.QueryRowContext(ctx, "SELECT ISNULL(OnHand, 0) FROM OITW WHERE ItemCode = @p1 AND WhsCode = @p2", itemCode, warehouseCode).Scan(&onHand)
+		if err == nil {
+			return onHand, nil
+		}
+	}
+	// Fallback to Service Layer Items lookup
+	endpoint := fmt.Sprintf("Items('%s')?$select=ItemWarehouseInfoCollection", url.PathEscape(itemCode))
+	var res struct {
+		ItemWarehouseInfoCollection []struct {
+			WarehouseCode string  `json:"WarehouseCode"`
+			InStock       float64 `json:"InStock"`
+		} `json:"ItemWarehouseInfoCollection"`
+	}
+	if err := c.DoRequest(ctx, http.MethodGet, endpoint, nil, &res); err != nil {
+		return 0, err
+	}
+	for _, wh := range res.ItemWarehouseInfoCollection {
+		if wh.WarehouseCode == warehouseCode {
+			return wh.InStock, nil
+		}
+	}
+	return 0, nil
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

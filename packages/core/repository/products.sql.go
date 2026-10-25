@@ -1689,3 +1689,44 @@ func (q *Queries) UpdateProductCategory(ctx context.Context, arg UpdateProductCa
 	)
 	return i, err
 }
+
+const updateProductCostPrice = `-- name: UpdateProductCostPrice :one
+UPDATE products
+SET cost_price = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at
+`
+
+type UpdateProductCostPriceParams struct {
+	ID        int32          `json:"id"`
+	CostPrice pgtype.Numeric `json:"cost_price"`
+}
+
+func (q *Queries) UpdateProductCostPrice(ctx context.Context, arg UpdateProductCostPriceParams) (Product, error) {
+	row := q.db.QueryRow(ctx, updateProductCostPrice, arg.ID, arg.CostPrice)
+	var i Product
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Sku,
+		&i.Name,
+		&i.Description,
+		&i.CategoryID,
+		&i.BrandID,
+		&i.BaseUomID,
+		&i.ProductType,
+		&i.TaxCategoryID,
+		&i.IsSerialized,
+		&i.IsBatchManaged,
+		&i.IsActive,
+		&i.IsSellable,
+		&i.IsPurchasable,
+		&i.AllowDecimalQuantity,
+		&i.TrackInventory,
+		&i.CostPrice,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

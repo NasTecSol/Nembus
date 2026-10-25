@@ -47,12 +47,17 @@ func (m *MockSAPClient) PostCreditMemo(ctx context.Context, memo *sap.SAPInvoice
 	return &sap.SAPInvoiceResponse{DocEntry: 777, DocNum: 888}, nil
 }
 
+func (m *MockSAPClient) CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error) {
+	return 999.0, nil
+}
+
 // MockNembusClient implements pipeline.NembusClient
 type MockNembusClient struct {
 	unpostedPOSTransactions   []nembus.POSTransaction
 	txLines                   map[int64][]nembus.POSTransactionLine
 	txPayments                map[int64][]nembus.POSPayment
 	markedTransactions        map[int64]markedSAPDoc
+	heldTransactions          map[int64]string
 
 	unpostedSalesReturns      []nembus.SalesReturn
 	returnLines               map[int64][]nembus.SalesReturnLine
@@ -94,6 +99,14 @@ func (m *MockNembusClient) FetchTransactionPayments(ctx context.Context, transac
 
 func (m *MockNembusClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error {
 	m.markedTransactions[transactionID] = markedSAPDoc{DocEntry: sapDocEntry, DocNum: sapDocNum}
+	return nil
+}
+
+func (m *MockNembusClient) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error {
+	if m.heldTransactions == nil {
+		m.heldTransactions = make(map[int64]string)
+	}
+	m.heldTransactions[txID] = summary
 	return nil
 }
 
@@ -600,6 +613,50 @@ func TestProcessOutbox_ReturnUnresolvedOriginalDocEntry(t *testing.T) {
 	}
 	if len(mockNembus.markedReturns) != 1 {
 		t.Errorf("expected return to be marked as posted in Nembus")
+	}
+}
+
+type stockShortageSAPClient struct {
+	MockSAPClient
+	onHandStock float64
+}
+
+func (s *stockShortageSAPClient) CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error) {
+	return s.onHandStock, nil
+}
+
+func TestProcessOutbox_StockShortageHold(t *testing.T) {
+	mockSAP := &stockShortageSAPClient{onHandStock: 0.0}
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                88,
+			TransactionNumber: "TX-HOLD-001",
+			TransactionDate:   time.Now(),
+			TotalAmount:       150.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[88] = []nembus.POSTransactionLine{
+		{ID: 881, TransactionID: 88, ProductSKU: "SKU-DEPLETED", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
+	}
+
+	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
+	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	ctx := context.Background()
+
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("unexpected ProcessOutbox error: %v", err)
+	}
+
+	if stats.TransactionsPosted != 0 {
+		t.Errorf("expected 0 transactions posted, got %d", stats.TransactionsPosted)
+	}
+	if summary, held := mockNembus.heldTransactions[88]; !held {
+		t.Errorf("expected transaction 88 to be held for review")
+	} else if !strings.Contains(summary, "SAP Stock Shortage") {
+		t.Errorf("expected shortage summary, got: %s", summary)
 	}
 }
 
