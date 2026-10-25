@@ -479,6 +479,23 @@ func (ns NullZatcaDocStatus) Value() (driver.Value, error) {
 	return string(ns.ZatcaDocStatus), nil
 }
 
+type AppRelease struct {
+	ID                  int32            `json:"id"`
+	AppName             string           `json:"app_name"`
+	Version             string           `json:"version"`
+	Channel             string           `json:"channel"`
+	ReleaseNotes        pgtype.Text      `json:"release_notes"`
+	FileName            string           `json:"file_name"`
+	FilePath            string           `json:"file_path"`
+	FileSizeBytes       int64            `json:"file_size_bytes"`
+	ChecksumSha256      string           `json:"checksum_sha256"`
+	IsMandatory         bool             `json:"is_mandatory"`
+	MinSupportedVersion pgtype.Text      `json:"min_supported_version"`
+	IsActive            bool             `json:"is_active"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
+}
+
 type ApprovalPolicy struct {
 	ID                 int32            `json:"id"`
 	OrganizationID     int32            `json:"organization_id"`

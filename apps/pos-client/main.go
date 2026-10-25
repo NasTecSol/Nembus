@@ -242,11 +242,11 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	return r
 }
 
-// Application Version & GitHub release information (populated via -ldflags at build time)
+// Application Version & Update configuration (populated via -ldflags at build time)
 var (
-	Version     = "v1.0.0"
-	GithubToken = ""
-	GithubRepo  = "NasTecSol/Nembus"
+	Version      = "v1.0.0"
+	AppUpdateKey = ""
+	CloudURL     = ""
 )
 
 func healthCheck(c *gin.Context) {
@@ -280,7 +280,7 @@ func main() {
 	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
 
 	// Wails Setup
-	app := NewApp(Version, GithubToken, GithubRepo)
+	app := NewApp(Version, AppUpdateKey, CloudURL)
 
 	err := wails.Run(&options.App{
 		Title:  "NEMBUS",

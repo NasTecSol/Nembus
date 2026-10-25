@@ -47,16 +47,16 @@ type App struct {
 	geideaClient  *geidea.Client
 	cfg           *config.Config
 	version       string
-	ghToken       string
-	ghRepo        string
+	appKey        string
+	cloudURL      string
 }
 
 // NewApp creates a new App application struct
-func NewApp(version, ghToken, ghRepo string) *App {
+func NewApp(version, appKey, cloudURL string) *App {
 	return &App{
-		version: version,
-		ghToken: ghToken,
-		ghRepo:  ghRepo,
+		version:  version,
+		appKey:   appKey,
+		cloudURL: cloudURL,
 	}
 }
 
@@ -104,28 +104,24 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 		}, nil
 	}
 
-	token := a.ghToken
-	if token == "" && a.cfg != nil {
-		token = a.cfg.GithubToken
+	cloudURL := a.cloudURL
+	if cloudURL == "" && a.cfg != nil {
+		cloudURL = a.cfg.CloudURL
 	}
-	repo := a.ghRepo
-	if repo == "" && a.cfg != nil {
-		repo = a.cfg.GithubRepo
+	appKey := a.appKey
+	if appKey == "" && a.cfg != nil {
+		appKey = a.cfg.AppUpdateClientKey
 	}
-	return updater.CheckForUpdate(a.GetAppVersion(), repo, token)
+	return updater.CheckForUpdate(a.GetAppVersion(), cloudURL, appKey)
 }
 
-// ApplyUpdate downloads release asset and restarts application
-func (a *App) ApplyUpdate(downloadURL string, assetID int64) error {
-	token := a.ghToken
-	if token == "" && a.cfg != nil {
-		token = a.cfg.GithubToken
+// ApplyUpdate downloads release binary, verifies SHA-256, and restarts application
+func (a *App) ApplyUpdate(downloadURL string, checksumSha256 string) error {
+	appKey := a.appKey
+	if appKey == "" && a.cfg != nil {
+		appKey = a.cfg.AppUpdateClientKey
 	}
-	repo := a.ghRepo
-	if repo == "" && a.cfg != nil {
-		repo = a.cfg.GithubRepo
-	}
-	return updater.ApplyUpdate(downloadURL, assetID, repo, token)
+	return updater.ApplyUpdate(downloadURL, checksumSha256, appKey)
 }
 
 // domReady is called after front-end resources have been loaded

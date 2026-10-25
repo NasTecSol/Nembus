@@ -122,6 +122,11 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
 	}
 
+	// App Releases & Auto-Update Endpoints (CI/CD upload and POS client check/download)
+	releaseUC := usecase.NewReleaseUseCase(masterRepo, cfg.UpdatesStorageDir)
+	releaseHandler := handler.NewReleaseHandler(releaseUC, cfg)
+	router.RegisterReleaseRoutes(r, releaseHandler)
+
 	// SAP Migration Batch Ingestion (agent -> cloud) - Secured with AgentAPIKeyMiddleware
 	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
 	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
