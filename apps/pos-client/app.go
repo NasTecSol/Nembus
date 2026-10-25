@@ -319,13 +319,27 @@ func (a *App) CloneTenant(slug string) string {
 	if a.masterRepo == nil {
 		return "Error: Local database not started"
 	}
+
+	emitProgress := func(phase string, percent int, bytes int64, speed string, estSecs int, msg string) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "clone:progress", map[string]interface{}{
+				"phase":             phase,
+				"percent":           percent,
+				"bytes_transferred": bytes,
+				"speed":             speed,
+				"estimated_seconds": estSecs,
+				"message":           msg,
+			})
+		}
+	}
+
+	emitProgress("connecting", 5, 0, "", 30, "Connecting to cloud server...")
+
 	previousSync := a.syncService
 	if previousSync != nil {
 		log.Printf("CloneTenant: stopping background sync during backup and restore")
 		previousSync.Stop()
 		defer func() {
-			// A failed clone resumes the previous tenant worker. A successful
-			// clone starts a fresh worker after restore and migrations.
 			if a.syncService == previousSync {
 				a.StartSyncService(previousSync.TenantSlug())
 			}
@@ -333,6 +347,7 @@ func (a *App) CloneTenant(slug string) string {
 	}
 
 	// 1. Fetch Tenant details from cloud
+	emitProgress("metadata", 12, 0, "", 28, fmt.Sprintf("Fetching tenant details for [%s]...", slug))
 	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
 	log.Printf("Fetching tenant details for [%s] from: %s", slug, url)
 	req, err := http.NewRequest("GET", url, nil)
@@ -356,9 +371,6 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error decoding tenant data: %v", err)
 	}
 
-	// cloudTenant is a plain struct for parsing the cloud API's JSON response.
-	// repository.Tenant uses pgtype.* types which require special JSON nesting
-	// and cannot be decoded directly from plain REST JSON.
 	type cloudTenant struct {
 		ID         string          `json:"id"`
 		TenantName string          `json:"tenant_name"`
@@ -380,15 +392,10 @@ func (a *App) CloneTenant(slug string) string {
 	}
 
 	// 2. Create the tenant database locally
+	emitProgress("creating_db", 20, 0, "", 25, fmt.Sprintf("Preparing database schema for %s...", tenant.TenantName))
 	tenantDBName := slug
-	// Check if database exists, create if not
-	// We use standard db/sql for this as creating databases cannot run in a transaction block which pgx pool might implicitly use or log.
-	// Actually masterPool.Exec without a transaction is fine, but CREATE DATABASE cannot be executed inside a transaction block.
-	// Let's drop it if it exists (for a clean clone), but we must disconnect first. Since it's a new setup, it probably doesn't exist,
-	// but to be safe we try to create it and ignore "already exists" errors.
 	_, err = a.masterPool.Exec(a.ctx, fmt.Sprintf(`CREATE DATABASE "%s" WITH ENCODING 'UTF8'`, tenantDBName))
 	if err != nil {
-		// Ignore error if database already exists
 		if !strings.Contains(err.Error(), "already exists") {
 			return fmt.Sprintf("Error creating tenant database: %v", db.WithStorageHint(err))
 		}
@@ -400,9 +407,6 @@ func (a *App) CloneTenant(slug string) string {
 	backupDir := filepath.Join(home, ".nembus", "backups", tenant.Slug)
 	backupToken := a.cfg.BackupAuthToken
 
-	// Construct the tenant-specific DB URL
-	// We extract username, password, port from a.cfg.MasterDBURL
-	// Since we know StartDatabase uses postgres / password / nembus / port
 	tenantDBURL := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable",
 		a.dbManager.GetConfig().Username,
 		a.dbManager.GetConfig().Password,
@@ -411,12 +415,15 @@ func (a *App) CloneTenant(slug string) string {
 	)
 
 	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
-	backupPath, err := clientbackup.DownloadBackup(
+	backupPath, err := clientbackup.DownloadBackupWithProgress(
 		a.cfg.GRPCAddr,
 		tenant.Slug,
 		backupToken,
 		backupDir,
-		tenantDBURL, // restore directly into the tenant's database
+		tenantDBURL,
+		func(stage string, percent int, bytesTransferred int64, speed string, estimatedSecs int, message string) {
+			emitProgress(stage, percent, bytesTransferred, speed, estimatedSecs, message)
+		},
 	)
 	if err != nil {
 		log.Printf("CloneTenant Backup Error: %v", err)
@@ -425,6 +432,7 @@ func (a *App) CloneTenant(slug string) string {
 	log.Printf("Tenant backup restored from: %s", backupPath)
 
 	// 4. Run POS extensions migrations directly on the restored tenant database
+	emitProgress("migrating", 88, 0, "", 5, "Applying offline tables and local triggers...")
 	log.Printf("CloneTenant: applying POS migrations to tenant DB [%s]", tenant.Slug)
 	if err := a.migrate(tenantDBURL); err != nil {
 		log.Printf("Error applying POS migrations to tenant DB: %v", err)
@@ -433,7 +441,7 @@ func (a *App) CloneTenant(slug string) string {
 	log.Printf("POS migrations applied successfully to tenant DB [%s]", tenant.Slug)
 
 	// 5. Ensure the local tenant record is correct in the master DB.
-	// We upsert it to make sure the slug exists and points to our local tenant DB URL.
+	emitProgress("finalizing", 96, 0, "", 2, "Finalizing local configuration...")
 	upsertSQL := `
 		INSERT INTO tenants (id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -451,10 +459,11 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error finalizing local tenant record: %v", err)
 	}
 
-	// Invalidate cached pool so subsequent requests (like GET /api/stores) reconnect to the newly restored DB
 	if a.tenantManager != nil {
 		a.tenantManager.EvictPool(tenant.Slug)
 	}
+
+	emitProgress("complete", 100, 0, "", 0, "Organization cloned successfully!")
 
 	// 6. Start sync service for this tenant
 	a.StartSyncService(tenant.Slug)

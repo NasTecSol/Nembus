@@ -264,6 +264,8 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
+		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 
 		// Notification Center & Outbox Routes
