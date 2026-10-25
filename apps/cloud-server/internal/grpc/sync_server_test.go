@@ -104,8 +104,8 @@ func TestUpsertAcceptedEntityTypes(t *testing.T) {
 		t.Fatalf("expected unsupported entity type error, got %v", err)
 	}
 
-	// Ensure sales_returns, sales_return_lines, and stock_movements are accepted as valid tables
-	for _, table := range []string{"sales_returns", "sales_return_lines", "stock_movements"} {
+	// Ensure sales_returns, sales_return_lines, stock_movements, and notification_events are accepted as valid tables
+	for _, table := range []string{"sales_returns", "sales_return_lines", "stock_movements", "notification_events"} {
 		err := s.upsertEntityJSON(ctx, nil, table, "INSERT", []byte(`{"id":1}`))
 		// With nil pool, it should pass the validTables check and fail on getTableUpdateClause
 		if err != nil && strings.Contains(err.Error(), "unsupported entity type for upsert") {

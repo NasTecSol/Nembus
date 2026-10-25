@@ -129,23 +129,24 @@ func GenerateM2MToken(clientID, clientName, tenantID string, scopes []string, du
 // JWTAuthMiddleware validates JWT tokens from the Authorization header
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get the Authorization header
+		// Get the Authorization header or token query parameter (useful for WebSocket connections)
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		var tokenString string
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+		if tokenString == "" {
+			tokenString = c.Query("token")
+		}
+
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or token parameter required"})
 			c.Abort()
 			return
 		}
-
-		// Check if it starts with "Bearer "
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header must be in format: Bearer <token>"})
-			c.Abort()
-			return
-		}
-
-		tokenString := parts[1]
 
 		// Get JWT secret from environment
 		jwtSecret := os.Getenv("JWT_SECRET")

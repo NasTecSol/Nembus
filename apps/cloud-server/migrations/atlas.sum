@@ -1,4 +1,4 @@
-h1:uS5rTIMc0tY5weLZnAZOrvk0D44g3cV+xcLvYOPd11E=
+h1:78bHY1SL8WSBFAm38ytnKgtEAcf2+TZ6DkDttwcDFXs=
 20260918111505_initial_schema.sql h1:IRmi7An5XAhbuk6XO1hjD79vwF7mb+yTyT0HKpdSMuM=
 20260919000000_sap_user_customer_addresses.sql h1:1qRWKZNHU/oVbAb3Mn962y//Wmq5ZDi/7MCAt1B1atY=
 20260919010000_unify_business_partners.sql h1:iZkUc+fLzQUhy302aLy67zG0KxJktVjV5FO3zIAk308=
@@ -9,3 +9,4 @@ h1:uS5rTIMc0tY5weLZnAZOrvk0D44g3cV+xcLvYOPd11E=
 20260926000001_products_cost_price.sql h1:iiRPDlRGdUddGUCtZtGeCWRJ8dU4APyTuOrSk/9CjLo=
 20260926000002_fix_views_business_partners.sql h1:NV9yf6sg7K4e/n8ROo07H8hCpZBTCygw57vWnMh4sOk=
 20261022000000_geidea_pos_payments_emv.sql h1:0nlEYEepEKT7Kk6JJhlinPzP0YhXdYd9tG6ATuAlZ1k=
+20261026000000_notification_engine.sql h1:zSr3EFVJdWTA0IC0NyEHcKYDe67jwD+uUDvWe3gSYX8=

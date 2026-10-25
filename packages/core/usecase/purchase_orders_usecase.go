@@ -867,6 +867,37 @@ func (uc *PurchaseOrdersUseCase) UpdatePurchaseOrderStatus(ctx context.Context, 
 		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to update purchase order status: %v", err), nil)
 	}
 
+	// Enqueue notification outbox event for PO status transitions
+	var notifEvent string
+	switch input.Status {
+	case "submitted":
+		notifEvent = "po.submitted"
+	case "approved":
+		notifEvent = "po.approved"
+	case "cancelled":
+		notifEvent = "po.rejected"
+	}
+	if notifEvent != "" {
+		payload := map[string]interface{}{
+			"purchase_order_id": existing.ID,
+			"po_number":         existing.PoNumber,
+			"status":            input.Status,
+			"partner_id":        existing.PartnerID,
+			"organization_id":   existing.OrganizationID,
+		}
+		if pBytes, mErr := json.Marshal(payload); mErr == nil {
+			idempKey := fmt.Sprintf("%s:%d:%s:%d", notifEvent, existing.ID, input.Status, time.Now().UnixNano())
+			_, _ = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+				OrganizationID: existing.OrganizationID,
+				EventTypeID:    notifEvent,
+				EntityType:     "purchase_order",
+				EntityID:       fmt.Sprintf("%d", existing.ID),
+				IdempotencyKey: idempKey,
+				Payload:        pBytes,
+			})
+		}
+	}
+
 	return uc.GetPurchaseOrder(ctx, id)
 }
 

@@ -952,6 +952,42 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			}
 		}
 	}
+	// Enqueue POS E-Receipt outbox event if customer contact or customer id is present
+	var custPhone, custEmail string
+	if len(in.Metadata) > 0 {
+		var inMeta map[string]interface{}
+		if err := json.Unmarshal(in.Metadata, &inMeta); err == nil {
+			if p, ok := inMeta["customer_phone"].(string); ok {
+				custPhone = p
+			}
+			if e, ok := inMeta["customer_email"].(string); ok {
+				custEmail = e
+			}
+		}
+	}
+	if custPhone != "" || custEmail != "" || in.CustomerID != nil {
+		receiptPayload := map[string]interface{}{
+			"transaction_id":     header.ID,
+			"transaction_number": header.TransactionNumber,
+			"total_amount":       in.TotalAmount,
+			"customer_phone":     custPhone,
+			"customer_email":     custEmail,
+			"organization_id":    store.OrganizationID,
+			"qr_code_base64":     qrCode,
+			"zatca_uuid":         zatcaUUID,
+		}
+		if pBytes, mErr := json.Marshal(receiptPayload); mErr == nil {
+			idempKey := fmt.Sprintf("pos.receipt:%d:%s", header.ID, header.TransactionNumber)
+			_, _ = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+				OrganizationID: store.OrganizationID,
+				EventTypeID:    "pos.receipt",
+				EntityType:     "pos_transaction",
+				EntityID:       fmt.Sprintf("%d", header.ID),
+				IdempotencyKey: idempKey,
+				Payload:        pBytes,
+			})
+		}
+	}
 
 	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
 

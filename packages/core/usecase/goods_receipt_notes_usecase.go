@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"time"
@@ -499,6 +500,27 @@ func (uc *GoodsReceiptNotesUseCase) PostGoodsReceiptNote(ctx context.Context, id
 	}
 	if !res.Success {
 		return utils.NewResponse(utils.CodeBadReq, res.Message, nil)
+	}
+
+	// Enqueue notification outbox event for GRN posting
+	payload := map[string]interface{}{
+		"grn_id":            grn.ID,
+		"grn_number":        grn.GrnNumber,
+		"purchase_order_id": grn.PurchaseOrderID.Int32,
+		"partner_id":        grn.PartnersID,
+		"store_id":          grn.StoreID,
+		"organization_id":   grn.OrganizationID,
+	}
+	if pBytes, mErr := json.Marshal(payload); mErr == nil {
+		idempKey := fmt.Sprintf("grn.posted:%d:%d", grn.ID, time.Now().UnixNano())
+		_, _ = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+			OrganizationID: grn.OrganizationID,
+			EventTypeID:    "grn.posted",
+			EntityType:     "grn",
+			EntityID:       fmt.Sprintf("%d", grn.ID),
+			IdempotencyKey: idempKey,
+			Payload:        pBytes,
+		})
 	}
 
 	return utils.NewResponse(utils.CodeOK, res.Message, nil)

@@ -692,6 +692,13 @@ definitions:
         type: integer
       path: {}
     type: object
+  handler.ChannelsListResponse:
+    properties:
+      channels:
+        items:
+          $ref: '#/definitions/handler.NotificationChannelItem'
+        type: array
+    type: object
   handler.CloseCashierSessionRequest:
     properties:
       closed_by:
@@ -1654,6 +1661,10 @@ definitions:
         type: string
       is_active:
         type: boolean
+      metadata:
+        items:
+          type: integer
+        type: array
       store_id:
         type: integer
       terminal_code:
@@ -2053,7 +2064,7 @@ definitions:
         items:
           type: integer
         type: array
-      target_customer_s:
+      target_customer_tiers:
         items:
           type: string
         type: array
@@ -2415,6 +2426,33 @@ definitions:
     required:
     - code
     - name
+    type: object
+  handler.CreateRuleRequest:
+    properties:
+      audience_type:
+        example: role
+        type: string
+      channels:
+        items:
+          type: integer
+        type: array
+      conditions:
+        items:
+          type: integer
+        type: array
+      event_type_id:
+        example: po.approved
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      target_role_id:
+        example: 2
+        type: integer
+    required:
+    - audience_type
+    - channels
+    - event_type_id
     type: object
   handler.CreateSalesOrderLineV2Request:
     properties:
@@ -3688,6 +3726,148 @@ definitions:
         example: "2026-01-24T21:43:00Z"
         type: string
     type: object
+  handler.NotificationChannelItem:
+    properties:
+      channel_type:
+        example: whatsapp
+        type: string
+      config:
+        items:
+          type: integer
+        type: array
+      id:
+        example: 1
+        type: integer
+      is_enabled:
+        example: true
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+    type: object
+  handler.NotificationInAppItem:
+    properties:
+      action_url:
+        example: /purchasing/orders/12
+        type: string
+      created_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+      event_id:
+        example: c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22
+        type: string
+      id:
+        example: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+        type: string
+      is_read:
+        example: false
+        type: boolean
+      message:
+        example: 'PO #PO-2026-001 has been approved by the manager.'
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      read_at:
+        example: "2026-10-25T20:30:00Z"
+        type: string
+      severity:
+        example: info
+        type: string
+      title:
+        example: Purchase Order Approved
+        type: string
+      user_id:
+        example: 42
+        type: integer
+    type: object
+  handler.NotificationListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/handler.NotificationInAppItem'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
+  handler.NotificationRoutingRuleItem:
+    properties:
+      audience_type:
+        example: role
+        type: string
+      channels:
+        items:
+          type: integer
+        type: array
+      conditions:
+        items:
+          type: integer
+        type: array
+      created_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+      event_type_id:
+        example: po.approved
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      target_role_id:
+        example: 2
+        type: integer
+      updated_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+    type: object
+  handler.NotificationTemplateItem:
+    properties:
+      body_template:
+        example: 'Hello {{.CustomerName}}, total: {{.TotalAmount}}'
+        type: string
+      channel_type:
+        example: whatsapp
+        type: string
+      created_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+      event_type_id:
+        example: pos.receipt
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      locale:
+        example: en
+        type: string
+      meta_template_name:
+        example: pos_digital_receipt
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      subject_template:
+        example: 'Receipt #{{.TransactionNumber}}'
+        type: string
+      updated_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+    type: object
   handler.OpenCashierSessionRequest:
     properties:
       cashier_id:
@@ -4396,6 +4576,13 @@ definitions:
       statusCode:
         type: integer
     type: object
+  handler.RulesListResponse:
+    properties:
+      rules:
+        items:
+          $ref: '#/definitions/handler.NotificationRoutingRuleItem'
+        type: array
+    type: object
   handler.SetPrimaryBarcodeRequest:
     properties:
       barcode_id:
@@ -4788,6 +4975,13 @@ definitions:
     - template_code
     - template_name
     type: object
+  handler.TemplatesListResponse:
+    properties:
+      templates:
+        items:
+          $ref: '#/definitions/handler.NotificationTemplateItem'
+        type: array
+    type: object
   handler.TenantResponse:
     properties:
       created_at:
@@ -5046,6 +5240,12 @@ definitions:
       tenant_slug:
         example: store-riyadh-01
         type: string
+    type: object
+  handler.UnreadCountResponse:
+    properties:
+      unread_count:
+        example: 5
+        type: integer
     type: object
   handler.UpdateBPPriceContractRequest:
     properties:
@@ -5661,6 +5861,10 @@ definitions:
         type: string
       is_active:
         type: boolean
+      metadata:
+        items:
+          type: integer
+        type: array
       terminal_name:
         type: string
     type: object
@@ -6084,6 +6288,29 @@ definitions:
     required:
     - name
     type: object
+  handler.UpdateRuleRequest:
+    properties:
+      audience_type:
+        example: role
+        type: string
+      channels:
+        items:
+          type: integer
+        type: array
+      conditions:
+        items:
+          type: integer
+        type: array
+      is_active:
+        example: true
+        type: boolean
+      target_role_id:
+        example: 2
+        type: integer
+    required:
+    - audience_type
+    - channels
+    type: object
   handler.UpdateSalesOrderLineV2Request:
     properties:
       discount_amount:
@@ -6384,6 +6611,18 @@ definitions:
         additionalProperties: true
         type: object
     type: object
+  handler.UpsertChannelRequest:
+    properties:
+      config:
+        items:
+          type: integer
+        type: array
+      is_active:
+        example: true
+        type: boolean
+    required:
+    - config
+    type: object
   handler.UpsertInventoryStockRequest:
     properties:
       max_stock_level:
@@ -6416,6 +6655,31 @@ definitions:
     required:
     - product_id
     - store_id
+    type: object
+  handler.UpsertTemplateRequest:
+    properties:
+      body_template:
+        example: 'Hello {{.CustomerName}}, total: {{.TotalAmount}}'
+        type: string
+      channel_type:
+        example: whatsapp
+        type: string
+      event_type_id:
+        example: pos.receipt
+        type: string
+      locale:
+        example: en
+        type: string
+      meta_template_name:
+        example: pos_digital_receipt
+        type: string
+      subject_template:
+        example: 'Receipt #{{.TransactionNumber}}'
+        type: string
+    required:
+    - body_template
+    - channel_type
+    - event_type_id
     type: object
   handler.UserResponse:
     properties:
@@ -17598,6 +17862,594 @@ paths:
       summary: Get user navigation
       tags:
       - navigation
+  /api/notifications:
+    get:
+      description: Returns paginated in-app notifications for the currently authenticated
+        user
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - default: 20
+        description: Number of items to return
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset to skip
+        in: query
+        name: offset
+        type: integer
+      - description: Filter by read status
+        in: query
+        name: is_read
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List user notifications
+      tags:
+      - notifications
+  /api/notifications/{id}/read:
+    post:
+      description: Marks a specific notification as read by UUID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Notification UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationInAppItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark notification as read
+      tags:
+      - notifications
+  /api/notifications/channels:
+    get:
+      description: Returns configuration status for all supported channels (whatsapp,
+        email, sms, websocket)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ChannelsListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification channels
+      tags:
+      - notifications
+  /api/notifications/channels/{type}:
+    get:
+      description: Returns credentials and settings for a specific channel type (e.g.
+        whatsapp, email)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Channel type (whatsapp, email, sms, websocket)
+        in: path
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationChannelItem'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get channel configuration
+      tags:
+      - notifications
+    put:
+      consumes:
+      - application/json
+      description: Updates active status and JSON credentials for a channel type (e.g.
+        Meta WhatsApp token, AWS SES SMTP)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Channel type (whatsapp, email)
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Channel payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpsertChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationChannelItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upsert channel configuration
+      tags:
+      - notifications
+  /api/notifications/read-all:
+    post:
+      description: Marks all pending notifications as read for the current user
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark all notifications as read
+      tags:
+      - notifications
+  /api/notifications/rules:
+    get:
+      description: Returns routing rules mapping events to audiences, channels, and
+        roles
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RulesListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification rules
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Creates a routing rule for an event type with audience targeting
+        and channels
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Rule payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.NotificationRoutingRuleItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create notification rule
+      tags:
+      - notifications
+  /api/notifications/rules/{id}:
+    delete:
+      description: Deletes an existing notification routing rule
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete notification rule
+      tags:
+      - notifications
+    put:
+      consumes:
+      - application/json
+      description: Updates rule audience, target role, channels, or active status
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rule payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationRoutingRuleItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update notification rule
+      tags:
+      - notifications
+  /api/notifications/templates:
+    get:
+      description: Returns active notification templates optionally filtered by event_type_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Event type ID filter (e.g. pos.receipt, po.approved)
+        in: query
+        name: event_type_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TemplatesListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification templates
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Creates or updates subject and body templates with interpolation
+        variables (e.g. {{.CustomerName}})
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Template payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpsertTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationTemplateItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upsert notification template
+      tags:
+      - notifications
+  /api/notifications/templates/{id}:
+    delete:
+      description: Removes a notification template by its numeric ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete notification template
+      tags:
+      - notifications
+  /api/notifications/unread-count:
+    get:
+      description: Returns the total count of unread in-app notifications for the
+        bell badge
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.UnreadCountResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get unread notifications count
+      tags:
+      - notifications
   /api/order-fulfillment-items/{item_id}:
     delete:
       consumes:

@@ -156,6 +156,9 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 }
 
 func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) (string, error) {
+	if pool == nil {
+		return "", fmt.Errorf("read columns for %s: database pool is nil", table)
+	}
 	rows, err := pool.Query(ctx, `
 		SELECT column_name 
 		FROM information_schema.columns 
@@ -202,6 +205,7 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		"cashier_sessions": true, "carts": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
 		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
 		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
+		"notification_events": true,
 	}
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)

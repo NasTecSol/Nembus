@@ -232,6 +232,11 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+
+		// Notification Center Routes (In-App Bell & Notifications)
+		notifUC := usecase.NewNotificationUseCase(masterRepo)
+		notifHandler := handler.NewNotificationHandler(notifUC)
+		router.RegisterNotificationRoutes(api, notifHandler)
 	}
 
 	return r

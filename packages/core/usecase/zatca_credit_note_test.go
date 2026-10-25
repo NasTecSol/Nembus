@@ -48,7 +48,9 @@ func (r *mockZatcaRow) Scan(dest ...interface{}) error {
 	switch {
 	case strings.Contains(s, "GetNextICV") || strings.Contains(s, "COALESCE(MAX(icv), 0) + 1"):
 		if len(dest) > 0 {
-			if ptr, ok := dest[0].(*int64); ok {
+			if ptr, ok := dest[0].(*int32); ok {
+				*ptr = int32(r.mock.latestICV + 1)
+			} else if ptr, ok := dest[0].(*int64); ok {
 				*ptr = r.mock.latestICV + 1
 			}
 		}

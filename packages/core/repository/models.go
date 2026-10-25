@@ -1274,6 +1274,74 @@ type ModulePermission struct {
 	Metadata     json.RawMessage `json:"metadata"`
 }
 
+type NotificationChannel struct {
+	ID             int32              `json:"id"`
+	OrganizationID int32              `json:"organization_id"`
+	ChannelType    string             `json:"channel_type"`
+	IsActive       pgtype.Bool        `json:"is_active"`
+	Config         json.RawMessage    `json:"config"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type NotificationDelivery struct {
+	ID                uuid.UUID          `json:"id"`
+	EventID           uuid.UUID          `json:"event_id"`
+	ChannelType       string             `json:"channel_type"`
+	Recipient         string             `json:"recipient"`
+	Status            string             `json:"status"`
+	ProviderMessageID pgtype.Text        `json:"provider_message_id"`
+	ErrorMessage      pgtype.Text        `json:"error_message"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	SentAt            pgtype.Timestamptz `json:"sent_at"`
+}
+
+type NotificationEvent struct {
+	ID             uuid.UUID          `json:"id"`
+	OrganizationID int32              `json:"organization_id"`
+	EventTypeID    string             `json:"event_type_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       string             `json:"entity_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Payload        json.RawMessage    `json:"payload"`
+	Status         string             `json:"status"`
+	RetryCount     pgtype.Int4        `json:"retry_count"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DispatchedAt   pgtype.Timestamptz `json:"dispatched_at"`
+}
+
+type NotificationEventType struct {
+	ID          string             `json:"id"`
+	Category    string             `json:"category"`
+	Description pgtype.Text        `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type NotificationRule struct {
+	ID             int32              `json:"id"`
+	OrganizationID int32              `json:"organization_id"`
+	EventTypeID    string             `json:"event_type_id"`
+	AudienceType   string             `json:"audience_type"`
+	TargetRoleID   pgtype.Int4        `json:"target_role_id"`
+	Channels       json.RawMessage    `json:"channels"`
+	Conditions     json.RawMessage    `json:"conditions"`
+	IsActive       pgtype.Bool        `json:"is_active"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type NotificationTemplate struct {
+	ID               int32              `json:"id"`
+	OrganizationID   int32              `json:"organization_id"`
+	EventTypeID      string             `json:"event_type_id"`
+	ChannelType      string             `json:"channel_type"`
+	Locale           string             `json:"locale"`
+	SubjectTemplate  pgtype.Text        `json:"subject_template"`
+	BodyTemplate     string             `json:"body_template"`
+	MetaTemplateName pgtype.Text        `json:"meta_template_name"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Shipment and fulfillment tracking for orders
 type OrderFulfillment struct {
 	ID                    uuid.UUID        `json:"id"`
@@ -2715,6 +2783,19 @@ type User struct {
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	MustResetPassword bool             `json:"must_reset_password"`
 	SapImported       bool             `json:"sap_imported"`
+}
+
+type UserNotification struct {
+	ID             uuid.UUID          `json:"id"`
+	OrganizationID int32              `json:"organization_id"`
+	UserID         int32              `json:"user_id"`
+	EventID        pgtype.UUID        `json:"event_id"`
+	Title          string             `json:"title"`
+	Message        string             `json:"message"`
+	ActionUrl      pgtype.Text        `json:"action_url"`
+	IsRead         pgtype.Bool        `json:"is_read"`
+	ReadAt         pgtype.Timestamptz `json:"read_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type UserRole struct {

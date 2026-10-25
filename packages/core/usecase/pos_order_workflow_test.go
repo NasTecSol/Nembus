@@ -209,13 +209,36 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 
 	case strings.Contains(s, "GetNextICV"):
 		if len(dest) > 0 {
-			if icvPtr, ok := dest[0].(*int64); ok {
+			if icvPtr, ok := dest[0].(*int32); ok {
+				*icvPtr = int32(r.mock.latestICV + 1)
+			} else if icvPtr, ok := dest[0].(*int64); ok {
 				*icvPtr = r.mock.latestICV + 1
 			}
 		}
 		return nil
 
+	case strings.Contains(s, "::numeric") || strings.Contains(s, "SELECT $1"):
+		if len(dest) > 0 && len(r.args) > 0 {
+			if numPtr, ok := dest[0].(*pgtype.Numeric); ok {
+				if str, ok := r.args[0].(string); ok {
+					_ = numPtr.Scan(str)
+				}
+			}
+		}
+		return nil
+
 	case strings.Contains(s, "GetLatestChainEntry"):
+		if r.mock.latestICV > 0 {
+			if len(dest) >= 8 {
+				if icvPtr, ok := dest[6].(*int64); ok {
+					*icvPtr = r.mock.latestICV
+				}
+				if pihPtr, ok := dest[7].(*string); ok {
+					*pihPtr = "previous-hash"
+				}
+			}
+			return nil
+		}
 		return pgx.ErrNoRows
 
 	case strings.Contains(s, "InsertChainEntry") || strings.Contains(s, "INSERT INTO zatca_document_chain"):
@@ -367,10 +390,10 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 		return nil
 
 	case strings.Contains(s, "CreateSalesOrderLineV2"):
-		if len(r.args) >= 7 {
+		if len(r.args) >= 8 {
 			r.mock.createdOrderLinesV2 = append(r.mock.createdOrderLinesV2, repository.CreateSalesOrderLineV2Params{
 				SalesOrderID:    r.args[0].(uuid.UUID),
-				ProductID:       r.args[4].(int32),
+				ProductID:       r.args[3].(int32),
 				QuantityOrdered: r.args[7].(pgtype.Numeric),
 			})
 		}
