@@ -22,6 +22,8 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
 	"github.com/NasTecSol/nembus-sap-agent/internal/reconciliation"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
+	"github.com/kardianos/service"
 )
 
 type Server struct {
@@ -112,6 +114,10 @@ func (s *Server) setupRoutes() {
 		// History & Logs
 		api.GET("/history", s.handleGetHistory)
 		api.GET("/logs", s.handleGetLogs)
+
+		// Application Auto-Update
+		api.GET("/updates/check", s.handleCheckUpdates)
+		api.POST("/updates/apply", s.handleApplyUpdate)
 	}
 }
 
@@ -730,3 +736,52 @@ func (s *Server) handleGetLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
+
+func (s *Server) handleCheckUpdates(c *gin.Context) {
+	currVer := s.cfg.Version
+	if currVer == "" {
+		currVer = "v1.0.0"
+	}
+	info, err := updater.CheckForUpdate(currVer, s.cfg.Cloud.BaseURL, s.cfg.Cloud.AppUpdateClientKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"hasUpdate":      false,
+			"currentVersion": currVer,
+			"error":          err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, info)
+}
+
+func (s *Server) handleApplyUpdate(c *gin.Context) {
+	var req struct {
+		DownloadURL    string `json:"downloadUrl"`
+		ChecksumSHA256 string `json:"checksumSha256"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "downloadUrl and checksumSha256 required"})
+		return
+	}
+
+	// Trigger async update sequence so HTTP response is returned to client before process restart
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		err := updater.ApplyUpdate(
+			req.DownloadURL,
+			req.ChecksumSHA256,
+			s.cfg.Cloud.AppUpdateClientKey,
+			!service.Interactive(),
+			"NembusSAPMigrationAgent",
+		)
+		if err != nil {
+			log.Printf("[SAP-UPDATER] Failed to apply update: %v", err)
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "updating",
+		"message": "Update initiated. SAP Agent is downloading binary, verifying checksum, and restarting.",
+	})
+}
+

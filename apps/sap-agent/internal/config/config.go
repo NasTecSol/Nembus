@@ -20,14 +20,16 @@ type MSSQLConfig struct {
 }
 
 type CloudConfig struct {
-	BaseURL        string `json:"base_url"`
-	APIKey         string `json:"api_key"`
-	OrganizationID int    `json:"organization_id"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-	DatabaseURL    string `json:"database_url,omitempty"`
+	BaseURL            string `json:"base_url"`
+	APIKey             string `json:"api_key"`
+	AppUpdateClientKey string `json:"app_update_client_key,omitempty"`
+	OrganizationID     int    `json:"organization_id"`
+	TimeoutSeconds     int    `json:"timeout_seconds"`
+	DatabaseURL        string `json:"database_url,omitempty"`
 }
 
 type AgentConfig struct {
+	Version              string      `json:"version,omitempty"`
 	Port                 int         `json:"port"`
 	SQLitePath           string      `json:"sqlite_path"`
 	BatchSize            int         `json:"batch_size"`
@@ -109,10 +111,11 @@ func DefaultConfig() *AgentConfig {
 			ConnectionTimeout:      15,
 		},
 		Cloud: CloudConfig{
-			BaseURL:        "http://127.0.0.1:8080",
-			APIKey:         "",
-			OrganizationID: 1,
-			TimeoutSeconds: 60,
+			BaseURL:            "http://127.0.0.1:8080",
+			APIKey:             "",
+			AppUpdateClientKey: "nembus-pos-update-client-key-default",
+			OrganizationID:     1,
+			TimeoutSeconds:     60,
 		},
 	}
 }

@@ -16,7 +16,15 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
 	"github.com/NasTecSol/nembus-sap-agent/internal/server"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
+	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
 	"github.com/NasTecSol/nembus-sap-agent/ui"
+)
+
+// Application Version & Update configuration (injected via -ldflags at build time)
+var (
+	Version      = "v1.0.0"
+	AppUpdateKey = ""
+	CloudURL     = ""
 )
 
 type program struct {
@@ -24,6 +32,7 @@ type program struct {
 	port   int
 	sqlite *db.SQLiteStore
 	mssql  *db.MSSQLClient
+	cfg    *config.AgentConfig
 }
 
 func (p *program) Start(s service.Service) error {
@@ -42,6 +51,34 @@ func (p *program) run() {
 			openBrowser(addr)
 		}()
 	}
+
+	// Background Auto-Update Polling (every 2 hours)
+	go func() {
+		time.Sleep(15 * time.Second) // Initial delay on startup
+		ticker := time.NewTicker(2 * time.Hour)
+		defer ticker.Stop()
+		for {
+			currVer := p.cfg.Version
+			if currVer == "" {
+				currVer = "v1.0.0"
+			}
+			info, err := updater.CheckForUpdate(currVer, p.cfg.Cloud.BaseURL, p.cfg.Cloud.AppUpdateClientKey)
+			if err == nil && info != nil && info.HasUpdate {
+				log.Printf("[SAP-UPDATER] 🚀 New update available: %s (Current: %s)", info.LatestVersion, currVer)
+				if info.IsMandatory {
+					log.Println("[SAP-UPDATER] Mandatory update detected. Applying automatically...")
+					_ = updater.ApplyUpdate(
+						info.DownloadURL,
+						info.ChecksumSHA256,
+						p.cfg.Cloud.AppUpdateClientKey,
+						!service.Interactive(),
+						"NembusSAPMigrationAgent",
+					)
+				}
+			}
+			<-ticker.C
+		}
+	}()
 
 	if err := p.srv.Start(p.port); err != nil {
 		log.Fatalf("[SAP-AGENT] Server failed: %v", err)
@@ -73,6 +110,9 @@ func openBrowser(url string) {
 }
 
 func main() {
+	// Clean up legacy executable backups from prior update cycles
+	updater.CleanupOldExecutables()
+
 	svcFlag := flag.String("service", "", "Control the Windows service ('install', 'uninstall', 'start', 'stop', 'status')")
 	portFlag := flag.Int("port", 17890, "HTTP server port (default 17890)")
 	configFlag := flag.String("config", "agent_config.json", "Path to agent configuration file")
@@ -86,6 +126,15 @@ func main() {
 	}
 	if *portFlag != 17890 {
 		cfg.Port = *portFlag
+	}
+
+	// Apply build-time or environment variables
+	cfg.Version = Version
+	if CloudURL != "" {
+		cfg.Cloud.BaseURL = CloudURL
+	}
+	if AppUpdateKey != "" {
+		cfg.Cloud.AppUpdateClientKey = AppUpdateKey
 	}
 
 	// 2. Initialize Local SQLite Checkpoint Storage
@@ -112,6 +161,7 @@ func main() {
 		port:   cfg.Port,
 		sqlite: sqliteStore,
 		mssql:  mssqlClient,
+		cfg:    cfg,
 	}
 
 	svcConfig := &service.Config{

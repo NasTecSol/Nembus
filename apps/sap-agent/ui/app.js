@@ -54,6 +54,8 @@
         startTelemetryPolling();
         syncRunState();
         setInterval(syncRunState, 4000);
+        checkAgentUpdates();
+        setInterval(checkAgentUpdates, 600000);
     });
 
     // -------------------------------------------------------------
@@ -1061,6 +1063,67 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // -------------------------------------------------------------
+    // AGENT AUTO-UPDATE CONTROLLER
+    // -------------------------------------------------------------
+    async function checkAgentUpdates() {
+        try {
+            const res = await fetch('/api/v1/updates/check');
+            if (!res.ok) return;
+            const data = await res.json();
+            const banner = document.getElementById('update-notification-banner');
+            if (!banner) return;
+
+            if (data.hasUpdate) {
+                const versionEl = document.getElementById('update-version-label');
+                const notesEl = document.getElementById('update-notes-label');
+                if (versionEl) versionEl.textContent = data.latestVersion || '';
+                if (notesEl && data.releaseNotes) {
+                    notesEl.textContent = data.releaseNotes;
+                }
+                banner.style.display = 'flex';
+
+                const btn = document.getElementById('btn-apply-update');
+                if (btn) {
+                    btn.onclick = async () => {
+                        btn.disabled = true;
+                        const txt = document.getElementById('btn-apply-update-text');
+                        if (txt) txt.textContent = 'Downloading & Updating...';
+                        showToast('Downloading update and restarting SAP Agent...', 'success');
+
+                        try {
+                            const applyRes = await fetch('/api/v1/updates/apply', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    downloadUrl: data.downloadUrl,
+                                    checksumSha256: data.checksumSha256
+                                })
+                            });
+
+                            if (!applyRes.ok) {
+                                throw new Error('Update endpoint returned HTTP ' + applyRes.status);
+                            }
+
+                            setTimeout(() => {
+                                showToast('Agent is restarting with new binary. Reloading...', 'success');
+                                setTimeout(() => window.location.reload(), 4000);
+                            }, 1000);
+                        } catch (err) {
+                            showToast('Failed to apply update: ' + err.message, 'error');
+                            btn.disabled = false;
+                            if (txt) txt.textContent = 'Update & Restart';
+                        }
+                    };
+                }
+            } else {
+                banner.style.display = 'none';
+            }
+        } catch (e) {
+            console.warn('[SAP-AGENT] Update check error:', e);
+        }
     }
 
 })();
