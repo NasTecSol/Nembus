@@ -695,6 +695,7 @@ type UpsertProductPriceParams struct {
 	Price       pgtype.Numeric `json:"price"`
 }
 
+// Targets the default base-product row (variant NULL, min_quantity 1) for a product/list/UOM.
 func (q *Queries) UpsertProductPrice(ctx context.Context, arg UpsertProductPriceParams) (ProductPrice, error) {
 	row := q.db.QueryRow(ctx, upsertProductPrice,
 		arg.ProductID,
