@@ -38,6 +38,16 @@ func (uc *GeideaPaymentUseCase) SetDriverLoader(loader func(meta map[string]inte
 	uc.driverLoader = loader
 }
 
+// WithRepository returns a request-scoped use case using the supplied tenant repository.
+// The driver loader is shared as immutable configuration; repository state is not shared
+// between requests or tenants.
+func (uc *GeideaPaymentUseCase) WithRepository(repo *repository.Queries) *GeideaPaymentUseCase {
+	return &GeideaPaymentUseCase{
+		repo:         repo,
+		driverLoader: uc.driverLoader,
+	}
+}
+
 type InitiateGeideaPurchaseInput struct {
 	TransactionID  int32   `json:"transaction_id"`
 	TerminalID     int32   `json:"terminal_id"`
@@ -197,7 +207,11 @@ func (uc *GeideaPaymentUseCase) ResolveUncertain(ctx context.Context, in Resolve
 		if !payment.EcrReferenceID.Valid || payment.EcrReferenceID.String == "" {
 			return nil, errors.New("no ecr reference found for query")
 		}
-		driver, err := uc.driverLoader(nil)
+		var meta map[string]interface{}
+		if len(payment.Metadata) > 0 {
+			_ = json.Unmarshal(payment.Metadata, &meta)
+		}
+		driver, err := uc.driverLoader(meta)
 		if err != nil {
 			return nil, err
 		}

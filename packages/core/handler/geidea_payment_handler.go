@@ -3,7 +3,9 @@ package handler
 import (
 	"net/http"
 
+	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/payment/geidea"
+	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/gin-gonic/gin"
 )
@@ -16,6 +18,15 @@ func NewGeideaPaymentHandler(uc *usecase.GeideaPaymentUseCase) *GeideaPaymentHan
 	return &GeideaPaymentHandler{uc: uc}
 }
 
+func (h *GeideaPaymentHandler) useCaseForRequest(c *gin.Context) (*usecase.GeideaPaymentUseCase, bool) {
+	repo, ok := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
+	if !ok || repo == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant repository not found in request context"})
+		return nil, false
+	}
+	return h.uc.WithRepository(repo), true
+}
+
 func (h *GeideaPaymentHandler) Purchase(c *gin.Context) {
 	var in usecase.InitiateGeideaPurchaseInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -23,7 +34,11 @@ func (h *GeideaPaymentHandler) Purchase(c *gin.Context) {
 		return
 	}
 
-	payment, resp, err := h.uc.Purchase(c.Request.Context(), in)
+	uc, ok := h.useCaseForRequest(c)
+	if !ok {
+		return
+	}
+	payment, resp, err := uc.Purchase(c.Request.Context(), in)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "payment": payment, "response": resp})
 		return
@@ -39,7 +54,11 @@ func (h *GeideaPaymentHandler) ResolveUncertain(c *gin.Context) {
 		return
 	}
 
-	payment, err := h.uc.ResolveUncertain(c.Request.Context(), in)
+	uc, ok := h.useCaseForRequest(c)
+	if !ok {
+		return
+	}
+	payment, err := uc.ResolveUncertain(c.Request.Context(), in)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

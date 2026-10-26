@@ -165,6 +165,8 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		router.RegisterSalesReturnRoutes(api, salesReturnHandler)
 		posTerminalsHandler := handler.NewPosTerminalsHandler(posTerminalsUC)
 		router.RegisterPosTerminalsRoutes(api, posTerminalsHandler)
+		geideaPaymentHandler := handler.NewGeideaPaymentHandler(usecase.NewGeideaPaymentUseCase(masterRepo))
+		router.RegisterGeideaPaymentRoutes(api, geideaPaymentHandler)
 		storageLocationsHandler := handler.NewStorageLocationsHandler(storageLocationsUC)
 		router.RegisterStorageLocationsRoutes(api, storageLocationsHandler)
 		tenantHandler := handler.NewTenantHandler(tenantUC)

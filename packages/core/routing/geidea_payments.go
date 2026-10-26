@@ -14,7 +14,7 @@ func RegisterGeideaPaymentRoutes(r *gin.RouterGroup, h *handler.GeideaPaymentHan
 		geidea.POST("/ping", h.Ping)
 	}
 
-	v1 := r.Group("/api/v1/pos/payments/geidea")
+	v1 := r.Group("/v1/pos/payments/geidea")
 	{
 		v1.POST("/purchase", h.Purchase)
 		v1.POST("/resolve-uncertain", h.ResolveUncertain)
