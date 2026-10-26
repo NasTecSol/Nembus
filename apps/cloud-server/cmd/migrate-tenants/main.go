@@ -160,6 +160,9 @@ func main() {
 		log.Println("==================================================")
 
 		if *declarativeMode {
+			if err := applyPreDeclarativePatches(ctx, masterURL); err != nil {
+				log.Fatalf("❌ Master database pre-declarative patches failed: %v", err)
+			}
 			if err := executeAtlasDeclarative(atlasBin, masterURL, absSchemaPath, devURL, *statusOnly); err != nil {
 				log.Fatalf("❌ Master database declarative schema sync failed: %v", err)
 			}
@@ -221,6 +224,11 @@ func main() {
 		}
 
 		if *declarativeMode {
+			if err := applyPreDeclarativePatches(ctx, tenantURL); err != nil {
+				log.Printf("❌ Pre-declarative patches failed for tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
 			err = executeAtlasDeclarative(atlasBin, tenantURL, absSchemaPath, devURL, *statusOnly)
 			if err != nil {
 				if isMissingDatabase(err) {
@@ -470,6 +478,22 @@ func resolveSchemaDir(customPath string) (string, error) {
 	return filepath.Abs("packages/core/db/schema")
 }
 
+// resolvePreDeclarativePatchPath returns the SQL patch file to run before declarative apply, if present.
+func resolvePreDeclarativePatchPath() (string, error) {
+	candidates := []string{
+		"../../packages/core/db/patches/pre_declarative.sql",
+		"../packages/core/db/patches/pre_declarative.sql",
+		"packages/core/db/patches/pre_declarative.sql",
+		"./patches/pre_declarative.sql",
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return filepath.Abs(c)
+		}
+	}
+	return "", nil
+}
+
 // resolveDevURL resolves the Atlas dev database URL used for calculating declarative diffs.
 func resolveDevURL(customURL string) string {
 	if customURL != "" {
@@ -611,6 +635,18 @@ func resolveViewsPath(customPath string) (string, error) {
 }
 
 // applySQLScript executes raw SQL statements from a file against the target database using pgxpool.
+func applyPreDeclarativePatches(ctx context.Context, dbURL string) error {
+	patchPath, err := resolvePreDeclarativePatchPath()
+	if err != nil {
+		return err
+	}
+	if patchPath == "" {
+		return nil
+	}
+	log.Printf("⚡ Applying pre-declarative patches from %s...\n", patchPath)
+	return applySQLScript(ctx, dbURL, patchPath)
+}
+
 func applySQLScript(ctx context.Context, dbURL, filePath string) error {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
