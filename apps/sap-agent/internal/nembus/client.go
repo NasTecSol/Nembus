@@ -206,9 +206,11 @@ func (c *Client) UpsertBarcode(ctx context.Context, productID int32, barcode str
 
 func (c *Client) UpsertProductPrice(ctx context.Context, productID, priceListID int32, uomID *int32, price float64) error {
 	query := `
-		INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, updated_at)
-		VALUES ($1, $2, $3, $4, true, NOW())
-		ON CONFLICT (product_id, price_list_id) DO UPDATE
+		INSERT INTO product_prices (
+			product_id, price_list_id, uom_id, price, min_quantity, is_active, updated_at
+		)
+		VALUES ($1, $2, $3, $4, 1, true, NOW())
+		ON CONFLICT (product_id, price_list_id, product_variant_id, uom_id, min_quantity) DO UPDATE
 		SET price = EXCLUDED.price,
 		    uom_id = COALESCE(EXCLUDED.uom_id, product_prices.uom_id),
 		    is_active = true,
