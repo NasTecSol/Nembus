@@ -155,7 +155,13 @@ CREATE TABLE product_prices (
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_product_prices_product_price_list UNIQUE (product_id, price_list_id)
+    CONSTRAINT uq_product_prices_natural_key UNIQUE NULLS NOT DISTINCT (
+        product_id,
+        price_list_id,
+        product_variant_id,
+        uom_id,
+        min_quantity
+    )
 );
 
 CREATE TABLE product_uom_conversions (

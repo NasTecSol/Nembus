@@ -19,3 +19,7 @@ BEGIN
         ALTER TABLE public.purchase_orders RENAME COLUMN partners_id TO partner_id;
     END IF;
 END $$;
+
+-- product_prices: drop obsolete narrow unique if a prior deploy attempted it (declarative schema now uses uq_product_prices_natural_key).
+ALTER TABLE public.product_prices
+    DROP CONSTRAINT IF EXISTS uq_product_prices_product_price_list;
