@@ -119,18 +119,39 @@ func TestListPurchaseOrdersRowPartnerIDMapping(t *testing.T) {
 	}
 }
 
+// findMonorepoRoot walks up from cwd until it finds apps/cloud-server (Nembus repo layout).
+func findMonorepoRoot() (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "apps", "cloud-server")); err == nil {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
 func TestGetPurchaseOrderWithDetailsQueryDoesNotContainPartnersID(t *testing.T) {
+	root, inMonorepo := findMonorepoRoot()
+
 	// Verify repository generated code across core and cloud-server
 	repoPaths := []string{
 		filepath.Join("..", "repository", "purchase_orders.sql.go"),
-		filepath.Join("..", "..", "apps", "cloud-server", "internal", "repository", "purchase_orders.sql.go"),
+	}
+	if inMonorepo {
+		repoPaths = append(repoPaths, filepath.Join(root, "apps", "cloud-server", "internal", "repository", "purchase_orders.sql.go"))
 	}
 
 	for _, relPath := range repoPaths {
 		data, err := os.ReadFile(relPath)
 		if err != nil {
-			t.Logf("file %s not found (may not exist in test env): %v", relPath, err)
-			continue
+			t.Fatalf("file %s not found: %v", relPath, err)
 		}
 		content := string(data)
 
@@ -167,13 +188,14 @@ func TestGetPurchaseOrderWithDetailsQueryDoesNotContainPartnersID(t *testing.T) 
 	// Also verify query source definitions
 	queryPaths := []string{
 		filepath.Join("..", "queries", "purchase_orders.sql"),
-		filepath.Join("..", "..", "apps", "cloud-server", "queries", "purchase_orders.sql"),
+	}
+	if inMonorepo {
+		queryPaths = append(queryPaths, filepath.Join(root, "apps", "cloud-server", "queries", "purchase_orders.sql"))
 	}
 	for _, qPath := range queryPaths {
 		data, err := os.ReadFile(qPath)
 		if err != nil {
-			t.Logf("file %s not found: %v", qPath, err)
-			continue
+			t.Fatalf("file %s not found: %v", qPath, err)
 		}
 		if strings.Contains(string(data), "partners_id") {
 			t.Fatalf("expected %s to NOT contain deprecated 'partners_id'", qPath)
