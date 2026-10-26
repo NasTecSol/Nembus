@@ -225,6 +225,12 @@ func main() {
 
 		if *declarativeMode {
 			if err := applyPreDeclarativePatches(ctx, tenantURL); err != nil {
+				if isUnreachableDBHost(err) {
+					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
 				log.Printf("❌ Pre-declarative patches failed for tenant %s: %v\n", tenant.Slug, err)
 				failedCount++
 				continue
@@ -234,6 +240,12 @@ func main() {
 				if isMissingDatabase(err) {
 					log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
 					log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				if isUnreachableDBHost(err) {
+					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
 					skippedCount++
 					continue
 				}
@@ -431,6 +443,18 @@ func isMissingDatabase(err error) bool {
 	}
 	// Fallback for wrapped/non-pgconn errors.
 	return strings.Contains(err.Error(), `database "`) && strings.Contains(err.Error(), "does not exist")
+}
+
+// isUnreachableDBHost reports DNS / network failures when resolving the DB host
+// (e.g. decommissioned Supabase project still listed as an active tenant).
+func isUnreachableDBHost(err error) bool {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.IsNotFound || dnsErr.Err == "no such host"
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no such host") ||
+		(strings.Contains(msg, "lookup ") && strings.Contains(msg, "i/o timeout"))
 }
 
 // resolveAtlasBinary locates the Atlas CLI executable
