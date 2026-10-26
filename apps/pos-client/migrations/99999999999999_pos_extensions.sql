@@ -54,7 +54,7 @@ DECLARE
     prio INTEGER := 5;
 BEGIN
     entity_name := TG_ARGV[0];
-    IF entity_name = 'pos_transactions' OR entity_name = 'pos_payments' THEN
+    IF entity_name = 'pos_transactions' OR entity_name = 'pos_payments' OR entity_name = 'sales_returns' THEN
         prio := 10;
     END IF;
 
@@ -100,7 +100,32 @@ CREATE TRIGGER trg_sync_cashier_sessions
     FOR EACH ROW
     EXECUTE FUNCTION trg_enqueue_sync_outbox('cashier_sessions');
 
+-- Automatically enqueue sales returns into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_sales_returns ON sales_returns;
+CREATE TRIGGER trg_sync_sales_returns
+    AFTER INSERT OR UPDATE ON sales_returns
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_returns');
+
+-- Automatically enqueue sales return lines into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_sales_return_lines ON sales_return_lines;
+CREATE TRIGGER trg_sync_sales_return_lines
+    AFTER INSERT ON sales_return_lines
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_return_lines');
+
+-- Automatically enqueue stock movements with loop-filter into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
+CREATE TRIGGER trg_sync_stock_movements
+    AFTER INSERT ON stock_movements
+    FOR EACH ROW
+    WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count'))
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
+
 -- +goose Down
+DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
+DROP TRIGGER IF EXISTS trg_sync_sales_return_lines ON sales_return_lines;
+DROP TRIGGER IF EXISTS trg_sync_sales_returns ON sales_returns;
 DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
 DROP TRIGGER IF EXISTS trg_sync_pos_payments ON pos_payments;
 DROP TRIGGER IF EXISTS trg_sync_pos_transaction_lines ON pos_transaction_lines;

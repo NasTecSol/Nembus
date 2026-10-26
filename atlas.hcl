@@ -21,7 +21,10 @@ variable "dev_db_url" {
 
 # Environment for Core Database Package
 env "local" {
-  src = "file://packages/core/db/schema"
+  src = [
+    "file://packages/core/db/schema",
+    "file://packages/core/db/views_functions"
+  ]
   url = var.master_db_url
   dev = var.dev_db_url
   migration {
@@ -37,7 +40,10 @@ env "local" {
 
 # Environment for Cloud Server
 env "cloud" {
-  src = "file://packages/core/db/schema"
+  src = [
+    "file://packages/core/db/schema",
+    "file://packages/core/db/views_functions"
+  ]
   url = var.master_db_url
   dev = var.dev_db_url
   migration {
@@ -48,7 +54,10 @@ env "cloud" {
 
 # Environment for POS Client
 env "pos" {
-  src = "file://packages/core/db/schema"
+  src = [
+    "file://packages/core/db/schema",
+    "file://packages/core/db/views_functions"
+  ]
   url = var.master_db_url
   dev = var.dev_db_url
   migration {
@@ -58,7 +67,10 @@ env "pos" {
 }
 
 env "stg" {
-  src = "file://packages/core/db/schema"
+  src = [
+    "file://packages/core/db/schema",
+    "file://packages/core/db/views_functions"
+  ]
   url = var.stg_db_url
   dev = var.dev_db_url
   migration {

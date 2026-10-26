@@ -16,6 +16,7 @@ import (
 	router "github.com/NasTecSol/nembus-core/routing"
 	"github.com/NasTecSol/nembus-core/usecase"
 	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
+	"github.com/NasTecSol/nembus-server/internal/notification"
 	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
 
 	_ "github.com/NasTecSol/nembus-server/docs/swagger" // Swagger generated docs
@@ -69,7 +70,7 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 }
 
 // setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
-func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, invoiceUC *usecase.InvoiceUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, stockCountsUC *usecase.StockCountsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, purchaseOrdersUC *usecase.PurchaseOrdersUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, cfg *config.Config) *gin.Engine {
+func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, invoiceUC *usecase.InvoiceUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, stockCountsUC *usecase.StockCountsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, purchaseOrdersUC *usecase.PurchaseOrdersUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, wsHub *notification.WebSocketHub, cfg *config.Config) *gin.Engine {
 	if cfg.Env == "production" || cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -121,6 +122,21 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
 	}
 
+	// App Releases & Auto-Update Endpoints (CI/CD upload and POS client check/download)
+	releaseUC := usecase.NewReleaseUseCase(masterRepo, cfg.UpdatesStorageDir)
+	releaseHandler := handler.NewReleaseHandler(releaseUC, cfg)
+	router.RegisterReleaseRoutes(r, releaseHandler)
+
+	// SAP Migration Batch Ingestion (agent -> cloud) - Secured with AgentAPIKeyMiddleware
+	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
+	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
+	apiV1 := r.Group("/api/v1")
+	apiV1.Use(middleware.AgentAPIKeyMiddleware())
+	router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
+	apiMigration := r.Group("/api")
+	apiMigration.Use(middleware.AgentAPIKeyMiddleware())
+	router.RegisterSAPMigrationRoutes(apiMigration, sapMigrationHandler)
+
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuthMiddleware())
 	api.Use(middleware.TenantMiddleware(tenantManager))
@@ -149,6 +165,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		router.RegisterSalesReturnRoutes(api, salesReturnHandler)
 		posTerminalsHandler := handler.NewPosTerminalsHandler(posTerminalsUC)
 		router.RegisterPosTerminalsRoutes(api, posTerminalsHandler)
+		geideaPaymentHandler := handler.NewGeideaPaymentHandler(usecase.NewGeideaPaymentUseCase(masterRepo))
+		router.RegisterGeideaPaymentRoutes(api, geideaPaymentHandler)
 		storageLocationsHandler := handler.NewStorageLocationsHandler(storageLocationsUC)
 		router.RegisterStorageLocationsRoutes(api, storageLocationsHandler)
 		tenantHandler := handler.NewTenantHandler(tenantUC)
@@ -241,6 +259,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		approvalsUC := usecase.NewApprovalsUseCase()
 		approvalsUC.RegisterAccommodator("goods_receipt_note", usecase.NewGoodsReceiptNoteApprovalAccommodator())
+		approvalsUC.RegisterAccommodator("catalog", usecase.NewCatalogPriceAccommodator())
+		approvalsUC.RegisterAccommodator("sap_invoice", usecase.NewSAPInvoiceStockAccommodator())
 		approvalsHandler := handler.NewApprovalsHandler(approvalsUC)
 		router.RegisterApprovalsRoutes(api, approvalsHandler)
 
@@ -254,7 +274,37 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
+		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+
+		// Notification Center & Outbox Routes
+		notifUC := usecase.NewNotificationUseCase(masterRepo)
+		notifHandler := handler.NewNotificationHandler(notifUC)
+		router.RegisterNotificationRoutes(api, notifHandler)
+
+		if wsHub != nil {
+			api.GET("/ws/notifications", func(c *gin.Context) {
+				orgID, ok := middleware.GetOrganizationIDFromContext(c)
+				if !ok {
+					c.JSON(401, gin.H{"error": "organization claim missing"})
+					return
+				}
+				uid, ok := middleware.GetUserIDFromContext(c)
+				if !ok {
+					c.JSON(401, gin.H{"error": "user claim missing"})
+					return
+				}
+				var n int
+				_, _ = os.Stdout.WriteString("")
+				for _, ch := range uid {
+					if ch >= '0' && ch <= '9' {
+						n = n*10 + int(ch-'0')
+					}
+				}
+				wsHub.ServeWs(c, orgID, int32(n))
+			})
+		}
 	}
 
 	publicRFQHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
@@ -362,8 +412,16 @@ func main() {
 		zatcaSvc.StartReportingWorker(ctx)
 	}
 
+	// ── Notification Center WebSocket Hub & Outbox Dispatcher ──────────
+	wsHub := notification.NewWebSocketHub()
+	go wsHub.Run(ctx.Done())
+
+	notifUC := usecase.NewNotificationUseCase(masterRepo)
+	dispatcher := notification.NewDispatcher(masterPool, notifUC, wsHub)
+	go dispatcher.Start(ctx)
+
 	// Setup Router
-	r := setupRouter(tenantManager, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, stockCountsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, purchaseOrdersUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, cfg)
+	r := setupRouter(tenantManager, masterPool, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, stockCountsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, purchaseOrdersUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, wsHub, cfg)
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 

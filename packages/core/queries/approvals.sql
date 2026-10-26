@@ -60,3 +60,20 @@ WHERE organization_id = $1 AND domain = $2 AND action = $3;
 -- name: DeleteApprovalRequest :execrows
 DELETE FROM approval_requests
 WHERE organization_id = $1 AND id = $2;
+
+-- name: FindPendingApprovalRequestByEntity :one
+SELECT * FROM approval_requests
+WHERE organization_id = $1
+  AND domain = $2
+  AND action = $3
+  AND entity_type = $4
+  AND entity_id = $5
+  AND status = 'pending'
+ORDER BY id DESC
+LIMIT 1;
+
+-- name: UpdateApprovalRequestPayload :one
+UPDATE approval_requests
+SET payload = $3, summary = $4, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+RETURNING *;

@@ -61,13 +61,18 @@ func (h *PosTerminalsHandler) CreatePOSTerminal(c *gin.Context) {
 		return
 	}
 
+	var metaBytes []byte
+	if req.Metadata != nil {
+		metaBytes = []byte(*req.Metadata)
+	}
+
 	input := &usecase.CreatePOSTerminalInput{
 		StoreID:      req.StoreID,
 		TerminalCode: req.TerminalCode,
 		TerminalName: req.TerminalName,
 		DeviceID:     req.DeviceID,
 		IsActive:     req.IsActive,
-		Metadata:     nil,
+		Metadata:     metaBytes,
 	}
 	resp := h.useCase.CreatePOSTerminal(c.Request.Context(), input)
 	c.JSON(resp.StatusCode, resp)
@@ -265,12 +270,17 @@ func (h *PosTerminalsHandler) UpdatePOSTerminal(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
 		return
 	}
+	var metaBytes []byte
+	if req.Metadata != nil {
+		metaBytes = []byte(*req.Metadata)
+	}
+
 	input := &usecase.UpdatePOSTerminalInput{
 		ID:           int32(id),
 		TerminalName: req.TerminalName,
 		DeviceID:     req.DeviceID,
 		IsActive:     req.IsActive,
-		Metadata:     nil,
+		Metadata:     metaBytes,
 	}
 	resp := h.useCase.UpdatePOSTerminal(c.Request.Context(), input)
 	c.JSON(resp.StatusCode, resp)

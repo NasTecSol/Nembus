@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,17 +43,21 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE carts (id uuid PRIMARY KEY);
 		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
-CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
+		CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
+		CREATE TABLE sales_returns (id bigint PRIMARY KEY, return_number text, status text);
+		CREATE TABLE sales_return_lines (id bigint PRIMARY KEY, return_id bigint REFERENCES sales_returns(id), line_number integer);
 		INSERT INTO carts VALUES ('00000000-0000-0000-0000-000000000001');
 		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
-INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
+		INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
 		CREATE TABLE sync_queue (id bigint PRIMARY KEY, entity_type text, entity_id bigint, action text,
 			payload jsonb, created_at timestamp DEFAULT now(), correlation_id text, status text);
 		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
 			(1, 'pos_transactions', 7, 'INSERT', '{"id":7}', 'failed'),
 			(2, 'pos_transaction_lines', 8, 'INSERT', '{"id":8,"transaction_id":7}', 'pending'),
 			(3, 'pos_payments', 9, 'INSERT', '{"id":9,"transaction_id":7}', 'pending'),
-			(4, 'cashier_sessions', 10, 'INSERT', '{"id":10}', 'pending');
+			(4, 'cashier_sessions', 10, 'INSERT', '{"id":10}', 'pending'),
+			(5, 'sales_returns', 100, 'INSERT', '{"id":100}', 'failed'),
+			(6, 'sales_return_lines', 101, 'INSERT', '{"id":101,"return_id":100}', 'pending');
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +129,7 @@ INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003',
 		return ids
 	}
 	if ids := eligible(); len(ids) != 1 || ids[0] != 4 {
-		t.Fatalf("children of failed transaction must wait; eligible=%v", ids)
+		t.Fatalf("children of failed transaction and failed return must wait; eligible=%v", ids)
 	}
 	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='pending' WHERE id=1"); err != nil {
 		t.Fatal(err)
@@ -136,5 +142,58 @@ INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003',
 	}
 	if ids := eligible(); len(ids) != 3 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 {
 		t.Fatalf("children must become eligible in order after transaction sync; eligible=%v", ids)
+	}
+	// Verify sales_return_lines waiting on sales_returns:
+	// Update sales_returns to pending: sales_returns is eligible, sales_return_lines still waits
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='pending' WHERE id=5"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 4 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 || ids[3] != 5 {
+		t.Fatalf("parent sales_return should be eligible but child must wait; eligible=%v", ids)
+	}
+	// Update sales_returns to synced: sales_return_lines becomes eligible!
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='synced' WHERE id=5"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 4 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 || ids[3] != 6 {
+		t.Fatalf("child sales_return_lines must become eligible after sales_returns synced; eligible=%v", ids)
+	}
+}
+
+func TestPendingOutboxSQLStructure(t *testing.T) {
+	requiredClauses := []string{
+		"q.entity_type IN ('pos_transaction_lines', 'pos_payments')",
+		"parent.entity_type = 'pos_transactions'",
+		"parent.entity_id = (q.payload->>'transaction_id')::bigint",
+		"q.entity_type = 'sales_return_lines'",
+		"parent.entity_type = 'sales_returns'",
+		"parent.entity_id = (q.payload->>'return_id')::bigint",
+		"parent.status IN ('pending', 'failed')",
+	}
+	for _, clause := range requiredClauses {
+		if !strings.Contains(pendingOutboxSQL, clause) {
+			t.Errorf("pendingOutboxSQL missing expected clause: %s", clause)
+		}
+	}
+}
+
+func TestMasterDataPullEntityTypesInSync(t *testing.T) {
+	types := syncpb.PullEntityTypes()
+	expectedPrefix := []string{
+		"units_of_measure",
+		"product_categories",
+		"payment_terms",
+		"users",
+		"cashiers",
+		"business_partners",
+		"partner_addresses",
+	}
+	if len(types) < len(expectedPrefix) {
+		t.Fatalf("PullEntityTypes length %d < expected master data count %d", len(types), len(expectedPrefix))
+	}
+	for i, expected := range expectedPrefix {
+		if types[i] != expected {
+			t.Errorf("PullEntityTypes()[%d] = %s; want %s", i, types[i], expected)
+		}
 	}
 }

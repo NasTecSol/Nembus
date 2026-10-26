@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"strconv"
 	"time"
@@ -723,4 +724,47 @@ func (uc *InventoryStockUseCase) GetInventoryStockSummary(ctx context.Context, s
 	}
 
 	return utils.NewResponse(utils.CodeOK, "inventory stock summary fetched", row)
+}
+
+// SweepLowStockProducts queries items at or below reorder level and enqueues inventory.low_stock events
+func (uc *InventoryStockUseCase) SweepLowStockProducts(ctx context.Context, orgID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	lowItems, err := uc.repo.GetLowStockProducts(ctx)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	enqueuedCount := 0
+	for _, item := range lowItems {
+		payload := map[string]interface{}{
+			"product_id":         item.ProductID,
+			"product_name":       item.Name,
+			"sku":                item.Sku,
+			"store_id":           item.StoreID,
+			"store_name":         item.StoreName,
+			"quantity_available": item.QuantityAvailable,
+			"reorder_level":      item.ReorderLevel,
+			"reorder_quantity":   item.ReorderQuantity,
+			"organization_id":    orgID,
+		}
+		if pBytes, mErr := json.Marshal(payload); mErr == nil {
+			idempKey := fmt.Sprintf("inventory.low_stock:%d:%d:%s", item.ProductID, item.StoreID, time.Now().Format("2006-01-02"))
+			_, err = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+				OrganizationID: orgID,
+				EventTypeID:    "inventory.low_stock",
+				EntityType:     "inventory_stock",
+				EntityID:       fmt.Sprintf("%d:%d", item.ProductID, item.StoreID),
+				IdempotencyKey: idempKey,
+				Payload:        pBytes,
+			})
+			if err == nil {
+				enqueuedCount++
+			}
+		}
+	}
+
+	return utils.NewResponse(utils.CodeOK, fmt.Sprintf("swept %d low stock products, enqueued %d events", len(lowItems), enqueuedCount), lowItems)
 }

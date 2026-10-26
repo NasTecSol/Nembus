@@ -120,6 +120,7 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	// Dynamic ingestion routing by entity type
 	switch event.EntityType {
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
+		"sales_returns", "sales_return_lines", "stock_movements",
 		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
 		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
 		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.Action, event.PayloadJson); err != nil {
@@ -155,6 +156,9 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 }
 
 func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) (string, error) {
+	if pool == nil {
+		return "", fmt.Errorf("read columns for %s: database pool is nil", table)
+	}
 	rows, err := pool.Query(ctx, `
 		SELECT column_name 
 		FROM information_schema.columns 
@@ -197,9 +201,11 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	}
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
+		"sales_returns": true, "sales_return_lines": true, "stock_movements": true,
 		"cashier_sessions": true, "carts": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
 		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
 		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
+		"notification_events": true,
 	}
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)

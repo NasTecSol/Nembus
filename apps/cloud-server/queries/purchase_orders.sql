@@ -6,7 +6,7 @@
 INSERT INTO purchase_orders (
     organization_id,
     po_number,
-    partners_id,
+    partner_id,
     store_id,
     po_date,
     expected_delivery_date,
@@ -62,7 +62,7 @@ SELECT
     bpc.discount_percentage AS applied_contract_discount_percentage,
     bpc.discount_amount AS applied_contract_discount_amount
 FROM purchase_orders po
-LEFT JOIN business_partners bp ON po.partners_id = bp.id
+LEFT JOIN business_partners bp ON po.partner_id = bp.id
 LEFT JOIN stores s ON po.store_id = s.id
 LEFT JOIN users u_created ON po.created_by = u_created.id
 LEFT JOIN users u_approved ON po.approved_by = u_approved.id
@@ -95,12 +95,12 @@ SELECT
     COUNT(pol.id) AS item_count,
     COALESCE(SUM(pol.quantity), 0)::numeric AS total_quantity
 FROM purchase_orders po
-LEFT JOIN business_partners bp ON po.partners_id = bp.id
+LEFT JOIN business_partners bp ON po.partner_id = bp.id
 LEFT JOIN stores s ON po.store_id = s.id
 LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
 WHERE po.organization_id = sqlc.arg('organization_id')
   AND (sqlc.narg('store_id')::int IS NULL OR po.store_id = sqlc.narg('store_id'))
-  AND (sqlc.narg('partner_id')::int IS NULL OR po.partners_id = sqlc.narg('partner_id'))
+  AND (sqlc.narg('partner_id')::int IS NULL OR po.partner_id = sqlc.narg('partner_id'))
   AND (sqlc.narg('status')::text IS NULL OR po.status = sqlc.narg('status'))
   AND (sqlc.narg('from_date')::date IS NULL OR po.po_date >= sqlc.narg('from_date'))
   AND (sqlc.narg('to_date')::date IS NULL OR po.po_date <= sqlc.narg('to_date'))
@@ -116,10 +116,10 @@ LIMIT sqlc.arg('limit_count') OFFSET sqlc.arg('offset_count');
 -- name: CountPurchaseOrders :one
 SELECT COUNT(DISTINCT po.id)
 FROM purchase_orders po
-LEFT JOIN business_partners bp ON po.partners_id = bp.id
+LEFT JOIN business_partners bp ON po.partner_id = bp.id
 WHERE po.organization_id = sqlc.arg('organization_id')
   AND (sqlc.narg('store_id')::int IS NULL OR po.store_id = sqlc.narg('store_id'))
-  AND (sqlc.narg('partner_id')::int IS NULL OR po.partners_id = sqlc.narg('partner_id'))
+  AND (sqlc.narg('partner_id')::int IS NULL OR po.partner_id = sqlc.narg('partner_id'))
   AND (sqlc.narg('status')::text IS NULL OR po.status = sqlc.narg('status'))
   AND (sqlc.narg('from_date')::date IS NULL OR po.po_date >= sqlc.narg('from_date'))
   AND (sqlc.narg('to_date')::date IS NULL OR po.po_date <= sqlc.narg('to_date'))
@@ -131,7 +131,7 @@ WHERE po.organization_id = sqlc.arg('organization_id')
 
 -- name: UpdatePurchaseOrderHeader :one
 UPDATE purchase_orders
-SET partners_id = $2,
+SET partner_id = $2,
     store_id = $3,
     po_date = $4,
     expected_delivery_date = $5,
@@ -178,7 +178,7 @@ SELECT
     p.sku,
     p.name AS product_name
 FROM purchase_orders po
-JOIN business_partners bp ON po.partners_id = bp.id
+JOIN business_partners bp ON po.partner_id = bp.id
 JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
 JOIN products p ON pol.product_id = p.id
 WHERE po.id = $1

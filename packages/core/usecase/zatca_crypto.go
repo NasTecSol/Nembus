@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"math/big"
 	"time"
+
+	secp256k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 // ─── ZATCA Configuration ────────────────────────────────────────────────────
@@ -33,20 +35,43 @@ const GenesisKPIH = "NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU
 // ─── Key Generation ─────────────────────────────────────────────────────────
 
 // GenerateECDSAKeyPair generates a new secp256k1 ECDSA key pair.
-// ZATCA mandates secp256k1 (not P-256). Go's crypto/elliptic does not expose
-// secp256k1 directly, so we use the curve parameters.
+// ZATCA mandates secp256k1 (not P-256).
 func GenerateECDSAKeyPair() (*ecdsa.PrivateKey, error) {
-	curve := Secp256k1()
-	key, err := ecdsa.GenerateKey(curve, rand.Reader)
+	privKey, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate secp256k1 key: %w", err)
 	}
-	return key, nil
+	return privKey.ToECDSA(), nil
 }
 
-// EncodePrivateKeyPEM serializes an ECDSA private key to PEM format.
+var oidSecp256k1 = asn1.ObjectIdentifier{1, 3, 132, 0, 10}
+
+type sec1ECPrivateKey struct {
+	Version       int
+	PrivateKey    []byte
+	NamedCurveOID asn1.ObjectIdentifier `asn1:"optional,explicit,tag:0"`
+	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag:1"`
+}
+
+// EncodePrivateKeyPEM serializes an ECDSA private key to PEM format (RFC 5915 SEC 1).
 func EncodePrivateKeyPEM(key *ecdsa.PrivateKey) (string, error) {
-	derBytes, err := x509.MarshalECPrivateKey(key)
+	dBytes := key.D.Bytes()
+	padded := make([]byte, 32)
+	copy(padded[32-len(dBytes):], dBytes)
+
+	pubBytes := elliptic.Marshal(key.Curve, key.X, key.Y)
+
+	ecPriv := sec1ECPrivateKey{
+		Version:       1,
+		PrivateKey:    padded,
+		NamedCurveOID: oidSecp256k1,
+		PublicKey: asn1.BitString{
+			Bytes:     pubBytes,
+			BitLength: len(pubBytes) * 8,
+		},
+	}
+
+	derBytes, err := asn1.Marshal(ecPriv)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal private key: %w", err)
 	}
@@ -63,6 +88,23 @@ func DecodePrivateKeyPEM(pemStr string) (*ecdsa.PrivateKey, error) {
 	if block == nil || block.Type != "EC PRIVATE KEY" {
 		return nil, fmt.Errorf("invalid PEM block type")
 	}
+
+	var ecPriv sec1ECPrivateKey
+	if _, err := asn1.Unmarshal(block.Bytes, &ecPriv); err == nil && len(ecPriv.PrivateKey) > 0 {
+		curve := Secp256k1()
+		d := new(big.Int).SetBytes(ecPriv.PrivateKey)
+		x, y := curve.ScalarBaseMult(ecPriv.PrivateKey)
+
+		return &ecdsa.PrivateKey{
+			PublicKey: ecdsa.PublicKey{
+				Curve: curve,
+				X:     x,
+				Y:     y,
+			},
+			D: d,
+		}, nil
+	}
+
 	key, err := x509.ParseECPrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
@@ -294,23 +336,6 @@ func EncodePublicKeyBase64(key *ecdsa.PublicKey) string {
 // ─── secp256k1 Curve Definition ─────────────────────────────────────────────
 
 // Secp256k1 returns the secp256k1 elliptic curve used by ZATCA for ECDSA signing.
-// Go's standard library does not include secp256k1, so we define the parameters here.
 func Secp256k1() elliptic.Curve {
-	return secp256k1Curve
-}
-
-var secp256k1Curve = &elliptic.CurveParams{
-	P:       fromHex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F"),
-	N:       fromHex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141"),
-	B:       big.NewInt(7),
-	Gx:      fromHex("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798"),
-	Gy:      fromHex("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8"),
-	BitSize: 256,
-	Name:    "secp256k1",
-}
-
-func fromHex(hex string) *big.Int {
-	n := new(big.Int)
-	n.SetString(hex, 16)
-	return n
+	return secp256k1.S256()
 }

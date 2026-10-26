@@ -17,6 +17,8 @@ import (
 	clientbackup "github.com/NasTecSol/nembus-client/client"
 	"github.com/NasTecSol/nembus-client/internal/config"
 	"github.com/NasTecSol/nembus-client/internal/db"
+	"github.com/NasTecSol/nembus-client/internal/payment/geidea"
+	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -28,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed migrations/*.sql
@@ -41,18 +44,19 @@ type App struct {
 	masterPool    *pgxpool.Pool
 	tenantManager *manager.Manager
 	syncService   *sync.SyncService
+	geideaClient  *geidea.Client
 	cfg           *config.Config
 	version       string
-	ghToken       string
-	ghRepo        string
+	appKey        string
+	cloudURL      string
 }
 
 // NewApp creates a new App application struct
-func NewApp(version, ghToken, ghRepo string) *App {
+func NewApp(version, appKey, cloudURL string) *App {
 	return &App{
-		version: version,
-		ghToken: ghToken,
-		ghRepo:  ghRepo,
+		version:  version,
+		appKey:   appKey,
+		cloudURL: cloudURL,
 	}
 }
 
@@ -100,28 +104,24 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 		}, nil
 	}
 
-	token := a.ghToken
-	if token == "" && a.cfg != nil {
-		token = a.cfg.GithubToken
+	cloudURL := a.cloudURL
+	if cloudURL == "" && a.cfg != nil {
+		cloudURL = a.cfg.CloudURL
 	}
-	repo := a.ghRepo
-	if repo == "" && a.cfg != nil {
-		repo = a.cfg.GithubRepo
+	appKey := a.appKey
+	if appKey == "" && a.cfg != nil {
+		appKey = a.cfg.AppUpdateClientKey
 	}
-	return updater.CheckForUpdate(a.GetAppVersion(), repo, token)
+	return updater.CheckForUpdate(a.GetAppVersion(), cloudURL, appKey)
 }
 
-// ApplyUpdate downloads release asset and restarts application
-func (a *App) ApplyUpdate(downloadURL string, assetID int64) error {
-	token := a.ghToken
-	if token == "" && a.cfg != nil {
-		token = a.cfg.GithubToken
+// ApplyUpdate downloads release binary, verifies SHA-256, and restarts application
+func (a *App) ApplyUpdate(downloadURL string, checksumSha256 string) error {
+	appKey := a.appKey
+	if appKey == "" && a.cfg != nil {
+		appKey = a.cfg.AppUpdateClientKey
 	}
-	repo := a.ghRepo
-	if repo == "" && a.cfg != nil {
-		repo = a.cfg.GithubRepo
-	}
-	return updater.ApplyUpdate(downloadURL, assetID, repo, token)
+	return updater.ApplyUpdate(downloadURL, checksumSha256, appKey)
 }
 
 // domReady is called after front-end resources have been loaded
@@ -315,13 +315,27 @@ func (a *App) CloneTenant(slug string) string {
 	if a.masterRepo == nil {
 		return "Error: Local database not started"
 	}
+
+	emitProgress := func(phase string, percent int, bytes int64, speed string, estSecs int, msg string) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "clone:progress", map[string]interface{}{
+				"phase":             phase,
+				"percent":           percent,
+				"bytes_transferred": bytes,
+				"speed":             speed,
+				"estimated_seconds": estSecs,
+				"message":           msg,
+			})
+		}
+	}
+
+	emitProgress("connecting", 5, 0, "", 30, "Connecting to cloud server...")
+
 	previousSync := a.syncService
 	if previousSync != nil {
 		log.Printf("CloneTenant: stopping background sync during backup and restore")
 		previousSync.Stop()
 		defer func() {
-			// A failed clone resumes the previous tenant worker. A successful
-			// clone starts a fresh worker after restore and migrations.
 			if a.syncService == previousSync {
 				a.StartSyncService(previousSync.TenantSlug())
 			}
@@ -329,6 +343,7 @@ func (a *App) CloneTenant(slug string) string {
 	}
 
 	// 1. Fetch Tenant details from cloud
+	emitProgress("metadata", 12, 0, "", 28, fmt.Sprintf("Fetching tenant details for [%s]...", slug))
 	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
 	log.Printf("Fetching tenant details for [%s] from: %s", slug, url)
 	req, err := http.NewRequest("GET", url, nil)
@@ -352,9 +367,6 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error decoding tenant data: %v", err)
 	}
 
-	// cloudTenant is a plain struct for parsing the cloud API's JSON response.
-	// repository.Tenant uses pgtype.* types which require special JSON nesting
-	// and cannot be decoded directly from plain REST JSON.
 	type cloudTenant struct {
 		ID         string          `json:"id"`
 		TenantName string          `json:"tenant_name"`
@@ -376,15 +388,10 @@ func (a *App) CloneTenant(slug string) string {
 	}
 
 	// 2. Create the tenant database locally
+	emitProgress("creating_db", 20, 0, "", 25, fmt.Sprintf("Preparing database schema for %s...", tenant.TenantName))
 	tenantDBName := slug
-	// Check if database exists, create if not
-	// We use standard db/sql for this as creating databases cannot run in a transaction block which pgx pool might implicitly use or log.
-	// Actually masterPool.Exec without a transaction is fine, but CREATE DATABASE cannot be executed inside a transaction block.
-	// Let's drop it if it exists (for a clean clone), but we must disconnect first. Since it's a new setup, it probably doesn't exist,
-	// but to be safe we try to create it and ignore "already exists" errors.
 	_, err = a.masterPool.Exec(a.ctx, fmt.Sprintf(`CREATE DATABASE "%s" WITH ENCODING 'UTF8'`, tenantDBName))
 	if err != nil {
-		// Ignore error if database already exists
 		if !strings.Contains(err.Error(), "already exists") {
 			return fmt.Sprintf("Error creating tenant database: %v", db.WithStorageHint(err))
 		}
@@ -396,9 +403,6 @@ func (a *App) CloneTenant(slug string) string {
 	backupDir := filepath.Join(home, ".nembus", "backups", tenant.Slug)
 	backupToken := a.cfg.BackupAuthToken
 
-	// Construct the tenant-specific DB URL
-	// We extract username, password, port from a.cfg.MasterDBURL
-	// Since we know StartDatabase uses postgres / password / nembus / port
 	tenantDBURL := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable",
 		a.dbManager.GetConfig().Username,
 		a.dbManager.GetConfig().Password,
@@ -407,12 +411,15 @@ func (a *App) CloneTenant(slug string) string {
 	)
 
 	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
-	backupPath, err := clientbackup.DownloadBackup(
+	backupPath, err := clientbackup.DownloadBackupWithProgress(
 		a.cfg.GRPCAddr,
 		tenant.Slug,
 		backupToken,
 		backupDir,
-		tenantDBURL, // restore directly into the tenant's database
+		tenantDBURL,
+		func(stage string, percent int, bytesTransferred int64, speed string, estimatedSecs int, message string) {
+			emitProgress(stage, percent, bytesTransferred, speed, estimatedSecs, message)
+		},
 	)
 	if err != nil {
 		log.Printf("CloneTenant Backup Error: %v", err)
@@ -421,6 +428,7 @@ func (a *App) CloneTenant(slug string) string {
 	log.Printf("Tenant backup restored from: %s", backupPath)
 
 	// 4. Run POS extensions migrations directly on the restored tenant database
+	emitProgress("migrating", 88, 0, "", 5, "Applying offline tables and local triggers...")
 	log.Printf("CloneTenant: applying POS migrations to tenant DB [%s]", tenant.Slug)
 	if err := a.migrate(tenantDBURL); err != nil {
 		log.Printf("Error applying POS migrations to tenant DB: %v", err)
@@ -429,7 +437,7 @@ func (a *App) CloneTenant(slug string) string {
 	log.Printf("POS migrations applied successfully to tenant DB [%s]", tenant.Slug)
 
 	// 5. Ensure the local tenant record is correct in the master DB.
-	// We upsert it to make sure the slug exists and points to our local tenant DB URL.
+	emitProgress("finalizing", 96, 0, "", 2, "Finalizing local configuration...")
 	upsertSQL := `
 		INSERT INTO tenants (id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -447,10 +455,11 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error finalizing local tenant record: %v", err)
 	}
 
-	// Invalidate cached pool so subsequent requests (like GET /api/stores) reconnect to the newly restored DB
 	if a.tenantManager != nil {
 		a.tenantManager.EvictPool(tenant.Slug)
 	}
+
+	emitProgress("complete", 100, 0, "", 0, "Organization cloned successfully!")
 
 	// 6. Start sync service for this tenant
 	a.StartSyncService(tenant.Slug)
@@ -777,3 +786,106 @@ func (a *App) GetDevToken() string {
 	}
 	return token
 }
+
+// GeideaConfigure configures or updates the terminal parameters (TCP or Serial COM).
+func (a *App) GeideaConfigure(cfg geidea.TerminalConfig) string {
+	if a.geideaClient == nil {
+		a.geideaClient = geidea.NewClient(cfg)
+	} else {
+		a.geideaClient.UpdateConfig(cfg)
+	}
+	log.Printf("[GEIDEA] Terminal configured: mode=%s, ip=%s:%s, com=%s, baud=%d",
+		cfg.Mode, cfg.IP, cfg.Port, cfg.SerialPort, cfg.BaudRate)
+	return "OK"
+}
+
+// GeideaCheckStatus tests connectivity to the physical terminal.
+func (a *App) GeideaCheckStatus() (bool, error) {
+	if a.geideaClient == nil {
+		return false, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.CheckStatus(a.ctx)
+}
+
+// GeideaPurchase initiates a card purchase with live status event streaming to the frontend.
+func (a *App) GeideaPurchase(req geidea.PurchaseRequest) (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Purchase(a.ctx, req, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaRefund initiates a refund using original transaction RRN.
+func (a *App) GeideaRefund(req geidea.RefundRequest) (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Refund(a.ctx, req, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaReconcile triggers End of Day settlement and reconciliation with SAMA.
+func (a *App) GeideaReconcile() (*geidea.ReconciliationResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Reconcile(a.ctx, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaCancel sends the abort signal to cancel an in-flight transaction.
+func (a *App) GeideaCancel() error {
+	if a.geideaClient == nil {
+		return fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Cancel(a.ctx)
+}
+
+// GeideaRepeatLast queries the terminal for the last transaction result.
+func (a *App) GeideaRepeatLast() (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.RepeatLast(a.ctx)
+}
+
+// StartGeideaPayment initiates the payment through Wails runtime with status streaming (backward-compatible).
+func (a *App) StartGeideaPayment(terminalID int, amount float64, ecrRef string) (string, error) {
+	if a.geideaClient == nil {
+		a.geideaClient = geidea.NewClient(geidea.TerminalConfig{
+			Mode: "network",
+			IP:   "127.0.0.1",
+			Port: "80",
+		})
+	}
+	res, err := a.GeideaPurchase(geidea.PurchaseRequest{
+		Amount:        amount,
+		InvoiceNumber: ecrRef,
+	})
+	if err != nil {
+		return "", err
+	}
+	resJSON, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	return string(resJSON), nil
+}
+
+// PrintMadaReceipt builds an ESC/POS formatted mada transaction receipt and sends it to the printer.
+func (a *App) PrintMadaReceipt(data printing.MadaReceiptData, cfg printing.PrinterConfig) error {
+	rawBytes := printing.BuildMadaReceipt(data)
+	return printing.Print(cfg, rawBytes)
+}
+
+

@@ -502,7 +502,7 @@ func (uc *BusinessPartnerUseCase) ToggleBusinessPartnerActive(ctx context.Contex
 // Granular Address operations
 
 func isValidAddressType(t string) bool {
-	return t == "bill_to" || t == "ship_to" || t == "both"
+	return t == "bill_to" || t == "ship_to" || t == "both" || t == "billing" || t == "shipping"
 }
 
 func (uc *BusinessPartnerUseCase) AddPartnerAddress(ctx context.Context, partnerIDStr string, input PartnerAddressInput) *repository.Response {
@@ -527,7 +527,7 @@ func (uc *BusinessPartnerUseCase) AddPartnerAddress(ctx context.Context, partner
 		input.AddressType = "both"
 	}
 	if !isValidAddressType(input.AddressType) {
-		return utils.NewResponse(utils.CodeBadReq, "invalid address_type, must be one of: bill_to, ship_to, both", nil)
+		return utils.NewResponse(utils.CodeBadReq, "invalid address_type, must be one of: bill_to, ship_to, both, billing, shipping", nil)
 	}
 
 	if input.CountryCode == "" {
@@ -620,7 +620,7 @@ func (uc *BusinessPartnerUseCase) UpdatePartnerAddress(ctx context.Context, addr
 	if input.AddressType == "" {
 		input.AddressType = a.AddressType
 	} else if !isValidAddressType(input.AddressType) {
-		return utils.NewResponse(utils.CodeBadReq, "invalid address_type, must be one of: bill_to, ship_to, both", nil)
+		return utils.NewResponse(utils.CodeBadReq, "invalid address_type, must be one of: bill_to, ship_to, both, billing, shipping", nil)
 	}
 
 	var street pgtype.Text = a.Street

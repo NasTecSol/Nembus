@@ -294,6 +294,12 @@ DROP TRIGGER IF EXISTS trg_business_partners_updated_at ON business_partners;
 CREATE TRIGGER trg_business_partners_updated_at BEFORE UPDATE ON business_partners FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS trg_bp_price_contracts_updated_at ON bp_price_contracts;
 CREATE TRIGGER trg_bp_price_contracts_updated_at BEFORE UPDATE ON bp_price_contracts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_payment_terms_updated_at ON payment_terms;
+CREATE TRIGGER update_payment_terms_updated_at BEFORE UPDATE ON payment_terms FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_partner_addresses_updated_at ON partner_addresses;
+CREATE TRIGGER update_partner_addresses_updated_at BEFORE UPDATE ON partner_addresses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_cashiers_updated_at ON cashiers;
+CREATE TRIGGER update_cashiers_updated_at BEFORE UPDATE ON cashiers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Restaurant triggers
 DROP TRIGGER IF EXISTS trg_restaurant_tables_updated_at ON restaurant_tables;
@@ -494,7 +500,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_customer_type ON customers(customer_typ
 
 -- Purchase Orders
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_organization_id ON purchase_orders(organization_id);
-CREATE INDEX IF NOT EXISTS idx_purchase_orders_partners_id ON purchase_orders(partners_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_partner_id ON purchase_orders(partner_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_store_id ON purchase_orders(store_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_po_number ON purchase_orders(po_number);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
@@ -1092,7 +1098,7 @@ SELECT
     po.created_at
 FROM purchase_orders po
 JOIN stores s    ON s.id = po.store_id
-JOIN business_partners sup ON sup.id = po.partners_id
+JOIN business_partners sup ON sup.id = po.partner_id
 LEFT JOIN users u_created  ON u_created.id  = po.created_by
 LEFT JOIN users u_approved ON u_approved.id = po.approved_by
 WHERE po.status <> 'received' AND po.status <> 'cancelled' AND po.status <> 'closed'
@@ -1165,7 +1171,7 @@ SELECT
     po.created_at
 FROM purchase_orders po
 JOIN organizations org ON org.id = po.organization_id
-JOIN business_partners sup ON sup.id = po.partners_id
+JOIN business_partners sup ON sup.id = po.partner_id
 JOIN stores        s   ON s.id   = po.store_id
 WHERE po.status = 'partially_received' OR po.status = 'received' OR po.status = 'approved'
 ORDER BY po.po_date;
@@ -3096,10 +3102,19 @@ DECLARE
     v_order RECORD;
     v_quantity DECIMAL(15,3);
 BEGIN
+    -- Skip historical SAP migration records (inventory is already snapshotted from OITW and movements from OINM)
+    IF NEW.metadata IS NOT NULL AND NEW.metadata ? 'sap_line_num' THEN
+        RETURN NEW;
+    END IF;
+
     -- Get the parent order
-    SELECT order_status, store_id INTO v_order
+    SELECT order_status, store_id, metadata INTO v_order
     FROM sales_orders_v2
     WHERE id = NEW.sales_order_id;
+
+    IF v_order.metadata IS NOT NULL AND v_order.metadata ? 'sap_doc_entry' THEN
+        RETURN NEW;
+    END IF;
 
     -- Only process if order status is 'pending' or 'confirmed'
     IF v_order.order_status IN ('pending', 'confirmed') AND v_order.store_id IS NOT NULL THEN
@@ -4213,12 +4228,18 @@ DECLARE
     v_cost_price NUMERIC(15,4);
     v_uom_id INT;
     v_reason TEXT;
+    v_ret_metadata JSONB;
 BEGIN
-    -- Get store_id and return_reason from parent sales_returns header
-    SELECT store_id, COALESCE(return_reason, 'POS Sales Return') 
-    INTO v_store_id, v_reason 
+    -- Get store_id, return_reason, and metadata from parent sales_returns header
+    SELECT store_id, COALESCE(return_reason, 'POS Sales Return'), metadata
+    INTO v_store_id, v_reason, v_ret_metadata
     FROM sales_returns 
     WHERE id = NEW.return_id;
+
+    -- Skip historical SAP migration returns (inventory is snapshotted from OITW and movements come from OINM TransType 14/16)
+    IF v_ret_metadata IS NOT NULL AND (v_ret_metadata ? 'sap_doc_entry' OR v_ret_metadata ? 'sap_doc_num') THEN
+        RETURN NEW;
+    END IF;
 
     -- Fetch cost_price and uom_id from original pos_transaction_lines if available
     IF NEW.original_line_id IS NOT NULL THEN
@@ -4268,10 +4289,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Disabled sales return line trigger to prevent double-restocking.
+-- Restocking and movement tracking is managed directly in Go application logic (SalesReturnUseCase).
 DROP TRIGGER IF EXISTS trg_process_sales_return ON sales_return_lines;
-CREATE TRIGGER trg_process_sales_return
-AFTER INSERT ON sales_return_lines
-FOR EACH ROW EXECUTE FUNCTION fn_trigger_process_sales_return();
 
 -- Helper function to calculate remaining returnable quantity for a pos_transaction_line
 CREATE OR REPLACE FUNCTION fn_get_returnable_quantity(p_original_line_id INT)
@@ -4291,3 +4311,362 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- =====================================================
+-- 99: FINANCIAL & INVENTORY OPERATIONAL ANALYTICAL VIEWS
+-- =====================================================
+
+-- =====================================================================
+-- Schema 99: Financial & Inventory Operational Analytical Views
+-- 
+-- 1. vw_realtime_pnl                 (Real-time Gross Revenue, Returns, Discounts, COGS, Gross Profit & Margin %)
+-- 2. vw_cashier_shift_reconciliation (Cashier drawer reconciliation: Cash vs Card vs Other, expected cash, variance)
+-- 3. vw_stock_movement_ledger        (Item movement chronological running quantity and valuation per SKU & Store)
+-- 4. vw_vendor_performance_ppv       (Purchase Price Variance & Vendor Fill Rate % / On-time tracking)
+-- 5. vw_supplier_aging_report        (Accounts Payable overdue aging buckets: Current, 1-30, 31-60, 61-90, >90)
+-- 6. vw_tax_vat_summary              (Tax / VAT Reconciliation: Output VAT vs Input VAT and Net VAT Payable)
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1. Real-Time Operational P&L & COGS View
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_realtime_pnl AS
+WITH daily_pos_sales AS (
+    SELECT
+        pt.store_id,
+        s.organization_id,
+        s.name AS store_name,
+        pt.transaction_date::DATE AS period_date,
+        COUNT(DISTINCT pt.id) AS transaction_count,
+        COALESCE(SUM(ptl.line_total), 0) AS gross_sales,
+        COALESCE(SUM(ptl.discount_amount), 0) AS total_discounts,
+        COALESCE(SUM(ptl.tax_amount), 0) AS total_tax,
+        COALESCE(SUM(ptl.cost_price * ptl.quantity), 0) AS total_cogs
+    FROM pos_transactions pt
+    JOIN stores s ON s.id = pt.store_id
+    JOIN pos_transaction_lines ptl ON ptl.transaction_id = pt.id
+    WHERE pt.status = 'completed'
+    GROUP BY pt.store_id, s.organization_id, s.name, pt.transaction_date::DATE
+),
+daily_returns AS (
+    SELECT
+        sr.store_id,
+        sr.return_date::DATE AS period_date,
+        COUNT(DISTINCT sr.id) AS return_count,
+        COALESCE(SUM(sr.total_refund_amount), 0) AS total_returns
+    FROM sales_returns sr
+    WHERE sr.status = 'completed'
+    GROUP BY sr.store_id, sr.return_date::DATE
+),
+daily_invoices AS (
+    SELECT
+        inv.store_id,
+        inv.organization_id,
+        s.name AS store_name,
+        inv.invoice_date AS period_date,
+        COUNT(DISTINCT inv.id) AS invoice_count,
+        COALESCE(SUM(inv.total_amount), 0) AS invoice_gross,
+        COALESCE(SUM(inv.tax_amount), 0) AS invoice_tax,
+        COALESCE(SUM(il_cost.total_cost), 0) AS invoice_cogs
+    FROM invoices inv
+    JOIN stores s ON s.id = inv.store_id
+    LEFT JOIN (
+        SELECT 
+            il.invoice_id,
+            SUM(COALESCE(p.cost_price, 0) * il.quantity) AS total_cost
+        FROM invoice_lines il
+        LEFT JOIN products p ON p.id = il.product_id
+        GROUP BY il.invoice_id
+    ) il_cost ON il_cost.invoice_id = inv.id
+    WHERE inv.invoice_status NOT IN ('draft', 'cancelled')
+    GROUP BY inv.store_id, inv.organization_id, s.name, inv.invoice_date
+),
+all_periods AS (
+    SELECT store_id, organization_id, store_name, period_date FROM daily_pos_sales
+    UNION
+    SELECT store_id, organization_id, store_name, period_date FROM daily_invoices
+)
+SELECT
+    ap.organization_id,
+    ap.store_id,
+    ap.store_name,
+    ap.period_date,
+    DATE_TRUNC('month', ap.period_date)::DATE AS period_month,
+    COALESCE(ps.transaction_count, 0) + COALESCE(di.invoice_count, 0) AS total_transactions,
+    COALESCE(ps.gross_sales, 0) + COALESCE(di.invoice_gross, 0) AS gross_revenue,
+    COALESCE(ps.total_discounts, 0) AS total_discounts,
+    COALESCE(ret.total_returns, 0) AS total_returns,
+    (COALESCE(ps.gross_sales, 0) + COALESCE(di.invoice_gross, 0) - COALESCE(ps.total_discounts, 0) - COALESCE(ret.total_returns, 0)) AS net_revenue,
+    COALESCE(ps.total_cogs, 0) + COALESCE(di.invoice_cogs, 0) AS cogs,
+    (COALESCE(ps.gross_sales, 0) + COALESCE(di.invoice_gross, 0) - COALESCE(ps.total_discounts, 0) - COALESCE(ret.total_returns, 0))
+        - (COALESCE(ps.total_cogs, 0) + COALESCE(di.invoice_cogs, 0)) AS gross_profit,
+    CASE
+        WHEN (COALESCE(ps.gross_sales, 0) + COALESCE(di.invoice_gross, 0) - COALESCE(ps.total_discounts, 0) - COALESCE(ret.total_returns, 0)) > 0
+        THEN ROUND(
+            ((COALESCE(ps.gross_sales, 0) + COALESCE(di.invoice_gross, 0) - COALESCE(ps.total_discounts, 0) - COALESCE(ret.total_returns, 0))
+             - (COALESCE(ps.total_cogs, 0) + COALESCE(di.invoice_cogs, 0)))
+            / (COALESCE(ps.gross_sales, 0) + COALESCE(di.invoice_gross, 0) - COALESCE(ps.total_discounts, 0) - COALESCE(ret.total_returns, 0)) * 100, 2
+        )
+        ELSE 0
+    END AS gross_margin_pct,
+    COALESCE(ps.total_tax, 0) + COALESCE(di.invoice_tax, 0) AS total_tax_collected
+FROM all_periods ap
+LEFT JOIN daily_pos_sales ps ON ps.store_id = ap.store_id AND ps.period_date = ap.period_date
+LEFT JOIN daily_returns ret ON ret.store_id = ap.store_id AND ret.period_date = ap.period_date
+LEFT JOIN daily_invoices di ON di.store_id = ap.store_id AND di.period_date = ap.period_date;
+
+-- ---------------------------------------------------------------------
+-- 2. Cashier Shift Drawer & Tender Reconciliation View
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_cashier_shift_reconciliation AS
+WITH payments_summary AS (
+    SELECT
+        pt.cashier_session_id,
+        COUNT(DISTINCT pt.id) AS transaction_count,
+        COALESCE(SUM(pt.total_amount), 0) AS total_sales,
+        COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN p.amount ELSE 0 END), 0) AS cash_collected,
+        COALESCE(SUM(CASE WHEN LOWER(p.payment_method) IN ('card', 'credit_card', 'debit_card') THEN p.amount ELSE 0 END), 0) AS card_collected,
+        COALESCE(SUM(CASE WHEN LOWER(p.payment_method) NOT IN ('cash', 'card', 'credit_card', 'debit_card') THEN p.amount ELSE 0 END), 0) AS other_tender_collected
+    FROM pos_transactions pt
+    LEFT JOIN pos_payments p ON p.transaction_id = pt.id
+    WHERE pt.status = 'completed'
+      AND pt.cashier_session_id IS NOT NULL
+    GROUP BY pt.cashier_session_id
+),
+refunds_summary AS (
+    SELECT
+        sr.cashier_session_id,
+        COUNT(DISTINCT sr.id) AS return_count,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE(sr.refund_method, 'cash')) = 'cash' THEN sr.total_refund_amount ELSE 0 END), 0) AS cash_refunds,
+        COALESCE(SUM(sr.total_refund_amount), 0) AS total_refunds
+    FROM sales_returns sr
+    WHERE sr.status = 'completed'
+      AND sr.cashier_session_id IS NOT NULL
+    GROUP BY sr.cashier_session_id
+)
+SELECT
+    cs.id AS session_id,
+    cs.session_number,
+    t.store_id,
+    s.name AS store_name,
+    cs.pos_terminal_id,
+    t.terminal_code,
+    t.terminal_name,
+    cs.cashier_id,
+    c.cashier_code,
+    u.first_name || ' ' || u.last_name AS cashier_name,
+    cs.opening_time,
+    cs.closing_time,
+    cs.status,
+    COALESCE(cs.opening_balance, 0) AS opening_balance,
+    COALESCE(ps.cash_collected, 0) AS cash_collected,
+    COALESCE(ps.card_collected, 0) AS card_collected,
+    COALESCE(ps.other_tender_collected, 0) AS other_tender_collected,
+    COALESCE(rs.cash_refunds, 0) AS cash_refunds,
+    (COALESCE(cs.opening_balance, 0) + COALESCE(ps.cash_collected, 0) - COALESCE(rs.cash_refunds, 0)) AS expected_closing_cash,
+    cs.closing_balance AS actual_closing_cash,
+    COALESCE(
+        cs.variance,
+        cs.closing_balance - (COALESCE(cs.opening_balance, 0) + COALESCE(ps.cash_collected, 0) - COALESCE(rs.cash_refunds, 0))
+    ) AS over_short_variance,
+    COALESCE(ps.total_sales, 0) AS total_sales,
+    COALESCE(ps.transaction_count, 0) AS transaction_count,
+    COALESCE(rs.total_refunds, 0) AS total_refunds,
+    COALESCE(rs.return_count, 0) AS return_count
+FROM cashier_sessions cs
+JOIN pos_terminals t ON t.id = cs.pos_terminal_id
+JOIN stores s ON s.id = t.store_id
+JOIN cashiers c ON c.id = cs.cashier_id
+JOIN users u ON u.id = c.user_id
+LEFT JOIN payments_summary ps ON ps.cashier_session_id = cs.id
+LEFT JOIN refunds_summary rs ON rs.cashier_session_id = cs.id;
+
+-- ---------------------------------------------------------------------
+-- 3. Stock Movement Running Ledger & Inventory Valuation View
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_stock_movement_ledger AS
+SELECT
+    sm.id AS movement_id,
+    sm.movement_date,
+    COALESCE(sm.to_store_id, sm.from_store_id) AS store_id,
+    s.name AS store_name,
+    s.organization_id,
+    sm.product_id,
+    p.sku,
+    p.name AS product_name,
+    pb.barcode,
+    pc.name AS category_name,
+    sm.movement_type,
+    sm.reference_type,
+    sm.reference_id,
+    sm.batch_number,
+    sm.serial_number,
+    CASE WHEN sm.quantity > 0 THEN sm.quantity ELSE 0 END AS quantity_in,
+    CASE WHEN sm.quantity < 0 THEN ABS(sm.quantity) ELSE 0 END AS quantity_out,
+    sm.quantity AS net_quantity,
+    COALESCE(sm.cost_per_unit, p.cost_price, 0) AS unit_cost,
+    COALESCE(sm.total_value, sm.quantity * COALESCE(sm.cost_per_unit, p.cost_price, 0)) AS movement_value,
+    SUM(sm.quantity) OVER (
+        PARTITION BY COALESCE(sm.to_store_id, sm.from_store_id), sm.product_id
+        ORDER BY sm.movement_date, sm.id
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS running_quantity,
+    SUM(sm.quantity) OVER (
+        PARTITION BY COALESCE(sm.to_store_id, sm.from_store_id), sm.product_id
+        ORDER BY sm.movement_date, sm.id
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) * COALESCE(sm.cost_per_unit, p.cost_price, 0) AS running_valuation,
+    sm.status,
+    sm.metadata
+FROM stock_movements sm
+JOIN products p ON p.id = sm.product_id
+LEFT JOIN product_barcodes pb ON pb.product_id = p.id AND pb.is_primary = true
+LEFT JOIN product_categories pc ON pc.id = p.category_id
+LEFT JOIN stores s ON s.id = COALESCE(sm.to_store_id, sm.from_store_id);
+
+-- ---------------------------------------------------------------------
+-- 4. Vendor Fulfillment & Purchase Price Variance (PPV) View
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_vendor_performance_ppv AS
+SELECT
+    bp.id AS supplier_id,
+    bp.code AS supplier_code,
+    bp.name AS supplier_name,
+    po.organization_id,
+    po.id AS po_id,
+    po.po_number,
+    po.po_date,
+    po.expected_delivery_date,
+    grn.id AS grn_id,
+    grn.grn_number,
+    grn.receipt_date,
+    p.id AS product_id,
+    p.sku,
+    p.name AS product_name,
+    pol.quantity AS ordered_quantity,
+    grni.quantity_received,
+    grni.quantity_rejected,
+    ROUND((grni.quantity_received / NULLIF(pol.quantity, 0)) * 100, 2) AS fill_rate_pct,
+    CASE 
+        WHEN po.expected_delivery_date IS NOT NULL AND grn.receipt_date::DATE <= po.expected_delivery_date::DATE THEN true
+        WHEN po.expected_delivery_date IS NULL THEN true
+        ELSE false
+    END AS is_on_time,
+    pol.unit_price AS po_unit_price,
+    COALESCE(grni.unit_cost, pol.unit_price) AS grn_unit_cost,
+    (COALESCE(grni.unit_cost, pol.unit_price) - pol.unit_price) AS unit_price_variance,
+    ROUND((COALESCE(grni.unit_cost, pol.unit_price) - pol.unit_price) * grni.quantity_received, 2) AS total_price_variance,
+    CASE
+        WHEN (COALESCE(grni.unit_cost, pol.unit_price) - pol.unit_price) > 0 THEN 'unfavorable'
+        WHEN (COALESCE(grni.unit_cost, pol.unit_price) - pol.unit_price) < 0 THEN 'favorable'
+        ELSE 'at_cost'
+    END AS variance_status
+FROM goods_receipt_notes grn
+JOIN goods_receipt_note_items grni ON grni.grn_id = grn.id
+JOIN purchase_orders po ON po.id = grn.purchase_order_id
+LEFT JOIN purchase_order_lines pol ON pol.id = grni.purchase_order_line_id
+JOIN business_partners bp ON bp.id = grn.partners_id
+JOIN products p ON p.id = grni.product_id;
+
+-- ---------------------------------------------------------------------
+-- 5. Supplier Accounts Payable Aging Report View
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_supplier_aging_report AS
+WITH po_balances AS (
+    SELECT
+        po.id AS po_id,
+        po.partner_id,
+        po.organization_id,
+        COALESCE(po.expected_delivery_date, (po.po_date + INTERVAL '30 days')::DATE) AS due_date,
+        (
+            SELECT COALESCE(SUM(pol.received_quantity * pol.unit_price), 0)
+            FROM purchase_order_lines pol
+            WHERE pol.purchase_order_id = po.id
+        ) - COALESCE(NULLIF(po.metadata->>'amount_paid', '')::numeric, 0) AS balance_due,
+        po.status
+    FROM purchase_orders po
+    WHERE po.status IN ('partially_received', 'received', 'approved')
+)
+SELECT
+    bp.id AS supplier_id,
+    bp.code AS supplier_code,
+    bp.name AS supplier_name,
+    bp.credit_limit,
+    pb.organization_id,
+    COALESCE(SUM(CASE WHEN pb.due_date >= CURRENT_DATE THEN pb.balance_due ELSE 0 END), 0) AS current_amount,
+    COALESCE(SUM(CASE WHEN pb.due_date < CURRENT_DATE AND CURRENT_DATE - pb.due_date <= 30 THEN pb.balance_due ELSE 0 END), 0) AS overdue_1_30,
+    COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.due_date BETWEEN 31 AND 60 THEN pb.balance_due ELSE 0 END), 0) AS overdue_31_60,
+    COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.due_date BETWEEN 61 AND 90 THEN pb.balance_due ELSE 0 END), 0) AS overdue_61_90,
+    COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.due_date > 90 THEN pb.balance_due ELSE 0 END), 0) AS overdue_over_90,
+    COALESCE(SUM(CASE WHEN pb.balance_due > 0 THEN pb.balance_due ELSE 0 END), 0) AS total_outstanding,
+    COUNT(CASE WHEN pb.due_date < CURRENT_DATE AND pb.balance_due > 0 THEN 1 END)::INTEGER AS overdue_po_count,
+    MAX(pb.due_date) AS latest_due_date
+FROM business_partners bp
+LEFT JOIN po_balances pb
+    ON pb.partner_id = bp.id
+    AND pb.balance_due > 0
+WHERE bp.is_active = true AND bp.partner_role = 'supplier'
+GROUP BY
+    bp.id, bp.code, bp.name,
+    bp.credit_limit, pb.organization_id
+ORDER BY total_outstanding DESC;
+
+-- ---------------------------------------------------------------------
+-- 6. Tax / VAT Reconciliation Summary View
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_tax_vat_summary AS
+WITH output_vat AS (
+    SELECT
+        s.organization_id,
+        pt.store_id,
+        DATE_TRUNC('month', pt.transaction_date)::DATE AS period_month,
+        COALESCE(SUM(pt.subtotal), 0) AS taxable_sales,
+        COALESCE(SUM(pt.tax_amount), 0) AS output_vat
+    FROM pos_transactions pt
+    JOIN stores s ON s.id = pt.store_id
+    WHERE pt.status = 'completed'
+    GROUP BY s.organization_id, pt.store_id, DATE_TRUNC('month', pt.transaction_date)::DATE
+
+    UNION ALL
+
+    SELECT
+        inv.organization_id,
+        inv.store_id,
+        DATE_TRUNC('month', inv.invoice_date::timestamp)::DATE AS period_month,
+        COALESCE(SUM(inv.subtotal), 0) AS taxable_sales,
+        COALESCE(SUM(inv.tax_amount), 0) AS output_vat
+    FROM invoices inv
+    WHERE inv.invoice_status NOT IN ('draft', 'cancelled')
+    GROUP BY inv.organization_id, inv.store_id, DATE_TRUNC('month', inv.invoice_date::timestamp)::DATE
+),
+input_vat AS (
+    SELECT
+        po.organization_id,
+        po.store_id,
+        DATE_TRUNC('month', po.po_date::timestamp)::DATE AS period_month,
+        COALESCE(SUM(po.subtotal), 0) AS taxable_purchases,
+        COALESCE(SUM(po.tax_amount), 0) AS input_vat
+    FROM purchase_orders po
+    WHERE po.status NOT IN ('draft', 'cancelled')
+    GROUP BY po.organization_id, po.store_id, DATE_TRUNC('month', po.po_date::timestamp)::DATE
+),
+all_periods AS (
+    SELECT organization_id, store_id, period_month FROM output_vat
+    UNION
+    SELECT organization_id, store_id, period_month FROM input_vat
+)
+SELECT
+    ap.organization_id,
+    ap.store_id,
+    s.name AS store_name,
+    ap.period_month,
+    COALESCE(SUM(ov.taxable_sales), 0) AS total_taxable_sales,
+    COALESCE(SUM(ov.output_vat), 0) AS total_output_vat,
+    COALESCE(SUM(iv.taxable_purchases), 0) AS total_taxable_purchases,
+    COALESCE(SUM(iv.input_vat), 0) AS total_input_vat,
+    (COALESCE(SUM(ov.output_vat), 0) - COALESCE(SUM(iv.input_vat), 0)) AS net_vat_payable
+FROM all_periods ap
+JOIN stores s ON s.id = ap.store_id
+LEFT JOIN output_vat ov ON ov.organization_id = ap.organization_id AND ov.store_id = ap.store_id AND ov.period_month = ap.period_month
+LEFT JOIN input_vat iv ON iv.organization_id = ap.organization_id AND iv.store_id = ap.store_id AND iv.period_month = ap.period_month
+GROUP BY ap.organization_id, ap.store_id, s.name, ap.period_month
+ORDER BY ap.period_month DESC, s.name;
