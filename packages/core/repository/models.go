@@ -1996,6 +1996,73 @@ type RestaurantTable struct {
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
+type Rfq struct {
+	ID               uuid.UUID        `json:"id"`
+	OrganizationID   int32            `json:"organization_id"`
+	StoreID          pgtype.Int4      `json:"store_id"`
+	RfqNumber        string           `json:"rfq_number"`
+	VendorName       string           `json:"vendor_name"`
+	Title            string           `json:"title"`
+	Description      pgtype.Text      `json:"description"`
+	Status           string           `json:"status"`
+	Token            string           `json:"token"`
+	TokenValidFrom   pgtype.Timestamp `json:"token_valid_from"`
+	TokenExpiresAt   pgtype.Timestamp `json:"token_expires_at"`
+	InvitedPartnerID pgtype.Int4      `json:"invited_partner_id"`
+	CreatedByUserID  pgtype.Int4      `json:"created_by_user_id"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
+}
+
+type RfqItem struct {
+	ID               uuid.UUID        `json:"id"`
+	RfqID            uuid.UUID        `json:"rfq_id"`
+	ProductID        pgtype.Int4      `json:"product_id"`
+	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
+	ItemName         string           `json:"item_name"`
+	ItemDescription  pgtype.Text      `json:"item_description"`
+	Quantity         pgtype.Numeric   `json:"quantity"`
+	UomID            pgtype.Int4      `json:"uom_id"`
+	TargetPrice      pgtype.Numeric   `json:"target_price"`
+	LineNumber       int32            `json:"line_number"`
+	Notes            pgtype.Text      `json:"notes"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+}
+
+type RfqResponse struct {
+	ID                   uuid.UUID        `json:"id"`
+	RfqID                uuid.UUID        `json:"rfq_id"`
+	OrganizationID       int32            `json:"organization_id"`
+	PartnerID            pgtype.Int4      `json:"partner_id"`
+	IsRegisteredSupplier bool             `json:"is_registered_supplier"`
+	SupplierName         string           `json:"supplier_name"`
+	SupplierEmail        pgtype.Text      `json:"supplier_email"`
+	SupplierPhone        pgtype.Text      `json:"supplier_phone"`
+	ResponseStatus       string           `json:"response_status"`
+	TotalQuotedAmount    pgtype.Numeric   `json:"total_quoted_amount"`
+	ValidUntil           pgtype.Date      `json:"valid_until"`
+	Notes                pgtype.Text      `json:"notes"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	SubmittedAt          pgtype.Timestamp `json:"submitted_at"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+}
+
+type RfqResponseItem struct {
+	ID                   uuid.UUID        `json:"id"`
+	RfqResponseID        uuid.UUID        `json:"rfq_response_id"`
+	RfqItemID            pgtype.UUID      `json:"rfq_item_id"`
+	UomID                int32            `json:"uom_id"`
+	Quantity             pgtype.Numeric   `json:"quantity"`
+	UnitPrice            pgtype.Numeric   `json:"unit_price"`
+	TaxAmount            pgtype.Numeric   `json:"tax_amount"`
+	LineTotal            pgtype.Numeric   `json:"line_total"`
+	DeliveryLeadTimeDays pgtype.Int4      `json:"delivery_lead_time_days"`
+	Notes                pgtype.Text      `json:"notes"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+}
+
 type Role struct {
 	ID           int32            `json:"id"`
 	Name         string           `json:"name"`

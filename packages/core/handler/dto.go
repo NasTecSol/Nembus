@@ -2384,7 +2384,7 @@ type TransferRequestResponse struct {
 	Metadata             json.RawMessage               `json:"metadata,omitempty" swaggertype:"object"`
 	CreatedAt            string                        `json:"created_at" example:"2026-09-08T10:00:00Z"`
 	UpdatedAt            string                        `json:"updated_at" example:"2026-09-08T10:00:00Z"`
-	Items                []TransferRequestItemResponse `json:"items,omitempty"`
+	Items                []TransferRequestItemResponse `json:"items"`
 }
 
 // M2MClientResponse represents the response body for an M2M client.

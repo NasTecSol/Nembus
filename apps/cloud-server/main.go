@@ -254,6 +254,9 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		purchaseOrdersHandler := handler.NewPurchaseOrdersHandler(purchaseOrdersUC)
 		router.RegisterPurchaseOrderRoutes(api, purchaseOrdersHandler)
 
+		rfqHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
+		router.RegisterRFQRoutes(api, rfqHandler)
+
 		approvalsUC := usecase.NewApprovalsUseCase()
 		approvalsUC.RegisterAccommodator("goods_receipt_note", usecase.NewGoodsReceiptNoteApprovalAccommodator())
 		approvalsUC.RegisterAccommodator("catalog", usecase.NewCatalogPriceAccommodator())
@@ -303,6 +306,10 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 			})
 		}
 	}
+
+	publicRFQHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
+	publicRFQRoutes := r.Group("/api/public")
+	router.RegisterPublicRFQRoutes(publicRFQRoutes, publicRFQHandler)
 
 	return r
 }

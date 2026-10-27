@@ -12722,6 +12722,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/inventory-stock/totals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns combined totals and per-store totals for inventory-tracked products in one organization. total_units sums quantity_on_hand in base units, including allocated stock and signed negative quantities; available units are returned separately. Cost value is on-hand quantity times current products.cost_price. Sale value is on-hand quantity times one currently active base-UOM (or unspecified-UOM) unit price from the selected price list; variant-specific prices take precedence over product prices. Quantity tiers must apply to one unit. Prices are used as stored, without tax adjustments or discounts. Missing costs/prices contribute zero value and are reported as absolute units_missing_*_price. Price List 01 (ID 1) is the default. No pagination: totals cover every matching inventory row. Omit store/location for all stores; specify store_id for one store; specify both store_id and storage_location_id for one location. Empty stores return zero totals. The price list must use the organization's currency. On databases without products.cost_price, costs are reported as missing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "inventory-stock"
+                ],
+                "summary": "Inventory units and valuation across stores",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Organization ID",
+                        "name": "organization_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Store ID (omit or 0 for all stores)",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Storage location ID; requires store_id (omit or 0 for all locations)",
+                        "name": "storage_location_id",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Selling price list",
+                        "name": "price_list_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/handler.InventoryTotalsData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/inventory-stock/upsert": {
             "post": {
                 "security": [
@@ -30948,6 +31048,104 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/public/rfqs/{token}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Public RFQs"
+                ],
+                "summary": "Get public RFQ details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Supplier access token",
+                        "name": "token",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "tenant",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/public/rfqs/{token}/responses": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Public RFQs"
+                ],
+                "summary": "Submit supplier quotation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Supplier access token",
+                        "name": "token",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "tenant",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "description": "Copy rfq_item_id, product_id, and uom_id from the public RFQ GET response; include one quote for each requested item.",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/usecase.SubmitRFQResponseInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/api/purchase-order-lines": {
             "get": {
                 "security": [
@@ -36512,6 +36710,344 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/rfqs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RFQs"
+                ],
+                "summary": "List RFQs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Results per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFQ status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Timeline status",
+                        "name": "timeline_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search RFQ number or title",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by response presence",
+                        "name": "has_response",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by supplier type",
+                        "name": "supplier_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RFQs"
+                ],
+                "summary": "Create RFQ draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Example: organization_id must match the authenticated organization; provide vendor_name and at least one product item.",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/usecase.CreateRFQInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/rfqs/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RFQs"
+                ],
+                "summary": "Get RFQ",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFQ UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/rfqs/{id}/close": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RFQs"
+                ],
+                "summary": "Close RFQ",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFQ UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/rfqs/{id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RFQs"
+                ],
+                "summary": "Publish RFQ",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFQ UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Publication expiry; example expires_at is 2026-11-30T00:00:00Z.",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.PublishRFQInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/rfqs/{id}/responses": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "RFQs"
+                ],
+                "summary": "List supplier responses",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFQ UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/api/roles": {
             "get": {
                 "security": [
@@ -38591,7 +39127,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get paginated list of all stock movements",
+                "description": "Get paginated stock movements, optionally filtered by a reference type from /api/stock-movements/reference-types. Pagination totals reflect the selected reference type.",
                 "consumes": [
                     "application/json"
                 ],
@@ -38629,6 +39165,13 @@ const docTemplate = `{
                         "default": 100,
                         "description": "Number of records per page",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "sales_order",
+                        "description": "Reference type (omit for all types)",
+                        "name": "reference_type",
                         "in": "query"
                     }
                 ],
@@ -38699,6 +39242,87 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handler.CreateStockMovementRequest"
                         }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-movements/by-reference-type": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Return stock movements matching the required reference_type, with total_count, page, limit and total_pages for the matching records. Unknown reference types return an empty list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-movements"
+                ],
+                "summary": "List stock movements by reference type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "sales_order",
+                        "description": "Reference type from /api/stock-movements/reference-types",
+                        "name": "reference_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Records per page (maximum 500)",
+                        "name": "limit",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -38984,6 +39608,155 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-movements/reference-type": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Return stock movements matching the required reference_type, with total_count, page, limit and total_pages for the matching records. Unknown reference types return an empty list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-movements"
+                ],
+                "summary": "List stock movements by reference type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "sales_order",
+                        "description": "Reference type from /api/stock-movements/reference-types",
+                        "name": "reference_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Records per page (maximum 500)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stock-movements/reference-types": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Return sorted distinct nonempty reference types present in the tenant's stock movements. Use a returned value as reference_type when listing stock movements.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stock-movements"
+                ],
+                "summary": "List stock movement reference types",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "401": {
@@ -50249,6 +51022,91 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.InventoryStoreTotals": {
+            "type": "object",
+            "properties": {
+                "product_count": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "integer"
+                },
+                "store_name": {
+                    "type": "string"
+                },
+                "total_available_units": {
+                    "type": "number"
+                },
+                "total_cost_value": {
+                    "type": "number"
+                },
+                "total_sale_value": {
+                    "type": "number"
+                },
+                "total_units": {
+                    "type": "number"
+                },
+                "units_missing_cost_price": {
+                    "type": "number"
+                },
+                "units_missing_sale_price": {
+                    "type": "number"
+                }
+            }
+        },
+        "handler.InventoryTotalsData": {
+            "type": "object",
+            "properties": {
+                "currency_code": {
+                    "type": "string"
+                },
+                "organization_id": {
+                    "type": "integer"
+                },
+                "price_list_id": {
+                    "type": "integer"
+                },
+                "product_count": {
+                    "type": "integer"
+                },
+                "quantity_basis": {
+                    "type": "string"
+                },
+                "storage_location_id": {
+                    "type": "integer"
+                },
+                "store_count": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "integer"
+                },
+                "stores": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.InventoryStoreTotals"
+                    }
+                },
+                "total_available_units": {
+                    "type": "number"
+                },
+                "total_cost_value": {
+                    "type": "number"
+                },
+                "total_sale_value": {
+                    "type": "number"
+                },
+                "total_units": {
+                    "type": "number"
+                },
+                "units_missing_cost_price": {
+                    "type": "number"
+                },
+                "units_missing_sale_price": {
+                    "type": "number"
+                }
+            }
+        },
         "handler.LevelPayload": {
             "type": "object",
             "required": [
@@ -51421,6 +52279,18 @@ const docTemplate = `{
                 "valid_to": {
                     "type": "string",
                     "example": "2026-08-31T23:59:59Z"
+                }
+            }
+        },
+        "handler.PublishRFQInput": {
+            "type": "object",
+            "required": [
+                "expires_at"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-11-30T00:00:00Z"
                 }
             }
         },
@@ -55269,6 +56139,44 @@ const docTemplate = `{
                 }
             }
         },
+        "usecase.CreateRFQInput": {
+            "type": "object",
+            "required": [
+                "organization_id",
+                "vendor_name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Please quote the requested ALMARAI-MILK-FW-1L for delivery next month."
+                },
+                "invited_partner_id": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RFQItemInput"
+                    }
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "title": {
+                    "type": "string",
+                    "example": "500 ALMARAI-MILK-FW-1L SAUDIYA BRANCH"
+                },
+                "vendor_name": {
+                    "type": "string",
+                    "example": "Example Vendor Co."
+                }
+            }
+        },
         "usecase.MenuItemFullDetailsResponse": {
             "type": "object",
             "properties": {
@@ -55397,6 +56305,79 @@ const docTemplate = `{
                 }
             }
         },
+        "usecase.RFQItemInput": {
+            "type": "object",
+            "properties": {
+                "item_description": {
+                    "type": "string",
+                    "example": "ALMARAI-MILK-FW-1L lumbar support"
+                },
+                "item_name": {
+                    "type": "string",
+                    "example": "ALMARAI-MILK-FW-1L"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Black preferred"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "product_variant_id": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 20
+                },
+                "target_price": {
+                    "type": "number",
+                    "example": 25000
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "usecase.RFQQuoteItemInput": {
+            "type": "object",
+            "properties": {
+                "delivery_lead_time_days": {
+                    "type": "integer",
+                    "example": 21
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Price per Liter"
+                },
+                "product_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 20
+                },
+                "rfq_item_id": {
+                    "type": "string",
+                    "example": "362d4816-773b-4f0c-9b0d-f7660b5a4e2f"
+                },
+                "tax_amount": {
+                    "type": "number",
+                    "example": 1
+                },
+                "unit_price": {
+                    "type": "number",
+                    "example": 22000
+                },
+                "uom_id": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
         "usecase.RecordInvoicePaymentInput": {
             "type": "object",
             "properties": {
@@ -55438,6 +56419,37 @@ const docTemplate = `{
                 },
                 "received_by_user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "usecase.SubmitRFQResponseInput": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RFQQuoteItemInput"
+                    }
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "We can deliver in two shipments."
+                },
+                "supplier_email": {
+                    "type": "string",
+                    "example": "quotes@example.com"
+                },
+                "supplier_name": {
+                    "type": "string",
+                    "example": "Example Supply Co."
+                },
+                "supplier_phone": {
+                    "type": "string",
+                    "example": "+92-300-1234567"
+                },
+                "valid_until": {
+                    "type": "string",
+                    "example": "2026-11-30"
                 }
             }
         },

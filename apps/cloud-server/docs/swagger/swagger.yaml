@@ -3393,6 +3393,62 @@ definitions:
     required:
     - store_id
     type: object
+  handler.InventoryStoreTotals:
+    properties:
+      product_count:
+        type: integer
+      store_id:
+        type: integer
+      store_name:
+        type: string
+      total_available_units:
+        type: number
+      total_cost_value:
+        type: number
+      total_sale_value:
+        type: number
+      total_units:
+        type: number
+      units_missing_cost_price:
+        type: number
+      units_missing_sale_price:
+        type: number
+    type: object
+  handler.InventoryTotalsData:
+    properties:
+      currency_code:
+        type: string
+      organization_id:
+        type: integer
+      price_list_id:
+        type: integer
+      product_count:
+        type: integer
+      quantity_basis:
+        type: string
+      storage_location_id:
+        type: integer
+      store_count:
+        type: integer
+      store_id:
+        type: integer
+      stores:
+        items:
+          $ref: '#/definitions/handler.InventoryStoreTotals'
+        type: array
+      total_available_units:
+        type: number
+      total_cost_value:
+        type: number
+      total_sale_value:
+        type: number
+      total_units:
+        type: number
+      units_missing_cost_price:
+        type: number
+      units_missing_sale_price:
+        type: number
+    type: object
   handler.LevelPayload:
     properties:
       level_order:
@@ -4244,6 +4300,14 @@ definitions:
       valid_to:
         example: "2026-08-31T23:59:59Z"
         type: string
+    type: object
+  handler.PublishRFQInput:
+    properties:
+      expires_at:
+        example: "2026-11-30T00:00:00Z"
+        type: string
+    required:
+    - expires_at
     type: object
   handler.PurchaseOrderLineDTO:
     properties:
@@ -6973,6 +7037,33 @@ definitions:
       uom_id:
         type: integer
     type: object
+  usecase.CreateRFQInput:
+    properties:
+      description:
+        example: Please quote the requested ALMARAI-MILK-FW-1L for delivery next month.
+        type: string
+      invited_partner_id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/usecase.RFQItemInput'
+        type: array
+      organization_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      title:
+        example: 500 ALMARAI-MILK-FW-1L SAUDIYA BRANCH
+        type: string
+      vendor_name:
+        example: Example Vendor Co.
+        type: string
+    required:
+    - organization_id
+    - vendor_name
+    type: object
   usecase.MenuItemFullDetailsResponse:
     properties:
       base_price:
@@ -7065,6 +7156,59 @@ definitions:
         example: 6
         type: integer
     type: object
+  usecase.RFQItemInput:
+    properties:
+      item_description:
+        example: ALMARAI-MILK-FW-1L lumbar support
+        type: string
+      item_name:
+        example: ALMARAI-MILK-FW-1L
+        type: string
+      notes:
+        example: Black preferred
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        type: integer
+      quantity:
+        example: 20
+        type: number
+      target_price:
+        example: 25000
+        type: number
+      uom_id:
+        example: 3
+        type: integer
+    type: object
+  usecase.RFQQuoteItemInput:
+    properties:
+      delivery_lead_time_days:
+        example: 21
+        type: integer
+      notes:
+        example: Price per Liter
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      quantity:
+        example: 20
+        type: number
+      rfq_item_id:
+        example: 362d4816-773b-4f0c-9b0d-f7660b5a4e2f
+        type: string
+      tax_amount:
+        example: 1
+        type: number
+      unit_price:
+        example: 22000
+        type: number
+      uom_id:
+        example: 3
+        type: integer
+    type: object
   usecase.RecordInvoicePaymentInput:
     properties:
       bank_account_id:
@@ -7094,6 +7238,28 @@ definitions:
         type: string
       received_by_user_id:
         type: integer
+    type: object
+  usecase.SubmitRFQResponseInput:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/usecase.RFQQuoteItemInput'
+        type: array
+      notes:
+        example: We can deliver in two shipments.
+        type: string
+      supplier_email:
+        example: quotes@example.com
+        type: string
+      supplier_name:
+        example: Example Supply Co.
+        type: string
+      supplier_phone:
+        example: +92-300-1234567
+        type: string
+      valid_until:
+        example: "2026-11-30"
+        type: string
     type: object
   usecase.UpdateInvoiceInput:
     properties:
@@ -15844,6 +16010,83 @@ paths:
       summary: Get inventory stock summary
       tags:
       - inventory_stock
+  /api/inventory-stock/totals:
+    get:
+      description: 'Returns combined totals and per-store totals for inventory-tracked
+        products in one organization. total_units sums quantity_on_hand in base units,
+        including allocated stock and signed negative quantities; available units
+        are returned separately. Cost value is on-hand quantity times current products.cost_price.
+        Sale value is on-hand quantity times one currently active base-UOM (or unspecified-UOM)
+        unit price from the selected price list; variant-specific prices take precedence
+        over product prices. Quantity tiers must apply to one unit. Prices are used
+        as stored, without tax adjustments or discounts. Missing costs/prices contribute
+        zero value and are reported as absolute units_missing_*_price. Price List
+        01 (ID 1) is the default. No pagination: totals cover every matching inventory
+        row. Omit store/location for all stores; specify store_id for one store; specify
+        both store_id and storage_location_id for one location. Empty stores return
+        zero totals. The price list must use the organization''s currency. On databases
+        without products.cost_price, costs are reported as missing.'
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        minimum: 1
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID (omit or 0 for all stores)
+        in: query
+        minimum: 0
+        name: store_id
+        type: integer
+      - description: Storage location ID; requires store_id (omit or 0 for all locations)
+        in: query
+        minimum: 0
+        name: storage_location_id
+        type: integer
+      - default: 1
+        description: Selling price list
+        in: query
+        minimum: 1
+        name: price_list_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.InventoryTotalsData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Inventory units and valuation across stores
+      tags:
+      - inventory-stock
   /api/inventory-stock/upsert:
     post:
       consumes:
@@ -27616,6 +27859,73 @@ paths:
       summary: Validate coupon (read-only)
       tags:
       - promotions
+  /api/public/rfqs/{token}:
+    get:
+      parameters:
+      - description: Supplier access token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: Tenant identifier
+        in: query
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get public RFQ details
+      tags:
+      - Public RFQs
+  /api/public/rfqs/{token}/responses:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Supplier access token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: Tenant identifier
+        in: query
+        name: tenant
+        required: true
+        type: string
+      - description: Copy rfq_item_id, product_id, and uom_id from the public RFQ
+          GET response; include one quote for each requested item.
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.SubmitRFQResponseInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Submit supplier quotation
+      tags:
+      - Public RFQs
   /api/purchase-order-lines:
     get:
       consumes:
@@ -31235,6 +31545,226 @@ paths:
       summary: Update waste log
       tags:
       - restaurant
+  /api/rfqs:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - description: RFQ status
+        in: query
+        name: status
+        type: string
+      - description: Timeline status
+        in: query
+        name: timeline_status
+        type: string
+      - description: Search RFQ number or title
+        in: query
+        name: search
+        type: string
+      - description: Filter by response presence
+        in: query
+        name: has_response
+        type: string
+      - description: Filter by supplier type
+        in: query
+        name: supplier_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List RFQs
+      tags:
+      - RFQs
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: 'Example: organization_id must match the authenticated organization;
+          provide vendor_name and at least one product item.'
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateRFQInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create RFQ draft
+      tags:
+      - RFQs
+  /api/rfqs/{id}:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/close:
+    post:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Publication expiry; example expires_at is 2026-11-30T00:00:00Z.
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PublishRFQInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Publish RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/responses:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List supplier responses
+      tags:
+      - RFQs
   /api/roles:
     get:
       consumes:
@@ -32608,7 +33138,9 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get paginated list of all stock movements
+      description: Get paginated stock movements, optionally filtered by a reference
+        type from /api/stock-movements/reference-types. Pagination totals reflect
+        the selected reference type.
       parameters:
       - description: Tenant identifier
         in: header
@@ -32630,6 +33162,11 @@ paths:
         in: query
         name: limit
         type: integer
+      - description: Reference type (omit for all types)
+        example: sales_order
+        in: query
+        name: reference_type
+        type: string
       produces:
       - application/json
       responses:
@@ -32794,6 +33331,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Update stock movement status
+      tags:
+      - stock-movements
+  /api/stock-movements/by-reference-type:
+    get:
+      description: Return stock movements matching the required reference_type, with
+        total_count, page, limit and total_pages for the matching records. Unknown
+        reference types return an empty list.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Reference type from /api/stock-movements/reference-types
+        example: sales_order
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: Records per page (maximum 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movements by reference type
       tags:
       - stock-movements
   /api/stock-movements/daterange:
@@ -32977,6 +33570,105 @@ paths:
       security:
       - BearerAuth: []
       summary: List stock movements for product in date range
+      tags:
+      - stock-movements
+  /api/stock-movements/reference-type:
+    get:
+      description: Return stock movements matching the required reference_type, with
+        total_count, page, limit and total_pages for the matching records. Unknown
+        reference types return an empty list.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Reference type from /api/stock-movements/reference-types
+        example: sales_order
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: Records per page (maximum 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movements by reference type
+      tags:
+      - stock-movements
+  /api/stock-movements/reference-types:
+    get:
+      description: Return sorted distinct nonempty reference types present in the
+        tenant's stock movements. Use a returned value as reference_type when listing
+        stock movements.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movement reference types
       tags:
       - stock-movements
   /api/storage-locations:
