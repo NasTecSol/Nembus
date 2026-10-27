@@ -66,12 +66,31 @@ env "pos" {
   }
 }
 
+variable "supabase_db_url" {
+  type        = string
+  default     = getenv("SUPABASE_DB_URL") != "" ? getenv("SUPABASE_DB_URL") : ""
+  description = "Connection URL for Supabase tenant database"
+}
+
 env "stg" {
   src = [
     "file://packages/core/db/schema",
     "file://packages/core/db/views_functions"
   ]
   url = var.stg_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://packages/core/db/migrations"
+    format = atlas
+  }
+}
+
+env "supabase" {
+  src = [
+    "file://packages/core/db/schema",
+    "file://packages/core/db/views_functions"
+  ]
+  url = var.supabase_db_url
   dev = var.dev_db_url
   migration {
     dir    = "file://packages/core/db/migrations"
