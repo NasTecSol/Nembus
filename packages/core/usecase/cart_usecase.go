@@ -1066,12 +1066,15 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		}
 	}
 
+	var posTxnID *int32
+
 	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled
-	if cart.Channel.Valid && cart.Channel.String == "pos" {
+	if cart.Channel.Valid && strings.EqualFold(strings.TrimSpace(cart.Channel.String), "pos") {
 		posTxn, err := uc.repo.CreateTransactionFromOrder(ctx, orderID)
 		if err != nil {
 			fmt.Printf("Warning: failed to create POS transaction: %s\n", err.Error())
 		} else {
+			posTxnID = &posTxn.ID
 			err = uc.repo.SyncTransactionLinesFromOrder(ctx, repository.SyncTransactionLinesFromOrderParams{
 				TransactionID: posTxn.ID,
 				SalesOrderID:  orderID,
@@ -1109,10 +1112,16 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		}
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "order created from cart", map[string]interface{}{
+	respData := map[string]interface{}{
 		"order_id":     orderID,
 		"order_number": orderNumber,
-	})
+	}
+	if posTxnID != nil {
+		respData["pos_transaction_id"] = *posTxnID
+		respData["transaction_id"] = *posTxnID
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "order created from cart", respData)
 }
 
 // ReopenCart reopens a converted cart back into an active cart if its order is pending.
