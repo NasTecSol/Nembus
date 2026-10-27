@@ -29,8 +29,8 @@ generate-core:
 	@cd packages/core && sqlc generate
 
 sync-core:
-	@echo "==> Syncing core schema & queries into pos-client..."
-	@cd apps/pos-client && powershell -ExecutionPolicy Bypass -File scripts/sync_core.ps1
+	@echo "==> Syncing core schema & migrations..."
+	@powershell -ExecutionPolicy Bypass -File scripts/sync_migrations.ps1
 
 # Build & Run Commands
 build-server:
@@ -41,11 +41,18 @@ build-client:
 	@echo "==> Building POS client (Wails)..."
 	@cd apps/pos-client && wails build
 
+build-agent:
+	@echo "==> Building SAP agent..."
+	@cd apps/sap-agent && go build -o bin/sap-agent cmd/main.go
+
 dev-server:
 	@cd apps/cloud-server && go run main.go dev
 
 dev-client:
 	@cd apps/pos-client && wails dev
+
+dev-agent:
+	@cd apps/sap-agent && go run cmd/main.go daemon
 
 sync-notebook:
 	@echo "==> Bundling NotebookLM context sources..."
@@ -56,6 +63,7 @@ tidy:
 	@cd packages/core && go mod tidy
 	@cd apps/cloud-server && go mod tidy
 	@cd apps/pos-client && go mod tidy
+	@cd apps/sap-agent && go mod tidy
 
 swagger:
 	@echo "==> Generating Swagger documentation..."

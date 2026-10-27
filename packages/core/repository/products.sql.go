@@ -42,7 +42,7 @@ INSERT INTO products (
     is_purchasable, allow_decimal_quantity, track_inventory, metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
-) RETURNING id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at
+) RETURNING id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at
 `
 
 type CreateProductParams struct {
@@ -119,6 +119,7 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -703,7 +704,7 @@ func (q *Queries) GetMasterProductCatalogCount(ctx context.Context, organization
 }
 
 const getProduct = `-- name: GetProduct :one
-SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products WHERE id = $1 LIMIT 1
+SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at FROM products WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetProduct(ctx context.Context, id int32) (Product, error) {
@@ -727,6 +728,7 @@ func (q *Queries) GetProduct(ctx context.Context, id int32) (Product, error) {
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -735,7 +737,7 @@ func (q *Queries) GetProduct(ctx context.Context, id int32) (Product, error) {
 }
 
 const getProductBySKU = `-- name: GetProductBySKU :one
-SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products 
+SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at FROM products 
 WHERE organization_id = $1 AND sku = $2 
 LIMIT 1
 `
@@ -766,6 +768,7 @@ func (q *Queries) GetProductBySKU(ctx context.Context, arg GetProductBySKUParams
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -819,7 +822,7 @@ func (q *Queries) GetProductCategoryByCode(ctx context.Context, code string) (Pr
 
 const getProductWithDetails = `-- name: GetProductWithDetails :one
 SELECT 
-    p.id, p.organization_id, p.sku, p.name, p.description, p.category_id, p.brand_id, p.base_uom_id, p.product_type, p.tax_category_id, p.is_serialized, p.is_batch_managed, p.is_active, p.is_sellable, p.is_purchasable, p.allow_decimal_quantity, p.track_inventory, p.metadata, p.created_at, p.updated_at,
+    p.id, p.organization_id, p.sku, p.name, p.description, p.category_id, p.brand_id, p.base_uom_id, p.product_type, p.tax_category_id, p.is_serialized, p.is_batch_managed, p.is_active, p.is_sellable, p.is_purchasable, p.allow_decimal_quantity, p.track_inventory, p.cost_price, p.metadata, p.created_at, p.updated_at,
     pc.name as category_name,
     pc.code as category_code,
     b.name as brand_name,
@@ -855,6 +858,7 @@ type GetProductWithDetailsRow struct {
 	IsPurchasable        pgtype.Bool      `json:"is_purchasable"`
 	AllowDecimalQuantity pgtype.Bool      `json:"allow_decimal_quantity"`
 	TrackInventory       pgtype.Bool      `json:"track_inventory"`
+	CostPrice            pgtype.Numeric   `json:"cost_price"`
 	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
@@ -889,6 +893,7 @@ func (q *Queries) GetProductWithDetails(ctx context.Context, id int32) (GetProdu
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -986,7 +991,7 @@ func (q *Queries) ListProductCategories(ctx context.Context, isActive pgtype.Boo
 }
 
 const listProducts = `-- name: ListProducts :many
-SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products
+SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at FROM products
 WHERE organization_id = $1
   AND is_active = COALESCE($4, is_active)
   AND category_id = COALESCE($5, category_id)
@@ -1041,6 +1046,7 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]P
 			&i.IsPurchasable,
 			&i.AllowDecimalQuantity,
 			&i.TrackInventory,
+			&i.CostPrice,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1183,7 +1189,7 @@ func (q *Queries) ListProductsWithVariants(ctx context.Context, arg ListProducts
 }
 
 const listPurchasableProducts = `-- name: ListPurchasableProducts :many
-SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products
+SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at FROM products
 WHERE organization_id = $1
   AND is_purchasable = true
   AND is_active = true
@@ -1224,6 +1230,7 @@ func (q *Queries) ListPurchasableProducts(ctx context.Context, arg ListPurchasab
 			&i.IsPurchasable,
 			&i.AllowDecimalQuantity,
 			&i.TrackInventory,
+			&i.CostPrice,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1239,7 +1246,7 @@ func (q *Queries) ListPurchasableProducts(ctx context.Context, arg ListPurchasab
 }
 
 const listSellableProducts = `-- name: ListSellableProducts :many
-SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products
+SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at FROM products
 WHERE organization_id = $1
   AND is_sellable = true
   AND is_active = true
@@ -1280,6 +1287,7 @@ func (q *Queries) ListSellableProducts(ctx context.Context, arg ListSellableProd
 			&i.IsPurchasable,
 			&i.AllowDecimalQuantity,
 			&i.TrackInventory,
+			&i.CostPrice,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1480,7 +1488,7 @@ func (q *Queries) SearchMasterProductCatalogCount(ctx context.Context, arg Searc
 }
 
 const searchProducts = `-- name: SearchProducts :many
-SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at FROM products
+SELECT id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at FROM products
 WHERE organization_id = $1
   AND is_active = true
   AND (
@@ -1531,6 +1539,7 @@ func (q *Queries) SearchProducts(ctx context.Context, arg SearchProductsParams) 
 			&i.IsPurchasable,
 			&i.AllowDecimalQuantity,
 			&i.TrackInventory,
+			&i.CostPrice,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1564,7 +1573,7 @@ SET
     track_inventory = COALESCE($14, track_inventory),
     metadata = COALESCE($15, metadata)
 WHERE id = $16
-RETURNING id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, metadata, created_at, updated_at
+RETURNING id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at
 `
 
 type UpdateProductParams struct {
@@ -1624,6 +1633,7 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1673,6 +1683,47 @@ func (q *Queries) UpdateProductCategory(ctx context.Context, arg UpdateProductCa
 		&i.Description,
 		&i.CategoryLevel,
 		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateProductCostPrice = `-- name: UpdateProductCostPrice :one
+UPDATE products
+SET cost_price = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type, tax_category_id, is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, allow_decimal_quantity, track_inventory, cost_price, metadata, created_at, updated_at
+`
+
+type UpdateProductCostPriceParams struct {
+	ID        int32          `json:"id"`
+	CostPrice pgtype.Numeric `json:"cost_price"`
+}
+
+func (q *Queries) UpdateProductCostPrice(ctx context.Context, arg UpdateProductCostPriceParams) (Product, error) {
+	row := q.db.QueryRow(ctx, updateProductCostPrice, arg.ID, arg.CostPrice)
+	var i Product
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Sku,
+		&i.Name,
+		&i.Description,
+		&i.CategoryID,
+		&i.BrandID,
+		&i.BaseUomID,
+		&i.ProductType,
+		&i.TaxCategoryID,
+		&i.IsSerialized,
+		&i.IsBatchManaged,
+		&i.IsActive,
+		&i.IsSellable,
+		&i.IsPurchasable,
+		&i.AllowDecimalQuantity,
+		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,

@@ -15,10 +15,10 @@ import (
 const countPurchaseOrders = `-- name: CountPurchaseOrders :one
 SELECT COUNT(DISTINCT po.id)
 FROM purchase_orders po
-LEFT JOIN business_partners bp ON po.partners_id = bp.id
+LEFT JOIN business_partners bp ON po.partner_id = bp.id
 WHERE po.organization_id = $1
   AND ($2::int IS NULL OR po.store_id = $2)
-  AND ($3::int IS NULL OR po.partners_id = $3)
+  AND ($3::int IS NULL OR po.partner_id = $3)
   AND ($4::text IS NULL OR po.status = $4)
   AND ($5::date IS NULL OR po.po_date >= $5)
   AND ($6::date IS NULL OR po.po_date <= $6)
@@ -59,7 +59,7 @@ const createPurchaseOrder = `-- name: CreatePurchaseOrder :one
 INSERT INTO purchase_orders (
     organization_id,
     po_number,
-    partners_id,
+    partner_id,
     store_id,
     po_date,
     expected_delivery_date,
@@ -74,13 +74,13 @@ INSERT INTO purchase_orders (
     applied_contract_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-) RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
+) RETURNING id, organization_id, po_number, partner_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
 `
 
 type CreatePurchaseOrderParams struct {
 	OrganizationID       int32           `json:"organization_id"`
 	PoNumber             string          `json:"po_number"`
-	PartnersID           int32           `json:"partners_id"`
+	PartnerID            int32           `json:"partner_id"`
 	StoreID              int32           `json:"store_id"`
 	PoDate               pgtype.Date     `json:"po_date"`
 	ExpectedDeliveryDate pgtype.Date     `json:"expected_delivery_date"`
@@ -102,7 +102,7 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 	row := q.db.QueryRow(ctx, createPurchaseOrder,
 		arg.OrganizationID,
 		arg.PoNumber,
-		arg.PartnersID,
+		arg.PartnerID,
 		arg.StoreID,
 		arg.PoDate,
 		arg.ExpectedDeliveryDate,
@@ -121,7 +121,7 @@ func (q *Queries) CreatePurchaseOrder(ctx context.Context, arg CreatePurchaseOrd
 		&i.ID,
 		&i.OrganizationID,
 		&i.PoNumber,
-		&i.PartnersID,
+		&i.PartnerID,
 		&i.StoreID,
 		&i.PoDate,
 		&i.ExpectedDeliveryDate,
@@ -245,7 +245,7 @@ func (q *Queries) DeletePurchaseOrderLines(ctx context.Context, purchaseOrderID 
 }
 
 const getPurchaseOrderByID = `-- name: GetPurchaseOrderByID :one
-SELECT id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders WHERE id = $1
+SELECT id, organization_id, po_number, partner_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders WHERE id = $1
 `
 
 func (q *Queries) GetPurchaseOrderByID(ctx context.Context, id int32) (PurchaseOrder, error) {
@@ -255,7 +255,7 @@ func (q *Queries) GetPurchaseOrderByID(ctx context.Context, id int32) (PurchaseO
 		&i.ID,
 		&i.OrganizationID,
 		&i.PoNumber,
-		&i.PartnersID,
+		&i.PartnerID,
 		&i.StoreID,
 		&i.PoDate,
 		&i.ExpectedDeliveryDate,
@@ -276,7 +276,7 @@ func (q *Queries) GetPurchaseOrderByID(ctx context.Context, id int32) (PurchaseO
 }
 
 const getPurchaseOrderByNumber = `-- name: GetPurchaseOrderByNumber :one
-SELECT id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders 
+SELECT id, organization_id, po_number, partner_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at FROM purchase_orders 
 WHERE organization_id = $1 AND po_number = $2
 `
 
@@ -292,7 +292,7 @@ func (q *Queries) GetPurchaseOrderByNumber(ctx context.Context, arg GetPurchaseO
 		&i.ID,
 		&i.OrganizationID,
 		&i.PoNumber,
-		&i.PartnersID,
+		&i.PartnerID,
 		&i.StoreID,
 		&i.PoDate,
 		&i.ExpectedDeliveryDate,
@@ -384,7 +384,7 @@ func (q *Queries) GetPurchaseOrderLineByID(ctx context.Context, id int32) (GetPu
 
 const getPurchaseOrderWithDetails = `-- name: GetPurchaseOrderWithDetails :one
 SELECT 
-    po.id, po.organization_id, po.po_number, po.partners_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.applied_contract_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
+    po.id, po.organization_id, po.po_number, po.partner_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.applied_contract_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
     bp.name AS partner_name,
     bp.code AS partner_code,
     s.name AS store_name,
@@ -395,7 +395,7 @@ SELECT
     bpc.discount_percentage AS applied_contract_discount_percentage,
     bpc.discount_amount AS applied_contract_discount_amount
 FROM purchase_orders po
-LEFT JOIN business_partners bp ON po.partners_id = bp.id
+LEFT JOIN business_partners bp ON po.partner_id = bp.id
 LEFT JOIN stores s ON po.store_id = s.id
 LEFT JOIN users u_created ON po.created_by = u_created.id
 LEFT JOIN users u_approved ON po.approved_by = u_approved.id
@@ -407,7 +407,7 @@ type GetPurchaseOrderWithDetailsRow struct {
 	ID                                int32            `json:"id"`
 	OrganizationID                    int32            `json:"organization_id"`
 	PoNumber                          string           `json:"po_number"`
-	PartnersID                        int32            `json:"partners_id"`
+	PartnerID                         int32            `json:"partner_id"`
 	StoreID                           int32            `json:"store_id"`
 	PoDate                            pgtype.Date      `json:"po_date"`
 	ExpectedDeliveryDate              pgtype.Date      `json:"expected_delivery_date"`
@@ -441,7 +441,7 @@ func (q *Queries) GetPurchaseOrderWithDetails(ctx context.Context, id int32) (Ge
 		&i.ID,
 		&i.OrganizationID,
 		&i.PoNumber,
-		&i.PartnersID,
+		&i.PartnerID,
 		&i.StoreID,
 		&i.PoDate,
 		&i.ExpectedDeliveryDate,
@@ -486,7 +486,7 @@ SELECT
     p.sku,
     p.name AS product_name
 FROM purchase_orders po
-JOIN business_partners bp ON po.partners_id = bp.id
+JOIN business_partners bp ON po.partner_id = bp.id
 JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
 JOIN products p ON pol.product_id = p.id
 WHERE po.id = $1
@@ -629,19 +629,19 @@ func (q *Queries) ListPurchaseOrderLines(ctx context.Context, purchaseOrderID in
 
 const listPurchaseOrders = `-- name: ListPurchaseOrders :many
 SELECT 
-    po.id, po.organization_id, po.po_number, po.partners_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.applied_contract_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
+    po.id, po.organization_id, po.po_number, po.partner_id, po.store_id, po.po_date, po.expected_delivery_date, po.status, po.subtotal, po.discount_amount, po.tax_amount, po.total_amount, po.price_list_id, po.applied_contract_id, po.created_by, po.approved_by, po.metadata, po.created_at, po.updated_at,
     bp.name AS partner_name,
     bp.code AS partner_code,
     s.name AS store_name,
     COUNT(pol.id) AS item_count,
     COALESCE(SUM(pol.quantity), 0)::numeric AS total_quantity
 FROM purchase_orders po
-LEFT JOIN business_partners bp ON po.partners_id = bp.id
+LEFT JOIN business_partners bp ON po.partner_id = bp.id
 LEFT JOIN stores s ON po.store_id = s.id
 LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
 WHERE po.organization_id = $1
   AND ($2::int IS NULL OR po.store_id = $2)
-  AND ($3::int IS NULL OR po.partners_id = $3)
+  AND ($3::int IS NULL OR po.partner_id = $3)
   AND ($4::text IS NULL OR po.status = $4)
   AND ($5::date IS NULL OR po.po_date >= $5)
   AND ($6::date IS NULL OR po.po_date <= $6)
@@ -671,7 +671,7 @@ type ListPurchaseOrdersRow struct {
 	ID                   int32            `json:"id"`
 	OrganizationID       int32            `json:"organization_id"`
 	PoNumber             string           `json:"po_number"`
-	PartnersID           int32            `json:"partners_id"`
+	PartnerID            int32            `json:"partner_id"`
 	StoreID              int32            `json:"store_id"`
 	PoDate               pgtype.Date      `json:"po_date"`
 	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
@@ -717,7 +717,7 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 			&i.ID,
 			&i.OrganizationID,
 			&i.PoNumber,
-			&i.PartnersID,
+			&i.PartnerID,
 			&i.StoreID,
 			&i.PoDate,
 			&i.ExpectedDeliveryDate,
@@ -751,7 +751,7 @@ func (q *Queries) ListPurchaseOrders(ctx context.Context, arg ListPurchaseOrders
 
 const updatePurchaseOrderHeader = `-- name: UpdatePurchaseOrderHeader :one
 UPDATE purchase_orders
-SET partners_id = $2,
+SET partner_id = $2,
     store_id = $3,
     po_date = $4,
     expected_delivery_date = $5,
@@ -764,12 +764,12 @@ SET partners_id = $2,
     applied_contract_id = COALESCE($12, applied_contract_id),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
+RETURNING id, organization_id, po_number, partner_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
 `
 
 type UpdatePurchaseOrderHeaderParams struct {
 	ID                   int32           `json:"id"`
-	PartnersID           int32           `json:"partners_id"`
+	PartnerID            int32           `json:"partner_id"`
 	StoreID              int32           `json:"store_id"`
 	PoDate               pgtype.Date     `json:"po_date"`
 	ExpectedDeliveryDate pgtype.Date     `json:"expected_delivery_date"`
@@ -785,7 +785,7 @@ type UpdatePurchaseOrderHeaderParams struct {
 func (q *Queries) UpdatePurchaseOrderHeader(ctx context.Context, arg UpdatePurchaseOrderHeaderParams) (PurchaseOrder, error) {
 	row := q.db.QueryRow(ctx, updatePurchaseOrderHeader,
 		arg.ID,
-		arg.PartnersID,
+		arg.PartnerID,
 		arg.StoreID,
 		arg.PoDate,
 		arg.ExpectedDeliveryDate,
@@ -802,7 +802,7 @@ func (q *Queries) UpdatePurchaseOrderHeader(ctx context.Context, arg UpdatePurch
 		&i.ID,
 		&i.OrganizationID,
 		&i.PoNumber,
-		&i.PartnersID,
+		&i.PartnerID,
 		&i.StoreID,
 		&i.PoDate,
 		&i.ExpectedDeliveryDate,
@@ -896,7 +896,7 @@ SET status = $2,
     approved_by = $3,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, po_number, partners_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
+RETURNING id, organization_id, po_number, partner_id, store_id, po_date, expected_delivery_date, status, subtotal, discount_amount, tax_amount, total_amount, price_list_id, applied_contract_id, created_by, approved_by, metadata, created_at, updated_at
 `
 
 type UpdatePurchaseOrderStatusParams struct {
@@ -912,7 +912,7 @@ func (q *Queries) UpdatePurchaseOrderStatus(ctx context.Context, arg UpdatePurch
 		&i.ID,
 		&i.OrganizationID,
 		&i.PoNumber,
-		&i.PartnersID,
+		&i.PartnerID,
 		&i.StoreID,
 		&i.PoDate,
 		&i.ExpectedDeliveryDate,

@@ -59,8 +59,8 @@ func (uc *ApprovalsUseCase) Submit(ctx context.Context, in ApprovalInput) (repos
 		return repository.ApprovalRequest{}, errors.New("repository is not configured")
 	}
 	in.Domain, in.Action = strings.ToLower(strings.TrimSpace(in.Domain)), strings.ToLower(strings.TrimSpace(in.Action))
-	if in.OrganizationID <= 0 || in.RequestedBy <= 0 || in.Domain == "" || in.Action == "" || in.EntityType == "" || strings.TrimSpace(in.Summary) == "" || len(in.Payload) == 0 || !json.Valid(in.Payload) {
-		return repository.ApprovalRequest{}, errors.New("organization, requester, domain, action, entity type, summary, and valid JSON payload are required")
+	if in.OrganizationID <= 0 || in.Domain == "" || in.Action == "" || in.EntityType == "" || strings.TrimSpace(in.Summary) == "" || len(in.Payload) == 0 || !json.Valid(in.Payload) {
+		return repository.ApprovalRequest{}, errors.New("organization, domain, action, entity type, summary, and valid JSON payload are required")
 	}
 	policy, err := uc.repo.GetApprovalPolicy(ctx, repository.GetApprovalPolicyParams{OrganizationID: in.OrganizationID, Domain: in.Domain, Action: in.Action})
 	if err != nil {
@@ -76,13 +76,114 @@ func (uc *ApprovalsUseCase) Submit(ctx context.Context, in ApprovalInput) (repos
 	if in.Notes != nil {
 		notes = pgtype.Text{String: *in.Notes, Valid: true}
 	}
-	request, err := uc.repo.CreateApprovalRequest(ctx, repository.CreateApprovalRequestParams{OrganizationID: in.OrganizationID, Domain: in.Domain, Action: in.Action, EntityType: in.EntityType, EntityID: entityID, RequestedBy: pgtype.Int4{Int32: in.RequestedBy, Valid: true}, RequiredPermission: policy.RequiredPermission, Summary: in.Summary, Payload: in.Payload, SubmissionNotes: notes, Metadata: json.RawMessage(`{}`)})
+	requestedBy := pgtype.Int4{}
+	if in.RequestedBy > 0 {
+		requestedBy = pgtype.Int4{Int32: in.RequestedBy, Valid: true}
+	}
+	request, err := uc.repo.CreateApprovalRequest(ctx, repository.CreateApprovalRequestParams{
+		OrganizationID:     in.OrganizationID,
+		Domain:             in.Domain,
+		Action:             in.Action,
+		EntityType:         in.EntityType,
+		EntityID:           entityID,
+		RequestedBy:        requestedBy,
+		RequiredPermission: policy.RequiredPermission,
+		Summary:            in.Summary,
+		Payload:            in.Payload,
+		SubmissionNotes:    notes,
+		Metadata:           json.RawMessage(`{}`),
+	})
 	if err != nil {
 		return repository.ApprovalRequest{}, err
 	}
-	_, err = uc.repo.CreateApprovalRequestLog(ctx, repository.CreateApprovalRequestLogParams{ApprovalRequestID: request.ID, UserID: pgtype.Int4{Int32: in.RequestedBy, Valid: true}, Action: "submitted", Notes: notes, Metadata: json.RawMessage(`{}`)})
+	_, err = uc.repo.CreateApprovalRequestLog(ctx, repository.CreateApprovalRequestLogParams{
+		ApprovalRequestID: request.ID,
+		UserID:            requestedBy,
+		Action:            "submitted",
+		Notes:             notes,
+		Metadata:          json.RawMessage(`{}`),
+	})
 	return request, err
 }
+
+func (uc *ApprovalsUseCase) FindPending(ctx context.Context, orgID int32, domain, action, entityType, entityID string) (*repository.ApprovalRequest, error) {
+	if uc.repo == nil {
+		return nil, errors.New("repository is not configured")
+	}
+	req, err := uc.repo.FindPendingApprovalRequestByEntity(ctx, repository.FindPendingApprovalRequestByEntityParams{
+		OrganizationID: orgID,
+		Domain:         strings.ToLower(strings.TrimSpace(domain)),
+		Action:         strings.ToLower(strings.TrimSpace(action)),
+		EntityType:     entityType,
+		EntityID:       pgtype.Text{String: entityID, Valid: entityID != ""},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+func (uc *ApprovalsUseCase) SubmitOrUpdatePending(ctx context.Context, in ApprovalInput) (repository.ApprovalRequest, error) {
+	if uc.repo == nil {
+		return repository.ApprovalRequest{}, errors.New("repository is not configured")
+	}
+	if in.EntityID != nil && *in.EntityID != "" {
+		existing, err := uc.FindPending(ctx, in.OrganizationID, in.Domain, in.Action, in.EntityType, *in.EntityID)
+		if err == nil && existing != nil {
+			updated, updateErr := uc.repo.UpdateApprovalRequestPayload(ctx, repository.UpdateApprovalRequestPayloadParams{
+				ID:             existing.ID,
+				OrganizationID: existing.OrganizationID,
+				Payload:        in.Payload,
+				Summary:        in.Summary,
+			})
+			if updateErr == nil {
+				return updated, nil
+			}
+		}
+	}
+	return uc.Submit(ctx, in)
+}
+
+func (uc *ApprovalsUseCase) EnsureDefaultPolicies(ctx context.Context, orgID int32) error {
+	if uc.repo == nil {
+		return errors.New("repository is not configured")
+	}
+	defaultPolicies := []struct {
+		domain     string
+		action     string
+		permission string
+		rules      string
+	}{
+		{
+			domain:     "catalog",
+			action:     "price_change",
+			permission: "catalog:pricing:approve",
+			rules:      `{"price_drop_requires_approval": true, "cost_increase_threshold_pct": 10.0, "below_cost_requires_approval": true}`,
+		},
+		{
+			domain:     "sap_invoice",
+			action:     "stock_hold",
+			permission: "sap:invoice:override",
+			rules:      `{"hold_on_zero_stock": true, "allow_manual_reverify": true, "allow_adjustment_force": true}`,
+		},
+	}
+	for _, p := range defaultPolicies {
+		_, err := uc.repo.UpsertApprovalPolicy(ctx, repository.UpsertApprovalPolicyParams{
+			OrganizationID:     orgID,
+			Domain:             p.domain,
+			Action:             p.action,
+			IsEnabled:          true,
+			RequiresApproval:   true,
+			RequiredPermission: p.permission,
+			Rules:              json.RawMessage(p.rules),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to ensure approval policy %s.%s: %w", p.domain, p.action, err)
+		}
+	}
+	return nil
+}
+
 
 func (uc *ApprovalsUseCase) List(ctx context.Context, orgID int32, domain, status *string, page, limit int32) ([]repository.ApprovalRequest, error) {
 	if uc.repo == nil {

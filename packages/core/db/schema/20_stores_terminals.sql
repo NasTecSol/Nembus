@@ -81,6 +81,7 @@ CREATE TABLE cashiers (
     is_active     BOOLEAN   DEFAULT true,
     metadata      JSONB     DEFAULT '{}',
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(store_id, cashier_code)
 );
 CREATE TABLE pos_terminals (

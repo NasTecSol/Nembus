@@ -151,6 +151,9 @@ CREATE TABLE sales_orders_v2 (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Foreign key linking carts to sales_orders_v2 (resolves circular dependency)
+ALTER TABLE carts ADD CONSTRAINT fk_carts_converted_to_order FOREIGN KEY (converted_to_order_id) REFERENCES sales_orders_v2(id) ON DELETE SET NULL;
+
 -- Enhanced order line items
 CREATE TABLE sales_order_lines_v2 (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

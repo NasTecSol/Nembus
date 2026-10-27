@@ -67,4 +67,7 @@ SET status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1;
 
+-- name: UpdateSalesReturnMetadata :exec
+UPDATE sales_returns SET metadata = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1;
+
 

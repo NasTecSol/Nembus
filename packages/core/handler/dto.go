@@ -424,18 +424,20 @@ type AddProductRequest struct {
 
 // CreatePOSTerminalRequest is the request body for creating a POS terminal.
 type CreatePOSTerminalRequest struct {
-	StoreID      int32   `json:"store_id" binding:"required"`
-	TerminalCode string  `json:"terminal_code" binding:"required"`
-	TerminalName *string `json:"terminal_name,omitempty"`
-	DeviceID     *string `json:"device_id,omitempty"`
-	IsActive     *bool   `json:"is_active,omitempty"`
+	StoreID      int32            `json:"store_id" binding:"required"`
+	TerminalCode string           `json:"terminal_code" binding:"required"`
+	TerminalName *string          `json:"terminal_name,omitempty"`
+	DeviceID     *string          `json:"device_id,omitempty"`
+	IsActive     *bool            `json:"is_active,omitempty"`
+	Metadata     *json.RawMessage `json:"metadata,omitempty"`
 }
 
 // UpdatePOSTerminalRequest is the request body for updating a POS terminal.
 type UpdatePOSTerminalRequest struct {
-	TerminalName *string `json:"terminal_name,omitempty"`
-	DeviceID     *string `json:"device_id,omitempty"`
-	IsActive     *bool   `json:"is_active,omitempty"`
+	TerminalName *string          `json:"terminal_name,omitempty"`
+	DeviceID     *string          `json:"device_id,omitempty"`
+	IsActive     *bool            `json:"is_active,omitempty"`
+	Metadata     *json.RawMessage `json:"metadata,omitempty"`
 }
 
 // TogglePOSTerminalActiveRequest is the request body for toggling terminal active state.

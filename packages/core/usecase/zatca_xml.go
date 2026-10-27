@@ -68,6 +68,7 @@ type UBLInvoice struct {
 	DocumentCurrencyCode string               `xml:"cbc:DocumentCurrencyCode"`
 	TaxCurrencyCode     string                `xml:"cbc:TaxCurrencyCode,omitempty"`
 	LineCountNumeric    int                   `xml:"cbc:LineCountNumeric"`
+	BillingReference    *UBLBillingReference  `xml:"cac:BillingReference,omitempty"`
 	AdditionalDocRefs   []UBLAdditionalDocRef `xml:"cac:AdditionalDocumentReference,omitempty"`
 	Supplier            UBLParty              `xml:"cac:AccountingSupplierParty>cac:Party"`
 	Customer            UBLParty              `xml:"cac:AccountingCustomerParty>cac:Party,omitempty"`
@@ -76,6 +77,16 @@ type UBLInvoice struct {
 	TaxTotal            []UBLTaxTotal         `xml:"cac:TaxTotal"`
 	LegalMonetaryTotal  UBLLegalMonetaryTotal `xml:"cac:LegalMonetaryTotal"`
 	InvoiceLines        []UBLInvoiceLine      `xml:"cac:InvoiceLine"`
+}
+
+// UBLBillingReference references a prior invoice/transaction for credit and debit notes.
+type UBLBillingReference struct {
+	InvoiceDocumentReference UBLDocumentReference `xml:"cac:InvoiceDocumentReference"`
+}
+
+// UBLDocumentReference carries the original invoice or transaction ID.
+type UBLDocumentReference struct {
+	ID string `xml:"cbc:ID"`
 }
 
 // UBLInvoiceTypeCode carries the type code plus ZATCA subtype attribute.
@@ -232,9 +243,10 @@ type UBLPrice struct {
 // InvoiceXMLInput holds all the data needed to build a ZATCA-compliant UBL 2.1 XML.
 type InvoiceXMLInput struct {
 	// Invoice identification
-	InvoiceNumber string
-	ZatcaUUID     string
-	IssueDate     time.Time
+	InvoiceNumber         string
+	OriginalInvoiceNumber string // Populated for Credit Notes (381) / Debit Notes (383)
+	ZatcaUUID             string
+	IssueDate             time.Time
 	InvoiceType   ZatcaInvoiceTypeCode
 	SubType       ZatcaInvoiceSubType
 	CurrencyCode  string
@@ -310,6 +322,14 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 		DocumentCurrencyCode: input.CurrencyCode,
 		TaxCurrencyCode:      "SAR",
 		LineCountNumeric:     len(input.Lines),
+	}
+
+	if input.OriginalInvoiceNumber != "" {
+		inv.BillingReference = &UBLBillingReference{
+			InvoiceDocumentReference: UBLDocumentReference{
+				ID: input.OriginalInvoiceNumber,
+			},
+		}
 	}
 
 	// Additional Document References: ICV, PIH

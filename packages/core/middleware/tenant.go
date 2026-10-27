@@ -9,6 +9,7 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type contextKey string
@@ -19,6 +20,18 @@ const RepoKey contextKey = "tenant_repo"
 func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tenantID := c.GetHeader("x-tenant-id")
+		if tenantID == "" {
+			tenantID = c.Query("tenant_id")
+		}
+		if tenantID == "" {
+			if claimsVal, exists := c.Get(string(ClaimsKey)); exists {
+				if m, ok := claimsVal.(jwt.MapClaims); ok {
+					if tid, ok := m["tenant_id"].(string); ok && tid != "" {
+						tenantID = tid
+					}
+				}
+			}
+		}
 		if tenantID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "x-tenant-id header required"})
 			c.Abort()

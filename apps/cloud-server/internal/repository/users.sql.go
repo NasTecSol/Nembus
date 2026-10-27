@@ -107,7 +107,7 @@ INSERT INTO users (
     first_name, last_name, employee_code, is_active, metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
-) RETURNING id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at
+) RETURNING id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported
 `
 
 type CreateUserParams struct {
@@ -151,6 +151,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 	)
 	return i, err
 }
@@ -165,7 +167,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 }
 
 const getStoreUsers = `-- name: GetStoreUsers :many
-SELECT u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at FROM users u
+SELECT u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at, u.must_reset_password, u.sap_imported FROM users u
 INNER JOIN user_store_access usa ON u.id = usa.user_id
 WHERE usa.store_id = $1
   AND u.is_active = true
@@ -194,6 +196,8 @@ func (q *Queries) GetStoreUsers(ctx context.Context, storeID int32) ([]User, err
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MustResetPassword,
+			&i.SapImported,
 		); err != nil {
 			return nil, err
 		}
@@ -206,7 +210,7 @@ func (q *Queries) GetStoreUsers(ctx context.Context, storeID int32) ([]User, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at FROM users WHERE id = $1 LIMIT 1
+SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported FROM users WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
@@ -225,12 +229,14 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at FROM users WHERE email = $1 LIMIT 1
+SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported FROM users WHERE email = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -249,12 +255,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 	)
 	return i, err
 }
 
 const getUserByEmployeeCode = `-- name: GetUserByEmployeeCode :one
-SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at FROM users 
+SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported FROM users 
 WHERE organization_id = $1 AND employee_code = $2 
 LIMIT 1
 `
@@ -280,12 +288,14 @@ func (q *Queries) GetUserByEmployeeCode(ctx context.Context, arg GetUserByEmploy
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at FROM users WHERE username = $1 LIMIT 1
+SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported FROM users WHERE username = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -304,6 +314,8 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 	)
 	return i, err
 }
@@ -417,7 +429,7 @@ func (q *Queries) GetUserStores(ctx context.Context, userID int32) ([]Store, err
 const getUserWithDetails = `-- name: GetUserWithDetails :one
 
 SELECT 
-    u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at,
+    u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at, u.must_reset_password, u.sap_imported,
     json_agg(DISTINCT jsonb_build_object(
         'id', r.id,
         'name', r.name,
@@ -439,20 +451,22 @@ GROUP BY u.id
 `
 
 type GetUserWithDetailsRow struct {
-	ID             int32            `json:"id"`
-	OrganizationID int32            `json:"organization_id"`
-	Username       string           `json:"username"`
-	Email          string           `json:"email"`
-	PasswordHash   string           `json:"password_hash"`
-	FirstName      pgtype.Text      `json:"first_name"`
-	LastName       pgtype.Text      `json:"last_name"`
-	EmployeeCode   pgtype.Text      `json:"employee_code"`
-	IsActive       pgtype.Bool      `json:"is_active"`
-	Metadata       json.RawMessage  `json:"metadata"`
-	CreatedAt      pgtype.Timestamp `json:"created_at"`
-	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
-	Roles          []byte           `json:"roles"`
-	Stores         []byte           `json:"stores"`
+	ID                int32            `json:"id"`
+	OrganizationID    int32            `json:"organization_id"`
+	Username          string           `json:"username"`
+	Email             string           `json:"email"`
+	PasswordHash      string           `json:"password_hash"`
+	FirstName         pgtype.Text      `json:"first_name"`
+	LastName          pgtype.Text      `json:"last_name"`
+	EmployeeCode      pgtype.Text      `json:"employee_code"`
+	IsActive          pgtype.Bool      `json:"is_active"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+	MustResetPassword bool             `json:"must_reset_password"`
+	SapImported       bool             `json:"sap_imported"`
+	Roles             []byte           `json:"roles"`
+	Stores            []byte           `json:"stores"`
 }
 
 // =====================================================
@@ -474,6 +488,8 @@ func (q *Queries) GetUserWithDetails(ctx context.Context, id int32) (GetUserWith
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 		&i.Roles,
 		&i.Stores,
 	)
@@ -481,7 +497,7 @@ func (q *Queries) GetUserWithDetails(ctx context.Context, id int32) (GetUserWith
 }
 
 const getUsersWithRole = `-- name: GetUsersWithRole :many
-SELECT u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at FROM users u
+SELECT u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at, u.must_reset_password, u.sap_imported FROM users u
 INNER JOIN user_roles ur ON u.id = ur.user_id
 WHERE ur.role_id = $1
   AND u.is_active = true
@@ -510,6 +526,8 @@ func (q *Queries) GetUsersWithRole(ctx context.Context, roleID int32) ([]User, e
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MustResetPassword,
+			&i.SapImported,
 		); err != nil {
 			return nil, err
 		}
@@ -560,7 +578,7 @@ func (q *Queries) GrantStoreAccessToUser(ctx context.Context, arg GrantStoreAcce
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at FROM users
+SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported FROM users
 WHERE organization_id = $1
   AND is_active = COALESCE($4, is_active)
 ORDER BY first_name, last_name
@@ -601,6 +619,8 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MustResetPassword,
+			&i.SapImported,
 		); err != nil {
 			return nil, err
 		}
@@ -614,7 +634,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 
 const listUsersWithDetails = `-- name: ListUsersWithDetails :many
 SELECT 
-    u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at,
+    u.id, u.organization_id, u.username, u.email, u.password_hash, u.first_name, u.last_name, u.employee_code, u.is_active, u.metadata, u.created_at, u.updated_at, u.must_reset_password, u.sap_imported,
     json_agg(DISTINCT jsonb_build_object(
         'id', r.id,
         'name', r.name,
@@ -646,20 +666,22 @@ type ListUsersWithDetailsParams struct {
 }
 
 type ListUsersWithDetailsRow struct {
-	ID             int32            `json:"id"`
-	OrganizationID int32            `json:"organization_id"`
-	Username       string           `json:"username"`
-	Email          string           `json:"email"`
-	PasswordHash   string           `json:"password_hash"`
-	FirstName      pgtype.Text      `json:"first_name"`
-	LastName       pgtype.Text      `json:"last_name"`
-	EmployeeCode   pgtype.Text      `json:"employee_code"`
-	IsActive       pgtype.Bool      `json:"is_active"`
-	Metadata       json.RawMessage  `json:"metadata"`
-	CreatedAt      pgtype.Timestamp `json:"created_at"`
-	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
-	Roles          []byte           `json:"roles"`
-	Stores         []byte           `json:"stores"`
+	ID                int32            `json:"id"`
+	OrganizationID    int32            `json:"organization_id"`
+	Username          string           `json:"username"`
+	Email             string           `json:"email"`
+	PasswordHash      string           `json:"password_hash"`
+	FirstName         pgtype.Text      `json:"first_name"`
+	LastName          pgtype.Text      `json:"last_name"`
+	EmployeeCode      pgtype.Text      `json:"employee_code"`
+	IsActive          pgtype.Bool      `json:"is_active"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
+	MustResetPassword bool             `json:"must_reset_password"`
+	SapImported       bool             `json:"sap_imported"`
+	Roles             []byte           `json:"roles"`
+	Stores            []byte           `json:"stores"`
 }
 
 func (q *Queries) ListUsersWithDetails(ctx context.Context, arg ListUsersWithDetailsParams) ([]ListUsersWithDetailsRow, error) {
@@ -689,6 +711,8 @@ func (q *Queries) ListUsersWithDetails(ctx context.Context, arg ListUsersWithDet
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MustResetPassword,
+			&i.SapImported,
 			&i.Roles,
 			&i.Stores,
 		); err != nil {
@@ -751,7 +775,7 @@ func (q *Queries) RevokeStoreAccessFromUser(ctx context.Context, arg RevokeStore
 }
 
 const searchUsers = `-- name: SearchUsers :many
-SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at FROM users
+SELECT id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported FROM users
 WHERE organization_id = $1
   AND is_active = true
   AND (
@@ -799,6 +823,8 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MustResetPassword,
+			&i.SapImported,
 		); err != nil {
 			return nil, err
 		}
@@ -832,7 +858,7 @@ SET
     is_active = COALESCE($5, is_active),
     metadata = COALESCE($6, metadata)
 WHERE id = $7
-RETURNING id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at
+RETURNING id, organization_id, username, email, password_hash, first_name, last_name, employee_code, is_active, metadata, created_at, updated_at, must_reset_password, sap_imported
 `
 
 type UpdateUserParams struct {
@@ -869,6 +895,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MustResetPassword,
+		&i.SapImported,
 	)
 	return i, err
 }

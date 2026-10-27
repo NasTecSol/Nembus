@@ -40,6 +40,7 @@ This project follows **Clean Architecture principles** with a focus on:
 │   ├── config/              # Configuration loading logic
 │   ├── handler/             # HTTP handlers (Gin) - Entry point for requests
 │   ├── middleware/          # HTTP middlewares (Auth, Tenant-detection, etc.)
+│   ├── notification/        # Outbox dispatcher, WebSocket hub, Meta WhatsApp & AWS SES clients
 │   ├── repository/          # Data access layer (SQLC generated code & wrappers)
 │   ├── routing/             # API route definitions
 │   └── usecase/             # Business logic layer (Core domain logic)
