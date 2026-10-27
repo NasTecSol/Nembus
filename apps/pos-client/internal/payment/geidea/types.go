@@ -207,26 +207,26 @@ type TerminalConfig struct {
 	Mode string `json:"mode"`
 
 	// IP is the terminal's IP address (for network mode, e.g. "192.168.1.50")
-	IP string `json:"ip"`
+	IP string `json:"ip,omitempty"`
 
 	// Port is the TCP port (defaults to "80" if empty)
-	Port string `json:"port"`
+	Port string `json:"port,omitempty"`
 
 	// SerialPort is the COM port name (for serial mode, e.g. "COM3")
-	SerialPort string `json:"serial_port"`
+	SerialPort string `json:"serial_port,omitempty"`
 
 	// BaudRate for serial connection (defaults to 38400)
-	BaudRate int `json:"baud_rate"`
+	BaudRate int `json:"baud_rate,omitempty"`
 
 	// TimeoutSeconds for the entire transaction flow (defaults to 120)
-	TimeoutSeconds int `json:"timeout_seconds"`
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 }
 
 // PurchaseRequest describes a payment request
 type PurchaseRequest struct {
-	Amount         float64 `json:"amount"`          // In SAR (e.g. 50.25)
-	CashbackAmount float64 `json:"cashback_amount"` // In SAR (0 for standard purchase)
-	InvoiceNumber  string  `json:"invoice_number"`  // POS invoice/bill reference (up to 16 digits)
+	Amount         float64 `json:"amount"`                    // In SAR (e.g. 50.25)
+	CashbackAmount float64 `json:"cashback_amount,omitempty"` // In SAR (0 for standard purchase)
+	InvoiceNumber  string  `json:"invoice_number"`            // POS invoice/bill reference (up to 16 digits)
 }
 
 // RefundRequest describes a refund request
