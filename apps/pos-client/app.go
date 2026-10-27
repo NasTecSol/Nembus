@@ -53,11 +53,24 @@ type App struct {
 
 // NewApp creates a new App application struct
 func NewApp(version, appKey, cloudURL string) *App {
+	cfg := config.LoadConfig("development")
 	return &App{
 		version:  version,
 		appKey:   appKey,
 		cloudURL: cloudURL,
+		cfg:      cfg,
 	}
+}
+
+// getCloudURL safely resolves the cloud server URL
+func (a *App) getCloudURL() string {
+	if a.cloudURL != "" {
+		return a.cloudURL
+	}
+	if a.cfg != nil && a.cfg.CloudURL != "" {
+		return a.cfg.CloudURL
+	}
+	return "https://nembus.nashrms.com"
 }
 
 // startup is called at application startup
@@ -104,10 +117,7 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 		}, nil
 	}
 
-	cloudURL := a.cloudURL
-	if cloudURL == "" && a.cfg != nil {
-		cloudURL = a.cfg.CloudURL
-	}
+	cloudURL := a.getCloudURL()
 	appKey := a.appKey
 	if appKey == "" && a.cfg != nil {
 		appKey = a.cfg.AppUpdateClientKey
@@ -280,7 +290,7 @@ func (a *App) migrate(dbURL string) error {
 
 // FetchCloudTenants fetches available tenants from the cloud URL
 func (a *App) FetchCloudTenants(slug string) interface{} {
-	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
+	url := fmt.Sprintf("%s/api/tenants/%s", a.getCloudURL(), slug)
 	log.Printf("Fetching cloud tenant from: %s", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -344,7 +354,7 @@ func (a *App) CloneTenant(slug string) string {
 
 	// 1. Fetch Tenant details from cloud
 	emitProgress("metadata", 12, 0, "", 28, fmt.Sprintf("Fetching tenant details for [%s]...", slug))
-	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
+	url := fmt.Sprintf("%s/api/tenants/%s", a.getCloudURL(), slug)
 	log.Printf("Fetching tenant details for [%s] from: %s", slug, url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
