@@ -77,6 +77,7 @@ func (uc *CashierSessionUseCase) CloseCashierSession(ctx context.Context, arg re
 		ClosingBalance: arg.ClosingBalance,
 		Column3:        arg.Column5,
 		Column4:        arg.Column6,
+		Column5:        arg.Column7,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to close cashier session", err.Error())

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,19 +22,19 @@ RETURNING id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, 
 `
 
 type CreateRestaurantOrderItemParams struct {
-	OrderID           int32          `json:"order_id"`
-	MenuItemID        int32          `json:"menu_item_id"`
-	Quantity          pgtype.Numeric `json:"quantity"`
-	UnitPrice         pgtype.Numeric `json:"unit_price"`
-	ModifiersSnapshot []byte         `json:"modifiers_snapshot"`
-	ModifiersTotal    pgtype.Numeric `json:"modifiers_total"`
-	DiscountAmount    pgtype.Numeric `json:"discount_amount"`
-	TaxAmount         pgtype.Numeric `json:"tax_amount"`
-	Subtotal          pgtype.Numeric `json:"subtotal"`
-	LineNumber        pgtype.Int4    `json:"line_number"`
-	Notes             pgtype.Text    `json:"notes"`
-	Status            pgtype.Text    `json:"status"`
-	Metadata          []byte         `json:"metadata"`
+	OrderID           int32           `json:"order_id"`
+	MenuItemID        int32           `json:"menu_item_id"`
+	Quantity          pgtype.Numeric  `json:"quantity"`
+	UnitPrice         pgtype.Numeric  `json:"unit_price"`
+	ModifiersSnapshot json.RawMessage `json:"modifiers_snapshot"`
+	ModifiersTotal    pgtype.Numeric  `json:"modifiers_total"`
+	DiscountAmount    pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric  `json:"tax_amount"`
+	Subtotal          pgtype.Numeric  `json:"subtotal"`
+	LineNumber        pgtype.Int4     `json:"line_number"`
+	Notes             pgtype.Text     `json:"notes"`
+	Status            pgtype.Text     `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateRestaurantOrderItem(ctx context.Context, arg CreateRestaurantOrderItemParams) (RestaurantOrderItem, error) {
@@ -179,19 +180,19 @@ RETURNING id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, 
 `
 
 type UpdateRestaurantOrderItemParams struct {
-	ID                int32          `json:"id"`
-	MenuItemID        int32          `json:"menu_item_id"`
-	Quantity          pgtype.Numeric `json:"quantity"`
-	UnitPrice         pgtype.Numeric `json:"unit_price"`
-	ModifiersSnapshot []byte         `json:"modifiers_snapshot"`
-	ModifiersTotal    pgtype.Numeric `json:"modifiers_total"`
-	DiscountAmount    pgtype.Numeric `json:"discount_amount"`
-	TaxAmount         pgtype.Numeric `json:"tax_amount"`
-	Subtotal          pgtype.Numeric `json:"subtotal"`
-	LineNumber        pgtype.Int4    `json:"line_number"`
-	Notes             pgtype.Text    `json:"notes"`
-	Status            pgtype.Text    `json:"status"`
-	Metadata          []byte         `json:"metadata"`
+	ID                int32           `json:"id"`
+	MenuItemID        int32           `json:"menu_item_id"`
+	Quantity          pgtype.Numeric  `json:"quantity"`
+	UnitPrice         pgtype.Numeric  `json:"unit_price"`
+	ModifiersSnapshot json.RawMessage `json:"modifiers_snapshot"`
+	ModifiersTotal    pgtype.Numeric  `json:"modifiers_total"`
+	DiscountAmount    pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric  `json:"tax_amount"`
+	Subtotal          pgtype.Numeric  `json:"subtotal"`
+	LineNumber        pgtype.Int4     `json:"line_number"`
+	Notes             pgtype.Text     `json:"notes"`
+	Status            pgtype.Text     `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateRestaurantOrderItem(ctx context.Context, arg UpdateRestaurantOrderItemParams) (RestaurantOrderItem, error) {

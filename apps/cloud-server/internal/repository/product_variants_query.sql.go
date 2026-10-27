@@ -31,7 +31,7 @@ type CreateProductVariantParams struct {
 	VariantName       pgtype.Text     `json:"variant_name"`
 	VariantAttributes json.RawMessage `json:"variant_attributes"`
 	IsActive          pgtype.Bool     `json:"is_active"`
-	Metadata          []byte          `json:"metadata"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateProductVariant(ctx context.Context, arg CreateProductVariantParams) (ProductVariant, error) {
@@ -240,7 +240,7 @@ type SearchProductVariantsRow struct {
 	VariantName       pgtype.Text      `json:"variant_name"`
 	VariantAttributes json.RawMessage  `json:"variant_attributes"`
 	IsActive          pgtype.Bool      `json:"is_active"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	ProductName       string           `json:"product_name"`
@@ -324,7 +324,7 @@ type UpdateProductVariantParams struct {
 	VariantName       pgtype.Text     `json:"variant_name"`
 	VariantAttributes json.RawMessage `json:"variant_attributes"`
 	IsActive          pgtype.Bool     `json:"is_active"`
-	Metadata          []byte          `json:"metadata"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateProductVariant(ctx context.Context, arg UpdateProductVariantParams) (ProductVariant, error) {

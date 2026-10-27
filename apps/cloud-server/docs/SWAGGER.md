@@ -91,3 +91,20 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
   - `GET /api/restaurant/tables` - List tables
   - `GET /api/restaurant/orders/{order_id}` - Get order by specific ID
   - `POST /api/restaurant/orders` - Create restaurant order
+- **Notification Center & Outbox**:
+  - `GET /api/notifications` - Paginated in-app user notifications
+  - `GET /api/notifications/unread-count` - Total unread notifications count
+  - `POST /api/notifications/{id}/read` - Mark specific notification as read
+  - `POST /api/notifications/read-all` - Mark all user notifications as read
+  - `GET /api/notifications/channels` - List notification channels
+  - `GET /api/notifications/channels/{type}` - Get channel credentials (whatsapp, email)
+  - `PUT /api/notifications/channels/{type}` - Upsert channel configuration
+  - `GET /api/notifications/templates` - List notification templates
+  - `POST /api/notifications/templates` - Upsert notification template
+  - `DELETE /api/notifications/templates/{id}` - Delete notification template
+  - `GET /api/notifications/rules` - List event routing rules
+  - `POST /api/notifications/rules` - Create routing rule
+  - `PUT /api/notifications/rules/{id}` - Update routing rule
+  - `DELETE /api/notifications/rules/{id}` - Delete routing rule
+  - `GET /api/ws/notifications` - Live WebSocket stream for real-time alerts
+

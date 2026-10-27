@@ -122,7 +122,7 @@ func (h *StoreHandler) GetStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID := c.Param("store_id")
+	storeID := c.Param("id")
 	resp := h.useCase.GetStore(c.Request.Context(), storeID)
 
 	if resp.StatusCode != utils.CodeOK {
@@ -222,7 +222,7 @@ func (h *StoreHandler) DeleteStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID := c.Param("store_id")
+	storeID := c.Param("id")
 	resp := h.useCase.DeleteStore(c.Request.Context(), storeID)
 
 	c.JSON(resp.StatusCode, resp)
@@ -399,7 +399,7 @@ func (h *StoreHandler) UpdateStore(c *gin.Context) {
 	}
 	h.useCase.SetRepository(repo)
 
-	storeID := c.Param("store_id")
+	storeID := c.Param("id")
 
 	var req struct {
 		Name         *string     `json:"name,omitempty"`

@@ -98,12 +98,18 @@ WHERE id = $1;
 -- Pass a negative value for $2 to redeem/deduct points; positive to add
 UPDATE customers
 SET loyalty_points = loyalty_points + $2,
+    loyalty_tier = CASE
+        WHEN (loyalty_points + $2) >= 1000 THEN 'gold'
+        WHEN (loyalty_points + $2) >= 500 THEN 'silver'
+        ELSE 'bronze'
+    END,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;
 
 -- name: GetCustomerLoyaltyBalance :one
 -- Lightweight fetch for POS validation before redemption
-SELECT id, name, loyalty_points
+SELECT id, name, loyalty_points, loyalty_tier
 FROM customers
 WHERE id = $1;
+

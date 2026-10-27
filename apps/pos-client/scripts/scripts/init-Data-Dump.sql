@@ -179,9 +179,9 @@ ON CONFLICT (code) DO NOTHING;
 -- PRICE LISTS
 -- =====================================================
 INSERT INTO price_lists (name, code, price_list_type, currency_code, valid_from, is_default, is_active) VALUES
-('Retail Price List', 'RETAIL_SAR', 'retail', 'SAR', '2024-01-01', true, true),
-('Wholesale Price List', 'WHOLESALE_SAR', 'wholesale', 'SAR', '2024-01-01', false, true),
-('Promotional Price List', 'PROMO_SAR', 'promotional', 'SAR', '2024-01-01', false, true)
+('Retail Price List', 'RETAIL', 'retail', 'SAR', '2024-01-01', true, true),
+('Wholesale Price List', 'WHOLESALE', 'wholesale', 'SAR', '2024-01-01', false, true),
+('Promotional Price List', 'PROMO', 'promotional', 'SAR', '2024-01-01', false, true)
 ON CONFLICT (code) DO NOTHING;
 
 -- =====================================================
@@ -630,177 +630,177 @@ INSERT INTO product_barcodes (product_id, barcode, barcode_type, is_primary) VAL
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 -- Milk & Dairy
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MILK-FW-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 8.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MILK-LF-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 8.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'NADEC-MILK-FW-2L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 14.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-LABAN-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 6.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALSAFI-YOGURT-170G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 3.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-CHEESE-SLICE-200G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 12.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-FETA-CHEESE-400G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 15.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'EGGS-WHITE-30PCS'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'PCS'), 18.00, 1, true);
 
 -- Beverages Prices (Retail)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-330ML'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 2.00, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'PEPSI-330ML'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 2.00, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-2L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'BTL'), 6.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'WATER-600ML'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'BTL'), 1.00, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'WATER-1.5L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'BTL'), 1.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-ORANGE-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 7.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MIXED-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 7.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'RABEA-TEA-100BAG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'BOX'), 12.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'LIPTON-TEA-100BAG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'BOX'), 14.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'NESCAFE-CLASSIC-200G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 28.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'NESCAFE-ARABIAN-200G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 32.00, 1, true);
 
 -- Food & Groceries Prices (Retail)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 ((SELECT id FROM products WHERE sku = 'RICE-BASMATI-5KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 45.00, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'RICE-BASMATI-10KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 85.00, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'OIL-SUNFLOWER-1.8L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 18.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'OIL-CORN-1.8L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 19.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'PASTA-PENNE-500G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 6.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'PASTA-SPAGHETTI-500G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 6.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'CALGARDEN-BEANS-400G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 4.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'CALGARDEN-TUNA-185G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 8.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'SUGAR-WHITE-1KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 5.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'SALT-TABLE-1KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 3.00, 1, true);
 
 -- Frozen Foods Prices (Retail)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 ((SELECT id FROM products WHERE sku = 'SUNBULAH-FRIES-1KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 12.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'SUNBULAH-VEGETABLES-450G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 9.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'WATANIA-CHICKEN-1KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 22.00, 1, true);
 
 -- Personal Care Prices (Retail)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 ((SELECT id FROM products WHERE sku = 'DETTOL-SOAP-125G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 4.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'DOVE-BODYWASH-500ML'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'ML'), 24.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'LUX-SOAP-120G'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 3.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'PALMOLIVE-TOOTHPASTE-100ML'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'ML'), 8.95, 1, true);
 
 -- Household Prices (Retail)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 ((SELECT id FROM products WHERE sku = 'TIDE-POWDER-3KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 39.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'ARIEL-POWDER-2.5KG'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 35.95, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'PERSIL-LIQUID-3L'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 42.00, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'FINISH-TABS-40PCS'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'BOX'), 48.50, 1, true),
 
 ((SELECT id FROM products WHERE sku = 'PALMOLIVE-DISH-750ML'), 
-    (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'RETAIL'), 
     (SELECT id FROM units_of_measure WHERE code = 'ML'), 12.95, 1, true);
 
 -- =====================================================
@@ -810,66 +810,66 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Dairy Prices (Wholesale)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MILK-FW-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 7.25, 12, true),
 
 ((SELECT id FROM products WHERE sku = 'NADEC-MILK-FW-2L'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 12.75, 6, true),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-LABAN-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 5.95, 12, true),
 
 ((SELECT id FROM products WHERE sku = 'EGGS-WHITE-30PCS'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'PCS'), 15.50, 10, true),
 
 -- Beverages (Wholesale - Carton pricing)
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-330ML'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 1.70, 24, true),
 
 ((SELECT id FROM products WHERE sku = 'PEPSI-330ML'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 1.70, 24, true),
 
 ((SELECT id FROM products WHERE sku = 'WATER-600ML'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'BTL'), 0.75, 24, true),
 
 ((SELECT id FROM products WHERE sku = 'RABEA-TEA-100BAG'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'BOX'), 10.50, 12, true),
 
 ((SELECT id FROM products WHERE sku = 'NESCAFE-CLASSIC-200G'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 24.50, 12, true),
 
 -- Food (Wholesale)
 ((SELECT id FROM products WHERE sku = 'RICE-BASMATI-10KG'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 75.00, 5, true),
 
 ((SELECT id FROM products WHERE sku = 'OIL-SUNFLOWER-1.8L'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 16.50, 6, true),
 
 ((SELECT id FROM products WHERE sku = 'SUGAR-WHITE-1KG'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 4.75, 10, true),
 
 -- Household (Wholesale)
 ((SELECT id FROM products WHERE sku = 'TIDE-POWDER-3KG'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 34.50, 6, true),
 
 ((SELECT id FROM products WHERE sku = 'ARIEL-POWDER-2.5KG'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 30.50, 6, true),
 
 ((SELECT id FROM products WHERE sku = 'FINISH-TABS-40PCS'), 
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'), 
     (SELECT id FROM units_of_measure WHERE code = 'BOX'), 42.00, 6, true);
 
 -- =====================================================
@@ -901,13 +901,13 @@ SELECT
     'Retail Prices' as data_type,
     COUNT(*) as count
 FROM product_prices
-WHERE price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR')
+WHERE price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL')
 UNION ALL
 SELECT 
     'Wholesale Prices' as data_type,
     COUNT(*) as count
 FROM product_prices
-WHERE price_list_id = (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR');
+WHERE price_list_id = (SELECT id FROM price_lists WHERE code = 'WHOLESALE');
 
 -- =====================================================
 -- DETAILED PRODUCT LIST WITH CATEGORIES AND PRICES
@@ -930,9 +930,9 @@ LEFT JOIN brands b ON p.brand_id = b.id
 LEFT JOIN units_of_measure uom ON p.base_uom_id = uom.id
 LEFT JOIN product_barcodes pb ON p.id = pb.product_id AND pb.is_primary = true
 LEFT JOIN product_prices pp_retail ON p.id = pp_retail.product_id 
-    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR')
+    AND pp_retail.price_list_id = (SELECT id FROM price_lists WHERE code = 'RETAIL')
 LEFT JOIN product_prices pp_wholesale ON p.id = pp_wholesale.product_id 
-    AND pp_wholesale.price_list_id = (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR')
+    AND pp_wholesale.price_list_id = (SELECT id FROM price_lists WHERE code = 'WHOLESALE')
 LEFT JOIN tax_categories tc ON p.tax_category_id = tc.id
 WHERE p.organization_id = 1
 ORDER BY pc.name, b.name, p.name;
@@ -1195,64 +1195,64 @@ INSERT INTO pos_terminals (store_id, terminal_code, terminal_name, device_id, is
 UPDATE price_lists 
 SET valid_from = CURRENT_DATE, 
     valid_to = CURRENT_DATE + INTERVAL '30 days'
-WHERE code = 'PROMO_SAR';
+WHERE code = 'PROMO';
 
 -- Add promotional prices (10-30% discount on selected items)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, valid_from, valid_to, is_active, metadata) VALUES
 -- Dairy Promotions
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MILK-FW-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 
     6.99, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Weekly Special", "discount_percent": 18}'),
 
 ((SELECT id FROM products WHERE sku = 'ALMARAI-LABAN-1L'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'LTR'), 
     5.50, 2, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Buy 2 Get Discount", "discount_percent": 21}'),
 
 -- Beverage Promotions
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-330ML'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'CAN'), 
     1.50, 6, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "6-Pack Deal", "discount_percent": 25}'),
 
 ((SELECT id FROM products WHERE sku = 'WATER-600ML'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'BTL'), 
     0.75, 12, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "12-Pack Deal", "discount_percent": 25}'),
 
 ((SELECT id FROM products WHERE sku = 'NESCAFE-CLASSIC-200G'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'GM'), 
     24.99, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Coffee Week", "discount_percent": 12}'),
 
 -- Food Promotions
 ((SELECT id FROM products WHERE sku = 'RICE-BASMATI-10KG'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 
     69.99, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Rice Festival", "discount_percent": 18}'),
 
 ((SELECT id FROM products WHERE sku = 'SUGAR-WHITE-1KG'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 
     4.99, 2, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Multi-buy Deal", "discount_percent": 9}'),
 
 -- Household Promotions
 ((SELECT id FROM products WHERE sku = 'TIDE-POWDER-3KG'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'KG'), 
     34.99, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Cleaning Month", "discount_percent": 12}'),
 
 ((SELECT id FROM products WHERE sku = 'FINISH-TABS-40PCS'), 
-    (SELECT id FROM price_lists WHERE code = 'PROMO_SAR'), 
+    (SELECT id FROM price_lists WHERE code = 'PROMO'), 
     (SELECT id FROM units_of_measure WHERE code = 'BOX'), 
     39.99, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true,
     '{"promotion_name": "Cleaning Month", "discount_percent": 18}');
@@ -2935,7 +2935,7 @@ INSERT INTO product_uom_conversions (product_id, from_uom_id, to_uom_id, convers
 -- Piece level (retail customer buying individual bottles)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MILK-FW-1L'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'PCS'),
     7.50,  -- Lower than retail (8.50)
     1,
@@ -2946,7 +2946,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Carton level (wholesale customer buying cartons of 12)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'ALMARAI-MILK-FW-1L'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'CTN'),
     85.00,  -- 7.08 per piece (12 pieces per carton)
     1,
@@ -2958,7 +2958,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Single can
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-330ML'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'CAN'),
     1.75,  -- Retail is 2.00
     1,
@@ -2969,7 +2969,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- 6-pack
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-330ML'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'PACK'),
     9.90,  -- 1.65 per can (6 cans)
     1,
@@ -2980,7 +2980,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Full carton (24 cans = 4 packs)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'COCA-COLA-330ML'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'CTN'),
     36.00,  -- 1.50 per can (24 cans)
     1,
@@ -2992,7 +2992,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Single bottle
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'WATER-600ML'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'BTL'),
     0.85,
     1,
@@ -3003,7 +3003,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- 12-pack
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'WATER-600ML'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'PACK'),
     9.00,  -- 0.75 per bottle
     1,
@@ -3014,7 +3014,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Full carton (24 bottles)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'WATER-600ML'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'CTN'),
     16.80,  -- 0.70 per bottle
     1,
@@ -3026,7 +3026,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Single tray (30 eggs)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'EGGS-WHITE-30PCS'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'TRAY'),
     16.50,  -- Retail is 18.00
     1,
@@ -3037,7 +3037,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Full carton (360 eggs = 12 trays)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'EGGS-WHITE-30PCS'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'CTN'),
     180.00,  -- 15.00 per tray, 0.50 per egg
     1,
@@ -3049,7 +3049,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Single bag
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'RICE-BASMATI-5KG'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'BAG'),
     42.00,
     1,
@@ -3060,7 +3060,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Sack (4 bags = 20kg)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'RICE-BASMATI-5KG'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'SACK'),
     160.00,  -- 40.00 per 5kg bag, 8.00 per kg
     1,
@@ -3072,7 +3072,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Single jar (200g)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'NESCAFE-CLASSIC-200G'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'PCS'),
     26.00,
     1,
@@ -3083,7 +3083,7 @@ INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quanti
 -- Full carton (24 jars)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active, metadata) VALUES
 ((SELECT id FROM products WHERE sku = 'NESCAFE-CLASSIC-200G'),
-    (SELECT id FROM price_lists WHERE code = 'WHOLESALE_SAR'),
+    (SELECT id FROM price_lists WHERE code = 'WHOLESALE'),
     (SELECT id FROM units_of_measure WHERE code = 'CTN'),
     576.00,  -- 24.00 per jar
     1,
@@ -3223,7 +3223,7 @@ WITH price_conversions AS (
     JOIN price_lists pl ON pp.price_list_id = pl.id
     JOIN units_of_measure uom ON pp.uom_id = uom.id
     JOIN units_of_measure base_uom ON p.base_uom_id = base_uom.id
-    WHERE pl.code = 'WHOLESALE_SAR'
+    WHERE pl.code = 'WHOLESALE'
 )
 SELECT 
     product_name,

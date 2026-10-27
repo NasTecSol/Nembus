@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,13 +22,13 @@ INSERT INTO modules (
 `
 
 type CreateModuleParams struct {
-	Name         string      `json:"name"`
-	Code         string      `json:"code"`
-	Description  pgtype.Text `json:"description"`
-	Icon         pgtype.Text `json:"icon"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	DisplayOrder pgtype.Int4 `json:"display_order"`
-	Metadata     []byte      `json:"metadata"`
+	Name         string          `json:"name"`
+	Code         string          `json:"code"`
+	Description  pgtype.Text     `json:"description"`
+	Icon         pgtype.Text     `json:"icon"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	DisplayOrder pgtype.Int4     `json:"display_order"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -261,13 +262,13 @@ RETURNING id, name, code, description, icon, is_active, display_order, metadata,
 `
 
 type UpdateModuleParams struct {
-	Name         pgtype.Text `json:"name"`
-	Description  pgtype.Text `json:"description"`
-	Icon         pgtype.Text `json:"icon"`
-	IsActive     pgtype.Bool `json:"is_active"`
-	DisplayOrder pgtype.Int4 `json:"display_order"`
-	Metadata     []byte      `json:"metadata"`
-	ID           int32       `json:"id"`
+	Name         pgtype.Text     `json:"name"`
+	Description  pgtype.Text     `json:"description"`
+	Icon         pgtype.Text     `json:"icon"`
+	IsActive     pgtype.Bool     `json:"is_active"`
+	DisplayOrder pgtype.Int4     `json:"display_order"`
+	Metadata     json.RawMessage `json:"metadata"`
+	ID           int32           `json:"id"`
 }
 
 func (q *Queries) UpdateModule(ctx context.Context, arg UpdateModuleParams) (Module, error) {

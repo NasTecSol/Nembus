@@ -249,9 +249,9 @@ INSERT INTO submenu_permissions (submenu_id, permission_id) VALUES
 
 -- Prices for ingredients (Purchasable)
 INSERT INTO product_prices (product_id, price_list_id, uom_id, price, min_quantity, is_active) VALUES
-((SELECT id FROM products WHERE sku = 'ING-CHICKEN-BREAST'), (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), (SELECT id FROM units_of_measure WHERE code = 'KG'), 25.00, 1, true),
-((SELECT id FROM products WHERE sku = 'ING-BEEF-MINCED'), (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), (SELECT id FROM units_of_measure WHERE code = 'KG'), 45.00, 1, true),
-((SELECT id FROM products WHERE sku = 'ING-COFFEE-BEANS'), (SELECT id FROM price_lists WHERE code = 'RETAIL_SAR'), (SELECT id FROM units_of_measure WHERE code = 'KG'), 120.00, 1, true);
+((SELECT id FROM products WHERE sku = 'ING-CHICKEN-BREAST'), (SELECT id FROM price_lists WHERE code = 'RETAIL'), (SELECT id FROM units_of_measure WHERE code = 'KG'), 25.00, 1, true),
+((SELECT id FROM products WHERE sku = 'ING-BEEF-MINCED'), (SELECT id FROM price_lists WHERE code = 'RETAIL'), (SELECT id FROM units_of_measure WHERE code = 'KG'), 45.00, 1, true),
+((SELECT id FROM products WHERE sku = 'ING-COFFEE-BEANS'), (SELECT id FROM price_lists WHERE code = 'RETAIL'), (SELECT id FROM units_of_measure WHERE code = 'KG'), 120.00, 1, true);
 
 -- UOM Conversions (e.g., Coffee Beans KG to Grams for recipes)
 INSERT INTO product_uom_conversions (product_id, from_uom_id, to_uom_id, conversion_factor, is_default) VALUES

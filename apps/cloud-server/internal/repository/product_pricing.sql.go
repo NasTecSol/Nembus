@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -41,17 +42,17 @@ INSERT INTO product_prices (
 `
 
 type CreateProductPriceParams struct {
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	PriceListID      int32          `json:"price_list_id"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	Price            pgtype.Numeric `json:"price"`
-	MinQuantity      pgtype.Numeric `json:"min_quantity"`
-	MaxQuantity      pgtype.Numeric `json:"max_quantity"`
-	ValidFrom        pgtype.Date    `json:"valid_from"`
-	ValidTo          pgtype.Date    `json:"valid_to"`
-	IsActive         pgtype.Bool    `json:"is_active"`
-	Metadata         []byte         `json:"metadata"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	PriceListID      int32           `json:"price_list_id"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	Price            pgtype.Numeric  `json:"price"`
+	MinQuantity      pgtype.Numeric  `json:"min_quantity"`
+	MaxQuantity      pgtype.Numeric  `json:"max_quantity"`
+	ValidFrom        pgtype.Date     `json:"valid_from"`
+	ValidTo          pgtype.Date     `json:"valid_to"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -305,7 +306,7 @@ func (q *Queries) GetProductPriceForList(ctx context.Context, arg GetProductPric
 const getProductWithPricing = `-- name: GetProductWithPricing :one
 
 SELECT 
-    p.id, p.organization_id, p.sku, p.name, p.description, p.category_id, p.brand_id, p.base_uom_id, p.product_type, p.tax_category_id, p.is_serialized, p.is_batch_managed, p.is_active, p.is_sellable, p.is_purchasable, p.allow_decimal_quantity, p.track_inventory, p.metadata, p.created_at, p.updated_at,
+    p.id, p.organization_id, p.sku, p.name, p.description, p.category_id, p.brand_id, p.base_uom_id, p.product_type, p.tax_category_id, p.is_serialized, p.is_batch_managed, p.is_active, p.is_sellable, p.is_purchasable, p.allow_decimal_quantity, p.track_inventory, p.cost_price, p.metadata, p.created_at, p.updated_at,
     json_agg(DISTINCT jsonb_build_object(
         'price_list_id', pl.id,
         'price_list_name', pl.name,
@@ -339,7 +340,8 @@ type GetProductWithPricingRow struct {
 	IsPurchasable        pgtype.Bool      `json:"is_purchasable"`
 	AllowDecimalQuantity pgtype.Bool      `json:"allow_decimal_quantity"`
 	TrackInventory       pgtype.Bool      `json:"track_inventory"`
-	Metadata             []byte           `json:"metadata"`
+	CostPrice            pgtype.Numeric   `json:"cost_price"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	Prices               []byte           `json:"prices"`
@@ -369,6 +371,7 @@ func (q *Queries) GetProductWithPricing(ctx context.Context, id int32) (GetProdu
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -404,7 +407,7 @@ type ListPricesByPriceListRow struct {
 	ValidFrom        pgtype.Date      `json:"valid_from"`
 	ValidTo          pgtype.Date      `json:"valid_to"`
 	IsActive         pgtype.Bool      `json:"is_active"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	ProductName      string           `json:"product_name"`
@@ -486,7 +489,7 @@ type ListProductPricesRow struct {
 	ValidFrom        pgtype.Date      `json:"valid_from"`
 	ValidTo          pgtype.Date      `json:"valid_to"`
 	IsActive         pgtype.Bool      `json:"is_active"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	CreatedAt        pgtype.Timestamp `json:"created_at"`
 	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 	PriceListName    string           `json:"price_list_name"`
@@ -631,14 +634,14 @@ RETURNING id, product_id, product_variant_id, price_list_id, uom_id, price, min_
 `
 
 type UpdateProductPriceParams struct {
-	Price       pgtype.Numeric `json:"price"`
-	MinQuantity pgtype.Numeric `json:"min_quantity"`
-	MaxQuantity pgtype.Numeric `json:"max_quantity"`
-	ValidFrom   pgtype.Date    `json:"valid_from"`
-	ValidTo     pgtype.Date    `json:"valid_to"`
-	IsActive    pgtype.Bool    `json:"is_active"`
-	Metadata    []byte         `json:"metadata"`
-	ID          int32          `json:"id"`
+	Price       pgtype.Numeric  `json:"price"`
+	MinQuantity pgtype.Numeric  `json:"min_quantity"`
+	MaxQuantity pgtype.Numeric  `json:"max_quantity"`
+	ValidFrom   pgtype.Date     `json:"valid_from"`
+	ValidTo     pgtype.Date     `json:"valid_to"`
+	IsActive    pgtype.Bool     `json:"is_active"`
+	Metadata    json.RawMessage `json:"metadata"`
+	ID          int32           `json:"id"`
 }
 
 func (q *Queries) UpdateProductPrice(ctx context.Context, arg UpdateProductPriceParams) (ProductPrice, error) {

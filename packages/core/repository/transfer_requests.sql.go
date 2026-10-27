@@ -7,9 +7,26 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const callAllocateTransferRequestReservation = `-- name: CallAllocateTransferRequestReservation :one
+SELECT success::boolean AS success, message::text AS message FROM fn_allocate_transfer_request_reservation($1)
+`
+
+type CallAllocateTransferRequestReservationRow struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func (q *Queries) CallAllocateTransferRequestReservation(ctx context.Context, pTransferRequestID int32) (CallAllocateTransferRequestReservationRow, error) {
+	row := q.db.QueryRow(ctx, callAllocateTransferRequestReservation, pTransferRequestID)
+	var i CallAllocateTransferRequestReservationRow
+	err := row.Scan(&i.Success, &i.Message)
+	return i, err
+}
 
 const callApproveTransferRequest = `-- name: CallApproveTransferRequest :one
 SELECT success::boolean AS success, message::text AS message FROM fn_approve_transfer_request($1, $2)
@@ -32,6 +49,27 @@ func (q *Queries) CallApproveTransferRequest(ctx context.Context, arg CallApprov
 	return i, err
 }
 
+const callCancelTransferRequest = `-- name: CallCancelTransferRequest :one
+SELECT success::boolean AS success, message::text AS message FROM fn_cancel_transfer_request($1, $2)
+`
+
+type CallCancelTransferRequestParams struct {
+	PTransferRequestID int32 `json:"p_transfer_request_id"`
+	PCancelledBy       int32 `json:"p_cancelled_by"`
+}
+
+type CallCancelTransferRequestRow struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func (q *Queries) CallCancelTransferRequest(ctx context.Context, arg CallCancelTransferRequestParams) (CallCancelTransferRequestRow, error) {
+	row := q.db.QueryRow(ctx, callCancelTransferRequest, arg.PTransferRequestID, arg.PCancelledBy)
+	var i CallCancelTransferRequestRow
+	err := row.Scan(&i.Success, &i.Message)
+	return i, err
+}
+
 const callReceiveTransferRequest = `-- name: CallReceiveTransferRequest :one
 SELECT success::boolean AS success, message::text AS message FROM fn_receive_transfer_request($1, $2)
 `
@@ -49,6 +87,22 @@ type CallReceiveTransferRequestRow struct {
 func (q *Queries) CallReceiveTransferRequest(ctx context.Context, arg CallReceiveTransferRequestParams) (CallReceiveTransferRequestRow, error) {
 	row := q.db.QueryRow(ctx, callReceiveTransferRequest, arg.PTransferRequestID, arg.PReceivedBy)
 	var i CallReceiveTransferRequestRow
+	err := row.Scan(&i.Success, &i.Message)
+	return i, err
+}
+
+const callReleaseTransferRequestReservation = `-- name: CallReleaseTransferRequestReservation :one
+SELECT success::boolean AS success, message::text AS message FROM fn_release_transfer_request_reservation($1)
+`
+
+type CallReleaseTransferRequestReservationRow struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func (q *Queries) CallReleaseTransferRequestReservation(ctx context.Context, pTransferRequestID int32) (CallReleaseTransferRequestReservationRow, error) {
+	row := q.db.QueryRow(ctx, callReleaseTransferRequestReservation, pTransferRequestID)
+	var i CallReleaseTransferRequestReservationRow
 	err := row.Scan(&i.Success, &i.Message)
 	return i, err
 }
@@ -82,14 +136,15 @@ INSERT INTO transfer_requests (
     from_store_id,
     to_store_id,
     status,
+    is_stock_reserved,
     requested_by,
     request_date,
     expected_delivery_date,
     notes,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-) RETURNING id, organization_id, transfer_number, from_store_id, to_store_id, status, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+) RETURNING id, organization_id, transfer_number, from_store_id, to_store_id, status, is_stock_reserved, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at
 `
 
 type CreateTransferRequestParams struct {
@@ -98,11 +153,12 @@ type CreateTransferRequestParams struct {
 	FromStoreID          int32            `json:"from_store_id"`
 	ToStoreID            int32            `json:"to_store_id"`
 	Status               string           `json:"status"`
+	IsStockReserved      bool             `json:"is_stock_reserved"`
 	RequestedBy          pgtype.Int4      `json:"requested_by"`
 	RequestDate          pgtype.Timestamp `json:"request_date"`
 	ExpectedDeliveryDate pgtype.Date      `json:"expected_delivery_date"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 }
 
 // =====================================================
@@ -115,6 +171,7 @@ func (q *Queries) CreateTransferRequest(ctx context.Context, arg CreateTransferR
 		arg.FromStoreID,
 		arg.ToStoreID,
 		arg.Status,
+		arg.IsStockReserved,
 		arg.RequestedBy,
 		arg.RequestDate,
 		arg.ExpectedDeliveryDate,
@@ -129,6 +186,7 @@ func (q *Queries) CreateTransferRequest(ctx context.Context, arg CreateTransferR
 		&i.FromStoreID,
 		&i.ToStoreID,
 		&i.Status,
+		&i.IsStockReserved,
 		&i.RequestedBy,
 		&i.ApprovedBy,
 		&i.ShippedBy,
@@ -214,8 +272,18 @@ func (q *Queries) CreateTransferRequestItem(ctx context.Context, arg CreateTrans
 	return i, err
 }
 
+const deleteTransferRequestItems = `-- name: DeleteTransferRequestItems :exec
+DELETE FROM transfer_request_items
+WHERE transfer_request_id = $1
+`
+
+func (q *Queries) DeleteTransferRequestItems(ctx context.Context, transferRequestID int32) error {
+	_, err := q.db.Exec(ctx, deleteTransferRequestItems, transferRequestID)
+	return err
+}
+
 const getTransferRequest = `-- name: GetTransferRequest :one
-SELECT id, organization_id, transfer_number, from_store_id, to_store_id, status, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at FROM transfer_requests WHERE id = $1
+SELECT id, organization_id, transfer_number, from_store_id, to_store_id, status, is_stock_reserved, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at FROM transfer_requests WHERE id = $1
 `
 
 func (q *Queries) GetTransferRequest(ctx context.Context, id int32) (TransferRequest, error) {
@@ -228,6 +296,7 @@ func (q *Queries) GetTransferRequest(ctx context.Context, id int32) (TransferReq
 		&i.FromStoreID,
 		&i.ToStoreID,
 		&i.Status,
+		&i.IsStockReserved,
 		&i.RequestedBy,
 		&i.ApprovedBy,
 		&i.ShippedBy,
@@ -246,7 +315,7 @@ func (q *Queries) GetTransferRequest(ctx context.Context, id int32) (TransferReq
 
 const getTransferRequestWithDetails = `-- name: GetTransferRequestWithDetails :one
 SELECT 
-    tr.id, tr.organization_id, tr.transfer_number, tr.from_store_id, tr.to_store_id, tr.status, tr.requested_by, tr.approved_by, tr.shipped_by, tr.received_by, tr.request_date, tr.expected_delivery_date, tr.shipped_at, tr.received_at, tr.notes, tr.metadata, tr.created_at, tr.updated_at,
+    tr.id, tr.organization_id, tr.transfer_number, tr.from_store_id, tr.to_store_id, tr.status, tr.is_stock_reserved, tr.requested_by, tr.approved_by, tr.shipped_by, tr.received_by, tr.request_date, tr.expected_delivery_date, tr.shipped_at, tr.received_at, tr.notes, tr.metadata, tr.created_at, tr.updated_at,
     fs.name AS from_store_name,
     ts.name AS to_store_name,
     req_u.username AS requested_by_name,
@@ -266,6 +335,7 @@ type GetTransferRequestWithDetailsRow struct {
 	FromStoreID          int32            `json:"from_store_id"`
 	ToStoreID            int32            `json:"to_store_id"`
 	Status               string           `json:"status"`
+	IsStockReserved      bool             `json:"is_stock_reserved"`
 	RequestedBy          pgtype.Int4      `json:"requested_by"`
 	ApprovedBy           pgtype.Int4      `json:"approved_by"`
 	ShippedBy            pgtype.Int4      `json:"shipped_by"`
@@ -275,7 +345,7 @@ type GetTransferRequestWithDetailsRow struct {
 	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
 	ReceivedAt           pgtype.Timestamp `json:"received_at"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	FromStoreName        pgtype.Text      `json:"from_store_name"`
@@ -294,6 +364,7 @@ func (q *Queries) GetTransferRequestWithDetails(ctx context.Context, id int32) (
 		&i.FromStoreID,
 		&i.ToStoreID,
 		&i.Status,
+		&i.IsStockReserved,
 		&i.RequestedBy,
 		&i.ApprovedBy,
 		&i.ShippedBy,
@@ -384,14 +455,89 @@ func (q *Queries) ListTransferRequestItems(ctx context.Context, transferRequestI
 	return items, nil
 }
 
+const listTransferRequestItemsByRequestIDs = `-- name: ListTransferRequestItemsByRequestIDs :many
+SELECT
+    tri.id, tri.transfer_request_id, tri.product_id, tri.product_variant_id, tri.from_location_id, tri.to_location_id, tri.requested_quantity, tri.approved_quantity, tri.shipped_quantity, tri.received_quantity, tri.uom_id, tri.batch_number, tri.notes, tri.created_at,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    uom.name AS uom_name
+FROM transfer_request_items tri
+JOIN products p ON tri.product_id = p.id
+LEFT JOIN units_of_measure uom ON tri.uom_id = uom.id
+WHERE tri.transfer_request_id = ANY($1::integer[])
+ORDER BY tri.transfer_request_id, tri.id
+`
+
+type ListTransferRequestItemsByRequestIDsRow struct {
+	ID                int32            `json:"id"`
+	TransferRequestID int32            `json:"transfer_request_id"`
+	ProductID         int32            `json:"product_id"`
+	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
+	FromLocationID    pgtype.Int4      `json:"from_location_id"`
+	ToLocationID      pgtype.Int4      `json:"to_location_id"`
+	RequestedQuantity pgtype.Numeric   `json:"requested_quantity"`
+	ApprovedQuantity  pgtype.Numeric   `json:"approved_quantity"`
+	ShippedQuantity   pgtype.Numeric   `json:"shipped_quantity"`
+	ReceivedQuantity  pgtype.Numeric   `json:"received_quantity"`
+	UomID             pgtype.Int4      `json:"uom_id"`
+	BatchNumber       pgtype.Text      `json:"batch_number"`
+	Notes             pgtype.Text      `json:"notes"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	ProductName       string           `json:"product_name"`
+	ProductSku        string           `json:"product_sku"`
+	UomName           pgtype.Text      `json:"uom_name"`
+}
+
+func (q *Queries) ListTransferRequestItemsByRequestIDs(ctx context.Context, transferRequestIds []int32) ([]ListTransferRequestItemsByRequestIDsRow, error) {
+	rows, err := q.db.Query(ctx, listTransferRequestItemsByRequestIDs, transferRequestIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTransferRequestItemsByRequestIDsRow
+	for rows.Next() {
+		var i ListTransferRequestItemsByRequestIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TransferRequestID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.FromLocationID,
+			&i.ToLocationID,
+			&i.RequestedQuantity,
+			&i.ApprovedQuantity,
+			&i.ShippedQuantity,
+			&i.ReceivedQuantity,
+			&i.UomID,
+			&i.BatchNumber,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.ProductName,
+			&i.ProductSku,
+			&i.UomName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTransferRequestsByOrganization = `-- name: ListTransferRequestsByOrganization :many
 SELECT 
-    tr.id, tr.organization_id, tr.transfer_number, tr.from_store_id, tr.to_store_id, tr.status, tr.requested_by, tr.approved_by, tr.shipped_by, tr.received_by, tr.request_date, tr.expected_delivery_date, tr.shipped_at, tr.received_at, tr.notes, tr.metadata, tr.created_at, tr.updated_at,
+    tr.id, tr.organization_id, tr.transfer_number, tr.from_store_id, tr.to_store_id, tr.status, tr.is_stock_reserved, tr.requested_by, tr.approved_by, tr.shipped_by, tr.received_by, tr.request_date, tr.expected_delivery_date, tr.shipped_at, tr.received_at, tr.notes, tr.metadata, tr.created_at, tr.updated_at,
     fs.name AS from_store_name,
-    ts.name AS to_store_name
+    ts.name AS to_store_name,
+    req_u.username AS requested_by_name,
+    app_u.username AS approved_by_name
 FROM transfer_requests tr
 LEFT JOIN stores fs ON tr.from_store_id = fs.id
 LEFT JOIN stores ts ON tr.to_store_id = ts.id
+LEFT JOIN users req_u ON tr.requested_by = req_u.id
+LEFT JOIN users app_u ON tr.approved_by = app_u.id
 WHERE tr.organization_id = $1
 ORDER BY tr.created_at DESC
 LIMIT $2 OFFSET $3
@@ -410,6 +556,7 @@ type ListTransferRequestsByOrganizationRow struct {
 	FromStoreID          int32            `json:"from_store_id"`
 	ToStoreID            int32            `json:"to_store_id"`
 	Status               string           `json:"status"`
+	IsStockReserved      bool             `json:"is_stock_reserved"`
 	RequestedBy          pgtype.Int4      `json:"requested_by"`
 	ApprovedBy           pgtype.Int4      `json:"approved_by"`
 	ShippedBy            pgtype.Int4      `json:"shipped_by"`
@@ -419,11 +566,13 @@ type ListTransferRequestsByOrganizationRow struct {
 	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
 	ReceivedAt           pgtype.Timestamp `json:"received_at"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	FromStoreName        pgtype.Text      `json:"from_store_name"`
 	ToStoreName          pgtype.Text      `json:"to_store_name"`
+	RequestedByName      pgtype.Text      `json:"requested_by_name"`
+	ApprovedByName       pgtype.Text      `json:"approved_by_name"`
 }
 
 func (q *Queries) ListTransferRequestsByOrganization(ctx context.Context, arg ListTransferRequestsByOrganizationParams) ([]ListTransferRequestsByOrganizationRow, error) {
@@ -442,6 +591,7 @@ func (q *Queries) ListTransferRequestsByOrganization(ctx context.Context, arg Li
 			&i.FromStoreID,
 			&i.ToStoreID,
 			&i.Status,
+			&i.IsStockReserved,
 			&i.RequestedBy,
 			&i.ApprovedBy,
 			&i.ShippedBy,
@@ -456,6 +606,8 @@ func (q *Queries) ListTransferRequestsByOrganization(ctx context.Context, arg Li
 			&i.UpdatedAt,
 			&i.FromStoreName,
 			&i.ToStoreName,
+			&i.RequestedByName,
+			&i.ApprovedByName,
 		); err != nil {
 			return nil, err
 		}
@@ -469,7 +621,7 @@ func (q *Queries) ListTransferRequestsByOrganization(ctx context.Context, arg Li
 
 const listTransferRequestsByStore = `-- name: ListTransferRequestsByStore :many
 SELECT 
-    tr.id, tr.organization_id, tr.transfer_number, tr.from_store_id, tr.to_store_id, tr.status, tr.requested_by, tr.approved_by, tr.shipped_by, tr.received_by, tr.request_date, tr.expected_delivery_date, tr.shipped_at, tr.received_at, tr.notes, tr.metadata, tr.created_at, tr.updated_at,
+    tr.id, tr.organization_id, tr.transfer_number, tr.from_store_id, tr.to_store_id, tr.status, tr.is_stock_reserved, tr.requested_by, tr.approved_by, tr.shipped_by, tr.received_by, tr.request_date, tr.expected_delivery_date, tr.shipped_at, tr.received_at, tr.notes, tr.metadata, tr.created_at, tr.updated_at,
     fs.name AS from_store_name,
     ts.name AS to_store_name
 FROM transfer_requests tr
@@ -493,6 +645,7 @@ type ListTransferRequestsByStoreRow struct {
 	FromStoreID          int32            `json:"from_store_id"`
 	ToStoreID            int32            `json:"to_store_id"`
 	Status               string           `json:"status"`
+	IsStockReserved      bool             `json:"is_stock_reserved"`
 	RequestedBy          pgtype.Int4      `json:"requested_by"`
 	ApprovedBy           pgtype.Int4      `json:"approved_by"`
 	ShippedBy            pgtype.Int4      `json:"shipped_by"`
@@ -502,7 +655,7 @@ type ListTransferRequestsByStoreRow struct {
 	ShippedAt            pgtype.Timestamp `json:"shipped_at"`
 	ReceivedAt           pgtype.Timestamp `json:"received_at"`
 	Notes                pgtype.Text      `json:"notes"`
-	Metadata             []byte           `json:"metadata"`
+	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 	FromStoreName        pgtype.Text      `json:"from_store_name"`
@@ -525,6 +678,7 @@ func (q *Queries) ListTransferRequestsByStore(ctx context.Context, arg ListTrans
 			&i.FromStoreID,
 			&i.ToStoreID,
 			&i.Status,
+			&i.IsStockReserved,
 			&i.RequestedBy,
 			&i.ApprovedBy,
 			&i.ShippedBy,
@@ -550,12 +704,70 @@ func (q *Queries) ListTransferRequestsByStore(ctx context.Context, arg ListTrans
 	return items, nil
 }
 
+const updateTransferRequestHeader = `-- name: UpdateTransferRequestHeader :one
+UPDATE transfer_requests
+SET from_store_id = CASE WHEN $1::integer > 0 THEN $1::integer ELSE from_store_id END,
+    to_store_id = CASE WHEN $2::integer > 0 THEN $2::integer ELSE to_store_id END,
+    notes = COALESCE($3, notes),
+    expected_delivery_date = COALESCE($4, expected_delivery_date),
+    metadata = COALESCE($5, metadata),
+    is_stock_reserved = COALESCE($6, is_stock_reserved),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $7 AND status IN ('draft', 'approved')
+RETURNING id, organization_id, transfer_number, from_store_id, to_store_id, status, is_stock_reserved, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at
+`
+
+type UpdateTransferRequestHeaderParams struct {
+	FromStoreID          int32           `json:"from_store_id"`
+	ToStoreID            int32           `json:"to_store_id"`
+	Notes                pgtype.Text     `json:"notes"`
+	ExpectedDeliveryDate pgtype.Date     `json:"expected_delivery_date"`
+	Metadata             json.RawMessage `json:"metadata"`
+	IsStockReserved      pgtype.Bool     `json:"is_stock_reserved"`
+	ID                   int32           `json:"id"`
+}
+
+func (q *Queries) UpdateTransferRequestHeader(ctx context.Context, arg UpdateTransferRequestHeaderParams) (TransferRequest, error) {
+	row := q.db.QueryRow(ctx, updateTransferRequestHeader,
+		arg.FromStoreID,
+		arg.ToStoreID,
+		arg.Notes,
+		arg.ExpectedDeliveryDate,
+		arg.Metadata,
+		arg.IsStockReserved,
+		arg.ID,
+	)
+	var i TransferRequest
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TransferNumber,
+		&i.FromStoreID,
+		&i.ToStoreID,
+		&i.Status,
+		&i.IsStockReserved,
+		&i.RequestedBy,
+		&i.ApprovedBy,
+		&i.ShippedBy,
+		&i.ReceivedBy,
+		&i.RequestDate,
+		&i.ExpectedDeliveryDate,
+		&i.ShippedAt,
+		&i.ReceivedAt,
+		&i.Notes,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateTransferRequestStatus = `-- name: UpdateTransferRequestStatus :one
 UPDATE transfer_requests
 SET status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, organization_id, transfer_number, from_store_id, to_store_id, status, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at
+RETURNING id, organization_id, transfer_number, from_store_id, to_store_id, status, is_stock_reserved, requested_by, approved_by, shipped_by, received_by, request_date, expected_delivery_date, shipped_at, received_at, notes, metadata, created_at, updated_at
 `
 
 type UpdateTransferRequestStatusParams struct {
@@ -573,6 +785,7 @@ func (q *Queries) UpdateTransferRequestStatus(ctx context.Context, arg UpdateTra
 		&i.FromStoreID,
 		&i.ToStoreID,
 		&i.Status,
+		&i.IsStockReserved,
 		&i.RequestedBy,
 		&i.ApprovedBy,
 		&i.ShippedBy,

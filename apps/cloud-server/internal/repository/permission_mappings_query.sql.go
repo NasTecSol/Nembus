@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const checkUserHasMenuAccess = `-- name: CheckUserHasMenuAccess :one
@@ -109,9 +110,9 @@ INSERT INTO menu_permissions (
 `
 
 type CreateMenuPermissionParams struct {
-	MenuID       int32  `json:"menu_id"`
-	PermissionID int32  `json:"permission_id"`
-	Metadata     []byte `json:"metadata"`
+	MenuID       int32           `json:"menu_id"`
+	PermissionID int32           `json:"permission_id"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateMenuPermission(ctx context.Context, arg CreateMenuPermissionParams) (MenuPermission, error) {
@@ -137,9 +138,9 @@ INSERT INTO module_permissions (
 `
 
 type CreateModulePermissionParams struct {
-	ModuleID     int32  `json:"module_id"`
-	PermissionID int32  `json:"permission_id"`
-	Metadata     []byte `json:"metadata"`
+	ModuleID     int32           `json:"module_id"`
+	PermissionID int32           `json:"permission_id"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateModulePermission(ctx context.Context, arg CreateModulePermissionParams) (ModulePermission, error) {
@@ -165,9 +166,9 @@ INSERT INTO submenu_permissions (
 `
 
 type CreateSubmenuPermissionParams struct {
-	SubmenuID    int32  `json:"submenu_id"`
-	PermissionID int32  `json:"permission_id"`
-	Metadata     []byte `json:"metadata"`
+	SubmenuID    int32           `json:"submenu_id"`
+	PermissionID int32           `json:"permission_id"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateSubmenuPermission(ctx context.Context, arg CreateSubmenuPermissionParams) (SubmenuPermission, error) {
@@ -287,12 +288,12 @@ ORDER BY m.name, p.name
 `
 
 type ListMenuPermissionsRow struct {
-	ID             int32  `json:"id"`
-	MenuID         int32  `json:"menu_id"`
-	PermissionID   int32  `json:"permission_id"`
-	Metadata       []byte `json:"metadata"`
-	MenuName       string `json:"menu_name"`
-	PermissionName string `json:"permission_name"`
+	ID             int32           `json:"id"`
+	MenuID         int32           `json:"menu_id"`
+	PermissionID   int32           `json:"permission_id"`
+	Metadata       json.RawMessage `json:"metadata"`
+	MenuName       string          `json:"menu_name"`
+	PermissionName string          `json:"permission_name"`
 }
 
 func (q *Queries) ListMenuPermissions(ctx context.Context) ([]ListMenuPermissionsRow, error) {
@@ -331,12 +332,12 @@ ORDER BY p.name
 `
 
 type ListMenuPermissionsByMenuRow struct {
-	ID             int32  `json:"id"`
-	MenuID         int32  `json:"menu_id"`
-	PermissionID   int32  `json:"permission_id"`
-	Metadata       []byte `json:"metadata"`
-	PermissionName string `json:"permission_name"`
-	PermissionCode string `json:"permission_code"`
+	ID             int32           `json:"id"`
+	MenuID         int32           `json:"menu_id"`
+	PermissionID   int32           `json:"permission_id"`
+	Metadata       json.RawMessage `json:"metadata"`
+	PermissionName string          `json:"permission_name"`
+	PermissionCode string          `json:"permission_code"`
 }
 
 func (q *Queries) ListMenuPermissionsByMenu(ctx context.Context, menuID int32) ([]ListMenuPermissionsByMenuRow, error) {
@@ -375,12 +376,12 @@ ORDER BY m.name, p.name
 `
 
 type ListModulePermissionsRow struct {
-	ID             int32  `json:"id"`
-	ModuleID       int32  `json:"module_id"`
-	PermissionID   int32  `json:"permission_id"`
-	Metadata       []byte `json:"metadata"`
-	ModuleName     string `json:"module_name"`
-	PermissionName string `json:"permission_name"`
+	ID             int32           `json:"id"`
+	ModuleID       int32           `json:"module_id"`
+	PermissionID   int32           `json:"permission_id"`
+	Metadata       json.RawMessage `json:"metadata"`
+	ModuleName     string          `json:"module_name"`
+	PermissionName string          `json:"permission_name"`
 }
 
 func (q *Queries) ListModulePermissions(ctx context.Context) ([]ListModulePermissionsRow, error) {
@@ -419,12 +420,12 @@ ORDER BY p.name
 `
 
 type ListModulePermissionsByModuleRow struct {
-	ID             int32  `json:"id"`
-	ModuleID       int32  `json:"module_id"`
-	PermissionID   int32  `json:"permission_id"`
-	Metadata       []byte `json:"metadata"`
-	PermissionName string `json:"permission_name"`
-	PermissionCode string `json:"permission_code"`
+	ID             int32           `json:"id"`
+	ModuleID       int32           `json:"module_id"`
+	PermissionID   int32           `json:"permission_id"`
+	Metadata       json.RawMessage `json:"metadata"`
+	PermissionName string          `json:"permission_name"`
+	PermissionCode string          `json:"permission_code"`
 }
 
 func (q *Queries) ListModulePermissionsByModule(ctx context.Context, moduleID int32) ([]ListModulePermissionsByModuleRow, error) {
@@ -463,12 +464,12 @@ ORDER BY s.name, p.name
 `
 
 type ListSubmenuPermissionsRow struct {
-	ID             int32  `json:"id"`
-	SubmenuID      int32  `json:"submenu_id"`
-	PermissionID   int32  `json:"permission_id"`
-	Metadata       []byte `json:"metadata"`
-	SubmenuName    string `json:"submenu_name"`
-	PermissionName string `json:"permission_name"`
+	ID             int32           `json:"id"`
+	SubmenuID      int32           `json:"submenu_id"`
+	PermissionID   int32           `json:"permission_id"`
+	Metadata       json.RawMessage `json:"metadata"`
+	SubmenuName    string          `json:"submenu_name"`
+	PermissionName string          `json:"permission_name"`
 }
 
 func (q *Queries) ListSubmenuPermissions(ctx context.Context) ([]ListSubmenuPermissionsRow, error) {
@@ -507,12 +508,12 @@ ORDER BY p.name
 `
 
 type ListSubmenuPermissionsBySubmenuRow struct {
-	ID             int32  `json:"id"`
-	SubmenuID      int32  `json:"submenu_id"`
-	PermissionID   int32  `json:"permission_id"`
-	Metadata       []byte `json:"metadata"`
-	PermissionName string `json:"permission_name"`
-	PermissionCode string `json:"permission_code"`
+	ID             int32           `json:"id"`
+	SubmenuID      int32           `json:"submenu_id"`
+	PermissionID   int32           `json:"permission_id"`
+	Metadata       json.RawMessage `json:"metadata"`
+	PermissionName string          `json:"permission_name"`
+	PermissionCode string          `json:"permission_code"`
 }
 
 func (q *Queries) ListSubmenuPermissionsBySubmenu(ctx context.Context, submenuID int32) ([]ListSubmenuPermissionsBySubmenuRow, error) {

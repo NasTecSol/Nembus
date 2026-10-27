@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -40,16 +41,16 @@ INSERT INTO stores (
 `
 
 type CreateStoreParams struct {
-	OrganizationID int32       `json:"organization_id"`
-	ParentStoreID  pgtype.Int4 `json:"parent_store_id"`
-	Name           string      `json:"name"`
-	Code           string      `json:"code"`
-	StoreType      pgtype.Text `json:"store_type"`
-	IsWarehouse    pgtype.Bool `json:"is_warehouse"`
-	IsPosEnabled   pgtype.Bool `json:"is_pos_enabled"`
-	Timezone       pgtype.Text `json:"timezone"`
-	IsActive       pgtype.Bool `json:"is_active"`
-	Metadata       []byte      `json:"metadata"`
+	OrganizationID int32           `json:"organization_id"`
+	ParentStoreID  pgtype.Int4     `json:"parent_store_id"`
+	Name           string          `json:"name"`
+	Code           string          `json:"code"`
+	StoreType      pgtype.Text     `json:"store_type"`
+	IsWarehouse    pgtype.Bool     `json:"is_warehouse"`
+	IsPosEnabled   pgtype.Bool     `json:"is_pos_enabled"`
+	Timezone       pgtype.Text     `json:"timezone"`
+	IsActive       pgtype.Bool     `json:"is_active"`
+	Metadata       json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -139,16 +140,16 @@ type GetStorageLocationHierarchyParams struct {
 }
 
 type GetStorageLocationHierarchyRow struct {
-	ID               int32       `json:"id"`
-	StoreID          int32       `json:"store_id"`
-	Code             string      `json:"code"`
-	Name             string      `json:"name"`
-	LocationType     pgtype.Text `json:"location_type"`
-	ParentLocationID pgtype.Int4 `json:"parent_location_id"`
-	IsActive         pgtype.Bool `json:"is_active"`
-	Metadata         []byte      `json:"metadata"`
-	Level            int32       `json:"level"`
-	Path             interface{} `json:"path"`
+	ID               int32           `json:"id"`
+	StoreID          int32           `json:"store_id"`
+	Code             string          `json:"code"`
+	Name             string          `json:"name"`
+	LocationType     pgtype.Text     `json:"location_type"`
+	ParentLocationID pgtype.Int4     `json:"parent_location_id"`
+	IsActive         pgtype.Bool     `json:"is_active"`
+	Metadata         json.RawMessage `json:"metadata"`
+	Level            int32           `json:"level"`
+	Path             interface{}     `json:"path"`
 }
 
 // =====================================================
@@ -528,15 +529,15 @@ RETURNING id, organization_id, parent_store_id, name, code, store_type, is_wareh
 `
 
 type UpdateStoreParams struct {
-	ParentStoreID pgtype.Int4 `json:"parent_store_id"`
-	Name          pgtype.Text `json:"name"`
-	StoreType     pgtype.Text `json:"store_type"`
-	IsWarehouse   pgtype.Bool `json:"is_warehouse"`
-	IsPosEnabled  pgtype.Bool `json:"is_pos_enabled"`
-	Timezone      pgtype.Text `json:"timezone"`
-	IsActive      pgtype.Bool `json:"is_active"`
-	Metadata      []byte      `json:"metadata"`
-	ID            int32       `json:"id"`
+	ParentStoreID pgtype.Int4     `json:"parent_store_id"`
+	Name          pgtype.Text     `json:"name"`
+	StoreType     pgtype.Text     `json:"store_type"`
+	IsWarehouse   pgtype.Bool     `json:"is_warehouse"`
+	IsPosEnabled  pgtype.Bool     `json:"is_pos_enabled"`
+	Timezone      pgtype.Text     `json:"timezone"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
+	ID            int32           `json:"id"`
 }
 
 func (q *Queries) UpdateStore(ctx context.Context, arg UpdateStoreParams) (Store, error) {

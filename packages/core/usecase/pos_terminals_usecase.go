@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -227,4 +228,171 @@ func (uc *PosTerminalsUseCase) TogglePOSTerminalActive(ctx context.Context, id i
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	return utils.NewResponse(utils.CodeOK, "terminal updated", terminal)
+}
+
+// AssignCashiersToPOSTerminal assigns cashier IDs to a terminal's metadata.
+func (uc *PosTerminalsUseCase) AssignCashiersToPOSTerminal(ctx context.Context, terminalID int32, cashierIDs []int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	terminal, err := uc.repo.GetPOSTerminal(ctx, terminalID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "terminal not found", nil)
+	}
+
+	meta := make(map[string]interface{})
+	if len(terminal.Metadata) > 0 {
+		_ = json.Unmarshal(terminal.Metadata, &meta)
+	}
+
+	// Merge existing assigned_cashier_ids with incoming cashierIDs to prevent overwriting
+	existingSet := make(map[int32]bool)
+	if rawIDs, ok := meta["assigned_cashier_ids"]; ok && rawIDs != nil {
+		if slice, ok := rawIDs.([]interface{}); ok {
+			for _, item := range slice {
+				if num, ok := item.(float64); ok {
+					existingSet[int32(num)] = true
+				}
+			}
+		}
+	}
+	for _, cid := range cashierIDs {
+		existingSet[cid] = true
+	}
+
+	mergedIDs := make([]int32, 0, len(existingSet))
+	for cid := range existingSet {
+		mergedIDs = append(mergedIDs, cid)
+	}
+
+	meta["assigned_cashier_ids"] = mergedIDs
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to marshal metadata", nil)
+	}
+
+	updated, err := uc.repo.UpdatePOSTerminal(ctx, repository.UpdatePOSTerminalParams{
+		ID:           terminalID,
+		TerminalName: terminal.TerminalName,
+		DeviceID:     terminal.DeviceID,
+		IsActive:     terminal.IsActive,
+		Metadata:     metaBytes,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "cashiers assigned to terminal successfully", updated)
+}
+
+// GetCashiersForPOSTerminal returns all cashiers assigned to a terminal via its metadata.
+func (uc *PosTerminalsUseCase) GetCashiersForPOSTerminal(ctx context.Context, terminalID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	terminal, err := uc.repo.GetPOSTerminal(ctx, terminalID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "terminal not found", nil)
+	}
+
+	if len(terminal.Metadata) == 0 {
+		return utils.NewResponse(utils.CodeOK, "no cashiers assigned to terminal", []interface{}{})
+	}
+
+	meta := make(map[string]interface{})
+	if err := json.Unmarshal(terminal.Metadata, &meta); err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to unmarshal metadata", nil)
+	}
+
+	rawIDs, ok := meta["assigned_cashier_ids"]
+	if !ok || rawIDs == nil {
+		return utils.NewResponse(utils.CodeOK, "no cashiers assigned to terminal", []interface{}{})
+	}
+
+	var cashierIDs []int32
+	switch v := rawIDs.(type) {
+	case []interface{}:
+		for _, item := range v {
+			if num, ok := item.(float64); ok {
+				cashierIDs = append(cashierIDs, int32(num))
+			}
+		}
+	}
+
+	if len(cashierIDs) == 0 {
+		return utils.NewResponse(utils.CodeOK, "no cashiers assigned to terminal", []interface{}{})
+	}
+
+	var cashiers []repository.Cashier
+	for _, cid := range cashierIDs {
+		c, err := uc.repo.GetCashierByID(ctx, cid)
+		if err == nil {
+			cashiers = append(cashiers, c)
+		}
+	}
+
+	return utils.NewResponse(utils.CodeOK, "cashiers fetched successfully", cashiers)
+}
+
+// RemoveCashierFromPOSTerminal unassigns a cashier ID from a terminal's metadata.
+func (uc *PosTerminalsUseCase) RemoveCashierFromPOSTerminal(ctx context.Context, terminalID int32, cashierID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	terminal, err := uc.repo.GetPOSTerminal(ctx, terminalID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "terminal not found", nil)
+	}
+
+	if len(terminal.Metadata) == 0 {
+		return utils.NewResponse(utils.CodeOK, "cashier not assigned to terminal", nil)
+	}
+
+	meta := make(map[string]interface{})
+	if err := json.Unmarshal(terminal.Metadata, &meta); err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to unmarshal metadata", nil)
+	}
+
+	rawIDs, ok := meta["assigned_cashier_ids"]
+	if !ok || rawIDs == nil {
+		return utils.NewResponse(utils.CodeOK, "cashier not assigned to terminal", nil)
+	}
+
+	var updatedIDs []int32
+	removed := false
+	switch v := rawIDs.(type) {
+	case []interface{}:
+		for _, item := range v {
+			if num, ok := item.(float64); ok {
+				cid := int32(num)
+				if cid == cashierID {
+					removed = true
+				} else {
+					updatedIDs = append(updatedIDs, cid)
+				}
+			}
+		}
+	}
+
+	if !removed {
+		return utils.NewResponse(utils.CodeBadReq, "cashier is not assigned to this terminal", nil)
+	}
+
+	meta["assigned_cashier_ids"] = updatedIDs
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to marshal metadata", nil)
+	}
+
+	updated, err := uc.repo.UpdatePOSTerminal(ctx, repository.UpdatePOSTerminalParams{
+		ID:           terminalID,
+		TerminalName: terminal.TerminalName,
+		DeviceID:     terminal.DeviceID,
+		IsActive:     terminal.IsActive,
+		Metadata:     metaBytes,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "cashier unassigned from terminal successfully", updated)
 }

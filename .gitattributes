@@ -1,0 +1,12 @@
+# Normalize line endings to LF in the repository
+* text=auto
+
+# Force LF for source code files — prevents CRLF-induced diffs between
+# Windows (local development) and Linux (CI/GitHub Actions runners).
+*.go   text eol=lf
+*.sql  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.hcl  text eol=lf
+*.md   text eol=lf
+*.sum  text eol=lf

@@ -198,6 +198,7 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 		Variance:        variance,
 		Column5:         req.ClosingNote,
 		Column6:         req.ClosedBy,
+		Column7:         req.Metadata,
 	}
 
 	resp := h.useCase.CloseCashierSession(c.Request.Context(), arg)

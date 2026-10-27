@@ -35,6 +35,7 @@ func (h *UomPackagingTemplateHandler) getRepositoryFromContext(c *gin.Context) *
 // CreateUomPackagingTemplateRequest represents the body for creating a template.
 type CreateUomPackagingTemplateRequest struct {
 	OrganizationID int32  `json:"organization_id" binding:"required" example:"1"`
+	UomID          int32  `json:"uom_id" binding:"required" example:"1"`
 	Name           string `json:"name" binding:"required" example:"Bottle Pack"`
 	Code           string `json:"code" binding:"required" example:"BTL_PK"`
 	IsActive       bool   `json:"is_active" example:"true"`
@@ -85,7 +86,7 @@ func (h *UomPackagingTemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.CreateTemplate(c.Request.Context(), req.OrganizationID, req.Name, req.Code, req.IsActive)
+	resp := h.useCase.CreateTemplate(c.Request.Context(), req.OrganizationID, req.UomID, req.Name, req.Code, req.IsActive)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -291,3 +292,93 @@ func (h *UomPackagingTemplateHandler) GetTemplateWithLevels(c *gin.Context) {
 	resp := h.useCase.GetTemplateWithLevels(c.Request.Context(), id)
 	c.JSON(resp.StatusCode, resp)
 }
+
+// CreateTemplatePipelineRequest represents the payload for bulk pipeline creation.
+type CreateTemplatePipelineRequest struct {
+	OrganizationID int32             `json:"organization_id" binding:"required" example:"1"`
+	UomID          int32             `json:"uom_id" binding:"required" example:"1"`
+	Templates      []TemplatePayload `json:"templates" binding:"required"`
+}
+
+type TemplatePayload struct {
+	TemplateName   string         `json:"template_name" binding:"required" example:"Template A"`
+	TemplateCode   string         `json:"template_code" binding:"required" example:"1-24-12"`
+	TemplateActive bool           `json:"template_active" example:"true"`
+	Levels         []LevelPayload `json:"levels" binding:"required"`
+}
+
+type LevelPayload struct {
+	LevelOrder int32  `json:"level_order" binding:"required" example:"1"`
+	UomCode    string `json:"uom_code" binding:"required" example:"KG"`
+	Multiplier string `json:"multiplier" binding:"required" example:"1.000000"`
+}
+
+// CreateTemplatePipeline handles POST /api/uom-packaging-templates/pipeline
+// @Summary      Create UOM packaging template pipeline
+// @Description  Create templates and their level hierarchy in a single execution
+// @Tags         uom-packaging-templates
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  CreateTemplatePipelineRequest true  "Pipeline payload"
+// @Success      201   {object}  SuccessResponse
+// @Failure      400   {object}  ErrorResponse
+// @Router       /api/uom-packaging-templates/pipeline [post]
+func (h *UomPackagingTemplateHandler) CreateTemplatePipeline(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req CreateTemplatePipelineRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	templatesInput := make([]usecase.TemplatePayloadInput, len(req.Templates))
+	for i, t := range req.Templates {
+		levelsInput := make([]usecase.LevelPayloadInput, len(t.Levels))
+		for j, l := range t.Levels {
+			levelsInput[j] = usecase.LevelPayloadInput{
+				LevelOrder: l.LevelOrder,
+				UomCode:    l.UomCode,
+				Multiplier: l.Multiplier,
+			}
+		}
+		templatesInput[i] = usecase.TemplatePayloadInput{
+			TemplateName:   t.TemplateName,
+			TemplateCode:   t.TemplateCode,
+			TemplateActive: t.TemplateActive,
+			Levels:         levelsInput,
+		}
+	}
+
+	resp := h.useCase.CreateTemplatePipeline(c.Request.Context(), usecase.CreateUomPackagingTemplatePipelineInput{
+		OrganizationID: req.OrganizationID,
+		UomID:          req.UomID,
+		Templates:      templatesInput,
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetTemplatesByUomID handles GET /api/uom-packaging-templates/by-uom/:uom_id
+// @Summary      Get packaging templates by UOM ID
+// @Description  Retrieve all templates and their levels that use the specified UOM ID
+// @Tags         uom-packaging-templates
+// @Param        uom_id  path  string  true  "UOM ID"
+// @Success      200 {object}  SuccessResponse
+// @Router       /api/uom-packaging-templates/by-uom/{uom_id} [get]
+func (h *UomPackagingTemplateHandler) GetTemplatesByUomID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	uomID := c.Param("uom_id")
+	resp := h.useCase.GetTemplatesByUomID(c.Request.Context(), uomID)
+	c.JSON(resp.StatusCode, resp)
+}
+

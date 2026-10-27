@@ -11,7 +11,9 @@ func RegisterUomPackagingTemplateRoutes(r *gin.RouterGroup, h *handler.UomPackag
 	templates := r.Group("/uom-packaging-templates")
 	{
 		templates.POST("", h.CreateTemplate)
+		templates.POST("/pipeline", h.CreateTemplatePipeline)
 		templates.GET("", h.ListTemplates)
+		templates.GET("/by-uom/:uom_id", h.GetTemplatesByUomID)
 		templates.GET("/:id", h.GetTemplate)
 		templates.GET("/:id/full", h.GetTemplateWithLevels)
 		templates.PUT("/:id", h.UpdateTemplate)

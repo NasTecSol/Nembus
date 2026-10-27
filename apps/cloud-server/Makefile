@@ -53,7 +53,7 @@ run:
 swagger:
 	@echo "Generating Swagger documentation..."
 	@which swag > /dev/null 2>&1 || (echo "Error: swag command not found. Install it with: make install-swagger" && exit 1)
-	@swag init -g main.go -o docs/swagger
+	@swag init -g main.go --dir ./,../../packages/core/handler,../../packages/core/usecase,../../packages/core/repository -o docs/swagger --parseDependency --parseInternal
 	@echo "Swagger docs generated in docs/swagger/"
 
 # Generate and serve Swagger docs
@@ -61,6 +61,17 @@ swagger-serve: swagger
 	@echo "Swagger documentation available at: http://localhost:8080/swagger/index.html"
 	@echo "Starting server..."
 	@ENV=development go run main.go
+
+# Regenerate Postman collection from generate-collection.js
+postman:
+	@echo "Regenerating Postman collection..."
+	@which node > /dev/null 2>&1 || (echo "Error: node not found. Install Node.js." && exit 1)
+	@node postman-collection/generate-collection.js
+	@echo "Collection written to postman-collection/Nembus-API.postman_collection.json"
+
+# Regenerate both Swagger and Postman together
+docs: swagger postman
+	@echo "All docs regenerated."
 
 # Clean build artifacts
 clean:
@@ -100,27 +111,22 @@ install-grpcurl:
 	@go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
 	@echo "grpcurl installed. Make sure $(shell go env GOPATH)/bin is in your PATH"
 
-# Database migration commands
+# Database migration commands (Atlas)
 migrate-master:
-	@echo "Running migrations on master database..."
-	@ENV_FILE=$$([ -f .env.dev ] && echo .env.dev || echo .env); \
-	if [ ! -f "$$ENV_FILE" ]; then \
-		echo "Error: Neither .env.dev nor .env file found"; \
-		exit 1; \
-	fi; \
-	MASTER_DB_URL=$$(grep -E '^MASTER_DB_URL=' "$$ENV_FILE" | cut -d '=' -f 2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'); \
-	if [ -z "$$MASTER_DB_URL" ]; then \
-		echo "Error: MASTER_DB_URL is not set in $$ENV_FILE"; \
-		exit 1; \
-	fi; \
-	GOOSE_DRIVER=postgres GOOSE_DBSTRING="$$MASTER_DB_URL" go run github.com/pressly/goose/v3/cmd/goose@latest -dir migrations up
+	@echo "Running Atlas migrations on master database..."
+	@go run cmd/migrate-tenants/main.go -master=true
 
 migrate-tenants:
-	@echo "Running migrations on all active tenant databases..."
-	@go run cmd/migrate-tenants/main.go
+	@echo "Running Atlas migrations on all active tenant databases..."
+	@go run cmd/migrate-tenants/main.go -master=false
 
-migrate-all: migrate-master migrate-tenants
-	@echo "All migrations completed!"
+migrate-all:
+	@echo "Running Atlas migrations on master and all tenant databases..."
+	@go run cmd/migrate-tenants/main.go -master=true
+
+migrate-status:
+	@echo "Checking Atlas migration status across databases..."
+	@go run cmd/migrate-tenants/main.go -status=true
 
 # Install dependencies
 deps:
@@ -128,6 +134,15 @@ deps:
 	@go mod download
 	@go mod tidy
 	@echo "Dependencies installed"
+
+# Refresh & Sync Migrated Domains to Target DB
+sync-target:
+	@echo "Syncing migrated domains from STG to Target database..."
+	@go run cmd/sync-target-db/main.go
+
+sync-target-dryrun:
+	@echo "Simulating sync from STG to Target database (dry-run)..."
+	@go run cmd/sync-target-db/main.go -dry-run=true
 
 # Install Swagger CLI tool
 install-swagger:

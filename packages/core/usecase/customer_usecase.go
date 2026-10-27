@@ -25,13 +25,30 @@ type CustomerOutput struct {
 	CreditLimit        pgtype.Numeric   `json:"credit_limit"`
 	OutstandingBalance pgtype.Numeric   `json:"outstanding_balance"`
 	LoyaltyPoints      pgtype.Numeric   `json:"loyalty_points"`
+	LoyaltyTier        string           `json:"loyalty_tier"`
+	NextTierThreshold  float64          `json:"next_tier_threshold"`
 	IsActive           pgtype.Bool      `json:"is_active"`
 	Metadata           json.RawMessage  `json:"metadata"`
 	CreatedAt          pgtype.Timestamp `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
 }
 
+func CalculateTierAndThreshold(pts float64) (string, float64) {
+	if pts < 500 {
+		return "bronze", 500.0
+	} else if pts < 1000 {
+		return "silver", 1000.0
+	}
+	return "gold", 1000.0
+}
+
 func customerToOutput(c repository.Customer) CustomerOutput {
+	pts := numericToFloat(c.LoyaltyPoints)
+	tier, nextThreshold := CalculateTierAndThreshold(pts)
+	if c.LoyaltyTier.Valid && c.LoyaltyTier.String != "" {
+		tier = c.LoyaltyTier.String
+	}
+
 	return CustomerOutput{
 		ID:                 c.ID,
 		OrganizationID:     c.OrganizationID,
@@ -45,6 +62,8 @@ func customerToOutput(c repository.Customer) CustomerOutput {
 		CreditLimit:        c.CreditLimit,
 		OutstandingBalance: c.OutstandingBalance,
 		LoyaltyPoints:      c.LoyaltyPoints,
+		LoyaltyTier:        tier,
+		NextTierThreshold:  nextThreshold,
 		IsActive:           c.IsActive,
 		Metadata:           utils.BytesToJSONRawMessage(c.Metadata),
 		CreatedAt:          c.CreatedAt,

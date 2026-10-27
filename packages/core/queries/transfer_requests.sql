@@ -9,13 +9,14 @@ INSERT INTO transfer_requests (
     from_store_id,
     to_store_id,
     status,
+    is_stock_reserved,
     requested_by,
     request_date,
     expected_delivery_date,
     notes,
     metadata
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 ) RETURNING *;
 
 -- name: CreateTransferRequestItem :one
@@ -64,14 +65,30 @@ JOIN products p ON tri.product_id = p.id
 LEFT JOIN units_of_measure uom ON tri.uom_id = uom.id
 WHERE tri.transfer_request_id = $1;
 
+-- name: ListTransferRequestItemsByRequestIDs :many
+SELECT
+    tri.*,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    uom.name AS uom_name
+FROM transfer_request_items tri
+JOIN products p ON tri.product_id = p.id
+LEFT JOIN units_of_measure uom ON tri.uom_id = uom.id
+WHERE tri.transfer_request_id = ANY(sqlc.arg(transfer_request_ids)::integer[])
+ORDER BY tri.transfer_request_id, tri.id;
+
 -- name: ListTransferRequestsByOrganization :many
 SELECT 
     tr.*,
     fs.name AS from_store_name,
-    ts.name AS to_store_name
+    ts.name AS to_store_name,
+    req_u.username AS requested_by_name,
+    app_u.username AS approved_by_name
 FROM transfer_requests tr
 LEFT JOIN stores fs ON tr.from_store_id = fs.id
 LEFT JOIN stores ts ON tr.to_store_id = ts.id
+LEFT JOIN users req_u ON tr.requested_by = req_u.id
+LEFT JOIN users app_u ON tr.approved_by = app_u.id
 WHERE tr.organization_id = $1
 ORDER BY tr.created_at DESC
 LIMIT $2 OFFSET $3;
@@ -95,6 +112,22 @@ SET status = $2,
 WHERE id = $1
 RETURNING *;
 
+-- name: UpdateTransferRequestHeader :one
+UPDATE transfer_requests
+SET from_store_id = CASE WHEN sqlc.arg(from_store_id)::integer > 0 THEN sqlc.arg(from_store_id)::integer ELSE from_store_id END,
+    to_store_id = CASE WHEN sqlc.arg(to_store_id)::integer > 0 THEN sqlc.arg(to_store_id)::integer ELSE to_store_id END,
+    notes = COALESCE(sqlc.narg(notes), notes),
+    expected_delivery_date = COALESCE(sqlc.narg(expected_delivery_date), expected_delivery_date),
+    metadata = COALESCE(sqlc.narg(metadata), metadata),
+    is_stock_reserved = COALESCE(sqlc.narg(is_stock_reserved), is_stock_reserved),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id) AND status IN ('draft', 'approved')
+RETURNING *;
+
+-- name: DeleteTransferRequestItems :exec
+DELETE FROM transfer_request_items
+WHERE transfer_request_id = $1;
+
 -- name: CallApproveTransferRequest :one
 SELECT success::boolean AS success, message::text AS message FROM fn_approve_transfer_request($1, $2);
 
@@ -103,3 +136,13 @@ SELECT success::boolean AS success, message::text AS message FROM fn_ship_transf
 
 -- name: CallReceiveTransferRequest :one
 SELECT success::boolean AS success, message::text AS message FROM fn_receive_transfer_request($1, $2);
+
+-- name: CallCancelTransferRequest :one
+SELECT success::boolean AS success, message::text AS message FROM fn_cancel_transfer_request($1, $2);
+
+-- name: CallReleaseTransferRequestReservation :one
+SELECT success::boolean AS success, message::text AS message FROM fn_release_transfer_request_reservation($1);
+
+-- name: CallAllocateTransferRequestReservation :one
+SELECT success::boolean AS success, message::text AS message FROM fn_allocate_transfer_request_reservation($1);
+

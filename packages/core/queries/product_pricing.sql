@@ -172,3 +172,16 @@ LEFT JOIN product_prices pp ON pl.id = pp.price_list_id
     AND pp.is_active = true
 WHERE pl.is_active = true
 ORDER BY pl.name;
+
+-- name: UpsertProductPrice :one
+-- Targets the default base-product row (variant NULL, min_quantity 1) for a product/list/UOM.
+INSERT INTO product_prices (
+    product_id, price_list_id, uom_id, price, min_quantity, is_active, updated_at
+)
+VALUES ($1, $2, $3, $4, 1, true, CURRENT_TIMESTAMP)
+ON CONFLICT (product_id, price_list_id, product_variant_id, uom_id, min_quantity) DO UPDATE
+SET price = EXCLUDED.price,
+    uom_id = COALESCE(EXCLUDED.uom_id, product_prices.uom_id),
+    is_active = true,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;

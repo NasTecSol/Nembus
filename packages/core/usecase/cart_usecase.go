@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -498,6 +499,17 @@ func (uc *CartUseCase) ListActiveCarts(ctx context.Context, arg repository.ListA
 	return utils.NewResponse(utils.CodeOK, "active carts listed", cartsToOutput(carts))
 }
 
+func (uc *CartUseCase) ListDraftCartsByCashier(ctx context.Context, arg repository.ListDraftCartsByCashierParams) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	carts, err := uc.repo.ListDraftCartsByCashier(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to list draft carts by cashier", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "draft carts listed successfully", cartsToOutput(carts))
+}
+
 func (uc *CartUseCase) ListAbandonedCarts(ctx context.Context, arg repository.ListAbandonedCartsParams) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
@@ -758,7 +770,7 @@ func (uc *CartUseCase) MergeGuestCartToCustomer(ctx context.Context, arg reposit
 }
 
 // AddToCart adds an item to the cart.
-func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, productVariantID *int32, qty float64, uomID int32, priceListID int32) *repository.Response {
+func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID int32, productID int32, productVariantID *int32, qty float64, uomID int32, priceListID int32, batchNumber *string) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
 		return resp
 	}
@@ -886,6 +898,11 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to convert line total: %v", err), nil)
 	}
 
+	var batchNumText pgtype.Text
+	if batchNumber != nil && *batchNumber != "" {
+		batchNumText = pgtype.Text{String: *batchNumber, Valid: true}
+	}
+
 	cartItem, err := uc.repo.CreateCartItem(ctx, repository.CreateCartItemParams{
 		CartID:           cartID,
 		OrganizationID:   orgID,
@@ -898,6 +915,7 @@ func (uc *CartUseCase) AddToCart(ctx context.Context, cartID uuid.UUID, orgID in
 		LineTotal:        lineTotal,
 		PriceListID:      pgtype.Int4{Int32: productPrice.PriceListID, Valid: true},
 		TaxCategoryID:    pgtype.Int4{Int32: product.TaxCategoryID.Int32, Valid: product.TaxCategoryID.Valid},
+		BatchNumber:      batchNumText,
 	})
 
 	if err != nil {
@@ -1080,7 +1098,13 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 					ReferenceNumber: pgtype.Text{},
 					Metadata:        order.Metadata,
 				})
-				// Session expected_balance will be updated upon payment processing (POST /api/pos/payments)
+				// Session expected_balance updated for cash payments
+				if strings.EqualFold(strings.TrimSpace(paymentMethod), "cash") && posTxn.CashierSessionID != 0 {
+					_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+						ID:              posTxn.CashierSessionID,
+						ExpectedBalance: order.TotalAmount,
+					})
+				}
 			}
 		}
 	}
@@ -1089,4 +1113,22 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		"order_id":     orderID,
 		"order_number": orderNumber,
 	})
+}
+
+// ReopenCart reopens a converted cart back into an active cart if its order is pending.
+func (uc *CartUseCase) ReopenCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	cart, err := uc.repo.ReopenCart(ctx, cartID)
+	if err != nil {
+		// sqlc returns pgx.ErrNoRows (or sql.ErrNoRows depending on driver) if the UPDATE affects 0 rows
+		if err.Error() == "no rows in result set" || strings.Contains(err.Error(), "no rows") {
+			return utils.NewResponse(utils.CodeBadReq, "cannot reopen cart: order is not pending, already fulfilled, or cart is already active", nil)
+		}
+		return utils.NewResponse(utils.CodeError, "failed to reopen cart: "+err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "cart reopened successfully", cartToOutput(cart))
 }

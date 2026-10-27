@@ -2,32 +2,45 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
-
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
 func main() {
 	// Parse command line flags
-	down := flag.Bool("down", false, "Rollback migrations instead of applying them")
-	migrationsDir := flag.String("dir", "./migrations", "Directory containing migration files")
+	includeMaster := flag.Bool("master", true, "Also run migrations on the master database")
+	declarativeMode := flag.Bool("declarative", false, "Use declarative schema sync (atlas schema apply) instead of versioned migrations")
+	schemaDir := flag.String("schema", "", "Directory containing Atlas SQL schema files (for declarative mode; default: auto-detected packages/core/db/schema)")
+	viewsPath := flag.String("views", "", "Path to SQL file or directory containing views, functions, and triggers to apply after schema apply (default: auto-detected packages/core/db/views_functions/90_views_functions.sql)")
+	devDBURL := flag.String("dev-url", "", "Dev database URL for Atlas schema calculation (default: ATLAS_DEV_URL env var or docker://postgres/16/dev)")
+	migrationsDir := flag.String("dir", "", "Directory containing Atlas migration files (default: auto-detected packages/core/db/migrations)")
+	baselineVer := flag.String("baseline", "", "Baseline migration version. Leave empty (default) to AUTO-DETECT per database: empty DBs and DBs already tracked by Atlas (atlas_schema_revisions) get no baseline; DBs that have schema but no revisions table get the first migration version. Set it explicitly to force the same baseline for every database (e.g. -baseline 20260813124500) — a baseline that does not exist in the migration directory is a hard error.")
+	statusOnly := flag.Bool("status", false, "Show status / dry-run without applying")
+	hostOverride := flag.String("host-override", "postgres=localhost", "Rewrite the host in database connection strings before connecting (from=to). Set to empty to disable. Use when databases are Docker services (e.g. host=postgres) that only resolve inside the compose network while this runner executes on the host.")
 	flag.Parse()
 
 	// Get current working directory for debugging
 	cwd, _ := os.Getwd()
 	log.Printf("Current working directory: %s\n", cwd)
 
-	// Load environment variables from project root
-	// Try multiple locations: current dir, parent dir (if running from cmd/), and explicit .env
-	envPaths := []string{".env", "../.env", "../../.env"}
+	// Load environment variables
+	envPaths := []string{".env.dev", ".env", "../.env.dev", "../.env", "../../.env.dev", "../../.env"}
 	var envLoaded bool
 	var loadedPath string
 	for _, envPath := range envPaths {
@@ -36,13 +49,12 @@ func main() {
 			if err := godotenv.Load(envPath); err == nil {
 				envLoaded = true
 				loadedPath = absPath
-				log.Printf("✓ Loaded .env from: %s\n", absPath)
+				log.Printf("✓ Loaded env from: %s\n", absPath)
 				break
 			}
 		}
 	}
 
-	// Also try loading from current working directory (default behavior)
 	if !envLoaded {
 		if err := godotenv.Load(); err == nil {
 			envLoaded = true
@@ -58,72 +70,507 @@ func main() {
 	// Get master database URL
 	masterDBURL := os.Getenv("MASTER_DB_URL")
 	if masterDBURL == "" {
-		log.Fatal("❌ MASTER_DB_URL is not set. Please:\n" +
-			"  1. Create a .env file in the project root with: MASTER_DB_URL=postgresql://...\n" +
-			"  2. Or set it as an environment variable: export MASTER_DB_URL=...")
+		log.Fatal("❌ MASTER_DB_URL is not set. Please set it in .env or as an environment variable.")
 	}
 
 	log.Printf("✓ MASTER_DB_URL found (length: %d characters)\n", len(masterDBURL))
 
+	// Normalize to a URL Atlas can consume (pgx keyword DSNs are not
+	// accepted by Atlas) and apply the docker-service host override.
+	masterURL, err := dsnToURL(masterDBURL, *hostOverride)
+	if err != nil {
+		log.Fatalf("❌ Invalid MASTER_DB_URL: %v", err)
+	}
+
+	var absSchemaPath, devURL, absViewsPath string
+	var absMigPath, firstMig string
+
+	if *declarativeMode {
+		absSchemaPath, err = resolveSchemaDir(*schemaDir)
+		if err != nil {
+			log.Fatalf("Failed to resolve schema directory: %v", err)
+		}
+		log.Printf("✓ Declarative mode active. Using schema directory: %s\n", absSchemaPath)
+		devURL = resolveDevURL(*devDBURL)
+		log.Printf("✓ Using dev database: %s\n", devURL)
+		absViewsPath, err = resolveViewsPath(*viewsPath)
+		if err != nil {
+			log.Fatalf("Failed to resolve views/functions path: %v", err)
+		}
+		if absViewsPath != "" {
+			log.Printf("✓ Using views/functions file: %s\n", absViewsPath)
+		}
+	} else {
+		// Resolve migrations directory
+		migPath := *migrationsDir
+		if migPath == "" {
+			candidates := []string{
+				"../../packages/core/db/migrations",
+				"../packages/core/db/migrations",
+				"packages/core/db/migrations",
+				"./migrations",
+				"/app/migrations",
+			}
+			for _, c := range candidates {
+				if info, err := os.Stat(c); err == nil && info.IsDir() {
+					migPath = c
+					break
+				}
+			}
+			if migPath == "" {
+				migPath = "packages/core/db/migrations"
+			}
+		}
+
+		absMigPath, err = filepath.Abs(migPath)
+		if err != nil {
+			log.Fatalf("Failed to resolve absolute path for migrations dir: %v", err)
+		}
+		log.Printf("✓ Using migrations directory: %s\n", absMigPath)
+
+		// First (oldest) migration version — used as the baseline for databases
+		// that have schema but no atlas_schema_revisions table.
+		firstMig, err = firstMigrationVersion(absMigPath)
+		if err != nil {
+			log.Fatalf("Failed to determine first migration version: %v", err)
+		}
+		log.Printf("✓ First migration version (baseline for legacy DBs): %s\n", firstMig)
+	}
+
+	atlasBin := resolveAtlasBinary()
+	log.Printf("✓ Using Atlas binary: %s\n", atlasBin)
+
 	ctx := context.Background()
 
 	// Connect to master database
-	pool, err := pgxpool.New(ctx, masterDBURL)
+	pool, err := pgxpool.New(ctx, masterURL)
 	if err != nil {
 		log.Fatalf("Unable to connect to master database: %v", err)
 	}
 	defer pool.Close()
 
-	// Get all active tenants directly from the pool
+	// 1. Optionally migrate/sync master database
+	if *includeMaster {
+		log.Println("\n==================================================")
+		if *declarativeMode {
+			log.Println("⚡ Running Atlas declarative schema sync on Master Database...")
+		} else {
+			log.Println("⚡ Running Atlas migration on Master Database...")
+		}
+		log.Println("==================================================")
+
+		if *declarativeMode {
+			if err := applyPreDeclarativePatches(ctx, masterURL); err != nil {
+				log.Fatalf("❌ Master database pre-declarative patches failed: %v", err)
+			}
+			if err := executeAtlasDeclarative(atlasBin, masterURL, absSchemaPath, devURL, *statusOnly); err != nil {
+				log.Fatalf("❌ Master database declarative schema sync failed: %v", err)
+			}
+			if !*statusOnly && absViewsPath != "" {
+				log.Printf("⚡ Applying views, functions and triggers to Master Database from %s...\n", absViewsPath)
+				if err := applySQLScript(ctx, masterURL, absViewsPath); err != nil {
+					log.Fatalf("❌ Master database views/functions apply failed: %v", err)
+				}
+				log.Println("✅ Master database views, functions and triggers applied successfully!")
+			}
+		} else {
+			baseline, err := resolveBaseline(ctx, masterURL, *baselineVer, firstMig)
+			if err != nil {
+				log.Fatalf("❌ Failed to inspect master database: %v", err)
+			}
+			logBaseline(baseline)
+
+			if err := executeAtlas(atlasBin, masterURL, absMigPath, baseline, *statusOnly); err != nil {
+				log.Fatalf("❌ Master database migration failed: %v", err)
+			}
+		}
+		log.Println("✅ Master database schema update completed successfully!")
+	}
+
+	// 2. Discover all active tenants
 	tenants, err := getAllActiveTenants(ctx, pool)
 	if err != nil {
-		log.Fatalf("Failed to get tenants: %v", err)
+		log.Fatalf("Failed to query tenants from master database: %v", err)
 	}
 
 	if len(tenants) == 0 {
-		log.Println("No active tenants found")
+		log.Println("\nℹ No active tenants found in master database.")
 		return
 	}
 
-	log.Printf("Found %d active tenant(s)\n", len(tenants))
+	log.Printf("\nFound %d active tenant(s) to process.\n", len(tenants))
 
-	// Get absolute path to migrations directory
-	migrationsPath, err := filepath.Abs(*migrationsDir)
-	if err != nil {
-		log.Fatalf("Failed to get absolute path for migrations directory: %v", err)
-	}
-
-	// Run migrations for each tenant
+	// 3. Migrate/sync each tenant database
 	successCount := 0
 	failedCount := 0
+	skippedCount := 0
 
 	for _, tenant := range tenants {
-		log.Printf("\n--- Migrating tenant: %s (slug: %s) ---\n", tenant.TenantName, tenant.Slug)
+		log.Println("\n--------------------------------------------------")
+		log.Printf("🚀 Processing tenant: %s (slug: %s)\n", tenant.TenantName, tenant.Slug)
+		log.Println("--------------------------------------------------")
 
-		action := "up"
-		if *down {
-			action = "down"
-		}
-
-		err := runMigrations(tenant.DbConnStr, migrationsPath, action)
-		if err != nil {
-			log.Printf("❌ Failed to migrate tenant %s: %v\n", tenant.Slug, err)
+		if tenant.DbConnStr == "" {
+			log.Printf("❌ Skipping tenant %s: db_conn_str is empty\n", tenant.Slug)
 			failedCount++
 			continue
 		}
 
-		log.Printf("✅ Successfully migrated tenant: %s\n", tenant.Slug)
-		successCount++
+		tenantURL, err := dsnToURL(tenant.DbConnStr, *hostOverride)
+		if err != nil {
+			log.Printf("❌ Failed to parse connection string for tenant %s: %v\n", tenant.Slug, err)
+			failedCount++
+			continue
+		}
+
+		if *declarativeMode {
+			if err := applyPreDeclarativePatches(ctx, tenantURL); err != nil {
+				if isUnreachableDBHost(err) {
+					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				log.Printf("❌ Pre-declarative patches failed for tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
+			err = executeAtlasDeclarative(atlasBin, tenantURL, absSchemaPath, devURL, *statusOnly)
+			if err != nil {
+				if isMissingDatabase(err) {
+					log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
+					log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				if isUnreachableDBHost(err) {
+					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				log.Printf("❌ Failed to apply declarative schema to tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
+			if !*statusOnly && absViewsPath != "" {
+				if err := applySQLScript(ctx, tenantURL, absViewsPath); err != nil {
+					log.Printf("❌ Failed to apply views and functions to tenant %s: %v\n", tenant.Slug, err)
+					failedCount++
+					continue
+				}
+			}
+			log.Printf("✅ Successfully synced declarative schema for tenant: %s\n", tenant.Slug)
+			successCount++
+		} else {
+			baseline, err := resolveBaseline(ctx, tenantURL, *baselineVer, firstMig)
+			if err != nil {
+				if isMissingDatabase(err) {
+					log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
+					log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				log.Printf("❌ Failed to inspect tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
+			logBaseline(baseline)
+
+			err = executeAtlas(atlasBin, tenantURL, absMigPath, baseline, *statusOnly)
+			if err != nil {
+				log.Printf("❌ Failed to migrate tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
+
+			log.Printf("✅ Successfully migrated tenant: %s\n", tenant.Slug)
+			successCount++
+		}
 	}
 
-	log.Printf("\n=== Migration Summary ===\n")
+	log.Println("\n==================================================")
+	if *declarativeMode {
+		log.Println("=== Multi-Tenant Declarative Schema Sync Summary ===")
+	} else {
+		log.Println("=== Multi-Tenant Atlas Migration Summary ===")
+	}
+	log.Println("==================================================")
 	log.Printf("Successful: %d\n", successCount)
-	log.Printf("Failed: %d\n", failedCount)
-	log.Printf("Total: %d\n", len(tenants))
+	log.Printf("Skipped:    %d (database missing)\n", skippedCount)
+	log.Printf("Failed:     %d\n", failedCount)
+	log.Printf("Total:      %d\n", len(tenants))
 
 	if failedCount > 0 {
 		os.Exit(1)
 	}
+}
+
+// firstMigrationVersion returns the oldest versioned migration file
+// (YYYYMMDDHHMMSS_*.sql) in dir — used as the baseline for legacy databases.
+func firstMigrationVersion(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("read migrations dir: %w", err)
+	}
+	var first string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		name := e.Name()
+		if len(name) < 14 {
+			continue
+		}
+		ver := name[:14]
+		if _, err := strconv.ParseInt(ver, 10, 64); err != nil {
+			continue
+		}
+		if first == "" || ver < first {
+			first = ver
+		}
+	}
+	if first == "" {
+		return "", fmt.Errorf("no versioned migration files found in %s", dir)
+	}
+	return first, nil
+}
+
+// resolveBaseline decides the Atlas --baseline for one database:
+//   - an explicit -baseline flag always wins;
+//   - a database already tracked by Atlas (atlas_schema_revisions table)
+//     needs no baseline (apply pending only);
+//   - a fresh/empty database needs no baseline (apply everything);
+//   - a database that has schema objects but no revisions table (legacy /
+//     restored) needs the first migration version as baseline, otherwise
+//     Atlas refuses with "connected database is not clean".
+func resolveBaseline(ctx context.Context, dbURL, explicit, firstMig string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return "", fmt.Errorf("connect to database: %w", err)
+	}
+	defer pool.Close()
+
+	var hasRevisions bool
+	err = pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables
+		WHERE table_name = 'atlas_schema_revisions'
+		  AND table_schema NOT IN ('pg_catalog', 'information_schema')
+	)`).Scan(&hasRevisions)
+	if err != nil {
+		return "", fmt.Errorf("check atlas_schema_revisions: %w", err)
+	}
+	if hasRevisions {
+		return "", nil
+	}
+
+	var objectCount int
+	err = pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM information_schema.tables    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.views     WHERE table_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.sequences WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')) +
+		(SELECT count(*) FROM information_schema.routines  WHERE routine_schema NOT IN ('pg_catalog', 'information_schema'))`).Scan(&objectCount)
+	if err != nil {
+		return "", fmt.Errorf("check database emptiness: %w", err)
+	}
+	if objectCount == 0 {
+		return "", nil
+	}
+	return firstMig, nil
+}
+
+// logBaseline prints which baseline strategy is used for the current database.
+func logBaseline(baseline string) {
+	switch baseline {
+	case "":
+		log.Println("  ℹ baseline: none (fresh or Atlas-tracked database)")
+	default:
+		log.Printf("  ℹ baseline: %s (schema present, no revisions table)\n", baseline)
+	}
+}
+
+var sslModeRe = regexp.MustCompile(`(?i)\bsslmode=([a-z]+)`)
+
+// dsnToURL converts any pgx-accepted connection string (URL or keyword DSN
+// like "host=postgres user=x dbname=y") into a postgres:// URL that the Atlas
+// CLI can consume, applying the docker-service host override (from=to).
+func dsnToURL(connStr, hostOverride string) (string, error) {
+	cfg, err := pgx.ParseConfig(connStr)
+	if err != nil {
+		return "", fmt.Errorf("parse connection string: %w", err)
+	}
+
+	host := cfg.Host
+	overridden := false
+	if hostOverride != "" {
+		if from, to, ok := strings.Cut(hostOverride, "="); ok && strings.EqualFold(host, from) {
+			host = to
+			overridden = true
+		}
+	}
+	if strings.HasPrefix(host, "/") {
+		return "", fmt.Errorf("unix-socket hosts are not supported by Atlas URLs (host=%q)", host)
+	}
+
+	q := url.Values{}
+	if m := sslModeRe.FindStringSubmatch(connStr); len(m) == 2 {
+		q.Set("sslmode", m[1])
+	} else if overridden {
+		// Docker-local connections default to no TLS.
+		q.Set("sslmode", "disable")
+	}
+
+	u := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(cfg.User, cfg.Password),
+		Host:     net.JoinHostPort(host, strconv.Itoa(int(cfg.Port))),
+		Path:     "/" + cfg.Database,
+		RawQuery: q.Encode(),
+	}
+	return u.String(), nil
+}
+
+// isMissingDatabase reports whether the error is PostgreSQL's
+// "database ... does not exist" (SQLSTATE 3D000 / invalid_catalog_name).
+func isMissingDatabase(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "3D000" {
+		return true
+	}
+	// Fallback for wrapped/non-pgconn errors.
+	return strings.Contains(err.Error(), `database "`) && strings.Contains(err.Error(), "does not exist")
+}
+
+// isUnreachableDBHost reports DNS / network failures when resolving the DB host
+// (e.g. decommissioned Supabase project still listed as an active tenant).
+func isUnreachableDBHost(err error) bool {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.IsNotFound || dnsErr.Err == "no such host"
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no such host") ||
+		(strings.Contains(msg, "lookup ") && strings.Contains(msg, "i/o timeout"))
+}
+
+// resolveAtlasBinary locates the Atlas CLI executable
+func resolveAtlasBinary() string {
+	if custom := os.Getenv("ATLAS_PATH"); custom != "" {
+		return custom
+	}
+	if path, err := exec.LookPath("atlas"); err == nil {
+		return path
+	}
+	// Common fallback locations on Windows / Linux
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(home, "go", "bin", "atlas.exe"),
+		filepath.Join(home, "go", "bin", "atlas"),
+		"/usr/local/bin/atlas",
+		"/usr/bin/atlas",
+		"C:\\Program Files\\Atlas\\atlas.exe",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "atlas"
+}
+
+// resolveSchemaDir determines the absolute path to the directory containing Atlas SQL schema files.
+func resolveSchemaDir(customPath string) (string, error) {
+	if customPath != "" {
+		return filepath.Abs(customPath)
+	}
+	candidates := []string{
+		"../../packages/core/db/schema",
+		"../packages/core/db/schema",
+		"packages/core/db/schema",
+		"./schema",
+		"/app/schema",
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			return filepath.Abs(c)
+		}
+	}
+	return filepath.Abs("packages/core/db/schema")
+}
+
+// resolvePreDeclarativePatchPath returns the SQL patch file to run before declarative apply, if present.
+func resolvePreDeclarativePatchPath() (string, error) {
+	candidates := []string{
+		"../../packages/core/db/patches/pre_declarative.sql",
+		"../packages/core/db/patches/pre_declarative.sql",
+		"packages/core/db/patches/pre_declarative.sql",
+		"./patches/pre_declarative.sql",
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return filepath.Abs(c)
+		}
+	}
+	return "", nil
+}
+
+// resolveDevURL resolves the Atlas dev database URL used for calculating declarative diffs.
+func resolveDevURL(customURL string) string {
+	if customURL != "" {
+		return customURL
+	}
+	if env := os.Getenv("ATLAS_DEV_URL"); env != "" {
+		return env
+	}
+	return "docker://postgres/16/dev"
+}
+
+// executeAtlasDeclarative invokes Atlas CLI to declaratively sync a database to the schema directory.
+func executeAtlasDeclarative(atlasBin, dbURL, schemaDir, devURL string, dryRun bool) error {
+	schemaURI := "file://" + filepath.ToSlash(schemaDir)
+
+	args := []string{
+		"schema", "apply",
+		"--url", dbURL,
+		"--to", schemaURI,
+		"--dev-url", devURL,
+	}
+	if dryRun {
+		args = append(args, "--dry-run")
+	} else {
+		args = append(args, "--auto-approve")
+	}
+
+	cmd := exec.Command(atlasBin, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+// executeAtlas invokes the Atlas CLI to apply or inspect migrations
+func executeAtlas(atlasBin, dbURL, migrationsDir, baseline string, statusOnly bool) error {
+	dirURI := "file://" + filepath.ToSlash(migrationsDir)
+
+	var args []string
+	if statusOnly {
+		args = []string{"migrate", "status", "--url", dbURL, "--dir", dirURI}
+	} else {
+		args = []string{"migrate", "apply", "--url", dbURL, "--dir", dirURI}
+		if baseline != "" {
+			args = append(args, "--baseline", baseline)
+		}
+	}
+
+	cmd := exec.Command(atlasBin, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
 }
 
 // getAllActiveTenants retrieves all active tenants from the master database
@@ -133,6 +580,13 @@ func getAllActiveTenants(ctx context.Context, pool *pgxpool.Pool) ([]repository.
 		return nil, fmt.Errorf("failed to acquire connection: %w", err)
 	}
 	defer conn.Release()
+
+	// Check if tenants table exists
+	var exists bool
+	err = conn.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tenants')").Scan(&exists)
+	if err != nil || !exists {
+		return nil, nil
+	}
 
 	rows, err := conn.Query(ctx, "SELECT id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at FROM tenants WHERE is_active = true")
 	if err != nil {
@@ -166,22 +620,72 @@ func getAllActiveTenants(ctx context.Context, pool *pgxpool.Pool) ([]repository.
 	return tenants, nil
 }
 
-// runMigrations executes goose migrations on a tenant database
-func runMigrations(dbConnStr, migrationsDir, action string) error {
-	// Set environment variables for goose
-	os.Setenv("GOOSE_DRIVER", "postgres")
-	os.Setenv("GOOSE_DBSTRING", dbConnStr)
-
-	// Build goose command
-	var cmd *exec.Cmd
-	if action == "down" {
-		cmd = exec.Command("goose", "-dir", migrationsDir, "down")
-	} else {
-		cmd = exec.Command("goose", "-dir", migrationsDir, "up")
+// resolveViewsPath determines the absolute path to the SQL file containing views, functions, and triggers.
+func resolveViewsPath(customPath string) (string, error) {
+	if customPath != "" {
+		abs, err := filepath.Abs(customPath)
+		if err != nil {
+			return "", fmt.Errorf("resolve views path: %w", err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return "", fmt.Errorf("views path %q does not exist: %w", customPath, err)
+		}
+		if info.IsDir() {
+			candidate := filepath.Join(abs, "90_views_functions.sql")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+			return abs, nil
+		}
+		return abs, nil
 	}
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
+	candidates := []string{
+		"../../packages/core/db/views_functions/90_views_functions.sql",
+		"../packages/core/db/views_functions/90_views_functions.sql",
+		"packages/core/db/views_functions/90_views_functions.sql",
+		"./views_functions/90_views_functions.sql",
+		"/app/views_functions/90_views_functions.sql",
+		"./schema/views_functions/90_views_functions.sql",
+		"./90_views_functions.sql",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return filepath.Abs(c)
+		}
+	}
+	return "", nil
 }
+
+// applySQLScript executes raw SQL statements from a file against the target database using pgxpool.
+func applyPreDeclarativePatches(ctx context.Context, dbURL string) error {
+	patchPath, err := resolvePreDeclarativePatchPath()
+	if err != nil {
+		return err
+	}
+	if patchPath == "" {
+		return nil
+	}
+	log.Printf("⚡ Applying pre-declarative patches from %s...\n", patchPath)
+	return applySQLScript(ctx, dbURL, patchPath)
+}
+
+func applySQLScript(ctx context.Context, dbURL, filePath string) error {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read sql file %s: %w", filePath, err)
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect to db for script execution: %w", err)
+	}
+	defer pool.Close()
+
+	if _, err := pool.Exec(ctx, string(content)); err != nil {
+		return fmt.Errorf("execute sql script %s: %w", filePath, err)
+	}
+	return nil
+}
+

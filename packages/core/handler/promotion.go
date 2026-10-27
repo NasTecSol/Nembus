@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -40,7 +41,7 @@ func (h *PromotionHandler) getRepositoryFromContext(c *gin.Context) *repository.
 
 // CreatePromotion handles POST /api/promotions
 // @Summary      Create promotion
-// @Description  Create a new promotion or coupon (all types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item)
+// @Description  Create a new promotion or coupon (all types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo)
 // @Tags         promotions
 // @Accept       json
 // @Produce      json
@@ -68,6 +69,7 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 
 	actionMeta, _ := json.Marshal(req.ActionMetadata)
 	scheduleMeta, _ := json.Marshal(req.ScheduleJson)
+	metaBytes, _ := json.Marshal(req.Metadata)
 
 	arg := repository.CreatePromotionParams{
 		OrganizationID:    req.OrganizationID,
@@ -77,12 +79,24 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 		PromotionType:     req.PromotionType,
 		ActionMetadata:    actionMeta,
 		ScheduleJson:      scheduleMeta,
-		AppliesTo:         promoTextOpt(req.AppliesTo),
-		TargetProductIds:  req.TargetProductIds,
-		TargetCategoryIds: req.TargetCategoryIds,
-		CouponCode:        promoTextOpt(req.CouponCode),
+		AppliesTo:           promoTextOpt(req.AppliesTo),
+		TargetProductIds:    req.TargetProductIds,
+		TargetCategoryIds:   req.TargetCategoryIds,
+		TargetCustomerTypes: req.TargetCustomerTypes,
+		TargetCustomerTiers: req.TargetCustomerTiers,
+		CouponCode:          promoTextOpt(req.CouponCode),
 		IsStackable:       promoBoolOpt(req.IsStackable),
 		IsActive:          promoBoolOpt(req.IsActive),
+		StoreIds:          req.StoreIds,
+		Metadata:          metaBytes,
+	}
+
+	if req.CreatedBy != nil {
+		arg.CreatedBy = pgtype.Int4{Int32: *req.CreatedBy, Valid: true}
+	} else if userIDStr, ok := middleware.GetUserIDFromContext(c); ok {
+		if uid, err := strconv.ParseInt(userIDStr, 10, 32); err == nil {
+			arg.CreatedBy = pgtype.Int4{Int32: int32(uid), Valid: true}
+		}
 	}
 
 	if req.MinOrderAmount != nil {
@@ -103,15 +117,24 @@ func (h *PromotionHandler) CreatePromotion(c *gin.Context) {
 	if req.UsageLimit != nil {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
 	if req.ValidFrom != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidFrom); err == nil {
-			arg.ValidFrom = pgtype.Timestamp{Time: t, Valid: true}
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
 		}
+		arg.ValidFrom = vf
 	}
 	if req.ValidTo != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidTo); err == nil {
-			arg.ValidTo = pgtype.Timestamp{Time: t, Valid: true}
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
 		}
+		arg.ValidTo = vt
 	}
 
 	resp := h.useCase.CreatePromotion(c.Request.Context(), arg)
@@ -305,10 +328,13 @@ func (h *PromotionHandler) UpdatePromotion(c *gin.Context) {
 		Description:       promoTextOpt(req.Description),
 		ActionMetadata:    actionMeta,
 		ScheduleJson:      scheduleMeta,
-		AppliesTo:         promoTextOpt(req.AppliesTo),
-		TargetProductIds:  req.TargetProductIds,
-		TargetCategoryIds: req.TargetCategoryIds,
-		IsStackable:       promoBoolOpt(req.IsStackable),
+		AppliesTo:           promoTextOpt(req.AppliesTo),
+		TargetProductIds:    req.TargetProductIds,
+		TargetCategoryIds:   req.TargetCategoryIds,
+		TargetCustomerTypes: req.TargetCustomerTypes,
+		TargetCustomerTiers: req.TargetCustomerTiers,
+		IsStackable:         promoBoolOpt(req.IsStackable),
+		StoreIds:          req.StoreIds,
 	}
 	if req.MinOrderAmount != nil {
 		n := pgtype.Numeric{}
@@ -328,15 +354,24 @@ func (h *PromotionHandler) UpdatePromotion(c *gin.Context) {
 	if req.UsageLimit != nil {
 		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
 	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
 	if req.ValidFrom != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidFrom); err == nil {
-			arg.ValidFrom = pgtype.Timestamp{Time: t, Valid: true}
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
 		}
+		arg.ValidFrom = vf
 	}
 	if req.ValidTo != nil {
-		if t, err := time.Parse(time.RFC3339, *req.ValidTo); err == nil {
-			arg.ValidTo = pgtype.Timestamp{Time: t, Valid: true}
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
 		}
+		arg.ValidTo = vt
 	}
 
 	resp := h.useCase.UpdatePromotion(c.Request.Context(), arg)
@@ -379,9 +414,14 @@ func (h *PromotionHandler) UpdatePromotionStatus(c *gin.Context) {
 		return
 	}
 
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
 	resp := h.useCase.UpdatePromotionStatus(c.Request.Context(), repository.UpdatePromotionStatusParams{
 		ID:       int32(id64),
-		IsActive: pgtype.Bool{Bool: req.IsActive, Valid: true},
+		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
 	})
 	c.JSON(resp.StatusCode, resp)
 }
@@ -423,7 +463,7 @@ func (h *PromotionHandler) DeletePromotion(c *gin.Context) {
 
 // ApplyCoupon handles POST /api/promotions/apply-coupon
 // @Summary      Apply coupon to cart
-// @Description  Apply a coupon code to a cart. Validates constraints (min_order_amount, min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the appropriate discount. Supported types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item.
+// @Description  Apply a coupon code to a cart. Validates constraints (min_order_amount, min_quantity, happy_hour schedule, buy_x_get_y thresholds) and applies the appropriate discount. Supported types: percentage_discount, fixed_discount, buy_x_get_y, happy_hour, points_multiplier, bundle_price, free_item, bucket_combo.
 // @Tags         promotions
 // @Accept       json
 // @Produce      json
@@ -528,4 +568,23 @@ func promoStrDeref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func parsePromotionTimestamp(s *string) (pgtype.Timestamp, error) {
+	if s == nil || *s == "" {
+		return pgtype.Timestamp{Valid: false}, nil
+	}
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+	for _, fmtStr := range formats {
+		if t, err := time.Parse(fmtStr, *s); err == nil {
+			return pgtype.Timestamp{Time: t, Valid: true}, nil
+		}
+	}
+	return pgtype.Timestamp{}, fmt.Errorf("invalid timestamp '%s'", *s)
 }

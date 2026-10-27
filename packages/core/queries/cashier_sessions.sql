@@ -37,12 +37,12 @@ SET
     variance         = $4,
     status           = 'closed',
     metadata         = jsonb_set(
-        jsonb_set(metadata, '{closing_note}', to_jsonb($5::text)),
+        jsonb_set(COALESCE(metadata, '{}'::jsonb) || COALESCE($7::jsonb, '{}'::jsonb), '{closing_note}', to_jsonb($5::text)),
         '{closed_by}', to_jsonb($6::bigint)
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, session_number, opening_time, closing_time, variance, status;
+RETURNING *;
 
 -- name: GetSessionSummary :one
 SELECT 
@@ -56,7 +56,14 @@ SELECT
     cs.variance,
     COUNT(t.id) AS transaction_count,
     COALESCE(SUM(t.total_amount), 0) AS total_sales,
-    COALESCE(SUM(t.total_amount), 0) AS cash_sales,
+    COALESCE((
+        SELECT SUM(p.amount)
+        FROM pos_payments p
+        JOIN pos_transactions pt ON pt.id = p.transaction_id
+        WHERE pt.cashier_session_id = cs.id
+          AND pt.status = 'completed'
+          AND LOWER(p.payment_method) = 'cash'
+    ), 0) AS cash_sales,
     COALESCE(SUM(t.discount_amount), 0) AS total_discounts_given
 FROM cashier_sessions cs
 LEFT JOIN pos_transactions t 
@@ -80,12 +87,12 @@ SET
     expected_balance = COALESCE(expected_balance, opening_balance),
     status           = 'closed',
     metadata         = jsonb_set(
-        jsonb_set(COALESCE(metadata, '{}'), '{closing_note}', to_jsonb($3::text)),
+        jsonb_set(COALESCE(metadata, '{}'::jsonb) || COALESCE($5::jsonb, '{}'::jsonb), '{closing_note}', to_jsonb($3::text)),
         '{closed_by}', to_jsonb($4::bigint)
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, session_number, opening_time, closing_time, expected_balance, variance, status;
+RETURNING *;
 
 -- name: GetCashierSessions :many
 SELECT 

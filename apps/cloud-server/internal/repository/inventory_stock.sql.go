@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -147,19 +148,19 @@ INSERT INTO inventory_stock (
 `
 
 type CreateInventoryStockParams struct {
-	ProductID         int32          `json:"product_id"`
-	ProductVariantID  pgtype.Int4    `json:"product_variant_id"`
-	StoreID           int32          `json:"store_id"`
-	StorageLocationID pgtype.Int4    `json:"storage_location_id"`
-	QuantityOnHand    pgtype.Numeric `json:"quantity_on_hand"`
-	QuantityAllocated pgtype.Numeric `json:"quantity_allocated"`
-	QuantityAvailable pgtype.Numeric `json:"quantity_available"`
-	QuantityOnOrder   pgtype.Numeric `json:"quantity_on_order"`
-	QuantityInTransit pgtype.Numeric `json:"quantity_in_transit"`
-	ReorderLevel      pgtype.Numeric `json:"reorder_level"`
-	ReorderQuantity   pgtype.Numeric `json:"reorder_quantity"`
-	MaxStockLevel     pgtype.Numeric `json:"max_stock_level"`
-	Metadata          []byte         `json:"metadata"`
+	ProductID         int32           `json:"product_id"`
+	ProductVariantID  pgtype.Int4     `json:"product_variant_id"`
+	StoreID           int32           `json:"store_id"`
+	StorageLocationID pgtype.Int4     `json:"storage_location_id"`
+	QuantityOnHand    pgtype.Numeric  `json:"quantity_on_hand"`
+	QuantityAllocated pgtype.Numeric  `json:"quantity_allocated"`
+	QuantityAvailable pgtype.Numeric  `json:"quantity_available"`
+	QuantityOnOrder   pgtype.Numeric  `json:"quantity_on_order"`
+	QuantityInTransit pgtype.Numeric  `json:"quantity_in_transit"`
+	ReorderLevel      pgtype.Numeric  `json:"reorder_level"`
+	ReorderQuantity   pgtype.Numeric  `json:"reorder_quantity"`
+	MaxStockLevel     pgtype.Numeric  `json:"max_stock_level"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -692,7 +693,7 @@ type UpdateInventoryStockParams struct {
 	ReorderQuantity   pgtype.Numeric   `json:"reorder_quantity"`
 	MaxStockLevel     pgtype.Numeric   `json:"max_stock_level"`
 	LastCountedAt     pgtype.Timestamp `json:"last_counted_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) UpdateInventoryStock(ctx context.Context, arg UpdateInventoryStockParams) (InventoryStock, error) {

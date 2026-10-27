@@ -23,6 +23,11 @@ type Config struct {
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
+
+	// Release & Update Configuration
+	ReleaseAPISecret   string // Secret token for CI/CD or admin to upload new builds
+	AppUpdateClientKey string // Secret token embedded in POS to check/download updates
+	UpdatesStorageDir  string // Local filesystem directory where update binaries are stored
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -74,10 +79,13 @@ func LoadConfig(env string) *Config {
 		DevUserLogin:  getEnv("DEV_USER_LOGIN", "dev_user"),
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
 		PGDumpPath:    getEnv("PG_DUMP_PATH", "pg_dump"),
-		ZatcaEnabled:  getEnv("ZATCA_ENABLED", "false") == "true",
-		ZatcaEnv:      zatcaEnv,
-		ZatcaBaseURL:  zatcaBaseURL,
-		ZatcaOrgVATID: getEnv("ZATCA_ORG_VAT_ID", ""),
+		ZatcaEnabled:       getEnv("ZATCA_ENABLED", "false") == "true",
+		ZatcaEnv:           zatcaEnv,
+		ZatcaBaseURL:       zatcaBaseURL,
+		ZatcaOrgVATID:      getEnv("ZATCA_ORG_VAT_ID", ""),
+		ReleaseAPISecret:   getEnv("RELEASE_API_SECRET", "nembus-release-secret-change-in-prod"),
+		AppUpdateClientKey: getEnv("APP_UPDATE_CLIENT_KEY", "nembus-pos-update-client-key-default"),
+		UpdatesStorageDir:  getEnv("UPDATES_STORAGE_DIR", "uploads/releases"),
 	}
 }
 

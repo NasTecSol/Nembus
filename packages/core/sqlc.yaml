@@ -1,7 +1,9 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    schema: "./migrations"
+    schema:
+      - "./db/schema"
+      - "./db/views_functions"
     queries: "./queries"
     gen:
       go:
@@ -20,3 +22,6 @@ sql:
               type: "Time"
           - db_type: "jsonb"
             go_type: "encoding/json.RawMessage"
+          - db_type: "jsonb"
+            go_type: "encoding/json.RawMessage"
+            nullable: true

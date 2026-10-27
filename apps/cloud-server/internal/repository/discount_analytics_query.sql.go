@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -35,21 +36,21 @@ INSERT INTO discount_analytics (
 `
 
 type CreateDiscountAnalyticsParams struct {
-	OrganizationID           int32          `json:"organization_id"`
-	StoreID                  pgtype.Int4    `json:"store_id"`
-	CashierID                pgtype.Int4    `json:"cashier_id"`
-	ProductID                pgtype.Int4    `json:"product_id"`
-	DiscountType             pgtype.Text    `json:"discount_type"`
-	Date                     pgtype.Date    `json:"date"`
-	Month                    pgtype.Int4    `json:"month"`
-	Quarter                  pgtype.Int4    `json:"quarter"`
-	Year                     pgtype.Int4    `json:"year"`
-	TotalDiscountsGiven      pgtype.Numeric `json:"total_discounts_given"`
-	TransactionsWithDiscount pgtype.Int4    `json:"transactions_with_discount"`
-	TotalTransactions        pgtype.Int4    `json:"total_transactions"`
-	DiscountPercentage       pgtype.Numeric `json:"discount_percentage"`
-	RevenueImpact            pgtype.Numeric `json:"revenue_impact"`
-	Metadata                 []byte         `json:"metadata"`
+	OrganizationID           int32           `json:"organization_id"`
+	StoreID                  pgtype.Int4     `json:"store_id"`
+	CashierID                pgtype.Int4     `json:"cashier_id"`
+	ProductID                pgtype.Int4     `json:"product_id"`
+	DiscountType             pgtype.Text     `json:"discount_type"`
+	Date                     pgtype.Date     `json:"date"`
+	Month                    pgtype.Int4     `json:"month"`
+	Quarter                  pgtype.Int4     `json:"quarter"`
+	Year                     pgtype.Int4     `json:"year"`
+	TotalDiscountsGiven      pgtype.Numeric  `json:"total_discounts_given"`
+	TransactionsWithDiscount pgtype.Int4     `json:"transactions_with_discount"`
+	TotalTransactions        pgtype.Int4     `json:"total_transactions"`
+	DiscountPercentage       pgtype.Numeric  `json:"discount_percentage"`
+	RevenueImpact            pgtype.Numeric  `json:"revenue_impact"`
+	Metadata                 json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateDiscountAnalytics(ctx context.Context, arg CreateDiscountAnalyticsParams) (DiscountAnalytic, error) {
@@ -655,13 +656,13 @@ RETURNING id, organization_id, store_id, cashier_id, product_id, discount_type, 
 `
 
 type UpdateDiscountAnalyticsParams struct {
-	ID                       int32          `json:"id"`
-	TotalDiscountsGiven      pgtype.Numeric `json:"total_discounts_given"`
-	TransactionsWithDiscount pgtype.Int4    `json:"transactions_with_discount"`
-	TotalTransactions        pgtype.Int4    `json:"total_transactions"`
-	DiscountPercentage       pgtype.Numeric `json:"discount_percentage"`
-	RevenueImpact            pgtype.Numeric `json:"revenue_impact"`
-	Metadata                 []byte         `json:"metadata"`
+	ID                       int32           `json:"id"`
+	TotalDiscountsGiven      pgtype.Numeric  `json:"total_discounts_given"`
+	TransactionsWithDiscount pgtype.Int4     `json:"transactions_with_discount"`
+	TotalTransactions        pgtype.Int4     `json:"total_transactions"`
+	DiscountPercentage       pgtype.Numeric  `json:"discount_percentage"`
+	RevenueImpact            pgtype.Numeric  `json:"revenue_impact"`
+	Metadata                 json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateDiscountAnalytics(ctx context.Context, arg UpdateDiscountAnalyticsParams) (DiscountAnalytic, error) {

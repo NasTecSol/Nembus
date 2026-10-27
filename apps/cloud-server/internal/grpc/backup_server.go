@@ -91,13 +91,96 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 		return status.Errorf(codes.NotFound, "tenant not found: %v", err)
 	}
 
+	// Tables whose data should be excluded from the backup dump to keep POS offline sync lean.
+	// The DDL/schema for these tables is still dumped, ensuring all relations, triggers,
+	// and constraints exist without bloating POS machines with historical transactional data.
+	tablesToExcludeData := []string{
+		// POS & Sales transactions
+		"pos_transactions",
+		"pos_transaction_lines",
+		"pos_payments",
+		"sales_orders",
+		"sales_order_lines",
+		"sales_orders_v2",
+		"sales_order_lines_v2",
+		"order_status_history",
+		"order_fulfillments",
+		"order_fulfillment_items",
+
+		// Carts & drafts
+		"carts",
+		"cart_items",
+		"cart_activity_log",
+		"draft_cart_templates",
+		"draft_cart_template_items",
+
+		// Invoices & Billing
+		"invoices",
+		"invoice_lines",
+		"invoice_payments",
+		"invoice_status_history",
+
+		// Returns & Quotes
+		"sales_returns",
+		"sales_return_lines",
+		"quotes",
+		"quote_lines",
+
+		// Purchasing & Stock transfers
+		"purchase_orders",
+		"purchase_order_lines",
+		"goods_receipt_notes",
+		"goods_receipt_note_items",
+		"transfer_requests",
+		"transfer_request_items",
+
+		// Operations, stock counts & history
+		"stock_movements",
+		"stock_counts",
+		"stock_count_lines",
+		"stock_reservations",
+		"waste_logs",
+		"cashier_sessions",
+		"kiosk_sessions",
+
+		// Restaurant order transactions
+		"restaurant_orders",
+		"restaurant_order_items",
+
+		// General ledger journal
+		"journal_entries",
+		"journal_lines",
+
+		// Audit, telemetry & compliance chain
+		"audit_logs",
+		"zatca_document_chain",
+		"sync_watermarks",
+
+		// Analytics aggregates
+		"sales_analytics",
+		"purchase_analytics",
+		"inventory_analytics",
+		"profit_loss_analytics",
+		"discount_analytics",
+
+		// Serial numbers tracking
+		"product_serial_numbers",
+	}
+
 	// 4. Build pg_dump command
+	// Export complete schema DDL + data ONLY for master data required for POS offline operations
 	var pgArgs []string
 	if req.Compressed {
-		pgArgs = []string{"--no-password", "--format=custom", dsn}
+		pgArgs = []string{"--no-password", "--format=custom"}
 	} else {
-		pgArgs = []string{"--no-password", "--format=plain", dsn}
+		pgArgs = []string{"--no-password", "--format=plain"}
 	}
+
+	for _, tbl := range tablesToExcludeData {
+		pgArgs = append(pgArgs, fmt.Sprintf("--exclude-table-data=%s", tbl))
+		pgArgs = append(pgArgs, fmt.Sprintf("--exclude-table-data=public.%s", tbl))
+	}
+	pgArgs = append(pgArgs, dsn)
 
 	cmd := exec.CommandContext(ctx, s.pgDumpPath, pgArgs...)
 	stdout, err := cmd.StdoutPipe()

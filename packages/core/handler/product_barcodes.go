@@ -67,6 +67,7 @@ func (h *ProductBarcodeHandler) CreateProductBarcode(c *gin.Context) {
 	arg := repository.CreateProductBarcodeParams{
 		ProductID:        req.ProductID,
 		ProductVariantID: int4Ptr(req.ProductVariantID),
+		UomID:            int4Ptr(req.UOMID),
 		Barcode:          req.Barcode,
 		BarcodeType:      textPtr(req.BarcodeType),
 		IsPrimary:        boolPtr(req.IsPrimary),
@@ -279,6 +280,7 @@ func (h *ProductBarcodeHandler) UpdateProductBarcode(c *gin.Context) {
 
 	arg := repository.UpdateProductBarcodeParams{
 		ID:          int32(id),
+		UomID:       int4Ptr(req.UOMID),
 		BarcodeType: textPtr(req.BarcodeType),
 		IsPrimary:   boolPtr(req.IsPrimary),
 		Metadata:    metaBytes,

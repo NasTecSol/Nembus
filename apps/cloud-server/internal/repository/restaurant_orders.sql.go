@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -37,7 +38,7 @@ type CreateRestaurantOrderParams struct {
 	ChangeGiven      pgtype.Numeric   `json:"change_given"`
 	Notes            pgtype.Text      `json:"notes"`
 	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 	OrderedAt        pgtype.Timestamp `json:"ordered_at"`
 }
 
@@ -277,7 +278,7 @@ type UpdateRestaurantOrderParams struct {
 	ConfirmedAt      pgtype.Timestamp `json:"confirmed_at"`
 	ServedAt         pgtype.Timestamp `json:"served_at"`
 	PaidAt           pgtype.Timestamp `json:"paid_at"`
-	Metadata         []byte           `json:"metadata"`
+	Metadata         json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) UpdateRestaurantOrder(ctx context.Context, arg UpdateRestaurantOrderParams) (RestaurantOrder, error) {

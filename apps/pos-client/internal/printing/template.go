@@ -332,3 +332,189 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 
 	return buf.Bytes()
 }
+
+// ─── SAMA mada Receipt Builder ───────────────────────────────────────────────
+
+// MadaReceiptData holds all fields required by SAMA POS v6.0.1 Appendix I
+type MadaReceiptData struct {
+	IsCustomerCopy bool    `json:"is_customer_copy"`
+	MerchantNameAr string  `json:"merchant_name_ar"`
+	MerchantNameEn string  `json:"merchant_name_en"`
+	AddressAr      string  `json:"address_ar"`
+	AddressEn      string  `json:"address_en"`
+	Phone          string  `json:"phone"`
+	DateTime       string  `json:"date_time"` // DD/MM/YYYY HH:MM:SS
+	BankID         string  `json:"bank_id"`
+	TerminalID     string  `json:"terminal_id"`
+	MerchantID     string  `json:"merchant_id"`
+	MCC            string  `json:"mcc"`
+	STAN           string  `json:"stan"`
+	RRN            string  `json:"rrn"`
+	SchemeName     string  `json:"scheme_name"` // mada, Visa, MasterCard, etc.
+	TxTypeEn       string  `json:"tx_type_en"`   // PURCHASE, REFUND
+	TxTypeAr       string  `json:"tx_type_ar"`   // شراء, استرجاع
+	MaskedCard     string  `json:"masked_card"`
+	ExpiryDate     string  `json:"expiry_date"` // MM/YY
+	Amount         float64 `json:"amount"`
+	CashbackAmount float64 `json:"cashback_amount"`
+	StatusEn       string  `json:"status_en"`       // APPROVED, DECLINED
+	StatusAr       string  `json:"status_ar"`       // مقبولة, مرفوضة
+	ApprovalCode   string  `json:"approval_code"`   // Auth code
+	VerificationEn string  `json:"verification_en"` // CARDHOLDER PIN VERIFIED, NO VERIFICATION REQUIRED
+	VerificationAr string  `json:"verification_ar"` // تم التحقق من الرقم السري للعميل
+	CardEntryMode  string  `json:"card_entry_mode"` // DIPPED, CONTACTLESS
+	AID            string  `json:"aid"`
+	TVR            string  `json:"tvr"`
+	TSI            string  `json:"tsi"`
+	Cryptogram     string  `json:"cryptogram"`
+}
+
+// BuildMadaReceipt formats an ESC/POS byte stream for a SAMA mada compliant transaction receipt
+func BuildMadaReceipt(d MadaReceiptData) []byte {
+	var buf bytes.Buffer
+	w := func(b []byte) { buf.Write(b) }
+	p := func(s string) { buf.WriteString(s) }
+	nl := func() { buf.WriteByte(LF) }
+
+	w(CmdInit())
+
+	// 1. Merchant Header
+	w(CmdAlign("center"))
+	if d.MerchantNameAr != "" {
+		w(CmdBold(true))
+		p(d.MerchantNameAr + "\n")
+		w(CmdBold(false))
+	}
+	if d.MerchantNameEn != "" {
+		w(CmdBold(true))
+		p(d.MerchantNameEn + "\n")
+		w(CmdBold(false))
+	}
+	if d.AddressAr != "" {
+		p(d.AddressAr + "\n")
+	}
+	if d.AddressEn != "" {
+		p(d.AddressEn + "\n")
+	}
+	if d.Phone != "" {
+		p("TEL: " + d.Phone + "\n")
+	}
+	w(Divider())
+
+	// 2. Terminal & Audit Metadata
+	w(CmdAlign("left"))
+	if d.DateTime != "" {
+		p(d.DateTime + "\n")
+	}
+	w(Col2("TID: "+d.TerminalID, "MID: "+d.MerchantID, COLS))
+	w(Col2("MCC: "+d.MCC, "STAN: "+d.STAN, COLS))
+	if d.BankID != "" || d.RRN != "" {
+		w(Col2("BANK: "+d.BankID, "RRN: "+d.RRN, COLS))
+	}
+	w(Divider())
+
+	// 3. Scheme & Transaction Type
+	w(CmdAlign("center"))
+	w(CmdBold(true))
+	schemeDisplay := d.SchemeName
+	if schemeDisplay == "" {
+		schemeDisplay = "mada / SPAN"
+	}
+	p("الشبكة السعودية للمدفوعات\n")
+	p(schemeDisplay + "\n")
+	nl()
+
+	txTypeAr := d.TxTypeAr
+	if txTypeAr == "" {
+		txTypeAr = "شراء"
+	}
+	txTypeEn := d.TxTypeEn
+	if txTypeEn == "" {
+		txTypeEn = "PURCHASE"
+	}
+	p(txTypeAr + " / " + txTypeEn + "\n")
+	w(CmdBold(false))
+	w(Divider())
+
+	// 4. Card Details
+	w(CmdAlign("left"))
+	if d.MaskedCard != "" {
+		w(Col2(d.MaskedCard, d.ExpiryDate, COLS))
+	}
+	w(Divider())
+
+	// 5. Amount
+	w(CmdAlign("center"))
+	p("مبلغ الشراء / PURCHASE AMOUNT\n")
+	w(CmdDoubleSize(true))
+	w(CmdBold(true))
+	p(fmt.Sprintf("SAR %.2f\n", d.Amount))
+	w(CmdDoubleSize(false))
+	w(CmdBold(false))
+
+	if d.CashbackAmount > 0 {
+		p(fmt.Sprintf("مبلغ نقد / NAQD: SAR %.2f\n", d.CashbackAmount))
+		p(fmt.Sprintf("المجموع / TOTAL: SAR %.2f\n", d.Amount+d.CashbackAmount))
+	}
+	w(Divider())
+
+	// 6. Approval Status & Verification
+	w(CmdAlign("center"))
+	w(CmdBold(true))
+	statusAr := d.StatusAr
+	if statusAr == "" {
+		statusAr = "مقبولة"
+	}
+	statusEn := d.StatusEn
+	if statusEn == "" {
+		statusEn = "APPROVED"
+	}
+	p(statusAr + " / " + statusEn + "\n")
+	w(CmdBold(false))
+
+	if d.VerificationAr != "" || d.VerificationEn != "" {
+		if d.VerificationAr != "" {
+			p(d.VerificationAr + "\n")
+		}
+		if d.VerificationEn != "" {
+			p(d.VerificationEn + "\n")
+		}
+	}
+	if d.ApprovalCode != "" {
+		p("رمز الموافقة / APPROVAL CODE: " + d.ApprovalCode + "\n")
+	}
+	w(Divider())
+
+	// 7. SAMA Retain Notice & Copy indicator
+	w(CmdAlign("center"))
+	p("شكرًا لاستخدامكم مدى\n")
+	p("THANK YOU FOR USING mada\n")
+	p("يرجى الاحتفاظ بالإيصال\n")
+	p("PLEASE RETAIN RECEIPT\n")
+	nl()
+
+	w(CmdBold(true))
+	if d.IsCustomerCopy {
+		p("** نسخة العميل / CUSTOMER COPY **\n")
+	} else {
+		p("** نسخة التاجر / RETAILER COPY **\n")
+	}
+	w(CmdBold(false))
+
+	// 8. EMV Security Line
+	if d.CardEntryMode != "" || d.AID != "" {
+		w(Divider())
+		w(CmdAlign("left"))
+		emvLine1 := fmt.Sprintf("%s %s %s", d.CardEntryMode, d.AID, d.TVR)
+		p(strings.TrimSpace(emvLine1) + "\n")
+		if d.TSI != "" || d.Cryptogram != "" {
+			emvLine2 := fmt.Sprintf("TSI: %s AC: %s", d.TSI, d.Cryptogram)
+			p(strings.TrimSpace(emvLine2) + "\n")
+		}
+	}
+
+	w(CmdFeedLines(3))
+	w(CmdCut())
+	return buf.Bytes()
+}
+

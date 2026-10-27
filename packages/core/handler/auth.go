@@ -75,3 +75,46 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Respond with token
 	c.JSON(response.StatusCode, response)
 }
+
+// AuthorizeAction handles POST /api/auth/authorize-action
+// @Summary      Supervisor override authorization
+// @Description  A supervisor authenticates with their own credentials and authorizes a specific
+//
+//	action for the current cashier session. Returns a short-lived authorization token
+//	(5-minute TTL) that must be sent in the X-Authorization-Token header when calling
+//	the restricted endpoint (e.g. POST /api/pos/returns).
+//
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        x-tenant-id  header    string                  true  "Tenant identifier"
+// @Param        request      body      AuthorizeActionRequest  true  "Supervisor credentials and permission code"
+// @Success      200          {object}  AuthorizeActionResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      403          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/auth/authorize-action [post]
+func (h *AuthHandler) AuthorizeAction(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req AuthorizeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	resp := h.useCase.AuthorizeAction(
+		c.Request.Context(),
+		req.SupervisorLogin,
+		req.SupervisorPassword,
+		req.PermissionCode,
+		req.CashierID,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+

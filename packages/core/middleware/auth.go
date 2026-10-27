@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,9 @@ import (
 )
 
 const UserIDKey contextKey = "user_id"
+const OrgIDKey contextKey = "organization_id"
 const ClaimsKey contextKey = "jwt_claims"
+
 
 type M2MClient struct {
 	ClientID   string   `json:"client_id"`
@@ -126,23 +129,24 @@ func GenerateM2MToken(clientID, clientName, tenantID string, scopes []string, du
 // JWTAuthMiddleware validates JWT tokens from the Authorization header
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get the Authorization header
+		// Get the Authorization header or token query parameter (useful for WebSocket connections)
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		var tokenString string
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+		if tokenString == "" {
+			tokenString = c.Query("token")
+		}
+
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or token parameter required"})
 			c.Abort()
 			return
 		}
-
-		// Check if it starts with "Bearer "
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header must be in format: Bearer <token>"})
-			c.Abort()
-			return
-		}
-
-		tokenString := parts[1]
 
 		// Get JWT secret from environment
 		jwtSecret := os.Getenv("JWT_SECRET")
@@ -244,6 +248,22 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			if userID, ok := claims["user_id"].(string); ok {
 				c.Set(string(UserIDKey), userID)
 			}
+			if orgID, ok := claims["organization_id"]; ok {
+				switch v := orgID.(type) {
+				case float64:
+					c.Set(string(OrgIDKey), int32(v))
+				case int32:
+					c.Set(string(OrgIDKey), v)
+				case int:
+					c.Set(string(OrgIDKey), int32(v))
+				case int64:
+					c.Set(string(OrgIDKey), int32(v))
+				case string:
+					if id, err := strconv.ParseInt(v, 10, 32); err == nil {
+						c.Set(string(OrgIDKey), int32(id))
+					}
+				}
+			}
 		}
 
 		c.Set(string(ClaimsKey), claims)
@@ -262,6 +282,16 @@ func GetUserIDFromContext(c *gin.Context) (string, bool) {
 	return userIDStr, ok
 }
 
+// GetOrganizationIDFromContext extracts organization ID from Gin context
+func GetOrganizationIDFromContext(c *gin.Context) (int32, bool) {
+	orgID, exists := c.Get(string(OrgIDKey))
+	if !exists {
+		return 0, false
+	}
+	orgIDInt, ok := orgID.(int32)
+	return orgIDInt, ok
+}
+
 // GetClaimsFromContext extracts JWT claims from Gin context
 func GetClaimsFromContext(c *gin.Context) (jwt.MapClaims, bool) {
 	claims, exists := c.Get(string(ClaimsKey))
@@ -272,8 +302,8 @@ func GetClaimsFromContext(c *gin.Context) (jwt.MapClaims, bool) {
 	return claimsMap, ok
 }
 
-// GenerateJWTToken generates a JWT token for a user
-func GenerateJWTToken(userID string, userLogin string) (string, error) {
+// GenerateJWTToken generates a JWT token for a user with optional organization ID
+func GenerateJWTToken(userID string, userLogin string, orgID ...int32) (string, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		return "", errors.New("JWT_SECRET not configured")
@@ -282,12 +312,18 @@ func GenerateJWTToken(userID string, userLogin string) (string, error) {
 	// Set token expiration (24 hours)
 	expirationTime := time.Now().Add(24 * time.Hour)
 
+	var organizationID int32
+	if len(orgID) > 0 {
+		organizationID = orgID[0]
+	}
+
 	// Create claims
 	claims := jwt.MapClaims{
-		"user_id":    userID,
-		"user_login": userLogin,
-		"exp":        expirationTime.Unix(),
-		"iat":        time.Now().Unix(),
+		"user_id":         userID,
+		"user_login":      userLogin,
+		"organization_id": organizationID,
+		"exp":             expirationTime.Unix(),
+		"iat":             time.Now().Unix(),
 	}
 
 	// Create token
@@ -307,3 +343,181 @@ func GenerateJWTToken(userID string, userLogin string) (string, error) {
 func GenerateDevToken(userID, userLogin string) (string, error) {
 	return GenerateJWTToken(userID, userLogin)
 }
+
+// GenerateAuthorizationToken mints a short-lived JWT for supervisor override actions.
+// The token is scoped to a specific permission code and optionally to a cashier ID.
+// Default expiry is 5 minutes — enough time for the cashier to complete the action.
+func GenerateAuthorizationToken(supervisorID int32, supervisorLogin, permissionCode string, cashierID *int32) (string, error) {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return "", errors.New("JWT_SECRET not configured")
+	}
+
+	expiresAt := time.Now().Add(5 * time.Minute)
+
+	claims := jwt.MapClaims{
+		"is_authorization_token": true,
+		"authorized_by_user_id":  supervisorID,
+		"authorized_by_login":    supervisorLogin,
+		"permission_code":        permissionCode,
+		"exp":                    expiresAt.Unix(),
+		"iat":                    time.Now().Unix(),
+	}
+	if cashierID != nil {
+		claims["cashier_id"] = *cashierID
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret))
+}
+
+// RequireAuthorizationToken returns a Gin middleware that enforces the presence of a valid
+// supervisor authorization token in the X-Authorization-Token header.
+// It checks:
+//  1. The token is a valid JWT signed with JWT_SECRET
+//  2. The claim "is_authorization_token" is true
+//  3. The claim "permission_code" matches the required code
+//  4. The token has not expired
+//
+// On success it stores "authorized_by_user_id" and "authorized_by_login" in the Gin context.
+func RequireAuthorizationToken(permissionCode string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := c.GetHeader("X-Authorization-Token")
+		if tokenString == "" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "supervisor authorization required — provide X-Authorization-Token header",
+			})
+			c.Abort()
+			return
+		}
+
+		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT_SECRET not configured"})
+			c.Abort()
+			return
+		}
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("unexpected signing method")
+			}
+			return []byte(jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired authorization token"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "malformed authorization token"})
+			c.Abort()
+			return
+		}
+
+		// Must be an authorization token, not a regular user session token
+		isAuthToken, _ := claims["is_authorization_token"].(bool)
+		if !isAuthToken {
+			c.JSON(http.StatusForbidden, gin.H{"error": "token is not a supervisor authorization token"})
+			c.Abort()
+			return
+		}
+
+		// Permission code in the token must match the required code for this route
+		tokenPermCode, _ := claims["permission_code"].(string)
+		if tokenPermCode != permissionCode {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":             "authorization token does not cover the required permission",
+				"required":          permissionCode,
+				"token_covers":      tokenPermCode,
+			})
+			c.Abort()
+			return
+		}
+
+		// Inject supervisor context for downstream handlers / audit logging
+		if userID, ok := claims["authorized_by_user_id"].(float64); ok {
+			c.Set("authorized_by_user_id", int32(userID))
+		}
+		if login, ok := claims["authorized_by_login"].(string); ok {
+			c.Set("authorized_by_login", login)
+		}
+		if cashierID, ok := claims["cashier_id"].(float64); ok {
+			c.Set("authorization_cashier_id", int32(cashierID))
+		}
+
+		c.Next()
+	}
+}
+
+// AgentAPIKeyMiddleware authenticates automated agents (such as sap-agent)
+// using AGENT_API_KEY, MIGRATION_API_KEY, x-api-key header, or Bearer JWT token with Migrator/auto-user identity.
+func AgentAPIKeyMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := c.GetHeader("x-api-key")
+		if apiKey == "" {
+			apiKey = c.GetHeader("X-Agent-Key")
+		}
+
+		authHeader := c.GetHeader("Authorization")
+		bearerToken := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			bearerToken = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		expectedKey := os.Getenv("AGENT_API_KEY")
+		if expectedKey == "" {
+			expectedKey = os.Getenv("MIGRATION_API_KEY")
+		}
+
+		// 1. Check direct API Key
+		if expectedKey != "" && apiKey != "" && apiKey == expectedKey {
+			c.Set("agent_authenticated", true)
+			c.Set("agent_identity", "sap-agent-system")
+			c.Next()
+			return
+		}
+
+		// 2. Check Bearer Token (JWT for Migrator / auto-user / service user)
+		if bearerToken != "" {
+			jwtSecret := os.Getenv("JWT_SECRET")
+			if jwtSecret != "" {
+				token, err := jwt.Parse(bearerToken, func(token *jwt.Token) (interface{}, error) {
+					if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+						return nil, errors.New("unexpected signing method")
+					}
+					return []byte(jwtSecret), nil
+				})
+
+				if err == nil && token.Valid {
+					if claims, ok := token.Claims.(jwt.MapClaims); ok {
+						c.Set(string(ClaimsKey), claims)
+						if login, ok := claims["user_login"].(string); ok {
+							c.Set("user_login", login)
+						}
+						c.Set("agent_authenticated", true)
+						c.Next()
+						return
+					}
+				}
+			}
+		}
+
+		// 3. Fallback in development mode if no key configured
+		env := os.Getenv("ENV")
+		if expectedKey == "" && (env == "development" || env == "dev" || env == "") {
+			c.Set("agent_authenticated", true)
+			c.Set("agent_identity", "sap-agent-dev")
+			c.Next()
+			return
+		}
+
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized: valid x-api-key or Migrator Bearer token required for agent operations",
+		})
+		c.Abort()
+	}
+}
+

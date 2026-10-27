@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -36,22 +37,22 @@ INSERT INTO purchase_analytics (
 `
 
 type CreatePurchaseAnalyticsParams struct {
-	OrganizationID    int32          `json:"organization_id"`
-	StoreID           pgtype.Int4    `json:"store_id"`
-	SupplierID        pgtype.Int4    `json:"supplier_id"`
-	ProductID         pgtype.Int4    `json:"product_id"`
-	CategoryID        pgtype.Int4    `json:"category_id"`
-	Date              pgtype.Date    `json:"date"`
-	Month             pgtype.Int4    `json:"month"`
-	Quarter           pgtype.Int4    `json:"quarter"`
-	Year              pgtype.Int4    `json:"year"`
-	TotalOrders       pgtype.Int4    `json:"total_orders"`
-	TotalQuantity     pgtype.Numeric `json:"total_quantity"`
-	TotalAmount       pgtype.Numeric `json:"total_amount"`
-	DiscountsReceived pgtype.Numeric `json:"discounts_received"`
-	TaxesPaid         pgtype.Numeric `json:"taxes_paid"`
-	NetAmount         pgtype.Numeric `json:"net_amount"`
-	Metadata          []byte         `json:"metadata"`
+	OrganizationID    int32           `json:"organization_id"`
+	StoreID           pgtype.Int4     `json:"store_id"`
+	SupplierID        pgtype.Int4     `json:"supplier_id"`
+	ProductID         pgtype.Int4     `json:"product_id"`
+	CategoryID        pgtype.Int4     `json:"category_id"`
+	Date              pgtype.Date     `json:"date"`
+	Month             pgtype.Int4     `json:"month"`
+	Quarter           pgtype.Int4     `json:"quarter"`
+	Year              pgtype.Int4     `json:"year"`
+	TotalOrders       pgtype.Int4     `json:"total_orders"`
+	TotalQuantity     pgtype.Numeric  `json:"total_quantity"`
+	TotalAmount       pgtype.Numeric  `json:"total_amount"`
+	DiscountsReceived pgtype.Numeric  `json:"discounts_received"`
+	TaxesPaid         pgtype.Numeric  `json:"taxes_paid"`
+	NetAmount         pgtype.Numeric  `json:"net_amount"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreatePurchaseAnalytics(ctx context.Context, arg CreatePurchaseAnalyticsParams) (PurchaseAnalytic, error) {
@@ -596,14 +597,14 @@ RETURNING id, organization_id, store_id, supplier_id, product_id, category_id, d
 `
 
 type UpdatePurchaseAnalyticsParams struct {
-	ID                int32          `json:"id"`
-	TotalOrders       pgtype.Int4    `json:"total_orders"`
-	TotalQuantity     pgtype.Numeric `json:"total_quantity"`
-	TotalAmount       pgtype.Numeric `json:"total_amount"`
-	DiscountsReceived pgtype.Numeric `json:"discounts_received"`
-	TaxesPaid         pgtype.Numeric `json:"taxes_paid"`
-	NetAmount         pgtype.Numeric `json:"net_amount"`
-	Metadata          []byte         `json:"metadata"`
+	ID                int32           `json:"id"`
+	TotalOrders       pgtype.Int4     `json:"total_orders"`
+	TotalQuantity     pgtype.Numeric  `json:"total_quantity"`
+	TotalAmount       pgtype.Numeric  `json:"total_amount"`
+	DiscountsReceived pgtype.Numeric  `json:"discounts_received"`
+	TaxesPaid         pgtype.Numeric  `json:"taxes_paid"`
+	NetAmount         pgtype.Numeric  `json:"net_amount"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdatePurchaseAnalytics(ctx context.Context, arg UpdatePurchaseAnalyticsParams) (PurchaseAnalytic, error) {

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,11 +20,11 @@ RETURNING id, tenant_name, slug, db_conn_str, is_active, settings, created_at, u
 `
 
 type CreateTenantParams struct {
-	TenantName string      `json:"tenant_name"`
-	Slug       string      `json:"slug"`
-	DbConnStr  string      `json:"db_conn_str"`
-	IsActive   pgtype.Bool `json:"is_active"`
-	Settings   []byte      `json:"settings"`
+	TenantName string          `json:"tenant_name"`
+	Slug       string          `json:"slug"`
+	DbConnStr  string          `json:"db_conn_str"`
+	IsActive   pgtype.Bool     `json:"is_active"`
+	Settings   json.RawMessage `json:"settings"`
 }
 
 func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error) {
@@ -168,12 +169,12 @@ RETURNING id, tenant_name, slug, db_conn_str, is_active, settings, created_at, u
 `
 
 type UpdateTenantParams struct {
-	ID         uuid.UUID   `json:"id"`
-	TenantName string      `json:"tenant_name"`
-	Slug       string      `json:"slug"`
-	DbConnStr  string      `json:"db_conn_str"`
-	IsActive   pgtype.Bool `json:"is_active"`
-	Settings   []byte      `json:"settings"`
+	ID         uuid.UUID       `json:"id"`
+	TenantName string          `json:"tenant_name"`
+	Slug       string          `json:"slug"`
+	DbConnStr  string          `json:"db_conn_str"`
+	IsActive   pgtype.Bool     `json:"is_active"`
+	Settings   json.RawMessage `json:"settings"`
 }
 
 func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error) {

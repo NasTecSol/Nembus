@@ -7,7 +7,7 @@ INSERT INTO goods_receipt_notes (
     organization_id,
     grn_number,
     purchase_order_id,
-    supplier_id,
+    partners_id,
     store_id,
     received_by,
     receipt_date,
@@ -44,12 +44,12 @@ SELECT * FROM goods_receipt_notes WHERE id = $1;
 -- name: GetGoodsReceiptNoteWithDetails :one
 SELECT 
     grn.*,
-    sup.name AS supplier_name,
+    bp.name AS supplier_name,
     st.name AS store_name,
     u.username AS received_by_name,
     po.po_number
 FROM goods_receipt_notes grn
-JOIN suppliers sup ON grn.supplier_id = sup.id
+JOIN business_partners bp ON grn.partners_id = bp.id
 JOIN stores st ON grn.store_id = st.id
 LEFT JOIN users u ON grn.received_by = u.id
 LEFT JOIN purchase_orders po ON grn.purchase_order_id = po.id
@@ -66,28 +66,157 @@ JOIN products p ON grni.product_id = p.id
 LEFT JOIN units_of_measure uom ON grni.uom_id = uom.id
 WHERE grni.grn_id = $1;
 
+-- name: CountGoodsReceiptNotesByOrganization :one
+SELECT COUNT(*) FROM goods_receipt_notes
+WHERE organization_id = $1;
+
 -- name: ListGoodsReceiptNotesByOrganization :many
 SELECT 
     grn.*,
-    sup.name AS supplier_name,
+    bp.name AS supplier_name,
     st.name AS store_name
 FROM goods_receipt_notes grn
-JOIN suppliers sup ON grn.supplier_id = sup.id
+JOIN business_partners bp ON grn.partners_id = bp.id
 JOIN stores st ON grn.store_id = st.id
 WHERE grn.organization_id = $1
 ORDER BY grn.created_at DESC
 LIMIT $2 OFFSET $3;
 
+-- name: CountGoodsReceiptNotesByPurchaseOrder :one
+SELECT COUNT(*) FROM goods_receipt_notes
+WHERE purchase_order_id = $1;
+
 -- name: ListGoodsReceiptNotesByPurchaseOrder :many
 SELECT 
     grn.*,
-    sup.name AS supplier_name,
+    bp.name AS supplier_name,
     st.name AS store_name
 FROM goods_receipt_notes grn
-JOIN suppliers sup ON grn.supplier_id = sup.id
+JOIN business_partners bp ON grn.partners_id = bp.id
 JOIN stores st ON grn.store_id = st.id
 WHERE grn.purchase_order_id = $1
-ORDER BY grn.created_at DESC;
+ORDER BY grn.created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: ListGoodsReceiptNotes :many
+SELECT 
+    grn.id,
+    grn.organization_id,
+    grn.grn_number,
+    grn.purchase_order_id,
+    grn.partners_id,
+    grn.store_id,
+    grn.received_by,
+    grn.receipt_date,
+    grn.delivery_note_number,
+    grn.status,
+    grn.notes,
+    grn.metadata,
+    grn.created_at,
+    grn.updated_at,
+    bp.name AS supplier_name,
+    bp.code AS supplier_code,
+    st.name AS store_name,
+    po.po_number,
+    u.username AS received_by_name,
+    COUNT(grni.id) AS item_count,
+    COALESCE(SUM(grni.quantity_received), 0)::numeric AS total_received_quantity
+FROM goods_receipt_notes grn
+JOIN business_partners bp ON grn.partners_id = bp.id
+JOIN stores st ON grn.store_id = st.id
+LEFT JOIN users u ON grn.received_by = u.id
+LEFT JOIN purchase_orders po ON grn.purchase_order_id = po.id
+LEFT JOIN goods_receipt_note_items grni ON grni.grn_id = grn.id
+WHERE (sqlc.narg('organization_id')::int IS NULL OR grn.organization_id = sqlc.narg('organization_id'))
+  AND (sqlc.narg('store_id')::int IS NULL OR grn.store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('supplier_id')::int IS NULL OR grn.partners_id = sqlc.narg('supplier_id'))
+  AND (sqlc.narg('purchase_order_id')::int IS NULL OR grn.purchase_order_id = sqlc.narg('purchase_order_id'))
+  AND (sqlc.narg('status')::text IS NULL OR grn.status = sqlc.narg('status'))
+  AND (sqlc.narg('from_date')::date IS NULL OR grn.receipt_date::date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR grn.receipt_date::date <= sqlc.narg('to_date'))
+  AND (
+      sqlc.narg('search')::text IS NULL 
+      OR grn.grn_number ILIKE '%' || sqlc.narg('search')::text || '%'
+      OR grn.delivery_note_number ILIKE '%' || sqlc.narg('search')::text || '%'
+      OR po.po_number ILIKE '%' || sqlc.narg('search')::text || '%'
+      OR bp.name ILIKE '%' || sqlc.narg('search')::text || '%'
+  )
+GROUP BY grn.id, bp.name, bp.code, st.name, po.po_number, u.username
+ORDER BY grn.created_at DESC
+LIMIT sqlc.arg('limit_count') OFFSET sqlc.arg('offset_count');
+
+-- name: CountGoodsReceiptNotes :one
+SELECT COUNT(DISTINCT grn.id)
+FROM goods_receipt_notes grn
+JOIN business_partners bp ON grn.partners_id = bp.id
+LEFT JOIN purchase_orders po ON grn.purchase_order_id = po.id
+WHERE (sqlc.narg('organization_id')::int IS NULL OR grn.organization_id = sqlc.narg('organization_id'))
+  AND (sqlc.narg('store_id')::int IS NULL OR grn.store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('supplier_id')::int IS NULL OR grn.partners_id = sqlc.narg('supplier_id'))
+  AND (sqlc.narg('purchase_order_id')::int IS NULL OR grn.purchase_order_id = sqlc.narg('purchase_order_id'))
+  AND (sqlc.narg('status')::text IS NULL OR grn.status = sqlc.narg('status'))
+  AND (sqlc.narg('from_date')::date IS NULL OR grn.receipt_date::date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::date IS NULL OR grn.receipt_date::date <= sqlc.narg('to_date'))
+  AND (
+      sqlc.narg('search')::text IS NULL 
+      OR grn.grn_number ILIKE '%' || sqlc.narg('search')::text || '%'
+      OR grn.delivery_note_number ILIKE '%' || sqlc.narg('search')::text || '%'
+      OR po.po_number ILIKE '%' || sqlc.narg('search')::text || '%'
+      OR bp.name ILIKE '%' || sqlc.narg('search')::text || '%'
+  );
+
+-- name: UpdateGoodsReceiptNoteHeader :one
+UPDATE goods_receipt_notes
+SET partners_id = $2,
+    store_id = $3,
+    purchase_order_id = $4,
+    received_by = $5,
+    receipt_date = $6,
+    delivery_note_number = $7,
+    notes = $8,
+    metadata = $9,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteGoodsReceiptNoteItems :exec
+DELETE FROM goods_receipt_note_items WHERE grn_id = $1;
+
+-- name: DeleteGoodsReceiptNote :exec
+DELETE FROM goods_receipt_notes WHERE id = $1;
 
 -- name: CallProcessGoodsReceipt :one
 SELECT success::boolean AS success, message::text AS message FROM fn_process_goods_receipt($1);
+
+-- Atomically hold the GRN, create its approval request, and add the submission log.
+-- name: StageGoodsReceiptNoteForApproval :one
+WITH staged_grn AS (
+    UPDATE goods_receipt_notes
+    SET status = 'pending_approval', updated_at = CURRENT_TIMESTAMP
+    WHERE goods_receipt_notes.id = $1
+      AND goods_receipt_notes.organization_id = $2
+      AND goods_receipt_notes.status = 'draft'
+    RETURNING id
+), created_request AS (
+    INSERT INTO approval_requests (
+        organization_id, domain, action, entity_type, entity_id,
+        requested_by, required_permission, summary, payload, submission_notes, metadata
+    )
+    SELECT $2, 'goods_receipt_note', 'post', 'goods_receipt_note', staged_grn.id::text,
+           $3, $4, $5, $6, $7, '{}'::jsonb
+    FROM staged_grn
+    RETURNING id
+), created_log AS (
+    INSERT INTO approval_request_logs (approval_request_id, user_id, action, notes, metadata)
+    SELECT created_request.id, $3, 'submitted', $7, '{}'::jsonb
+    FROM created_request
+    RETURNING id
+)
+SELECT created_request.id
+FROM created_request
+CROSS JOIN (SELECT COUNT(*) FROM created_log) AS ensured_log;
+
+-- name: RejectGoodsReceiptNoteApproval :execrows
+UPDATE goods_receipt_notes
+SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'pending_approval';

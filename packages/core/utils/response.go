@@ -4,11 +4,13 @@ import "github.com/NasTecSol/nembus-core/repository"
 
 // Standard codes
 const (
-	CodeOK       = 200
-	CodeCreated  = 201
-	CodeNotFound = 404
-	CodeBadReq   = 400
-	CodeError    = 500
+	CodeOK           = 200
+	CodeCreated      = 201
+	CodeNotFound     = 404
+	CodeBadReq       = 400
+	CodeUnauthorized = 401
+	CodeForbidden    = 403
+	CodeError        = 500
 )
 
 // NewResponse creates a standard response object

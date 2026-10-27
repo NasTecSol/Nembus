@@ -39,10 +39,10 @@ func (h *TransferRequestsHandler) getRepositoryFromContext(c *gin.Context) *repo
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        x-tenant-id   header    string                              true   "Tenant identifier"
-// @Param        Authorization header    string                              true   "Bearer token"
-// @Param        body          body      usecase.CreateTransferRequestInput  true   "Transfer request payload"
-// @Success      200           {object}  usecase.TransferRequestOutput
+// @Param        x-tenant-id   header    string                    true   "Tenant identifier"
+// @Param        Authorization header    string                    true   "Bearer token"
+// @Param        body          body      CreateTransferRequestDTO  true   "Transfer request payload"
+// @Success      200           {object}  TransferRequestResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
 // @Router       /api/transfer-requests [post]
@@ -73,7 +73,7 @@ func (h *TransferRequestsHandler) CreateTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Success      200           {object}  usecase.TransferRequestOutput
+// @Success      200           {object}  TransferRequestResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      404           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -108,7 +108,7 @@ func (h *TransferRequestsHandler) GetTransferRequest(c *gin.Context) {
 // @Param        organization_id query     int     true   "Organization ID"
 // @Param        limit           query     int     false  "Limit" default(50)
 // @Param        offset          query     int     false  "Offset" default(0)
-// @Success      200             {array}   usecase.TransferRequestOutput
+// @Success      200             {array}   TransferRequestResponse
 // @Failure      400             {object}  ErrorResponse
 // @Failure      500             {object}  ErrorResponse
 // @Router       /api/transfer-requests [get]
@@ -135,6 +135,46 @@ func (h *TransferRequestsHandler) ListTransferRequests(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// UpdateTransferRequest handles PUT /api/transfer-requests/:id
+// @Summary      Update draft transfer request
+// @Description  Update a draft transfer request header and itemized lines
+// @Tags         transfer-requests
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string                    true   "Tenant identifier"
+// @Param        Authorization header    string                    true   "Bearer token"
+// @Param        id            path      int                       true   "Transfer Request ID"
+// @Param        body          body      CreateTransferRequestDTO  true   "Transfer request payload"
+// @Success      200           {object}  TransferRequestResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/transfer-requests/{id} [put]
+func (h *TransferRequestsHandler) UpdateTransferRequest(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transfer request id", nil))
+		return
+	}
+
+	var req usecase.CreateTransferRequestInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	resp := h.useCase.UpdateTransferRequest(c.Request.Context(), int32(id), req)
+	c.JSON(resp.StatusCode, resp)
+}
+
 // ApproveTransferRequest handles POST /api/transfer-requests/:id/approve
 // @Summary      Approve transfer request
 // @Description  Approve transfer request lifecycle state transition (Draft/Pending -> Approved)
@@ -145,7 +185,7 @@ func (h *TransferRequestsHandler) ListTransferRequests(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Param        body          body      usecase.ApproveTransferRequestInput true "Approval payload"
+// @Param        body          body      ApproveTransferRequestDTO true "Approval payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -181,7 +221,7 @@ func (h *TransferRequestsHandler) ApproveTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Param        body          body      usecase.ShipTransferRequestInput true "Shipping payload"
+// @Param        body          body      ShipTransferRequestDTO true "Shipping payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -217,7 +257,7 @@ func (h *TransferRequestsHandler) ShipTransferRequest(c *gin.Context) {
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
 // @Param        Authorization header    string  true  "Bearer token"
 // @Param        id            path      int     true  "Transfer Request ID"
-// @Param        body          body      usecase.ReceiveTransferRequestInput true "Receiving payload"
+// @Param        body          body      ReceiveTransferRequestDTO true "Receiving payload"
 // @Success      200           {object}  SuccessResponse
 // @Failure      400           {object}  ErrorResponse
 // @Failure      500           {object}  ErrorResponse
@@ -240,5 +280,41 @@ func (h *TransferRequestsHandler) ReceiveTransferRequest(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	resp := h.useCase.ReceiveTransferRequest(c.Request.Context(), int32(id), req.ReceivedBy)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// CancelTransferRequest handles POST /api/transfer-requests/:id/cancel
+// @Summary      Cancel transfer request
+// @Description  Cancel transfer request and release reserved stock if applicable
+// @Tags         transfer-requests
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Transfer Request ID"
+// @Param        body          body      CancelTransferRequestDTO true "Cancellation payload"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/transfer-requests/{id}/cancel [post]
+func (h *TransferRequestsHandler) CancelTransferRequest(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transfer request id", nil))
+		return
+	}
+
+	var req usecase.CancelTransferRequestInput
+	_ = c.ShouldBindJSON(&req)
+
+	resp := h.useCase.CancelTransferRequest(c.Request.Context(), int32(id), req.CancelledBy)
 	c.JSON(resp.StatusCode, resp)
 }

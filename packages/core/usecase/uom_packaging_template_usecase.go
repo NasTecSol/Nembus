@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -14,6 +15,7 @@ import (
 type UomPackagingTemplateOutput struct {
 	ID             int32                             `json:"id"`
 	OrganizationID int32                             `json:"organization_id"`
+	UomID          int32                             `json:"uom_id"`
 	Name           string                            `json:"name"`
 	Code           string                            `json:"code"`
 	IsActive       pgtype.Bool                       `json:"is_active"`
@@ -35,6 +37,7 @@ func templateToOutput(t repository.UomPackagingTemplate) UomPackagingTemplateOut
 	return UomPackagingTemplateOutput{
 		ID:             t.ID,
 		OrganizationID: t.OrganizationID,
+		UomID:          t.UomID.Int32,
 		Name:           t.Name,
 		Code:           t.Code,
 		IsActive:       t.IsActive,
@@ -76,6 +79,7 @@ func (uc *UomPackagingTemplateUseCase) repoOrErr() *repository.Response {
 func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 	ctx context.Context,
 	organizationID int32,
+	uomID int32,
 	name string,
 	code string,
 	isActive bool,
@@ -92,6 +96,7 @@ func (uc *UomPackagingTemplateUseCase) CreateTemplate(
 
 	row, err := uc.repo.CreateUomPackagingTemplate(ctx, repository.CreateUomPackagingTemplateParams{
 		OrganizationID: organizationID,
+		UomID:          pgtype.Int4{Int32: uomID, Valid: uomID != 0},
 		Name:           name,
 		Code:           code,
 		IsActive:       active,
@@ -334,3 +339,73 @@ func (uc *UomPackagingTemplateUseCase) GetTemplateWithLevels(ctx context.Context
 
 	return utils.NewResponse(utils.CodeOK, "packaging template with levels fetched", out)
 }
+
+// CreateUomPackagingTemplatePipelineInput represents parameters for creating UOM template pipeline.
+type CreateUomPackagingTemplatePipelineInput struct {
+	OrganizationID int32                   `json:"organization_id"`
+	UomID          int32                   `json:"uom_id"`
+	Templates      []TemplatePayloadInput  `json:"templates"`
+}
+
+type TemplatePayloadInput struct {
+	TemplateName   string              `json:"template_name"`
+	TemplateCode   string              `json:"template_code"`
+	TemplateActive bool                `json:"template_active"`
+	Levels         []LevelPayloadInput `json:"levels"`
+}
+
+type LevelPayloadInput struct {
+	LevelOrder int32  `json:"level_order"`
+	UomCode    string `json:"uom_code"`
+	Multiplier string `json:"multiplier"`
+}
+
+// CreateTemplatePipeline creates new templates and levels, then fetches them by the base UOM ID.
+func (uc *UomPackagingTemplateUseCase) CreateTemplatePipeline(
+	ctx context.Context,
+	input CreateUomPackagingTemplatePipelineInput,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	payloadBytes, err := json.Marshal(input)
+	if err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "failed to marshal payload: "+err.Error(), nil)
+	}
+
+	err = uc.repo.CreateUomPackagingTemplatesPipeline(ctx, payloadBytes)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, pgtype.Int4{Int32: input.UomID, Valid: input.UomID != 0})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "packaging templates pipeline created successfully", rows)
+}
+
+// GetTemplatesByUomID retrieves packaging templates that utilize a specific UOM ID.
+func (uc *UomPackagingTemplateUseCase) GetTemplatesByUomID(
+	ctx context.Context,
+	uomID string,
+) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	parsed, err := strconv.ParseInt(uomID, 10, 32)
+	if err != nil {
+		return utils.NewResponse(utils.CodeBadReq, "invalid uom id", nil)
+	}
+
+	rows, err := uc.repo.GetUomPackagingTemplatesByUomID(ctx, pgtype.Int4{Int32: int32(parsed), Valid: true})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "packaging templates fetched successfully", rows)
+}
+

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -17,7 +18,7 @@ SET
     status = 'approved',
     approved_by = $2
 WHERE id = $1
-RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at
+RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 type ApproveStockCountParams struct {
@@ -42,6 +43,7 @@ func (q *Queries) ApproveStockCount(ctx context.Context, arg ApproveStockCountPa
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -52,7 +54,7 @@ SET
     status = 'completed',
     completed_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at
+RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 func (q *Queries) CompleteStockCount(ctx context.Context, id int32) (StockCount, error) {
@@ -72,6 +74,7 @@ func (q *Queries) CompleteStockCount(ctx context.Context, id int32) (StockCount,
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -87,17 +90,17 @@ INSERT INTO stock_counts (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7
-) RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at
+) RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 type CreateStockCountParams struct {
-	CountNumber   string      `json:"count_number"`
-	StoreID       int32       `json:"store_id"`
-	CountType     pgtype.Text `json:"count_type"`
-	Status        pgtype.Text `json:"status"`
-	ScheduledDate pgtype.Date `json:"scheduled_date"`
-	CountedBy     pgtype.Int4 `json:"counted_by"`
-	Metadata      []byte      `json:"metadata"`
+	CountNumber   string          `json:"count_number"`
+	StoreID       int32           `json:"store_id"`
+	CountType     pgtype.Text     `json:"count_type"`
+	Status        pgtype.Text     `json:"status"`
+	ScheduledDate pgtype.Date     `json:"scheduled_date"`
+	CountedBy     pgtype.Int4     `json:"counted_by"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateStockCount(ctx context.Context, arg CreateStockCountParams) (StockCount, error) {
@@ -125,6 +128,7 @@ func (q *Queries) CreateStockCount(ctx context.Context, arg CreateStockCountPara
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -145,7 +149,7 @@ INSERT INTO stock_count_lines (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-) RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at
+) RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at, updated_at
 `
 
 type CreateStockCountLineParams struct {
@@ -160,7 +164,7 @@ type CreateStockCountLineParams struct {
 	BatchNumber       pgtype.Text      `json:"batch_number"`
 	SerialNumber      pgtype.Text      `json:"serial_number"`
 	CountedAt         pgtype.Timestamp `json:"counted_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 }
 
 func (q *Queries) CreateStockCountLine(ctx context.Context, arg CreateStockCountLineParams) (StockCountLine, error) {
@@ -196,6 +200,7 @@ func (q *Queries) CreateStockCountLine(ctx context.Context, arg CreateStockCount
 		&i.SerialNumber,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -221,7 +226,7 @@ func (q *Queries) DeleteStockCountLine(ctx context.Context, id int32) error {
 }
 
 const getStockCount = `-- name: GetStockCount :one
-SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at FROM stock_counts
+SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at FROM stock_counts
 WHERE id = $1
 `
 
@@ -242,12 +247,13 @@ func (q *Queries) GetStockCount(ctx context.Context, id int32) (StockCount, erro
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getStockCountByNumber = `-- name: GetStockCountByNumber :one
-SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at FROM stock_counts
+SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at FROM stock_counts
 WHERE count_number = $1
 `
 
@@ -268,12 +274,13 @@ func (q *Queries) GetStockCountByNumber(ctx context.Context, countNumber string)
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getStockCountLine = `-- name: GetStockCountLine :one
-SELECT id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at FROM stock_count_lines
+SELECT id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at, updated_at FROM stock_count_lines
 WHERE id = $1
 `
 
@@ -297,6 +304,7 @@ func (q *Queries) GetStockCountLine(ctx context.Context, id int32) (StockCountLi
 		&i.SerialNumber,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -334,7 +342,7 @@ func (q *Queries) GetStockCountSummary(ctx context.Context, stockCountID int32) 
 }
 
 const listStockCountLines = `-- name: ListStockCountLines :many
-SELECT id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at FROM stock_count_lines
+SELECT id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at, updated_at FROM stock_count_lines
 WHERE stock_count_id = $1
 ORDER BY id
 `
@@ -365,6 +373,7 @@ func (q *Queries) ListStockCountLines(ctx context.Context, stockCountID int32) (
 			&i.SerialNumber,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -377,7 +386,7 @@ func (q *Queries) ListStockCountLines(ctx context.Context, stockCountID int32) (
 }
 
 const listStockCounts = `-- name: ListStockCounts :many
-SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at FROM stock_counts
+SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at FROM stock_counts
 ORDER BY created_at DESC
 `
 
@@ -404,6 +413,7 @@ func (q *Queries) ListStockCounts(ctx context.Context) ([]StockCount, error) {
 			&i.ApprovedBy,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -416,7 +426,7 @@ func (q *Queries) ListStockCounts(ctx context.Context) ([]StockCount, error) {
 }
 
 const listStockCountsByStatus = `-- name: ListStockCountsByStatus :many
-SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at FROM stock_counts
+SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at FROM stock_counts
 WHERE status = $1
 ORDER BY created_at DESC
 `
@@ -444,6 +454,7 @@ func (q *Queries) ListStockCountsByStatus(ctx context.Context, status pgtype.Tex
 			&i.ApprovedBy,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -456,7 +467,7 @@ func (q *Queries) ListStockCountsByStatus(ctx context.Context, status pgtype.Tex
 }
 
 const listStockCountsByStore = `-- name: ListStockCountsByStore :many
-SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at FROM stock_counts
+SELECT id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at FROM stock_counts
 WHERE store_id = $1
 ORDER BY created_at DESC
 `
@@ -484,6 +495,7 @@ func (q *Queries) ListStockCountsByStore(ctx context.Context, storeID int32) ([]
 			&i.ApprovedBy,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -501,7 +513,7 @@ SET
     status = 'in_progress',
     started_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at
+RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 func (q *Queries) StartStockCount(ctx context.Context, id int32) (StockCount, error) {
@@ -521,6 +533,7 @@ func (q *Queries) StartStockCount(ctx context.Context, id int32) (StockCount, er
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -531,13 +544,13 @@ SET
     status = $2,
     metadata = $3
 WHERE id = $1
-RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at
+RETURNING id, count_number, store_id, storage_location_id, count_type, status, scheduled_date, started_at, completed_at, counted_by, approved_by, metadata, created_at, updated_at
 `
 
 type UpdateStockCountParams struct {
-	ID       int32       `json:"id"`
-	Status   pgtype.Text `json:"status"`
-	Metadata []byte      `json:"metadata"`
+	ID       int32           `json:"id"`
+	Status   pgtype.Text     `json:"status"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateStockCount(ctx context.Context, arg UpdateStockCountParams) (StockCount, error) {
@@ -557,6 +570,7 @@ func (q *Queries) UpdateStockCount(ctx context.Context, arg UpdateStockCountPara
 		&i.ApprovedBy,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -569,7 +583,7 @@ SET
     variance_value = $4,
     counted_at = $5
 WHERE id = $1
-RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at
+RETURNING id, stock_count_id, product_id, product_variant_id, storage_location_id, expected_quantity, system_quantity, counted_quantity, variance, variance_value, counted_at, uom_id, batch_number, serial_number, metadata, created_at, updated_at
 `
 
 type UpdateStockCountLineParams struct {
@@ -606,6 +620,7 @@ func (q *Queries) UpdateStockCountLine(ctx context.Context, arg UpdateStockCount
 		&i.SerialNumber,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

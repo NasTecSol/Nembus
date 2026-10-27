@@ -40,7 +40,7 @@ func (h *PrintHandler) getRepositoryFromContext(c *gin.Context) *repository.Quer
 // @Security     BearerAuth
 // @Param        x-tenant-id  header  string                    true  "Tenant identifier"
 // @Param        Authorization header string                    true  "Bearer token"
-// @Param        body         body    usecase.PrintReceiptInput true  "Print request payload"
+// @Param        body         body    PrintReceiptRequest       true  "Print request payload"
 // @Success      200          {object} SuccessResponse
 // @Failure      400          {object} ErrorResponse
 // @Failure      401          {object} ErrorResponse

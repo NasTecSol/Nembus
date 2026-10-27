@@ -5,16 +5,20 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	clientbackup "github.com/NasTecSol/nembus-client/client"
 	"github.com/NasTecSol/nembus-client/internal/config"
 	"github.com/NasTecSol/nembus-client/internal/db"
+	"github.com/NasTecSol/nembus-client/internal/payment/geidea"
+	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -26,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed migrations/*.sql
@@ -33,23 +38,25 @@ var migrations embed.FS
 
 // App struct
 type App struct {
-	ctx         context.Context
-	dbManager   *db.DBManager
-	masterRepo  *repository.Queries
-	masterPool  *pgxpool.Pool
-	syncService *sync.SyncService
-	cfg         *config.Config
-	version     string
-	ghToken     string
-	ghRepo      string
+	ctx           context.Context
+	dbManager     *db.DBManager
+	masterRepo    *repository.Queries
+	masterPool    *pgxpool.Pool
+	tenantManager *manager.Manager
+	syncService   *sync.SyncService
+	geideaClient  *geidea.Client
+	cfg           *config.Config
+	version       string
+	appKey        string
+	cloudURL      string
 }
 
 // NewApp creates a new App application struct
-func NewApp(version, ghToken, ghRepo string) *App {
+func NewApp(version, appKey, cloudURL string) *App {
 	return &App{
-		version: version,
-		ghToken: ghToken,
-		ghRepo:  ghRepo,
+		version:  version,
+		appKey:   appKey,
+		cloudURL: cloudURL,
 	}
 }
 
@@ -97,28 +104,24 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 		}, nil
 	}
 
-	token := a.ghToken
-	if token == "" && a.cfg != nil {
-		token = a.cfg.GithubToken
+	cloudURL := a.cloudURL
+	if cloudURL == "" && a.cfg != nil {
+		cloudURL = a.cfg.CloudURL
 	}
-	repo := a.ghRepo
-	if repo == "" && a.cfg != nil {
-		repo = a.cfg.GithubRepo
+	appKey := a.appKey
+	if appKey == "" && a.cfg != nil {
+		appKey = a.cfg.AppUpdateClientKey
 	}
-	return updater.CheckForUpdate(a.GetAppVersion(), repo, token)
+	return updater.CheckForUpdate(a.GetAppVersion(), cloudURL, appKey)
 }
 
-// ApplyUpdate downloads release asset and restarts application
-func (a *App) ApplyUpdate(downloadURL string, assetID int64) error {
-	token := a.ghToken
-	if token == "" && a.cfg != nil {
-		token = a.cfg.GithubToken
+// ApplyUpdate downloads release binary, verifies SHA-256, and restarts application
+func (a *App) ApplyUpdate(downloadURL string, checksumSha256 string) error {
+	appKey := a.appKey
+	if appKey == "" && a.cfg != nil {
+		appKey = a.cfg.AppUpdateClientKey
 	}
-	repo := a.ghRepo
-	if repo == "" && a.cfg != nil {
-		repo = a.cfg.GithubRepo
-	}
-	return updater.ApplyUpdate(downloadURL, assetID, repo, token)
+	return updater.ApplyUpdate(downloadURL, checksumSha256, appKey)
 }
 
 // domReady is called after front-end resources have been loaded
@@ -135,6 +138,9 @@ func (a *App) beforeClose(ctx context.Context) (prevent bool) {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	if a.syncService != nil {
+		a.syncService.Stop()
+	}
 	if a.dbManager != nil {
 		_ = a.dbManager.Stop()
 	}
@@ -160,35 +166,10 @@ func (a *App) StartDatabase(username, password, database string, port uint32) st
 	// Initialize master repo
 	ctx := context.Background()
 
-	// Run migrations before connecting with pgxpool.
-	// If migration fails (e.g. due to a stale/partial previous install), wipe the
-	// data directory and retry once from a clean DB.
+	// Run migrations before connecting with pgxpool. Preserve local databases
+	// on failure: a storage or migration error must never trigger a data reset.
 	if err := a.migrate(a.cfg.MasterDBURL); err != nil {
-		log.Printf("Migration failed: %v — wiping data dir and retrying from scratch", err)
-
-		// Stop the embedded DB so we can delete the data dir.
-		_ = a.dbManager.Stop()
-
-		// Wipe the data directory.
-		home, _ := os.UserHomeDir()
-		dataPath := filepath.Join(home, ".nembus", "data")
-		if removeErr := os.RemoveAll(dataPath); removeErr != nil {
-			return fmt.Sprintf("Error cleaning data dir: %v", removeErr)
-		}
-
-		// Also remove the setup marker so the wizard starts fresh.
-		_ = os.Remove(filepath.Join(home, ".nembus", ".setup_done"))
-
-		// Start a fresh embedded DB.
-		a.dbManager = db.NewDBManager(dbCfg)
-		if startErr := a.dbManager.Start(); startErr != nil {
-			return fmt.Sprintf("Error restarting DB after wipe: %v", startErr)
-		}
-
-		// Retry migration on the clean DB.
-		if retryErr := a.migrate(a.cfg.MasterDBURL); retryErr != nil {
-			return fmt.Sprintf("Error running migrations (after reset): %v", retryErr)
-		}
+		return fmt.Sprintf("Error running migrations (local data preserved): %v", db.WithStorageHint(err))
 	}
 
 	pool, repo, err := setupDatabase(ctx, a.cfg)
@@ -214,19 +195,44 @@ func (a *App) migrate(dbURL string) error {
 	}
 	defer sqlDB.Close()
 
+	// Wait for the database to be ready and not in recovery mode (e.g. after a bulk restore or WAL replay)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var inRecovery bool
+		err := sqlDB.QueryRow("SELECT pg_is_in_recovery()").Scan(&inRecovery)
+		if err == nil && !inRecovery {
+			var databaseName string
+			if err := sqlDB.QueryRow("SELECT current_database()").Scan(&databaseName); err != nil {
+				return fmt.Errorf("failed to identify migration database: %w", err)
+			}
+			log.Printf("Database [%s] is ready for migrations", databaseName)
+			break
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("database not ready after 30s: %w", err)
+			}
+			return fmt.Errorf("database still in recovery mode after 30s")
+		}
+		log.Printf("Waiting for database to finish recovery / accept connections... (status: %v)", err)
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	// If the database was restored from a Cloud backup, the base schema tables (e.g. organizations)
-	// already exist, but goose_db_version may not be initialized. Mark version 1 as applied
-	// so Goose skips 000001_base_schema.sql and proceeds to apply 000002_pos_extensions.sql.
+	// already exist, but goose_db_version may not be initialized. Mark initial baseline as applied
+	// so Goose skips the initial schema and proceeds to apply POS extensions.
 	var baseSchemaExists bool
-	_ = sqlDB.QueryRow(`
+	if err := sqlDB.QueryRow(`
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables 
 			WHERE table_schema = 'public' AND table_name = 'organizations'
 		);
-	`).Scan(&baseSchemaExists)
+	`).Scan(&baseSchemaExists); err != nil {
+		return fmt.Errorf("failed to check restored schema: %w", err)
+	}
 
 	if baseSchemaExists {
-		_, _ = sqlDB.Exec(`
+		if _, err := sqlDB.Exec(`
 			CREATE TABLE IF NOT EXISTS goose_db_version (
 				id serial PRIMARY KEY,
 				version_id bigint NOT NULL,
@@ -234,9 +240,17 @@ func (a *App) migrate(dbURL string) error {
 				tstamp timestamp NULL default now()
 			);
 			INSERT INTO goose_db_version (version_id, is_applied)
-			SELECT 1, true
-			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 1);
-		`)
+			SELECT 20260918111505, true
+			WHERE NOT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 20260918111505);
+
+			DELETE FROM goose_db_version WHERE version_id IN (
+				20260813124500, 20260821060910, 20260829102802,
+				20260829112654, 20260916085642, 20260917120000,
+				20260918140000, 20261001153500
+			);
+		`); err != nil {
+			return fmt.Errorf("failed to initialize restored migration baseline: %w", db.WithStorageHint(err))
+		}
 	}
 
 	goose.SetBaseFS(migrations)
@@ -246,12 +260,20 @@ func (a *App) migrate(dbURL string) error {
 	}
 
 	if err := goose.Up(sqlDB, "migrations"); err != nil {
-		return fmt.Errorf("failed to run migrations: %v", err)
+		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
 
-	// Ensure legacy DB triggers that double-count cashier session balances are dropped
-	_, _ = sqlDB.Exec("DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
-	_, _ = sqlDB.Exec("DROP FUNCTION IF EXISTS update_cashier_session_balance();")
+	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
+	for _, statement := range []string{
+		"DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;",
+		"DROP TRIGGER IF EXISTS trg_deduct_inventory_on_pos_transaction ON pos_transaction_lines;",
+		"DROP FUNCTION IF EXISTS update_cashier_session_balance();",
+		"ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;",
+	} {
+		if _, err := sqlDB.Exec(statement); err != nil {
+			return fmt.Errorf("failed to finalize POS schema: %w", db.WithStorageHint(err))
+		}
+	}
 
 	return nil
 }
@@ -294,7 +316,34 @@ func (a *App) CloneTenant(slug string) string {
 		return "Error: Local database not started"
 	}
 
+	emitProgress := func(phase string, percent int, bytes int64, speed string, estSecs int, msg string) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "clone:progress", map[string]interface{}{
+				"phase":             phase,
+				"percent":           percent,
+				"bytes_transferred": bytes,
+				"speed":             speed,
+				"estimated_seconds": estSecs,
+				"message":           msg,
+			})
+		}
+	}
+
+	emitProgress("connecting", 5, 0, "", 30, "Connecting to cloud server...")
+
+	previousSync := a.syncService
+	if previousSync != nil {
+		log.Printf("CloneTenant: stopping background sync during backup and restore")
+		previousSync.Stop()
+		defer func() {
+			if a.syncService == previousSync {
+				a.StartSyncService(previousSync.TenantSlug())
+			}
+		}()
+	}
+
 	// 1. Fetch Tenant details from cloud
+	emitProgress("metadata", 12, 0, "", 28, fmt.Sprintf("Fetching tenant details for [%s]...", slug))
 	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
 	log.Printf("Fetching tenant details for [%s] from: %s", slug, url)
 	req, err := http.NewRequest("GET", url, nil)
@@ -318,9 +367,6 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error decoding tenant data: %v", err)
 	}
 
-	// cloudTenant is a plain struct for parsing the cloud API's JSON response.
-	// repository.Tenant uses pgtype.* types which require special JSON nesting
-	// and cannot be decoded directly from plain REST JSON.
 	type cloudTenant struct {
 		ID         string          `json:"id"`
 		TenantName string          `json:"tenant_name"`
@@ -342,17 +388,12 @@ func (a *App) CloneTenant(slug string) string {
 	}
 
 	// 2. Create the tenant database locally
+	emitProgress("creating_db", 20, 0, "", 25, fmt.Sprintf("Preparing database schema for %s...", tenant.TenantName))
 	tenantDBName := slug
-	// Check if database exists, create if not
-	// We use standard db/sql for this as creating databases cannot run in a transaction block which pgx pool might implicitly use or log.
-	// Actually masterPool.Exec without a transaction is fine, but CREATE DATABASE cannot be executed inside a transaction block.
-	// Let's drop it if it exists (for a clean clone), but we must disconnect first. Since it's a new setup, it probably doesn't exist,
-	// but to be safe we try to create it and ignore "already exists" errors.
 	_, err = a.masterPool.Exec(a.ctx, fmt.Sprintf(`CREATE DATABASE "%s" WITH ENCODING 'UTF8'`, tenantDBName))
 	if err != nil {
-		// Ignore error if database already exists
 		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Sprintf("Error creating tenant database: %v", err)
+			return fmt.Sprintf("Error creating tenant database: %v", db.WithStorageHint(err))
 		}
 		log.Printf("Database %s already exists, proceeding...", tenantDBName)
 	}
@@ -362,9 +403,6 @@ func (a *App) CloneTenant(slug string) string {
 	backupDir := filepath.Join(home, ".nembus", "backups", tenant.Slug)
 	backupToken := a.cfg.BackupAuthToken
 
-	// Construct the tenant-specific DB URL
-	// We extract username, password, port from a.cfg.MasterDBURL
-	// Since we know StartDatabase uses postgres / password / nembus / port
 	tenantDBURL := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable",
 		a.dbManager.GetConfig().Username,
 		a.dbManager.GetConfig().Password,
@@ -373,20 +411,24 @@ func (a *App) CloneTenant(slug string) string {
 	)
 
 	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
-	backupPath, err := clientbackup.DownloadBackup(
+	backupPath, err := clientbackup.DownloadBackupWithProgress(
 		a.cfg.GRPCAddr,
 		tenant.Slug,
 		backupToken,
 		backupDir,
-		tenantDBURL, // restore directly into the tenant's database
+		tenantDBURL,
+		func(stage string, percent int, bytesTransferred int64, speed string, estimatedSecs int, message string) {
+			emitProgress(stage, percent, bytesTransferred, speed, estimatedSecs, message)
+		},
 	)
 	if err != nil {
 		log.Printf("CloneTenant Backup Error: %v", err)
-		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", err)
+		return fmt.Sprintf("Error downloading/restoring tenant backup: %v", db.WithStorageHint(err))
 	}
 	log.Printf("Tenant backup restored from: %s", backupPath)
 
 	// 4. Run POS extensions migrations directly on the restored tenant database
+	emitProgress("migrating", 88, 0, "", 5, "Applying offline tables and local triggers...")
 	log.Printf("CloneTenant: applying POS migrations to tenant DB [%s]", tenant.Slug)
 	if err := a.migrate(tenantDBURL); err != nil {
 		log.Printf("Error applying POS migrations to tenant DB: %v", err)
@@ -395,7 +437,7 @@ func (a *App) CloneTenant(slug string) string {
 	log.Printf("POS migrations applied successfully to tenant DB [%s]", tenant.Slug)
 
 	// 5. Ensure the local tenant record is correct in the master DB.
-	// We upsert it to make sure the slug exists and points to our local tenant DB URL.
+	emitProgress("finalizing", 96, 0, "", 2, "Finalizing local configuration...")
 	upsertSQL := `
 		INSERT INTO tenants (id, tenant_name, slug, db_conn_str, is_active, settings, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -413,36 +455,77 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error finalizing local tenant record: %v", err)
 	}
 
-	// 6. Initialize sync (will use the newly created tenant)
-	a.InitializeSync()
+	if a.tenantManager != nil {
+		a.tenantManager.EvictPool(tenant.Slug)
+	}
 
-	// 7. Finalize setup
-	markerPath := filepath.Join(home, ".nembus", ".setup_done")
-	_ = os.MkdirAll(filepath.Dir(markerPath), 0755)
-	_ = os.WriteFile(markerPath, []byte("done"), 0644)
+	emitProgress("complete", 100, 0, "", 0, "Organization cloned successfully!")
+
+	// 6. Start sync service for this tenant
+	a.StartSyncService(tenant.Slug)
 
 	return "Success"
 }
 
 // StartSyncService starts the background synchronization worker
 func (a *App) StartSyncService(slug string) {
+	if a.syncService != nil {
+		a.syncService.Stop()
+	}
 	if a.masterPool == nil {
 		log.Println("Warning: Cannot start sync service without master pool")
 		return
 	}
 
-	tenantPool := a.masterPool
-	if a.masterRepo != nil {
-		tenantManager := manager.NewManager(a.masterRepo)
-		pool, err := tenantManager.GetPool(a.ctx, slug)
-		if err == nil && pool != nil {
-			tenantPool = pool
-		} else {
-			log.Printf("[SyncService] Could not resolve pool for tenant [%s]: %v (falling back to masterPool)", slug, err)
+	bgCtx := context.Background()
+	if a.tenantManager == nil && a.masterRepo != nil {
+		a.tenantManager = manager.NewManager(a.masterRepo)
+	}
+	if a.tenantManager == nil {
+		log.Printf("[SyncService] Cannot resolve tenant database for [%s]", slug)
+		return
+	}
+	tenantPool, err := a.tenantManager.GetPool(bgCtx, slug)
+	if err != nil || tenantPool == nil {
+		log.Printf("[SyncService] Cannot resolve tenant database for [%s]: %v", slug, err)
+		return
+	}
+	var configured bool
+	deviceCtx, cancelDevice := context.WithTimeout(bgCtx, 15*time.Second)
+	defer cancelDevice()
+	if err := tenantPool.QueryRow(deviceCtx, `SELECT COALESCE((SELECT store_id FROM local_device_config ORDER BY id LIMIT 1),0) > 0`).Scan(&configured); err != nil {
+		log.Printf("[SyncService] Cannot check device configuration: %v", err)
+	} else if !configured {
+		if raw := a.LoadDeviceConfig(); raw != "" {
+			identity, err := sync.ParseDeviceIdentity(raw)
+			if err == nil {
+				err = sync.SaveDeviceIdentity(deviceCtx, tenantPool, identity)
+			}
+			if err != nil {
+				log.Printf("[SyncService] Cannot restore saved device configuration: %v", err)
+			} else {
+				log.Printf("[SyncService] Restored local device configuration for store %d", identity.StoreID)
+			}
 		}
 	}
 
-	a.syncService = sync.NewSyncService(a.ctx, tenantPool, a.cfg.CloudURL, slug)
+	grpcAddr := ""
+	if a.cfg != nil {
+		grpcAddr = a.cfg.GRPCAddr
+		if grpcAddr == "" {
+			grpcAddr = a.cfg.CloudURL
+		}
+	}
+	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
+
+	// Reset any sync_queue items that previously hit max_retries (e.g. due to
+	// transient cloud errors or FK constraint issues that have since been fixed)
+	// so they are retried on the next sync cycle.
+	if count, err := a.syncService.ResetFailedItems(); err != nil {
+		log.Printf("[SyncService] Warning: could not reset failed sync_queue items: %v", err)
+	} else if count > 0 {
+		log.Printf("[SyncService] Reset %d previously-failed sync_queue items to pending — will retry shortly", count)
+	}
 	a.syncService.Start()
 }
 
@@ -467,7 +550,8 @@ func (a *App) InitializeSync() {
 
 func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	// reuse the pool
-	tenantManager := manager.NewManager(a.masterRepo)
+	a.tenantManager = manager.NewManager(a.masterRepo)
+	tenantManager := a.tenantManager
 
 	// Initialize Use Cases
 	userUC := usecase.NewUserUseCase()
@@ -491,6 +575,8 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	orderUC := usecase.NewOrderUseCase()
 	restaurantUC := usecase.NewRestaurantUseCase()
 	customerUC := usecase.NewCustomerUseCase()
+	businessPartnerUC := usecase.NewBusinessPartnerUseCase()
+	bpPriceContractUC := usecase.NewBPPriceContractUseCase()
 	uomUC := usecase.NewUOMUseCase()
 	priceListsUC := usecase.NewPriceListsUseCase()
 	taxCategoriesUC := usecase.NewTaxCategoriesUseCase()
@@ -505,8 +591,11 @@ func (a *App) runBackend(masterPool *pgxpool.Pool) {
 	loyaltyUC := usecase.NewLoyaltyUseCase()
 	productCatalogUC := usecase.NewProductCatalogUseCase()
 	printUC := usecase.NewPrintUseCase()
+	paymentTermsUC := usecase.NewPaymentTermsUseCase()
+	purchaseOrdersUC := usecase.NewPurchaseOrdersUseCase()
+	invoiceUC := usecase.NewInvoiceUseCase()
 
-	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, a.cfg)
+	r := setupRouter(tenantManager, a.masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, printUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, purchaseOrdersUC, a.cfg)
 	r.Static("/images", "./images")
 
 	log.Printf("Starting Gin HTTP server on port %s (Swagger: http://localhost:%s/swagger/index.html)", a.cfg.Port, a.cfg.Port)
@@ -623,8 +712,44 @@ func (a *App) LoadDeviceConfig() string {
 }
 
 // SaveDeviceConfig writes the device configuration to disk so it persists
-// across Wails restarts and clean builds.
+// across Wails restarts and clean builds, and updates local_device_config in the tenant DB.
 func (a *App) SaveDeviceConfig(configJSON string) string {
+	identity, identityErr := sync.ParseDeviceIdentity(configJSON)
+	if identityErr != nil && !errors.Is(identityErr, sync.ErrDeviceConfigIncomplete) {
+		return fmt.Sprintf("Error: %v", identityErr)
+	}
+	if identityErr == nil {
+		if a.masterRepo == nil {
+			return "Error: local database is not ready to save device configuration"
+		}
+		if a.tenantManager == nil {
+			a.tenantManager = manager.NewManager(a.masterRepo)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var slug string
+		if a.syncService != nil {
+			slug = a.syncService.TenantSlug()
+		} else {
+			tenants, err := a.masterRepo.ListActiveTenants(ctx)
+			if err != nil {
+				return fmt.Sprintf("Error: cannot resolve configured tenant: %v", err)
+			}
+			if len(tenants) != 1 {
+				return "Error: device configuration requires one active local tenant"
+			}
+			slug = tenants[0].Slug
+		}
+		pool, err := a.tenantManager.GetPool(ctx, slug)
+		if err != nil {
+			return fmt.Sprintf("Error: cannot open tenant database: %v", err)
+		}
+		if err := sync.SaveDeviceIdentity(ctx, pool, identity); err != nil {
+			log.Printf("SaveDeviceConfig: database save failed: %v", err)
+			return fmt.Sprintf("Error: %v", err)
+		}
+		log.Printf("SaveDeviceConfig: saved local_device_config for tenant %s, store %d", slug, identity.StoreID)
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Sprintf("Error: cannot get home dir: %v", err)
@@ -638,6 +763,17 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 		return fmt.Sprintf("Error: cannot write config: %v", err)
 	}
 	log.Printf("SaveDeviceConfig: config saved to %s", path)
+
+	if identityErr == nil {
+		markerPath := filepath.Join(dir, ".setup_done")
+		if err := os.WriteFile(markerPath, []byte("done"), 0644); err != nil {
+			return fmt.Sprintf("Error: cannot save setup marker: %v", err)
+		}
+		if a.syncService != nil {
+			a.syncService.SyncNow()
+		}
+	}
+
 	return "OK"
 }
 
@@ -650,3 +786,106 @@ func (a *App) GetDevToken() string {
 	}
 	return token
 }
+
+// GeideaConfigure configures or updates the terminal parameters (TCP or Serial COM).
+func (a *App) GeideaConfigure(cfg geidea.TerminalConfig) string {
+	if a.geideaClient == nil {
+		a.geideaClient = geidea.NewClient(cfg)
+	} else {
+		a.geideaClient.UpdateConfig(cfg)
+	}
+	log.Printf("[GEIDEA] Terminal configured: mode=%s, ip=%s:%s, com=%s, baud=%d",
+		cfg.Mode, cfg.IP, cfg.Port, cfg.SerialPort, cfg.BaudRate)
+	return "OK"
+}
+
+// GeideaCheckStatus tests connectivity to the physical terminal.
+func (a *App) GeideaCheckStatus() (bool, error) {
+	if a.geideaClient == nil {
+		return false, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.CheckStatus(a.ctx)
+}
+
+// GeideaPurchase initiates a card purchase with live status event streaming to the frontend.
+func (a *App) GeideaPurchase(req geidea.PurchaseRequest) (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Purchase(a.ctx, req, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaRefund initiates a refund using original transaction RRN.
+func (a *App) GeideaRefund(req geidea.RefundRequest) (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Refund(a.ctx, req, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaReconcile triggers End of Day settlement and reconciliation with SAMA.
+func (a *App) GeideaReconcile() (*geidea.ReconciliationResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Reconcile(a.ctx, func(event geidea.TerminalStatusEvent) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "geidea:status", event)
+		}
+	})
+}
+
+// GeideaCancel sends the abort signal to cancel an in-flight transaction.
+func (a *App) GeideaCancel() error {
+	if a.geideaClient == nil {
+		return fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.Cancel(a.ctx)
+}
+
+// GeideaRepeatLast queries the terminal for the last transaction result.
+func (a *App) GeideaRepeatLast() (*geidea.TransactionResult, error) {
+	if a.geideaClient == nil {
+		return nil, fmt.Errorf("geidea terminal is not configured")
+	}
+	return a.geideaClient.RepeatLast(a.ctx)
+}
+
+// StartGeideaPayment initiates the payment through Wails runtime with status streaming (backward-compatible).
+func (a *App) StartGeideaPayment(terminalID int, amount float64, ecrRef string) (string, error) {
+	if a.geideaClient == nil {
+		a.geideaClient = geidea.NewClient(geidea.TerminalConfig{
+			Mode: "network",
+			IP:   "127.0.0.1",
+			Port: "80",
+		})
+	}
+	res, err := a.GeideaPurchase(geidea.PurchaseRequest{
+		Amount:        amount,
+		InvoiceNumber: ecrRef,
+	})
+	if err != nil {
+		return "", err
+	}
+	resJSON, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	return string(resJSON), nil
+}
+
+// PrintMadaReceipt builds an ESC/POS formatted mada transaction receipt and sends it to the printer.
+func (a *App) PrintMadaReceipt(data printing.MadaReceiptData, cfg printing.PrinterConfig) error {
+	rawBytes := printing.BuildMadaReceipt(data)
+	return printing.Print(cfg, rawBytes)
+}
+
+

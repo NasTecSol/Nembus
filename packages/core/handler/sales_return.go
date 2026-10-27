@@ -87,6 +87,13 @@ func (h *SalesReturnHandler) ProcessReturn(c *gin.Context) {
 		Lines:                 lines,
 	}
 
+	// If a supervisor authorized this return, record their ID for audit
+	if authUserID, exists := c.Get("authorized_by_user_id"); exists {
+		if id, ok := authUserID.(int32); ok {
+			in.AuthorizedByUserID = &id
+		}
+	}
+
 	resp := h.useCase.ProcessSalesReturn(c.Request.Context(), in)
 	c.JSON(resp.StatusCode, resp)
 }

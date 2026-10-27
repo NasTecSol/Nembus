@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,18 +22,18 @@ RETURNING id, organization_id, recipe_code, recipe_name, description, finished_p
 `
 
 type CreateRecipeParams struct {
-	OrganizationID     int32          `json:"organization_id"`
-	RecipeCode         string         `json:"recipe_code"`
-	RecipeName         string         `json:"recipe_name"`
-	Description        pgtype.Text    `json:"description"`
-	FinishedProductID  pgtype.Int4    `json:"finished_product_id"`
-	YieldQuantity      pgtype.Numeric `json:"yield_quantity"`
-	YieldUomID         pgtype.Int4    `json:"yield_uom_id"`
-	PreparationSteps   pgtype.Text    `json:"preparation_steps"`
-	PreparationTimeMin pgtype.Int4    `json:"preparation_time_min"`
-	CookingTimeMin     pgtype.Int4    `json:"cooking_time_min"`
-	IsActive           pgtype.Bool    `json:"is_active"`
-	Metadata           []byte         `json:"metadata"`
+	OrganizationID     int32           `json:"organization_id"`
+	RecipeCode         string          `json:"recipe_code"`
+	RecipeName         string          `json:"recipe_name"`
+	Description        pgtype.Text     `json:"description"`
+	FinishedProductID  pgtype.Int4     `json:"finished_product_id"`
+	YieldQuantity      pgtype.Numeric  `json:"yield_quantity"`
+	YieldUomID         pgtype.Int4     `json:"yield_uom_id"`
+	PreparationSteps   pgtype.Text     `json:"preparation_steps"`
+	PreparationTimeMin pgtype.Int4     `json:"preparation_time_min"`
+	CookingTimeMin     pgtype.Int4     `json:"cooking_time_min"`
+	IsActive           pgtype.Bool     `json:"is_active"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error) {
@@ -173,18 +174,18 @@ RETURNING id, organization_id, recipe_code, recipe_name, description, finished_p
 `
 
 type UpdateRecipeParams struct {
-	ID                 int32          `json:"id"`
-	RecipeCode         string         `json:"recipe_code"`
-	RecipeName         string         `json:"recipe_name"`
-	Description        pgtype.Text    `json:"description"`
-	FinishedProductID  pgtype.Int4    `json:"finished_product_id"`
-	YieldQuantity      pgtype.Numeric `json:"yield_quantity"`
-	YieldUomID         pgtype.Int4    `json:"yield_uom_id"`
-	PreparationSteps   pgtype.Text    `json:"preparation_steps"`
-	PreparationTimeMin pgtype.Int4    `json:"preparation_time_min"`
-	CookingTimeMin     pgtype.Int4    `json:"cooking_time_min"`
-	IsActive           pgtype.Bool    `json:"is_active"`
-	Metadata           []byte         `json:"metadata"`
+	ID                 int32           `json:"id"`
+	RecipeCode         string          `json:"recipe_code"`
+	RecipeName         string          `json:"recipe_name"`
+	Description        pgtype.Text     `json:"description"`
+	FinishedProductID  pgtype.Int4     `json:"finished_product_id"`
+	YieldQuantity      pgtype.Numeric  `json:"yield_quantity"`
+	YieldUomID         pgtype.Int4     `json:"yield_uom_id"`
+	PreparationSteps   pgtype.Text     `json:"preparation_steps"`
+	PreparationTimeMin pgtype.Int4     `json:"preparation_time_min"`
+	CookingTimeMin     pgtype.Int4     `json:"cooking_time_min"`
+	IsActive           pgtype.Bool     `json:"is_active"`
+	Metadata           json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateRecipe(ctx context.Context, arg UpdateRecipeParams) (Recipe, error) {

@@ -17,11 +17,12 @@ type Config struct {
 	DevUserLogin    string
 	LogLevel        string
 	IsDesktop       bool
-	CloudURL        string
-	GRPCAddr        string // bare host:port for the cloud gRPC backup server
-	BackupAuthToken string // Auth token for downloading tenant backups
-	GithubToken     string // GitHub token for private repo release updates
-	GithubRepo      string // Repository owner/name (default: NasTecSol/Nembus)
+	CloudURL           string
+	GRPCAddr           string // bare host:port for the cloud gRPC backup server
+	BackupAuthToken    string // Auth token for downloading tenant backups
+	AppUpdateClientKey string // Secret token for checking and downloading updates from Nembus Cloud Server
+	GithubToken        string // GitHub token for private repo release updates (legacy fallback)
+	GithubRepo         string // Repository owner/name (default: NasTecSol/Nembus)
 
 	// ZATCA Phase 2 Configuration
 	ZatcaEnabled  bool   // ZATCA_ENABLED — false for non-Saudi deployments
@@ -81,11 +82,12 @@ func LoadConfig(env string) *Config {
 		DevUserLogin:    getEnv("DEV_USER_LOGIN", "dev_user"),
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
 		IsDesktop:       true, // Default to true for this Wails build
-		CloudURL:        getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
-		GRPCAddr:        getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
-		BackupAuthToken: getEnv("BACKUP_AUTH_TOKEN", "nembus"),
-		GithubToken:     ghToken,
-		GithubRepo:      getEnv("GITHUB_REPO", "NasTecSol/Nembus"),
+		CloudURL:           getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
+		GRPCAddr:           getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
+		BackupAuthToken:    getEnv("BACKUP_AUTH_TOKEN", "nembus"),
+		AppUpdateClientKey: getEnv("APP_UPDATE_CLIENT_KEY", "nembus-pos-update-client-key-default"),
+		GithubToken:        ghToken,
+		GithubRepo:         getEnv("GITHUB_REPO", "NasTecSol/Nembus"),
 		ZatcaEnabled:    getEnv("ZATCA_ENABLED", "false") == "true",
 		ZatcaEnv:        zatcaEnv,
 		ZatcaBaseURL:    zatcaBaseURL,

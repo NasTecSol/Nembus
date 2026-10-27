@@ -451,3 +451,54 @@ func (uc *UOMUseCase) DeleteProductUOMConversion(ctx context.Context, id string)
 	return utils.NewResponse(utils.CodeOK, "product UOM conversion deleted", nil)
 }
 
+// ProductUOMConversionDetailedOutput represents a detailed product UOM conversion.
+type ProductUOMConversionDetailedOutput struct {
+	ProductID          int32          `json:"product_id" example:"9"`
+	ProductSku         string         `json:"product_sku" example:"COCA-COLA-330ML"`
+	ProductName        string         `json:"product_name" example:"Coca-Cola 330ml Can"`
+	PackagingUomCode   string         `json:"packaging_uom_code" example:"CTN"`
+	PackagingUomName   string         `json:"packaging_uom_name" example:"Carton"`
+	TargetUomCode      string         `json:"target_uom_code" example:"CAN"`
+	TargetUomName      string         `json:"target_uom_name" example:"Can"`
+	ConversionFactor   pgtype.Numeric `json:"conversion_factor" swaggertype:"string" example:"24.000000"`
+	IsDefaultPackaging pgtype.Bool    `json:"is_default_packaging" example:"true"`
+}
+
+func detailedConversionToOutput(c repository.GetProductUOMConversionsDetailedRow) ProductUOMConversionDetailedOutput {
+	return ProductUOMConversionDetailedOutput{
+		ProductID:          c.ProductID,
+		ProductSku:         c.ProductSku,
+		ProductName:        c.ProductName,
+		PackagingUomCode:   c.PackagingUomCode,
+		PackagingUomName:   c.PackagingUomName,
+		TargetUomCode:      c.TargetUomCode,
+		TargetUomName:      c.TargetUomName,
+		ConversionFactor:   c.ConversionFactor,
+		IsDefaultPackaging: c.IsDefaultPackaging,
+	}
+}
+
+// GetProductUOMConversionsDetailed lists detailed conversions for a product.
+func (uc *UOMUseCase) GetProductUOMConversionsDetailed(ctx context.Context, productID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	if productID == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "product_id is required", nil)
+	}
+
+	rows, err := uc.repo.GetProductUOMConversionsDetailed(ctx, productID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	out := make([]ProductUOMConversionDetailedOutput, len(rows))
+	for i := range rows {
+		out[i] = detailedConversionToOutput(rows[i])
+	}
+
+	return utils.NewResponse(utils.CodeOK, "product UOM conversions fetched successfully", out)
+}
+
+

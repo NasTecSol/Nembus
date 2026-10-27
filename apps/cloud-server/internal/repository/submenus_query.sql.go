@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -28,15 +29,15 @@ INSERT INTO submenus (
 `
 
 type CreateSubmenuParams struct {
-	MenuID          int32       `json:"menu_id"`
-	ParentSubmenuID pgtype.Int4 `json:"parent_submenu_id"`
-	Name            string      `json:"name"`
-	Code            string      `json:"code"`
-	RoutePath       pgtype.Text `json:"route_path"`
-	Icon            pgtype.Text `json:"icon"`
-	DisplayOrder    pgtype.Int4 `json:"display_order"`
-	IsActive        pgtype.Bool `json:"is_active"`
-	Metadata        []byte      `json:"metadata"`
+	MenuID          int32           `json:"menu_id"`
+	ParentSubmenuID pgtype.Int4     `json:"parent_submenu_id"`
+	Name            string          `json:"name"`
+	Code            string          `json:"code"`
+	RoutePath       pgtype.Text     `json:"route_path"`
+	Icon            pgtype.Text     `json:"icon"`
+	DisplayOrder    pgtype.Int4     `json:"display_order"`
+	IsActive        pgtype.Bool     `json:"is_active"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateSubmenu(ctx context.Context, arg CreateSubmenuParams) (Submenu, error) {
@@ -336,14 +337,14 @@ RETURNING id, menu_id, parent_submenu_id, name, code, route_path, icon, display_
 `
 
 type UpdateSubmenuParams struct {
-	ID              int32       `json:"id"`
-	ParentSubmenuID pgtype.Int4 `json:"parent_submenu_id"`
-	Name            string      `json:"name"`
-	RoutePath       pgtype.Text `json:"route_path"`
-	Icon            pgtype.Text `json:"icon"`
-	DisplayOrder    pgtype.Int4 `json:"display_order"`
-	IsActive        pgtype.Bool `json:"is_active"`
-	Metadata        []byte      `json:"metadata"`
+	ID              int32           `json:"id"`
+	ParentSubmenuID pgtype.Int4     `json:"parent_submenu_id"`
+	Name            string          `json:"name"`
+	RoutePath       pgtype.Text     `json:"route_path"`
+	Icon            pgtype.Text     `json:"icon"`
+	DisplayOrder    pgtype.Int4     `json:"display_order"`
+	IsActive        pgtype.Bool     `json:"is_active"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateSubmenu(ctx context.Context, arg UpdateSubmenuParams) (Submenu, error) {

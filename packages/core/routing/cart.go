@@ -18,6 +18,7 @@ func RegisterCartRoutes(r *gin.RouterGroup, h *handler.CartHandler) {
 		carts.GET("/by-number/:cart_number", h.GetCartByNumber)
 		carts.GET("/by-customer", h.GetActiveCartByCustomer)
 		carts.GET("/by-guest", h.GetActiveCartByGuestIdentifier)
+		carts.GET("/drafts/by-cashier/:cashier_id", h.GetDraftCartsByCashier)
 		carts.GET("/:id", h.GetCart)
 		carts.PUT("/:id", h.UpdateCart)
 		carts.PUT("/:id/status", h.UpdateCartStatus)
@@ -38,6 +39,7 @@ func RegisterCartRoutes(r *gin.RouterGroup, h *handler.CartHandler) {
 		carts.POST("/:id/coupon", h.ApplyCouponToCart)
 		carts.POST("/:id/recalculate", h.RecalculateCartTotals)
 		carts.POST("/:id/checkout", h.ConvertToOrder)
+		carts.POST("/:id/reopen", h.ReopenCart)
 		carts.POST("/:id/merge", h.MergeGuestCartToCustomer)
 
 		// Cart activity log

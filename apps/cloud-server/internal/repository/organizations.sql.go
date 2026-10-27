@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -33,14 +34,14 @@ INSERT INTO organizations (
 `
 
 type CreateOrganizationParams struct {
-	Name              string      `json:"name"`
-	Code              string      `json:"code"`
-	LegalName         pgtype.Text `json:"legal_name"`
-	TaxID             pgtype.Text `json:"tax_id"`
-	CurrencyCode      pgtype.Text `json:"currency_code"`
-	FiscalYearVariant pgtype.Text `json:"fiscal_year_variant"`
-	IsActive          pgtype.Bool `json:"is_active"`
-	Metadata          []byte      `json:"metadata"`
+	Name              string          `json:"name"`
+	Code              string          `json:"code"`
+	LegalName         pgtype.Text     `json:"legal_name"`
+	TaxID             pgtype.Text     `json:"tax_id"`
+	CurrencyCode      pgtype.Text     `json:"currency_code"`
+	FiscalYearVariant pgtype.Text     `json:"fiscal_year_variant"`
+	IsActive          pgtype.Bool     `json:"is_active"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
@@ -186,14 +187,14 @@ RETURNING id, name, code, legal_name, tax_id, currency_code, fiscal_year_variant
 `
 
 type UpdateOrganizationParams struct {
-	Name              pgtype.Text `json:"name"`
-	LegalName         pgtype.Text `json:"legal_name"`
-	TaxID             pgtype.Text `json:"tax_id"`
-	CurrencyCode      pgtype.Text `json:"currency_code"`
-	FiscalYearVariant pgtype.Text `json:"fiscal_year_variant"`
-	IsActive          pgtype.Bool `json:"is_active"`
-	Metadata          []byte      `json:"metadata"`
-	ID                int32       `json:"id"`
+	Name              pgtype.Text     `json:"name"`
+	LegalName         pgtype.Text     `json:"legal_name"`
+	TaxID             pgtype.Text     `json:"tax_id"`
+	CurrencyCode      pgtype.Text     `json:"currency_code"`
+	FiscalYearVariant pgtype.Text     `json:"fiscal_year_variant"`
+	IsActive          pgtype.Bool     `json:"is_active"`
+	Metadata          json.RawMessage `json:"metadata"`
+	ID                int32           `json:"id"`
 }
 
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error) {

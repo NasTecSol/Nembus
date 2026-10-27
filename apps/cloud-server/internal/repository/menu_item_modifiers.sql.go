@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,13 +22,13 @@ RETURNING id, menu_item_id, modifier_name, modifier_type, price_adjustment, is_a
 `
 
 type CreateMenuItemModifierParams struct {
-	MenuItemID      int32          `json:"menu_item_id"`
-	ModifierName    string         `json:"modifier_name"`
-	ModifierType    string         `json:"modifier_type"`
-	PriceAdjustment pgtype.Numeric `json:"price_adjustment"`
-	IsActive        pgtype.Bool    `json:"is_active"`
-	DisplayOrder    pgtype.Int4    `json:"display_order"`
-	Metadata        []byte         `json:"metadata"`
+	MenuItemID      int32           `json:"menu_item_id"`
+	ModifierName    string          `json:"modifier_name"`
+	ModifierType    string          `json:"modifier_type"`
+	PriceAdjustment pgtype.Numeric  `json:"price_adjustment"`
+	IsActive        pgtype.Bool     `json:"is_active"`
+	DisplayOrder    pgtype.Int4     `json:"display_order"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateMenuItemModifier(ctx context.Context, arg CreateMenuItemModifierParams) (MenuItemModifier, error) {
@@ -125,6 +126,68 @@ func (q *Queries) ListMenuItemModifiers(ctx context.Context, menuItemID int32) (
 	return items, nil
 }
 
+const listModifiersByStore = `-- name: ListModifiersByStore :many
+SELECT 
+    mim.id, 
+    mim.menu_item_id, 
+    mim.modifier_name, 
+    mim.modifier_type, 
+    mim.price_adjustment, 
+    mim.is_active, 
+    mim.display_order, 
+    mim.metadata, 
+    mim.created_at,
+    mi.name AS menu_item_name
+FROM menu_item_modifiers mim
+JOIN menu_items mi ON mim.menu_item_id = mi.id
+WHERE mi.store_id = $1
+ORDER BY mim.display_order, mim.modifier_name
+`
+
+type ListModifiersByStoreRow struct {
+	ID              int32            `json:"id"`
+	MenuItemID      int32            `json:"menu_item_id"`
+	ModifierName    string           `json:"modifier_name"`
+	ModifierType    string           `json:"modifier_type"`
+	PriceAdjustment pgtype.Numeric   `json:"price_adjustment"`
+	IsActive        pgtype.Bool      `json:"is_active"`
+	DisplayOrder    pgtype.Int4      `json:"display_order"`
+	Metadata        json.RawMessage  `json:"metadata"`
+	CreatedAt       pgtype.Timestamp `json:"created_at"`
+	MenuItemName    string           `json:"menu_item_name"`
+}
+
+func (q *Queries) ListModifiersByStore(ctx context.Context, storeID int32) ([]ListModifiersByStoreRow, error) {
+	rows, err := q.db.Query(ctx, listModifiersByStore, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListModifiersByStoreRow
+	for rows.Next() {
+		var i ListModifiersByStoreRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MenuItemID,
+			&i.ModifierName,
+			&i.ModifierType,
+			&i.PriceAdjustment,
+			&i.IsActive,
+			&i.DisplayOrder,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.MenuItemName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateMenuItemModifier = `-- name: UpdateMenuItemModifier :one
 UPDATE menu_item_modifiers
 SET
@@ -139,13 +202,13 @@ RETURNING id, menu_item_id, modifier_name, modifier_type, price_adjustment, is_a
 `
 
 type UpdateMenuItemModifierParams struct {
-	ID              int32          `json:"id"`
-	ModifierName    string         `json:"modifier_name"`
-	ModifierType    string         `json:"modifier_type"`
-	PriceAdjustment pgtype.Numeric `json:"price_adjustment"`
-	IsActive        pgtype.Bool    `json:"is_active"`
-	DisplayOrder    pgtype.Int4    `json:"display_order"`
-	Metadata        []byte         `json:"metadata"`
+	ID              int32           `json:"id"`
+	ModifierName    string          `json:"modifier_name"`
+	ModifierType    string          `json:"modifier_type"`
+	PriceAdjustment pgtype.Numeric  `json:"price_adjustment"`
+	IsActive        pgtype.Bool     `json:"is_active"`
+	DisplayOrder    pgtype.Int4     `json:"display_order"`
+	Metadata        json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateMenuItemModifier(ctx context.Context, arg UpdateMenuItemModifierParams) (MenuItemModifier, error) {

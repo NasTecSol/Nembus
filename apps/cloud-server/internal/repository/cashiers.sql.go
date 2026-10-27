@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,7 +17,7 @@ const activateCashier = `-- name: ActivateCashier :one
 UPDATE cashiers
 SET is_active = true
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 // Activate a cashier
@@ -33,26 +34,27 @@ func (q *Queries) ActivateCashier(ctx context.Context, id int32) (Cashier, error
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 type BulkCreatePosTransactionLinesParams struct {
-	TransactionID    int32          `json:"transaction_id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
-	Quantity         pgtype.Numeric `json:"quantity"`
-	UomID            pgtype.Int4    `json:"uom_id"`
-	UnitPrice        pgtype.Numeric `json:"unit_price"`
-	DiscountAmount   pgtype.Numeric `json:"discount_amount"`
-	TaxAmount        pgtype.Numeric `json:"tax_amount"`
-	Subtotal         pgtype.Numeric `json:"subtotal"`
-	LineTotal        pgtype.Numeric `json:"line_total"`
-	CostPrice        pgtype.Numeric `json:"cost_price"`
-	LineNumber       pgtype.Int4    `json:"line_number"`
-	SerialNumber     pgtype.Text    `json:"serial_number"`
-	BatchNumber      pgtype.Text    `json:"batch_number"`
-	Metadata         []byte         `json:"metadata"`
+	TransactionID    int32           `json:"transaction_id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	Subtotal         pgtype.Numeric  `json:"subtotal"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	CostPrice        pgtype.Numeric  `json:"cost_price"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	SerialNumber     pgtype.Text     `json:"serial_number"`
+	BatchNumber      pgtype.Text     `json:"batch_number"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 const calculateSessionExpectedBalance = `-- name: CalculateSessionExpectedBalance :one
@@ -209,17 +211,17 @@ INSERT INTO cashiers (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type CreateCashierParams struct {
-	UserID        int32          `json:"user_id"`
-	StoreID       int32          `json:"store_id"`
-	CashierCode   string         `json:"cashier_code"`
-	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
-	DiscountLimit pgtype.Numeric `json:"discount_limit"`
-	IsActive      pgtype.Bool    `json:"is_active"`
-	Metadata      []byte         `json:"metadata"`
+	UserID        int32           `json:"user_id"`
+	StoreID       int32           `json:"store_id"`
+	CashierCode   string          `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric  `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric  `json:"discount_limit"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -252,6 +254,7 @@ func (q *Queries) CreateCashier(ctx context.Context, arg CreateCashierParams) (C
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -277,7 +280,7 @@ type CreateCashierSessionParams struct {
 	SessionNumber  string           `json:"session_number"`
 	OpeningTime    pgtype.Timestamp `json:"opening_time"`
 	OpeningBalance pgtype.Numeric   `json:"opening_balance"`
-	Metadata       []byte           `json:"metadata"`
+	Metadata       json.RawMessage  `json:"metadata"`
 }
 
 // Create a new cashier session
@@ -319,7 +322,7 @@ INSERT INTO cashiers (
 ) VALUES (
     $1, $2, $3, true
 )
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type CreateCashierWithDefaultsParams struct {
@@ -342,6 +345,7 @@ func (q *Queries) CreateCashierWithDefaults(ctx context.Context, arg CreateCashi
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -371,7 +375,7 @@ INSERT INTO pos_transactions (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
     jsonb_build_object('source_cart_id', $18)
 )
-RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
 `
 
 type CreatePosTransactionFromCartParams struct {
@@ -446,6 +450,7 @@ func (q *Queries) CreatePosTransactionFromCart(ctx context.Context, arg CreatePo
 		&i.VoidedAt,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -454,7 +459,7 @@ const deactivateCashier = `-- name: DeactivateCashier :one
 UPDATE cashiers
 SET is_active = false
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 // Deactivate a cashier
@@ -471,6 +476,7 @@ func (q *Queries) DeactivateCashier(ctx context.Context, id int32) (Cashier, err
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -564,7 +570,7 @@ func (q *Queries) GetActiveSessionByCashierAndTerminal(ctx context.Context, arg 
 }
 
 const getCashierByCode = `-- name: GetCashierByCode :one
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 WHERE cashier_code = $1 AND store_id = $2
 `
 
@@ -587,13 +593,14 @@ func (q *Queries) GetCashierByCode(ctx context.Context, arg GetCashierByCodePara
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getCashierByID = `-- name: GetCashierByID :one
 
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 WHERE id = $1
 `
 
@@ -614,12 +621,13 @@ func (q *Queries) GetCashierByID(ctx context.Context, id int32) (Cashier, error)
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getCashierByUserID = `-- name: GetCashierByUserID :one
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 WHERE user_id = $1 AND store_id = $2
 `
 
@@ -642,6 +650,7 @@ func (q *Queries) GetCashierByUserID(ctx context.Context, arg GetCashierByUserID
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -896,7 +905,7 @@ func (q *Queries) GetCashierWithLimits(ctx context.Context, id int32) (GetCashie
 
 const getCashierWithUserDetails = `-- name: GetCashierWithUserDetails :one
 SELECT 
-    c.id, c.user_id, c.store_id, c.cashier_code, c.drawer_limit, c.discount_limit, c.is_active, c.metadata, c.created_at,
+    c.id, c.user_id, c.store_id, c.cashier_code, c.drawer_limit, c.discount_limit, c.is_active, c.metadata, c.created_at, c.updated_at,
     u.username,
     u.first_name || ' ' || u.last_name as full_name,
     u.email,
@@ -915,8 +924,9 @@ type GetCashierWithUserDetailsRow struct {
 	DrawerLimit   pgtype.Numeric   `json:"drawer_limit"`
 	DiscountLimit pgtype.Numeric   `json:"discount_limit"`
 	IsActive      pgtype.Bool      `json:"is_active"`
-	Metadata      []byte           `json:"metadata"`
+	Metadata      json.RawMessage  `json:"metadata"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 	Username      string           `json:"username"`
 	FullName      interface{}      `json:"full_name"`
 	Email         string           `json:"email"`
@@ -938,6 +948,7 @@ func (q *Queries) GetCashierWithUserDetails(ctx context.Context, id int32) (GetC
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Username,
 		&i.FullName,
 		&i.Email,
@@ -975,7 +986,7 @@ type GetOpenSessionsForStoreRow struct {
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	Status          pgtype.Text      `json:"status"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     string           `json:"cashier_code"`
@@ -1266,7 +1277,7 @@ type GetSessionsByStatusRow struct {
 	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
 	Variance        pgtype.Numeric   `json:"variance"`
 	Status          pgtype.Text      `json:"status"`
-	Metadata        []byte           `json:"metadata"`
+	Metadata        json.RawMessage  `json:"metadata"`
 	CreatedAt       pgtype.Timestamp `json:"created_at"`
 	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
 	CashierCode     string           `json:"cashier_code"`
@@ -1384,7 +1395,7 @@ func (q *Queries) GetTopPerformingCashiers(ctx context.Context, arg GetTopPerfor
 
 const getVoidedTransactionsByDate = `-- name: GetVoidedTransactionsByDate :many
 SELECT 
-    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at,
+    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at, pt.updated_at,
     c.cashier_code,
     u.username as voided_by_username
 FROM pos_transactions pt
@@ -1425,8 +1436,9 @@ type GetVoidedTransactionsByDateRow struct {
 	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
 	VoidedBy          pgtype.Int4      `json:"voided_by"`
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	CashierCode       string           `json:"cashier_code"`
 	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
 }
@@ -1466,6 +1478,7 @@ func (q *Queries) GetVoidedTransactionsByDate(ctx context.Context, arg GetVoided
 			&i.VoidedAt,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.CashierCode,
 			&i.VoidedByUsername,
 		); err != nil {
@@ -1481,7 +1494,7 @@ func (q *Queries) GetVoidedTransactionsByDate(ctx context.Context, arg GetVoided
 
 const getVoidedTransactionsBySession = `-- name: GetVoidedTransactionsBySession :many
 SELECT 
-    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at,
+    pt.id, pt.store_id, pt.cashier_id, pt.cashier_session_id, pt.customer_id, pt.pos_terminal_id, pt.transaction_number, pt.transaction_date, pt.transaction_type, pt.subtotal, pt.discount_amount, pt.tax_amount, pt.total_amount, pt.total_cost, pt.amount_paid, pt.change_given, pt.status, pt.price_list_id, pt.sales_order_id, pt.source_cart_id, pt.voided_by, pt.voided_at, pt.metadata, pt.created_at, pt.updated_at,
     u.username as voided_by_username,
     u.first_name || ' ' || u.last_name as voided_by_name
 FROM pos_transactions pt
@@ -1514,8 +1527,9 @@ type GetVoidedTransactionsBySessionRow struct {
 	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
 	VoidedBy          pgtype.Int4      `json:"voided_by"`
 	VoidedAt          pgtype.Timestamp `json:"voided_at"`
-	Metadata          []byte           `json:"metadata"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	VoidedByUsername  pgtype.Text      `json:"voided_by_username"`
 	VoidedByName      interface{}      `json:"voided_by_name"`
 }
@@ -1555,6 +1569,7 @@ func (q *Queries) GetVoidedTransactionsBySession(ctx context.Context, cashierSes
 			&i.VoidedAt,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.VoidedByUsername,
 			&i.VoidedByName,
 		); err != nil {
@@ -1569,7 +1584,7 @@ func (q *Queries) GetVoidedTransactionsBySession(ctx context.Context, cashierSes
 }
 
 const listActiveCashiers = `-- name: ListActiveCashiers :many
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 WHERE is_active = true
 ORDER BY cashier_code
 `
@@ -1594,6 +1609,7 @@ func (q *Queries) ListActiveCashiers(ctx context.Context) ([]Cashier, error) {
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1606,7 +1622,7 @@ func (q *Queries) ListActiveCashiers(ctx context.Context) ([]Cashier, error) {
 }
 
 const listActiveCashiersByStore = `-- name: ListActiveCashiersByStore :many
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 WHERE store_id = $1 AND is_active = true
 ORDER BY cashier_code
 `
@@ -1631,6 +1647,7 @@ func (q *Queries) ListActiveCashiersByStore(ctx context.Context, storeID int32) 
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1697,7 +1714,7 @@ func (q *Queries) ListActiveCashiersInStore(ctx context.Context, storeID int32) 
 }
 
 const listAllCashiers = `-- name: ListAllCashiers :many
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 ORDER BY cashier_code
 `
 
@@ -1721,6 +1738,7 @@ func (q *Queries) ListAllCashiers(ctx context.Context) ([]Cashier, error) {
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1782,7 +1800,7 @@ func (q *Queries) ListCashierSessions(ctx context.Context, arg ListCashierSessio
 }
 
 const listCashiersByStore = `-- name: ListCashiersByStore :many
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 WHERE store_id = $1
 ORDER BY cashier_code
 `
@@ -1807,6 +1825,7 @@ func (q *Queries) ListCashiersByStore(ctx context.Context, storeID int32) ([]Cas
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1819,7 +1838,7 @@ func (q *Queries) ListCashiersByStore(ctx context.Context, storeID int32) ([]Cas
 }
 
 const listCashiersWithPagination = `-- name: ListCashiersWithPagination :many
-SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at FROM cashiers
+SELECT id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at FROM cashiers
 ORDER BY cashier_code
 LIMIT $1 OFFSET $2
 `
@@ -1849,6 +1868,7 @@ func (q *Queries) ListCashiersWithPagination(ctx context.Context, arg ListCashie
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1862,7 +1882,7 @@ func (q *Queries) ListCashiersWithPagination(ctx context.Context, arg ListCashie
 
 const listCashiersWithUserDetails = `-- name: ListCashiersWithUserDetails :many
 SELECT 
-    c.id, c.user_id, c.store_id, c.cashier_code, c.drawer_limit, c.discount_limit, c.is_active, c.metadata, c.created_at,
+    c.id, c.user_id, c.store_id, c.cashier_code, c.drawer_limit, c.discount_limit, c.is_active, c.metadata, c.created_at, c.updated_at,
     u.username,
     u.first_name || ' ' || u.last_name as full_name,
     u.email,
@@ -1882,8 +1902,9 @@ type ListCashiersWithUserDetailsRow struct {
 	DrawerLimit   pgtype.Numeric   `json:"drawer_limit"`
 	DiscountLimit pgtype.Numeric   `json:"discount_limit"`
 	IsActive      pgtype.Bool      `json:"is_active"`
-	Metadata      []byte           `json:"metadata"`
+	Metadata      json.RawMessage  `json:"metadata"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 	Username      string           `json:"username"`
 	FullName      interface{}      `json:"full_name"`
 	Email         string           `json:"email"`
@@ -1910,6 +1931,7 @@ func (q *Queries) ListCashiersWithUserDetails(ctx context.Context, storeID int32
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.Username,
 			&i.FullName,
 			&i.Email,
@@ -1978,7 +2000,7 @@ const softDeleteCashier = `-- name: SoftDeleteCashier :one
 UPDATE cashiers
 SET is_active = false
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 // Soft delete by deactivating
@@ -1995,6 +2017,7 @@ func (q *Queries) SoftDeleteCashier(ctx context.Context, id int32) (Cashier, err
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2026,18 +2049,18 @@ SET
     is_active = $7,
     metadata = $8
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type UpdateCashierParams struct {
-	ID            int32          `json:"id"`
-	UserID        int32          `json:"user_id"`
-	StoreID       int32          `json:"store_id"`
-	CashierCode   string         `json:"cashier_code"`
-	DrawerLimit   pgtype.Numeric `json:"drawer_limit"`
-	DiscountLimit pgtype.Numeric `json:"discount_limit"`
-	IsActive      pgtype.Bool    `json:"is_active"`
-	Metadata      []byte         `json:"metadata"`
+	ID            int32           `json:"id"`
+	UserID        int32           `json:"user_id"`
+	StoreID       int32           `json:"store_id"`
+	CashierCode   string          `json:"cashier_code"`
+	DrawerLimit   pgtype.Numeric  `json:"drawer_limit"`
+	DiscountLimit pgtype.Numeric  `json:"discount_limit"`
+	IsActive      pgtype.Bool     `json:"is_active"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 // =====================================================
@@ -2066,6 +2089,7 @@ func (q *Queries) UpdateCashier(ctx context.Context, arg UpdateCashierParams) (C
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2074,7 +2098,7 @@ const updateCashierDiscountLimit = `-- name: UpdateCashierDiscountLimit :one
 UPDATE cashiers
 SET discount_limit = $2
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type UpdateCashierDiscountLimitParams struct {
@@ -2096,6 +2120,7 @@ func (q *Queries) UpdateCashierDiscountLimit(ctx context.Context, arg UpdateCash
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2104,7 +2129,7 @@ const updateCashierDrawerLimit = `-- name: UpdateCashierDrawerLimit :one
 UPDATE cashiers
 SET drawer_limit = $2
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type UpdateCashierDrawerLimitParams struct {
@@ -2126,6 +2151,7 @@ func (q *Queries) UpdateCashierDrawerLimit(ctx context.Context, arg UpdateCashie
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2136,7 +2162,7 @@ SET
     drawer_limit = $2,
     discount_limit = $3
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type UpdateCashierLimitsParams struct {
@@ -2159,6 +2185,7 @@ func (q *Queries) UpdateCashierLimits(ctx context.Context, arg UpdateCashierLimi
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2167,12 +2194,12 @@ const updateCashierMetadata = `-- name: UpdateCashierMetadata :one
 UPDATE cashiers
 SET metadata = $2
 WHERE id = $1
-RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at
+RETURNING id, user_id, store_id, cashier_code, drawer_limit, discount_limit, is_active, metadata, created_at, updated_at
 `
 
 type UpdateCashierMetadataParams struct {
-	ID       int32  `json:"id"`
-	Metadata []byte `json:"metadata"`
+	ID       int32           `json:"id"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // Update cashier metadata
@@ -2189,6 +2216,7 @@ func (q *Queries) UpdateCashierMetadata(ctx context.Context, arg UpdateCashierMe
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2201,7 +2229,7 @@ SET
     voided_by = $2,
     voided_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
 `
 
 type VoidTransactionParams struct {
@@ -2241,6 +2269,7 @@ func (q *Queries) VoidTransaction(ctx context.Context, arg VoidTransactionParams
 		&i.VoidedAt,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

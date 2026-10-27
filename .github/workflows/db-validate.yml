@@ -1,0 +1,197 @@
+name: DB Declarative Schema, Lint & Tenant Apply (Junction)
+
+# Pipeline:
+#   1. PR Checks (target: junction):
+#      - Declarative schema validation / dry-run on Postgres container (Atlas Community).
+#      - Views, triggers & functions apply to test Postgres container.
+#      - sqlc generation freshness check.
+#      - Unit & integration test suites.
+#   2. Push / Merge to junction:
+#      - Runs all validation checks.
+#      - Builds the migrate-tenants runner.
+#      - Ships the runner + schema + views/functions directory to EC2 (scp).
+#      - Declaratively applies schema changes (Atlas Community) and views/functions (pgx)
+#        to the Master DB and all active tenant DBs over SSH.
+
+on:
+  pull_request:
+    branches:
+      - junction
+  push:
+    branches:
+      - junction
+  workflow_dispatch:
+
+concurrency:
+  group: db-junction-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Schema Validation, sqlc & Tests
+    runs-on: ubuntu-latest
+
+    env:
+      # Atlas dev database used for schema calculation/diffing
+      ATLAS_DEV_URL: postgres://postgres:password@localhost:5433/dev?sslmode=disable
+      # Test database to verify schema applies cleanly from scratch
+      TEST_DB_URL: postgres://postgres:password@localhost:5432/masterDB_test?sslmode=disable
+
+    services:
+      devdb:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: dev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      testdb:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: masterDB_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Install Atlas CLI
+        uses: ariga/setup-atlas@v0
+        with:
+          version: v1.3.0
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+
+      # ---------------------------------------------------------------
+      # 1. VALIDATE SCHEMA — Dry-run and full apply against clean test DB
+      # ---------------------------------------------------------------
+      - name: Validate Schema (Atlas Dry-Run)
+        run: |
+          atlas schema apply \
+            --url "$TEST_DB_URL" \
+            --to "file://packages/core/db/schema" \
+            --dev-url "$ATLAS_DEV_URL" \
+            --dry-run
+
+      - name: Test Fresh Database Declarative Apply
+        run: |
+          atlas schema apply \
+            --url "$TEST_DB_URL" \
+            --to "file://packages/core/db/schema" \
+            --dev-url "$ATLAS_DEV_URL" \
+            --auto-approve
+
+      - name: Apply Views, Triggers & Functions to Test DB
+        run: |
+          PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d masterDB_test -v ON_ERROR_STOP=1 -f packages/core/db/views_functions/90_views_functions.sql
+
+      # ---------------------------------------------------------------
+      # 2. VERIFY — sqlc freshness + test suites
+      # ---------------------------------------------------------------
+      - name: Verify sqlc Generation Freshness
+        run: |
+          cd packages/core
+          sqlc generate
+          git diff --exit-code repository/
+
+      - name: Run Core & Server Tests
+        run: |
+          cd packages/core && go test -v ./...
+          cd ../../apps/cloud-server && go test -v ./...
+
+  apply-tenants:
+    name: Apply Declarative Schema (Master & All Active Tenants)
+    # Only executes on push/merge to junction or manual trigger (not on PR checks)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      # ---------------------------------------------------------------
+      # Build & Package Declarative Runner + Schema
+      # ---------------------------------------------------------------
+      - name: Build migrate-tenants Runner
+        run: |
+          cd apps/cloud-server
+          go build -o "${{ github.workspace }}/migrate-tenants-bin" ./cmd/migrate-tenants
+
+      - name: Package Runner + Schema + Views
+        run: |
+          mkdir -p nembus-db-migrate
+          cp migrate-tenants-bin nembus-db-migrate/
+          cp -r packages/core/db/schema nembus-db-migrate/schema
+          cp -r packages/core/db/patches nembus-db-migrate/patches
+          cp -r packages/core/db/views_functions nembus-db-migrate/views_functions
+          tar -czf nembus-db-migrate.tar.gz nembus-db-migrate
+
+      - name: Copy Runner + Schema to EC2 Host
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          source: "nembus-db-migrate.tar.gz"
+          target: /opt/apps
+
+      - name: Apply Declarative Schema on EC2 (Master + All Active Tenants)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            # Ensure the pinned Atlas version is present on the host
+            mkdir -p "$HOME/bin"
+            if ! "$HOME/bin/atlas" version 2>/dev/null | grep -q "v1.3.0"; then
+              curl -sL -o "$HOME/bin/atlas" "https://atlasbinaries.com/atlas/atlas-linux-amd64-v1.3.0"
+              chmod +x "$HOME/bin/atlas"
+            fi
+            export PATH="$HOME/bin:$PATH"
+            atlas version
+
+            # MASTER_DB_URL is the local URL on the EC2 host (localhost)
+            export MASTER_DB_URL='${{ secrets.MASTER_DB_URL }}'
+
+            cd /opt/apps
+            rm -rf nembus-db-migrate
+            tar -xzf nembus-db-migrate.tar.gz
+            cd nembus-db-migrate
+
+            # Run in declarative mode across Master DB and all active tenants (no Pro license required)
+            ./migrate-tenants-bin -declarative -schema "$PWD/schema" -views "$PWD/views_functions/90_views_functions.sql"
+

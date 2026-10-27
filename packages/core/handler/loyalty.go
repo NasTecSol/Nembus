@@ -320,7 +320,12 @@ func (h *LoyaltyHandler) ToggleLoyaltyRuleActive(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
 		return
 	}
-	resp := h.useCase.ToggleLoyaltyRuleActive(c.Request.Context(), c.Param("id"), req.IsActive)
+
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+	resp := h.useCase.ToggleLoyaltyRuleActive(c.Request.Context(), c.Param("id"), isActive)
 	c.JSON(resp.StatusCode, resp)
 }
 

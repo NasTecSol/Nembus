@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -21,13 +22,13 @@ RETURNING id, store_id, table_number, table_name, section, capacity, is_active, 
 `
 
 type CreateRestaurantTableParams struct {
-	StoreID     int32       `json:"store_id"`
-	TableNumber string      `json:"table_number"`
-	TableName   pgtype.Text `json:"table_name"`
-	Section     pgtype.Text `json:"section"`
-	Capacity    pgtype.Int4 `json:"capacity"`
-	IsActive    pgtype.Bool `json:"is_active"`
-	Metadata    []byte      `json:"metadata"`
+	StoreID     int32           `json:"store_id"`
+	TableNumber string          `json:"table_number"`
+	TableName   pgtype.Text     `json:"table_name"`
+	Section     pgtype.Text     `json:"section"`
+	Capacity    pgtype.Int4     `json:"capacity"`
+	IsActive    pgtype.Bool     `json:"is_active"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateRestaurantTable(ctx context.Context, arg CreateRestaurantTableParams) (RestaurantTable, error) {
@@ -143,13 +144,13 @@ RETURNING id, store_id, table_number, table_name, section, capacity, is_active, 
 `
 
 type UpdateRestaurantTableParams struct {
-	ID          int32       `json:"id"`
-	TableNumber string      `json:"table_number"`
-	TableName   pgtype.Text `json:"table_name"`
-	Section     pgtype.Text `json:"section"`
-	Capacity    pgtype.Int4 `json:"capacity"`
-	IsActive    pgtype.Bool `json:"is_active"`
-	Metadata    []byte      `json:"metadata"`
+	ID          int32           `json:"id"`
+	TableNumber string          `json:"table_number"`
+	TableName   pgtype.Text     `json:"table_name"`
+	Section     pgtype.Text     `json:"section"`
+	Capacity    pgtype.Int4     `json:"capacity"`
+	IsActive    pgtype.Bool     `json:"is_active"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) UpdateRestaurantTable(ctx context.Context, arg UpdateRestaurantTableParams) (RestaurantTable, error) {

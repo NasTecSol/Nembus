@@ -19,11 +19,12 @@ ORDER BY created_at DESC;
 -- name: CreateUomPackagingTemplate :one
 INSERT INTO uom_packaging_templates (
     organization_id,
+    uom_id,
     name,
     code,
     is_active
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 RETURNING *;
 
