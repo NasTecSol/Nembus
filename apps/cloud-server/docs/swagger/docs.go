@@ -14927,7 +14927,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Shared key configured as M2M_API_KEY on the server",
+                        "description": "Shared key defined by middleware.M2MAPIKey",
                         "name": "x-m2m-key",
                         "in": "header",
                         "required": true
@@ -14963,12 +14963,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }

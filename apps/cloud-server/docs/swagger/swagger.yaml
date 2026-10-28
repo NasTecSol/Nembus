@@ -17624,7 +17624,7 @@ paths:
         name: x-tenant-id
         required: true
         type: string
-      - description: Shared key configured as M2M_API_KEY on the server
+      - description: Shared key defined by middleware.M2MAPIKey
         in: header
         name: x-m2m-key
         required: true
@@ -17652,10 +17652,6 @@ paths:
             $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handler.ErrorResponse'
-        "503":
-          description: Service Unavailable
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
       summary: Create M2M token

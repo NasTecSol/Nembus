@@ -28,13 +28,12 @@ type CreateM2MRequest struct {
 // @Accept       json
 // @Produce      json
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
-// @Param        x-m2m-key     header    string  true  "Shared key configured as M2M_API_KEY on the server"
+// @Param        x-m2m-key     header    string  true  "Shared key defined by middleware.M2MAPIKey"
 // @Param        request       body      CreateM2MRequest  true  "M2M client registration data"
 // @Success      200  {object}  M2MClientResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
-// @Failure      503  {object}  ErrorResponse
 // @Router       /api/m2m/tokens [post]
 func (h *M2MHandler) CreateToken(c *gin.Context) {
 	tenantID := c.GetHeader("x-tenant-id")

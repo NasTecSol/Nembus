@@ -757,7 +757,7 @@ const collection = {
       req('Create M2M Token', 'POST', '/api/m2m/tokens', {
         auth: authNoAuth,
         header: [...tenantHeader, H('Content-Type', 'application/json'), H('x-m2m-key', '{{m2m_api_key}}')],
-        description: 'Generate and save an M2M token using the shared M2M_API_KEY. No user JWT required.',
+        description: 'Generate and save an M2M token using the shared middleware key. No user JWT required.',
         body: {
           client_id: "pos-App",
           client_name: "pos-App",

@@ -15,7 +15,6 @@ import (
 
 func TestM2MTokenAuthentication(t *testing.T) {
 	t.Chdir(t.TempDir())
-	t.Setenv("M2M_API_KEY", "test-shared-key")
 	t.Setenv("JWT_SECRET", "test-jwt-secret")
 	r := gin.New()
 	protected := r.Group("/api", middleware.JWTAuthMiddleware())
@@ -25,12 +24,12 @@ func TestM2MTokenAuthentication(t *testing.T) {
 		name, method, key, tenant, authorization string
 		status                                   int
 	}{
-		{"issue without JWT", "POST", "test-shared-key", "stg", "", http.StatusOK},
+		{"issue without JWT", "POST", middleware.M2MAPIKey, "stg", "", http.StatusOK},
 		{"missing key", "POST", "", "stg", "", http.StatusUnauthorized},
 		{"wrong key", "POST", "wrong", "stg", "", http.StatusUnauthorized},
 		{"JWT cannot replace key", "POST", "", "stg", "Bearer irrelevant", http.StatusUnauthorized},
-		{"missing tenant", "POST", "test-shared-key", "", "", http.StatusBadRequest},
-		{"listing requires JWT", "GET", "test-shared-key", "stg", "", http.StatusUnauthorized},
+		{"missing tenant", "POST", middleware.M2MAPIKey, "", "", http.StatusBadRequest},
+		{"listing requires JWT", "GET", middleware.M2MAPIKey, "stg", "", http.StatusUnauthorized},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, "/api/m2m/tokens", strings.NewReader(`{"client_id":"pos-app-stg","client_name":"Staging POS","scopes":["products:read"],"years":2}`))
@@ -85,14 +84,4 @@ func TestM2MTokenAuthentication(t *testing.T) {
 			}
 		})
 	}
-	t.Run("unconfigured key fails closed", func(t *testing.T) {
-		t.Setenv("M2M_API_KEY", "")
-		req := httptest.NewRequest("POST", "/api/m2m/tokens", nil)
-		req.Header.Set("x-m2m-key", "test-shared-key")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		if w.Code != http.StatusServiceUnavailable {
-			t.Fatalf("status = %d, want 503", w.Code)
-		}
-	})
 }

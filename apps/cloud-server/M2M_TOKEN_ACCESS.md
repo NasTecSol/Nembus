@@ -1,8 +1,8 @@
 # M2M token issuance
 
-Set `M2M_API_KEY` in the server environment or ignored `.env.local` in the
-cloud-server working directory. The existing local key is unchanged. Restart
-when changing configuration. `JWT_SECRET` must be configured to sign tokens.
+The shared key is defined by `M2MAPIKey` in
+`packages/core/middleware/m2m_key.go`. Rebuild and restart the backend after
+changing it. `JWT_SECRET` must still be configured to sign tokens.
 
 ```javascript
 const response = await fetch(`${baseUrl}/api/m2m/tokens`, {
@@ -29,12 +29,10 @@ POST validates the shared key, generates a signed M2M JWT, saves the client to
 No user JWT or manual creation step is needed. `client_id` and `client_name`
 are required; `scopes` is optional and `years` defaults to 5. Posting an existing
 client ID updates its saved record. Missing or incorrect keys return HTTP 401;
-missing tenant or invalid payload returns HTTP 400. An unconfigured shared key
-returns HTTP 503. Responses disable caching.
+missing tenant or invalid payload returns HTTP 400. Responses disable caching.
 
 GET `/api/m2m/tokens` lists existing tokens for the supplied tenant and requires
 JWT authentication again. It does not accept the shared key as authentication.
 
 A key embedded in frontend code is visible to users and allows token issuance
-for any supplied tenant ID. Keep it out of source control and published docs,
-use HTTPS, and distribute it only to trusted clients.
+for any supplied tenant ID. The key is stored in source code; use HTTPS and distribute it only to trusted clients.

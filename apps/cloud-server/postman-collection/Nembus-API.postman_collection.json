@@ -6516,7 +6516,7 @@
               "mode": "raw",
               "raw": "{\"client_id\":\"pos-App\",\"client_name\":\"pos-App\",\"scopes\":[\"products:read\",\"orders:write\"],\"years\":5}"
             },
-            "description": "Generate and save an M2M token using the shared M2M_API_KEY. No user JWT required."
+            "description": "Generate and save an M2M token using the shared middleware key. No user JWT required."
           }
         },
         {
