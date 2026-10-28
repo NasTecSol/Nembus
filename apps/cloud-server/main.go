@@ -271,15 +271,9 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 			OrgVATID: cfg.ZatcaOrgVATID,
 		}
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
-		posHandler.SetZatcaConfig(zatcaCfg)
-		cartHandler.SetZatcaConfig(zatcaCfg)
-		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
-		orderHandler.SetZatcaReporter(zatcaService)
-		cartHandler.SetZatcaReporter(zatcaService)
-		posHandler.SetZatcaReporter(zatcaService)
 		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
 		zatcaHandler.SetSubmitter(zatcaService)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
@@ -405,15 +399,6 @@ func main() {
 
 	// BackupUseCase talks to the local gRPC backup server (same process)
 	backupUC := usecase.NewBackupUseCase(tenantManager, "localhost:"+cfg.GRPCPort)
-
-	// ZATCA Phase 2 Cloud Service & Reporting Worker
-	zatcaCfg := &usecase.ZatcaConfig{
-		Env:      cfg.ZatcaEnv,
-		BaseURL:  cfg.ZatcaBaseURL,
-		OrgVATID: cfg.ZatcaOrgVATID,
-	}
-	zatcaSvc := cloudzatca.NewService(masterRepo, zatcaCfg)
-	zatcaSvc.StartReportingWorker(ctx, tenantManager)
 
 	// ── Notification Center WebSocket Hub & Outbox Dispatcher ──────────
 	wsHub := notification.NewWebSocketHub()

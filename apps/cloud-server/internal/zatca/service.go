@@ -3,13 +3,10 @@ package zatca
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/middleware"
-	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -134,62 +131,4 @@ func (s *Service) ClearB2BInvoice(ctx context.Context, invoice *repository.Invoi
 	}
 
 	return nil
-}
-
-// StartReportingWorker starts a background worker that periodically polls for pending B2C reporting entries
-// and submits them to ZATCA's Reporting API within the required 24-hour window.
-func (s *Service) StartReportingWorker(ctx context.Context, tenants *manager.Manager) {
-
-	ticker := time.NewTicker(2 * time.Minute)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s.processPendingReportsForTenants(ctx, tenants)
-			}
-		}
-	}()
-	log.Println("✅ ZATCA B2C Reporting Worker started")
-}
-
-func (s *Service) processPendingReportsForTenants(ctx context.Context, tenants *manager.Manager) {
-	if s.repo == nil || tenants == nil {
-		return
-	}
-	active, err := s.repo.ListActiveTenants(ctx)
-	if err != nil {
-		log.Printf("ZATCA worker could not list active tenants: %v", err)
-		return
-	}
-	for _, tenant := range active {
-		pool, err := tenants.GetPool(ctx, tenant.Slug)
-		if err != nil {
-			log.Printf("ZATCA worker could not open tenant %s: %v", tenant.Slug, err)
-			continue
-		}
-		s.processPendingReports(ctx, repository.New(pool))
-	}
-}
-
-func (s *Service) processPendingReports(ctx context.Context, repo *repository.Queries) {
-	entries, err := repo.ListEnabledPendingZatcaDocuments(ctx, 20)
-	if err != nil || len(entries) == 0 {
-		if err != nil {
-			log.Printf("ZATCA worker could not list pending reports: %v", err)
-		}
-		return
-	}
-
-	for _, entry := range entries {
-		// Standard B2B invoices use clearance; do not send them to reporting.
-		if entry.EntityType != usecase.ZatcaSalesOrderEntity && entry.EntityType != "pos_transaction" && entry.EntityType != "sales_return" {
-			continue
-		}
-		// Reuse the same credential validation and status persistence as manual submit.
-		if _, err := s.submitDocument(ctx, repo, &entry); err != nil && !errors.Is(err, usecase.ErrZatcaDisabled) {
-			log.Printf("ZATCA reporting failed for document %d: %v", entry.ID, err)
-		}
-	}
 }

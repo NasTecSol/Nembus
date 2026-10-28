@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
@@ -233,6 +234,11 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		zatcaReporter := zatca.NewReporter(zatcaCfg)
+		posHandler.SetZatcaReporter(zatcaReporter)
+		cartHandler.SetZatcaReporter(zatcaReporter)
+		orderHandler.SetZatcaReporter(zatcaReporter)
+		zatcaHandler.SetOrderReporter(zatcaReporter)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 
 		// Notification Center Routes (In-App Bell & Notifications)
