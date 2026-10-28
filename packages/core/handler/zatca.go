@@ -108,12 +108,15 @@ func (h *ZatcaHandler) salesOrderGateway(c *gin.Context, submit bool) {
 		c.JSON(400, utils.NewResponse(400, "invalid sales order UUID", nil))
 		return
 	}
-	service, ok := h.submitter.(SalesOrderZatcaSubmitter)
-	if !ok {
-		c.JSON(501, utils.NewResponse(501, "order checking/submission is available on the cloud-server backend", nil))
-		return
-	}
 	if submit {
+		service := h.orderReporter
+		if service == nil {
+			service, _ = h.submitter.(OrderZatcaReporter)
+		}
+		if service == nil {
+			c.JSON(501, utils.NewResponse(501, "order reporting is unavailable on this backend", nil))
+			return
+		}
 		entry, err := service.SubmitSalesOrder(c.Request.Context(), id)
 		if err != nil {
 			status := zatcaGatewayStatus(err)
@@ -121,6 +124,11 @@ func (h *ZatcaHandler) salesOrderGateway(c *gin.Context, submit bool) {
 			return
 		}
 		c.JSON(200, utils.NewResponse(200, "ZATCA sales order invoice reported successfully", entry))
+		return
+	}
+	service, ok := h.submitter.(SalesOrderZatcaSubmitter)
+	if !ok {
+		c.JSON(501, utils.NewResponse(501, "order compliance checking is available on the cloud-server backend", nil))
 		return
 	}
 	response, err := service.CheckSalesOrder(c.Request.Context(), id)
@@ -133,9 +141,14 @@ func (h *ZatcaHandler) salesOrderGateway(c *gin.Context, submit bool) {
 }
 
 type ZatcaHandler struct {
-	zatcaUC   *usecase.ZatcaUseCase
-	onboarder DeviceOnboarder
-	submitter PosZatcaSubmitter
+	zatcaUC       *usecase.ZatcaUseCase
+	onboarder     DeviceOnboarder
+	submitter     PosZatcaSubmitter
+	orderReporter OrderZatcaReporter
+}
+
+func (h *ZatcaHandler) SetOrderReporter(reporter OrderZatcaReporter) {
+	h.orderReporter = reporter
 }
 
 func NewZatcaHandler(uc *usecase.ZatcaUseCase) *ZatcaHandler {

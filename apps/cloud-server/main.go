@@ -85,7 +85,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -242,7 +242,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 		// [NEW] M2M Token management
 		m2mHandler := handler.NewM2MHandler()
-		router.RegisterM2MRoutes(api, m2mHandler)
+		router.RegisterM2MRoutes(api, r.Group("/api"), m2mHandler)
 
 		// [NEW] Warehouse Logistics (Transfer Requests, Goods Receipt Notes & Purchase Orders)
 		transferRequestsHandler := handler.NewTransferRequestsHandler(transferRequestsUC)
@@ -271,15 +271,9 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 			OrgVATID: cfg.ZatcaOrgVATID,
 		}
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
-		posHandler.SetZatcaConfig(zatcaCfg)
-		cartHandler.SetZatcaConfig(zatcaCfg)
-		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
-		orderHandler.SetZatcaReporter(zatcaService)
-		cartHandler.SetZatcaReporter(zatcaService)
-		posHandler.SetZatcaReporter(zatcaService)
 		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
 		zatcaHandler.SetSubmitter(zatcaService)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
@@ -405,15 +399,6 @@ func main() {
 
 	// BackupUseCase talks to the local gRPC backup server (same process)
 	backupUC := usecase.NewBackupUseCase(tenantManager, "localhost:"+cfg.GRPCPort)
-
-	// ZATCA Phase 2 Cloud Service & Reporting Worker
-	zatcaCfg := &usecase.ZatcaConfig{
-		Env:      cfg.ZatcaEnv,
-		BaseURL:  cfg.ZatcaBaseURL,
-		OrgVATID: cfg.ZatcaOrgVATID,
-	}
-	zatcaSvc := cloudzatca.NewService(masterRepo, zatcaCfg)
-	zatcaSvc.StartReportingWorker(ctx, tenantManager)
 
 	// ── Notification Center WebSocket Hub & Outbox Dispatcher ──────────
 	wsHub := notification.NewWebSocketHub()

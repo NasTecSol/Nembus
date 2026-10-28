@@ -34,6 +34,7 @@ func PullEntityTypes() []string {
 		"stock_count_lines",
 		"inventory_stock",
 		"stock_movements",
+		"organizations",
 		"zatca_device_configs",
 	}
 }
