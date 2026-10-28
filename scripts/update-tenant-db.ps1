@@ -16,13 +16,13 @@
     Target database connection string (e.g. Supabase connection string).
 
 .EXAMPLE
-    .\scripts\update-tenant-db.ps1 -TenantSlug "e2e-enrichment" -DbUrl "postgresql://postgres.gktqsuecolwccvhpmuqw:Nembus%402026@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require"
+    .\scripts\update-tenant-db.ps1 -TenantSlug "e2e-enrichment" -DbUrl "postgresql://postgres:Nembus-2026@nembus-pg-db.cf86sus6qqzy.us-east-2.rds.amazonaws.com:5432/postgres?sslmode=require"
 #>
 param(
     [string]$MasterDbUrl = "postgres://postgres:root1234@localhost:5432/nembus_e2e_master?sslmode=disable",
     [Parameter(Mandatory = $true)]
     [string]$TenantSlug,
-    [string]$TenantName = "Supabase Tenant",
+    [string]$TenantName = "AWS RDS Tenant",
     [Parameter(Mandatory = $true)]
     [string]$DbUrl
 )

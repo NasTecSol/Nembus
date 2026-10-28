@@ -96,3 +96,22 @@ env "supabase" {
     format = atlas
   }
 }
+
+variable "aws_rds_db_url" {
+  type        = string
+  default     = getenv("AWS_RDS_DB_URL") != "" ? getenv("AWS_RDS_DB_URL") : "postgresql://postgres:Nembus-2026@nembus-pg-db.cf86sus6qqzy.us-east-2.rds.amazonaws.com:5432/postgres?sslmode=require"
+  description = "Connection URL for AWS RDS PostgreSQL database"
+}
+
+env "aws_rds" {
+  src = [
+    "file://db/schema",
+    "file://db/views_functions"
+  ]
+  url = var.aws_rds_db_url
+  dev = var.dev_db_url
+  migration {
+    dir    = "file://db/migrations"
+    format = atlas
+  }
+}
