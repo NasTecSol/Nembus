@@ -14853,6 +14853,11 @@ const docTemplate = `{
         },
         "/api/m2m/tokens": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "List all registered M2M tokens for the current tenant",
                 "produces": [
                     "application/json"
@@ -14898,12 +14903,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             },
             "post": {
                 "description": "Register a client application and generate a long-lived JWT token using the shared M2M key; no user JWT required",
@@ -46345,6 +46345,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/zatca/documents": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all saved document types and statuses, newest document ID first, from the current tenant and authenticated organization. Each document includes its saved status, gateway response, QR, identity and timestamps. Defaults to page=1 and limit=50; larger positive limits are accepted. An empty or out-of-range page returns documents=[] with HTTP 200. This read-only endpoint never generates or submits documents and works when ZATCA is disabled. The saved QR does not by itself prove successful reporting or that ZATCA returned it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "zatca"
+                ],
+                "summary": "List saved ZATCA documents with pagination",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number (starts at 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Records per page; values above 50 are supported",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaDocumentListAPIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/zatca/onboard": {
             "post": {
                 "security": [
@@ -46556,6 +46626,77 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/zatca/orders/{id}/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Read-only lookup of zatca_document_chain for a sales_orders_v2 UUID. Returns zatca_status (pending, reported, cleared, warning, rejected, or failed), the saved zatca_response, QR, document identity and timestamps. A pending document may have no gateway response. qr_code_base64 is the saved document QR and does not by itself prove reporting success or that ZATCA returned it. Never generates, checks, retries or submits an invoice. Also resolves historical linked POS documents and remains available when ZATCA is disabled. Returns 404 if no saved document exists.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "zatca"
+                ],
+                "summary": "Read a sales order's saved ZATCA status and response",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "sales_orders_v2.id UUID (not order number or POS transaction ID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaDocumentAPIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handler.ZatcaAPIError"
                         }
@@ -56803,6 +56944,53 @@ const docTemplate = `{
                 "zatca_uuid": {
                     "type": "string",
                     "format": "uuid"
+                }
+            }
+        },
+        "handler.ZatcaDocumentListAPIResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/handler.ZatcaDocumentListData"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Saved ZATCA documents"
+                },
+                "statusCode": {
+                    "type": "integer",
+                    "example": 200
+                }
+            }
+        },
+        "handler.ZatcaDocumentListData": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ZatcaDocumentData"
+                    }
+                },
+                "has_next_page": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 125
+                },
+                "total_pages": {
+                    "type": "integer",
+                    "example": 3
                 }
             }
         },

@@ -6913,6 +6913,39 @@ definitions:
         format: uuid
         type: string
     type: object
+  handler.ZatcaDocumentListAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaDocumentListData'
+      message:
+        example: Saved ZATCA documents
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaDocumentListData:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/handler.ZatcaDocumentData'
+        type: array
+      has_next_page:
+        example: true
+        type: boolean
+      limit:
+        example: 50
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total:
+        example: 125
+        type: integer
+      total_pages:
+        example: 3
+        type: integer
+    type: object
   handler.ZatcaDocumentStatus:
     properties:
       valid:
@@ -17617,7 +17650,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Register a client application and generate a long-lived JWT token using the shared M2M key; no user JWT required
+      description: Register a client application and generate a long-lived JWT token
+        using the shared M2M key; no user JWT required
       parameters:
       - description: Tenant identifier
         in: header
@@ -38242,6 +38276,60 @@ paths:
       summary: Resume incomplete device onboarding
       tags:
       - zatca
+  /api/zatca/documents:
+    get:
+      description: Returns all saved document types and statuses, newest document
+        ID first, from the current tenant and authenticated organization. Each document
+        includes its saved status, gateway response, QR, identity and timestamps.
+        Defaults to page=1 and limit=50; larger positive limits are accepted. An empty
+        or out-of-range page returns documents=[] with HTTP 200. This read-only endpoint
+        never generates or submits documents and works when ZATCA is disabled. The
+        saved QR does not by itself prove successful reporting or that ZATCA returned
+        it.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - default: 1
+        description: Page number (starts at 1)
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: page
+        type: integer
+      - default: 50
+        description: Records per page; values above 50 are supported
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentListAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: List saved ZATCA documents with pagination
+      tags:
+      - zatca
   /api/zatca/onboard:
     post:
       consumes:
@@ -38397,6 +38485,60 @@ paths:
       security:
       - BearerAuth: []
       summary: Generate or reuse the signed sales-order invoice
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/status:
+    get:
+      description: Read-only lookup of zatca_document_chain for a sales_orders_v2
+        UUID. Returns zatca_status (pending, reported, cleared, warning, rejected,
+        or failed), the saved zatca_response, QR, document identity and timestamps.
+        A pending document may have no gateway response. qr_code_base64 is the saved
+        document QR and does not by itself prove reporting success or that ZATCA returned
+        it. Never generates, checks, retries or submits an invoice. Also resolves
+        historical linked POS documents and remains available when ZATCA is disabled.
+        Returns 404 if no saved document exists.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: sales_orders_v2.id UUID (not order number or POS transaction
+          ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read a sales order's saved ZATCA status and response
       tags:
       - zatca
   /api/zatca/orders/{id}/submit:
