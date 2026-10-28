@@ -1137,6 +1137,9 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 	respData := map[string]interface{}{
 		"order_id":     orderID,
 		"order_number": orderNumber,
+		"qr_code":      qrCode,
+		"zatca_uuid":   zatcaUUID,
+		"zatca_error":  zatcaError,
 	}
 	if posTxnID != nil {
 		respData["pos_transaction_id"] = *posTxnID
@@ -1144,8 +1147,6 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 	}
 
 	return utils.NewResponse(utils.CodeCreated, "order created from cart", respData)
-		"qr_code":      qrCode, "zatca_uuid": zatcaUUID, "zatca_error": zatcaError,
-	
 }
 
 // ReopenCart reopens a converted cart back into an active cart if its order is pending.
