@@ -78,11 +78,11 @@ func (h *M2MHandler) CreateToken(c *gin.Context) {
 
 // ListTokens handles GET /api/m2m/tokens
 // @Summary      List M2M tokens
-// @Description  List all registered M2M tokens for the current tenant
-// @Security     BearerAuth
+// @Description  List all registered M2M tokens for the current tenant using the shared key; no JWT required
 // @Tags         m2m
 // @Produce      json
 // @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        x-m2m-key    header    string  true  "Shared key defined by middleware.M2MAPIKey"
 // @Success      200  {array}   M2MClientResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse

@@ -18,7 +18,8 @@ func TestM2MTokenAuthentication(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-jwt-secret")
 	r := gin.New()
 	protected := r.Group("/api", middleware.JWTAuthMiddleware())
-	RegisterM2MRoutes(protected, r.Group("/api"), handler.NewM2MHandler())
+	RegisterM2MRoutes(r.Group("/api"), handler.NewM2MHandler())
+	protected.GET("/test-auth", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 
 	for _, tc := range []struct {
 		name, method, key, tenant, authorization string
@@ -29,7 +30,6 @@ func TestM2MTokenAuthentication(t *testing.T) {
 		{"wrong key", "POST", "wrong", "stg", "", http.StatusUnauthorized},
 		{"JWT cannot replace key", "POST", "", "stg", "Bearer irrelevant", http.StatusUnauthorized},
 		{"missing tenant", "POST", middleware.M2MAPIKey, "", "", http.StatusBadRequest},
-		{"listing requires JWT", "GET", middleware.M2MAPIKey, "stg", "", http.StatusUnauthorized},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, "/api/m2m/tokens", strings.NewReader(`{"client_id":"pos-app-stg","client_name":"Staging POS","scopes":["products:read"],"years":2}`))
@@ -65,14 +65,14 @@ func TestM2MTokenAuthentication(t *testing.T) {
 				if err != nil || len(clients) != 1 || clients[0].Token != client.Token {
 					t.Fatal("issued token was not saved")
 				}
-				// Use the newly issued token to authenticate a subsequent request.
+				// Use the shared key to inspect the saved token, without a JWT.
 				authReq := httptest.NewRequest("GET", "/api/m2m/tokens", nil)
-				authReq.Header.Set("Authorization", "Bearer "+client.Token)
+				authReq.Header.Set("x-m2m-key", middleware.M2MAPIKey)
 				authReq.Header.Set("x-tenant-id", "stg")
 				authW := httptest.NewRecorder()
 				r.ServeHTTP(authW, authReq)
 				if authW.Code != http.StatusOK {
-					t.Fatalf("issued token rejected: %s", authW.Body.String())
+					t.Fatalf("shared key rejected: %s", authW.Body.String())
 				}
 				var listed []middleware.M2MClient
 				if err := json.Unmarshal(authW.Body.Bytes(), &listed); err != nil {
@@ -81,6 +81,44 @@ func TestM2MTokenAuthentication(t *testing.T) {
 				if len(listed) != 1 || listed[0].Token != client.Token {
 					t.Fatal("listing returned incorrect token")
 				}
+				// The issued token still authenticates ordinary protected routes.
+				apiReq := httptest.NewRequest("GET", "/api/test-auth", nil)
+				apiReq.Header.Set("Authorization", "Bearer "+client.Token)
+				apiW := httptest.NewRecorder()
+				r.ServeHTTP(apiW, apiReq)
+				if apiW.Code != http.StatusNoContent {
+					t.Fatalf("issued token rejected: %s", apiW.Body.String())
+				}
+
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name, key, tenant, authorization string
+		status                           int
+	}{
+		{"GET rejects missing key", "", "stg", "", http.StatusUnauthorized},
+		{"GET rejects wrong key", "wrong", "stg", "", http.StatusUnauthorized},
+		{"GET rejects JWT without key", "", "stg", "Bearer irrelevant", http.StatusUnauthorized},
+		{"GET requires tenant", middleware.M2MAPIKey, "", "", http.StatusBadRequest},
+		{"GET filters other tenant", middleware.M2MAPIKey, "other", "", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/m2m/tokens", nil)
+			req.Header.Set("x-m2m-key", tc.key)
+			req.Header.Set("x-tenant-id", tc.tenant)
+			req.Header.Set("Authorization", tc.authorization)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.status {
+				t.Fatalf("status = %d, want %d", w.Code, tc.status)
+			}
+			if w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("listing must disable caching")
+			}
+			if tc.status == http.StatusOK && strings.TrimSpace(w.Body.String()) != "[]" {
+				t.Fatal("tokens leaked across tenants")
 			}
 		})
 	}

@@ -14853,12 +14853,7 @@ const docTemplate = `{
         },
         "/api/m2m/tokens": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "List all registered M2M tokens for the current tenant",
+                "description": "List all registered M2M tokens for the current tenant using the shared key; no JWT required",
                 "produces": [
                     "application/json"
                 ],
@@ -14871,6 +14866,13 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Tenant identifier",
                         "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shared key defined by middleware.M2MAPIKey",
+                        "name": "x-m2m-key",
                         "in": "header",
                         "required": true
                     }

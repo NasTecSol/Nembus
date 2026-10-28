@@ -765,7 +765,11 @@ const collection = {
           years: 5
         }
       }),
-      req('List M2M Tokens', 'GET', '/api/m2m/tokens')
+      req('List M2M Tokens', 'GET', '/api/m2m/tokens', {
+        auth: authNoAuth,
+        header: [...tenantHeader, H('x-m2m-key', '{{m2m_api_key}}')],
+        description: 'List saved tenant M2M tokens using the shared middleware key. No JWT required.'
+      })
     ]),
     // --- Warehouse Transfer Requests ---
     folder('Transfer Requests', [

@@ -17614,11 +17614,16 @@ paths:
       - loyalty-rules
   /api/m2m/tokens:
     get:
-      description: List all registered M2M tokens for the current tenant
+      description: List all registered M2M tokens for the current tenant using the shared key; no JWT required
       parameters:
       - description: Tenant identifier
         in: header
         name: x-tenant-id
+        required: true
+        type: string
+      - description: Shared key defined by middleware.M2MAPIKey
+        in: header
+        name: x-m2m-key
         required: true
         type: string
       produces:
@@ -17642,8 +17647,6 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
-      security:
-      - BearerAuth: []
       summary: List M2M tokens
       tags:
       - m2m
