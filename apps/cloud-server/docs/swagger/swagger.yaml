@@ -6789,20 +6789,383 @@ definitions:
     required:
     - voided_by
     type: object
-  handler.ZatcaStatusResponse:
+  handler.ZatcaAPIError:
     properties:
-      base_url:
-        example: https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal
+      data:
+        x-nullable: true
+      message:
+        example: ZATCA is disabled for this organization
         type: string
+      statusCode:
+        example: 409
+        type: integer
+    type: object
+  handler.ZatcaCheckAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaGatewayData'
+      message:
+        example: Compliance check response; this call does not report the invoice
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaCompletionAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaCompletionData'
+      message:
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaCompletionData:
+    properties:
+      compliance_checks:
+        items:
+          $ref: '#/definitions/handler.ZatcaComplianceStep'
+        type: array
+      device_id:
+        example: 3
+        type: integer
+      onboarding_stage:
+        example: production
+        type: string
+      reporting_ready:
+        example: true
+        type: boolean
+      zatca_env:
+        example: simulation
+        type: string
+    type: object
+  handler.ZatcaComplianceStep:
+    properties:
+      already_completed:
+        type: boolean
+      document_type:
+        example: simplified-invoice
+        type: string
+      response:
+        $ref: '#/definitions/handler.ZatcaGatewayData'
+    type: object
+  handler.ZatcaDocumentAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaDocumentData'
+      message:
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaDocumentData:
+    properties:
+      cleared_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      created_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      device_config_id:
+        example: 3
+        type: integer
+      entity_id:
+        example: 00000000-0000-4000-8000-000000000001
+        type: string
+      entity_type:
+        example: sales_order_v2
+        type: string
+      icv:
+        example: 1
+        type: integer
+      id:
+        example: 10
+        type: integer
+      organization_id:
+        example: 1
+        type: integer
+      pih:
+        type: string
+      qr_code_base64:
+        type: string
+        x-nullable: true
+      signed_xml:
+        type: string
+        x-nullable: true
+      submitted_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      updated_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      xml_hash:
+        type: string
+      zatca_response: {}
+      zatca_status:
+        $ref: '#/definitions/handler.ZatcaDocumentStatus'
+      zatca_uuid:
+        format: uuid
+        type: string
+    type: object
+  handler.ZatcaDocumentStatus:
+    properties:
+      valid:
+        example: true
+        type: boolean
+      zatca_doc_status:
+        example: reported
+        type: string
+    type: object
+  handler.ZatcaGatewayData:
+    properties:
+      clearanceStatus:
+        type: string
+        x-nullable: true
+      qrBuyertStatus:
+        type: string
+        x-nullable: true
+      qrSellertStatus:
+        type: string
+        x-nullable: true
+      reportingStatus:
+        example: REPORTED
+        type: string
+        x-nullable: true
+      validationResults:
+        $ref: '#/definitions/handler.ZatcaValidationResults'
+    type: object
+  handler.ZatcaGenericAPIResponse:
+    properties:
+      data: {}
+      message:
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaOnboardAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaOnboardData'
+      message:
+        example: Device onboarded with ZATCA successfully
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaOnboardData:
+    properties:
+      completion_endpoint:
+        example: /api/zatca/devices/3/complete-onboarding
+        type: string
+      compliance_csid:
+        type: string
+      csid_expiry:
+        format: date-time
+        type: string
+      device_serial:
+        example: POS-01-SIM
+        type: string
+      device_type:
+        enum:
+        - pos
+        - cloud
+        type: string
+      id:
+        example: 3
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      onboarding_stage:
+        example: production
+        type: string
+      production_csid:
+        type: string
+      reporting_ready:
+        example: true
+        type: boolean
+      zatca_env:
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
+        type: string
+    type: object
+  handler.ZatcaOnboardRequest:
+    properties:
+      device_serial:
+        type: string
+      device_type:
+        description: '"pos" or "cloud", defaults to "pos"'
+        enum:
+        - pos
+        - cloud
+        example: pos
+        type: string
+      organization_id:
+        type: integer
+      otp:
+        example: OTP_FROM_MATCHING_PORTAL
+        type: string
+      pos_terminal_id:
+        type: integer
+      store_id:
+        type: integer
+      zatca_env:
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
+        type: string
+    required:
+    - device_serial
+    - otp
+    - zatca_env
+    type: object
+  handler.ZatcaOrganizationSettingData:
+    properties:
       enabled:
         example: true
         type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      source:
+        example: organizations.metadata.zatca.enabled
+        type: string
+    type: object
+  handler.ZatcaOrganizationSettingRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    required:
+    - enabled
+    type: object
+  handler.ZatcaOrganizationSettingResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaOrganizationSettingData'
+      message:
+        example: Organization ZATCA setting updated
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaReceiptQRAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaReceiptQRData'
+      message:
+        example: Saved receipt QR
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaReceiptQRData:
+    properties:
+      qr_code_base64:
+        type: string
+    type: object
+  handler.ZatcaStatusAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaStatusData'
+      message:
+        example: ZATCA status
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaStatusData:
+    properties:
+      base_url:
+        example: https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation
+        type: string
+      device_id:
+        example: 3
+        type: integer
+      enabled:
+        example: true
+        type: boolean
+        x-nullable: true
+      enabled_source:
+        example: organization_metadata
+        type: string
       env:
-        example: sandbox
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
         type: string
+      environment_source:
+        example: device_config
+        type: string
+      is_active:
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      organization_required:
+        type: boolean
+      reporting_ready:
+        type: boolean
       vat_id:
-        example: "300000000000003"
+        example: "310123456700003"
         type: string
+    type: object
+  handler.ZatcaValidationMessage:
+    properties:
+      category:
+        example: XSD validation
+        type: string
+      code:
+        example: XSD_ZATCA_VALID
+        type: string
+      message:
+        type: string
+      status:
+        example: PASS
+        type: string
+      type:
+        example: INFO
+        type: string
+    type: object
+  handler.ZatcaValidationResults:
+    properties:
+      errorMessages:
+        items:
+          $ref: '#/definitions/handler.ZatcaValidationMessage'
+        type: array
+      infoMessages:
+        items:
+          $ref: '#/definitions/handler.ZatcaValidationMessage'
+        type: array
+      status:
+        enum:
+        - PASS
+        - WARNING
+        - ERROR
+        example: PASS
+        type: string
+      warningMessages:
+        items:
+          $ref: '#/definitions/handler.ZatcaValidationMessage'
+        type: array
     type: object
   pgtype.Bool:
     properties:
@@ -7476,7 +7839,6 @@ definitions:
       message:
         type: string
     type: object
-host: localhost:8080
 info:
   contact:
     email: support@swagger.io
@@ -11757,7 +12119,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Convert an existing cart into a sales order
+      description: Convert a cart into a sales order and automatically attempt ZATCA
+        reporting when enabled and the device is ready. Inspect the top-level zatca
+        result; manual order submit remains available for retry.
       parameters:
       - description: Tenant identifier
         in: header
@@ -20030,7 +20394,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new sales order line
+      description: Save a sales order line. After all lines are saved, PUT /api/orders/{id}/totals
+        triggers automatic ZATCA generation and reporting. A line save by itself never
+        issues an invoice.
       parameters:
       - description: Tenant identifier
         in: header
@@ -20396,7 +20762,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update monetary totals of an order
+      description: Update final monetary totals. When ZATCA is enabled and an onboarded
+        device is ready, the complete saved order is signed and reported automatically;
+        the response includes a top-level zatca reporting result. On gateway failure,
+        the order remains saved and /api/zatca/orders/{id}/submit can retry it.
       parameters:
       - description: Tenant identifier
         in: header
@@ -20729,6 +21098,115 @@ paths:
       - BearerAuth: []
       summary: Update an organization
       tags:
+      - organizations
+  /api/organizations/{id}/zatca:
+    get:
+      description: Reads organizations.metadata.zatca.enabled. Missing values mean
+        disabled; environment-file flags are ignored.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaOrganizationSettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read organization ZATCA enablement
+      tags:
+      - zatca
+      - organizations
+    put:
+      consumes:
+      - application/json
+      description: Atomically updates only metadata.zatca.enabled, preserving seller
+        details and unrelated metadata. Both true and false are valid. Disabling pauses
+        ZATCA operations without deleting credentials or signed documents; changes
+        apply without a restart.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Organization-wide switch; false is valid
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ZatcaOrganizationSettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaOrganizationSettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable ZATCA for an organization
+      tags:
+      - zatca
       - organizations
   /api/organizations/code/{code}:
     get:
@@ -23927,7 +24405,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a POS transaction header and its lines
+      description: Creates a POS transaction and linked sales order, then automatically
+        attempts ZATCA reporting when enabled and the device is ready. Inspect the
+        top-level zatca.reported result; manual order submit remains available for
+        retry.
       parameters:
       - description: Tenant identifier
         in: header
@@ -37684,37 +38165,146 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.SuccessResponse'
+            $ref: '#/definitions/handler.ZatcaGenericAPIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
       security:
       - BearerAuth: []
       summary: Get ZATCA device configuration deltas (Pull Sync)
       tags:
       - zatca
-  /api/zatca/status:
-    get:
-      description: Returns whether ZATCA Phase 2 compliance is enabled, environment
-        mode (sandbox or production), base URL, and Org VAT ID
+  /api/zatca/devices/{id}/complete-onboarding:
+    post:
+      description: Recovery only. Reuses saved compliance credentials, request ID,
+        key and device zatca_env, completes six checks, and obtains/saves reporting
+        credentials. No OTP or body. Already-ready devices return without another
+        gateway call. Normal onboarding now completes this flow within POST /onboard.
       parameters:
       - description: Tenant identifier
         in: header
         name: x-tenant-id
         required: true
         type: string
-      - description: Bearer token
+      - description: zatca_device_configs.id (not terminal ID)
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaCompletionAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Resume incomplete device onboarding
+      tags:
+      - zatca
+  /api/zatca/onboard:
+    post:
+      consumes:
+      - application/json
+      description: Requires organization metadata.zatca.enabled=true and explicit
+        zatca_env. Uses an OTP from the matching portal, creates/saves compliance
+        credentials, runs six checks, then saves the reporting CSID and matching secret.
+        HTTP 200 means reporting_ready=true. Allow up to 240 seconds; partial failures
+        include saved device ID and completion_endpoint for recovery without a new
+        OTP. Environment-file flags do not select enablement or gateway.
+      parameters:
+      - description: Tenant identifier
         in: header
-        name: Authorization
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Device onboarding payload; zatca_env is required
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ZatcaOnboardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaOnboardAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Onboard a device completely in one call
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/check:
+    post:
+      description: Generates the saved order document if needed, then calls compliance/invoices
+        with its original device compliance credentials/environment. This does not
+        report the invoice or change its reporting status. Fully onboarded devices
+        may return Submitted before; use submit for actual reporting. No body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Sales order UUID
+        in: path
+        name: id
         required: true
         type: string
       produces:
@@ -37723,22 +38313,240 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ZatcaStatusResponse'
+            $ref: '#/definitions/handler.ZatcaCheckAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
       security:
       - BearerAuth: []
-      summary: Get ZATCA configuration status
+      summary: Check a sales-order invoice with ZATCA
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/generate:
+    post:
+      description: Reads persisted sales_orders_v2 and its complete lines. No extra
+        completion status or request body is required. Signs once and saves XML/hash/UUID/QR
+        locally; does not call ZATCA. Requires organization metadata.zatca.enabled=true.
+        Reuses historical linked transaction invoices to prevent duplicate issuance.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: sales_orders_v2.id UUID (not order number or POS transaction
+          ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Generate or reuse the signed sales-order invoice
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/submit:
+    post:
+      description: Generates the order document if missing, then reports the saved
+        XML using its device reporting CSID, matching secret and saved zatca_env.
+        Repeated calls reuse the saved identity; already-reported invoices are not
+        sent again. Requires organization enablement. No body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Sales order UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Report a sales-order invoice to ZATCA
+      tags:
+      - zatca
+  /api/zatca/receipt-qr:
+    get:
+      description: Provide sales_order_id or transaction_id. Returns the exact saved
+        Base64 TLV text, not a PNG. This read-only operation never generates or submits
+        an invoice and remains available when the organization switch is disabled.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Sales order UUID; provide this or transaction_id
+        in: query
+        name: sales_order_id
+        type: string
+      - description: POS transaction ID; takes precedence if both are supplied
+        in: query
+        name: transaction_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaReceiptQRAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read the saved invoice QR payload
+      tags:
+      - zatca
+  /api/zatca/status:
+    get:
+      description: Enablement comes from organizations.metadata.zatca.enabled, not
+        ZATCA_ENABLED. Supply device_id to include its saved environment/gateway,
+        or organization_id to read the organization switch. With no scope and no organization
+        in authentication, enabled is null and organization_required is true.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Saved device configuration ID; determines organization and gateway
+        in: query
+        name: device_id
+        type: integer
+      - description: Organization ID when device_id is omitted
+        in: query
+        name: organization_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaStatusAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read organization enablement and device gateway status
       tags:
       - zatca
   /api/zatca/sync/push:
     post:
       consumes:
       - application/json
-      description: Receives signed offline transactions and operational outbox records
-        from POS terminals for Cloud ERP ingestion and ZATCA reporting
+      description: Acknowledges received outbox item IDs only. This route does not
+        generate or submit invoices to ZATCA.
       parameters:
       - description: Tenant identifier
         in: header
@@ -37762,22 +38570,157 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.SuccessResponse'
+            $ref: '#/definitions/handler.ZatcaGenericAPIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Ingest offline transaction outbox payload (Push Sync)
+      tags:
+      - zatca
+  /api/zatca/terminals/{id}:
+    get:
+      description: Legacy terminal configuration lookup. For organization enablement
+        and the authoritative saved device environment, use GET /api/zatca/status?device_id=ID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: POS Terminal ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaGenericAPIResponse'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
-        "500":
-          description: Internal Server Error
+        "404":
+          description: Not Found
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
       security:
       - BearerAuth: []
-      summary: Ingest offline transaction outbox payload (Push Sync)
+      - BearerAuth: []
+      summary: Get active ZATCA device config for a POS terminal
+      tags:
+      - zatca
+  /api/zatca/transactions/{id}/check:
+    post:
+      deprecated: true
+      description: Legacy transaction-based lookup. Uses a previously saved pos_transaction
+        document; new sales-order invoices must use /orders/{id}/check. Calls ZATCA
+        compliance only, without reporting or changing local reporting status. No
+        body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Historical POS transaction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaCheckAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Check an existing historical POS invoice
+      tags:
+      - zatca
+  /api/zatca/transactions/{id}/submit:
+    post:
+      deprecated: true
+      description: Legacy transaction-based lookup. Reports saved XML with its original
+        device credentials/environment; does not create an invoice. Use /orders/{id}/submit
+        for new sales. Already-reported documents are not sent again. No body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Historical POS transaction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Report an existing historical POS invoice
       tags:
       - zatca
   /store/{store_id}:

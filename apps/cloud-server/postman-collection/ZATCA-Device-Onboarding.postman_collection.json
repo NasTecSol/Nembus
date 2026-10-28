@@ -1,0 +1,130 @@
+{
+  "info": {
+    "name": "Nembus - Single Call ZATCA Device Onboarding",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "POST /onboard runs all eight gateway steps: compliance CSID, six sample checks, reporting CSID. Use simulation and a NEW device serial with a fresh simulation OTP. Set Postman request timeout to 300000 ms or 0. Existing ready devices do not need re-onboarding. No secrets/private keys are returned. If incomplete, use the returned completion_endpoint with no new OTP. zatca_env is required. It selects the CSR and gateway and is saved with the device; server environment variables do not route device requests. First enable the organization through PUT /api/organizations/{id}/zatca with {\"enabled\":true}. ZATCA_ENABLED in the environment file no longer controls this feature."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tenant",
+      "value": "stgin"
+    },
+    {
+      "key": "organization_id",
+      "value": "1"
+    },
+    {
+      "key": "store_id",
+      "value": "3"
+    },
+    {
+      "key": "pos_terminal_id",
+      "value": "1"
+    },
+    {
+      "key": "device_serial",
+      "value": ""
+    },
+    {
+      "key": "otp",
+      "value": ""
+    },
+    {
+      "key": "device_config_id",
+      "value": ""
+    },
+    {
+      "key": "zatca_env",
+      "value": "simulation"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Onboard device completely (single call)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/onboard",
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"zatca_env\": \"{{zatca_env}}\",\n  \"organization_id\": {{organization_id}},\n  \"store_id\": {{store_id}},\n  \"pos_terminal_id\": {{pos_terminal_id}},\n  \"device_serial\": \"{{device_serial}}\",\n  \"device_type\": \"pos\",\n  \"otp\": \"{{otp}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r=pm.response.json(); if (r.data && (r.data.id || r.data.device_id)) pm.collectionVariables.set('device_config_id',String(r.data.id || r.data.device_id));",
+              "pm.test('Complete onboarding', function () { pm.response.to.have.status(200); pm.expect(r.data.reporting_ready).to.eql(true); pm.expect(r.data.onboarding_stage).to.eql('production'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recovery only - resume saved device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/devices/{{device_config_id}}/complete-onboarding",
+        "description": "Only needed after incomplete main onboarding. No body or OTP. Already-ready devices return without new gateway calls."
+      }
+    },
+    {
+      "name": "Read saved device environment",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/status?device_id={{device_config_id}}"
+      }
+    }
+  ]
+}

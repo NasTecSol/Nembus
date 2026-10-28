@@ -20,7 +20,7 @@ type Config struct {
 	PGDumpPath   string // full path to pg_dump binary
 
 	// ZATCA Phase 2 Configuration
-	ZatcaEnabled  bool   // ZATCA_ENABLED — false for non-Saudi deployments
+	ZatcaEnabled  bool   // Legacy configuration; runtime enablement uses organization metadata
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
@@ -59,6 +59,8 @@ func LoadConfig(env string) *Config {
 	switch zatcaEnv {
 	case "production":
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/core"
+	case "simulation":
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation"
 	default:
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
 	}

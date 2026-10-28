@@ -12,18 +12,26 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // PosHandler holds the POS and POS payment use cases.
 type PosHandler struct {
 	useCase        *usecase.PosUseCase
 	paymentUseCase *usecase.PosPaymentUseCase
+	zatcaConfig    *usecase.ZatcaConfig
+	zatcaReporter  OrderZatcaReporter
 }
 
 // NewPosHandler creates a new POS handler.
 func NewPosHandler(uc *usecase.PosUseCase, paymentUC *usecase.PosPaymentUseCase) *PosHandler {
 	return &PosHandler{useCase: uc, paymentUseCase: paymentUC}
 }
+
+func (h *PosHandler) SetZatcaConfig(cfg *usecase.ZatcaConfig) {
+	h.zatcaConfig = cfg
+}
+func (h *PosHandler) SetZatcaReporter(reporter OrderZatcaReporter) { h.zatcaReporter = reporter }
 
 func (h *PosHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
 	repo, ok := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
@@ -340,7 +348,7 @@ type CreatePosTransactionRequest struct {
 
 // CreateTransaction handles POST /api/pos/transactions
 // @Summary      Create POS transaction
-// @Description  Creates a POS transaction header and its lines
+// @Description  Creates a POS transaction and linked sales order, then automatically attempts ZATCA reporting when enabled and the device is ready. Inspect the top-level zatca.reported result; manual order submit remains available for retry.
 // @Tags         pos
 // @Accept       json
 // @Produce      json
@@ -358,7 +366,14 @@ func (h *PosHandler) CreateTransaction(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
+	// Checkout and signing must use the same request's tenant database.
+	checkoutUC := usecase.NewPosUseCase()
+	checkoutUC.SetRepository(repo)
+	if h.zatcaConfig != nil {
+		zatcaUC := usecase.NewZatcaUseCase(h.zatcaConfig)
+		zatcaUC.SetRepository(repo)
+		checkoutUC.SetZatcaUseCase(zatcaUC)
+	}
 
 	var req CreatePosTransactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -488,7 +503,14 @@ func (h *PosHandler) CreateTransaction(c *gin.Context) {
 		Lines:             lines,
 	}
 
-	resp := h.useCase.CreateTransaction(c.Request.Context(), input)
+	resp := checkoutUC.CreateTransaction(c.Request.Context(), input)
+	if h.zatcaReporter != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if data, ok := resp.Data.(usecase.CreateTransactionOutput); ok && data.SalesOrderID.Valid && data.ZatcaError == "" {
+			orderID := uuid.UUID(data.SalesOrderID.Bytes)
+			c.JSON(resp.StatusCode, gin.H{"statusCode": resp.StatusCode, "message": resp.Message, "data": resp.Data, "zatca": autoReportSalesOrder(c.Request.Context(), h.zatcaReporter, orderID)})
+			return
+		}
+	}
 	c.JSON(resp.StatusCode, resp)
 }
 
