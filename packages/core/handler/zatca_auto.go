@@ -11,8 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// OrderZatcaReporter is supplied by the cloud gateway. The POS client can
-// continue to save orders locally without pretending they were reported.
+// OrderZatcaReporter is supplied by the POS gateway after local checkout.
 type OrderZatcaReporter interface {
 	SubmitSalesOrder(context.Context, uuid.UUID) (*repository.ZatcaDocumentChain, error)
 }
@@ -20,7 +19,7 @@ type OrderZatcaReporter interface {
 func autoReportSalesOrder(ctx context.Context, reporter OrderZatcaReporter, id uuid.UUID) gin.H {
 	result := gin.H{"sales_order_id": id.String(), "reported": false}
 	if reporter == nil {
-		result["error"] = "automatic ZATCA reporting requires the cloud-server gateway"
+		result["error"] = "automatic ZATCA reporting requires the POS gateway"
 		return result
 	}
 	entry, err := reporter.SubmitSalesOrder(ctx, id)
