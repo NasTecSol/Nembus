@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -15,7 +16,41 @@ import (
 )
 
 type OrderHandler struct {
-	useCase *usecase.OrderUseCase
+	useCase       *usecase.OrderUseCase
+	zatcaCfg      *usecase.ZatcaConfig
+	zatcaReporter OrderZatcaReporter
+}
+
+func (h *OrderHandler) SetZatcaConfig(cfg *usecase.ZatcaConfig)      { h.zatcaCfg = cfg }
+func (h *OrderHandler) SetZatcaReporter(reporter OrderZatcaReporter) { h.zatcaReporter = reporter }
+
+// Saving final totals is the direct order API's completion boundary. Cart and
+// POS checkout have their own completion requests. Do not sign from a line
+// save: a partial set of lines could accidentally match stale header totals.
+func (h *OrderHandler) respondWithOrderZatca(c *gin.Context, resp *repository.Response, repo *repository.Queries, id uuid.UUID) {
+	if h.zatcaCfg == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.JSON(resp.StatusCode, resp)
+		return
+	}
+	uc := usecase.NewZatcaUseCase(h.zatcaCfg)
+	uc.SetRepository(repo)
+	entry, err := uc.EnsureSalesOrderDocument(c.Request.Context(), id)
+	result := gin.H{"sales_order_id": id.String(), "generated": false}
+	if err != nil {
+		if errors.Is(err, usecase.ErrZatcaDisabled) {
+			result["enabled"] = false
+		} else {
+			result["error"] = err.Error()
+		}
+	} else {
+		result["generated"] = true
+		result["qr_code"] = entry.QrCodeBase64.String
+		result["zatca_uuid"] = entry.ZatcaUuid.String()
+		if h.zatcaReporter != nil {
+			result = autoReportSalesOrder(c.Request.Context(), h.zatcaReporter, id)
+		}
+	}
+	c.JSON(resp.StatusCode, gin.H{"statusCode": resp.StatusCode, "message": resp.Message, "data": resp.Data, "zatca": result})
 }
 
 func NewOrderHandler(uc *usecase.OrderUseCase) *OrderHandler {
@@ -470,7 +505,7 @@ func (h *OrderHandler) UpdateOrderFulfillmentStatus(c *gin.Context) {
 
 // UpdateOrderTotals handles PUT /api/orders/:id/totals
 // @Summary      Update order totals
-// @Description  Update monetary totals of an order
+// @Description  Update final monetary totals. When ZATCA is enabled and an onboarded device is ready, the complete saved order is signed and reported automatically; the response includes a top-level zatca reporting result. On gateway failure, the order remains saved and /api/zatca/orders/{id}/submit can retry it.
 // @Tags         orders
 // @Accept       json
 // @Produce      json
@@ -546,7 +581,7 @@ func (h *OrderHandler) UpdateOrderTotals(c *gin.Context) {
 	}
 
 	resp := h.useCase.UpdateOrderTotals(c.Request.Context(), arg)
-	c.JSON(resp.StatusCode, resp)
+	h.respondWithOrderZatca(c, resp, repo, orderID)
 }
 
 // UpdateOrderDelivery handles PUT /api/orders/:id/delivery
@@ -716,7 +751,7 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 
 // CreateOrderLine handles POST /api/orders/:id/lines
 // @Summary      Create order line
-// @Description  Create a new sales order line
+// @Description  Save a sales order line. After all lines are saved, PUT /api/orders/{id}/totals triggers automatic ZATCA generation and reporting. A line save by itself never issues an invoice.
 // @Tags         order-lines
 // @Accept       json
 // @Produce      json

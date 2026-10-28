@@ -300,34 +300,45 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	// 5. F2.4: ZATCA Phase 2 Credit Note Signing (381)
 	var qrCode string
 	var zatcaUUID string
-	if uc.zatcaUC != nil && uc.zatcaUC.GetConfig() != nil && uc.zatcaUC.GetConfig().Enabled {
+	if uc.zatcaUC != nil && uc.zatcaUC.GetConfig() != nil {
 		store, storeErr := uc.repo.GetStore(ctx, in.StoreID)
 		if storeErr == nil {
 			org, orgErr := uc.repo.GetOrganization(ctx, store.OrganizationID)
-			if orgErr == nil {
+			enabled, enableErr := OrganizationZatcaEnabled(&org)
+			if orgErr == nil && enableErr == nil && enabled {
 				var device repository.ZatcaDeviceConfig
 				var devErr error
-				if in.SessionID != nil {
-					session, sErr := uc.repo.GetSessionByID(ctx, *in.SessionID)
-					if sErr == nil {
-						device, devErr = uc.repo.GetActivePosDevice(ctx, repository.GetActivePosDeviceParams{
-							OrganizationID: store.OrganizationID,
-							PosTerminalID:  pgtype.Int4{Int32: session.PosTerminalID, Valid: true},
-						})
-					}
-				}
-				if devErr != nil || device.ID == 0 {
-					device, devErr = uc.repo.GetActiveCloudDevice(ctx, store.OrganizationID)
-				}
-
-				if devErr == nil {
-					var origInvoiceNumber string
-					if in.OriginalTransactionID != nil {
-						origTxn, tErr := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
-						if tErr == nil {
-							origInvoiceNumber = origTxn.TransactionNumber
+				var origInvoiceNumber string
+				var originalDeviceID int32
+				if in.OriginalTransactionID != nil {
+					origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
+					if err == nil {
+						origInvoiceNumber, _ = uc.zatcaUC.OriginalIssuedInvoiceNumber(ctx, &origTxn)
+						if doc, err := uc.zatcaUC.IssuedTransactionDocument(ctx, &origTxn); err == nil {
+							originalDeviceID = doc.DeviceConfigID
 						}
 					}
+				}
+				if originalDeviceID > 0 {
+					device, devErr = uc.repo.GetZatcaDeviceConfig(ctx, originalDeviceID)
+				} else {
+					var terminal pgtype.Int4
+					if in.SessionID != nil {
+						if session, err := uc.repo.GetSessionByID(ctx, *in.SessionID); err == nil {
+							terminal = pgtype.Int4{Int32: session.PosTerminalID, Valid: true}
+						}
+					}
+					device, devErr = uc.zatcaUC.SelectZatcaDevice(ctx, store.OrganizationID, terminal, salesReturn.Metadata)
+				}
+				if devErr == nil {
+					if device.OrganizationID != store.OrganizationID || !device.IsActive.Bool || device.IsRevoked.Bool {
+						devErr = fmt.Errorf("original ZATCA device is unavailable")
+					}
+					if _, err := ZatcaDeviceEnvironment(&device); err != nil {
+						devErr = err
+					}
+				}
+				if devErr == nil {
 
 					// ZATCA Credit Note (381) strictly requires BillingReference to the original tax invoice
 					if origInvoiceNumber != "" {
@@ -379,4 +390,3 @@ type ProcessSalesReturnOutput struct {
 }
 
 type SalesReturnResult = ProcessSalesReturnOutput
-

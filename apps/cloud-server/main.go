@@ -41,7 +41,7 @@ import (
 // @license.name  MIT
 // @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host      localhost:8080
+// Swagger uses the serving origin, including the configured port.
 // @BasePath  /
 
 // @securityDefinitions.apikey BearerAuth
@@ -266,16 +266,22 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
-			Enabled:  cfg.ZatcaEnabled,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
 		}
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		posHandler.SetZatcaConfig(zatcaCfg)
+		cartHandler.SetZatcaConfig(zatcaCfg)
+		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
+		orderHandler.SetZatcaReporter(zatcaService)
+		cartHandler.SetZatcaReporter(zatcaService)
+		posHandler.SetZatcaReporter(zatcaService)
 		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
+		zatcaHandler.SetSubmitter(zatcaService)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 
 		// Notification Center & Outbox Routes
@@ -402,15 +408,12 @@ func main() {
 
 	// ZATCA Phase 2 Cloud Service & Reporting Worker
 	zatcaCfg := &usecase.ZatcaConfig{
-		Enabled:  cfg.ZatcaEnabled,
 		Env:      cfg.ZatcaEnv,
 		BaseURL:  cfg.ZatcaBaseURL,
 		OrgVATID: cfg.ZatcaOrgVATID,
 	}
 	zatcaSvc := cloudzatca.NewService(masterRepo, zatcaCfg)
-	if cfg.ZatcaEnabled {
-		zatcaSvc.StartReportingWorker(ctx)
-	}
+	zatcaSvc.StartReportingWorker(ctx, tenantManager)
 
 	// ── Notification Center WebSocket Hub & Outbox Dispatcher ──────────
 	wsHub := notification.NewWebSocketHub()
