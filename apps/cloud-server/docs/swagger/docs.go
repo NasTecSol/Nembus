@@ -14886,16 +14886,27 @@ const docTemplate = `{
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             },
             "post": {
-                "description": "Register a new client application and generate a long-lived JWT token",
+                "description": "Register a client application and generate a long-lived JWT token using the shared M2M key; no user JWT required",
                 "consumes": [
                     "application/json"
                 ],
@@ -14911,6 +14922,13 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Tenant identifier",
                         "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shared key configured as M2M_API_KEY on the server",
+                        "name": "x-m2m-key",
                         "in": "header",
                         "required": true
                     },
@@ -14945,6 +14963,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }

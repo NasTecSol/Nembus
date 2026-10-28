@@ -29,6 +29,10 @@
       "value": ""
     },
     {
+      "key": "m2m_api_key",
+      "value": ""
+    },
+    {
       "key": "store_id",
       "value": "1"
     },
@@ -6492,13 +6496,27 @@
                 "key": "x-tenant-id",
                 "value": "{{tenant_id}}",
                 "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-m2m-key",
+                "value": "{{m2m_api_key}}",
+                "type": "text"
               }
             ],
             "url": "{{base_url}}/api/m2m/tokens",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
               "raw": "{\"client_id\":\"pos-App\",\"client_name\":\"pos-App\",\"scopes\":[\"products:read\",\"orders:write\"],\"years\":5}"
-            }
+            },
+            "description": "Generate and save an M2M token using the shared M2M_API_KEY. No user JWT required."
           }
         },
         {

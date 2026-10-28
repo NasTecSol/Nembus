@@ -23,16 +23,18 @@ type CreateM2MRequest struct {
 
 // CreateToken handles POST /api/m2m/tokens
 // @Summary      Create M2M token
-// @Description  Register a new client application and generate a long-lived JWT token
+// @Description  Register a client application and generate a long-lived JWT token using the shared M2M key; no user JWT required
 // @Tags         m2m
 // @Accept       json
 // @Produce      json
 // @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        x-m2m-key     header    string  true  "Shared key configured as M2M_API_KEY on the server"
 // @Param        request       body      CreateM2MRequest  true  "M2M client registration data"
 // @Success      200  {object}  M2MClientResponse
 // @Failure      400  {object}  ErrorResponse
 // @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
+// @Failure      503  {object}  ErrorResponse
 // @Router       /api/m2m/tokens [post]
 func (h *M2MHandler) CreateToken(c *gin.Context) {
 	tenantID := c.GetHeader("x-tenant-id")
@@ -78,11 +80,13 @@ func (h *M2MHandler) CreateToken(c *gin.Context) {
 // ListTokens handles GET /api/m2m/tokens
 // @Summary      List M2M tokens
 // @Description  List all registered M2M tokens for the current tenant
+// @Security     BearerAuth
 // @Tags         m2m
 // @Produce      json
 // @Param        x-tenant-id  header    string  true  "Tenant identifier"
 // @Success      200  {array}   M2MClientResponse
 // @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
 // @Failure      500  {object}  ErrorResponse
 // @Router       /api/m2m/tokens [get]
 func (h *M2MHandler) ListTokens(c *gin.Context) {
