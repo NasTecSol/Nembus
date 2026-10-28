@@ -31,8 +31,9 @@ are required; `scopes` is optional and `years` defaults to 5. Posting an existin
 client ID updates its saved record. Missing or incorrect keys return HTTP 401;
 missing tenant or invalid payload returns HTTP 400. Responses disable caching.
 
-GET `/api/m2m/tokens` lists existing tokens for the supplied tenant and requires
-JWT authentication again. It does not accept the shared key as authentication.
+GET `/api/m2m/tokens` lists existing tokens for the supplied tenant. Send
+`x-tenant-id` and `x-m2m-key` with no JWT and no request body. It returns an
+array of saved clients including their tokens, or `[]` when none match.
 
 A key embedded in frontend code is visible to users and allows token issuance
 for any supplied tenant ID. The key is stored in source code; use HTTPS and distribute it only to trusted clients.

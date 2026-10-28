@@ -242,7 +242,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 		// [NEW] M2M Token management
 		m2mHandler := handler.NewM2MHandler()
-		router.RegisterM2MRoutes(api, r.Group("/api"), m2mHandler)
+		router.RegisterM2MRoutes(r.Group("/api"), m2mHandler)
 
 		// [NEW] Warehouse Logistics (Transfer Requests, Goods Receipt Notes & Purchase Orders)
 		transferRequestsHandler := handler.NewTransferRequestsHandler(transferRequestsUC)
