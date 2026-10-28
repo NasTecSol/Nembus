@@ -44,5 +44,16 @@ func autoReportSalesOrder(ctx context.Context, reporter OrderZatcaReporter, id u
 	}
 	result["reported"] = true
 	result["reporting_status"] = "REPORTED"
+	// Printing must use a QR returned by a successful gateway response, never
+	// the locally generated QR exposed above for existing API consumers.
+	if entry != nil && entry.ZatcaStatus.Valid && entry.ZatcaStatus.ZatcaDocStatus == repository.ZatcaDocStatusReported {
+		var response struct {
+			ReportingStatus string `json:"reportingStatus"`
+			QRCode          string `json:"qrCode"`
+		}
+		if json.Unmarshal(entry.ZatcaResponse, &response) == nil && response.ReportingStatus == "REPORTED" && response.QRCode != "" {
+			result["receipt_qr_code_base64"] = response.QRCode
+		}
+	}
 	return result
 }

@@ -96,6 +96,21 @@ type ZatcaDocumentAPIResponse struct {
 	Data       ZatcaDocumentData `json:"data"`
 }
 
+type ZatcaDocumentListData struct {
+	Documents   []ZatcaDocumentData `json:"documents"`
+	Page        int64               `json:"page" example:"1"`
+	Limit       int64               `json:"limit" example:"50"`
+	Total       int64               `json:"total" example:"125"`
+	TotalPages  int64               `json:"total_pages" example:"3"`
+	HasNextPage bool                `json:"has_next_page" example:"true"`
+}
+
+type ZatcaDocumentListAPIResponse struct {
+	StatusCode int                   `json:"statusCode" example:"200"`
+	Message    string                `json:"message" example:"Saved ZATCA documents"`
+	Data       ZatcaDocumentListData `json:"data"`
+}
+
 type ZatcaOnboardData struct {
 	ID                 int32  `json:"id" example:"3"`
 	DeviceSerial       string `json:"device_serial" example:"POS-01-SIM"`
