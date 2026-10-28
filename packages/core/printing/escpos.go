@@ -99,6 +99,22 @@ func CmdBarcode39(data string) []byte {
 	return b
 }
 
+// CmdQRCode encodes the exact saved ZATCA Base64 text, not decoded TLV bytes.
+// ESC/POS QR Model 2, 4-dot modules, error correction M; store and print.
+// https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_lparen_lk.html
+func CmdQRCode(data string) []byte {
+	if data == "" || len(data) > 2000 {
+		return nil
+	}
+	command := []byte{GS, '(', 'k', 4, 0, 49, 65, 50, 0,
+		GS, '(', 'k', 3, 0, 49, 67, 4,
+		GS, '(', 'k', 3, 0, 49, 69, 49}
+	size := len(data) + 3
+	command = append(command, GS, '(', 'k', byte(size), byte(size>>8), 49, 80, 48)
+	command = append(command, []byte(data)...)
+	return append(command, GS, '(', 'k', 3, 0, 49, 81, 48)
+}
+
 // ─── Layout helpers ───────────────────────────────────────────────────────────
 
 // Divider returns a full-width dashed separator line.

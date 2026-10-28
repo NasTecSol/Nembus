@@ -9,14 +9,14 @@ import (
 
 // Config holds application configuration
 type Config struct {
-	Env             string
-	Port            string
-	MasterDBURL     string
-	JWTSecret       string
-	DevUserID       string
-	DevUserLogin    string
-	LogLevel        string
-	IsDesktop       bool
+	Env                string
+	Port               string
+	MasterDBURL        string
+	JWTSecret          string
+	DevUserID          string
+	DevUserLogin       string
+	LogLevel           string
+	IsDesktop          bool
 	CloudURL           string
 	GRPCAddr           string // bare host:port for the cloud gRPC backup server
 	BackupAuthToken    string // Auth token for downloading tenant backups
@@ -25,7 +25,7 @@ type Config struct {
 	GithubRepo         string // Repository owner/name (default: NasTecSol/Nembus)
 
 	// ZATCA Phase 2 Configuration
-	ZatcaEnabled  bool   // ZATCA_ENABLED — false for non-Saudi deployments
+	ZatcaEnabled  bool   // Legacy configuration; runtime enablement uses organization metadata
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
@@ -69,29 +69,31 @@ func LoadConfig(env string) *Config {
 	switch zatcaEnv {
 	case "production":
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/core"
+	case "simulation":
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation"
 	default:
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
 	}
 
 	cfg := &Config{
-		Env:             getEnv("ENV", envValue),
-		Port:            getEnv("PORT", "8080"),
-		MasterDBURL:     getEnv("MASTER_DB_URL", ""),
-		JWTSecret:       getEnv("JWT_SECRET", "nembus-desktop-jwt-secret-2024"),
-		DevUserID:       getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
-		DevUserLogin:    getEnv("DEV_USER_LOGIN", "dev_user"),
-		LogLevel:        getEnv("LOG_LEVEL", "info"),
-		IsDesktop:       true, // Default to true for this Wails build
+		Env:                getEnv("ENV", envValue),
+		Port:               getEnv("PORT", "8080"),
+		MasterDBURL:        getEnv("MASTER_DB_URL", ""),
+		JWTSecret:          getEnv("JWT_SECRET", "nembus-desktop-jwt-secret-2024"),
+		DevUserID:          getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
+		DevUserLogin:       getEnv("DEV_USER_LOGIN", "dev_user"),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
+		IsDesktop:          true, // Default to true for this Wails build
 		CloudURL:           getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
 		GRPCAddr:           getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
 		BackupAuthToken:    getEnv("BACKUP_AUTH_TOKEN", "nembus"),
 		AppUpdateClientKey: getEnv("APP_UPDATE_CLIENT_KEY", "nembus-pos-update-client-key-default"),
 		GithubToken:        ghToken,
 		GithubRepo:         getEnv("GITHUB_REPO", "NasTecSol/Nembus"),
-		ZatcaEnabled:    getEnv("ZATCA_ENABLED", "false") == "true",
-		ZatcaEnv:        zatcaEnv,
-		ZatcaBaseURL:    zatcaBaseURL,
-		ZatcaOrgVATID:   getEnv("ZATCA_ORG_VAT_ID", ""),
+		ZatcaEnabled:       getEnv("ZATCA_ENABLED", "false") == "true",
+		ZatcaEnv:           zatcaEnv,
+		ZatcaBaseURL:       zatcaBaseURL,
+		ZatcaOrgVATID:      getEnv("ZATCA_ORG_VAT_ID", ""),
 	}
 
 	// Propagate resolved secrets back into the OS environment so that any

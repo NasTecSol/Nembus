@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,6 +17,12 @@ import (
 // workflowMockDBTX intercepts SQL queries executed by repository.Queries
 // to verify inventory adjustments, stock movements, and sales_orders_v2 linkage.
 type workflowMockDBTX struct {
+	organizationMetadata json.RawMessage
+	order                repository.SalesOrdersV2
+	orderLines           []repository.ListSalesOrderLinesV2Row
+	commits, rollbacks   int
+	legacyTransactionID  int32
+
 	// Recorded AdjustInventoryStock calls
 	adjustedStocks []repository.AdjustInventoryStockByProductAndStoreParams
 	// Recorded CreateStockMovement calls
@@ -34,8 +41,10 @@ type workflowMockDBTX struct {
 	updatedReturnMetadata []repository.UpdateSalesReturnMetadataParams
 
 	// Keypair for device signing
-	privateKeyPEM string
-	latestICV     int64
+	privateKeyPEM       string
+	certificate         string
+	createdTransactions int
+	latestICV           int64
 }
 
 type mockDashboardRows struct {
@@ -91,8 +100,8 @@ func (m *mockDashboardRows) Scan(dest ...interface{}) error {
 	return nil
 }
 func (m *mockDashboardRows) Values() ([]interface{}, error) { return nil, nil }
-func (m *mockDashboardRows) RawValues() [][]byte          { return nil }
-func (m *mockDashboardRows) Conn() *pgx.Conn              { return nil }
+func (m *mockDashboardRows) RawValues() [][]byte            { return nil }
+func (m *mockDashboardRows) Conn() *pgx.Conn                { return nil }
 
 func (m *workflowMockDBTX) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
 	if strings.Contains(sql, "UPDATE pos_transactions") && strings.Contains(sql, "sales_order_id") {
@@ -129,6 +138,10 @@ func (m *workflowMockDBTX) Exec(ctx context.Context, sql string, args ...interfa
 }
 
 func (m *workflowMockDBTX) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	if strings.Contains(sql, "ListSalesOrderLinesV2") {
+		return &zatcaOrderRows{values: m.orderLines}, nil
+	}
+
 	if strings.Contains(sql, "ListSalesOrdersDashboard") || strings.Contains(sql, "FROM sales_orders_v2") {
 		rows := make([]repository.ListSalesOrdersDashboardRow, 0, len(m.createdOrdersV2))
 		for _, o := range m.createdOrdersV2 {
@@ -160,6 +173,24 @@ type workflowMockRow struct {
 func (r *workflowMockRow) Scan(dest ...interface{}) error {
 	s := r.sql
 	switch {
+	case strings.Contains(s, "CountActiveZatcaDevices"):
+		*dest[0].(*int64) = 1
+		return nil
+	case strings.Contains(s, "GetSalesOrderV2"):
+		return scanOrderTestValue(r.mock.order, dest...)
+	case strings.Contains(s, "GetChainEntryByEntity"):
+		for _, c := range r.mock.chainEntries {
+			if c.EntityType == r.args[0].(string) && c.EntityID == r.args[1].(string) {
+				return scanOrderTestValue(orderTestChain(c), dest...)
+			}
+		}
+		return pgx.ErrNoRows
+	case strings.Contains(s, "GetLegacyZatcaOrderTransaction"):
+		if r.mock.legacyTransactionID > 0 {
+			*dest[0].(*int32) = r.mock.legacyTransactionID
+			return nil
+		}
+		return pgx.ErrNoRows
 	case strings.Contains(s, "GetStore") || strings.Contains(s, "FROM stores"):
 		if len(dest) >= 3 {
 			// Scan into repository.Store
@@ -187,9 +218,16 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 			if codePtr, ok := dest[2].(*string); ok {
 				*codePtr = "ORG-10"
 			}
-			if taxIDPtr, ok := dest[3].(*pgtype.Text); ok {
+			if taxIDPtr, ok := dest[4].(*pgtype.Text); ok {
 				*taxIDPtr = pgtype.Text{String: "310123456700003", Valid: true}
 			}
+		}
+		if len(dest) > 8 {
+			metadata := r.mock.organizationMetadata
+			if metadata == nil {
+				metadata = json.RawMessage(testZatcaSellerMetadata)
+			}
+			*dest[8].(*json.RawMessage) = metadata
 		}
 		return nil
 
@@ -204,6 +242,11 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 			if pkPtr, ok := dest[7].(*string); ok {
 				*pkPtr = r.mock.privateKeyPEM
 			}
+		}
+		if len(dest) > 9 {
+			*dest[8].(*pgtype.Text) = pgtype.Text{String: r.mock.certificate, Valid: true}
+			*dest[11].(*pgtype.Text) = pgtype.Text{String: "sandbox", Valid: true}
+			*dest[12].(*pgtype.Bool) = pgtype.Bool{Bool: true, Valid: true}
 		}
 		return nil
 
@@ -252,16 +295,13 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 				Icv:            r.args[5].(int64),
 				Pih:            r.args[6].(string),
 				XmlHash:        r.args[7].(string),
+				QrCodeBase64:   r.args[9].(pgtype.Text), SignedXml: r.args[10].(pgtype.Text), ZatcaStatus: r.args[8].(repository.NullZatcaDocStatus),
 			})
 		}
-		if len(dest) >= 1 {
-			if idPtr, ok := dest[0].(*int32); ok {
-				*idPtr = 1
-			}
-		}
-		return nil
+		return scanOrderTestValue(orderTestChain(r.mock.chainEntries[len(r.mock.chainEntries)-1]), dest...)
 
-	case strings.Contains(s, "CreatePosTransaction") || strings.Contains(s, "INSERT INTO pos_transactions"):
+	case strings.Contains(s, "CreatePosTransaction :one") || strings.Contains(s, "INSERT INTO pos_transactions ("):
+		r.mock.createdTransactions++
 		if len(dest) >= 7 {
 			if idPtr, ok := dest[0].(*int32); ok {
 				*idPtr = 77
@@ -272,6 +312,13 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 			if totalPtr, ok := dest[12].(*pgtype.Numeric); ok {
 				_ = totalPtr.Scan("115.00")
 			}
+		}
+		if len(dest) > 12 && len(r.args) > 12 {
+			*dest[1].(*int32) = r.args[1].(int32)
+			*dest[9].(*pgtype.Numeric) = r.args[9].(pgtype.Numeric)
+			*dest[10].(*pgtype.Numeric) = r.args[11].(pgtype.Numeric)
+			*dest[11].(*pgtype.Numeric) = r.args[10].(pgtype.Numeric)
+			*dest[12].(*pgtype.Numeric) = r.args[12].(pgtype.Numeric)
 		}
 		return nil
 
@@ -293,6 +340,12 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 					*qtyPtr = r.args[6].(pgtype.Numeric)
 				}
 			}
+		}
+		if len(dest) > 12 && len(r.args) > 13 {
+			for _, pair := range [][2]int{{4, 6}, {6, 8}, {7, 9}, {8, 10}, {9, 11}, {10, 12}, {11, 13}} {
+				*dest[pair[0]].(*pgtype.Numeric) = r.args[pair[1]].(pgtype.Numeric)
+			}
+			*dest[12].(*pgtype.Int4) = r.args[1].(pgtype.Int4)
 		}
 		return nil
 
@@ -349,15 +402,15 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 				BillingAddress:  billAddr,
 			})
 		}
-		if len(dest) > 0 {
-			if idPtr, ok := dest[0].(*uuid.UUID); ok {
-				*idPtr = uuid.New()
-			}
-		}
-		return nil
+		r.mock.order = repository.SalesOrdersV2{ID: uuid.New(), OrderNumber: r.args[0].(string), OrganizationID: r.args[1].(int32), StoreID: r.args[2].(pgtype.Int4), PosTerminalID: r.args[26].(pgtype.Int4)}
+		return scanOrderTestValue(r.mock.order, dest...)
 
 	case strings.Contains(s, "UpdateOrderTotals") || strings.Contains(s, "UpdateSalesOrderTotals"):
-		return nil
+		r.mock.order.Subtotal = r.args[1].(pgtype.Numeric)
+		r.mock.order.DiscountAmount = r.args[2].(pgtype.Numeric)
+		r.mock.order.TaxAmount = r.args[3].(pgtype.Numeric)
+		r.mock.order.TotalAmount = r.args[6].(pgtype.Numeric)
+		return scanOrderTestValue(r.mock.order, dest...)
 
 	case strings.Contains(s, "GetProduct") || strings.Contains(s, "FROM products"):
 		if len(dest) >= 18 {
@@ -390,6 +443,7 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 		return nil
 
 	case strings.Contains(s, "CreateSalesOrderLineV2"):
+		r.mock.orderLines = append(r.mock.orderLines, repository.ListSalesOrderLinesV2Row{SalesOrderID: r.args[0].(uuid.UUID), OrganizationID: r.args[1].(int32), LineNumber: r.args[2].(int32), ProductName: r.args[5].(string), QuantityOrdered: r.args[7].(pgtype.Numeric), UnitPrice: r.args[9].(pgtype.Numeric), DiscountAmount: r.args[10].(pgtype.Numeric), TaxAmount: r.args[12].(pgtype.Numeric), LineTotal: r.args[13].(pgtype.Numeric), TaxRate: r.args[15].(pgtype.Numeric)})
 		if len(r.args) >= 8 {
 			r.mock.createdOrderLinesV2 = append(r.mock.createdOrderLinesV2, repository.CreateSalesOrderLineV2Params{
 				SalesOrderID:    r.args[0].(uuid.UUID),
@@ -399,7 +453,7 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 		}
 		return nil
 
-	case strings.Contains(s, "CreateSalesReturn") || strings.Contains(s, "INSERT INTO sales_returns"):
+	case strings.Contains(s, "CreateSalesReturn :one") || strings.Contains(s, "INSERT INTO sales_returns ("):
 		if len(dest) >= 8 {
 			if idPtr, ok := dest[0].(*int32); ok {
 				*idPtr = 55
@@ -412,6 +466,12 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 			}
 			if taxPtr, ok := dest[7].(*pgtype.Numeric); ok {
 				_ = taxPtr.Scan("15.00")
+			}
+		}
+		if len(dest) > 12 && len(r.args) > 11 {
+			*dest[2].(*int32) = r.args[1].(int32)
+			for _, pair := range [][2]int{{10, 9}, {11, 10}, {12, 11}} {
+				*dest[pair[0]].(*pgtype.Numeric) = r.args[pair[1]].(pgtype.Numeric)
 			}
 		}
 		return nil
@@ -428,6 +488,11 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 				if len(r.args) >= 2 {
 					*pIDPtr = r.args[1].(int32)
 				}
+			}
+		}
+		if len(dest) > 7 && len(r.args) > 6 {
+			for _, pair := range [][2]int{{5, 4}, {6, 5}, {7, 6}} {
+				*dest[pair[0]].(*pgtype.Numeric) = r.args[pair[1]].(pgtype.Numeric)
 			}
 		}
 		return nil
@@ -547,6 +612,7 @@ func TestPosTransactionZatcaSigningAndChaining(t *testing.T) {
 
 	mockDB := &workflowMockDBTX{
 		privateKeyPEM: pemStr,
+		certificate:   testZatcaCertificate(t, key),
 		latestICV:     5,
 	}
 	repo := repository.New(mockDB)
@@ -565,6 +631,10 @@ func TestPosTransactionZatcaSigningAndChaining(t *testing.T) {
 
 	var qty pgtype.Numeric
 	_ = qty.Scan("1.000")
+	var price, tax, total pgtype.Numeric
+	_ = price.Scan("100.00")
+	_ = tax.Scan("15.00")
+	_ = total.Scan("115.00")
 
 	input := &PosCreateTransactionInput{
 		StoreID:           1,
@@ -572,10 +642,12 @@ func TestPosTransactionZatcaSigningAndChaining(t *testing.T) {
 		CashierSessionID:  88,
 		PosTerminalID:     2,
 		TransactionNumber: "POS-TXN-0077",
+		Subtotal:          price, TaxAmount: tax, TotalAmount: total,
 		Lines: []PosCreateTransactionLineInput{
 			{
 				ProductID: 301,
 				Quantity:  qty,
+				UnitPrice: price, Subtotal: price, TaxAmount: tax, LineTotal: total,
 			},
 		},
 	}
@@ -616,11 +688,11 @@ func TestPosTransactionZatcaSigningAndChaining(t *testing.T) {
 		t.Fatal("Expected entry inserted into zatca_document_chain")
 	}
 	chain := mockDB.chainEntries[0]
-	if chain.EntityType != "pos_transaction" {
-		t.Errorf("Expected chain EntityType 'pos_transaction', got '%s'", chain.EntityType)
+	if chain.EntityType != ZatcaSalesOrderEntity {
+		t.Errorf("expected order entity, got %s", chain.EntityType)
 	}
-	if chain.EntityID != "77" {
-		t.Errorf("Expected chain EntityID '77', got '%s'", chain.EntityID)
+	if chain.EntityID != mockDB.order.ID.String() {
+		t.Errorf("expected sales order UUID, got %s", chain.EntityID)
 	}
 	if chain.Icv != 6 {
 		t.Errorf("Expected ICV 6, got %d", chain.Icv)
@@ -651,6 +723,7 @@ func TestSalesReturnRestockingAndCreditNote(t *testing.T) {
 
 	mockDB := &workflowMockDBTX{
 		privateKeyPEM: pemStr,
+		certificate:   testZatcaCertificate(t, key),
 		latestICV:     10,
 	}
 	repo := repository.New(mockDB)
@@ -672,9 +745,9 @@ func TestSalesReturnRestockingAndCreditNote(t *testing.T) {
 		StoreID:               1,
 		OriginalTransactionID: &origTxnID,
 		ReturnReason:          "Defective unit exchange",
-		Subtotal:              "100.00",
-		TaxAmount:             "15.00",
-		TotalRefundAmount:     "115.00",
+		Subtotal:              "140.00",
+		TaxAmount:             "21.00",
+		TotalRefundAmount:     "161.00",
 		RefundMethod:          "card",
 		Lines: []ProcessReturnLineInput{
 			{
@@ -841,3 +914,53 @@ func TestDualOrderHarmonization(t *testing.T) {
 		t.Errorf("Expected sales_channel 'pos' in dashboard row, got '%s'", dashboardRows[0].SalesChannel.String)
 	}
 }
+
+// Transactional test adapter for order-based issuance.
+type workflowZatcaTx struct {
+	pgx.Tx
+	db *workflowMockDBTX
+}
+
+func (db *workflowMockDBTX) Begin(context.Context) (pgx.Tx, error) {
+	return &workflowZatcaTx{db: db}, nil
+}
+func (tx *workflowZatcaTx) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	return tx.db.Exec(ctx, sql, args...)
+}
+func (tx *workflowZatcaTx) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	return tx.db.Query(ctx, sql, args...)
+}
+func (tx *workflowZatcaTx) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	return tx.db.QueryRow(ctx, sql, args...)
+}
+func (tx *workflowZatcaTx) Commit(context.Context) error   { tx.db.commits++; return nil }
+func (tx *workflowZatcaTx) Rollback(context.Context) error { tx.db.rollbacks++; return nil }
+func scanOrderTestValue(value interface{}, dest ...interface{}) error {
+	v := reflect.ValueOf(value)
+	for i, d := range dest {
+		reflect.ValueOf(d).Elem().Set(v.Field(i))
+	}
+	return nil
+}
+func orderTestChain(c repository.InsertChainEntryParams) repository.ZatcaDocumentChain {
+	return repository.ZatcaDocumentChain{ID: 1, EntityType: c.EntityType, EntityID: c.EntityID, OrganizationID: c.OrganizationID, DeviceConfigID: c.DeviceConfigID, ZatcaUuid: c.ZatcaUuid, Icv: c.Icv, Pih: c.Pih, XmlHash: c.XmlHash, QrCodeBase64: c.QrCodeBase64, SignedXml: c.SignedXml, ZatcaStatus: c.ZatcaStatus}
+}
+
+type zatcaOrderRows struct {
+	pgx.Rows
+	values []repository.ListSalesOrderLinesV2Row
+	index  int
+}
+
+func (r *zatcaOrderRows) Next() bool {
+	if r.index >= len(r.values) {
+		return false
+	}
+	r.index++
+	return true
+}
+func (r *zatcaOrderRows) Scan(dest ...interface{}) error {
+	return scanOrderTestValue(r.values[r.index-1], dest...)
+}
+func (r *zatcaOrderRows) Close()     {}
+func (r *zatcaOrderRows) Err() error { return nil }

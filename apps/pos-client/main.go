@@ -223,12 +223,14 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
-			Enabled:  cfg.ZatcaEnabled,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
 		}
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		posHandler.SetZatcaConfig(zatcaCfg)
+		cartHandler.SetZatcaConfig(zatcaCfg)
+		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
