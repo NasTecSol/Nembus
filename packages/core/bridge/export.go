@@ -43,6 +43,13 @@ func FetchCompleteTenantMasterData(cTenantId *C.char, cCloudUrl *C.char) *C.char
 	activeDB := globalDBPath
 	dbPathMu.RUnlock()
 
+	if activeDB == "" {
+		return toCString(map[string]interface{}{
+			"success": false,
+			"error":   "Local SQLite database path is not initialized in Go engine. Call InitNembusMobile first.",
+		})
+	}
+
 	resp := SyncTenantBackupData(tenantID, cloudURL, activeDB)
 	return toCString(resp)
 }

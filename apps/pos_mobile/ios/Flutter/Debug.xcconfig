@@ -1,4 +1,8 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
 
-OTHER_LDFLAGS = $(inherited) -force_load $(PROJECT_DIR)/Runner/libnembus_core.a -lresolv -lpthread
+FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*] = $(inherited) $(PROJECT_DIR)/Frameworks/device
+FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*] = $(inherited) $(PROJECT_DIR)/Frameworks/simulator
+FRAMEWORK_SEARCH_PATHS = $(inherited) $(PROJECT_DIR)/Frameworks/device
+
+OTHER_LDFLAGS = $(inherited) -framework nembus_core -framework CoreFoundation -framework Security -lresolv -lpthread

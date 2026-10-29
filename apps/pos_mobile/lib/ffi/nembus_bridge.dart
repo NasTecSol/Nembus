@@ -44,6 +44,15 @@ class NembusBridge {
 
   static DynamicLibrary _openLibrary() {
     if (Platform.isIOS) {
+      final candidates = [
+        'nembus_core.framework/nembus_core',
+        'Frameworks/nembus_core.framework/nembus_core',
+      ];
+      for (final path in candidates) {
+        try {
+          return DynamicLibrary.open(path);
+        } catch (_) {}
+      }
       return DynamicLibrary.process();
     }
     if (Platform.isAndroid || Platform.isLinux) {
@@ -69,28 +78,69 @@ class NembusBridge {
         'Platform not supported: ${Platform.operatingSystem}');
   }
 
+  DynamicLibrary? _executableLib;
+  DynamicLibrary? get _execLib {
+    if (!Platform.isIOS) return null;
+    try {
+      _executableLib ??= DynamicLibrary.executable();
+    } catch (_) {}
+    return _executableLib;
+  }
+
+  List<DynamicLibrary> get _libraries {
+    final libs = <DynamicLibrary>[];
+    if (_lib != null) libs.add(_lib!);
+    final exec = _execLib;
+    if (exec != null) libs.add(exec);
+    return libs;
+  }
+
   _FreeCString _resolveFreeCString() {
-    if (_lib == null) {
-      return (Pointer<Utf8> ptr) {
+    for (final lib in _libraries) {
+      for (final name in ['FreeCString', '_FreeCString', 'NembusffiFreeCString']) {
         try {
-          calloc.free(ptr);
+          return lib.lookupFunction<_CFreeCString, _FreeCString>(name);
         } catch (_) {}
-      };
-    }
-    for (final name in [
-      'FreeCString',
-      '_FreeCString',
-      'NembusffiFreeCString'
-    ]) {
-      try {
-        return _lib!.lookupFunction<_CFreeCString, _FreeCString>(name);
-      } catch (_) {}
+      }
     }
     return (Pointer<Utf8> ptr) {
       try {
         calloc.free(ptr);
       } catch (_) {}
     };
+  }
+
+  _InitNembusMobile? _resolveInitMobile() {
+    for (final lib in _libraries) {
+      for (final name in ['InitNembusMobile', '_InitNembusMobile']) {
+        try {
+          return lib.lookupFunction<_CInitNembusMobile, _InitNembusMobile>(name);
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  _FetchCompleteTenantMasterData? _resolveFetchMasterData() {
+    for (final lib in _libraries) {
+      for (final name in ['FetchCompleteTenantMasterData', '_FetchCompleteTenantMasterData']) {
+        try {
+          return lib.lookupFunction<_CFetchCompleteTenantMasterData, _FetchCompleteTenantMasterData>(name);
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  _CallHandler? _resolveCallHandler() {
+    for (final lib in _libraries) {
+      for (final name in ['CallHandler', '_CallHandler']) {
+        try {
+          return lib.lookupFunction<_CCallHandler, _CallHandler>(name);
+        } catch (_) {}
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic> _parseAndFree(Pointer<Utf8>? resPtr) {
@@ -117,17 +167,7 @@ class NembusBridge {
   Map<String, dynamic> initMobile(String dbPath) {
     developer.log('Calling Go FFI: InitNembusMobile("$dbPath")',
         name: 'NembusBridge');
-    if (_lib == null) {
-      return {'success': false, 'error': 'Native library not loaded'};
-    }
-
-    _InitNembusMobile? fn;
-    for (final name in ['InitNembusMobile', '_InitNembusMobile']) {
-      try {
-        fn = _lib!.lookupFunction<_CInitNembusMobile, _InitNembusMobile>(name);
-        break;
-      } catch (_) {}
-    }
+    final fn = _resolveInitMobile();
 
     if (fn == null) {
       return {
@@ -147,27 +187,16 @@ class NembusBridge {
     }
   }
 
-  /// Triggers full master data backup stream from Cloud Server via gRPC.
+  /// Triggers full master data backup stream from Cloud Server via gRPC or HTTP fallback.
   Map<String, dynamic> fetchCompleteTenantMasterData(
-      String tenantId, String cloudUrl) {
+      String tenantId, String cloudUrl, {String? dbPath}) {
+    if (dbPath != null && dbPath.isNotEmpty) {
+      initMobile(dbPath);
+    }
     developer.log(
         'Calling Go FFI: FetchCompleteTenantMasterData($tenantId, $cloudUrl)',
         name: 'NembusBridge');
-    if (_lib == null) {
-      return {'success': false, 'error': 'Native library not loaded'};
-    }
-
-    _FetchCompleteTenantMasterData? fn;
-    for (final name in [
-      'FetchCompleteTenantMasterData',
-      '_FetchCompleteTenantMasterData'
-    ]) {
-      try {
-        fn = _lib!.lookupFunction<_CFetchCompleteTenantMasterData,
-            _FetchCompleteTenantMasterData>(name);
-        break;
-      } catch (_) {}
-    }
+    final fn = _resolveFetchMasterData();
 
     if (fn == null) {
       return {
@@ -200,17 +229,7 @@ class NembusBridge {
     required String action,
     Map<String, dynamic>? payload,
   }) {
-    if (_lib == null) {
-      return {'success': false, 'error': 'Go native library not loaded'};
-    }
-
-    _CallHandler? fn;
-    for (final name in ['CallHandler', '_CallHandler']) {
-      try {
-        fn = _lib!.lookupFunction<_CCallHandler, _CallHandler>(name);
-        break;
-      } catch (_) {}
-    }
+    final fn = _resolveCallHandler();
 
     if (fn == null) {
       return {

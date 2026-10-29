@@ -4,16 +4,20 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
@@ -31,7 +35,59 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// SyncTenantBackupData connects to the gRPC BackupService and populates SQLite.
+// resolveEndpoints parses any cloud URL or gRPC address and produces both
+// a valid gRPC address (host:50051) and an absolute HTTP/HTTPS base URL.
+func resolveEndpoints(cloudURL string) (grpcAddr string, httpBaseURL string) {
+	trimmed := strings.TrimSpace(cloudURL)
+	if trimmed == "" {
+		return "nembus.nashrms.com:50051", "https://nembus.nashrms.com"
+	}
+
+	var host string
+	var scheme = "https"
+	var customHTTPPort string
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		if u, err := url.Parse(trimmed); err == nil && u.Hostname() != "" {
+			host = u.Hostname()
+			scheme = u.Scheme
+			port := u.Port()
+			if port != "" && port != "80" && port != "443" && port != "50051" {
+				customHTTPPort = port
+			}
+		} else {
+			host = "nembus.nashrms.com"
+		}
+	} else {
+		parts := strings.Split(trimmed, ":")
+		host = parts[0]
+		if host == "localhost" || host == "127.0.0.1" || strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "10.") {
+			scheme = "http"
+			if len(parts) > 1 && parts[1] != "50051" {
+				customHTTPPort = parts[1]
+			}
+		}
+	}
+
+	if strings.Contains(trimmed, ":50051") || !strings.Contains(trimmed, ":") {
+		grpcAddr = fmt.Sprintf("%s:50051", host)
+	} else if strings.Contains(trimmed, ":") && !strings.HasPrefix(trimmed, "http") {
+		grpcAddr = trimmed
+	} else {
+		grpcAddr = fmt.Sprintf("%s:50051", host)
+	}
+
+	if customHTTPPort != "" {
+		httpBaseURL = fmt.Sprintf("%s://%s:%s", scheme, host, customHTTPPort)
+	} else {
+		httpBaseURL = fmt.Sprintf("%s://%s", scheme, host)
+	}
+
+	return grpcAddr, httpBaseURL
+}
+
+// SyncTenantBackupData connects to the gRPC BackupService and populates SQLite,
+// streaming directly into a temporary file and falling back seamlessly to Cloud REST sync.
 func SyncTenantBackupData(tenantSlug, cloudURL, sqlitePath string) map[string]interface{} {
 	cleanSlug := strings.TrimSpace(tenantSlug)
 	if cleanSlug == "" || strings.EqualFold(cleanSlug, "masterdb") {
@@ -40,24 +96,20 @@ func SyncTenantBackupData(tenantSlug, cloudURL, sqlitePath string) map[string]in
 			"error":   "Cannot clone database: a valid tenant slug must be specified (cannot clone masterdb)",
 		}
 	}
+	if strings.TrimSpace(sqlitePath) == "" {
+		return map[string]interface{}{
+			"success": false,
+			"error":   "Local SQLite database path is empty. Call InitNembusMobile before cloning.",
+		}
+	}
 
-	log.Printf("🚀 [Database Clone] Starting full backup clone for target tenant: '%s'", cleanSlug)
+	grpcAddr, httpBaseURL := resolveEndpoints(cloudURL)
+	log.Printf("🚀 [Database Clone] Starting clone for tenant '%s' (gRPC: %s, HTTP: %s)", cleanSlug, grpcAddr, httpBaseURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Direct gRPC address: nembus.nashrms.com:50051 (insecure, no HTTPS)
-	grpcAddr := "nembus.nashrms.com:50051"
-	if strings.Contains(cloudURL, ":") && !strings.HasPrefix(cloudURL, "http") {
-		grpcAddr = cloudURL
-	} else if u, err := url.Parse(cloudURL); err == nil && u.Hostname() != "" {
-		port := u.Port()
-		if port == "" {
-			port = "50051"
-		}
-		grpcAddr = u.Hostname() + ":" + port
-	}
-
+	// Direct gRPC dial with 15s timeout so mobile networks (cellular/Wi-Fi) have time to handshake
 	dialCtx, dialCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer dialCancel()
 
@@ -68,12 +120,12 @@ func SyncTenantBackupData(tenantSlug, cloudURL, sqlitePath string) map[string]in
 		grpc.WithBlock(),
 	)
 	if err != nil {
-		log.Printf("⚠️ [Database Clone] gRPC connection to %s failed: %v. Falling back to HTTP sync...", grpcAddr, err)
-		return syncTenantMasterDataHTTP(cleanSlug, cloudURL, sqlitePath)
+		log.Printf("⚠️ [Database Clone] gRPC connection to %s failed: %v. Falling back to HTTP sync (%s)...", grpcAddr, err, httpBaseURL)
+		return syncTenantMasterDataHTTP(cleanSlug, httpBaseURL, sqlitePath)
 	}
 	defer conn.Close()
 
-	// If gRPC connection was established, stream the exact tenant database
+	// If gRPC connection was established, stream the exact tenant database to temporary file
 	if conn != nil {
 		client := backuppb.NewBackupServiceClient(conn)
 		stream, err := client.StreamBackup(ctx, &backuppb.BackupRequest{
@@ -82,63 +134,88 @@ func SyncTenantBackupData(tenantSlug, cloudURL, sqlitePath string) map[string]in
 			Compressed: false,
 		})
 		if err == nil {
-			var rawSQLBuilder strings.Builder
-			var totalBytes uint64
-			streamFailed := false
+			tmpDumpFile := sqlitePath + ".pgdump.tmp"
+			f, createErr := os.Create(tmpDumpFile)
+			if createErr == nil {
+				var totalBytes uint64
+				streamFailed := false
 
-			for {
-				chunk, err := stream.Recv()
-				if err == io.EOF {
-					break
+				for {
+					chunk, err := stream.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						log.Printf("⚠️ [Database Clone] Stream recv error: %v", err)
+						streamFailed = true
+						break
+					}
+
+					if len(chunk.Data) > 0 {
+						if _, werr := f.Write(chunk.Data); werr != nil {
+							log.Printf("⚠️ [Database Clone] Stream write error: %v", werr)
+							streamFailed = true
+							break
+						}
+						totalBytes += uint64(len(chunk.Data))
+					}
+
+					if chunk.IsLast {
+						break
+					}
 				}
-				if err != nil {
-					streamFailed = true
-					break
-				}
+				_ = f.Close()
 
-				if len(chunk.Data) > 0 {
-					rawSQLBuilder.Write(chunk.Data)
-					totalBytes += uint64(len(chunk.Data))
-				}
+				if !streamFailed && totalBytes > 0 {
+					db, err := sql.Open("sqlite3", sqlitePath)
+					if err == nil {
+						defer db.Close()
+						insertedCount, err := applyPgDumpFileToSQLite(db, tmpDumpFile)
+						_ = os.Remove(tmpDumpFile)
 
-				if chunk.IsLast {
-					break
-				}
-			}
-
-			if !streamFailed && totalBytes > 0 && sqlitePath != "" {
-				db, err := sql.Open("sqlite3", sqlitePath)
-				if err == nil {
-					defer db.Close()
-					dumpContent := rawSQLBuilder.String()
-					insertedCount, _ := applyPgDumpToSQLite(db, dumpContent)
-
-					if insertedCount > 0 {
-						return map[string]interface{}{
-							"success": true,
-							"data": map[string]interface{}{
-								"tenant_slug":      tenantSlug,
-								"bytes_synced":     totalBytes,
-								"records_synced":   insertedCount,
-								"connected_target": grpcAddr,
-								"method":           "grpc_stream",
-								"status":           "completed",
-							},
+						if err == nil && insertedCount > 0 {
+							log.Printf("🎉 [Database Clone Complete] gRPC stream successfully restored %d records into SQLite", insertedCount)
+							return map[string]interface{}{
+								"success": true,
+								"data": map[string]interface{}{
+									"tenant_slug":      cleanSlug,
+									"bytes_synced":     totalBytes,
+									"records_synced":   insertedCount,
+									"connected_target": grpcAddr,
+									"method":           "grpc_stream",
+									"status":           "completed",
+								},
+							}
 						}
 					}
 				}
+				_ = os.Remove(tmpDumpFile)
 			}
 		}
 	}
 
 	// Fallback to Cloud Tenant Master Data HTTP Sync Engine
-	return syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath)
+	log.Printf("ℹ️ [Database Clone] gRPC stream not completed. Falling back to HTTP sync (%s)...", httpBaseURL)
+	return syncTenantMasterDataHTTP(cleanSlug, httpBaseURL, sqlitePath)
+}
+
+func applyPgDumpFileToSQLite(db *sql.DB, filePath string) (int, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	return applyPgDumpReaderToSQLite(db, f)
 }
 
 func applyPgDumpToSQLite(db *sql.DB, dumpContent string) (int, error) {
+	return applyPgDumpReaderToSQLite(db, strings.NewReader(dumpContent))
+}
+
+func applyPgDumpReaderToSQLite(db *sql.DB, reader io.Reader) (int, error) {
 	_, _ = db.Exec("PRAGMA foreign_keys = OFF;")
 
-	scanner := bufio.NewScanner(strings.NewReader(dumpContent))
+	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 1024*1024)
 	scanner.Buffer(buf, 50*1024*1024)
 
@@ -340,12 +417,69 @@ func applyPgDumpToSQLite(db *sql.DB, dumpContent string) (int, error) {
 	return totalInserted, nil
 }
 
+// fetchCloudAuthToken retrieves a valid Bearer token from the cloud server.
+func fetchCloudAuthToken(client *http.Client, baseURL string) string {
+	devTokenURL := fmt.Sprintf("%s/api/dev/token", baseURL)
+	req, err := http.NewRequest("GET", devTokenURL, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("⚠️ [Token Fetch] GET %s error: %v", devTokenURL, err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var res map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err == nil {
+			if token, ok := res["token"].(string); ok && token != "" {
+				log.Printf("🔑 [Token Fetch] Successfully acquired Bearer token from %s", devTokenURL)
+				return token
+			}
+		}
+	}
+	return ""
+}
+
+// extractRecords extracts a list of map records from diverse REST API response shapes.
+func extractRecords(respData map[string]interface{}) []map[string]interface{} {
+	var recs []map[string]interface{}
+	dataVal, exists := respData["data"]
+	if !exists || dataVal == nil {
+		return recs
+	}
+
+	switch d := dataVal.(type) {
+	case []interface{}:
+		for _, item := range d {
+			if m, ok := item.(map[string]interface{}); ok {
+				recs = append(recs, m)
+			}
+		}
+	case map[string]interface{}:
+		if innerList, ok := d["data"].([]interface{}); ok {
+			for _, item := range innerList {
+				if m, ok := item.(map[string]interface{}); ok {
+					recs = append(recs, m)
+				}
+			}
+		} else {
+			recs = append(recs, d)
+		}
+	}
+	return recs
+}
+
 // syncTenantMasterDataHTTP syncs ALL tenant tables and master data entities directly from the cloud REST APIs.
 func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[string]interface{} {
-	if sqlitePath == "" {
+	if strings.TrimSpace(sqlitePath) == "" {
 		return map[string]interface{}{"success": false, "error": "Local SQLite database path is empty"}
 	}
 
+	cleanSlug := strings.TrimSpace(tenantSlug)
 	db, err := sql.Open("sqlite3", sqlitePath)
 	if err != nil {
 		return map[string]interface{}{"success": false, "error": fmt.Sprintf("Failed to open SQLite db: %v", err)}
@@ -353,28 +487,85 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 	defer db.Close()
 
 	_, _ = db.Exec("PRAGMA foreign_keys = OFF;")
+	_, _ = db.Exec("PRAGMA synchronous = NORMAL;")
+	_, _ = db.Exec("PRAGMA journal_mode = WAL;")
 
-	baseURL := strings.TrimRight(cloudURL, "/")
-	httpClient := &http.Client{Timeout: 25 * time.Second}
+	_, baseURL := resolveEndpoints(cloudURL)
+	tr := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   15 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: false,
+		},
+	}
+	httpClient := &http.Client{
+		Transport: tr,
+		Timeout:   30 * time.Second,
+	}
 
 	totalRecords := 0
-
-	// 1. Fetch & Store Tenant Record
-	tenantURL := fmt.Sprintf("%s/api/tenants/%s", baseURL, tenantSlug)
-	if tResp, err := httpGetJSON(httpClient, tenantURL, ""); err == nil {
-		if tData, ok := tResp["data"].(map[string]interface{}); ok {
-			totalRecords += insertRecords(db, "tenants", []map[string]interface{}{tData})
+	var firstErr error
+	var errMu sync.Mutex
+	recordErr := func(err error) {
+		if err != nil {
+			errMu.Lock()
+			if firstErr == nil {
+				firstErr = err
+			}
+			errMu.Unlock()
 		}
 	}
 
-	// 2. Comprehensive Master Data & RBAC Resource Endpoints to clone
+	// 1. Fetch Cloud Auth Token
+	authToken := fetchCloudAuthToken(httpClient, baseURL)
+
+	// 2. Fetch & Store Tenant Record
+	tenantURL := fmt.Sprintf("%s/api/tenants/%s", baseURL, cleanSlug)
+	if tResp, err := httpGetJSON(httpClient, tenantURL, cleanSlug, authToken); err == nil {
+		if tData, ok := tResp["data"].(map[string]interface{}); ok {
+			inserted := insertRecords(db, "tenants", []map[string]interface{}{tData})
+			totalRecords += inserted
+			log.Printf("📦 [HTTP Clone] 'tenants': cloned %d records", inserted)
+		}
+	} else {
+		recordErr(err)
+	}
+
+	// 3. Fetch Organizations and extract organization_id
+	var orgID int
+	orgURL := fmt.Sprintf("%s/api/organizations", baseURL)
+	if oResp, err := httpGetJSON(httpClient, orgURL, cleanSlug, authToken); err == nil {
+		orgRecs := extractRecords(oResp)
+		if len(orgRecs) > 0 {
+			inserted := insertRecords(db, "organizations", orgRecs)
+			totalRecords += inserted
+			log.Printf("📦 [HTTP Clone] 'organizations': cloned %d records", inserted)
+			if idVal, ok := orgRecs[0]["id"].(float64); ok {
+				orgID = int(idVal)
+			}
+		}
+	} else {
+		recordErr(err)
+	}
+	if orgID == 0 {
+		orgID = 1
+	}
+
+	// 4. Comprehensive Master Data & RBAC Resource Endpoints to clone
 	type syncResource struct {
 		endpoint  string
 		tableName string
 	}
 
 	resources := []syncResource{
-		{endpoint: "/api/organizations", tableName: "organizations"},
 		{endpoint: "/api/stores", tableName: "stores"},
 		{endpoint: "/api/storage-locations", tableName: "storage_locations"},
 		{endpoint: "/api/roles", tableName: "roles"},
@@ -387,49 +578,71 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 		{endpoint: "/api/uoms", tableName: "units_of_measure"},
 		{endpoint: "/api/tax-categories", tableName: "tax_categories"},
 		{endpoint: "/api/price-lists", tableName: "price_lists"},
-		{endpoint: "/api/products", tableName: "products"},
-		{endpoint: "/api/product-pricing", tableName: "product_prices"},
+		{endpoint: fmt.Sprintf("/api/products/catalog?organization_id=%d", orgID), tableName: "products"},
+		{endpoint: "/api/product-prices", tableName: "product_prices"},
 		{endpoint: "/api/product-barcodes", tableName: "product_barcodes"},
 		{endpoint: "/api/product-variants", tableName: "product_variants"},
 		{endpoint: "/api/inventory-stock", tableName: "inventory_stock"},
 		{endpoint: "/api/stock-movements", tableName: "stock_movements"},
 		{endpoint: "/api/stock-counts", tableName: "stock_counts"},
 		{endpoint: "/api/stock-count-lines", tableName: "stock_count_lines"},
-		{endpoint: "/api/customers", tableName: "customers"},
-		{endpoint: "/api/business-partners", tableName: "business_partners"},
+		{endpoint: fmt.Sprintf("/api/customers?organization_id=%d", orgID), tableName: "customers"},
+		{endpoint: fmt.Sprintf("/api/business-partners?organization_id=%d", orgID), tableName: "business_partners"},
 		{endpoint: "/api/cashiers", tableName: "cashiers"},
-		{endpoint: "/api/pos-terminals", tableName: "pos_terminals"},
+		{endpoint: "/api/pos/terminals", tableName: "pos_terminals"},
+		{endpoint: "/api/pos/categories", tableName: "product_categories"},
 		{endpoint: "/api/promotions", tableName: "promotions"},
 		{endpoint: "/api/loyalty", tableName: "loyalty_rules"},
 		{endpoint: "/api/users", tableName: "users"},
 	}
 
-	for _, res := range resources {
-		resURL := fmt.Sprintf("%s%s", baseURL, res.endpoint)
-		respData, err := httpGetJSON(httpClient, resURL, tenantSlug)
-		if err != nil {
-			continue
-		}
-
-		if list, ok := respData["data"].([]interface{}); ok {
-			var records []map[string]interface{}
-			for _, item := range list {
-				if m, ok := item.(map[string]interface{}); ok {
-					records = append(records, m)
-				}
-			}
-			inserted := insertRecords(db, res.tableName, records)
-			totalRecords += inserted
-			log.Printf("📦 [HTTP Clone] '%s': cloned %d records", res.tableName, inserted)
-		} else if singleMap, ok := respData["data"].(map[string]interface{}); ok {
-			inserted := insertRecords(db, res.tableName, []map[string]interface{}{singleMap})
-			totalRecords += inserted
-		}
+	type fetchResult struct {
+		tableName string
+		records   []map[string]interface{}
 	}
 
-	// 3. User Details sync for user_roles and user_store_access
+	resChan := make(chan syncResource, len(resources))
+	for _, r := range resources {
+		resChan <- r
+	}
+	close(resChan)
+
+	resultsChan := make(chan fetchResult, len(resources))
+	var wg sync.WaitGroup
+	workers := 6
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for res := range resChan {
+				resURL := fmt.Sprintf("%s%s", baseURL, res.endpoint)
+				respData, err := httpGetJSON(httpClient, resURL, cleanSlug, authToken)
+				if err != nil {
+					recordErr(err)
+					continue
+				}
+
+				recs := extractRecords(respData)
+				if len(recs) > 0 {
+					resultsChan <- fetchResult{tableName: res.tableName, records: recs}
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(resultsChan)
+
+	// Batch insert results into local SQLite
+	for fr := range resultsChan {
+		inserted := insertRecords(db, fr.tableName, fr.records)
+		totalRecords += inserted
+		log.Printf("📦 [HTTP Clone] '%s': cloned %d records", fr.tableName, inserted)
+	}
+
+	// 5. User Details sync for user_roles and user_store_access
 	userDetailsURL := fmt.Sprintf("%s/api/users/details", baseURL)
-	if uResp, err := httpGetJSON(httpClient, userDetailsURL, tenantSlug); err == nil {
+	if uResp, err := httpGetJSON(httpClient, userDetailsURL, cleanSlug, authToken); err == nil {
 		if uList, ok := uResp["data"].([]interface{}); ok {
 			for _, uItem := range uList {
 				if uMap, ok := uItem.(map[string]interface{}); ok {
@@ -473,7 +686,7 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 		}
 	}
 
-	// 4. Role Permissions Mapping Sync
+	// 6. Role Permissions Mapping Sync
 	var roleIDs []int
 	if rRows, err := db.Query("SELECT id FROM roles"); err == nil {
 		for rRows.Next() {
@@ -486,27 +699,24 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 
 	for _, rid := range roleIDs {
 		rPermURL := fmt.Sprintf("%s/api/permissions/role/%d", baseURL, rid)
-		if rpResp, err := httpGetJSON(httpClient, rPermURL, tenantSlug); err == nil {
-			if rpList, ok := rpResp["data"].([]interface{}); ok {
-				for _, rpItem := range rpList {
-					if rpMap, ok := rpItem.(map[string]interface{}); ok {
-						permID := rpMap["permission_id"]
-						if permID == nil {
-							permID = rpMap["id"]
-						}
-						if permID != nil {
-							totalRecords += insertRecords(db, "role_permissions", []map[string]interface{}{{
-								"role_id":       rid,
-								"permission_id": permID,
-							}})
-						}
-					}
+		if rpResp, err := httpGetJSON(httpClient, rPermURL, cleanSlug, authToken); err == nil {
+			rpList := extractRecords(rpResp)
+			for _, rpMap := range rpList {
+				permID := rpMap["permission_id"]
+				if permID == nil {
+					permID = rpMap["id"]
+				}
+				if permID != nil {
+					totalRecords += insertRecords(db, "role_permissions", []map[string]interface{}{{
+						"role_id":       rid,
+						"permission_id": permID,
+					}})
 				}
 			}
 		}
 	}
 
-	// 5. Menu Permissions Mapping Sync
+	// 7. Menu Permissions Mapping Sync
 	var menuIDs []int
 	if mRows, err := db.Query("SELECT id FROM menus"); err == nil {
 		for mRows.Next() {
@@ -519,27 +729,24 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 
 	for _, mid := range menuIDs {
 		mPermURL := fmt.Sprintf("%s/api/permissions/menu/%d", baseURL, mid)
-		if mpResp, err := httpGetJSON(httpClient, mPermURL, tenantSlug); err == nil {
-			if mpList, ok := mpResp["data"].([]interface{}); ok {
-				for _, mpItem := range mpList {
-					if mpMap, ok := mpItem.(map[string]interface{}); ok {
-						permID := mpMap["permission_id"]
-						if permID == nil {
-							permID = mpMap["id"]
-						}
-						if permID != nil {
-							totalRecords += insertRecords(db, "menu_permissions", []map[string]interface{}{{
-								"menu_id":       mid,
-								"permission_id": permID,
-							}})
-						}
-					}
+		if mpResp, err := httpGetJSON(httpClient, mPermURL, cleanSlug, authToken); err == nil {
+			mpList := extractRecords(mpResp)
+			for _, mpMap := range mpList {
+				permID := mpMap["permission_id"]
+				if permID == nil {
+					permID = mpMap["id"]
+				}
+				if permID != nil {
+					totalRecords += insertRecords(db, "menu_permissions", []map[string]interface{}{{
+						"menu_id":       mid,
+						"permission_id": permID,
+					}})
 				}
 			}
 		}
 	}
 
-	// 6. Submenu Permissions Mapping Sync
+	// 8. Submenu Permissions Mapping Sync
 	var submenuIDs []int
 	if smRows, err := db.Query("SELECT id FROM submenus"); err == nil {
 		for smRows.Next() {
@@ -552,21 +759,18 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 
 	for _, smid := range submenuIDs {
 		smPermURL := fmt.Sprintf("%s/api/permissions/submenu/%d", baseURL, smid)
-		if smpResp, err := httpGetJSON(httpClient, smPermURL, tenantSlug); err == nil {
-			if smpList, ok := smpResp["data"].([]interface{}); ok {
-				for _, smpItem := range smpList {
-					if smpMap, ok := smpItem.(map[string]interface{}); ok {
-						permID := smpMap["permission_id"]
-						if permID == nil {
-							permID = smpMap["id"]
-						}
-						if permID != nil {
-							totalRecords += insertRecords(db, "submenu_permissions", []map[string]interface{}{{
-								"submenu_id":    smid,
-								"permission_id": permID,
-							}})
-						}
-					}
+		if smpResp, err := httpGetJSON(httpClient, smPermURL, cleanSlug, authToken); err == nil {
+			smpList := extractRecords(smpResp)
+			for _, smpMap := range smpList {
+				permID := smpMap["permission_id"]
+				if permID == nil {
+					permID = smpMap["id"]
+				}
+				if permID != nil {
+					totalRecords += insertRecords(db, "submenu_permissions", []map[string]interface{}{{
+						"submenu_id":    smid,
+						"permission_id": permID,
+					}})
 				}
 			}
 		}
@@ -574,12 +778,23 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 
 	_, _ = db.Exec("PRAGMA foreign_keys = ON;")
 
-	log.Printf("🎉 [Database Clone] Full master data sync completed for '%s': %d total records cloned", tenantSlug, totalRecords)
+	if totalRecords == 0 {
+		errMsg := fmt.Sprintf("Database clone failed for tenant '%s': 0 records could be retrieved from %s (verify tenant slug and connection)", cleanSlug, baseURL)
+		if firstErr != nil {
+			errMsg = fmt.Sprintf("Database clone failed for tenant '%s': 0 records could be retrieved from %s (%v)", cleanSlug, baseURL, firstErr)
+		}
+		return map[string]interface{}{
+			"success": false,
+			"error":   errMsg,
+		}
+	}
+
+	log.Printf("🎉 [Database Clone] Full master data sync completed for '%s': %d total records cloned", cleanSlug, totalRecords)
 
 	return map[string]interface{}{
 		"success": true,
 		"data": map[string]interface{}{
-			"tenant_slug":    tenantSlug,
+			"tenant_slug":    cleanSlug,
 			"records_synced": totalRecords,
 			"method":         "full_master_data_sync",
 			"status":         "completed",
@@ -587,32 +802,40 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 	}
 }
 
-func httpGetJSON(client *http.Client, targetURL, tenantSlug string) (map[string]interface{}, error) {
-	cleanSlug := strings.TrimSpace(tenantSlug)
-	if cleanSlug == "" || strings.EqualFold(cleanSlug, "masterdb") {
-		return nil, fmt.Errorf("a valid tenant slug is required for tenant data queries (cannot be masterdb)")
-	}
-
+func httpGetJSON(client *http.Client, targetURL, tenantSlug, authToken string) (map[string]interface{}, error) {
 	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	cleanSlug := strings.TrimSpace(tenantSlug)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("x-tenant-id", cleanSlug)
+	if cleanSlug != "" && !strings.EqualFold(cleanSlug, "masterdb") {
+		req.Header.Set("x-tenant-id", cleanSlug)
+		req.Header.Set("x-tenant-slug", cleanSlug)
+		req.Header.Set("X-Tenant-ID", cleanSlug)
+		req.Header.Set("X-Tenant-Slug", cleanSlug)
+	}
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("⚠️ [HTTP Error] GET %s: %v", targetURL, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, targetURL)
+		statusErr := fmt.Errorf("HTTP %d for %s", resp.StatusCode, targetURL)
+		log.Printf("⚠️ [HTTP Error] %v", statusErr)
+		return nil, statusErr
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("⚠️ [HTTP JSON Error] GET %s: %v", targetURL, err)
 		return nil, err
 	}
 	return result, nil
@@ -622,6 +845,30 @@ func insertRecords(db *sql.DB, tableName string, records []map[string]interface{
 	if len(records) == 0 {
 		return 0
 	}
+
+	// Query SQLite PRAGMA table_info to get the real columns for this table
+	sqliteColsMap := make(map[string]bool)
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(\"%s\")", tableName))
+	if err == nil {
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notnull, pk int
+			var dfltValue sql.NullString
+			_ = rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+			sqliteColsMap[strings.ToLower(name)] = true
+		}
+		rows.Close()
+	}
+
+	if len(sqliteColsMap) == 0 {
+		return 0
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0
+	}
 	inserted := 0
 	for _, rec := range records {
 		var cols []string
@@ -629,6 +876,10 @@ func insertRecords(db *sql.DB, tableName string, records []map[string]interface{
 		var vals []interface{}
 
 		for k, v := range rec {
+			if !sqliteColsMap[strings.ToLower(k)] {
+				continue
+			}
+
 			// Skip nested object arrays if they are sub-relations (e.g. variants array inside product)
 			switch val := v.(type) {
 			case []interface{}:
@@ -649,16 +900,17 @@ func insertRecords(db *sql.DB, tableName string, records []map[string]interface{
 			continue
 		}
 
-		query := fmt.Sprintf("INSERT OR REPLACE INTO %s (%s) VALUES (%s)",
+		query := fmt.Sprintf("INSERT OR REPLACE INTO \"%s\" (%s) VALUES (%s)",
 			tableName,
 			strings.Join(cols, ", "),
 			strings.Join(placeholders, ", "),
 		)
 
-		if _, err := db.Exec(query, vals...); err == nil {
+		if _, err := tx.Exec(query, vals...); err == nil {
 			inserted++
 		}
 	}
+	_ = tx.Commit()
 	return inserted
 }
 

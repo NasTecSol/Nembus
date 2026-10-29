@@ -1232,17 +1232,21 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
     final tenantSlug = widget.tenantSlug.isNotEmpty
         ? widget.tenantSlug
         : (SingletonClass().activeTenantSlug ?? 'qitaf');
-    final grpcAddr = SingletonClass().grpcAddress;
+    final syncTarget = SingletonClass().baseURL.isNotEmpty
+        ? SingletonClass().baseURL
+        : SingletonClass().grpcAddress;
+    final dbPath = await DatabaseService().getDatabasePath();
 
     developer.log(
-      '📥 [Cloud Pull Sync] Pulling latest database changes for tenant "$tenantSlug" from Cloud Server via gRPC ($grpcAddr)...',
+      '📥 [Cloud Pull Sync] Pulling latest database changes for tenant "$tenantSlug" from Cloud Server ($syncTarget)...',
       name: 'PosDashboardScreen',
     );
 
     try {
       final syncResp = NembusBridge().fetchCompleteTenantMasterData(
         tenantSlug,
-        grpcAddr,
+        syncTarget,
+        dbPath: dbPath,
       );
 
       developer.log('Cloud Pull Sync Result: $syncResp', name: 'PosDashboardScreen');

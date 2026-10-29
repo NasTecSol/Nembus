@@ -1,5 +1,6 @@
 PODS:
   - Flutter (1.0.0)
+  - nembus_core (1.0.0)
   - printing (1.0.0):
     - Flutter
   - sqflite_darwin (0.0.4):
@@ -8,22 +9,26 @@ PODS:
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
+  - nembus_core (from `.`)
   - printing (from `.symlinks/plugins/printing/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
+  nembus_core:
+    :path: "."
   printing:
     :path: ".symlinks/plugins/printing/ios"
   sqflite_darwin:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
 
 SPEC CHECKSUMS:
-  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  nembus_core: 4c3bc0c7d643cfcb89ae3f8920ab44321c3dc3de
   printing: a8960104e6c1a2b4bd3483a2f79c69be60830d08
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
 
-PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
+PODFILE CHECKSUM: 8ee3e230d7e76ae40f298601eb065dca03af7a3b
 
 COCOAPODS: 1.16.2

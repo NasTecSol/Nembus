@@ -42,8 +42,10 @@ class _DbCloningScreenState extends State<DbCloningScreen> {
         _currentPhase = SyncPhase.wiping;
         _progress = 0.15;
         _statusMessage = 'Purging existing local database structures...';
+        _errorMessage = null;
       });
       await DatabaseService().purgeDatabase();
+
       setState(() {
         _currentPhase = SyncPhase.migrating;
         _progress = 0.40;
@@ -51,34 +53,57 @@ class _DbCloningScreenState extends State<DbCloningScreen> {
       });
       await MigrationRunner.applyMigrations(
         onProgress: (step, prog) {
-          setState(() {
-            _progress = 0.40 + (prog * 0.30);
-          });
+          if (mounted) {
+            setState(() {
+              _progress = 0.40 + (prog * 0.25);
+            });
+          }
         },
       );
+
+      final dbPath = await DatabaseService().getDatabasePath();
+      final initRes = NembusBridge().initMobile(dbPath);
+      developer.log('Go Engine Init Result: $initRes', name: 'DbCloningScreen');
+      if (initRes['success'] == false) {
+        throw Exception('Native database initialization failed: ${initRes['error']}');
+      }
+
       setState(() {
         _currentPhase = SyncPhase.syncingData;
-        _progress = 0.75;
-        _statusMessage = 'Pulling tenant master data snapshot via gRPC...';
+        _progress = 0.70;
+        _statusMessage = 'Cloning tenant master data snapshot...';
       });
 
-      final grpcAddress = SingletonClass().grpcAddress;
-      final syncResult = NembusBridge().fetchCompleteTenantMasterData(
-        widget.tenantSlug.isNotEmpty ? widget.tenantSlug : widget.tenantId,
-        grpcAddress,
-      );
+      // Allow UI thread frame to render progress before heavy FFI call
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final targetUrl = SingletonClass().baseURL.isNotEmpty
+          ? SingletonClass().baseURL
+          : SingletonClass().grpcAddress;
+      final targetSlug = widget.tenantSlug.isNotEmpty ? widget.tenantSlug : widget.tenantId;
+
+      final syncResult = await Future(() => NembusBridge().fetchCompleteTenantMasterData(
+        targetSlug,
+        targetUrl,
+        dbPath: dbPath,
+      ));
 
       developer.log('FFI Sync Response: $syncResult', name: 'DbCloningScreen');
 
-      if (syncResult['success'] == false) {
-        developer.log('Data sync note: ${syncResult['error']}', name: 'DbCloningScreen');
+      if (syncResult['success'] != true) {
+        throw Exception(syncResult['error'] ?? 'Database synchronization failed');
+      }
+
+      final recordsSynced = (syncResult['data']?['records_synced'] as num?)?.toInt() ?? 0;
+      if (recordsSynced == 0) {
+        throw Exception('Synchronization finished but 0 records were cloned for tenant "${widget.tenantName}". Please verify tenant configuration and network connection.');
       }
 
       // Step 4: Finalize & Transition
       setState(() {
         _currentPhase = SyncPhase.completed;
         _progress = 1.0;
-        _statusMessage = 'Terminal initialized and ready.';
+        _statusMessage = 'Terminal initialized with $recordsSynced records.';
       });
 
       // Ensure any cloned/synced cashier sessions start closed
@@ -110,11 +135,13 @@ class _DbCloningScreenState extends State<DbCloningScreen> {
       }
     } catch (e, stack) {
       developer.log('DB Cloning Error: $e', name: 'DbCloningScreen', error: e, stackTrace: stack);
-      setState(() {
-        _currentPhase = SyncPhase.failed;
-        _errorMessage = e.toString();
-        _statusMessage = 'Synchronization failed. Please retry.';
-      });
+      if (mounted) {
+        setState(() {
+          _currentPhase = SyncPhase.failed;
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _statusMessage = 'Synchronization failed. Please retry.';
+        });
+      }
     }
   }
 
@@ -193,7 +220,9 @@ class _DbCloningScreenState extends State<DbCloningScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                _statusMessage,
+                _currentPhase == SyncPhase.failed && _errorMessage != null
+                    ? _errorMessage!
+                    : _statusMessage,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 13,

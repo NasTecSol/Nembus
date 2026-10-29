@@ -7,8 +7,6 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Retain Go CGo symbols in binary image for Dart FFI
-    _ = InitNembusMobile
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
