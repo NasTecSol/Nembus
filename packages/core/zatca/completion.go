@@ -206,7 +206,7 @@ func (s *OnboardingService) CompleteDeviceOnboarding(ctx context.Context, config
 	return result, nil
 }
 
-// JSON adapter keeps the shared handler independent of cloud-server types.
+// JSON adapter keeps the shared handler independent of gateway types.
 func (s *OnboardingService) CompleteDeviceOnboardingResponse(ctx context.Context, id int32) (json.RawMessage, error) {
 	result, err := s.CompleteDeviceOnboarding(ctx, id)
 	if result == nil {

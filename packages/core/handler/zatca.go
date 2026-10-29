@@ -198,7 +198,7 @@ func (h *ZatcaHandler) CompleteDeviceOnboarding(c *gin.Context) {
 	}
 	completer, ok := h.onboarder.(DeviceOnboardingCompleter)
 	if !ok {
-		c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "device onboarding completion is available on the cloud-server backend", nil))
+		c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "device onboarding completion service is unavailable on this backend", nil))
 		return
 	}
 	response, err := completer.CompleteDeviceOnboardingResponse(c.Request.Context(), int32(id))
@@ -640,7 +640,7 @@ func (h *ZatcaHandler) OnboardDevice(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "Device onboarding requires the cloud-server gateway service", nil))
+	c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "Device onboarding service is unavailable on this backend", nil))
 }
 
 // GetTerminalZatcaConfig handles GET /api/zatca/terminals/:id
