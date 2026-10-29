@@ -18,6 +18,8 @@ import (
 // @Param        x-tenant-id header string true "Tenant identifier"
 // @Param        page query int false "Page number (starts at 1)" default(1) minimum(1) maximum(2147483647)
 // @Param        limit query int false "Records per page; values above 50 are supported" default(50) minimum(1) maximum(2147483647)
+// @Param        store_id query int false "Source store ID; combined with terminal using AND, before pagination" minimum(1) maximum(2147483647)
+// @Param        pos_terminal_id query int false "Source terminal ID; may be supplied without store_id" minimum(1) maximum(2147483647)
 // @Success      200 {object} ZatcaDocumentListAPIResponse
 // @Failure      400 {object} ZatcaAPIError
 // @Failure      401 {object} ErrorResponse
@@ -30,13 +32,40 @@ func (h *ZatcaHandler) ListZatcaDocuments(c *gin.Context) {
 		c.JSON(400, utils.NewResponse(400, "page and limit must be positive integers no greater than 2147483647", nil))
 		return
 	}
+	filters := repository.ZatcaDocumentFilters{}
+	for _, field := range []struct {
+		name string
+		dest *int32
+	}{
+		{"store_id", &filters.StoreID},
+		{"pos_terminal_id", &filters.PosTerminalID},
+	} {
+		values, exists := c.Request.URL.Query()[field.name]
+		if !exists {
+			continue
+		}
+		if len(values) != 1 {
+			c.JSON(400, utils.NewResponse(400, field.name+" must be provided exactly once as a positive integer", nil))
+			return
+		}
+		value, err := strconv.ParseInt(values[0], 10, 32)
+		if err != nil || value <= 0 {
+			c.JSON(400, utils.NewResponse(400, field.name+" must be a positive integer no greater than 2147483647", nil))
+			return
+		}
+		*field.dest = int32(value)
+	}
+	orgID, ok := middleware.GetOrganizationIDFromContext(c)
+	if !ok || orgID <= 0 {
+		c.JSON(401, utils.NewResponse(401, "organization claim missing", nil))
+		return
+	}
 	repo, ok := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
 	if !ok || repo == nil {
 		c.JSON(500, utils.NewResponse(500, "tenant repository is required", nil))
 		return
 	}
-	orgID, _ := middleware.GetOrganizationIDFromContext(c)
-	documents, total, err := repo.ListZatcaDocumentsPage(c.Request.Context(), orgID, int32(limit), (page-1)*limit)
+	documents, total, err := repo.ListZatcaDocumentsPage(c.Request.Context(), orgID, int32(limit), (page-1)*limit, filters)
 	if err != nil {
 		c.JSON(500, utils.NewResponse(500, "failed to load saved ZATCA documents", nil))
 		return

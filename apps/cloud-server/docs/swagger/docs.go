@@ -46387,6 +46387,22 @@ const docTemplate = `{
                         "description": "Records per page; values above 50 are supported",
                         "name": "limit",
                         "in": "query"
+                    },
+                    {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Source store ID; combined with terminal using AND, before pagination",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Source terminal ID; may be supplied without store_id",
+                        "name": "pos_terminal_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -56971,7 +56987,7 @@ const docTemplate = `{
                 "documents": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/handler.ZatcaDocumentData"
+                        "$ref": "#/definitions/handler.ZatcaDocumentListEntryData"
                     }
                 },
                 "has_next_page": {
@@ -56993,6 +57009,87 @@ const docTemplate = `{
                 "total_pages": {
                     "type": "integer",
                     "example": 3
+                }
+            }
+        },
+        "handler.ZatcaDocumentListEntryData": {
+            "type": "object",
+            "properties": {
+                "cleared_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "device_config_id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "entity_id": {
+                    "type": "string",
+                    "example": "00000000-0000-4000-8000-000000000001"
+                },
+                "entity_type": {
+                    "type": "string",
+                    "example": "sales_order_v2"
+                },
+                "icv": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "pih": {
+                    "type": "string"
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 8
+                },
+                "qr_code_base64": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "signed_xml": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "store_id": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 3
+                },
+                "submitted_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "xml_hash": {
+                    "type": "string"
+                },
+                "zatca_response": {},
+                "zatca_status": {
+                    "$ref": "#/definitions/handler.ZatcaDocumentStatus"
+                },
+                "zatca_uuid": {
+                    "type": "string",
+                    "format": "uuid"
                 }
             }
         },

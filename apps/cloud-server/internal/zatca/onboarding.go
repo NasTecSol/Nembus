@@ -3,7 +3,9 @@ package zatca
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -16,6 +18,39 @@ type OnboardingService struct {
 	repo    *repository.Queries
 	clients environmentClientFactory
 	cfg     *usecase.ZatcaConfig
+}
+
+// No credentials have been persisted at this stage. Return the actual public
+// CSR identity and routing inputs so a portal mismatch can be diagnosed without
+// returning the OTP, CSR, private key, or any credentials.
+type onboardingComplianceError struct {
+	cause       error
+	gateway     *ComplianceAPIError
+	environment string
+	params      usecase.ZatcaCSRParams
+}
+
+func (e *onboardingComplianceError) Error() string { return e.cause.Error() }
+func (e *onboardingComplianceError) Unwrap() error { return e.cause }
+func (e *onboardingComplianceError) OnboardingHTTPStatus() int {
+	if e.gateway.StatusCode == http.StatusBadRequest {
+		return http.StatusBadRequest
+	}
+	return http.StatusBadGateway
+}
+func (e *onboardingComplianceError) OnboardingFailureDetails() json.RawMessage {
+	template := "ZATCA-Code-Signing"
+	if e.params.IsSandbox {
+		template = "PREZATCA-Code-Signing"
+	}
+	data, _ := json.Marshal(map[string]any{
+		"onboarding_stage": "compliance_csid", "reporting_ready": false, "device_saved": false,
+		"zatca_env": e.environment, "gateway_endpoint": e.gateway.Endpoint,
+		"gateway_http_status":         e.gateway.StatusCode,
+		"csr_organization_identifier": e.params.OrganizationIdentifier,
+		"csr_organization_unit":       e.params.OrgUnit, "csr_certificate_template": template,
+	})
+	return data
 }
 
 func NewOnboardingService(repo *repository.Queries, cfg *usecase.ZatcaConfig) *OnboardingService {
@@ -93,7 +128,12 @@ func (s *OnboardingService) createComplianceDevice(ctx context.Context, orgID in
 	// 2. Request Compliance CSID
 	ccsidResp, err := client.RequestComplianceCSID(ctx, csrPEM, otp)
 	if err != nil {
-		return nil, fmt.Errorf("compliance CSID request failed: %w", err)
+		cause := fmt.Errorf("compliance CSID request failed: %w", err)
+		var gateway *ComplianceAPIError
+		if errors.As(err, &gateway) {
+			return nil, &onboardingComplianceError{cause: cause, gateway: gateway, environment: environment, params: csrParams}
+		}
+		return nil, cause
 	}
 
 	requestID := ccsidResp.RequestID.String()

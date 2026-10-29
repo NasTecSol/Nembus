@@ -97,12 +97,18 @@ type ZatcaDocumentAPIResponse struct {
 }
 
 type ZatcaDocumentListData struct {
-	Documents   []ZatcaDocumentData `json:"documents"`
-	Page        int64               `json:"page" example:"1"`
-	Limit       int64               `json:"limit" example:"50"`
-	Total       int64               `json:"total" example:"125"`
-	TotalPages  int64               `json:"total_pages" example:"3"`
-	HasNextPage bool                `json:"has_next_page" example:"true"`
+	Documents   []ZatcaDocumentListEntryData `json:"documents"`
+	Page        int64                        `json:"page" example:"1"`
+	Limit       int64                        `json:"limit" example:"50"`
+	Total       int64                        `json:"total" example:"125"`
+	TotalPages  int64                        `json:"total_pages" example:"3"`
+	HasNextPage bool                         `json:"has_next_page" example:"true"`
+}
+
+type ZatcaDocumentListEntryData struct {
+	ZatcaDocumentData
+	StoreID       *int32 `json:"store_id" extensions:"x-nullable" example:"3"`
+	PosTerminalID *int32 `json:"pos_terminal_id" extensions:"x-nullable" example:"8"`
 }
 
 type ZatcaDocumentListAPIResponse struct {

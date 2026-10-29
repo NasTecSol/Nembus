@@ -160,5 +160,57 @@ API endpoints are documented in Swagger UI (`/swagger/index.html`) and included 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/zatca/status` | Get ZATCA feature toggle, env, base URL, and VAT ID |
+| `GET` | `/api/zatca/documents` | List saved documents with optional store and terminal filters |
 | `GET` | `/api/zatca/configs` | Delta-fetch device configs (Pull Sync) |
 | `POST` | `/api/zatca/sync/push` | Ingest offline POS outbox transactions (Push Sync) |
+
+### Filtering saved documents
+
+```http
+GET /api/zatca/documents?store_id=3&pos_terminal_id=8&page=1&limit=50
+```
+
+`store_id` and `pos_terminal_id` are optional positive 32-bit integers. Either
+filter can be supplied alone; when both are supplied, both must match. Empty,
+zero, negative, non-integer, overflowing, or repeated filter values return HTTP
+400. Organization scope comes from authentication and is required (HTTP 401
+when missing); query parameters cannot override it. These filters narrow the
+organization's results; they do not introduce cashier-specific permissions.
+
+Filtering happens before pagination and applies to `total`, `total_pages`, and
+`has_next_page`. Nonexistent IDs or mismatched store/terminal combinations return
+an empty list with HTTP 200. Without filters, all saved documents in the
+authenticated organization are returned in pages, newest document ID first.
+
+Each document includes nullable `store_id` and `pos_terminal_id` from its source:
+
+- Sales orders: the order's store and terminal.
+- POS transactions: the transaction's store and terminal, falling back to its
+  cashier session when the terminal is absent.
+- Invoices: the invoice's store, with terminal from its linked sales order when
+  that order belongs to the same organization and store.
+- Sales returns: the return's store and the terminal of the return's cashier
+  session, rather than the original sale's terminal.
+
+Missing or unsupported source references remain visible without location filters
+and have null location fields. No location is inferred from the signing device,
+which may be shared across stores. Documents without a known terminal can still
+match a store filter but cannot match a terminal filter. No database migration is
+required.
+
+### Diagnosing onboarding compliance failures
+
+When the initial compliance API rejects onboarding, the response `data` includes
+`zatca_env`, `gateway_endpoint`, `gateway_http_status`,
+`csr_organization_identifier`, `csr_organization_unit`, and
+`csr_certificate_template`. These describe the actual outbound request. No OTP,
+private key, CSR payload, or credentials are included in these diagnostic fields.
+`device_saved=false` means the failure happened before a new configuration was
+saved; it does not describe any earlier onboarding attempts.
+
+The CSR VAT comes from `organizations.tax_id` in the request tenant's database,
+falling back to `ZATCA_ORG_VAT_ID` only when the organization field is empty.
+Updating a store's VAT or another tenant's organization does not update this CSR.
+Initial compliance HTTP 400 responses, including `Invalid-OTP`, return HTTP 400
+from onboarding. Other gateway rejections return HTTP 502. A failed request does
+not automatically retry the OTP.
