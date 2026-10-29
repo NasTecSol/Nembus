@@ -6928,7 +6928,7 @@ definitions:
     properties:
       documents:
         items:
-          $ref: '#/definitions/handler.ZatcaDocumentData'
+          $ref: '#/definitions/handler.ZatcaDocumentListEntryData'
         type: array
       has_next_page:
         example: true
@@ -6945,6 +6945,67 @@ definitions:
       total_pages:
         example: 3
         type: integer
+    type: object
+  handler.ZatcaDocumentListEntryData:
+    properties:
+      cleared_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      created_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      device_config_id:
+        example: 3
+        type: integer
+      entity_id:
+        example: 00000000-0000-4000-8000-000000000001
+        type: string
+      entity_type:
+        example: sales_order_v2
+        type: string
+      icv:
+        example: 1
+        type: integer
+      id:
+        example: 10
+        type: integer
+      organization_id:
+        example: 1
+        type: integer
+      pih:
+        type: string
+      pos_terminal_id:
+        example: 8
+        type: integer
+        x-nullable: true
+      qr_code_base64:
+        type: string
+        x-nullable: true
+      signed_xml:
+        type: string
+        x-nullable: true
+      store_id:
+        example: 3
+        type: integer
+        x-nullable: true
+      submitted_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      updated_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      xml_hash:
+        type: string
+      zatca_response: {}
+      zatca_status:
+        $ref: '#/definitions/handler.ZatcaDocumentStatus'
+      zatca_uuid:
+        format: uuid
+        type: string
     type: object
   handler.ZatcaDocumentStatus:
     properties:
@@ -38308,6 +38369,18 @@ paths:
         maximum: 2147483647
         minimum: 1
         name: limit
+        type: integer
+      - description: Source store ID; combined with terminal using AND, before pagination
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: store_id
+        type: integer
+      - description: Source terminal ID; may be supplied without store_id
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: pos_terminal_id
         type: integer
       produces:
       - application/json

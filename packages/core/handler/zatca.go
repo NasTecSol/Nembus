@@ -598,6 +598,10 @@ func (h *ZatcaHandler) OnboardDevice(c *gin.Context) {
 			var progress interface{ OnboardingFailureDetails() json.RawMessage }
 			if errors.As(err, &progress) {
 				status := zatcaGatewayStatus(err)
+				var responseStatus interface{ OnboardingHTTPStatus() int }
+				if errors.As(err, &responseStatus) {
+					status = responseStatus.OnboardingHTTPStatus()
+				}
 				c.JSON(status, utils.NewResponse(status, "ZATCA onboarding incomplete: "+err.Error(), progress.OnboardingFailureDetails()))
 				return
 			}

@@ -12,16 +12,18 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type documentListDB struct {
 	repository.DBTX
-	total                 int64
-	countOrg, listOrg     int32
-	limit                 int32
-	offset                int64
-	err                   error
-	countCalls, listCalls int
+	total                     int64
+	countOrg, listOrg         int32
+	limit                     int32
+	offset                    int64
+	err                       error
+	countCalls, listCalls     int
+	countFilters, listFilters repository.ZatcaDocumentFilters
 }
 
 type documentCountRow struct {
@@ -43,6 +45,7 @@ func (db *documentListDB) QueryRow(_ context.Context, sql string, args ...interf
 	}
 	db.countCalls++
 	db.countOrg = args[0].(int32)
+	db.countFilters = repository.ZatcaDocumentFilters{StoreID: args[1].(int32), PosTerminalID: args[2].(int32)}
 	return documentCountRow{db.total, db.err}
 }
 
@@ -60,17 +63,20 @@ func (r *documentListRows) Scan(dest ...interface{}) error {
 		ID: r.id, OrganizationID: 7, EntityType: "sales_order_v2",
 		ZatcaStatus:   repository.NullZatcaDocStatus{ZatcaDocStatus: repository.ZatcaDocStatusReported, Valid: true},
 		ZatcaResponse: []byte(`{"reportingStatus":"REPORTED"}`),
-	}}).Scan(dest...)
+	}}).Scan(dest[:17]...)
+	*dest[17].(*pgtype.Int4) = pgtype.Int4{Int32: 3, Valid: true}
+	*dest[18].(*pgtype.Int4) = pgtype.Int4{Int32: 8, Valid: true}
 	r.remaining--
 	r.id--
 	return err
 }
 func (db *documentListDB) Query(_ context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
-	if !strings.Contains(sql, "ORDER BY id DESC LIMIT $2 OFFSET $3") {
+	if !strings.Contains(sql, "ORDER BY id DESC LIMIT $4 OFFSET $5") {
 		panic("pagination must be ordered and applied in SQL")
 	}
 	db.listCalls++
-	db.listOrg, db.limit, db.offset = args[0].(int32), args[1].(int32), args[2].(int64)
+	db.listOrg, db.limit, db.offset = args[0].(int32), args[3].(int32), args[4].(int64)
+	db.listFilters = repository.ZatcaDocumentFilters{StoreID: args[1].(int32), PosTerminalID: args[2].(int32)}
 	remaining := db.total - db.offset
 	if remaining > int64(db.limit) {
 		remaining = int64(db.limit)
@@ -150,11 +156,84 @@ func TestZatcaDocumentListMissingTenantAndDatabaseFailure(t *testing.T) {
 				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), middleware.RepoKey, repository.New(&documentListDB{err: errors.New("database offline")})))
 			})
 		}
+		engine.Use(func(c *gin.Context) { c.Set(string(middleware.OrgIDKey), int32(7)) })
 		engine.GET("/documents", NewZatcaHandler(nil).ListZatcaDocuments)
 		recorder := httptest.NewRecorder()
 		engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/documents", nil))
 		if recorder.Code != 500 {
 			t.Fatalf("body=%s", recorder.Body)
+		}
+	}
+}
+
+func TestZatcaDocumentListLocationFilters(t *testing.T) {
+	for _, tc := range []struct {
+		query   string
+		filters repository.ZatcaDocumentFilters
+	}{
+		{"store_id=3", repository.ZatcaDocumentFilters{StoreID: 3}},
+		{"pos_terminal_id=8", repository.ZatcaDocumentFilters{PosTerminalID: 8}},
+		{"store_id=3&pos_terminal_id=8", repository.ZatcaDocumentFilters{StoreID: 3, PosTerminalID: 8}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			db := &documentListDB{total: 3}
+			engine := gin.New()
+			engine.Use(func(c *gin.Context) {
+				c.Set(string(middleware.OrgIDKey), int32(7))
+				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), middleware.RepoKey, repository.New(db)))
+			})
+			engine.GET("/documents", NewZatcaHandler(nil).ListZatcaDocuments)
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/documents?"+tc.query+"&page=2&limit=2", nil))
+			if recorder.Code != 200 || db.countFilters != tc.filters || db.listFilters != tc.filters || db.offset != 2 {
+				t.Fatalf("filters not passed to count and list: %+v, body=%s", db, recorder.Body)
+			}
+			var body struct {
+				Data struct {
+					Documents  []repository.ZatcaDocumentListEntry `json:"documents"`
+					Total      int64                               `json:"total"`
+					TotalPages int64                               `json:"total_pages"`
+				}
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Data.Documents) != 1 || body.Data.Total != 3 || body.Data.TotalPages != 2 || body.Data.Documents[0].StoreID.Int32 != 3 || body.Data.Documents[0].PosTerminalID.Int32 != 8 {
+				t.Fatalf("incorrect filtered response: %s", recorder.Body)
+			}
+		})
+	}
+}
+
+func TestZatcaDocumentListInvalidLocationFilters(t *testing.T) {
+	engine := gin.New()
+	engine.GET("/documents", NewZatcaHandler(nil).ListZatcaDocuments)
+	for _, field := range []string{"store_id", "pos_terminal_id"} {
+		for _, value := range []string{"", "0", "-1", "abc", "1.5", "2147483648", "3&" + field + "=8"} {
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/documents?"+field+"="+value, nil))
+			if recorder.Code != 400 {
+				t.Fatalf("%s=%s: %d %s", field, value, recorder.Code, recorder.Body)
+			}
+		}
+	}
+}
+
+func TestZatcaDocumentListRequiresOrganization(t *testing.T) {
+	for _, org := range []int32{0, -1} {
+		db := &documentListDB{}
+		engine := gin.New()
+		engine.Use(func(c *gin.Context) {
+			if org != 0 {
+				c.Set(string(middleware.OrgIDKey), org)
+			}
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), middleware.RepoKey, repository.New(db)))
+		})
+		engine.GET("/documents", NewZatcaHandler(nil).ListZatcaDocuments)
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/documents?store_id=3", nil))
+		if recorder.Code != 401 || db.countCalls != 0 || db.listCalls != 0 {
+			t.Fatalf("missing organization allowed: %s", recorder.Body)
 		}
 	}
 }

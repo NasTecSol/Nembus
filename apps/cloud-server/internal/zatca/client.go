@@ -70,6 +70,18 @@ type ComplianceCSIDResponse struct {
 	Warnings            []string    `json:"warnings,omitempty"`
 }
 
+// ComplianceAPIError preserves the gateway status for onboarding diagnostics.
+// Do not attach request headers: the OTP must never appear in these errors.
+type ComplianceAPIError struct {
+	StatusCode int
+	Body       string
+	Endpoint   string
+}
+
+func (e *ComplianceAPIError) Error() string {
+	return fmt.Sprintf("compliance API error (HTTP %d): %s", e.StatusCode, e.Body)
+}
+
 type ProductionCSIDRequest struct {
 	ComplianceRequestID string `json:"compliance_request_id"`
 }
@@ -134,7 +146,7 @@ func (c *ZatcaClient) RequestComplianceCSID(ctx context.Context, csrPEM string, 
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("compliance API error (HTTP %d): %s", resp.StatusCode, string(respBody))
+		return nil, &ComplianceAPIError{StatusCode: resp.StatusCode, Body: string(respBody), Endpoint: url}
 	}
 
 	var res ComplianceCSIDResponse
