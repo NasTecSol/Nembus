@@ -41,13 +41,10 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 		return utils.NewResponse(utils.CodeBadReq, "password cannot be empty", nil)
 	}
 
-	// Get user by username (or email fallback)
+	// Get user by username
 	user, err := uc.repo.GetUserByUsername(ctx, userLogin)
 	if err != nil {
-		user, err = uc.repo.GetUserByEmail(ctx, userLogin)
-		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "invalid credentials", nil)
-		}
+		return utils.NewResponse(utils.CodeNotFound, "invalid credentials", nil)
 	}
 
 	// Check if user is active
@@ -70,7 +67,7 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 	userIDStr := strconv.FormatInt(int64(user.ID), 10)
 	token, err := middleware.GenerateJWTToken(userIDStr, userLogin, user.OrganizationID)
 	if err != nil {
-		token = "local-pos-token-" + userIDStr
+		return utils.NewResponse(utils.CodeError, "failed to generate token", nil)
 	}
 
 	return utils.NewResponse(utils.CodeOK, "login successful", token)

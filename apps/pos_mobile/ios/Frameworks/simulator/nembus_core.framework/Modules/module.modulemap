@@ -1,5 +1,0 @@
-framework module nembus_core {
-  umbrella header "nembus_core.h"
-  export *
-  module * { export * }
-}
