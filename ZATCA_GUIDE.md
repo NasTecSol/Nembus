@@ -112,9 +112,31 @@ All cryptographic functions reside in `packages/core/usecase`:
 ```
 
 1. Admin inputs a 1-hour OTP from the FATOORA Portal.
-2. The Cloud server executes CSR generation and calls `POST /compliance` to obtain a Compliance CSID (CCSID).
+2. The backend receiving the request (Cloud server or local Wails POS) executes CSR generation and calls `POST /compliance` to obtain a Compliance CSID (CCSID).
 3. 6 test documents are submitted to `POST /compliance/invoices`.
 4. `POST /production/csids` exchanges the CCSID for a Production CSID (PCSID) and saves it to `zatca_device_configs`.
+
+### Local Wails onboarding
+
+The local POS supports `POST http://localhost:8080/api/zatca/onboard` using the
+same shared gateway implementation in `packages/core/zatca` as the cloud server.
+Send the tenant's registered M2M token, `x-tenant-id`, and the usual organization,
+store, terminal, serial, OTP, and explicit `zatca_env` fields. The frontend can
+keep its existing localhost onboarding URL.
+
+Local onboarding generates the keypair locally, calls the selected ZATCA
+environment directly, and saves the signing key and credential pairs in the
+request's local tenant database. It requires internet access to ZATCA; it does
+not proxy onboarding through the cloud server or upload the private key there.
+The cloud and local backends each persist credentials in their own tenant
+database; local onboarding does not automatically register the device in the
+cloud database.
+
+If onboarding fails after compliance credentials have been saved, use
+`POST /api/zatca/devices/{id}/complete-onboarding` on the same local backend to
+resume with the saved credentials. Do not start another onboarding request for
+that device just to retry the compliance checks. HTTP 200 indicates the reporting
+credentials were saved successfully (`reporting_ready=true`).
 
 ---
 

@@ -15,9 +15,9 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	router "github.com/NasTecSol/nembus-core/routing"
 	"github.com/NasTecSol/nembus-core/usecase"
+	cloudzatca "github.com/NasTecSol/nembus-core/zatca"
 	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
 	"github.com/NasTecSol/nembus-server/internal/notification"
-	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
 
 	_ "github.com/NasTecSol/nembus-server/docs/swagger" // Swagger generated docs
 
