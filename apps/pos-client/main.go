@@ -117,6 +117,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		authHandler := handler.NewAuthHandler(authUC)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/login/biometric", authHandler.LoginWithBiometric)
+		auth.POST("/authorize-action", authHandler.AuthorizeAction)
+		auth.POST("/authorize-action/biometric", authHandler.AuthorizeActionWithBiometric)
 	}
 
 	publicTenants := r.Group("/api/tenants")
@@ -133,6 +136,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		userHandler := handler.NewUserHandler(userUC)
 		router.RegisterUserRoutes(api, userHandler)
+		biometricHandler := handler.NewBiometricHandler(usecase.NewBiometricUseCase())
+		router.RegisterBiometricRoutes(api, biometricHandler)
 		moduleHandler := handler.NewModuleHandler(moduleUC)
 		router.RegisterModuleRoutes(api, moduleHandler)
 		imageHandler := handler.NewImageHandler(imageUC)

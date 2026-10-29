@@ -12,6 +12,10 @@ func TestPullEntityTypesMasterDataOrder(t *testing.T) {
 		"product_categories",
 		"payment_terms",
 		"users",
+		"roles",
+		"permissions",
+		"role_permissions",
+		"user_roles",
 		"cashiers",
 		"business_partners",
 		"partner_addresses",
@@ -45,9 +49,15 @@ func TestPullEntityTypesMasterDataOrder(t *testing.T) {
 	if indexMap["payment_terms"] >= indexMap["business_partners"] {
 		t.Errorf("payment_terms (%d) must precede business_partners (%d)", indexMap["payment_terms"], indexMap["business_partners"])
 	}
-	// 4. users must precede cashiers
+	// 4. users must precede cashiers (RBAC entities between users and cashiers)
 	if indexMap["users"] >= indexMap["cashiers"] {
 		t.Errorf("users (%d) must precede cashiers (%d)", indexMap["users"], indexMap["cashiers"])
+	}
+	if indexMap["user_roles"] >= indexMap["cashiers"] {
+		t.Errorf("user_roles (%d) must precede cashiers (%d)", indexMap["user_roles"], indexMap["cashiers"])
+	}
+	if indexMap["cashiers"] >= indexMap["user_biometric_templates"] {
+		t.Errorf("cashiers (%d) must precede user_biometric_templates (%d)", indexMap["cashiers"], indexMap["user_biometric_templates"])
 	}
 	// 5. users must precede business_partners (sales_rep_user_id)
 	if indexMap["users"] >= indexMap["business_partners"] {

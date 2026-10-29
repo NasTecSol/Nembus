@@ -699,20 +699,22 @@ type Cashier struct {
 }
 
 type CashierSession struct {
-	ID              int32            `json:"id"`
-	CashierID       int32            `json:"cashier_id"`
-	PosTerminalID   int32            `json:"pos_terminal_id"`
-	SessionNumber   string           `json:"session_number"`
-	OpeningTime     pgtype.Timestamp `json:"opening_time"`
-	ClosingTime     pgtype.Timestamp `json:"closing_time"`
-	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
-	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
-	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
-	Variance        pgtype.Numeric   `json:"variance"`
-	Status          pgtype.Text      `json:"status"`
-	Metadata        json.RawMessage  `json:"metadata"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
-	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
+	ID                   int32            `json:"id"`
+	CashierID            int32            `json:"cashier_id"`
+	PosTerminalID        int32            `json:"pos_terminal_id"`
+	SessionNumber        string           `json:"session_number"`
+	OpeningTime          pgtype.Timestamp `json:"opening_time"`
+	ClosingTime          pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance       pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance       pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance      pgtype.Numeric   `json:"expected_balance"`
+	Variance             pgtype.Numeric   `json:"variance"`
+	Status               pgtype.Text      `json:"status"`
+	OpenedBySupervisorID pgtype.Int4      `json:"opened_by_supervisor_id"`
+	ClosedBySupervisorID pgtype.Int4      `json:"closed_by_supervisor_id"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 }
 
 type ChartOfAccount struct {
@@ -2867,6 +2869,22 @@ type User struct {
 	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 	MustResetPassword bool             `json:"must_reset_password"`
 	SapImported       bool             `json:"sap_imported"`
+}
+
+type UserBiometricTemplate struct {
+	ID               int32            `json:"id"`
+	OrganizationID   int32            `json:"organization_id"`
+	UserID           int32            `json:"user_id"`
+	FingerIndex      int16            `json:"finger_index"`
+	FmdFormat        string           `json:"fmd_format"`
+	FmdBase64        string           `json:"fmd_base64"`
+	QualityScore     pgtype.Int2      `json:"quality_score"`
+	ReaderSerial     pgtype.Text      `json:"reader_serial"`
+	EnrolledByUserID pgtype.Int4      `json:"enrolled_by_user_id"`
+	IsActive         bool             `json:"is_active"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	CreatedAt        pgtype.Timestamp `json:"created_at"`
+	UpdatedAt        pgtype.Timestamp `json:"updated_at"`
 }
 
 type UserNotification struct {

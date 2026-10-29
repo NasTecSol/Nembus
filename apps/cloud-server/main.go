@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -108,10 +109,12 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 	{
 		authHandler := handler.NewAuthHandler(authUC)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/login/biometric", authHandler.LoginWithBiometric)
 		// Supervisor override: authenticate a supervisor and obtain a short-lived
 		// authorization token for a restricted action (e.g. sales return).
 		// Does NOT require the cashier's JWT — the supervisor credentials are self-authenticating.
 		auth.POST("/authorize-action", authHandler.AuthorizeAction)
+		auth.POST("/authorize-action/biometric", authHandler.AuthorizeActionWithBiometric)
 	}
 
 	publicTenants := r.Group("/api/tenants")
@@ -143,6 +146,8 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 	{
 		userHandler := handler.NewUserHandler(userUC)
 		router.RegisterUserRoutes(api, userHandler)
+		biometricHandler := handler.NewBiometricHandler(usecase.NewBiometricUseCase())
+		router.RegisterBiometricRoutes(api, biometricHandler)
 		moduleHandler := handler.NewModuleHandler(moduleUC)
 		router.RegisterModuleRoutes(api, moduleHandler)
 		imageHandler := handler.NewImageHandler(imageUC)
@@ -336,6 +341,12 @@ func main() {
 
 	cfg := config.LoadConfig(env)
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
+
+	if err := biometrics.InitRuntime(); err != nil {
+		log.Printf("[Biometrics] Warning: embedded runtime extraction failed: %v", err)
+	} else {
+		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
+	}
 
 	ctx := context.Background()
 	masterPool, masterRepo, err := setupDatabase(ctx, cfg)

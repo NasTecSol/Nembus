@@ -10,6 +10,7 @@ const (
 	CodeBadReq       = 400
 	CodeUnauthorized = 401
 	CodeForbidden    = 403
+	CodeConflict     = 409
 	CodeError        = 500
 )
 

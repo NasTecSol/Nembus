@@ -681,6 +681,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/authorize-action/biometric": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Identifies a supervisor by fingerprint (1:1 if supervisor_login provided, else 1:N) and mints a 5-minute X-Authorization-Token when the matched user holds permission_code.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Supervisor override via fingerprint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Supervisor fingerprint authorization",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.BiometricAuthorizeActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AuthorizeActionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/login": {
             "post": {
                 "description": "Authenticate user and receive JWT token",
@@ -717,6 +781,59 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.LoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/login/biometric": {
+            "post": {
+                "description": "Authenticates using an ISO/IEC 19794-2:2005 probe FMD. Omit user_login for 1:N identification across active enrolled users.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Biometric login (1:1 or 1:N touch-only)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Probe FMD",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.BiometricLoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BiometricLoginResponse"
                         }
                     },
                     "400": {
@@ -1046,6 +1163,83 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/biometrics/enroll": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token scoped to biometrics.enroll.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "biometrics"
+                ],
+                "summary": "Enroll user fingerprint template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer JWT",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional supervisor override token (biometrics.enroll)",
+                        "name": "X-Authorization-Token",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Enrollment payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.EnrollFingerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.EnrollFingerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
@@ -45917,6 +46111,202 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/{id}/biometrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns active finger indices and metadata without raw FMD bytes.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "biometrics"
+                ],
+                "summary": "List enrolled fingerprints for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ListUserBiometricsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{id}/biometrics/enroll": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token scoped to biometrics.enroll.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "biometrics"
+                ],
+                "summary": "Enroll user fingerprint template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer JWT",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional supervisor override token (biometrics.enroll)",
+                        "name": "X-Authorization-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (when using /users/:id/biometrics/enroll)",
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "description": "Enrollment payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.EnrollFingerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.EnrollFingerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{id}/biometrics/{fingerIndex}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft-deactivates the template (is_active=false) for sync propagation. Requires biometrics.enroll permission.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "biometrics"
+                ],
+                "summary": "Deactivate a user fingerprint template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "NIST finger index (1-10)",
+                        "name": "fingerIndex",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/{id}/password": {
             "put": {
                 "security": [
@@ -47844,6 +48234,85 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.BiometricAuthorizeActionRequest": {
+            "type": "object",
+            "required": [
+                "fmd_base64",
+                "permission_code"
+            ],
+            "properties": {
+                "cashier_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "fmd_base64": {
+                    "type": "string",
+                    "example": "Rk1SAA..."
+                },
+                "permission_code": {
+                    "type": "string",
+                    "example": "pos:void_transactions"
+                },
+                "supervisor_login": {
+                    "type": "string",
+                    "example": "supervisor_jane"
+                }
+            }
+        },
+        "handler.BiometricLoginRequest": {
+            "type": "object",
+            "required": [
+                "fmd_base64"
+            ],
+            "properties": {
+                "fmd_base64": {
+                    "type": "string",
+                    "example": "Rk1SAA..."
+                },
+                "user_login": {
+                    "type": "string",
+                    "example": "cashier_jane"
+                }
+            }
+        },
+        "handler.BiometricLoginResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "matched_finger_index": {
+                            "type": "integer",
+                            "example": 2
+                        },
+                        "organization_id": {
+                            "type": "integer",
+                            "example": 1
+                        },
+                        "token": {
+                            "type": "string",
+                            "example": "eyJhbGci..."
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "example": 12
+                        },
+                        "user_login": {
+                            "type": "string",
+                            "example": "cashier_jane"
+                        }
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "biometric login successful"
+                },
+                "statusCode": {
+                    "type": "integer",
+                    "example": 200
+                }
+            }
+        },
         "handler.BrandResponse": {
             "type": "object",
             "properties": {
@@ -48312,6 +48781,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "supervisor_id": {
+                    "type": "integer"
                 },
                 "variance": {
                     "description": "Optional; server computes at close",
@@ -51667,6 +52139,79 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.EnrollFingerRequest": {
+            "type": "object",
+            "properties": {
+                "finger_index": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "fmd_base64": {
+                    "type": "string",
+                    "example": "Rk1SAA..."
+                },
+                "quality_score": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "reader_serial": {
+                    "type": "string",
+                    "example": "5000216000000000"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "view_fmds_base64": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.EnrollFingerResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "finger_index": {
+                            "type": "integer",
+                            "example": 2
+                        },
+                        "finger_name": {
+                            "type": "string",
+                            "example": "Right Index"
+                        },
+                        "id": {
+                            "type": "integer",
+                            "example": 1
+                        },
+                        "is_active": {
+                            "type": "boolean",
+                            "example": true
+                        },
+                        "quality_score": {
+                            "type": "integer",
+                            "example": 1
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "example": 12
+                        }
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "biometric fingerprint enrolled successfully"
+                },
+                "statusCode": {
+                    "type": "integer",
+                    "example": 200
+                }
+            }
+        },
         "handler.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -52179,6 +52724,25 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handler.ProductVariantSummary"
                     }
+                }
+            }
+        },
+        "handler.ListUserBiometricsResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.EnrolledFingerSummary"
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "user biometrics fetched successfully"
+                },
+                "statusCode": {
+                    "type": "integer",
+                    "example": 200
                 }
             }
         },
@@ -52798,6 +53362,9 @@ const docTemplate = `{
                 "session_number": {
                     "type": "string",
                     "example": "SES-20261026-001"
+                },
+                "supervisor_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -57823,6 +58390,44 @@ const docTemplate = `{
                 "vendor_name": {
                     "type": "string",
                     "example": "Example Vendor Co."
+                }
+            }
+        },
+        "usecase.EnrolledFingerSummary": {
+            "type": "object",
+            "properties": {
+                "enrolled_by_user_id": {
+                    "type": "integer"
+                },
+                "finger_index": {
+                    "type": "integer"
+                },
+                "finger_name": {
+                    "type": "string"
+                },
+                "fmd_format": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "organization_id": {
+                    "type": "integer"
+                },
+                "quality_score": {
+                    "type": "integer"
+                },
+                "reader_serial": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
                 }
             }
         },

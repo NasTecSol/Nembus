@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Fingerprint Scanner Service
+Comment=Start or restart the DigitalPersona fingerprint scanner microservice
+Exec=/opt/Crossmatch/urusdk-linux/Linux/finger/execute_fingerprint.sh
+Type=Application
+Terminal=true
+Icon=system-run
+Categories=Utility;HardwareSettings;

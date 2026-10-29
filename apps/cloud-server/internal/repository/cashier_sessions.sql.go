@@ -26,7 +26,7 @@ SET
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at
+RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at
 `
 
 type CloseCashierSessionParams struct {
@@ -62,6 +62,8 @@ func (q *Queries) CloseCashierSession(ctx context.Context, arg CloseCashierSessi
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -83,7 +85,7 @@ SET
     )
 WHERE id = $1
   AND status = 'open'
-RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at
+RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at
 `
 
 type CloseCashierSessionReconcileParams struct {
@@ -116,6 +118,8 @@ func (q *Queries) CloseCashierSessionReconcile(ctx context.Context, arg CloseCas
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -125,7 +129,7 @@ func (q *Queries) CloseCashierSessionReconcile(ctx context.Context, arg CloseCas
 
 const getActiveCashierSession = `-- name: GetActiveCashierSession :one
 SELECT 
-    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.opened_by_supervisor_id, cs.closed_by_supervisor_id, cs.metadata, cs.created_at, cs.updated_at,
     c.cashier_code,
     u.first_name || ' ' || u.last_name AS cashier_name,
     t.terminal_name,
@@ -142,24 +146,26 @@ LIMIT 1
 `
 
 type GetActiveCashierSessionRow struct {
-	ID              int32            `json:"id"`
-	CashierID       int32            `json:"cashier_id"`
-	PosTerminalID   int32            `json:"pos_terminal_id"`
-	SessionNumber   string           `json:"session_number"`
-	OpeningTime     pgtype.Timestamp `json:"opening_time"`
-	ClosingTime     pgtype.Timestamp `json:"closing_time"`
-	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
-	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
-	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
-	Variance        pgtype.Numeric   `json:"variance"`
-	Status          pgtype.Text      `json:"status"`
-	Metadata        json.RawMessage  `json:"metadata"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
-	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
-	CashierCode     string           `json:"cashier_code"`
-	CashierName     interface{}      `json:"cashier_name"`
-	TerminalName    pgtype.Text      `json:"terminal_name"`
-	TerminalCode    string           `json:"terminal_code"`
+	ID                   int32            `json:"id"`
+	CashierID            int32            `json:"cashier_id"`
+	PosTerminalID        int32            `json:"pos_terminal_id"`
+	SessionNumber        string           `json:"session_number"`
+	OpeningTime          pgtype.Timestamp `json:"opening_time"`
+	ClosingTime          pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance       pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance       pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance      pgtype.Numeric   `json:"expected_balance"`
+	Variance             pgtype.Numeric   `json:"variance"`
+	Status               pgtype.Text      `json:"status"`
+	OpenedBySupervisorID pgtype.Int4      `json:"opened_by_supervisor_id"`
+	ClosedBySupervisorID pgtype.Int4      `json:"closed_by_supervisor_id"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	CashierCode          string           `json:"cashier_code"`
+	CashierName          interface{}      `json:"cashier_name"`
+	TerminalName         pgtype.Text      `json:"terminal_name"`
+	TerminalCode         string           `json:"terminal_code"`
 }
 
 func (q *Queries) GetActiveCashierSession(ctx context.Context, cashierID int32) (GetActiveCashierSessionRow, error) {
@@ -177,6 +183,8 @@ func (q *Queries) GetActiveCashierSession(ctx context.Context, cashierID int32) 
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -190,7 +198,7 @@ func (q *Queries) GetActiveCashierSession(ctx context.Context, cashierID int32) 
 
 const getCashierSessions = `-- name: GetCashierSessions :many
 SELECT 
-    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.opened_by_supervisor_id, cs.closed_by_supervisor_id, cs.metadata, cs.created_at, cs.updated_at,
     c.cashier_code,
     u.first_name || ' ' || u.last_name AS cashier_name,
     t.terminal_name,
@@ -218,24 +226,26 @@ type GetCashierSessionsParams struct {
 }
 
 type GetCashierSessionsRow struct {
-	ID              int32            `json:"id"`
-	CashierID       int32            `json:"cashier_id"`
-	PosTerminalID   int32            `json:"pos_terminal_id"`
-	SessionNumber   string           `json:"session_number"`
-	OpeningTime     pgtype.Timestamp `json:"opening_time"`
-	ClosingTime     pgtype.Timestamp `json:"closing_time"`
-	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
-	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
-	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
-	Variance        pgtype.Numeric   `json:"variance"`
-	Status          pgtype.Text      `json:"status"`
-	Metadata        json.RawMessage  `json:"metadata"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
-	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
-	CashierCode     pgtype.Text      `json:"cashier_code"`
-	CashierName     interface{}      `json:"cashier_name"`
-	TerminalName    pgtype.Text      `json:"terminal_name"`
-	TerminalCode    pgtype.Text      `json:"terminal_code"`
+	ID                   int32            `json:"id"`
+	CashierID            int32            `json:"cashier_id"`
+	PosTerminalID        int32            `json:"pos_terminal_id"`
+	SessionNumber        string           `json:"session_number"`
+	OpeningTime          pgtype.Timestamp `json:"opening_time"`
+	ClosingTime          pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance       pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance       pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance      pgtype.Numeric   `json:"expected_balance"`
+	Variance             pgtype.Numeric   `json:"variance"`
+	Status               pgtype.Text      `json:"status"`
+	OpenedBySupervisorID pgtype.Int4      `json:"opened_by_supervisor_id"`
+	ClosedBySupervisorID pgtype.Int4      `json:"closed_by_supervisor_id"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	CashierCode          pgtype.Text      `json:"cashier_code"`
+	CashierName          interface{}      `json:"cashier_name"`
+	TerminalName         pgtype.Text      `json:"terminal_name"`
+	TerminalCode         pgtype.Text      `json:"terminal_code"`
 }
 
 func (q *Queries) GetCashierSessions(ctx context.Context, arg GetCashierSessionsParams) ([]GetCashierSessionsRow, error) {
@@ -264,6 +274,8 @@ func (q *Queries) GetCashierSessions(ctx context.Context, arg GetCashierSessions
 			&i.ExpectedBalance,
 			&i.Variance,
 			&i.Status,
+			&i.OpenedBySupervisorID,
+			&i.ClosedBySupervisorID,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,

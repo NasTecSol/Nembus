@@ -14,6 +14,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/NasTecSol/nembus-core/usecase"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -122,7 +123,7 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
 		"sales_returns", "sales_return_lines", "stock_movements",
 		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
-		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
+		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs", "user_biometric_templates":
 		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.Action, event.PayloadJson); err != nil {
 			log.Printf("[gRPC SyncServer] Ingestion error for %s (action=%s, ID %d): %v", event.EntityType, event.Action, event.EntityId, err)
 			return err
@@ -205,7 +206,7 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		"cashier_sessions": true, "carts": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
 		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
 		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
-		"notification_events": true,
+		"notification_events": true, "user_biometric_templates": true,
 	}
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
@@ -213,6 +214,12 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	updateClause, err := getTableUpdateClause(ctx, pool, entityType)
 	if err != nil {
 		return err
+	}
+	if entityType == "user_biometric_templates" {
+		if err := usecase.ApplyUserBiometricTemplateFromSync(ctx, pool, payload); err != nil {
+			return fmt.Errorf("failed to upsert %s (action=%s): %w", entityType, action, err)
+		}
+		return nil
 	}
 	if entityType == "sales_orders_v2" {
 		// Legacy header events must not undo a completed inventory transition.

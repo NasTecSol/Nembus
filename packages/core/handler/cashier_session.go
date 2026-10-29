@@ -74,6 +74,19 @@ func (h *CashierSessionHandler) OpenCashierSession(c *gin.Context) {
 	}
 
 	resp := h.useCase.OpenCashierSession(c.Request.Context(), arg)
+	if resp.StatusCode == utils.CodeCreated {
+		var supID int32
+		if tokenSupID, ok := middleware.ParseOptionalAuthorizationToken(c); ok {
+			supID = tokenSupID
+		} else if req.SupervisorID != nil && *req.SupervisorID > 0 {
+			supID = *req.SupervisorID
+		}
+		if supID > 0 {
+			if session, ok := resp.Data.(repository.OpenCashierSessionRow); ok {
+				_ = h.useCase.SetSessionOpenedSupervisor(c.Request.Context(), session.ID, supID)
+			}
+		}
+	}
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -202,6 +215,17 @@ func (h *CashierSessionHandler) CloseCashierSession(c *gin.Context) {
 	}
 
 	resp := h.useCase.CloseCashierSession(c.Request.Context(), arg)
+	if resp.StatusCode == utils.CodeOK {
+		var supID int32
+		if tokenSupID, ok := middleware.ParseOptionalAuthorizationToken(c); ok {
+			supID = tokenSupID
+		} else if req.SupervisorID != nil && *req.SupervisorID > 0 {
+			supID = *req.SupervisorID
+		}
+		if supID > 0 {
+			_ = h.useCase.SetSessionClosedSupervisor(c.Request.Context(), int32(id), supID)
+		}
+	}
 	c.JSON(resp.StatusCode, resp)
 }
 

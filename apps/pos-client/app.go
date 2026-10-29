@@ -21,6 +21,7 @@ import (
 	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
+	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -38,17 +39,18 @@ var migrations embed.FS
 
 // App struct
 type App struct {
-	ctx           context.Context
-	dbManager     *db.DBManager
-	masterRepo    *repository.Queries
-	masterPool    *pgxpool.Pool
-	tenantManager *manager.Manager
-	syncService   *sync.SyncService
-	geideaClient  *geidea.Client
-	cfg           *config.Config
-	version       string
-	appKey        string
-	cloudURL      string
+	ctx             context.Context
+	dbManager       *db.DBManager
+	masterRepo      *repository.Queries
+	masterPool      *pgxpool.Pool
+	tenantManager   *manager.Manager
+	syncService     *sync.SyncService
+	geideaClient    *geidea.Client
+	biometricBridge *biometrics.LocalBridgeServer
+	cfg             *config.Config
+	version         string
+	appKey          string
+	cloudURL        string
 }
 
 // NewApp creates a new App application struct
@@ -76,6 +78,17 @@ func (a *App) getCloudURL() string {
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Initialize embedded DigitalPersona runtime and start in-process local bridge on 127.0.0.1:5050
+	if err := biometrics.InitRuntime(); err != nil {
+		log.Printf("[Biometrics] Warning: embedded runtime extraction failed: %v", err)
+	} else {
+		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
+	}
+	a.biometricBridge = biometrics.NewLocalBridgeServer("127.0.0.1:5050")
+	if err := a.biometricBridge.StartIfPortFree(); err != nil {
+		log.Printf("[Biometrics] Warning: local bridge server failed to start: %v", err)
+	}
 
 	// Clean up legacy executable backups from previous update cycles
 	updater.CleanupOldExecutables()
@@ -148,6 +161,9 @@ func (a *App) beforeClose(ctx context.Context) (prevent bool) {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	if a.biometricBridge != nil {
+		_ = a.biometricBridge.Stop(ctx)
+	}
 	if a.syncService != nil {
 		a.syncService.Stop()
 	}
