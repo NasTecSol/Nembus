@@ -46,12 +46,20 @@ func (onboardingProgressError) OnboardingFailureDetails() json.RawMessage {
 	return []byte(`{"device_id":3,"id":3,"reporting_ready":false,"onboarding_stage":"compliance","completion_endpoint":"/api/zatca/devices/3/complete-onboarding"}`)
 }
 
+type onboardingOTPError struct{}
+
+func (onboardingOTPError) Error() string             { return "compliance API error: Invalid-OTP" }
+func (onboardingOTPError) OnboardingHTTPStatus() int { return 400 }
+func (onboardingOTPError) OnboardingFailureDetails() json.RawMessage {
+	return []byte(`{"onboarding_stage":"compliance_csid","zatca_env":"simulation","gateway_http_status":400,"csr_organization_identifier":"310123456700003","device_saved":false}`)
+}
+
 func TestOnboardHTTPReturnsSuccessOnlyForReportingReadyDevice(t *testing.T) {
 	for _, scenario := range []struct {
 		name string
 		code int
 	}{
-		{"ready", 200}, {"partial-error", 502}, {"compliance-only", 502}, {"no-gateway", 501}, {"organization-disabled", 409}, {"missing-env", 400}, {"invalid-env", 400},
+		{"ready", 200}, {"partial-error", 502}, {"invalid-otp", 400}, {"compliance-only", 502}, {"no-gateway", 501}, {"organization-disabled", 409}, {"missing-env", 400}, {"invalid-env", 400},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			handler := NewZatcaHandler(nil)
@@ -65,6 +73,9 @@ func TestOnboardHTTPReturnsSuccessOnlyForReportingReadyDevice(t *testing.T) {
 				}
 				if scenario.name == "partial-error" {
 					stub.err = onboardingProgressError{}
+				}
+				if scenario.name == "invalid-otp" {
+					stub.err = onboardingOTPError{}
 				}
 				handler.SetOnboarder(stub)
 			}
@@ -91,6 +102,9 @@ func TestOnboardHTTPReturnsSuccessOnlyForReportingReadyDevice(t *testing.T) {
 			}
 			if scenario.name == "partial-error" && !strings.Contains(recorder.Body.String(), `"device_id":3`) {
 				t.Fatal("recovery device missing")
+			}
+			if scenario.name == "invalid-otp" && (!strings.Contains(recorder.Body.String(), `"csr_organization_identifier":"310123456700003"`) || !strings.Contains(recorder.Body.String(), `"device_saved":false`)) {
+				t.Fatal("compliance request diagnostics missing")
 			}
 		})
 	}
