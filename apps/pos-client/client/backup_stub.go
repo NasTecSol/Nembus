@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,20 +22,30 @@ import (
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// ProgressCallback is invoked during backup streaming and restoration.
+type ProgressCallback func(stage string, percent int, bytesTransferred int64, speed string, estimatedSecs int, message string)
+
 // DownloadBackup downloads a tenant backup via gRPC streaming, writes it as a
 // .sql file under outputDir, restores it to localDBURL (if non-empty), and
 // returns the path to the saved backup file.
-//
-// serverAddr may be either a bare "host:port" gRPC address or an HTTP(S) URL
-// (scheme + host are extracted automatically).
 func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string) (string, error) {
+	return DownloadBackupWithProgress(serverAddr, tenantSlug, token, outputDir, localDBURL, nil)
+}
+
+// DownloadBackupWithProgress performs DownloadBackup and invokes progress callback with real-time transfer stats.
+func DownloadBackupWithProgress(serverAddr, tenantSlug, token, outputDir, localDBURL string, progress ProgressCallback) (string, error) {
 	grpcAddr := toGRPCAddr(serverAddr)
 	log.Printf("Connecting to backup gRPC server: %s", grpcAddr)
+
+	if progress != nil {
+		progress("connecting", 20, 0, "", 30, "Connecting to backup gRPC service...")
+	}
 
 	// 1. Connect to cloud gRPC server (insecure for now; add TLS via env flag if needed)
 	conn, err := grpc.Dial(grpcAddr,
@@ -49,7 +60,8 @@ func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string)
 
 	client := backuppb.NewBackupServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	// Large tenant backups (around 5 GB) can take well over 30 minutes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 	defer cancel()
 
 	// 2. Start streaming backup
@@ -78,6 +90,9 @@ func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string)
 
 	// 4. Receive all chunks and write to file
 	var totalBytes int64
+	startTime := time.Now()
+	lastReport := time.Now()
+
 	for {
 		chunk, err := stream.Recv()
 		if err == io.EOF {
@@ -98,24 +113,83 @@ func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string)
 			return "", fmt.Errorf("write error: %w", err)
 		}
 		totalBytes += int64(len(chunk.Data))
-		log.Printf("Backup download: %d bytes received", totalBytes)
+
+		// Periodically report progress (every 400ms or so)
+		if progress != nil && time.Since(lastReport) > 400*time.Millisecond {
+			elapsed := time.Since(startTime).Seconds()
+			speedBytesPerSec := float64(totalBytes) / elapsed
+			speedStr := fmt.Sprintf("%.1f MB/s", speedBytesPerSec/(1024*1024))
+			if speedBytesPerSec < 1024*1024 {
+				speedStr = fmt.Sprintf("%.0f KB/s", speedBytesPerSec/1024)
+			}
+
+			// Estimate total backup around standard size if unknown, scaled 25% -> 70%
+			progressPercent := 25 + int(float64(totalBytes)/(50*1024*1024)*45)
+			if progressPercent > 70 {
+				progressPercent = 70
+			}
+
+			estSecs := 20
+			if speedBytesPerSec > 0 {
+				remainingBytes := (30 * 1024 * 1024) - totalBytes
+				if remainingBytes > 0 {
+					estSecs = int(float64(remainingBytes) / speedBytesPerSec)
+				} else {
+					estSecs = 5
+				}
+			}
+
+			msg := fmt.Sprintf("Streaming backup chunks (%s received at %s)...", formatBytes(totalBytes), speedStr)
+			progress("downloading", progressPercent, totalBytes, speedStr, estSecs, msg)
+			lastReport = time.Now()
+		}
 	}
 
 	log.Printf("Backup download complete: %d bytes → %s", totalBytes, backupPath)
+	if err := outFile.Close(); err != nil {
+		return backupPath, fmt.Errorf("close backup file: %w", err)
+	}
+	if totalBytes == 0 {
+		return backupPath, fmt.Errorf("received an empty tenant backup")
+	}
 
 	// 5. Restore to local DB (if a DB URL was provided)
-	if localDBURL != "" && totalBytes > 0 {
+	if localDBURL != "" {
+		if progress != nil {
+			progress("restoring", 75, totalBytes, "", 10, "Restoring database tables and seed rows...")
+		}
 		log.Printf("Restoring backup to local database...")
 		if err := restoreSQL(backupPath, localDBURL); err != nil {
 			return backupPath, fmt.Errorf("restore failed: %w", err)
 		}
 		log.Printf("Restore complete.")
+		if progress != nil {
+			progress("restored", 85, totalBytes, "", 5, "Database tables successfully restored.")
+		}
 	}
 
 	return backupPath, nil
 }
 
-func executeStatements(ctx context.Context, conn *pgx.Conn, sql string) error {
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+
+type statementExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func executeStatements(ctx context.Context, conn statementExecutor, sql string) error {
 	statements := splitSQL(sql)
 	for _, rawStmt := range statements {
 		stmt := strings.TrimSpace(rawStmt)
@@ -128,9 +202,14 @@ func executeStatements(ctx context.Context, conn *pgx.Conn, sql string) error {
 		}
 
 		if _, err := conn.Exec(ctx, stmt); err != nil {
-			if !strings.Contains(err.Error(), "already exists") {
-				log.Printf("Warning: statement error (continuing): %v\nStatement: %.100s...", err, stmt)
+			// The public schema is recreated locally, so its CREATE SCHEMA
+			// statement in a dump can legitimately report duplicate_schema.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "42P06" &&
+				strings.HasPrefix(strings.ToUpper(stmt), "CREATE SCHEMA ") {
+				continue
 			}
+			return fmt.Errorf("restore statement failed (%.100s): %w", stmt, err)
 		}
 	}
 	return nil
@@ -162,13 +241,14 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 
 	// Force UTF8 client encoding to support multi-byte Unicode/Arabic characters during COPY and DDL imports
 	if _, err := conn.Exec(ctx, "SET client_encoding = 'UTF8';"); err != nil {
-		log.Printf("Warning: failed to set client_encoding to UTF8: %v", err)
+		return fmt.Errorf("set client_encoding: %w", err)
 	}
 
-	// Clean the public schema to avoid duplicate key/relation errors on restore if the DB already exists
-	log.Printf("Cleaning public schema for a clean restore...")
-	if _, err := conn.Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"); err != nil {
-		log.Printf("Warning: failed to clean public schema: %v", err)
+	// Clear both application schemas. SAP dumps include staging tables, which
+	// otherwise survive a failed clone and collide with the next restore.
+	log.Printf("Cleaning public and staging schemas for a clean restore...")
+	if _, err := conn.Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS staging CASCADE; CREATE SCHEMA public;"); err != nil {
+		return fmt.Errorf("clean restore schemas: %w", err)
 	}
 
 	file, err := os.Open(sqlFilePath)
@@ -195,7 +275,7 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 				// Execute the COPY block immediately
 				res, err := conn.PgConn().CopyFrom(ctx, bytes.NewReader(copyData.Bytes()), copyCmd)
 				if err != nil {
-					log.Printf("Warning: COPY error (continuing): %v\nCommand: %s", err, copyCmd)
+					return fmt.Errorf("restore COPY failed (%s): %w", copyCmd, err)
 				} else {
 					log.Printf("Restored %d rows via COPY", res.RowsAffected())
 				}
@@ -213,7 +293,9 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 		if strings.HasPrefix(strings.ToUpper(trimmed), "COPY ") && strings.HasSuffix(strings.ToUpper(trimmed), "FROM STDIN;") {
 			// Flush pending DDL/DML first
 			if currentSQL.Len() > 0 {
-				executeStatements(ctx, conn, currentSQL.String())
+				if err := executeStatements(ctx, conn, currentSQL.String()); err != nil {
+					return err
+				}
 				currentSQL.Reset()
 			}
 			inCopy = true
@@ -239,10 +321,15 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading dump file: %w", err)
 	}
+	if inCopy {
+		return fmt.Errorf("incomplete COPY block in backup: %s", copyCmd)
+	}
 
 	// Flush remaining SQL
 	if currentSQL.Len() > 0 {
-		executeStatements(ctx, conn, currentSQL.String())
+		if err := executeStatements(ctx, conn, currentSQL.String()); err != nil {
+			return err
+		}
 	}
 
 	return nil

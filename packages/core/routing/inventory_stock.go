@@ -13,6 +13,7 @@ func RegisterInventoryStockRoutes(r *gin.RouterGroup, h *handler.InventoryStockH
 		// CRUD operations
 		is.POST("", h.CreateInventoryStock)
 		is.GET("", h.ListInventoryStock)
+		is.GET("/totals", h.GetInventoryTotals)
 		is.GET("/:id", h.GetInventoryStock)
 		is.PUT("/:id", h.UpdateInventoryStock)
 		is.DELETE("/:id", h.DeleteInventoryStock)

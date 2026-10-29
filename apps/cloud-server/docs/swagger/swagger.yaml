@@ -148,6 +148,29 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.ApprovalDecisionRequest:
+    properties:
+      notes:
+        example: Reviewed and approved
+        type: string
+    type: object
+  handler.ApprovalPolicyRequest:
+    properties:
+      action:
+        example: post
+        type: string
+      is_enabled:
+        example: true
+        type: boolean
+      required_permission:
+        example: goods_receipt_notes:approve
+        type: string
+      requires_approval:
+        example: true
+        type: boolean
+      rules:
+        type: object
+    type: object
   handler.ApproveStockCountRequest:
     properties:
       approved_by:
@@ -668,6 +691,13 @@ definitions:
         example: 1
         type: integer
       path: {}
+    type: object
+  handler.ChannelsListResponse:
+    properties:
+      channels:
+        items:
+          $ref: '#/definitions/handler.NotificationChannelItem'
+        type: array
     type: object
   handler.CloseCashierSessionRequest:
     properties:
@@ -1631,6 +1661,10 @@ definitions:
         type: string
       is_active:
         type: boolean
+      metadata:
+        items:
+          type: integer
+        type: array
       store_id:
         type: integer
       terminal_code:
@@ -2392,6 +2426,33 @@ definitions:
     required:
     - code
     - name
+    type: object
+  handler.CreateRuleRequest:
+    properties:
+      audience_type:
+        example: role
+        type: string
+      channels:
+        items:
+          type: integer
+        type: array
+      conditions:
+        items:
+          type: integer
+        type: array
+      event_type_id:
+        example: po.approved
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      target_role_id:
+        example: 2
+        type: integer
+    required:
+    - audience_type
+    - channels
+    - event_type_id
     type: object
   handler.CreateSalesOrderLineV2Request:
     properties:
@@ -3332,6 +3393,62 @@ definitions:
     required:
     - store_id
     type: object
+  handler.InventoryStoreTotals:
+    properties:
+      product_count:
+        type: integer
+      store_id:
+        type: integer
+      store_name:
+        type: string
+      total_available_units:
+        type: number
+      total_cost_value:
+        type: number
+      total_sale_value:
+        type: number
+      total_units:
+        type: number
+      units_missing_cost_price:
+        type: number
+      units_missing_sale_price:
+        type: number
+    type: object
+  handler.InventoryTotalsData:
+    properties:
+      currency_code:
+        type: string
+      organization_id:
+        type: integer
+      price_list_id:
+        type: integer
+      product_count:
+        type: integer
+      quantity_basis:
+        type: string
+      storage_location_id:
+        type: integer
+      store_count:
+        type: integer
+      store_id:
+        type: integer
+      stores:
+        items:
+          $ref: '#/definitions/handler.InventoryStoreTotals'
+        type: array
+      total_available_units:
+        type: number
+      total_cost_value:
+        type: number
+      total_sale_value:
+        type: number
+      total_units:
+        type: number
+      units_missing_cost_price:
+        type: number
+      units_missing_sale_price:
+        type: number
+    type: object
   handler.LevelPayload:
     properties:
       level_order:
@@ -3663,6 +3780,148 @@ definitions:
         type: string
       updated_at:
         example: "2026-01-24T21:43:00Z"
+        type: string
+    type: object
+  handler.NotificationChannelItem:
+    properties:
+      channel_type:
+        example: whatsapp
+        type: string
+      config:
+        items:
+          type: integer
+        type: array
+      id:
+        example: 1
+        type: integer
+      is_enabled:
+        example: true
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+    type: object
+  handler.NotificationInAppItem:
+    properties:
+      action_url:
+        example: /purchasing/orders/12
+        type: string
+      created_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+      event_id:
+        example: c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22
+        type: string
+      id:
+        example: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+        type: string
+      is_read:
+        example: false
+        type: boolean
+      message:
+        example: 'PO #PO-2026-001 has been approved by the manager.'
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      read_at:
+        example: "2026-10-25T20:30:00Z"
+        type: string
+      severity:
+        example: info
+        type: string
+      title:
+        example: Purchase Order Approved
+        type: string
+      user_id:
+        example: 42
+        type: integer
+    type: object
+  handler.NotificationListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/handler.NotificationInAppItem'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
+  handler.NotificationRoutingRuleItem:
+    properties:
+      audience_type:
+        example: role
+        type: string
+      channels:
+        items:
+          type: integer
+        type: array
+      conditions:
+        items:
+          type: integer
+        type: array
+      created_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+      event_type_id:
+        example: po.approved
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      target_role_id:
+        example: 2
+        type: integer
+      updated_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+    type: object
+  handler.NotificationTemplateItem:
+    properties:
+      body_template:
+        example: 'Hello {{.CustomerName}}, total: {{.TotalAmount}}'
+        type: string
+      channel_type:
+        example: whatsapp
+        type: string
+      created_at:
+        example: "2026-10-25T20:00:00Z"
+        type: string
+      event_type_id:
+        example: pos.receipt
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      locale:
+        example: en
+        type: string
+      meta_template_name:
+        example: pos_digital_receipt
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      subject_template:
+        example: 'Receipt #{{.TransactionNumber}}'
+        type: string
+      updated_at:
+        example: "2026-10-25T20:00:00Z"
         type: string
     type: object
   handler.OpenCashierSessionRequest:
@@ -4042,6 +4301,14 @@ definitions:
         example: "2026-08-31T23:59:59Z"
         type: string
     type: object
+  handler.PublishRFQInput:
+    properties:
+      expires_at:
+        example: "2026-11-30T00:00:00Z"
+        type: string
+    required:
+    - expires_at
+    type: object
   handler.PurchaseOrderLineDTO:
     properties:
       discount_amount:
@@ -4372,6 +4639,13 @@ definitions:
         type: string
       statusCode:
         type: integer
+    type: object
+  handler.RulesListResponse:
+    properties:
+      rules:
+        items:
+          $ref: '#/definitions/handler.NotificationRoutingRuleItem'
+        type: array
     type: object
   handler.SetPrimaryBarcodeRequest:
     properties:
@@ -4765,6 +5039,13 @@ definitions:
     - template_code
     - template_name
     type: object
+  handler.TemplatesListResponse:
+    properties:
+      templates:
+        items:
+          $ref: '#/definitions/handler.NotificationTemplateItem'
+        type: array
+    type: object
   handler.TenantResponse:
     properties:
       created_at:
@@ -5023,6 +5304,12 @@ definitions:
       tenant_slug:
         example: store-riyadh-01
         type: string
+    type: object
+  handler.UnreadCountResponse:
+    properties:
+      unread_count:
+        example: 5
+        type: integer
     type: object
   handler.UpdateBPPriceContractRequest:
     properties:
@@ -5638,6 +5925,10 @@ definitions:
         type: string
       is_active:
         type: boolean
+      metadata:
+        items:
+          type: integer
+        type: array
       terminal_name:
         type: string
     type: object
@@ -6061,6 +6352,29 @@ definitions:
     required:
     - name
     type: object
+  handler.UpdateRuleRequest:
+    properties:
+      audience_type:
+        example: role
+        type: string
+      channels:
+        items:
+          type: integer
+        type: array
+      conditions:
+        items:
+          type: integer
+        type: array
+      is_active:
+        example: true
+        type: boolean
+      target_role_id:
+        example: 2
+        type: integer
+    required:
+    - audience_type
+    - channels
+    type: object
   handler.UpdateSalesOrderLineV2Request:
     properties:
       discount_amount:
@@ -6361,6 +6675,18 @@ definitions:
         additionalProperties: true
         type: object
     type: object
+  handler.UpsertChannelRequest:
+    properties:
+      config:
+        items:
+          type: integer
+        type: array
+      is_active:
+        example: true
+        type: boolean
+    required:
+    - config
+    type: object
   handler.UpsertInventoryStockRequest:
     properties:
       max_stock_level:
@@ -6393,6 +6719,31 @@ definitions:
     required:
     - product_id
     - store_id
+    type: object
+  handler.UpsertTemplateRequest:
+    properties:
+      body_template:
+        example: 'Hello {{.CustomerName}}, total: {{.TotalAmount}}'
+        type: string
+      channel_type:
+        example: whatsapp
+        type: string
+      event_type_id:
+        example: pos.receipt
+        type: string
+      locale:
+        example: en
+        type: string
+      meta_template_name:
+        example: pos_digital_receipt
+        type: string
+      subject_template:
+        example: 'Receipt #{{.TransactionNumber}}'
+        type: string
+    required:
+    - body_template
+    - channel_type
+    - event_type_id
     type: object
   handler.UserResponse:
     properties:
@@ -6438,20 +6789,416 @@ definitions:
     required:
     - voided_by
     type: object
-  handler.ZatcaStatusResponse:
+  handler.ZatcaAPIError:
     properties:
-      base_url:
-        example: https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal
+      data:
+        x-nullable: true
+      message:
+        example: ZATCA is disabled for this organization
         type: string
+      statusCode:
+        example: 409
+        type: integer
+    type: object
+  handler.ZatcaCheckAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaGatewayData'
+      message:
+        example: Compliance check response; this call does not report the invoice
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaCompletionAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaCompletionData'
+      message:
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaCompletionData:
+    properties:
+      compliance_checks:
+        items:
+          $ref: '#/definitions/handler.ZatcaComplianceStep'
+        type: array
+      device_id:
+        example: 3
+        type: integer
+      onboarding_stage:
+        example: production
+        type: string
+      reporting_ready:
+        example: true
+        type: boolean
+      zatca_env:
+        example: simulation
+        type: string
+    type: object
+  handler.ZatcaComplianceStep:
+    properties:
+      already_completed:
+        type: boolean
+      document_type:
+        example: simplified-invoice
+        type: string
+      response:
+        $ref: '#/definitions/handler.ZatcaGatewayData'
+    type: object
+  handler.ZatcaDocumentAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaDocumentData'
+      message:
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaDocumentData:
+    properties:
+      cleared_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      created_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      device_config_id:
+        example: 3
+        type: integer
+      entity_id:
+        example: 00000000-0000-4000-8000-000000000001
+        type: string
+      entity_type:
+        example: sales_order_v2
+        type: string
+      icv:
+        example: 1
+        type: integer
+      id:
+        example: 10
+        type: integer
+      organization_id:
+        example: 1
+        type: integer
+      pih:
+        type: string
+      qr_code_base64:
+        type: string
+        x-nullable: true
+      signed_xml:
+        type: string
+        x-nullable: true
+      submitted_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      updated_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      xml_hash:
+        type: string
+      zatca_response: {}
+      zatca_status:
+        $ref: '#/definitions/handler.ZatcaDocumentStatus'
+      zatca_uuid:
+        format: uuid
+        type: string
+    type: object
+  handler.ZatcaDocumentListAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaDocumentListData'
+      message:
+        example: Saved ZATCA documents
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaDocumentListData:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/handler.ZatcaDocumentData'
+        type: array
+      has_next_page:
+        example: true
+        type: boolean
+      limit:
+        example: 50
+        type: integer
+      page:
+        example: 1
+        type: integer
+      total:
+        example: 125
+        type: integer
+      total_pages:
+        example: 3
+        type: integer
+    type: object
+  handler.ZatcaDocumentStatus:
+    properties:
+      valid:
+        example: true
+        type: boolean
+      zatca_doc_status:
+        example: reported
+        type: string
+    type: object
+  handler.ZatcaGatewayData:
+    properties:
+      clearanceStatus:
+        type: string
+        x-nullable: true
+      qrBuyertStatus:
+        type: string
+        x-nullable: true
+      qrSellertStatus:
+        type: string
+        x-nullable: true
+      reportingStatus:
+        example: REPORTED
+        type: string
+        x-nullable: true
+      validationResults:
+        $ref: '#/definitions/handler.ZatcaValidationResults'
+    type: object
+  handler.ZatcaGenericAPIResponse:
+    properties:
+      data: {}
+      message:
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaOnboardAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaOnboardData'
+      message:
+        example: Device onboarded with ZATCA successfully
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaOnboardData:
+    properties:
+      completion_endpoint:
+        example: /api/zatca/devices/3/complete-onboarding
+        type: string
+      compliance_csid:
+        type: string
+      csid_expiry:
+        format: date-time
+        type: string
+      device_serial:
+        example: POS-01-SIM
+        type: string
+      device_type:
+        enum:
+        - pos
+        - cloud
+        type: string
+      id:
+        example: 3
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      onboarding_stage:
+        example: production
+        type: string
+      production_csid:
+        type: string
+      reporting_ready:
+        example: true
+        type: boolean
+      zatca_env:
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
+        type: string
+    type: object
+  handler.ZatcaOnboardRequest:
+    properties:
+      device_serial:
+        type: string
+      device_type:
+        description: '"pos" or "cloud", defaults to "pos"'
+        enum:
+        - pos
+        - cloud
+        example: pos
+        type: string
+      organization_id:
+        type: integer
+      otp:
+        example: OTP_FROM_MATCHING_PORTAL
+        type: string
+      pos_terminal_id:
+        type: integer
+      store_id:
+        type: integer
+      zatca_env:
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
+        type: string
+    required:
+    - device_serial
+    - otp
+    - zatca_env
+    type: object
+  handler.ZatcaOrganizationSettingData:
+    properties:
       enabled:
         example: true
         type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      source:
+        example: organizations.metadata.zatca.enabled
+        type: string
+    type: object
+  handler.ZatcaOrganizationSettingRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    required:
+    - enabled
+    type: object
+  handler.ZatcaOrganizationSettingResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaOrganizationSettingData'
+      message:
+        example: Organization ZATCA setting updated
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaReceiptQRAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaReceiptQRData'
+      message:
+        example: Saved receipt QR
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaReceiptQRData:
+    properties:
+      qr_code_base64:
+        type: string
+    type: object
+  handler.ZatcaStatusAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaStatusData'
+      message:
+        example: ZATCA status
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaStatusData:
+    properties:
+      base_url:
+        example: https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation
+        type: string
+      device_id:
+        example: 3
+        type: integer
+      enabled:
+        example: true
+        type: boolean
+        x-nullable: true
+      enabled_source:
+        example: organization_metadata
+        type: string
       env:
-        example: sandbox
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
         type: string
+      environment_source:
+        example: device_config
+        type: string
+      is_active:
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      organization_required:
+        type: boolean
+      reporting_ready:
+        type: boolean
       vat_id:
-        example: "300000000000003"
+        example: "310123456700003"
         type: string
+    type: object
+  handler.ZatcaValidationMessage:
+    properties:
+      category:
+        example: XSD validation
+        type: string
+      code:
+        example: XSD_ZATCA_VALID
+        type: string
+      message:
+        type: string
+      status:
+        example: PASS
+        type: string
+      type:
+        example: INFO
+        type: string
+    type: object
+  handler.ZatcaValidationResults:
+    properties:
+      errorMessages:
+        items:
+          $ref: '#/definitions/handler.ZatcaValidationMessage'
+        type: array
+      infoMessages:
+        items:
+          $ref: '#/definitions/handler.ZatcaValidationMessage'
+        type: array
+      status:
+        enum:
+        - PASS
+        - WARNING
+        - ERROR
+        example: PASS
+        type: string
+      warningMessages:
+        items:
+          $ref: '#/definitions/handler.ZatcaValidationMessage'
+        type: array
     type: object
   pgtype.Bool:
     properties:
@@ -6502,6 +7249,48 @@ definitions:
         type: string
       valid:
         type: boolean
+    type: object
+  repository.Response:
+    properties:
+      data:
+        description: can hold any type of data
+      message:
+        description: descriptive message
+        type: string
+      statusCode:
+        description: e.g., 200, 500
+        type: integer
+    type: object
+  usecase.ApprovalInput:
+    properties:
+      action:
+        type: string
+      domain:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        type: string
+      notes:
+        type: string
+      organization_id:
+        type: integer
+      payload:
+        items:
+          type: integer
+        type: array
+      requested_by:
+        type: integer
+      summary:
+        type: string
+    required:
+    - action
+    - domain
+    - entity_type
+    - organization_id
+    - payload
+    - requested_by
+    - summary
     type: object
   usecase.ComboComponentWithDetailsResponse:
     properties:
@@ -6644,6 +7433,33 @@ definitions:
       uom_id:
         type: integer
     type: object
+  usecase.CreateRFQInput:
+    properties:
+      description:
+        example: Please quote the requested ALMARAI-MILK-FW-1L for delivery next month.
+        type: string
+      invited_partner_id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/usecase.RFQItemInput'
+        type: array
+      organization_id:
+        example: 1
+        type: integer
+      store_id:
+        example: 1
+        type: integer
+      title:
+        example: 500 ALMARAI-MILK-FW-1L SAUDIYA BRANCH
+        type: string
+      vendor_name:
+        example: Example Vendor Co.
+        type: string
+    required:
+    - organization_id
+    - vendor_name
+    type: object
   usecase.MenuItemFullDetailsResponse:
     properties:
       base_price:
@@ -6736,6 +7552,59 @@ definitions:
         example: 6
         type: integer
     type: object
+  usecase.RFQItemInput:
+    properties:
+      item_description:
+        example: ALMARAI-MILK-FW-1L lumbar support
+        type: string
+      item_name:
+        example: ALMARAI-MILK-FW-1L
+        type: string
+      notes:
+        example: Black preferred
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      product_variant_id:
+        type: integer
+      quantity:
+        example: 20
+        type: number
+      target_price:
+        example: 25000
+        type: number
+      uom_id:
+        example: 3
+        type: integer
+    type: object
+  usecase.RFQQuoteItemInput:
+    properties:
+      delivery_lead_time_days:
+        example: 21
+        type: integer
+      notes:
+        example: Price per Liter
+        type: string
+      product_id:
+        example: 1
+        type: integer
+      quantity:
+        example: 20
+        type: number
+      rfq_item_id:
+        example: 362d4816-773b-4f0c-9b0d-f7660b5a4e2f
+        type: string
+      tax_amount:
+        example: 1
+        type: number
+      unit_price:
+        example: 22000
+        type: number
+      uom_id:
+        example: 3
+        type: integer
+    type: object
   usecase.RecordInvoicePaymentInput:
     properties:
       bank_account_id:
@@ -6765,6 +7634,28 @@ definitions:
         type: string
       received_by_user_id:
         type: integer
+    type: object
+  usecase.SubmitRFQResponseInput:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/usecase.RFQQuoteItemInput'
+        type: array
+      notes:
+        example: We can deliver in two shipments.
+        type: string
+      supplier_email:
+        example: quotes@example.com
+        type: string
+      supplier_name:
+        example: Example Supply Co.
+        type: string
+      supplier_phone:
+        example: +92-300-1234567
+        type: string
+      valid_until:
+        example: "2026-11-30"
+        type: string
     type: object
   usecase.UpdateInvoiceInput:
     properties:
@@ -6804,7 +7695,183 @@ definitions:
           type: string
         type: array
     type: object
-host: localhost:8080
+  usecase.ZReport:
+    properties:
+      calculation_version:
+        type: integer
+      cashier:
+        $ref: '#/definitions/usecase.ZReportIdentity'
+      currency:
+        type: string
+      drawer:
+        $ref: '#/definitions/usecase.ZReportDrawer'
+      finalized:
+        type: boolean
+      generated_at:
+        type: string
+      net:
+        $ref: '#/definitions/usecase.ZReportNet'
+      payment_totals:
+        $ref: '#/definitions/usecase.ZReportPaymentTotals'
+      payments:
+        items:
+          $ref: '#/definitions/usecase.ZReportPayment'
+        type: array
+      reconciliation:
+        $ref: '#/definitions/usecase.ZReportReconciliation'
+      report_type:
+        type: string
+      returns:
+        $ref: '#/definitions/usecase.ZReportReturns'
+      sales:
+        $ref: '#/definitions/usecase.ZReportSales'
+      session:
+        $ref: '#/definitions/usecase.ZReportSession'
+      store:
+        $ref: '#/definitions/usecase.ZReportStore'
+      terminal:
+        $ref: '#/definitions/usecase.ZReportIdentity'
+      voids:
+        $ref: '#/definitions/usecase.ZReportVoids'
+    type: object
+  usecase.ZReportDrawer:
+    properties:
+      calculated_expected_cash:
+        type: string
+      cash_received:
+        type: string
+      cash_refunded:
+        type: string
+      change_given:
+        type: string
+      counted_closing_cash:
+        type: string
+      manual_movements_included:
+        type: boolean
+      opening_cash:
+        type: string
+      recorded_expected_cash:
+        type: string
+      variance:
+        type: string
+    type: object
+  usecase.ZReportIdentity:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  usecase.ZReportNet:
+    properties:
+      sales_excluding_tax:
+        type: string
+      tax:
+        type: string
+      total_including_tax:
+        type: string
+    type: object
+  usecase.ZReportPayment:
+    properties:
+      change_given:
+        type: string
+      method:
+        type: string
+      net:
+        type: string
+      payment_count:
+        type: integer
+      received:
+        type: string
+      refunded:
+        type: string
+    type: object
+  usecase.ZReportPaymentTotals:
+    properties:
+      change_given:
+        type: string
+      net:
+        type: string
+      received:
+        type: string
+      refunded:
+        type: string
+    type: object
+  usecase.ZReportReconciliation:
+    properties:
+      expected_cash_difference:
+        type: string
+      sales_payment_difference:
+        type: string
+      warnings:
+        items:
+          $ref: '#/definitions/usecase.ZReportWarning'
+        type: array
+    type: object
+  usecase.ZReportReturns:
+    properties:
+      excluding_tax:
+        type: string
+      return_count:
+        type: integer
+      tax:
+        type: string
+      total_refunded:
+        type: string
+    type: object
+  usecase.ZReportSales:
+    properties:
+      after_discount_excluding_tax:
+        type: string
+      before_discount_excluding_tax:
+        type: string
+      discounts:
+        type: string
+      tax:
+        type: string
+      total_including_tax:
+        type: string
+      transaction_count:
+        type: integer
+    type: object
+  usecase.ZReportSession:
+    properties:
+      closed_at:
+        type: string
+      id:
+        type: integer
+      number:
+        type: string
+      opened_at:
+        type: string
+      status:
+        type: string
+    type: object
+  usecase.ZReportStore:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      timezone:
+        type: string
+    type: object
+  usecase.ZReportVoids:
+    properties:
+      total_including_tax:
+        type: string
+      transaction_count:
+        type: integer
+    type: object
+  usecase.ZReportWarning:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
 info:
   contact:
     email: support@swagger.io
@@ -6818,6 +7885,386 @@ info:
   title: NEMBUS API
   version: "1.0"
 paths:
+  /api/approvals:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Filter by domain
+        in: query
+        name: domain
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List approval requests
+      tags:
+      - approvals
+  /api/approvals/{id}:
+    delete:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an approval request
+      tags:
+      - approvals
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get an approval request
+      tags:
+      - approvals
+  /api/approvals/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Decision notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.ApprovalDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve an approval request
+      tags:
+      - approvals
+  /api/approvals/{id}/cancel:
+    post:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cancel an approval request
+      tags:
+      - approvals
+  /api/approvals/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Decision notes
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.ApprovalDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject an approval request
+      tags:
+      - approvals
+  /api/approvals/policies:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List approval policies
+      tags:
+      - approvals
+  /api/approvals/policies/{domain}:
+    delete:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval domain
+        in: path
+        name: domain
+        required: true
+        type: string
+      - default: submit
+        description: Action
+        in: query
+        name: action
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an approval policy
+      tags:
+      - approvals
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval domain
+        in: path
+        name: domain
+        required: true
+        type: string
+      - default: submit
+        description: Action
+        in: query
+        name: action
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get an approval policy
+      tags:
+      - approvals
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval domain
+        in: path
+        name: domain
+        required: true
+        type: string
+      - description: Policy configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ApprovalPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Save an approval policy
+      tags:
+      - approvals
+  /api/approvals/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Approval request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.ApprovalInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit an approval request
+      tags:
+      - approvals
   /api/auth/authorize-action:
     post:
       consumes:
@@ -10705,7 +12152,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Convert an existing cart into a sales order
+      description: Convert a cart into a sales order and automatically attempt ZATCA
+        reporting when enabled and the device is ready. Inspect the top-level zatca
+        result; manual order submit remains available for retry.
       parameters:
       - description: Tenant identifier
         in: header
@@ -14958,6 +16407,83 @@ paths:
       summary: Get inventory stock summary
       tags:
       - inventory_stock
+  /api/inventory-stock/totals:
+    get:
+      description: 'Returns combined totals and per-store totals for inventory-tracked
+        products in one organization. total_units sums quantity_on_hand in base units,
+        including allocated stock and signed negative quantities; available units
+        are returned separately. Cost value is on-hand quantity times current products.cost_price.
+        Sale value is on-hand quantity times one currently active base-UOM (or unspecified-UOM)
+        unit price from the selected price list; variant-specific prices take precedence
+        over product prices. Quantity tiers must apply to one unit. Prices are used
+        as stored, without tax adjustments or discounts. Missing costs/prices contribute
+        zero value and are reported as absolute units_missing_*_price. Price List
+        01 (ID 1) is the default. No pagination: totals cover every matching inventory
+        row. Omit store/location for all stores; specify store_id for one store; specify
+        both store_id and storage_location_id for one location. Empty stores return
+        zero totals. The price list must use the organization''s currency. On databases
+        without products.cost_price, costs are reported as missing.'
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        minimum: 1
+        name: organization_id
+        required: true
+        type: integer
+      - description: Store ID (omit or 0 for all stores)
+        in: query
+        minimum: 0
+        name: store_id
+        type: integer
+      - description: Storage location ID; requires store_id (omit or 0 for all locations)
+        in: query
+        minimum: 0
+        name: storage_location_id
+        type: integer
+      - default: 1
+        description: Selling price list
+        in: query
+        minimum: 1
+        name: price_list_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.InventoryTotalsData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Inventory units and valuation across stores
+      tags:
+      - inventory-stock
   /api/inventory-stock/upsert:
     post:
       consumes:
@@ -16088,11 +17614,16 @@ paths:
       - loyalty-rules
   /api/m2m/tokens:
     get:
-      description: List all registered M2M tokens for the current tenant
+      description: List all registered M2M tokens for the current tenant using the shared key; no JWT required
       parameters:
       - description: Tenant identifier
         in: header
         name: x-tenant-id
+        required: true
+        type: string
+      - description: Shared key defined by middleware.M2MAPIKey
+        in: header
+        name: x-m2m-key
         required: true
         type: string
       produces:
@@ -16108,6 +17639,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -16118,12 +17653,17 @@ paths:
     post:
       consumes:
       - application/json
-      description: Register a new client application and generate a long-lived JWT
-        token
+      description: Register a client application and generate a long-lived JWT token
+        using the shared M2M key; no user JWT required
       parameters:
       - description: Tenant identifier
         in: header
         name: x-tenant-id
+        required: true
+        type: string
+      - description: Shared key defined by middleware.M2MAPIKey
+        in: header
+        name: x-m2m-key
         required: true
         type: string
       - description: M2M client registration data
@@ -16976,6 +18516,594 @@ paths:
       summary: Get user navigation
       tags:
       - navigation
+  /api/notifications:
+    get:
+      description: Returns paginated in-app notifications for the currently authenticated
+        user
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - default: 20
+        description: Number of items to return
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset to skip
+        in: query
+        name: offset
+        type: integer
+      - description: Filter by read status
+        in: query
+        name: is_read
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List user notifications
+      tags:
+      - notifications
+  /api/notifications/{id}/read:
+    post:
+      description: Marks a specific notification as read by UUID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Notification UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationInAppItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark notification as read
+      tags:
+      - notifications
+  /api/notifications/channels:
+    get:
+      description: Returns configuration status for all supported channels (whatsapp,
+        email, sms, websocket)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ChannelsListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification channels
+      tags:
+      - notifications
+  /api/notifications/channels/{type}:
+    get:
+      description: Returns credentials and settings for a specific channel type (e.g.
+        whatsapp, email)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Channel type (whatsapp, email, sms, websocket)
+        in: path
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationChannelItem'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get channel configuration
+      tags:
+      - notifications
+    put:
+      consumes:
+      - application/json
+      description: Updates active status and JSON credentials for a channel type (e.g.
+        Meta WhatsApp token, AWS SES SMTP)
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Channel type (whatsapp, email)
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Channel payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpsertChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationChannelItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upsert channel configuration
+      tags:
+      - notifications
+  /api/notifications/read-all:
+    post:
+      description: Marks all pending notifications as read for the current user
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark all notifications as read
+      tags:
+      - notifications
+  /api/notifications/rules:
+    get:
+      description: Returns routing rules mapping events to audiences, channels, and
+        roles
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RulesListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification rules
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Creates a routing rule for an event type with audience targeting
+        and channels
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Rule payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.NotificationRoutingRuleItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create notification rule
+      tags:
+      - notifications
+  /api/notifications/rules/{id}:
+    delete:
+      description: Deletes an existing notification routing rule
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete notification rule
+      tags:
+      - notifications
+    put:
+      consumes:
+      - application/json
+      description: Updates rule audience, target role, channels, or active status
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rule payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationRoutingRuleItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update notification rule
+      tags:
+      - notifications
+  /api/notifications/templates:
+    get:
+      description: Returns active notification templates optionally filtered by event_type_id
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Event type ID filter (e.g. pos.receipt, po.approved)
+        in: query
+        name: event_type_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TemplatesListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List notification templates
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Creates or updates subject and body templates with interpolation
+        variables (e.g. {{.CustomerName}})
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Template payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpsertTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationTemplateItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upsert notification template
+      tags:
+      - notifications
+  /api/notifications/templates/{id}:
+    delete:
+      description: Removes a notification template by its numeric ID
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete notification template
+      tags:
+      - notifications
+  /api/notifications/unread-count:
+    get:
+      description: Returns the total count of unread in-app notifications for the
+        bell badge
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.UnreadCountResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get unread notifications count
+      tags:
+      - notifications
   /api/order-fulfillment-items/{item_id}:
     delete:
       consumes:
@@ -18313,7 +20441,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new sales order line
+      description: Save a sales order line. After all lines are saved, PUT /api/orders/{id}/totals
+        triggers automatic ZATCA generation and reporting. A line save by itself never
+        issues an invoice.
       parameters:
       - description: Tenant identifier
         in: header
@@ -18679,7 +20809,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update monetary totals of an order
+      description: Update final monetary totals. When ZATCA is enabled and an onboarded
+        device is ready, the complete saved order is signed and reported automatically;
+        the response includes a top-level zatca reporting result. On gateway failure,
+        the order remains saved and /api/zatca/orders/{id}/submit can retry it.
       parameters:
       - description: Tenant identifier
         in: header
@@ -19012,6 +21145,115 @@ paths:
       - BearerAuth: []
       summary: Update an organization
       tags:
+      - organizations
+  /api/organizations/{id}/zatca:
+    get:
+      description: Reads organizations.metadata.zatca.enabled. Missing values mean
+        disabled; environment-file flags are ignored.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaOrganizationSettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read organization ZATCA enablement
+      tags:
+      - zatca
+      - organizations
+    put:
+      consumes:
+      - application/json
+      description: Atomically updates only metadata.zatca.enabled, preserving seller
+        details and unrelated metadata. Both true and false are valid. Disabling pauses
+        ZATCA operations without deleting credentials or signed documents; changes
+        apply without a restart.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Organization-wide switch; false is valid
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ZatcaOrganizationSettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaOrganizationSettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable ZATCA for an organization
+      tags:
+      - zatca
       - organizations
   /api/organizations/code/{code}:
     get:
@@ -22210,7 +24452,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a POS transaction header and its lines
+      description: Creates a POS transaction and linked sales order, then automatically
+        attempts ZATCA reporting when enabled and the device is ready. Inspect the
+        top-level zatca.reported result; manual order submit remains available for
+        retry.
       parameters:
       - description: Tenant identifier
         in: header
@@ -25561,6 +27806,81 @@ paths:
       summary: Search master product catalog
       tags:
       - products
+  /api/products/master-catalog/stock:
+    get:
+      description: Returns inventory-tracked products with full catalog details. Stock
+        is summed across variants and inventory rows within the selected store/location
+        scope. Low means strictly below the threshold; non_low means at or above it.
+        Only scoped inventory is embedded. Without a scope, products without inventory
+        have zero stock; with a scope, products must have an inventory row in that
+        scope.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Organization ID
+        in: query
+        name: organization_id
+        required: true
+        type: integer
+      - description: Low stock threshold (default 20, non-negative)
+        in: query
+        name: low_stock_threshold
+        type: number
+      - description: Stock filter (default low)
+        enum:
+        - low
+        - non_low
+        - all
+        in: query
+        name: stock_status
+        type: string
+      - description: Category ID (omit or 0 for all)
+        in: query
+        name: category_id
+        type: integer
+      - description: Store ID (omit or 0 for all)
+        in: query
+        name: store_id
+        type: integer
+      - description: Storage location ID (omit or 0 for all)
+        in: query
+        name: storage_location_id
+        type: integer
+      - description: Page size (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Master product catalog by stock level
+      tags:
+      - products
   /api/promotions:
     get:
       consumes:
@@ -26067,6 +28387,73 @@ paths:
       summary: Validate coupon (read-only)
       tags:
       - promotions
+  /api/public/rfqs/{token}:
+    get:
+      parameters:
+      - description: Supplier access token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: Tenant identifier
+        in: query
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get public RFQ details
+      tags:
+      - Public RFQs
+  /api/public/rfqs/{token}/responses:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Supplier access token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: Tenant identifier
+        in: query
+        name: tenant
+        required: true
+        type: string
+      - description: Copy rfq_item_id, product_id, and uom_id from the public RFQ
+          GET response; include one quote for each requested item.
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.SubmitRFQResponseInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Submit supplier quotation
+      tags:
+      - Public RFQs
   /api/purchase-order-lines:
     get:
       consumes:
@@ -26713,6 +29100,67 @@ paths:
       summary: Update Purchase Order Status
       tags:
       - purchase-orders
+  /api/reports/z-report:
+    get:
+      description: Recalculates from existing records. finalized is true only for
+        a closed session with a closing time. Requires user store access. Does not
+        close a session or save a snapshot.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cashier session ID
+        in: query
+        name: cashier_session_id
+        required: true
+        type: integer
+      - description: Must match the session store
+        in: query
+        name: store_id
+        type: integer
+      - description: Must match the session terminal
+        in: query
+        name: pos_terminal_id
+        type: integer
+      - description: Must match the session cashier
+        in: query
+        name: cashier_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/repository.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/usecase.ZReport'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Calculate a cashier session Z-report
+      tags:
+      - reports
   /api/restaurant/kiosk/sessions:
     post:
       consumes:
@@ -29625,6 +32073,226 @@ paths:
       summary: Update waste log
       tags:
       - restaurant
+  /api/rfqs:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - description: RFQ status
+        in: query
+        name: status
+        type: string
+      - description: Timeline status
+        in: query
+        name: timeline_status
+        type: string
+      - description: Search RFQ number or title
+        in: query
+        name: search
+        type: string
+      - description: Filter by response presence
+        in: query
+        name: has_response
+        type: string
+      - description: Filter by supplier type
+        in: query
+        name: supplier_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List RFQs
+      tags:
+      - RFQs
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: 'Example: organization_id must match the authenticated organization;
+          provide vendor_name and at least one product item.'
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateRFQInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create RFQ draft
+      tags:
+      - RFQs
+  /api/rfqs/{id}:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/close:
+    post:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Publication expiry; example expires_at is 2026-11-30T00:00:00Z.
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PublishRFQInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Publish RFQ
+      tags:
+      - RFQs
+  /api/rfqs/{id}/responses:
+    get:
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: RFQ UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List supplier responses
+      tags:
+      - RFQs
   /api/roles:
     get:
       consumes:
@@ -30998,7 +33666,9 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get paginated list of all stock movements
+      description: Get paginated stock movements, optionally filtered by a reference
+        type from /api/stock-movements/reference-types. Pagination totals reflect
+        the selected reference type.
       parameters:
       - description: Tenant identifier
         in: header
@@ -31020,6 +33690,11 @@ paths:
         in: query
         name: limit
         type: integer
+      - description: Reference type (omit for all types)
+        example: sales_order
+        in: query
+        name: reference_type
+        type: string
       produces:
       - application/json
       responses:
@@ -31184,6 +33859,62 @@ paths:
       security:
       - BearerAuth: []
       summary: Update stock movement status
+      tags:
+      - stock-movements
+  /api/stock-movements/by-reference-type:
+    get:
+      description: Return stock movements matching the required reference_type, with
+        total_count, page, limit and total_pages for the matching records. Unknown
+        reference types return an empty list.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Reference type from /api/stock-movements/reference-types
+        example: sales_order
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: Records per page (maximum 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movements by reference type
       tags:
       - stock-movements
   /api/stock-movements/daterange:
@@ -31367,6 +34098,105 @@ paths:
       security:
       - BearerAuth: []
       summary: List stock movements for product in date range
+      tags:
+      - stock-movements
+  /api/stock-movements/reference-type:
+    get:
+      description: Return stock movements matching the required reference_type, with
+        total_count, page, limit and total_pages for the matching records. Unknown
+        reference types return an empty list.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Reference type from /api/stock-movements/reference-types
+        example: sales_order
+        in: query
+        name: reference_type
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: Records per page (maximum 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movements by reference type
+      tags:
+      - stock-movements
+  /api/stock-movements/reference-types:
+    get:
+      description: Return sorted distinct nonempty reference types present in the
+        tenant's stock movements. Use a returned value as reference_type when listing
+        stock movements.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List stock movement reference types
       tags:
       - stock-movements
   /api/storage-locations:
@@ -35382,11 +38212,114 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.SuccessResponse'
+            $ref: '#/definitions/handler.ZatcaGenericAPIResponse'
         "400":
           description: Bad Request
           schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Get ZATCA device configuration deltas (Pull Sync)
+      tags:
+      - zatca
+  /api/zatca/devices/{id}/complete-onboarding:
+    post:
+      description: Recovery only. Reuses saved compliance credentials, request ID,
+        key and device zatca_env, completes six checks, and obtains/saves reporting
+        credentials. No OTP or body. Already-ready devices return without another
+        gateway call. Normal onboarding now completes this flow within POST /onboard.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: zatca_device_configs.id (not terminal ID)
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaCompletionAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
             $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Resume incomplete device onboarding
+      tags:
+      - zatca
+  /api/zatca/documents:
+    get:
+      description: Returns all saved document types and statuses, newest document
+        ID first, from the current tenant and authenticated organization. Each document
+        includes its saved status, gateway response, QR, identity and timestamps.
+        Defaults to page=1 and limit=50; larger positive limits are accepted. An empty
+        or out-of-range page returns documents=[] with HTTP 200. This read-only endpoint
+        never generates or submits documents and works when ZATCA is disabled. The
+        saved QR does not by itself prove successful reporting or that ZATCA returned
+        it.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - default: 1
+        description: Page number (starts at 1)
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: page
+        type: integer
+      - default: 50
+        description: Records per page; values above 50 are supported
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentListAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
         "401":
           description: Unauthorized
           schema:
@@ -35394,25 +38327,85 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
       security:
       - BearerAuth: []
-      summary: Get ZATCA device configuration deltas (Pull Sync)
+      summary: List saved ZATCA documents with pagination
       tags:
       - zatca
-  /api/zatca/status:
-    get:
-      description: Returns whether ZATCA Phase 2 compliance is enabled, environment
-        mode (sandbox or production), base URL, and Org VAT ID
+  /api/zatca/onboard:
+    post:
+      consumes:
+      - application/json
+      description: Requires organization metadata.zatca.enabled=true and explicit
+        zatca_env. Uses an OTP from the matching portal, creates/saves compliance
+        credentials, runs six checks, then saves the reporting CSID and matching secret.
+        HTTP 200 means reporting_ready=true. Allow up to 240 seconds; partial failures
+        include saved device ID and completion_endpoint for recovery without a new
+        OTP. Environment-file flags do not select enablement or gateway.
       parameters:
       - description: Tenant identifier
         in: header
         name: x-tenant-id
         required: true
         type: string
-      - description: Bearer token
+      - description: Device onboarding payload; zatca_env is required
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ZatcaOnboardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaOnboardAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Onboard a device completely in one call
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/check:
+    post:
+      description: Generates the saved order document if needed, then calls compliance/invoices
+        with its original device compliance credentials/environment. This does not
+        report the invoice or change its reporting status. Fully onboarded devices
+        may return Submitted before; use submit for actual reporting. No body.
+      parameters:
+      - description: Tenant identifier
         in: header
-        name: Authorization
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Sales order UUID
+        in: path
+        name: id
         required: true
         type: string
       produces:
@@ -35421,22 +38414,294 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ZatcaStatusResponse'
+            $ref: '#/definitions/handler.ZatcaCheckAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
       security:
       - BearerAuth: []
-      summary: Get ZATCA configuration status
+      summary: Check a sales-order invoice with ZATCA
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/generate:
+    post:
+      description: Reads persisted sales_orders_v2 and its complete lines. No extra
+        completion status or request body is required. Signs once and saves XML/hash/UUID/QR
+        locally; does not call ZATCA. Requires organization metadata.zatca.enabled=true.
+        Reuses historical linked transaction invoices to prevent duplicate issuance.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: sales_orders_v2.id UUID (not order number or POS transaction
+          ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Generate or reuse the signed sales-order invoice
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/status:
+    get:
+      description: Read-only lookup of zatca_document_chain for a sales_orders_v2
+        UUID. Returns zatca_status (pending, reported, cleared, warning, rejected,
+        or failed), the saved zatca_response, QR, document identity and timestamps.
+        A pending document may have no gateway response. qr_code_base64 is the saved
+        document QR and does not by itself prove reporting success or that ZATCA returned
+        it. Never generates, checks, retries or submits an invoice. Also resolves
+        historical linked POS documents and remains available when ZATCA is disabled.
+        Returns 404 if no saved document exists.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: sales_orders_v2.id UUID (not order number or POS transaction
+          ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read a sales order's saved ZATCA status and response
+      tags:
+      - zatca
+  /api/zatca/orders/{id}/submit:
+    post:
+      description: Generates the order document if missing, then reports the saved
+        XML using its device reporting CSID, matching secret and saved zatca_env.
+        Repeated calls reuse the saved identity; already-reported invoices are not
+        sent again. Requires organization enablement. No body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Sales order UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Report a sales-order invoice to ZATCA
+      tags:
+      - zatca
+  /api/zatca/receipt-qr:
+    get:
+      description: Provide sales_order_id or transaction_id. Returns the exact saved
+        Base64 TLV text, not a PNG. This read-only operation never generates or submits
+        an invoice and remains available when the organization switch is disabled.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Sales order UUID; provide this or transaction_id
+        in: query
+        name: sales_order_id
+        type: string
+      - description: POS transaction ID; takes precedence if both are supplied
+        in: query
+        name: transaction_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaReceiptQRAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read the saved invoice QR payload
+      tags:
+      - zatca
+  /api/zatca/status:
+    get:
+      description: Enablement comes from organizations.metadata.zatca.enabled, not
+        ZATCA_ENABLED. Supply device_id to include its saved environment/gateway,
+        or organization_id to read the organization switch. With no scope and no organization
+        in authentication, enabled is null and organization_required is true.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Saved device configuration ID; determines organization and gateway
+        in: query
+        name: device_id
+        type: integer
+      - description: Organization ID when device_id is omitted
+        in: query
+        name: organization_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaStatusAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Read organization enablement and device gateway status
       tags:
       - zatca
   /api/zatca/sync/push:
     post:
       consumes:
       - application/json
-      description: Receives signed offline transactions and operational outbox records
-        from POS terminals for Cloud ERP ingestion and ZATCA reporting
+      description: Acknowledges received outbox item IDs only. This route does not
+        generate or submit invoices to ZATCA.
       parameters:
       - description: Tenant identifier
         in: header
@@ -35460,22 +38725,157 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.SuccessResponse'
+            $ref: '#/definitions/handler.ZatcaGenericAPIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Ingest offline transaction outbox payload (Push Sync)
+      tags:
+      - zatca
+  /api/zatca/terminals/{id}:
+    get:
+      description: Legacy terminal configuration lookup. For organization enablement
+        and the authoritative saved device environment, use GET /api/zatca/status?device_id=ID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: POS Terminal ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaGenericAPIResponse'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/handler.ErrorResponse'
-        "500":
-          description: Internal Server Error
+        "404":
+          description: Not Found
           schema:
-            $ref: '#/definitions/handler.ErrorResponse'
+            $ref: '#/definitions/handler.ZatcaAPIError'
       security:
       - BearerAuth: []
-      summary: Ingest offline transaction outbox payload (Push Sync)
+      - BearerAuth: []
+      summary: Get active ZATCA device config for a POS terminal
+      tags:
+      - zatca
+  /api/zatca/transactions/{id}/check:
+    post:
+      deprecated: true
+      description: Legacy transaction-based lookup. Uses a previously saved pos_transaction
+        document; new sales-order invoices must use /orders/{id}/check. Calls ZATCA
+        compliance only, without reporting or changing local reporting status. No
+        body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Historical POS transaction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaCheckAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Check an existing historical POS invoice
+      tags:
+      - zatca
+  /api/zatca/transactions/{id}/submit:
+    post:
+      deprecated: true
+      description: Legacy transaction-based lookup. Reports saved XML with its original
+        device credentials/environment; does not create an invoice. Use /orders/{id}/submit
+        for new sales. Already-reported documents are not sent again. No body.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Historical POS transaction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDocumentAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: Report an existing historical POS invoice
       tags:
       - zatca
   /store/{store_id}:

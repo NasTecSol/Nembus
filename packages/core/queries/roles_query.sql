@@ -77,3 +77,12 @@ SELECT EXISTS(
     SELECT 1 FROM role_permissions
     WHERE role_id = $1 AND permission_id = $2
 ) AS has_permission;
+
+-- name: CheckUserHasPermissionCode :one
+SELECT EXISTS (
+    SELECT 1 FROM user_roles ur
+    JOIN role_permissions rp ON ur.role_id = rp.role_id
+    JOIN permissions p ON rp.permission_id = p.id
+    JOIN roles r ON ur.role_id = r.id
+    WHERE ur.user_id = $1 AND p.code = $2 AND r.is_active = true
+) AS has_permission;

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"strconv"
 	"time"
@@ -15,23 +16,23 @@ import (
 
 // InventoryStockOutput represents inventory stock with JSON-friendly metadata.
 type InventoryStockOutput struct {
-	ID                 int32            `json:"id"`
-	ProductID          int32            `json:"product_id"`
-	ProductVariantID   pgtype.Int4      `json:"product_variant_id"`
-	StoreID            int32            `json:"store_id"`
-	StorageLocationID  pgtype.Int4      `json:"storage_location_id"`
-	QuantityOnHand     pgtype.Numeric   `json:"quantity_on_hand"`
-	QuantityAllocated  pgtype.Numeric   `json:"quantity_allocated"`
-	QuantityAvailable  pgtype.Numeric   `json:"quantity_available"`
-	QuantityOnOrder    pgtype.Numeric   `json:"quantity_on_order"`
-	QuantityInTransit  pgtype.Numeric   `json:"quantity_in_transit"`
-	ReorderLevel       pgtype.Numeric   `json:"reorder_level"`
-	ReorderQuantity    pgtype.Numeric   `json:"reorder_quantity"`
-	MaxStockLevel      pgtype.Numeric   `json:"max_stock_level"`
-	LastCountedAt      pgtype.Timestamp `json:"last_counted_at"`
-	Metadata           json.RawMessage  `json:"metadata"`
-	CreatedAt          pgtype.Timestamp `json:"created_at"`
-	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+	ID                int32            `json:"id"`
+	ProductID         int32            `json:"product_id"`
+	ProductVariantID  pgtype.Int4      `json:"product_variant_id"`
+	StoreID           int32            `json:"store_id"`
+	StorageLocationID pgtype.Int4      `json:"storage_location_id"`
+	QuantityOnHand    pgtype.Numeric   `json:"quantity_on_hand"`
+	QuantityAllocated pgtype.Numeric   `json:"quantity_allocated"`
+	QuantityAvailable pgtype.Numeric   `json:"quantity_available"`
+	QuantityOnOrder   pgtype.Numeric   `json:"quantity_on_order"`
+	QuantityInTransit pgtype.Numeric   `json:"quantity_in_transit"`
+	ReorderLevel      pgtype.Numeric   `json:"reorder_level"`
+	ReorderQuantity   pgtype.Numeric   `json:"reorder_quantity"`
+	MaxStockLevel     pgtype.Numeric   `json:"max_stock_level"`
+	LastCountedAt     pgtype.Timestamp `json:"last_counted_at"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `json:"updated_at"`
 }
 
 func inventoryStockToOutput(s repository.InventoryStock) InventoryStockOutput {
@@ -182,14 +183,14 @@ func (uc *InventoryStockUseCase) CreateInventoryStock(
 		StoreID:           storeID,
 		StorageLocationID: slID,
 		QuantityOnHand:    qtyOnHand,
-		QuantityAllocated:  qtyAllocated,
+		QuantityAllocated: qtyAllocated,
 		QuantityAvailable: qtyAvailable,
 		QuantityOnOrder:   qtyOnOrder,
 		QuantityInTransit: qtyInTransit,
 		ReorderLevel:      reorderLvl,
 		ReorderQuantity:   reorderQty,
 		MaxStockLevel:     maxStock,
-		Metadata:           metaBytes,
+		Metadata:          metaBytes,
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -692,7 +693,7 @@ func (uc *InventoryStockUseCase) ListInventoryStockByStoreAndLocation(
 	}
 
 	rows, err := uc.repo.ListInventoryStockByStoreAndLocation(ctx, repository.ListInventoryStockByStoreAndLocationParams{
-		StoreID:          int32(storeIDInt),
+		StoreID:           int32(storeIDInt),
 		StorageLocationID: slID,
 	})
 	if err != nil {
@@ -723,4 +724,75 @@ func (uc *InventoryStockUseCase) GetInventoryStockSummary(ctx context.Context, s
 	}
 
 	return utils.NewResponse(utils.CodeOK, "inventory stock summary fetched", row)
+}
+
+// SweepLowStockProducts queries items at or below reorder level and enqueues inventory.low_stock events
+func (uc *InventoryStockUseCase) SweepLowStockProducts(ctx context.Context, orgID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+
+	lowItems, err := uc.repo.GetLowStockProducts(ctx)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	enqueuedCount := 0
+	for _, item := range lowItems {
+		payload := map[string]interface{}{
+			"product_id":         item.ProductID,
+			"product_name":       item.Name,
+			"sku":                item.Sku,
+			"store_id":           item.StoreID,
+			"store_name":         item.StoreName,
+			"quantity_available": item.QuantityAvailable,
+			"reorder_level":      item.ReorderLevel,
+			"reorder_quantity":   item.ReorderQuantity,
+			"organization_id":    orgID,
+		}
+		if pBytes, mErr := json.Marshal(payload); mErr == nil {
+			idempKey := fmt.Sprintf("inventory.low_stock:%d:%d:%s", item.ProductID, item.StoreID, time.Now().Format("2006-01-02"))
+			_, err = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+				OrganizationID: orgID,
+				EventTypeID:    "inventory.low_stock",
+				EntityType:     "inventory_stock",
+				EntityID:       fmt.Sprintf("%d:%d", item.ProductID, item.StoreID),
+				IdempotencyKey: idempKey,
+				Payload:        pBytes,
+			})
+			if err == nil {
+				enqueuedCount++
+			}
+		}
+	}
+
+	return utils.NewResponse(utils.CodeOK, fmt.Sprintf("swept %d low stock products, enqueued %d events", len(lowItems), enqueuedCount), lowItems)
+}
+func (uc *InventoryStockUseCase) GetInventoryTotals(ctx context.Context, params repository.GetInventoryTotalsParams) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	if params.OrganizationID <= 0 || params.StoreID < 0 || params.StorageLocationID < 0 || params.PriceListID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid inventory totals filters", nil)
+	}
+	if params.StorageLocationID != 0 && params.StoreID == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "store_id is required with storage_location_id", nil)
+	}
+	row, err := uc.repo.GetInventoryTotals(ctx, params)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to fetch inventory totals", nil)
+	}
+	if !row.OrganizationExists {
+		return utils.NewResponse(utils.CodeNotFound, "organization not found", nil)
+	}
+	if !row.StoreExists {
+		return utils.NewResponse(utils.CodeNotFound, "store not found in this organization", nil)
+	}
+	if !row.LocationExists {
+		return utils.NewResponse(utils.CodeNotFound, "storage location not found in this store", nil)
+	}
+	if !row.PriceListValid {
+		return utils.NewResponse(utils.CodeBadReq, "price list must be active, currently valid, and in the organization's currency", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "inventory totals fetched", row.Data)
 }

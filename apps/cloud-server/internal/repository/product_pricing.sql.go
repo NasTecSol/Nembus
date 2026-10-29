@@ -306,7 +306,7 @@ func (q *Queries) GetProductPriceForList(ctx context.Context, arg GetProductPric
 const getProductWithPricing = `-- name: GetProductWithPricing :one
 
 SELECT 
-    p.id, p.organization_id, p.sku, p.name, p.description, p.category_id, p.brand_id, p.base_uom_id, p.product_type, p.tax_category_id, p.is_serialized, p.is_batch_managed, p.is_active, p.is_sellable, p.is_purchasable, p.allow_decimal_quantity, p.track_inventory, p.metadata, p.created_at, p.updated_at,
+    p.id, p.organization_id, p.sku, p.name, p.description, p.category_id, p.brand_id, p.base_uom_id, p.product_type, p.tax_category_id, p.is_serialized, p.is_batch_managed, p.is_active, p.is_sellable, p.is_purchasable, p.allow_decimal_quantity, p.track_inventory, p.cost_price, p.metadata, p.created_at, p.updated_at,
     json_agg(DISTINCT jsonb_build_object(
         'price_list_id', pl.id,
         'price_list_name', pl.name,
@@ -340,6 +340,7 @@ type GetProductWithPricingRow struct {
 	IsPurchasable        pgtype.Bool      `json:"is_purchasable"`
 	AllowDecimalQuantity pgtype.Bool      `json:"allow_decimal_quantity"`
 	TrackInventory       pgtype.Bool      `json:"track_inventory"`
+	CostPrice            pgtype.Numeric   `json:"cost_price"`
 	Metadata             json.RawMessage  `json:"metadata"`
 	CreatedAt            pgtype.Timestamp `json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
@@ -370,6 +371,7 @@ func (q *Queries) GetProductWithPricing(ctx context.Context, id int32) (GetProdu
 		&i.IsPurchasable,
 		&i.AllowDecimalQuantity,
 		&i.TrackInventory,
+		&i.CostPrice,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,

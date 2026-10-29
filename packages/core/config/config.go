@@ -19,10 +19,15 @@ type Config struct {
 	PGDumpPath   string // full path to pg_dump binary
 
 	// ZATCA Phase 2 Configuration
-	ZatcaEnabled  bool   // ZATCA_ENABLED — false for non-Saudi deployments
+	ZatcaEnabled  bool   // Legacy configuration; runtime enablement uses organization metadata
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
+
+	// Release & Update Configuration
+	ReleaseAPISecret   string // Secret token for CI/CD or admin to upload new builds
+	AppUpdateClientKey string // Secret token embedded in POS to check/download updates
+	UpdatesStorageDir  string // Local filesystem directory where update binaries are stored
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -60,24 +65,29 @@ func LoadConfig(env string) *Config {
 	switch zatcaEnv {
 	case "production":
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/core"
+	case "simulation":
+		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation"
 	default:
 		zatcaBaseURL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal"
 	}
 
 	return &Config{
-		Env:           getEnv("ENV", envValue),
-		Port:          getEnv("PORT", "8080"),
-		GRPCPort:      getEnv("GRPC_PORT", "50051"),
-		MasterDBURL:   getEnv("MASTER_DB_URL", ""),
-		JWTSecret:     getEnv("JWT_SECRET", "nembus-pos-mobile-secure-jwt-secret-key-2026"),
-		DevUserID:     getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
-		DevUserLogin:  getEnv("DEV_USER_LOGIN", "dev_user"),
-		LogLevel:      getEnv("LOG_LEVEL", "info"),
-		PGDumpPath:    getEnv("PG_DUMP_PATH", "pg_dump"),
-		ZatcaEnabled:  getEnv("ZATCA_ENABLED", "false") == "true",
-		ZatcaEnv:      zatcaEnv,
-		ZatcaBaseURL:  zatcaBaseURL,
-		ZatcaOrgVATID: getEnv("ZATCA_ORG_VAT_ID", ""),
+		Env:                getEnv("ENV", envValue),
+		Port:               getEnv("PORT", "8080"),
+		GRPCPort:           getEnv("GRPC_PORT", "50051"),
+		MasterDBURL:        getEnv("MASTER_DB_URL", ""),
+		JWTSecret:          getEnv("JWT_SECRET", ""),
+		DevUserID:          getEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000"),
+		DevUserLogin:       getEnv("DEV_USER_LOGIN", "dev_user"),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
+		PGDumpPath:         getEnv("PG_DUMP_PATH", "pg_dump"),
+		ZatcaEnabled:       getEnv("ZATCA_ENABLED", "false") == "true",
+		ZatcaEnv:           zatcaEnv,
+		ZatcaBaseURL:       zatcaBaseURL,
+		ZatcaOrgVATID:      getEnv("ZATCA_ORG_VAT_ID", ""),
+		ReleaseAPISecret:   getEnv("RELEASE_API_SECRET", "nembus-release-secret-change-in-prod"),
+		AppUpdateClientKey: getEnv("APP_UPDATE_CLIENT_KEY", "nembus-pos-update-client-key-default"),
+		UpdatesStorageDir:  getEnv("UPDATES_STORAGE_DIR", "uploads/releases"),
 	}
 }
 

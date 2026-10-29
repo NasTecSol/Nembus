@@ -105,6 +105,7 @@ CREATE TABLE products (
     is_purchasable BOOLEAN DEFAULT true,
     allow_decimal_quantity BOOLEAN DEFAULT false,
     track_inventory BOOLEAN DEFAULT true,
+    cost_price DECIMAL(15,4) DEFAULT 0,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -153,7 +154,14 @@ CREATE TABLE product_prices (
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_product_prices_natural_key UNIQUE NULLS NOT DISTINCT (
+        product_id,
+        price_list_id,
+        product_variant_id,
+        uom_id,
+        min_quantity
+    )
 );
 
 CREATE TABLE product_uom_conversions (

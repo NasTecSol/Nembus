@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -118,6 +120,7 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	// Dynamic ingestion routing by entity type
 	switch event.EntityType {
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
+		"sales_returns", "sales_return_lines", "stock_movements",
 		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
 		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs":
 		if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.Action, event.PayloadJson); err != nil {
@@ -153,6 +156,9 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 }
 
 func getTableUpdateClause(ctx context.Context, pool *pgxpool.Pool, table string) (string, error) {
+	if pool == nil {
+		return "", fmt.Errorf("read columns for %s: database pool is nil", table)
+	}
 	rows, err := pool.Query(ctx, `
 		SELECT column_name 
 		FROM information_schema.columns 
@@ -195,9 +201,11 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	}
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
+		"sales_returns": true, "sales_return_lines": true, "stock_movements": true,
 		"cashier_sessions": true, "carts": true, "sales_orders_v2": true, "sales_order_lines_v2": true,
 		"draft_cart_templates": true, "restaurant_orders": true, "restaurant_order_items": true,
 		"kiosk_sessions": true, "stock_counts": true, "stock_count_lines": true, "waste_logs": true,
+		"notification_events": true,
 	}
 	if !validTables[entityType] {
 		return fmt.Errorf("unsupported entity type for upsert: %s", entityType)
@@ -342,16 +350,28 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 	if limit <= 0 {
 		limit = 100
 	}
+	if limit > syncpb.PullPageLimit {
+		limit = syncpb.PullPageLimit
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(syncpb.PullCursorKey)) > 0 {
+		values := md.Get(syncpb.PullCursorKey)
+		afterID, err := strconv.ParseInt(values[0], 10, 64)
+		if err != nil || afterID < 0 || len(req.EntityTypes) != 1 {
+			return status.Error(codes.InvalidArgument, "pull cursor requires a nonnegative ID and exactly one entity")
+		}
+		if err := stream.SendHeader(metadata.Pairs(syncpb.PullCursorVersionKey, "1")); err != nil {
+			return err
+		}
+	}
 
 	// Delta entity target categories
 	targetEntities := req.EntityTypes
 	if len(targetEntities) == 0 {
-		targetEntities = []string{
-			"product_barcodes", "product_prices", "promotions",
-			"customers",
-			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
-			"inventory_stock", "stock_movements",
-			"zatca_device_configs",
+		targetEntities = syncpb.PullEntityTypes()
+	}
+	for _, entityType := range targetEntities {
+		if !syncpb.IsPullEntity(entityType) {
+			return status.Errorf(codes.InvalidArgument, "unsupported pull entity: %s", entityType)
 		}
 	}
 
@@ -364,7 +384,7 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 
 		if err := s.streamEntityDeltas(ctx, pool, req, entityType, sinceTime, limit, stream); err != nil {
 			log.Printf("[gRPC SyncServer] Error streaming deltas for %s: %v", entityType, err)
-			continue
+			return status.Errorf(codes.Internal, "stream %s: %v", entityType, err)
 		}
 	}
 
@@ -381,12 +401,24 @@ func (s *SyncServer) streamEntityDeltas(
 	stream syncpb.SyncService_StreamPullServer,
 ) error {
 	// Query modified entities updated after watermark using PostgreSQL row_to_json
-	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2`, entityType)
+	// Include the entire timestamp boundary so the next request's strict >
+	// predicate cannot skip rows sharing the last timestamp in this page.
+	query := fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t WHERE updated_at > $1 ORDER BY updated_at ASC FETCH FIRST ($2) ROWS WITH TIES`, pgx.Identifier{entityType}.Sanitize())
+	args := []any{since, limit}
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(syncpb.PullCursorKey)) > 0 {
+		afterID, err := strconv.ParseInt(md.Get(syncpb.PullCursorKey)[0], 10, 64)
+		if err != nil || afterID < 0 {
+			return status.Error(codes.InvalidArgument, "invalid pull cursor")
+		}
+		query = fmt.Sprintf(`SELECT id, row_to_json(t)::text, updated_at FROM %s t
+			WHERE updated_at > $1 OR (updated_at = $1 AND id > $3)
+			ORDER BY updated_at, id LIMIT $2`, pgx.Identifier{entityType}.Sanitize())
+		args = append(args, afterID)
+	}
 
-	rows, err := pool.Query(ctx, query, since, limit)
+	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
-		// Table might not exist in target schema, log warning and skip
-		return nil
+		return fmt.Errorf("query %s: %w", entityType, err)
 	}
 	defer rows.Close()
 
@@ -396,7 +428,7 @@ func (s *SyncServer) streamEntityDeltas(
 		var updatedAt time.Time
 
 		if err := rows.Scan(&id, &jsonStr, &updatedAt); err != nil {
-			continue
+			return fmt.Errorf("scan %s: %w", entityType, err)
 		}
 
 		payloadBytes := []byte(jsonStr)
@@ -422,5 +454,5 @@ func (s *SyncServer) streamEntityDeltas(
 		}
 	}
 
-	return nil
+	return rows.Err()
 }

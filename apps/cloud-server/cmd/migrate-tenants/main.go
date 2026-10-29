@@ -160,6 +160,9 @@ func main() {
 		log.Println("==================================================")
 
 		if *declarativeMode {
+			if err := applyPreDeclarativePatches(ctx, masterURL); err != nil {
+				log.Fatalf("❌ Master database pre-declarative patches failed: %v", err)
+			}
 			if err := executeAtlasDeclarative(atlasBin, masterURL, absSchemaPath, devURL, *statusOnly); err != nil {
 				log.Fatalf("❌ Master database declarative schema sync failed: %v", err)
 			}
@@ -221,11 +224,28 @@ func main() {
 		}
 
 		if *declarativeMode {
+			if err := applyPreDeclarativePatches(ctx, tenantURL); err != nil {
+				if isUnreachableDBHost(err) {
+					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				log.Printf("❌ Pre-declarative patches failed for tenant %s: %v\n", tenant.Slug, err)
+				failedCount++
+				continue
+			}
 			err = executeAtlasDeclarative(atlasBin, tenantURL, absSchemaPath, devURL, *statusOnly)
 			if err != nil {
 				if isMissingDatabase(err) {
 					log.Printf("⚠ Skipping tenant %s: its database does not exist on the server (%v).\n", tenant.Slug, err)
 					log.Printf("  Create the database or set is_active = false for this tenant in the master DB.\n")
+					skippedCount++
+					continue
+				}
+				if isUnreachableDBHost(err) {
+					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
 					skippedCount++
 					continue
 				}
@@ -425,6 +445,18 @@ func isMissingDatabase(err error) bool {
 	return strings.Contains(err.Error(), `database "`) && strings.Contains(err.Error(), "does not exist")
 }
 
+// isUnreachableDBHost reports DNS / network failures when resolving the DB host
+// (e.g. decommissioned Supabase project still listed as an active tenant).
+func isUnreachableDBHost(err error) bool {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.IsNotFound || dnsErr.Err == "no such host"
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no such host") ||
+		(strings.Contains(msg, "lookup ") && strings.Contains(msg, "i/o timeout"))
+}
+
 // resolveAtlasBinary locates the Atlas CLI executable
 func resolveAtlasBinary() string {
 	if custom := os.Getenv("ATLAS_PATH"); custom != "" {
@@ -468,6 +500,22 @@ func resolveSchemaDir(customPath string) (string, error) {
 		}
 	}
 	return filepath.Abs("packages/core/db/schema")
+}
+
+// resolvePreDeclarativePatchPath returns the SQL patch file to run before declarative apply, if present.
+func resolvePreDeclarativePatchPath() (string, error) {
+	candidates := []string{
+		"../../packages/core/db/patches/pre_declarative.sql",
+		"../packages/core/db/patches/pre_declarative.sql",
+		"packages/core/db/patches/pre_declarative.sql",
+		"./patches/pre_declarative.sql",
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return filepath.Abs(c)
+		}
+	}
+	return "", nil
 }
 
 // resolveDevURL resolves the Atlas dev database URL used for calculating declarative diffs.
@@ -611,6 +659,18 @@ func resolveViewsPath(customPath string) (string, error) {
 }
 
 // applySQLScript executes raw SQL statements from a file against the target database using pgxpool.
+func applyPreDeclarativePatches(ctx context.Context, dbURL string) error {
+	patchPath, err := resolvePreDeclarativePatchPath()
+	if err != nil {
+		return err
+	}
+	if patchPath == "" {
+		return nil
+	}
+	log.Printf("⚡ Applying pre-declarative patches from %s...\n", patchPath)
+	return applySQLScript(ctx, dbURL, patchPath)
+}
+
 func applySQLScript(ctx context.Context, dbURL, filePath string) error {
 	content, err := os.ReadFile(filePath)
 	if err != nil {

@@ -2,13 +2,16 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -54,9 +57,12 @@ func (uc *ZatcaUseCase) GetNextICVAndPIH(ctx context.Context, deviceConfigID int
 	}
 
 	latestEntry, err := uc.repo.GetLatestChainEntry(ctx, deviceConfigID)
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		// If no entry exists yet, this is the very first document in the chain
 		return int64(nextICV), GenesisKPIH, nil
+	}
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to read previous invoice hash: %w", err)
 	}
 
 	return int64(nextICV), latestEntry.XmlHash, nil
@@ -64,8 +70,12 @@ func (uc *ZatcaUseCase) GetNextICVAndPIH(ctx context.Context, deviceConfigID int
 
 // SignInvoice processes a B2B Standard Invoice, generates UBL 2.1 XML, signs it, and records the chain entry.
 func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Invoice, lines []repository.InvoiceLine, org *repository.Organization, store *repository.Store, device *repository.ZatcaDeviceConfig) (*SignedDocument, *repository.ZatcaDocumentChain, error) {
-	if !uc.cfg.Enabled {
-		return nil, nil, nil
+	enabled, err := OrganizationZatcaEnabled(org)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !enabled {
+		return nil, nil, ErrZatcaDisabled
 	}
 
 	privKey, err := DecodePrivateKeyPEM(device.PrivateKeyPem)
@@ -93,6 +103,7 @@ func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Inv
 			Quantity:    numericToString(line.Quantity),
 			UnitCode:    "PCE",
 			UnitPrice:   numericToString(line.UnitPrice),
+			DiscountAmt: numericToString(line.DiscountAmount),
 			TaxAmount:   numericToString(line.TaxAmount),
 			TaxPercent:  "15.00",
 			TaxCategory: "S",
@@ -110,25 +121,20 @@ func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Inv
 	}
 
 	xmlInput := InvoiceXMLInput{
-		InvoiceNumber:    invoice.InvoiceNumber,
-		ZatcaUUID:        zatcaUUID,
-		IssueDate:        invoice.InvoiceDate.Time,
-		InvoiceType:      ZatcaTypeStandard,
-		SubType:          ZatcaSubTypeB2BStandard,
-		CurrencyCode:     invoice.CurrencyCode.String,
-		ICV:              icv,
-		PIH:              pih,
-		SellerName:       sellerName,
-		SellerVATNumber:  vatID,
-		SellerStreet:     "Street",
-		SellerCity:       "Riyadh",
-		SellerPostalCode: "12345",
-		SellerCountry:    "SA",
-		SellerCRNumber:   org.Code,
-		BuyerName:        invoice.CustomerName,
-		BuyerVATNumber:   invoice.CustomerTaxID.String,
-		BuyerCountry:     "SA",
-		Subtotal:         numericToString(invoice.Subtotal),
+		InvoiceNumber:   invoice.InvoiceNumber,
+		ZatcaUUID:       zatcaUUID,
+		IssueDate:       invoice.InvoiceDate.Time,
+		InvoiceType:     ZatcaTypeStandard,
+		SubType:         ZatcaSubTypeB2BStandard,
+		CurrencyCode:    invoice.CurrencyCode.String,
+		ICV:             icv,
+		PIH:             pih,
+		SellerName:      sellerName,
+		SellerVATNumber: vatID,
+		BuyerName:       invoice.CustomerName,
+		BuyerVATNumber:  invoice.CustomerTaxID.String,
+		BuyerCountry:    "SA",
+		Subtotal:        numericToString(invoice.Subtotal),
 		DiscountAmount:  numericToString(invoice.DiscountAmount),
 		TaxAmount:       numericToString(invoice.TaxAmount),
 		TotalAmount:     numericToString(invoice.TotalAmount),
@@ -137,50 +143,16 @@ func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Inv
 		Lines:           xmlLines,
 	}
 
-	rawXML, err := BuildInvoiceXML(xmlInput)
+	if err := applySeller(&xmlInput, org, store, uc.cfg.OrgVATID); err != nil {
+		return nil, nil, err
+	}
+	signedDoc, err := signZatcaDocument(xmlInput, privKey, device)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build UBL XML: %w", err)
+		return nil, nil, fmt.Errorf("failed to stamp ZATCA document: %w", err)
 	}
-
-	canonXML, err := CanonicalizeXML(rawXML)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to canonicalize XML: %w", err)
-	}
-
-	xmlHash, signature, err := SignXMLHash(privKey, canonXML)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to sign XML hash: %w", err)
-	}
-
-	pubKeyBase64 := EncodePublicKeyBase64(&privKey.PublicKey)
-
-	qrData := ZatcaQRData{
-		SellerName:     sellerName,
-		VATNumber:      vatID,
-		Timestamp:      invoice.InvoiceDate.Time,
-		InvoiceTotal:   numericToString(invoice.TotalAmount),
-		VATTotal:       numericToString(invoice.TaxAmount),
-		XMLHash:        xmlHash,
-		ECDSASignature: signature,
-		ECDSAPublicKey: pubKeyBase64,
-	}
-
-	qrCodeBase64, err := GenerateTLVQRCode(qrData)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate TLV QR code: %w", err)
-	}
-
-	signedDoc := &SignedDocument{
-		RawXML:       rawXML,
-		CanonicalXML: canonXML,
-		XMLHash:      xmlHash,
-		Signature:    signature,
-		QRCode:       qrCodeBase64,
-		ZatcaUUID:    zatcaUUID,
-		ICV:          icv,
-		PIH:          pih,
-	}
-
+	xmlHash := signedDoc.XMLHash
+	qrCodeBase64 := signedDoc.QRCode
+	rawXML := signedDoc.RawXML
 	// Insert record into zatca_document_chain
 	parsedUUID, _ := uuid.Parse(zatcaUUID)
 	chainParams := repository.InsertChainEntryParams{
@@ -207,8 +179,12 @@ func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Inv
 
 // SignPosTransaction processes a B2C Simplified Tax Invoice for a POS transaction, signs it, and generates the TLV QR code.
 func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.PosTransaction, lines []repository.PosTransactionLine, org *repository.Organization, device *repository.ZatcaDeviceConfig) (*SignedDocument, *repository.ZatcaDocumentChain, error) {
-	if !uc.cfg.Enabled {
-		return nil, nil, nil
+	enabled, err := OrganizationZatcaEnabled(org)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !enabled {
+		return nil, nil, ErrZatcaDisabled
 	}
 
 	privKey, err := DecodePrivateKeyPEM(device.PrivateKeyPem)
@@ -235,6 +211,7 @@ func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.
 			Quantity:    numericToString(line.Quantity),
 			UnitCode:    "PCE",
 			UnitPrice:   numericToString(line.UnitPrice),
+			DiscountAmt: numericToString(line.DiscountAmount),
 			TaxAmount:   numericToString(line.TaxAmount),
 			TaxPercent:  "15.00",
 			TaxCategory: "S",
@@ -257,22 +234,17 @@ func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.
 	}
 
 	xmlInput := InvoiceXMLInput{
-		InvoiceNumber:    txn.TransactionNumber,
-		ZatcaUUID:        zatcaUUID,
-		IssueDate:        txnDate,
-		InvoiceType:      ZatcaTypeStandard,
-		SubType:          ZatcaSubTypeB2CSimplified,
-		CurrencyCode:     "SAR",
-		ICV:              icv,
-		PIH:              pih,
-		SellerName:       sellerName,
-		SellerVATNumber:  vatID,
-		SellerStreet:     "Store Street",
-		SellerCity:       "Riyadh",
-		SellerPostalCode: "12345",
-		SellerCountry:    "SA",
-		SellerCRNumber:   org.Code,
-		Subtotal:         numericToString(txn.Subtotal),
+		InvoiceNumber:   txn.TransactionNumber,
+		ZatcaUUID:       zatcaUUID,
+		IssueDate:       txnDate,
+		InvoiceType:     ZatcaTypeStandard,
+		SubType:         ZatcaSubTypeB2CSimplified,
+		CurrencyCode:    "SAR",
+		ICV:             icv,
+		PIH:             pih,
+		SellerName:      sellerName,
+		SellerVATNumber: vatID,
+		Subtotal:        numericToString(txn.Subtotal),
 		DiscountAmount:  numericToString(txn.DiscountAmount),
 		TaxAmount:       numericToString(txn.TaxAmount),
 		TotalAmount:     numericToString(txn.TotalAmount),
@@ -281,54 +253,155 @@ func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.
 		Lines:           xmlLines,
 	}
 
-	rawXML, err := BuildInvoiceXML(xmlInput)
+	store, err := uc.repo.GetStore(ctx, txn.StoreID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build UBL XML: %w", err)
+		return nil, nil, fmt.Errorf("ZATCA store not found: %w", err)
 	}
-
-	canonXML, err := CanonicalizeXML(rawXML)
+	if store.OrganizationID != org.ID {
+		return nil, nil, fmt.Errorf("ZATCA store belongs to a different organization")
+	}
+	if err := applySeller(&xmlInput, org, &store, uc.cfg.OrgVATID); err != nil {
+		return nil, nil, err
+	}
+	signedDoc, err := signZatcaDocument(xmlInput, privKey, device)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to canonicalize XML: %w", err)
+		return nil, nil, fmt.Errorf("failed to stamp ZATCA document: %w", err)
 	}
-
-	xmlHash, signature, err := SignXMLHash(privKey, canonXML)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to sign XML hash: %w", err)
-	}
-
-	pubKeyBase64 := EncodePublicKeyBase64(&privKey.PublicKey)
-
-	qrData := ZatcaQRData{
-		SellerName:     sellerName,
-		VATNumber:      vatID,
-		Timestamp:      txnDate,
-		InvoiceTotal:   numericToString(txn.TotalAmount),
-		VATTotal:       numericToString(txn.TaxAmount),
-		XMLHash:        xmlHash,
-		ECDSASignature: signature,
-		ECDSAPublicKey: pubKeyBase64,
-	}
-
-	qrCodeBase64, err := GenerateTLVQRCode(qrData)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate TLV QR code: %w", err)
-	}
-
-	signedDoc := &SignedDocument{
-		RawXML:       rawXML,
-		CanonicalXML: canonXML,
-		XMLHash:      xmlHash,
-		Signature:    signature,
-		QRCode:       qrCodeBase64,
-		ZatcaUUID:    zatcaUUID,
-		ICV:          icv,
-		PIH:          pih,
-	}
-
+	xmlHash := signedDoc.XMLHash
+	qrCodeBase64 := signedDoc.QRCode
+	rawXML := signedDoc.RawXML
 	parsedUUID, _ := uuid.Parse(zatcaUUID)
 	chainParams := repository.InsertChainEntryParams{
 		EntityType:     "pos_transaction",
 		EntityID:       strconv.Itoa(int(txn.ID)),
+		DeviceConfigID: device.ID,
+		OrganizationID: org.ID,
+		ZatcaUuid:      parsedUUID,
+		Icv:            icv,
+		Pih:            pih,
+		XmlHash:        xmlHash,
+		ZatcaStatus:    repository.NullZatcaDocStatus{ZatcaDocStatus: repository.ZatcaDocStatusPending, Valid: true},
+		QrCodeBase64:   pgtype.Text{String: qrCodeBase64, Valid: true},
+		SignedXml:      pgtype.Text{String: string(rawXML), Valid: true},
+	}
+
+	chainEntry, err := uc.repo.InsertChainEntry(ctx, chainParams)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to insert document chain entry: %w", err)
+	}
+
+	return signedDoc, &chainEntry, nil
+}
+
+// SignCreditNote processes a B2C Simplified Credit Note (381) for a sales return, signs it, and generates the TLV QR code.
+func (uc *ZatcaUseCase) SignCreditNote(
+	ctx context.Context,
+	ret *repository.SalesReturn,
+	lines []repository.SalesReturnLine,
+	origInvoiceNumber string,
+	org *repository.Organization,
+	device *repository.ZatcaDeviceConfig,
+) (*SignedDocument, *repository.ZatcaDocumentChain, error) {
+	enabled, err := OrganizationZatcaEnabled(org)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !enabled {
+		return nil, nil, ErrZatcaDisabled
+	}
+
+	privKey, err := DecodePrivateKeyPEM(device.PrivateKeyPem)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode device private key: %w", err)
+	}
+
+	icv, pih, err := uc.GetNextICVAndPIH(ctx, device.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get ICV/PIH: %w", err)
+	}
+
+	zatcaUUID := uuid.New().String()
+
+	xmlLines := make([]InvoiceLineInput, 0, len(lines))
+	for idx, line := range lines {
+		lineNum := idx + 1
+		if line.LineNumber.Valid {
+			lineNum = int(line.LineNumber.Int32)
+		}
+		refund, err := decimalValue(numericToString(line.RefundAmount))
+		if err != nil {
+			return nil, nil, err
+		}
+		lineTaxStr := new(big.Rat).Mul(refund, big.NewRat(15, 100)).FloatString(2)
+		xmlLines = append(xmlLines, InvoiceLineInput{
+			LineNumber:  lineNum,
+			ProductName: fmt.Sprintf("Returned Product #%d", line.ProductID),
+			Quantity:    numericToString(line.Quantity),
+			UnitCode:    "PCE",
+			UnitPrice:   numericToString(line.UnitPrice),
+			TaxAmount:   lineTaxStr,
+			TaxPercent:  "15.00",
+			TaxCategory: "S",
+			LineTotal:   numericToString(line.RefundAmount),
+		})
+	}
+
+	sellerName := org.LegalName.String
+	if sellerName == "" {
+		sellerName = org.Name
+	}
+	vatID := org.TaxID.String
+	if vatID == "" {
+		vatID = uc.cfg.OrgVATID
+	}
+
+	retDate := ret.ReturnDate.Time
+	if retDate.IsZero() {
+		retDate = time.Now()
+	}
+
+	xmlInput := InvoiceXMLInput{
+		InvoiceNumber:         ret.ReturnNumber,
+		OriginalInvoiceNumber: origInvoiceNumber,
+		ZatcaUUID:             zatcaUUID,
+		IssueDate:             retDate,
+		InvoiceType:           ZatcaTypeCreditNote,
+		SubType:               ZatcaSubTypeB2CSimplified,
+		CurrencyCode:          "SAR",
+		ICV:                   icv,
+		PIH:                   pih,
+		SellerName:            sellerName,
+		SellerVATNumber:       vatID,
+		Subtotal:              numericToString(ret.Subtotal),
+		DiscountAmount:        "0.00",
+		TaxAmount:             numericToString(ret.TaxAmount),
+		TotalAmount:           numericToString(ret.TotalRefundAmount),
+		TaxCategoryID:         "S",
+		TaxPercent:            "15.00",
+		Lines:                 xmlLines,
+	}
+
+	store, err := uc.repo.GetStore(ctx, ret.StoreID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ZATCA store not found: %w", err)
+	}
+	if store.OrganizationID != org.ID {
+		return nil, nil, fmt.Errorf("ZATCA store belongs to a different organization")
+	}
+	if err := applySeller(&xmlInput, org, &store, uc.cfg.OrgVATID); err != nil {
+		return nil, nil, err
+	}
+	signedDoc, err := signZatcaDocument(xmlInput, privKey, device)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to stamp ZATCA document: %w", err)
+	}
+	xmlHash := signedDoc.XMLHash
+	qrCodeBase64 := signedDoc.QRCode
+	rawXML := signedDoc.RawXML
+	parsedUUID, _ := uuid.Parse(zatcaUUID)
+	chainParams := repository.InsertChainEntryParams{
+		EntityType:     "sales_return",
+		EntityID:       strconv.Itoa(int(ret.ID)),
 		DeviceConfigID: device.ID,
 		OrganizationID: org.ID,
 		ZatcaUuid:      parsedUUID,

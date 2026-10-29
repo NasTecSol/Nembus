@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -34,7 +33,7 @@ const (
 type ZatcaInvoiceSubType string
 
 const (
-	ZatcaSubTypeB2BStandard  ZatcaInvoiceSubType = "0100000" // Standard (B2B Clearance)
+	ZatcaSubTypeB2BStandard   ZatcaInvoiceSubType = "0100000" // Standard (B2B Clearance)
 	ZatcaSubTypeB2CSimplified ZatcaInvoiceSubType = "0200000" // Simplified (B2C Reporting)
 )
 
@@ -54,41 +53,53 @@ func MapNembusInvoiceType(nembusType string) ZatcaInvoiceTypeCode {
 
 // UBLInvoice represents the top-level UBL 2.1 Invoice document.
 type UBLInvoice struct {
-	XMLName             xml.Name              `xml:"Invoice"`
-	XmlnsUBL            string                `xml:"xmlns,attr"`
-	XmlnsCAC            string                `xml:"xmlns:cac,attr"`
-	XmlnsCBC            string                `xml:"xmlns:cbc,attr"`
-	XmlnsExt            string                `xml:"xmlns:ext,attr"`
-	ProfileID           string                `xml:"cbc:ProfileID"`
-	ID                  string                `xml:"cbc:ID"`
-	UUID                string                `xml:"cbc:UUID"`
-	IssueDate           string                `xml:"cbc:IssueDate"`
-	IssueTime           string                `xml:"cbc:IssueTime"`
-	InvoiceTypeCode     UBLInvoiceTypeCode    `xml:"cbc:InvoiceTypeCode"`
-	DocumentCurrencyCode string               `xml:"cbc:DocumentCurrencyCode"`
-	TaxCurrencyCode     string                `xml:"cbc:TaxCurrencyCode,omitempty"`
-	LineCountNumeric    int                   `xml:"cbc:LineCountNumeric"`
-	AdditionalDocRefs   []UBLAdditionalDocRef `xml:"cac:AdditionalDocumentReference,omitempty"`
-	Supplier            UBLParty              `xml:"cac:AccountingSupplierParty>cac:Party"`
-	Customer            UBLParty              `xml:"cac:AccountingCustomerParty>cac:Party,omitempty"`
-	Delivery            *UBLDelivery          `xml:"cac:Delivery,omitempty"`
-	PaymentMeans        *UBLPaymentMeans      `xml:"cac:PaymentMeans,omitempty"`
-	TaxTotal            []UBLTaxTotal         `xml:"cac:TaxTotal"`
-	LegalMonetaryTotal  UBLLegalMonetaryTotal `xml:"cac:LegalMonetaryTotal"`
-	InvoiceLines        []UBLInvoiceLine      `xml:"cac:InvoiceLine"`
+	XMLName              xml.Name              `xml:"Invoice"`
+	XmlnsUBL             string                `xml:"xmlns,attr"`
+	XmlnsCAC             string                `xml:"xmlns:cac,attr"`
+	XmlnsCBC             string                `xml:"xmlns:cbc,attr"`
+	XmlnsExt             string                `xml:"xmlns:ext,attr"`
+	ProfileID            string                `xml:"cbc:ProfileID"`
+	ID                   string                `xml:"cbc:ID"`
+	UUID                 string                `xml:"cbc:UUID"`
+	IssueDate            string                `xml:"cbc:IssueDate"`
+	IssueTime            string                `xml:"cbc:IssueTime"`
+	InvoiceTypeCode      UBLInvoiceTypeCode    `xml:"cbc:InvoiceTypeCode"`
+	DocumentCurrencyCode string                `xml:"cbc:DocumentCurrencyCode"`
+	TaxCurrencyCode      string                `xml:"cbc:TaxCurrencyCode,omitempty"`
+	LineCountNumeric     int                   `xml:"cbc:LineCountNumeric"`
+	BillingReference     *UBLBillingReference  `xml:"cac:BillingReference,omitempty"`
+	AdditionalDocRefs    []UBLAdditionalDocRef `xml:"cac:AdditionalDocumentReference,omitempty"`
+	Supplier             UBLParty              `xml:"cac:AccountingSupplierParty>cac:Party"`
+	Customer             UBLPartyContainer     `xml:"cac:AccountingCustomerParty"`
+	Delivery             *UBLDelivery          `xml:"cac:Delivery,omitempty"`
+	PaymentMeans         *UBLPaymentMeans      `xml:"cac:PaymentMeans,omitempty"`
+	AllowanceCharges     []UBLAllowanceCharge  `xml:"cac:AllowanceCharge,omitempty"`
+	TaxTotal             []UBLTaxTotal         `xml:"cac:TaxTotal"`
+	LegalMonetaryTotal   UBLLegalMonetaryTotal `xml:"cac:LegalMonetaryTotal"`
+	InvoiceLines         []UBLInvoiceLine      `xml:"cac:InvoiceLine"`
+}
+
+// UBLBillingReference references a prior invoice/transaction for credit and debit notes.
+type UBLBillingReference struct {
+	InvoiceDocumentReference UBLDocumentReference `xml:"cac:InvoiceDocumentReference"`
+}
+
+// UBLDocumentReference carries the original invoice or transaction ID.
+type UBLDocumentReference struct {
+	ID string `xml:"cbc:ID"`
 }
 
 // UBLInvoiceTypeCode carries the type code plus ZATCA subtype attribute.
 type UBLInvoiceTypeCode struct {
-	Value   string `xml:",chardata"`
-	Name    string `xml:"name,attr,omitempty"` // ZATCA subtype: "0100000" or "0200000"
+	Value string `xml:",chardata"`
+	Name  string `xml:"name,attr,omitempty"` // ZATCA subtype: "0100000" or "0200000"
 }
 
 // UBLAdditionalDocRef holds additional document references (ICV, PIH, QR).
 type UBLAdditionalDocRef struct {
-	ID         string              `xml:"cbc:ID"`
-	UUID       string              `xml:"cbc:UUID,omitempty"`
-	Attachment *UBLAttachment      `xml:"cac:Attachment,omitempty"`
+	ID         string         `xml:"cbc:ID"`
+	UUID       string         `xml:"cbc:UUID,omitempty"`
+	Attachment *UBLAttachment `xml:"cac:Attachment,omitempty"`
 }
 
 // UBLAttachment wraps embedded document content.
@@ -110,6 +121,17 @@ type UBLParty struct {
 	PartyLegalEntity    UBLLegalEntity `xml:"cac:PartyLegalEntity"`
 }
 
+type UBLPartyContainer struct {
+	Party *UBLParty `xml:"cac:Party,omitempty"`
+}
+
+type UBLAllowanceCharge struct {
+	ChargeIndicator string          `xml:"cbc:ChargeIndicator"`
+	Reason          string          `xml:"cbc:AllowanceChargeReason"`
+	Amount          UBLAmount       `xml:"cbc:Amount"`
+	TaxCategory     *UBLTaxCategory `xml:"cac:TaxCategory,omitempty"`
+}
+
 // UBLPartyID holds a party identification (e.g., CR number, VAT ID).
 type UBLPartyID struct {
 	ID UBLSchemeID `xml:"cbc:ID"`
@@ -123,14 +145,14 @@ type UBLSchemeID struct {
 
 // UBLPostalAddr represents a postal address.
 type UBLPostalAddr struct {
-	StreetName           string          `xml:"cbc:StreetName,omitempty"`
-	BuildingNumber       string          `xml:"cbc:BuildingNumber,omitempty"`
-	PlotIdentification   string          `xml:"cbc:PlotIdentification,omitempty"`
-	CitySubdivisionName  string          `xml:"cbc:CitySubdivisionName,omitempty"`
-	CityName             string          `xml:"cbc:CityName,omitempty"`
-	PostalZone           string          `xml:"cbc:PostalZone,omitempty"`
-	CountrySubentity     string          `xml:"cbc:CountrySubentity,omitempty"`
-	Country              UBLCountry      `xml:"cac:Country"`
+	StreetName          string     `xml:"cbc:StreetName,omitempty"`
+	BuildingNumber      string     `xml:"cbc:BuildingNumber,omitempty"`
+	PlotIdentification  string     `xml:"cbc:PlotIdentification,omitempty"`
+	CitySubdivisionName string     `xml:"cbc:CitySubdivisionName,omitempty"`
+	CityName            string     `xml:"cbc:CityName,omitempty"`
+	PostalZone          string     `xml:"cbc:PostalZone,omitempty"`
+	CountrySubentity    string     `xml:"cbc:CountrySubentity,omitempty"`
+	Country             UBLCountry `xml:"cac:Country"`
 }
 
 // UBLCountry holds a country identification code.
@@ -160,19 +182,21 @@ type UBLDelivery struct {
 // UBLPaymentMeans describes how the invoice is paid.
 type UBLPaymentMeans struct {
 	PaymentMeansCode string `xml:"cbc:PaymentMeansCode"`
+	InstructionNote  string `xml:"cbc:InstructionNote,omitempty"`
 }
 
 // UBLTaxTotal holds tax totals.
 type UBLTaxTotal struct {
-	TaxAmount    UBLAmount       `xml:"cbc:TaxAmount"`
-	TaxSubtotals []UBLTaxSubtotal `xml:"cac:TaxSubtotal,omitempty"`
+	TaxAmount      UBLAmount        `xml:"cbc:TaxAmount"`
+	RoundingAmount *UBLAmount       `xml:"cbc:RoundingAmount,omitempty"`
+	TaxSubtotals   []UBLTaxSubtotal `xml:"cac:TaxSubtotal,omitempty"`
 }
 
 // UBLTaxSubtotal breaks down tax by category.
 type UBLTaxSubtotal struct {
-	TaxableAmount UBLAmount       `xml:"cbc:TaxableAmount"`
-	TaxAmount     UBLAmount       `xml:"cbc:TaxAmount"`
-	TaxCategory   UBLTaxCategory  `xml:"cac:TaxCategory"`
+	TaxableAmount UBLAmount      `xml:"cbc:TaxableAmount"`
+	TaxAmount     UBLAmount      `xml:"cbc:TaxAmount"`
+	TaxCategory   UBLTaxCategory `xml:"cac:TaxCategory"`
 }
 
 // UBLTaxCategory identifies the tax category and rate.
@@ -186,12 +210,12 @@ type UBLTaxCategory struct {
 
 // UBLLegalMonetaryTotal holds the invoice monetary summary.
 type UBLLegalMonetaryTotal struct {
-	LineExtensionAmount UBLAmount `xml:"cbc:LineExtensionAmount"`
-	TaxExclusiveAmount  UBLAmount `xml:"cbc:TaxExclusiveAmount"`
-	TaxInclusiveAmount  UBLAmount `xml:"cbc:TaxInclusiveAmount"`
+	LineExtensionAmount  UBLAmount  `xml:"cbc:LineExtensionAmount"`
+	TaxExclusiveAmount   UBLAmount  `xml:"cbc:TaxExclusiveAmount"`
+	TaxInclusiveAmount   UBLAmount  `xml:"cbc:TaxInclusiveAmount"`
 	AllowanceTotalAmount *UBLAmount `xml:"cbc:AllowanceTotalAmount,omitempty"`
-	PrepaidAmount       *UBLAmount `xml:"cbc:PrepaidAmount,omitempty"`
-	PayableAmount       UBLAmount `xml:"cbc:PayableAmount"`
+	PrepaidAmount        *UBLAmount `xml:"cbc:PrepaidAmount,omitempty"`
+	PayableAmount        UBLAmount  `xml:"cbc:PayableAmount"`
 }
 
 // UBLAmount is a monetary value with currency attribute.
@@ -202,12 +226,13 @@ type UBLAmount struct {
 
 // UBLInvoiceLine represents a single line item on the invoice.
 type UBLInvoiceLine struct {
-	ID                  string         `xml:"cbc:ID"`
-	InvoicedQuantity    UBLQuantity    `xml:"cbc:InvoicedQuantity"`
-	LineExtensionAmount UBLAmount      `xml:"cbc:LineExtensionAmount"`
-	TaxTotal            UBLTaxTotal    `xml:"cac:TaxTotal"`
-	Item                UBLItem        `xml:"cac:Item"`
-	Price               UBLPrice       `xml:"cac:Price"`
+	ID                  string               `xml:"cbc:ID"`
+	InvoicedQuantity    UBLQuantity          `xml:"cbc:InvoicedQuantity"`
+	LineExtensionAmount UBLAmount            `xml:"cbc:LineExtensionAmount"`
+	AllowanceCharges    []UBLAllowanceCharge `xml:"cac:AllowanceCharge,omitempty"`
+	TaxTotal            UBLTaxTotal          `xml:"cac:TaxTotal"`
+	Item                UBLItem              `xml:"cac:Item"`
+	Price               UBLPrice             `xml:"cac:Price"`
 }
 
 // UBLQuantity is a quantity with unit code.
@@ -218,8 +243,8 @@ type UBLQuantity struct {
 
 // UBLItem describes the invoiced item.
 type UBLItem struct {
-	Name                string            `xml:"cbc:Name"`
-	ClassifiedTaxCategory UBLTaxCategory  `xml:"cac:ClassifiedTaxCategory"`
+	Name                  string         `xml:"cbc:Name"`
+	ClassifiedTaxCategory UBLTaxCategory `xml:"cac:ClassifiedTaxCategory"`
 }
 
 // UBLPrice holds the unit price of the item.
@@ -232,33 +257,41 @@ type UBLPrice struct {
 // InvoiceXMLInput holds all the data needed to build a ZATCA-compliant UBL 2.1 XML.
 type InvoiceXMLInput struct {
 	// Invoice identification
-	InvoiceNumber string
-	ZatcaUUID     string
-	IssueDate     time.Time
-	InvoiceType   ZatcaInvoiceTypeCode
-	SubType       ZatcaInvoiceSubType
-	CurrencyCode  string
+	InvoiceNumber         string
+	OriginalInvoiceNumber string // Populated for Credit Notes (381) / Debit Notes (383)
+	ZatcaUUID             string
+	IssueDate             time.Time
+	InvoiceType           ZatcaInvoiceTypeCode
+	SubType               ZatcaInvoiceSubType
+	CurrencyCode          string
 
 	// Chain data
 	ICV int64  // Invoice Counter Value
 	PIH string // Previous Invoice Hash (Base64)
 
 	// Seller
-	SellerName       string
-	SellerVATNumber  string
-	SellerStreet     string
-	SellerCity       string
-	SellerPostalCode string
-	SellerCountry    string
-	SellerCRNumber   string
+	SellerName           string
+	SellerVATNumber      string
+	SellerStreet         string
+	SellerBuildingNumber string
+	SellerDistrict       string
+	SellerCity           string
+	SellerPostalCode     string
+	SellerCountry        string
+	SellerCRNumber       string
 
 	// Buyer (required for B2B, optional for B2C)
-	BuyerName       string
-	BuyerVATNumber  string
-	BuyerStreet     string
-	BuyerCity       string
-	BuyerPostalCode string
-	BuyerCountry    string
+	BuyerName           string
+	BuyerVATNumber      string
+	BuyerStreet         string
+	BuyerBuildingNumber string
+	BuyerDistrict       string
+	BuyerCity           string
+	BuyerPostalCode     string
+	BuyerCountry        string
+	DeliveryDate        string
+	PaymentCode         string
+	NoteReason          string
 
 	// Totals
 	Subtotal       string // Line extension amount (before tax)
@@ -279,30 +312,37 @@ type InvoiceXMLInput struct {
 
 // InvoiceLineInput holds a single invoice line for XML generation.
 type InvoiceLineInput struct {
-	LineNumber   int
-	ProductName  string
-	Quantity     string
-	UnitCode     string // e.g., "PCE" (piece), "KGM" (kilogram)
-	UnitPrice    string
-	DiscountAmt  string
-	TaxAmount    string
-	TaxPercent   string
-	TaxCategory  string // e.g., "S" (standard), "E" (exempt), "Z" (zero-rated)
-	LineTotal    string
+	LineNumber  int
+	ProductName string
+	Quantity    string
+	UnitCode    string // e.g., "PCE" (piece), "KGM" (kilogram)
+	UnitPrice   string
+	DiscountAmt string
+	TaxAmount   string
+	TaxPercent  string
+	TaxCategory string // e.g., "S" (standard), "E" (exempt), "Z" (zero-rated)
+	LineTotal   string
 }
 
 // BuildInvoiceXML generates a complete UBL 2.1 XML document from the given input.
 func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
+	if input.CurrencyCode == "" {
+		input.CurrencyCode = "SAR"
+	}
+	if err := validateInvoiceAmounts(input); err != nil {
+		return nil, err
+	}
+	input.IssueDate = input.IssueDate.UTC()
 	inv := UBLInvoice{
-		XmlnsUBL: "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
-		XmlnsCAC: "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
-		XmlnsCBC: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
-		XmlnsExt: "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2",
-		ProfileID:            "reporting:1.0",
-		ID:                   input.InvoiceNumber,
-		UUID:                 input.ZatcaUUID,
-		IssueDate:            input.IssueDate.Format("2006-01-02"),
-		IssueTime:            input.IssueDate.Format("15:04:05"),
+		XmlnsUBL:  "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
+		XmlnsCAC:  "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+		XmlnsCBC:  "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+		XmlnsExt:  "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2",
+		ProfileID: "reporting:1.0",
+		ID:        input.InvoiceNumber,
+		UUID:      input.ZatcaUUID,
+		IssueDate: input.IssueDate.Format("2006-01-02"),
+		IssueTime: input.IssueDate.Format("15:04:05Z"),
 		InvoiceTypeCode: UBLInvoiceTypeCode{
 			Value: string(input.InvoiceType),
 			Name:  string(input.SubType),
@@ -312,10 +352,18 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 		LineCountNumeric:     len(input.Lines),
 	}
 
+	if input.OriginalInvoiceNumber != "" {
+		inv.BillingReference = &UBLBillingReference{
+			InvoiceDocumentReference: UBLDocumentReference{
+				ID: input.OriginalInvoiceNumber,
+			},
+		}
+	}
+
 	// Additional Document References: ICV, PIH
 	inv.AdditionalDocRefs = []UBLAdditionalDocRef{
 		{
-			ID: "ICV",
+			ID:   "ICV",
 			UUID: fmt.Sprintf("%d", input.ICV),
 		},
 		{
@@ -348,10 +396,12 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 			ID: UBLSchemeID{SchemeID: "CRN", Value: input.SellerCRNumber},
 		},
 		PostalAddress: UBLPostalAddr{
-			StreetName: input.SellerStreet,
-			CityName:   input.SellerCity,
-			PostalZone: input.SellerPostalCode,
-			Country:    UBLCountry{IdentificationCode: input.SellerCountry},
+			StreetName:          input.SellerStreet,
+			BuildingNumber:      input.SellerBuildingNumber,
+			CitySubdivisionName: input.SellerDistrict,
+			CityName:            input.SellerCity,
+			PostalZone:          input.SellerPostalCode,
+			Country:             UBLCountry{IdentificationCode: input.SellerCountry},
 		},
 		PartyTaxScheme: UBLTaxScheme{
 			CompanyID: input.SellerVATNumber,
@@ -364,12 +414,14 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 
 	// Customer (Buyer) — required for B2B
 	if input.BuyerName != "" {
-		inv.Customer = UBLParty{
+		inv.Customer.Party = &UBLParty{
 			PostalAddress: UBLPostalAddr{
-				StreetName: input.BuyerStreet,
-				CityName:   input.BuyerCity,
-				PostalZone: input.BuyerPostalCode,
-				Country:    UBLCountry{IdentificationCode: input.BuyerCountry},
+				StreetName:          input.BuyerStreet,
+				BuildingNumber:      input.BuyerBuildingNumber,
+				CitySubdivisionName: input.BuyerDistrict,
+				CityName:            input.BuyerCity,
+				PostalZone:          input.BuyerPostalCode,
+				Country:             UBLCountry{IdentificationCode: input.BuyerCountry},
 			},
 			PartyTaxScheme: UBLTaxScheme{
 				CompanyID: input.BuyerVATNumber,
@@ -378,8 +430,21 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 				RegistrationName: input.BuyerName,
 			},
 		}
-		inv.Customer.PartyTaxScheme.TaxScheme.ID = "VAT"
+		inv.Customer.Party.PartyTaxScheme.TaxScheme.ID = "VAT"
 	}
+	if input.SellerCRNumber == "" {
+		inv.Supplier.PartyIdentification = nil
+	}
+	if input.BuyerName != "" && input.BuyerCountry == "" {
+		inv.Customer.Party.PostalAddress.Country.IdentificationCode = "SA"
+	}
+	if input.DeliveryDate != "" {
+		inv.Delivery = &UBLDelivery{ActualDeliveryDate: input.DeliveryDate}
+	}
+	if input.PaymentCode != "" {
+		inv.PaymentMeans = &UBLPaymentMeans{PaymentMeansCode: input.PaymentCode, InstructionNote: input.NoteReason}
+	}
+	taxable, _ := subtractMoney(input.Subtotal, input.DiscountAmount)
 
 	// Tax totals
 	inv.TaxTotal = []UBLTaxTotal{
@@ -387,7 +452,7 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 			TaxAmount: UBLAmount{CurrencyID: input.CurrencyCode, Value: input.TaxAmount},
 			TaxSubtotals: []UBLTaxSubtotal{
 				{
-					TaxableAmount: UBLAmount{CurrencyID: input.CurrencyCode, Value: input.Subtotal},
+					TaxableAmount: UBLAmount{CurrencyID: input.CurrencyCode, Value: taxable},
 					TaxAmount:     UBLAmount{CurrencyID: input.CurrencyCode, Value: input.TaxAmount},
 					TaxCategory: UBLTaxCategory{
 						ID:      input.TaxCategoryID,
@@ -398,11 +463,13 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 		},
 	}
 	inv.TaxTotal[0].TaxSubtotals[0].TaxCategory.TaxScheme.ID = "VAT"
+	// With a tax-accounting currency, supply exactly one separate total without subtotals.
+	inv.TaxTotal = append([]UBLTaxTotal{{TaxAmount: UBLAmount{CurrencyID: "SAR", Value: input.TaxAmount}}}, inv.TaxTotal...)
 
 	// Legal monetary totals
 	inv.LegalMonetaryTotal = UBLLegalMonetaryTotal{
 		LineExtensionAmount: UBLAmount{CurrencyID: input.CurrencyCode, Value: input.Subtotal},
-		TaxExclusiveAmount:  UBLAmount{CurrencyID: input.CurrencyCode, Value: input.Subtotal},
+		TaxExclusiveAmount:  UBLAmount{CurrencyID: input.CurrencyCode, Value: taxable},
 		TaxInclusiveAmount:  UBLAmount{CurrencyID: input.CurrencyCode, Value: input.TotalAmount},
 		PayableAmount:       UBLAmount{CurrencyID: input.CurrencyCode, Value: input.TotalAmount},
 	}
@@ -412,16 +479,21 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 			CurrencyID: input.CurrencyCode,
 			Value:      input.DiscountAmount,
 		}
+		category := UBLTaxCategory{ID: input.TaxCategoryID, Percent: input.TaxPercent}
+		category.TaxScheme.ID = "VAT"
+		inv.AllowanceCharges = []UBLAllowanceCharge{{ChargeIndicator: "false", Reason: "Discount", Amount: UBLAmount{CurrencyID: input.CurrencyCode, Value: input.DiscountAmount}, TaxCategory: &category}}
 	}
 
 	// Invoice lines
 	for _, line := range input.Lines {
+		withVAT, _ := addMoney(line.LineTotal, line.TaxAmount)
 		ublLine := UBLInvoiceLine{
-			ID:               fmt.Sprintf("%d", line.LineNumber),
-			InvoicedQuantity: UBLQuantity{UnitCode: line.UnitCode, Value: line.Quantity},
+			ID:                  fmt.Sprintf("%d", line.LineNumber),
+			InvoicedQuantity:    UBLQuantity{UnitCode: line.UnitCode, Value: line.Quantity},
 			LineExtensionAmount: UBLAmount{CurrencyID: input.CurrencyCode, Value: line.LineTotal},
 			TaxTotal: UBLTaxTotal{
-				TaxAmount: UBLAmount{CurrencyID: input.CurrencyCode, Value: line.TaxAmount},
+				TaxAmount:      UBLAmount{CurrencyID: input.CurrencyCode, Value: line.TaxAmount},
+				RoundingAmount: &UBLAmount{CurrencyID: input.CurrencyCode, Value: withVAT},
 			},
 			Item: UBLItem{
 				Name: line.ProductName,
@@ -435,6 +507,9 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 			},
 		}
 		ublLine.Item.ClassifiedTaxCategory.TaxScheme.ID = "VAT"
+		if discount, _ := decimalValue(line.DiscountAmt); discount.Sign() != 0 {
+			ublLine.AllowanceCharges = []UBLAllowanceCharge{{ChargeIndicator: "false", Reason: "Discount", Amount: UBLAmount{CurrencyID: input.CurrencyCode, Value: line.DiscountAmt}}}
+		}
 		inv.InvoiceLines = append(inv.InvoiceLines, ublLine)
 	}
 
@@ -454,49 +529,11 @@ func BuildInvoiceXML(input InvoiceXMLInput) ([]byte, error) {
 
 // ─── XML Canonicalization (C14N) ────────────────────────────────────────────
 
-// CanonicalizeXML performs a simplified XML canonicalization (C14N 1.1).
-// For ZATCA compliance, the key requirements are:
-//   - Normalize attribute ordering
-//   - Normalize namespace declarations
-//   - Remove XML declaration
-//   - Use UTF-8 encoding
-//
-// Note: This is a simplified implementation suitable for ZATCA's requirements.
-// For production, consider using a full C14N library.
-func CanonicalizeXML(xmlData []byte) ([]byte, error) {
-	// Remove XML declaration if present
-	content := string(xmlData)
-	if idx := strings.Index(content, "?>"); idx >= 0 {
-		content = strings.TrimSpace(content[idx+2:])
-	}
-
-	// Remove whitespace between tags for canonical form
-	// Parse and re-serialize to normalize
-	decoder := xml.NewDecoder(strings.NewReader(content))
-	var buf bytes.Buffer
-	encoder := xml.NewEncoder(&buf)
-
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			break
-		}
-		if err := encoder.EncodeToken(token); err != nil {
-			return nil, fmt.Errorf("failed to encode token during C14N: %w", err)
-		}
-	}
-	if err := encoder.Flush(); err != nil {
-		return nil, fmt.Errorf("failed to flush C14N encoder: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
 // ─── Signed Document ────────────────────────────────────────────────────────
 
 // SignedDocument holds all the outputs from signing an invoice/transaction.
 type SignedDocument struct {
-	RawXML       []byte // Original UBL 2.1 XML
+	RawXML       []byte // Final stamped UBL XML, including signature and QR
 	CanonicalXML []byte // Canonicalized XML (C14N)
 	XMLHash      string // SHA-256 hash of canonical XML (Base64)
 	Signature    string // ECDSA signature of hash (Base64)

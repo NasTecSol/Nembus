@@ -17,8 +17,11 @@ import (
 )
 
 type CartUseCase struct {
-	repo *repository.Queries
+	repo     *repository.Queries
+	zatcaCfg *ZatcaConfig
 }
+
+func (uc *CartUseCase) SetZatcaConfig(cfg *ZatcaConfig) { uc.zatcaCfg = cfg }
 
 func NewCartUseCase() *CartUseCase {
 	return &CartUseCase{}
@@ -1061,17 +1064,39 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 
 		_, err = uc.repo.CreateSalesOrderLineV2(ctx, arg)
 		if err != nil {
-			// In a real app, we might use a transaction and roll back
-			fmt.Printf("Warning: failed to create order line: %s\n", err.Error())
+			return utils.NewResponse(utils.CodeError, "order created but a line could not be saved; repair the order before ZATCA generation", map[string]interface{}{"order_id": orderID, "error": err.Error()})
+		}
+	}
+	var qrCode, zatcaUUID, zatcaError string
+	var enabled bool
+	var enableErr error
+	if uc.zatcaCfg != nil {
+		enabled, enableErr = OrganizationZatcaEnabledByID(ctx, uc.repo, cart.OrganizationID)
+	}
+	if uc.zatcaCfg != nil && enableErr != nil {
+		zatcaError = enableErr.Error()
+	}
+	if uc.zatcaCfg != nil && enableErr == nil && enabled {
+		zatcaUC := NewZatcaUseCase(uc.zatcaCfg)
+		zatcaUC.SetRepository(uc.repo)
+		entry, err := zatcaUC.EnsureSalesOrderDocument(ctx, orderID)
+		if err != nil {
+			zatcaError = err.Error()
+		} else {
+			qrCode = entry.QrCodeBase64.String
+			zatcaUUID = entry.ZatcaUuid.String()
 		}
 	}
 
+	var posTxnID *int32
+
 	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled
-	if cart.Channel.Valid && cart.Channel.String == "pos" {
+	if cart.Channel.Valid && strings.EqualFold(strings.TrimSpace(cart.Channel.String), "pos") {
 		posTxn, err := uc.repo.CreateTransactionFromOrder(ctx, orderID)
 		if err != nil {
 			fmt.Printf("Warning: failed to create POS transaction: %s\n", err.Error())
 		} else {
+			posTxnID = &posTxn.ID
 			err = uc.repo.SyncTransactionLinesFromOrder(ctx, repository.SyncTransactionLinesFromOrderParams{
 				TransactionID: posTxn.ID,
 				SalesOrderID:  orderID,
@@ -1109,10 +1134,19 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		}
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "order created from cart", map[string]interface{}{
+	respData := map[string]interface{}{
 		"order_id":     orderID,
 		"order_number": orderNumber,
-	})
+		"qr_code":      qrCode,
+		"zatca_uuid":   zatcaUUID,
+		"zatca_error":  zatcaError,
+	}
+	if posTxnID != nil {
+		respData["pos_transaction_id"] = *posTxnID
+		respData["transaction_id"] = *posTxnID
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "order created from cart", respData)
 }
 
 // ReopenCart reopens a converted cart back into an active cart if its order is pending.

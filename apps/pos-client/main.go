@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
@@ -223,25 +224,37 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
-			Enabled:  cfg.ZatcaEnabled,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
 		}
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		posHandler.SetZatcaConfig(zatcaCfg)
+		cartHandler.SetZatcaConfig(zatcaCfg)
+		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		zatcaReporter := zatca.NewReporter(zatcaCfg)
+		posHandler.SetZatcaReporter(zatcaReporter)
+		cartHandler.SetZatcaReporter(zatcaReporter)
+		orderHandler.SetZatcaReporter(zatcaReporter)
+		zatcaHandler.SetOrderReporter(zatcaReporter)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+
+		// Notification Center Routes (In-App Bell & Notifications)
+		notifUC := usecase.NewNotificationUseCase(masterRepo)
+		notifHandler := handler.NewNotificationHandler(notifUC)
+		router.RegisterNotificationRoutes(api, notifHandler)
 	}
 
 	return r
 }
 
-// Application Version & GitHub release information (populated via -ldflags at build time)
+// Application Version & Update configuration (populated via -ldflags at build time)
 var (
-	Version     = "v1.0.0"
-	GithubToken = ""
-	GithubRepo  = "NasTecSol/Nembus"
+	Version      = "v1.0.0"
+	AppUpdateKey = ""
+	CloudURL     = ""
 )
 
 func healthCheck(c *gin.Context) {
@@ -275,7 +288,7 @@ func main() {
 	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
 
 	// Wails Setup
-	app := NewApp(Version, GithubToken, GithubRepo)
+	app := NewApp(Version, AppUpdateKey, CloudURL)
 
 	err := wails.Run(&options.App{
 		Title:  "NEMBUS",

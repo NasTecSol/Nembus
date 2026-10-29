@@ -39,6 +39,7 @@ const collection = {
     { key: 'base_url', value: 'http://localhost:8080' },
     { key: 'tenant_id', value: 'default' },
     { key: 'token', value: '' },
+    { key: 'm2m_api_key', value: '' },
     { key: 'store_id', value: '1' },
     { key: 'cart_id', value: '' },
     { key: 'order_id', value: '' },
@@ -754,6 +755,9 @@ const collection = {
     // --- M2M Tokens ---
     folder('M2M Tokens', [
       req('Create M2M Token', 'POST', '/api/m2m/tokens', {
+        auth: authNoAuth,
+        header: [...tenantHeader, H('Content-Type', 'application/json'), H('x-m2m-key', '{{m2m_api_key}}')],
+        description: 'Generate and save an M2M token using the shared middleware key. No user JWT required.',
         body: {
           client_id: "pos-App",
           client_name: "pos-App",
@@ -761,7 +765,11 @@ const collection = {
           years: 5
         }
       }),
-      req('List M2M Tokens', 'GET', '/api/m2m/tokens')
+      req('List M2M Tokens', 'GET', '/api/m2m/tokens', {
+        auth: authNoAuth,
+        header: [...tenantHeader, H('x-m2m-key', '{{m2m_api_key}}')],
+        description: 'List saved tenant M2M tokens using the shared middleware key. No JWT required.'
+      })
     ]),
     // --- Warehouse Transfer Requests ---
     folder('Transfer Requests', [
@@ -875,3 +883,4 @@ collection.item.forEach(folder => {
 const outPath = path.join(__dirname, 'Nembus-API.postman_collection.json');
 fs.writeFileSync(outPath, JSON.stringify(collection, null, 2), 'utf8');
 console.log('Written:', outPath);
+console.log('API folders included:', collection.item.length);

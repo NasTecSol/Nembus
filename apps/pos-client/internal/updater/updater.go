@@ -1,155 +1,118 @@
 package updater
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// UpdateInfo contains update status and release details
+// UpdateInfo contains update status and release details from Nembus Cloud Server
 type UpdateInfo struct {
-	HasUpdate      bool   `json:"hasUpdate"`
-	CurrentVersion string `json:"currentVersion"`
-	LatestVersion  string `json:"latestVersion"`
-	ReleaseNotes   string `json:"releaseNotes"`
-	DownloadURL    string `json:"downloadUrl"`
-	AssetID        int64  `json:"assetId"`
+	HasUpdate           bool   `json:"hasUpdate"`
+	CurrentVersion      string `json:"currentVersion"`
+	LatestVersion       string `json:"latestVersion"`
+	ReleaseNotes        string `json:"releaseNotes"`
+	DownloadURL         string `json:"downloadUrl"`
+	ReleaseID           int32  `json:"releaseId"`
+	FileName            string `json:"fileName"`
+	FileSizeBytes       int64  `json:"fileSizeBytes"`
+	ChecksumSHA256      string `json:"checksumSha256"`
+	IsMandatory         bool   `json:"isMandatory"`
+	MinSupportedVersion string `json:"minSupportedVersion"`
 }
 
-type githubAsset struct {
-	ID                 int64  `json:"id"`
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-	URL                string `json:"url"`
-}
-
-type githubRelease struct {
-	TagName    string        `json:"tag_name"`
-	Name       string        `json:"name"`
-	Body       string        `json:"body"`
-	Draft      bool          `json:"draft"`
-	Prerelease bool          `json:"prerelease"`
-	Assets     []githubAsset `json:"assets"`
-}
-
-// CheckForUpdate checks GitHub Releases API for a newer version than currentVersion
-func CheckForUpdate(currentVersion, ghRepo, ghToken string) (*UpdateInfo, error) {
-	if ghRepo == "" {
-		ghRepo = "NasTecSol/Nembus"
+// CheckForUpdate queries the internal Nembus Cloud Server for newer versions of POS Client.
+// When offline or unreachable, it gracefully fails without crashing the POS client.
+func CheckForUpdate(currentVersion, cloudURL, clientKey string) (*UpdateInfo, error) {
+	if cloudURL == "" {
+		cloudURL = "https://nembus.nashrms.com"
 	}
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", ghRepo)
+	baseURL := strings.TrimRight(cloudURL, "/")
+	checkURL := fmt.Sprintf("%s/api/v1/updates/pos-client/latest?current_version=%s", baseURL, url.QueryEscape(currentVersion))
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", checkURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create update request: %w", err)
+		return &UpdateInfo{HasUpdate: false, CurrentVersion: currentVersion}, fmt.Errorf("failed to create update request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Nembus-POS-Client-Updater")
-	if ghToken != "" {
-		req.Header.Set("Authorization", "Bearer "+ghToken)
+	if clientKey != "" {
+		req.Header.Set("X-Nembus-App-Key", clientKey)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	// 5-second timeout for quick graceful offline fallback
+	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check for updates: %w", err)
+		log.Printf("[UPDATER] Cloud server unreachable, operating in offline mode: %v", err)
+		return &UpdateInfo{HasUpdate: false, CurrentVersion: currentVersion}, nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("github api returned status %d: %s", resp.StatusCode, string(body))
+		return &UpdateInfo{HasUpdate: false, CurrentVersion: currentVersion}, fmt.Errorf("update check returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	var release githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("failed to parse github release response: %w", err)
+	var info UpdateInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return &UpdateInfo{HasUpdate: false, CurrentVersion: currentVersion}, fmt.Errorf("failed to parse update response: %w", err)
 	}
 
-	latestVer := strings.TrimPrefix(release.TagName, "v")
-	currVer := strings.TrimPrefix(currentVersion, "v")
-
-	hasUpdate := isVersionNewer(currVer, latestVer)
-
-	var downloadURL string
-	var assetID int64
-	expectedExt := ".exe"
-	if runtime.GOOS != "windows" {
-		expectedExt = ""
+	// Resolve relative download URL against cloudURL
+	if info.DownloadURL != "" && !strings.HasPrefix(info.DownloadURL, "http://") && !strings.HasPrefix(info.DownloadURL, "https://") {
+		info.DownloadURL = baseURL + info.DownloadURL
 	}
 
-	for _, asset := range release.Assets {
-		assetNameLower := strings.ToLower(asset.Name)
-		if (expectedExt != "" && strings.HasSuffix(assetNameLower, expectedExt)) || strings.Contains(assetNameLower, "nembus") {
-			downloadURL = asset.BrowserDownloadURL
-			assetID = asset.ID
-			break
-		}
-	}
-
-	return &UpdateInfo{
-		HasUpdate:      hasUpdate,
-		CurrentVersion: currentVersion,
-		LatestVersion:  release.TagName,
-		ReleaseNotes:   release.Body,
-		DownloadURL:    downloadURL,
-		AssetID:        assetID,
-	}, nil
+	return &info, nil
 }
 
-// ApplyUpdate downloads the new release asset and replaces the running executable
-func ApplyUpdate(downloadURL string, assetID int64, ghRepo string, ghToken string) error {
-	var downloadReqURL string
-	if ghToken != "" && assetID > 0 {
-		if ghRepo == "" {
-			ghRepo = "NasTecSol/Nembus"
-		}
-		downloadReqURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/assets/%d", ghRepo, assetID)
-	} else {
-		downloadReqURL = downloadURL
+// ApplyUpdate downloads the new release binary, verifies its SHA-256 hash strictly,
+// replaces the running executable, and restarts the application.
+func ApplyUpdate(downloadURL, expectedChecksum, clientKey string) error {
+	if downloadURL == "" {
+		return fmt.Errorf("no valid download URL provided")
 	}
 
-	if downloadReqURL == "" {
-		return fmt.Errorf("no valid download URL or asset ID found")
-	}
-
-	req, err := http.NewRequest("GET", downloadReqURL, nil)
+	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create download request: %w", err)
 	}
 
-	if ghToken != "" && assetID > 0 {
-		req.Header.Set("Accept", "application/octet-stream")
-		req.Header.Set("Authorization", "Bearer "+ghToken)
-	}
+	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("User-Agent", "Nembus-POS-Client-Updater")
+	if clientKey != "" {
+		req.Header.Set("X-Nembus-App-Key", clientKey)
+	}
 
-	// Allow up to 30 minutes for large binary downloads on slow networks
+	// Allow up to 30 minutes for binary downloads
 	client := &http.Client{Timeout: 30 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to download update asset: %w", err)
+		return fmt.Errorf("failed to download update binary: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to download asset, status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("download failed with HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get current executable path: %w", err)
+		return fmt.Errorf("failed to resolve current executable path: %w", err)
 	}
 	exePath, err = filepath.EvalSymlinks(exePath)
 	if err != nil {
@@ -165,26 +128,36 @@ func ApplyUpdate(downloadURL string, assetID int64, ghRepo string, ghToken strin
 		return fmt.Errorf("failed to create temporary update file: %w", err)
 	}
 
-	_, err = io.Copy(out, resp.Body)
-	// Explicitly close file before attempting rename operations (critical on Windows)
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(out, hasher)
+	_, err = io.Copy(multiWriter, resp.Body)
 	closeErr := out.Close()
 	if err != nil {
 		_ = os.Remove(newExePath)
-		return fmt.Errorf("failed to write update content: %w", err)
+		return fmt.Errorf("failed to stream update content: %w", err)
 	}
 	if closeErr != nil {
 		_ = os.Remove(newExePath)
 		return fmt.Errorf("failed to flush update file to disk: %w", closeErr)
 	}
 
+	// STRICT SHA-256 INTEGRITY VERIFICATION
+	computedChecksum := hex.EncodeToString(hasher.Sum(nil))
+	if expectedChecksum != "" && !strings.EqualFold(expectedChecksum, computedChecksum) {
+		_ = os.Remove(newExePath)
+		return fmt.Errorf("binary integrity error: SHA-256 mismatch (expected: %s, got: %s)", expectedChecksum, computedChecksum)
+	}
+
 	_ = os.Chmod(newExePath, 0755)
 	_ = os.Remove(oldExePath)
 
+	// Atomic rename of current binary to .old backup
 	if err := os.Rename(exePath, oldExePath); err != nil {
 		_ = os.Remove(newExePath)
 		return fmt.Errorf("failed to backup current executable: %w", err)
 	}
 
+	// Rename new binary into production path
 	if err := os.Rename(newExePath, exePath); err != nil {
 		_ = os.Rename(oldExePath, exePath)
 		return fmt.Errorf("failed to replace executable: %w", err)
@@ -197,18 +170,18 @@ func ApplyUpdate(downloadURL string, assetID int64, ghRepo string, ghToken strin
 	cmd.Stdin = os.Stdin
 
 	if err := cmd.Start(); err != nil {
-		// Restore original binary if start fails
+		// Rollback original binary if spawn fails
 		_ = os.Rename(oldExePath, exePath)
-		return fmt.Errorf("failed to start updated application: %w", err)
+		return fmt.Errorf("failed to launch updated application: %w", err)
 	}
 
-	log.Println("[UPDATER] Update applied successfully! Restarting process...")
-	time.Sleep(200 * time.Millisecond)
+	log.Println("[UPDATER] Update applied and verified successfully! Restarting process...")
+	time.Sleep(250 * time.Millisecond)
 	os.Exit(0)
 	return nil
 }
 
-// CleanupOldExecutables removes legacy .old executable files from previous updates
+// CleanupOldExecutables removes legacy .old executable files left behind from previous updates
 func CleanupOldExecutables() {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -222,6 +195,9 @@ func CleanupOldExecutables() {
 }
 
 func isVersionNewer(curr, latest string) bool {
+	if curr == "" {
+		return true
+	}
 	currParts := parseVersion(curr)
 	latestParts := parseVersion(latest)
 

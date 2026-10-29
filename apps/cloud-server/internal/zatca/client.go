@@ -47,6 +47,14 @@ func NewZatcaClientForEnv(env string) *ZatcaClient {
 	return NewZatcaClient(GetBaseURLForEnv(env))
 }
 
+// setZatcaHeaders supplies the API version required by the FATOORA gateway.
+func setZatcaHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Language", "en")
+	req.Header.Set("Accept-Version", "V2")
+}
+
 // ─── Data Structures ────────────────────────────────────────────────────────
 
 type ComplianceCSIDRequest struct {
@@ -54,22 +62,23 @@ type ComplianceCSIDRequest struct {
 }
 
 type ComplianceCSIDResponse struct {
-	IssuedCertificate string   `json:"issuedCertificate"`
-	BinarySecurityToken string `json:"binarySecurityToken"`
-	Secret             string   `json:"secret"`
-	Errors             []string `json:"errors,omitempty"`
-	Warnings           []string `json:"warnings,omitempty"`
+	RequestID           json.Number `json:"requestID"`
+	IssuedCertificate   string      `json:"issuedCertificate"`
+	BinarySecurityToken string      `json:"binarySecurityToken"`
+	Secret              string      `json:"secret"`
+	Errors              []string    `json:"errors,omitempty"`
+	Warnings            []string    `json:"warnings,omitempty"`
 }
 
 type ProductionCSIDRequest struct {
-	ComplianceRequestID string `json:"complianceRequestId"`
+	ComplianceRequestID string `json:"compliance_request_id"`
 }
 
 type ProductionCSIDResponse struct {
-	IssuedCertificate string   `json:"issuedCertificate"`
-	BinarySecurityToken string `json:"binarySecurityToken"`
-	Secret             string   `json:"secret"`
-	Errors             []string `json:"errors,omitempty"`
+	IssuedCertificate   string   `json:"issuedCertificate"`
+	BinarySecurityToken string   `json:"binarySecurityToken"`
+	Secret              string   `json:"secret"`
+	Errors              []string `json:"errors,omitempty"`
 }
 
 type InvoiceSubmissionRequest struct {
@@ -79,19 +88,21 @@ type InvoiceSubmissionRequest struct {
 }
 
 type ClearanceResponse struct {
-	ClearanceStatus   string   `json:"clearanceStatus"`   // "CLEARED" or "NOT_CLEARED"
-	ClearedInvoice    string   `json:"clearedInvoice"`    // Base64 encoded signed XML with ZATCA stamp
-	QrCode            string   `json:"qrCode"`            // ZATCA signed QR code Base64
+	ClearanceStatus   string   `json:"clearanceStatus"` // "CLEARED" or "NOT_CLEARED"
+	ClearedInvoice    string   `json:"clearedInvoice"`  // Base64 encoded signed XML with ZATCA stamp
+	QrCode            string   `json:"qrCode"`          // ZATCA signed QR code Base64
 	ValidationResults string   `json:"validationResults"`
 	Errors            []string `json:"errors,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`
 }
 
 type ReportingResponse struct {
-	ReportingStatus   string   `json:"reportingStatus"`   // "REPORTED" or "NOT_REPORTED"
-	ValidationResults string   `json:"validationResults"`
-	Errors            []string `json:"errors,omitempty"`
-	Warnings          []string `json:"warnings,omitempty"`
+	ReportingStatus   string          `json:"reportingStatus"`
+	ValidationResults json.RawMessage `json:"validationResults"`
+	Errors            json.RawMessage `json:"errors,omitempty"`
+	Warnings          json.RawMessage `json:"warnings,omitempty"`
+	RawResponse       json.RawMessage `json:"-"`
+	HTTPStatus        int             `json:"-"`
 }
 
 // ─── API Methods ────────────────────────────────────────────────────────────
@@ -112,8 +123,7 @@ func (c *ZatcaClient) RequestComplianceCSID(ctx context.Context, csrPEM string, 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Language", "en")
+	setZatcaHeaders(req)
 	req.Header.Set("OTP", otp)
 
 	resp, err := c.httpClient.Do(req)
@@ -154,8 +164,7 @@ func (c *ZatcaClient) SubmitComplianceInvoice(ctx context.Context, ccsidBinaryTo
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Language", "en")
+	setZatcaHeaders(req)
 	req.SetBasicAuth(ccsidBinaryToken, secret)
 
 	resp, err := c.httpClient.Do(req)
@@ -164,13 +173,7 @@ func (c *ZatcaClient) SubmitComplianceInvoice(ctx context.Context, ccsidBinaryTo
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	var res ReportingResponse
-	if err := json.Unmarshal(respBody, &res); err != nil {
-		return nil, fmt.Errorf("failed to decode compliance invoice response: %w", err)
-	}
-
-	return &res, nil
+	return decodeInvoiceResponse(resp, "compliance check")
 }
 
 // RequestProductionCSID calls POST /production/csids to exchange a passed Compliance CSID for a Production CSID.
@@ -187,8 +190,7 @@ func (c *ZatcaClient) RequestProductionCSID(ctx context.Context, ccsidBinaryToke
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Language", "en")
+	setZatcaHeaders(req)
 	req.SetBasicAuth(ccsidBinaryToken, secret)
 
 	resp, err := c.httpClient.Do(req)
@@ -229,8 +231,7 @@ func (c *ZatcaClient) ClearStandardInvoice(ctx context.Context, pcsidBinaryToken
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Language", "en")
+	setZatcaHeaders(req)
 	req.Header.Set("Clearance-Status", "1")
 	req.SetBasicAuth(pcsidBinaryToken, secret)
 
@@ -268,8 +269,8 @@ func (c *ZatcaClient) ReportSimplifiedInvoice(ctx context.Context, pcsidBinaryTo
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Language", "en")
+	setZatcaHeaders(req)
+	req.Header.Set("Clearance-Status", "0")
 	req.SetBasicAuth(pcsidBinaryToken, secret)
 
 	resp, err := c.httpClient.Do(req)
@@ -278,10 +279,34 @@ func (c *ZatcaClient) ReportSimplifiedInvoice(ctx context.Context, pcsidBinaryTo
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	var res ReportingResponse
+	return decodeInvoiceResponse(resp, "reporting")
+}
+
+func decodeInvoiceResponse(resp *http.Response, operation string) (*ReportingResponse, error) {
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s response: %w", operation, err)
+	}
+	res := ReportingResponse{RawResponse: json.RawMessage(respBody), HTTPStatus: resp.StatusCode}
+	// Gateways can return an empty or HTML body for authentication failures.
+	// Preserve that response, but report the HTTP failure before decoding JSON.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if !json.Valid(respBody) {
+			res.RawResponse, _ = json.Marshal(map[string]any{"http_status": resp.StatusCode, "body": string(respBody)})
+		} else {
+			_ = json.Unmarshal(respBody, &res)
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			if operation == "reporting" {
+				return &res, fmt.Errorf("ZATCA authentication failed (HTTP %d): reporting requires the production CSID and its matching production secret from the same ZATCA environment", resp.StatusCode)
+			}
+			return &res, fmt.Errorf("ZATCA %s authentication failed (HTTP %d): verify the compliance CSID, matching secret and environment", operation, resp.StatusCode)
+		}
+		return &res, fmt.Errorf("ZATCA %s API error (HTTP %d)", operation, resp.StatusCode)
+	}
 	if err := json.Unmarshal(respBody, &res); err != nil {
-		return nil, fmt.Errorf("failed to decode reporting response: %w", err)
+		res.RawResponse, _ = json.Marshal(map[string]any{"http_status": resp.StatusCode, "body": string(respBody)})
+		return &res, fmt.Errorf("failed to decode %s response (HTTP %d): %w", operation, resp.StatusCode, err)
 	}
 
 	return &res, nil
@@ -303,8 +328,7 @@ func (c *ZatcaClient) RenewProductionCSID(ctx context.Context, currentPCSID stri
 		return nil, fmt.Errorf("failed to create CSID renewal request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Language", "en")
+	setZatcaHeaders(req)
 	req.SetBasicAuth(currentPCSID, secret)
 
 	resp, err := c.httpClient.Do(req)

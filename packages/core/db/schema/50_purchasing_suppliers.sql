@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS payment_terms (
     discount_percentage DECIMAL(5,2) DEFAULT 0.00,
     late_fee_percentage DECIMAL(5,2) DEFAULT 0.00,
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS cost_centers (
@@ -76,12 +77,12 @@ CREATE TABLE IF NOT EXISTS business_partners (
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     code VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    partner_role VARCHAR(20) NOT NULL CHECK (partner_role IN ('supplier','vendor','special_customer','corporate_group')),
+    partner_role VARCHAR(20) NOT NULL CHECK (partner_role IN ('supplier','vendor','customer','special_customer','corporate_group')),
     tax_id VARCHAR(50),
     currency_code VARCHAR(3) REFERENCES currencies(code) DEFAULT 'SAR',
     credit_limit DECIMAL(15,2) DEFAULT 0.00,
     outstanding_balance DECIMAL(15,2) DEFAULT 0.00,
-    payment_terms_id INTEGER,
+    payment_terms_id INTEGER REFERENCES payment_terms(id) ON DELETE SET NULL,
     sales_rep_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
@@ -93,14 +94,16 @@ CREATE TABLE IF NOT EXISTS partner_addresses (
     id SERIAL PRIMARY KEY,
     partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     address_name VARCHAR(100) NOT NULL,
-    address_type VARCHAR(20) NOT NULL CHECK (address_type IN ('bill_to','ship_to','both')),
+    address_type VARCHAR(20) NOT NULL CHECK (address_type IN ('bill_to','ship_to','both','billing','shipping')),
     street TEXT,
     city VARCHAR(100),
     state VARCHAR(100),
     zip_code VARCHAR(20),
     country_code VARCHAR(3) DEFAULT 'SA',
     is_default BOOLEAN DEFAULT false,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_partner_addresses_type_name UNIQUE (partner_id, address_type, address_name)
 );
 
 CREATE TABLE IF NOT EXISTS partner_contacts (
@@ -144,11 +147,35 @@ CREATE TABLE customers (
 -- PURCHASE & SALES ORDERS
 -- =====================================================
 
+-- This table must precede purchase_orders because purchase_orders references it.
+CREATE TABLE IF NOT EXISTS bp_price_contracts (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    contract_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
+    discount_type VARCHAR(20) DEFAULT 'percentage',
+    discount_amount DECIMAL(15,2) DEFAULT 0.00,
+    min_quantity DECIMAL(15,3) DEFAULT 1,
+    contract_type VARCHAR(20) DEFAULT 'ITEM',
+    min_order_amount DECIMAL(15,2) DEFAULT 0.00,
+    valid_from DATE,
+    valid_to DATE,
+    is_active BOOLEAN DEFAULT true,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(partner_id, product_id, product_variant_id, uom_id)
+);
+
 CREATE TABLE purchase_orders (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     po_number VARCHAR(50) UNIQUE NOT NULL,
-    partners_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
+    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
     store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     po_date DATE NOT NULL,
     expected_delivery_date DATE,
@@ -438,31 +465,8 @@ CREATE TABLE cart_activity_log (
 );
 
 -- =====================================================
--- BP PRICE CONTRACTS, JOURNAL ENTRIES & LINES
+-- JOURNAL ENTRIES & LINES
 -- =====================================================
-
-CREATE TABLE IF NOT EXISTS bp_price_contracts (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    partner_id INTEGER NOT NULL REFERENCES business_partners(id) ON DELETE CASCADE,
-    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
-    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE CASCADE,
-    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
-    contract_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
-    discount_percentage DECIMAL(5,2) DEFAULT 0.00,
-    discount_type VARCHAR(20) DEFAULT 'percentage',
-    discount_amount DECIMAL(15,2) DEFAULT 0.00,
-    min_quantity DECIMAL(15,3) DEFAULT 1,
-    contract_type VARCHAR(20) DEFAULT 'ITEM',
-    min_order_amount DECIMAL(15,2) DEFAULT 0.00,
-    valid_from DATE,
-    valid_to DATE,
-    is_active BOOLEAN DEFAULT true,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(partner_id, product_id, product_variant_id, uom_id)
-);
 
 CREATE TABLE IF NOT EXISTS journal_entries (
     id BIGSERIAL PRIMARY KEY,
@@ -505,5 +509,86 @@ CREATE INDEX IF NOT EXISTS idx_journal_lines_journal_id ON journal_lines(journal
 CREATE INDEX IF NOT EXISTS idx_journal_lines_account_id ON journal_lines(account_id);
 CREATE INDEX IF NOT EXISTS idx_bp_price_contracts_bp_product ON bp_price_contracts(partner_id, product_id);
 CREATE INDEX IF NOT EXISTS idx_bp_price_contracts_is_active ON bp_price_contracts(is_active);
+
+-- =====================================================
+-- REQUEST FOR QUOTATIONS (RFQ) & SUPPLIER RESPONSES
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS rfqs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+    rfq_number VARCHAR(50) UNIQUE NOT NULL,
+    vendor_name VARCHAR(255) NOT NULL DEFAULT '',
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    token VARCHAR(255) UNIQUE NOT NULL,
+    token_valid_from TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    token_expires_at TIMESTAMP NOT NULL,
+    invited_partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL,
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfq_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfq_id UUID NOT NULL REFERENCES rfqs(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
+    item_name VARCHAR(255) NOT NULL,
+    item_description TEXT,
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,
+    target_price DECIMAL(15,4),
+    line_number INTEGER NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfq_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfq_id UUID NOT NULL REFERENCES rfqs(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    partner_id INTEGER REFERENCES business_partners(id) ON DELETE SET NULL,
+    is_registered_supplier BOOLEAN NOT NULL DEFAULT false,
+    supplier_name VARCHAR(255) NOT NULL,
+    supplier_email VARCHAR(255),
+    supplier_phone VARCHAR(50),
+    response_status VARCHAR(50) NOT NULL DEFAULT 'submitted',
+    total_quoted_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    valid_until DATE,
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfq_response_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfq_response_id UUID NOT NULL REFERENCES rfq_responses(id) ON DELETE CASCADE,
+    rfq_item_id UUID REFERENCES rfq_items(id) ON DELETE SET NULL,
+    uom_id INTEGER NOT NULL REFERENCES units_of_measure(id) ON DELETE RESTRICT,
+    quantity DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    unit_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    tax_amount DECIMAL(15,2) DEFAULT 0.00,
+    line_total DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    delivery_lead_time_days INTEGER,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rfqs_organization_id ON rfqs(organization_id);
+CREATE INDEX IF NOT EXISTS idx_rfqs_status ON rfqs(status);
+CREATE INDEX IF NOT EXISTS idx_rfqs_token ON rfqs(token);
+CREATE INDEX IF NOT EXISTS idx_rfqs_token_expires_at ON rfqs(token_expires_at);
+CREATE INDEX IF NOT EXISTS idx_rfq_items_rfq_id ON rfq_items(rfq_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_responses_rfq_id ON rfq_responses(rfq_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_responses_partner_id ON rfq_responses(partner_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_responses_is_registered ON rfq_responses(is_registered_supplier);
+CREATE INDEX IF NOT EXISTS idx_rfq_response_items_response_id ON rfq_response_items(rfq_response_id);
 
 -- End of 50_purchasing_suppliers.sql

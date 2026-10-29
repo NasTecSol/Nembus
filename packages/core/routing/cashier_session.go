@@ -7,6 +7,7 @@ import (
 )
 
 func RegisterCashierSessionRoutes(r *gin.RouterGroup, h *handler.CashierSessionHandler) {
+	r.GET("/reports/z-report", h.GetZReport)
 	cashierSessions := r.Group("/cashier-sessions")
 	{
 		cashierSessions.POST("", h.OpenCashierSession)

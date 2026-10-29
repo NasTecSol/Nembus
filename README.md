@@ -171,5 +171,6 @@ All commands can be run via `make` from the monorepo root or using `go` / `wails
 
 - **[Developer Setup Guide](SETUP_GUIDE.md)**: Complete guide to installing dependencies, building the Wails desktop app on Windows, and running local development environments.
 - **[Core Schema Sync Guide](SYNC_CORE_GUIDE.md)**: Detailed instructions on propagating core schema and query updates from `packages/core` to `apps/pos-client`.
+- **[Notification Center & Outbox Engine Guide](NOTIFICATION_ENGINE_GUIDE.md)**: Architecture, channels (WhatsApp, AWS SES, WebSocket), and routing rule reference.
 - **[ZATCA Integration Guide](ZATCA_GUIDE.md)**: Saudi e-invoicing (ZATCA) integration reference.
 - **[Atlas Docs](https://atlasgo.io/versioned/intro)**: Official Atlas versioned migration documentation.

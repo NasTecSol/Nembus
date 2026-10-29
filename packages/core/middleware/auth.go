@@ -136,26 +136,31 @@ func GenerateM2MToken(clientID, clientName, tenantID string, scopes []string, du
 // JWTAuthMiddleware validates JWT tokens from the Authorization header
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get the Authorization header
+		// Get the Authorization header or token query parameter (useful for WebSocket connections)
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		var tokenString string
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+		if tokenString == "" {
+			tokenString = c.Query("token")
+		}
+
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or token parameter required"})
 			c.Abort()
 			return
 		}
-
-		// Check if it starts with "Bearer "
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header must be in format: Bearer <token>"})
+		// Get JWT secret from environment
+		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT_SECRET not configured"})
 			c.Abort()
 			return
 		}
-
-		tokenString := parts[1]
-
-		// Get JWT secret
-		jwtSecret := getJWTSecret()
 
 		// Parse and validate the token
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -439,6 +444,75 @@ func RequireAuthorizationToken(permissionCode string) gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+// AgentAPIKeyMiddleware authenticates automated agents (such as sap-agent)
+// using AGENT_API_KEY, MIGRATION_API_KEY, x-api-key header, or Bearer JWT token with Migrator/auto-user identity.
+func AgentAPIKeyMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := c.GetHeader("x-api-key")
+		if apiKey == "" {
+			apiKey = c.GetHeader("X-Agent-Key")
+		}
+
+		authHeader := c.GetHeader("Authorization")
+		bearerToken := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			bearerToken = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		expectedKey := os.Getenv("AGENT_API_KEY")
+		if expectedKey == "" {
+			expectedKey = os.Getenv("MIGRATION_API_KEY")
+		}
+
+		// 1. Check direct API Key
+		if expectedKey != "" && apiKey != "" && apiKey == expectedKey {
+			c.Set("agent_authenticated", true)
+			c.Set("agent_identity", "sap-agent-system")
+			c.Next()
+			return
+		}
+
+		// 2. Check Bearer Token (JWT for Migrator / auto-user / service user)
+		if bearerToken != "" {
+			jwtSecret := os.Getenv("JWT_SECRET")
+			if jwtSecret != "" {
+				token, err := jwt.Parse(bearerToken, func(token *jwt.Token) (interface{}, error) {
+					if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+						return nil, errors.New("unexpected signing method")
+					}
+					return []byte(jwtSecret), nil
+				})
+
+				if err == nil && token.Valid {
+					if claims, ok := token.Claims.(jwt.MapClaims); ok {
+						c.Set(string(ClaimsKey), claims)
+						if login, ok := claims["user_login"].(string); ok {
+							c.Set("user_login", login)
+						}
+						c.Set("agent_authenticated", true)
+						c.Next()
+						return
+					}
+				}
+			}
+		}
+
+		// 3. Fallback in development mode if no key configured
+		env := os.Getenv("ENV")
+		if expectedKey == "" && (env == "development" || env == "dev" || env == "") {
+			c.Set("agent_authenticated", true)
+			c.Set("agent_identity", "sap-agent-dev")
+			c.Next()
+			return
+		}
+
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized: valid x-api-key or Migrator Bearer token required for agent operations",
+		})
+		c.Abort()
 	}
 }
 

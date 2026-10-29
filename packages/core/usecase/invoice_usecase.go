@@ -18,7 +18,7 @@ type InvoiceOutput struct {
 	InvoiceNumber      string                     `json:"invoice_number"`
 	OrganizationID     int32                      `json:"organization_id"`
 	StoreID            pgtype.Int4                `json:"store_id"`
-	CustomerID         int32                      `json:"customer_id"`
+	CustomerID         pgtype.Int4                `json:"customer_id"`
 	CustomerName       string                     `json:"customer_name"`
 	CustomerEmail      pgtype.Text                `json:"customer_email"`
 	CustomerPhone      pgtype.Text                `json:"customer_phone"`
@@ -332,7 +332,7 @@ func (uc *InvoiceUseCase) CreateInvoice(ctx context.Context, input CreateInvoice
 		InvoiceNumber:     strings.TrimSpace(input.InvoiceNumber),
 		OrganizationID:    input.OrganizationID,
 		StoreID:           pgInt4(input.StoreID),
-		CustomerID:        input.CustomerID,
+		CustomerID:        pgtype.Int4{Int32: input.CustomerID, Valid: input.CustomerID > 0},
 		CustomerName:      strings.TrimSpace(input.CustomerName),
 		CustomerEmail:     pgText(input.CustomerEmail),
 		CustomerPhone:     pgText(input.CustomerPhone),
@@ -563,7 +563,7 @@ func (uc *InvoiceUseCase) ListCustomerInvoices(ctx context.Context, customerID, 
 	p, l, offset := calcInvoicePagination(page, limit)
 
 	totalCount, err := uc.repo.CountCustomerInvoices(ctx, repository.CountCustomerInvoicesParams{
-		CustomerID:     customerID,
+		CustomerID:     pgtype.Int4{Int32: customerID, Valid: true},
 		OrganizationID: orgID,
 	})
 	if err != nil {
@@ -571,7 +571,7 @@ func (uc *InvoiceUseCase) ListCustomerInvoices(ctx context.Context, customerID, 
 	}
 
 	rows, err := uc.repo.ListCustomerInvoices(ctx, repository.ListCustomerInvoicesParams{
-		CustomerID:     customerID,
+		CustomerID:     pgtype.Int4{Int32: customerID, Valid: true},
 		OrganizationID: orgID,
 		Limit:          l,
 		Offset:         offset,

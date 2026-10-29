@@ -187,6 +187,12 @@ SET
 WHERE id = sqlc.arg(id)
 RETURNING *;
 
+-- name: UpdateProductCostPrice :one
+UPDATE products
+SET cost_price = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING *;
+
 -- name: DeleteProduct :exec
 DELETE FROM products WHERE id = $1;
 

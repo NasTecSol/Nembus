@@ -445,6 +445,3 @@ GROUP BY
     cust.name
 ORDER BY t.transaction_date DESC, t.id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
-
-
-

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/url"
 	"strings"
@@ -23,6 +22,7 @@ import (
 
 type SyncService struct {
 	ctx        context.Context
+	cancel     context.CancelFunc
 	masterPool *pgxpool.Pool
 	cloudURL   string
 	tenantSlug string
@@ -43,9 +43,14 @@ type OutboxItem struct {
 func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug string) *SyncService {
 	// Resolve gRPC target address from cloudURL or environment default
 	grpcTarget := extractGRPCTarget(cloudURL)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	workerCtx, cancel := context.WithCancel(ctx)
 
 	return &SyncService{
-		ctx:        context.Background(),
+		ctx:        workerCtx,
+		cancel:     cancel,
 		masterPool: pool,
 		cloudURL:   cloudURL,
 		tenantSlug: slug,
@@ -86,6 +91,7 @@ func (s *SyncService) Start() {
 
 	ticker := time.NewTicker(15 * time.Second)
 	go func() {
+		defer ticker.Stop()
 		for {
 			select {
 			case <-s.ctx.Done():
@@ -98,6 +104,15 @@ func (s *SyncService) Start() {
 	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s, interval: 15s)", s.tenantSlug, s.grpcAddr)
 }
 
+// Stop cancels in-flight RPCs and waits for the worker to leave the database.
+func (s *SyncService) Stop() {
+	s.cancel()
+	s.syncMu.Lock()
+	s.syncMu.Unlock()
+}
+
+func (s *SyncService) TenantSlug() string { return s.tenantSlug }
+
 // SyncNow triggers immediate outbox draining and delta fetch
 func (s *SyncService) SyncNow() {
 	go s.performSync()
@@ -107,12 +122,16 @@ func (s *SyncService) performSync() {
 	// Startup, the timer and SyncNow can overlap. Only one worker may drain
 	// the queue, otherwise the same failure consumes several retries at once.
 	if !s.syncMu.TryLock() {
+		log.Printf("[gRPC SYNC] Previous cycle is still running for tenant %s", s.tenantSlug)
 		return
 	}
 	defer s.syncMu.Unlock()
-	if s.masterPool == nil {
+	if s.masterPool == nil || s.ctx.Err() != nil {
 		return
 	}
+	started := time.Now()
+	log.Printf("[gRPC SYNC] Starting cycle for tenant %s (target %s)", s.tenantSlug, s.grpcAddr)
+	defer func() { log.Printf("[gRPC SYNC] Cycle finished in %s", time.Since(started).Round(time.Millisecond)) }()
 
 	// 1. gRPC Push Strategy (Local Outbox -> Cloud)
 	s.drainOutboxGRPC()
@@ -128,19 +147,27 @@ const pendingOutboxSQL = `
 	WHERE q.status = 'pending'
 	  AND NOT EXISTS (
 		SELECT 1 FROM sync_queue parent
-		WHERE q.entity_type IN ('pos_transaction_lines', 'pos_payments')
-		  AND parent.entity_type = 'pos_transactions'
-		  AND parent.entity_id = (q.payload->>'transaction_id')::bigint
-		  AND parent.status IN ('pending', 'failed')
+		WHERE (
+			(q.entity_type IN ('pos_transaction_lines', 'pos_payments')
+			AND parent.entity_type = 'pos_transactions'
+			AND parent.entity_id = (q.payload->>'transaction_id')::bigint)
+			OR
+			(q.entity_type = 'sales_return_lines'
+			AND parent.entity_type = 'sales_returns'
+			AND parent.entity_id = (q.payload->>'return_id')::bigint)
+		)
+		AND parent.status IN ('pending', 'failed')
 	  )
 	ORDER BY q.id ASC
 	LIMIT 50;
 `
 
 func (s *SyncService) drainOutboxGRPC() {
+	ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+	defer cancel()
 	// Child events stay pending without consuming retries while their parent
 	// is pending or failed. They become eligible after its success is saved.
-	rows, err := s.masterPool.Query(s.ctx, pendingOutboxSQL)
+	rows, err := s.masterPool.Query(ctx, pendingOutboxSQL)
 	if err != nil {
 		log.Printf("[gRPC SYNC] Failed to query local sync_queue: %v", err)
 		return
@@ -164,9 +191,10 @@ func (s *SyncService) drainOutboxGRPC() {
 	if len(items) == 0 {
 		return
 	}
+	log.Printf("[gRPC SYNC] Pushing %d pending outbox entries", len(items))
 
 	var storeID int32
-	_ = s.masterPool.QueryRow(s.ctx, `SELECT store_id FROM local_device_config LIMIT 1;`).Scan(&storeID)
+	_ = s.masterPool.QueryRow(ctx, `SELECT store_id FROM local_device_config ORDER BY id LIMIT 1;`).Scan(&storeID)
 
 	conn, err := grpc.NewClient(s.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -177,7 +205,7 @@ func (s *SyncService) drainOutboxGRPC() {
 	defer conn.Close()
 
 	client := syncpb.NewSyncServiceClient(conn)
-	stream, err := client.StreamPush(s.ctx)
+	stream, err := client.StreamPush(ctx)
 	if err != nil {
 		log.Printf("[gRPC SYNC] StreamPush initialization error: %v", err)
 		s.recordOutboxFailure(items, err.Error())
@@ -187,11 +215,18 @@ func (s *SyncService) drainOutboxGRPC() {
 	var syncedIDs []int64
 
 	for _, item := range items {
+		if ctx.Err() != nil {
+			log.Printf("[gRPC SYNC] Push deadline reached; remaining entries will retry next cycle")
+			break
+		}
 		// Checkout creates a UUID sales order and cart locally, but the outbox
 		// only contains the resulting POS rows. Send those referenced parents
 		// first, including for older failed entries being retried.
-		parents, err := s.transactionParents(item)
+		parents, err := s.transactionParentsContext(ctx, item)
 		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
 			if errors.Is(err, errCheckoutNotReady) {
 				continue // Checkout is still completing locally; no retry is consumed.
 			}
@@ -220,11 +255,17 @@ func (s *SyncService) drainOutboxGRPC() {
 	_ = stream.CloseSend()
 
 	if len(syncedIDs) > 0 {
-		_, _ = s.masterPool.Exec(s.ctx, `
+		saveCtx, cancelSave := context.WithTimeout(s.ctx, 15*time.Second)
+		defer cancelSave()
+		_, err := s.masterPool.Exec(saveCtx, `
 			UPDATE sync_queue
 			SET status = 'synced', synced_at = NOW(), last_error = NULL
 			WHERE id = ANY($1);
 		`, syncedIDs)
+		if err != nil {
+			log.Printf("[gRPC SYNC] Could not save push acknowledgments: %v", err)
+			return
+		}
 		log.Printf("[gRPC SYNC] Pushed %d items upstream to Cloud via gRPC stream", len(syncedIDs))
 	}
 }
@@ -235,6 +276,12 @@ func (s *SyncService) drainOutboxGRPC() {
 var errCheckoutNotReady = errors.New("checkout is not fulfilled locally yet")
 
 func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+	defer cancel()
+	return s.transactionParentsContext(ctx, item)
+}
+
+func (s *SyncService) transactionParentsContext(ctx context.Context, item OutboxItem) ([]OutboxItem, error) {
 	if item.EntityType != "pos_transactions" {
 		return nil, nil
 	}
@@ -248,7 +295,7 @@ func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) 
 	if refs.SalesOrderID == nil && refs.SourceCartID == nil {
 		return nil, nil
 	}
-	rows, err := s.masterPool.Query(s.ctx, `
+	rows, err := s.masterPool.Query(ctx, `
 		SELECT entity_type, payload FROM (
 			SELECT 1 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
 			FROM carts c
@@ -325,18 +372,23 @@ func pushOutboxItem(stream syncpb.SyncService_StreamPushClient, item OutboxItem,
 }
 
 func (s *SyncService) recordOutboxFailure(items []OutboxItem, errMsg string) {
+	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+	defer cancel()
 	ids := make([]int64, len(items))
 	for i, item := range items {
 		ids[i] = item.ID
 	}
 
-	_, _ = s.masterPool.Exec(s.ctx, `
+	_, err := s.masterPool.Exec(ctx, `
 		UPDATE sync_queue
 		SET retry_count = retry_count + 1,
 		    last_error = $1,
 		    status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'pending' END
 		WHERE id = ANY($2);
 	`, errMsg, ids)
+	if err != nil {
+		log.Printf("[gRPC SYNC] Could not record outbox failure: %v", err)
+	}
 }
 
 // ResetFailedItems resets all 'failed' sync_queue entries back to 'pending' so they are
@@ -358,122 +410,4 @@ func (s *SyncService) ResetFailedItems() (int64, error) {
 		log.Printf("[gRPC SYNC] Reset %d failed sync_queue items to pending for retry", count)
 	}
 	return count, nil
-}
-
-// fetchDeltaGRPC pulls updated entities from Cloud via gRPC StreamPull using sync_watermarks
-func (s *SyncService) fetchDeltaGRPC() {
-	var storeID int32
-	var lastSyncAt time.Time
-
-	err := s.masterPool.QueryRow(s.ctx, `
-		SELECT store_id, COALESCE(last_zatca_sync_at, '1970-01-01 00:00:00+00')
-		FROM local_device_config
-		LIMIT 1;
-	`).Scan(&storeID, &lastSyncAt)
-	if err != nil {
-		return
-	}
-
-	conn, err := grpc.NewClient(s.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	client := syncpb.NewSyncServiceClient(conn)
-	req := &syncpb.PullRequest{
-		TenantSlug: s.tenantSlug,
-		StoreId:    storeID,
-		Since:      timestamppb.New(lastSyncAt),
-		EntityTypes: []string{
-			"product_barcodes", "product_prices", "promotions",
-			"customers",
-			"menu_items", "menu_modifier_groups", "combo_bundles", "recipes", "menu_item_availability_schedules",
-			"inventory_stock", "stock_movements",
-			"zatca_device_configs",
-		},
-		Limit: 200,
-	}
-
-	stream, err := client.StreamPull(s.ctx, req)
-	if err != nil {
-		log.Printf("[gRPC SYNC] StreamPull request error: %v", err)
-		return
-	}
-
-	pulledCount := 0
-	now := time.Now()
-
-	for {
-		event, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Printf("[gRPC SYNC] Error receiving delta stream: %v", err)
-			break
-		}
-
-		// SHA-256 verification
-		hasher := sha256.New()
-		hasher.Write(event.PayloadJson)
-		calculatedSha := hex.EncodeToString(hasher.Sum(nil))
-
-		if event.Sha256 != "" && event.Sha256 != calculatedSha {
-			log.Printf("[gRPC SYNC] SHA-256 checksum error for pulled entity %s ID %d", event.EntityType, event.EntityId)
-			continue
-		}
-
-		s.applyPulledEntity(event)
-		pulledCount++
-	}
-
-	if pulledCount > 0 {
-		_, _ = s.masterPool.Exec(s.ctx, `
-			UPDATE local_device_config
-			SET last_zatca_sync_at = $1;
-		`, now)
-		log.Printf("[gRPC SYNC] Pulled & verified %d delta updates from Cloud via gRPC", pulledCount)
-	}
-}
-
-func (s *SyncService) applyPulledEntity(event *syncpb.SyncEvent) {
-	if len(event.PayloadJson) == 0 {
-		return
-	}
-
-	// Supported catalog, pricing, menu, promotion, and compliance entities
-	validTables := map[string]bool{
-		"product_barcodes": true, "product_prices": true, "promotions": true,
-		"menu_items": true, "menu_modifier_groups": true, "combo_bundles": true,
-		"recipes": true, "menu_item_availability_schedules": true,
-		"customers": true, "inventory_stock": true, "zatca_device_configs": true,
-	}
-
-	if !validTables[event.EntityType] {
-		log.Printf("[gRPC SYNC] Applied generic entity delta: %s (ID %d)", event.EntityType, event.EntityId)
-		return
-	}
-
-	query := fmt.Sprintf(`
-		INSERT INTO %s
-		SELECT * FROM json_populate_record(NULL::%s, $1::json)
-		ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
-	`, event.EntityType, event.EntityType)
-
-	_, err := s.masterPool.Exec(s.ctx, query, string(event.PayloadJson))
-	if err != nil {
-		fallbackQuery := fmt.Sprintf(`
-			INSERT INTO %s
-			SELECT * FROM json_populate_record(NULL::%s, $1::json)
-			ON CONFLICT (id) DO NOTHING;
-		`, event.EntityType, event.EntityType)
-		if _, err2 := s.masterPool.Exec(s.ctx, fallbackQuery, string(event.PayloadJson)); err2 != nil {
-			log.Printf("[gRPC SYNC] Error applying pulled entity %s (ID %d): %v (fallback error: %v)",
-				event.EntityType, event.EntityId, err, err2)
-			return
-		}
-	}
-
-	log.Printf("[gRPC SYNC] Successfully applied delta for %s (ID %d)", event.EntityType, event.EntityId)
 }

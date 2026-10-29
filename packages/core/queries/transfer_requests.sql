@@ -65,14 +65,30 @@ JOIN products p ON tri.product_id = p.id
 LEFT JOIN units_of_measure uom ON tri.uom_id = uom.id
 WHERE tri.transfer_request_id = $1;
 
+-- name: ListTransferRequestItemsByRequestIDs :many
+SELECT
+    tri.*,
+    p.name AS product_name,
+    p.sku AS product_sku,
+    uom.name AS uom_name
+FROM transfer_request_items tri
+JOIN products p ON tri.product_id = p.id
+LEFT JOIN units_of_measure uom ON tri.uom_id = uom.id
+WHERE tri.transfer_request_id = ANY(sqlc.arg(transfer_request_ids)::integer[])
+ORDER BY tri.transfer_request_id, tri.id;
+
 -- name: ListTransferRequestsByOrganization :many
 SELECT 
     tr.*,
     fs.name AS from_store_name,
-    ts.name AS to_store_name
+    ts.name AS to_store_name,
+    req_u.username AS requested_by_name,
+    app_u.username AS approved_by_name
 FROM transfer_requests tr
 LEFT JOIN stores fs ON tr.from_store_id = fs.id
 LEFT JOIN stores ts ON tr.to_store_id = ts.id
+LEFT JOIN users req_u ON tr.requested_by = req_u.id
+LEFT JOIN users app_u ON tr.approved_by = app_u.id
 WHERE tr.organization_id = $1
 ORDER BY tr.created_at DESC
 LIMIT $2 OFFSET $3;

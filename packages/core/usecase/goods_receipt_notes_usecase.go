@@ -3,12 +3,16 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -39,6 +43,7 @@ type CreateGoodsReceiptNoteInput struct {
 	Notes              *string                     `json:"notes,omitempty"`
 	Metadata           map[string]interface{}      `json:"metadata,omitempty"`
 	Items              []GoodsReceiptNoteItemInput `json:"items"`
+	RequestedBy        int32                       `json:"-"`
 }
 
 type UpdateGoodsReceiptNoteInput struct {
@@ -138,6 +143,7 @@ type GoodsReceiptNoteOutput struct {
 	CreatedAt          pgtype.Timestamp             `json:"created_at"`
 	UpdatedAt          pgtype.Timestamp             `json:"updated_at"`
 	Items              []GoodsReceiptNoteItemOutput `json:"items,omitempty"`
+	ApprovalRequestID  *int64                       `json:"approval_request_id,omitempty"`
 }
 
 type GoodsReceiptNotesUseCase struct {
@@ -175,6 +181,19 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 	}
 	if len(input.Items) == 0 {
 		return utils.NewResponse(utils.CodeBadReq, "at least one GRN item is required", nil)
+	}
+
+	policy, policyErr := uc.repo.GetApprovalPolicy(ctx, repository.GetApprovalPolicyParams{
+		OrganizationID: input.OrganizationID,
+		Domain:         "goods_receipt_note",
+		Action:         "post",
+	})
+	if policyErr != nil && !errors.Is(policyErr, pgx.ErrNoRows) {
+		return utils.NewResponse(utils.CodeError, "failed to read GRN approval policy: "+policyErr.Error(), nil)
+	}
+	approvalRequired := policyErr == nil && policy.IsEnabled && policy.RequiresApproval
+	if approvalRequired && input.RequestedBy <= 0 {
+		return utils.NewResponse(utils.CodeUnauthorized, "authenticated user is required to submit this GRN for approval", nil)
 	}
 
 	receiptDate := pgtype.Timestamp{Time: time.Now(), Valid: true}
@@ -251,6 +270,37 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 		})
 	}
 
+	status := grn.Status.String
+	var approvalRequestID *int64
+	if approvalRequired {
+		payload, marshalErr := json.Marshal(map[string]interface{}{"grn_id": grn.ID, "grn": input})
+		if marshalErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to snapshot GRN for approval", nil)
+		}
+		submissionNotes := utils.StringToPgText(input.Notes)
+		summary := "Goods receipt note " + grn.GrnNumber + " requires approval before posting"
+		if grn.GrnNumber == "" {
+			summary = "Goods receipt note " + strconv.FormatInt(int64(grn.ID), 10) + " requires approval before posting"
+		}
+		requestID, stageErr := uc.repo.StageGoodsReceiptNoteForApproval(ctx, repository.StageGoodsReceiptNoteForApprovalParams{
+			ID:                 grn.ID,
+			OrganizationID:     input.OrganizationID,
+			RequestedBy:        pgtype.Int4{Int32: input.RequestedBy, Valid: true},
+			RequiredPermission: policy.RequiredPermission,
+			Summary:            summary,
+			Payload:            payload,
+			SubmissionNotes:    submissionNotes,
+		})
+		if stageErr != nil {
+			if errors.Is(stageErr, pgx.ErrNoRows) {
+				return utils.NewResponse(utils.CodeBadReq, "GRN could not be moved to pending approval", nil)
+			}
+			return utils.NewResponse(utils.CodeError, "failed to create GRN approval request: "+stageErr.Error(), nil)
+		}
+		status = "pending_approval"
+		approvalRequestID = &requestID
+	}
+
 	out := GoodsReceiptNoteOutput{
 		ID:                 grn.ID,
 		OrganizationID:     grn.OrganizationID,
@@ -261,12 +311,13 @@ func (uc *GoodsReceiptNotesUseCase) CreateGoodsReceiptNote(ctx context.Context, 
 		ReceivedBy:         grn.ReceivedBy,
 		ReceiptDate:        grn.ReceiptDate,
 		DeliveryNoteNumber: grn.DeliveryNoteNumber,
-		Status:             grn.Status.String,
+		Status:             status,
 		Notes:              grn.Notes,
 		Metadata:           utils.BytesToJSONRawMessage(grn.Metadata),
 		CreatedAt:          grn.CreatedAt,
 		UpdatedAt:          grn.UpdatedAt,
 		Items:              itemsOutput,
+		ApprovalRequestID:  approvalRequestID,
 	}
 
 	return utils.NewResponse(utils.CodeOK, "goods receipt note created successfully", out)
@@ -435,12 +486,41 @@ func (uc *GoodsReceiptNotesUseCase) PostGoodsReceiptNote(ctx context.Context, id
 		return resp
 	}
 
+	grn, err := uc.repo.GetGoodsReceiptNote(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "goods receipt note not found", nil)
+	}
+	if grn.Status.Valid && grn.Status.String == "pending_approval" {
+		return utils.NewResponse(utils.CodeBadReq, "goods receipt note is awaiting approval", nil)
+	}
+
 	res, err := uc.repo.CallProcessGoodsReceipt(ctx, id)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	if !res.Success {
 		return utils.NewResponse(utils.CodeBadReq, res.Message, nil)
+	}
+
+	// Enqueue notification outbox event for GRN posting
+	payload := map[string]interface{}{
+		"grn_id":            grn.ID,
+		"grn_number":        grn.GrnNumber,
+		"purchase_order_id": grn.PurchaseOrderID.Int32,
+		"partner_id":        grn.PartnersID,
+		"store_id":          grn.StoreID,
+		"organization_id":   grn.OrganizationID,
+	}
+	if pBytes, mErr := json.Marshal(payload); mErr == nil {
+		idempKey := fmt.Sprintf("grn.posted:%d:%d", grn.ID, time.Now().UnixNano())
+		_, _ = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+			OrganizationID: grn.OrganizationID,
+			EventTypeID:    "grn.posted",
+			EntityType:     "grn",
+			EntityID:       fmt.Sprintf("%d", grn.ID),
+			IdempotencyKey: idempKey,
+			Payload:        pBytes,
+		})
 	}
 
 	return utils.NewResponse(utils.CodeOK, res.Message, nil)
@@ -575,4 +655,3 @@ func (uc *GoodsReceiptNotesUseCase) DeleteGoodsReceiptNote(ctx context.Context, 
 
 	return utils.NewResponse(utils.CodeOK, "goods receipt note deleted successfully", nil)
 }
-

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -14,7 +16,8 @@ import (
 )
 
 type SalesReturnUseCase struct {
-	repo *repository.Queries
+	repo    *repository.Queries
+	zatcaUC *ZatcaUseCase
 }
 
 func NewSalesReturnUseCase() *SalesReturnUseCase {
@@ -23,6 +26,10 @@ func NewSalesReturnUseCase() *SalesReturnUseCase {
 
 func (uc *SalesReturnUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
+}
+
+func (uc *SalesReturnUseCase) SetZatcaUseCase(zuc *ZatcaUseCase) {
+	uc.zatcaUC = zuc
 }
 
 func (uc *SalesReturnUseCase) repoOrErr() *repository.Response {
@@ -61,6 +68,7 @@ type ProcessReturnLineInput struct {
 	SerialNumber     *string
 	BatchNumber      *string
 	Condition        string
+	CostPrice        string
 }
 
 func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in ProcessReturnInput) *repository.Response {
@@ -119,6 +127,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 	}
 
 	// 2. Prepare and Create Return Lines
+	createdReturnLines := make([]repository.SalesReturnLine, 0, len(in.Lines))
 	for i, l := range in.Lines {
 		qty, _ := uc.repo.ParseNumeric(ctx, l.Quantity)
 		uPrice, _ := uc.repo.ParseNumeric(ctx, l.UnitPrice)
@@ -126,13 +135,34 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 
 		// Validation: Check if returning more than available quantity on original line
 		if l.OriginalLineID != nil {
-			prevReturned, err := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: *l.OriginalLineID, Valid: true})
-			if err == nil && prevReturned.Valid && qty.Valid {
-				if vReq, err := qty.Value(); err == nil && vReq != nil {
-					_ = vReq
+			prevReturned, prevErr := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: *l.OriginalLineID, Valid: true})
+			if prevErr == nil && prevReturned.Valid && qty.Valid {
+				var prevQtyFloat float64
+				if vPrev, vErr := prevReturned.Value(); vErr == nil && vPrev != nil {
+					if s, ok := vPrev.(string); ok {
+						prevQtyFloat, _ = strconv.ParseFloat(s, 64)
+					}
 				}
-				if vPrev, err := prevReturned.Value(); err == nil && vPrev != nil {
-					_ = vPrev
+				var reqQtyFloat float64
+				if vReq, vErr := qty.Value(); vErr == nil && vReq != nil {
+					if s, ok := vReq.(string); ok {
+						reqQtyFloat, _ = strconv.ParseFloat(s, 64)
+					}
+				}
+				if reqQtyFloat <= 0 {
+					return utils.NewResponse(utils.CodeError, fmt.Sprintf("invalid return quantity %.3f for line %d: must be greater than zero", reqQtyFloat, i+1), nil)
+				}
+				origLine, origErr := uc.repo.GetPosTransactionLineByID(ctx, *l.OriginalLineID)
+				if origErr == nil && origLine.Quantity.Valid {
+					var origQtyFloat float64
+					if vOrig, vErr := origLine.Quantity.Value(); vErr == nil && vOrig != nil {
+						if s, ok := vOrig.(string); ok {
+							origQtyFloat, _ = strconv.ParseFloat(s, 64)
+						}
+					}
+					if origQtyFloat > 0 && (reqQtyFloat+prevQtyFloat) > origQtyFloat {
+						return utils.NewResponse(utils.CodeError, fmt.Sprintf("return quantity %.3f exceeds available returnable quantity %.3f (original: %.3f, previously returned: %.3f)", reqQtyFloat, origQtyFloat-prevQtyFloat, origQtyFloat, prevQtyFloat), nil)
+					}
 				}
 			}
 		}
@@ -161,9 +191,75 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 			lineParams.BatchNumber = pgtype.Text{String: *l.BatchNumber, Valid: true}
 		}
 
-		_, err = uc.repo.CreateSalesReturnLine(ctx, lineParams)
+		createdLine, err := uc.repo.CreateSalesReturnLine(ctx, lineParams)
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create return line %d: %s", i+1, err.Error()), nil)
+		}
+		createdReturnLines = append(createdReturnLines, createdLine)
+
+		// F2.3: Restock inventory when ReturnToStock is true and condition is good or empty
+		isGoodCondition := l.Condition == "" || strings.ToLower(l.Condition) == "good"
+		if l.ReturnToStock && isGoodCondition {
+			_, adjErr := uc.repo.AdjustInventoryStockByProductAndStore(ctx, repository.AdjustInventoryStockByProductAndStoreParams{
+				ProductID:         l.ProductID,
+				ProductVariantID:  lineParams.ProductVariantID,
+				StoreID:           in.StoreID,
+				QuantityOnHand:    qty,
+				QuantityAvailable: qty,
+			})
+			if adjErr != nil {
+				fmt.Printf("Warning: failed to adjust inventory stock on return: %v\n", adjErr)
+			}
+
+			// Determine unit cost and total cost for stock movement audit
+			unitCost := uPrice
+			if l.CostPrice != "" {
+				if parsedCost, err := uc.repo.ParseNumeric(ctx, l.CostPrice); err == nil && parsedCost.Valid {
+					unitCost = parsedCost
+				}
+			} else {
+				if prod, pErr := uc.repo.GetProduct(ctx, l.ProductID); pErr == nil && prod.CostPrice.Valid {
+					unitCost = prod.CostPrice
+				}
+			}
+
+			totalCost := refAmount
+			var costVal, qtyVal float64
+			if cV, err := unitCost.Value(); err == nil && cV != nil {
+				if s, ok := cV.(string); ok {
+					costVal, _ = strconv.ParseFloat(s, 64)
+				}
+			}
+			if qV, err := qty.Value(); err == nil && qV != nil {
+				if s, ok := qV.(string); ok {
+					qtyVal, _ = strconv.ParseFloat(s, 64)
+				}
+			}
+			if costVal > 0 && qtyVal > 0 {
+				if parsedTot, err := uc.repo.ParseNumeric(ctx, fmt.Sprintf("%.2f", costVal*qtyVal)); err == nil && parsedTot.Valid {
+					totalCost = parsedTot
+				}
+			}
+
+			_, movErr := uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
+				MovementType:     "return",
+				ReferenceType:    pgtype.Text{String: "sales_return", Valid: true},
+				ReferenceID:      pgtype.Int4{Int32: salesReturn.ID, Valid: true},
+				ProductID:        l.ProductID,
+				ProductVariantID: lineParams.ProductVariantID,
+				ToStoreID:        pgtype.Int4{Int32: in.StoreID, Valid: true},
+				Quantity:         qty,
+				BatchNumber:      lineParams.BatchNumber,
+				SerialNumber:     lineParams.SerialNumber,
+				MovementDate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
+				Status:           pgtype.Text{String: "completed", Valid: true},
+				CostPerUnit:      unitCost,
+				TotalValue:       totalCost,
+				Metadata:         json.RawMessage([]byte("{}")),
+			})
+			if movErr != nil {
+				fmt.Printf("Warning: failed to create stock movement on return: %v\n", movErr)
+			}
 		}
 	}
 
@@ -201,6 +297,96 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		}
 	}
 
-	return utils.NewResponse(utils.CodeCreated, "sales return processed successfully", salesReturn)
+	// 5. F2.4: ZATCA Phase 2 Credit Note Signing (381)
+	var qrCode string
+	var zatcaUUID string
+	if uc.zatcaUC != nil && uc.zatcaUC.GetConfig() != nil {
+		store, storeErr := uc.repo.GetStore(ctx, in.StoreID)
+		if storeErr == nil {
+			org, orgErr := uc.repo.GetOrganization(ctx, store.OrganizationID)
+			enabled, enableErr := OrganizationZatcaEnabled(&org)
+			if orgErr == nil && enableErr == nil && enabled {
+				var device repository.ZatcaDeviceConfig
+				var devErr error
+				var origInvoiceNumber string
+				var originalDeviceID int32
+				if in.OriginalTransactionID != nil {
+					origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
+					if err == nil {
+						origInvoiceNumber, _ = uc.zatcaUC.OriginalIssuedInvoiceNumber(ctx, &origTxn)
+						if doc, err := uc.zatcaUC.IssuedTransactionDocument(ctx, &origTxn); err == nil {
+							originalDeviceID = doc.DeviceConfigID
+						}
+					}
+				}
+				if originalDeviceID > 0 {
+					device, devErr = uc.repo.GetZatcaDeviceConfig(ctx, originalDeviceID)
+				} else {
+					var terminal pgtype.Int4
+					if in.SessionID != nil {
+						if session, err := uc.repo.GetSessionByID(ctx, *in.SessionID); err == nil {
+							terminal = pgtype.Int4{Int32: session.PosTerminalID, Valid: true}
+						}
+					}
+					device, devErr = uc.zatcaUC.SelectZatcaDevice(ctx, store.OrganizationID, terminal, salesReturn.Metadata)
+				}
+				if devErr == nil {
+					if device.OrganizationID != store.OrganizationID || !device.IsActive.Bool || device.IsRevoked.Bool {
+						devErr = fmt.Errorf("original ZATCA device is unavailable")
+					}
+					if _, err := ZatcaDeviceEnvironment(&device); err != nil {
+						devErr = err
+					}
+				}
+				if devErr == nil {
+
+					// ZATCA Credit Note (381) strictly requires BillingReference to the original tax invoice
+					if origInvoiceNumber != "" {
+						signedDoc, _, signErr := uc.zatcaUC.SignCreditNote(ctx, &salesReturn, createdReturnLines, origInvoiceNumber, &org, &device)
+						if signErr == nil && signedDoc != nil {
+							qrCode = signedDoc.QRCode
+							zatcaUUID = signedDoc.ZatcaUUID
+
+							var metaMap map[string]interface{}
+							if len(salesReturn.Metadata) > 0 {
+								_ = json.Unmarshal(salesReturn.Metadata, &metaMap)
+							}
+							if metaMap == nil {
+								metaMap = make(map[string]interface{})
+							}
+							metaMap["qr_code_base64"] = signedDoc.QRCode
+							metaMap["icv"] = signedDoc.ICV
+							metaMap["zatca_uuid"] = signedDoc.ZatcaUUID
+							if updatedMeta, mErr := json.Marshal(metaMap); mErr == nil {
+								salesReturn.Metadata = updatedMeta
+								if uErr := uc.repo.UpdateSalesReturnMetadata(ctx, repository.UpdateSalesReturnMetadataParams{
+									ID:       salesReturn.ID,
+									Metadata: updatedMeta,
+								}); uErr != nil {
+									fmt.Printf("Warning: failed to persist sales_return metadata: %v\n", uErr)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "sales return processed successfully", ProcessSalesReturnOutput{
+		SalesReturn: salesReturn,
+		Lines:       createdReturnLines,
+		QRCode:      qrCode,
+		ZatcaUUID:   zatcaUUID,
+	})
 }
 
+// ProcessSalesReturnOutput represents the result of processing a sales return.
+type ProcessSalesReturnOutput struct {
+	repository.SalesReturn
+	Lines     []repository.SalesReturnLine `json:"lines"`
+	QRCode    string                       `json:"qr_code,omitempty"`
+	ZatcaUUID string                       `json:"zatca_uuid,omitempty"`
+}
+
+type SalesReturnResult = ProcessSalesReturnOutput

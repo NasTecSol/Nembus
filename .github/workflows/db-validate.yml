@@ -151,6 +151,7 @@ jobs:
           mkdir -p nembus-db-migrate
           cp migrate-tenants-bin nembus-db-migrate/
           cp -r packages/core/db/schema nembus-db-migrate/schema
+          cp -r packages/core/db/patches nembus-db-migrate/patches
           cp -r packages/core/db/views_functions nembus-db-migrate/views_functions
           tar -czf nembus-db-migrate.tar.gz nembus-db-migrate
 
