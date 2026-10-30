@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	corezatca "github.com/NasTecSol/nembus-core/zatca"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,16 +22,18 @@ import (
 )
 
 type SyncService struct {
-	ctx              context.Context
-	cancel           context.CancelFunc
-	masterPool       *pgxpool.Pool
-	cloudURL         string
-	tenantSlug       string
-	grpcAddr         string
-	zatcaCloudURL    string
-	zatcaSchemaReady bool
-	zatcaBackfilled  bool
-	syncMu           sync.Mutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	masterPool           *pgxpool.Pool
+	cloudURL             string
+	tenantSlug           string
+	grpcAddr             string
+	zatcaCloudURL        string
+	zatcaSchemaReady     bool
+	zatcaBackfilled      bool
+	orderAutomationReady bool
+	orderSubmitter       corezatca.OrderSubmitter
+	syncMu               sync.Mutex
 }
 
 type OutboxItem struct {
@@ -109,6 +112,10 @@ func (s *SyncService) Start() {
 
 func (s *SyncService) ConfigureZatcaSync(cloudURL string) { s.zatcaCloudURL = cloudURL }
 
+func (s *SyncService) ConfigureOrderAutomation(submitter corezatca.OrderSubmitter) {
+	s.orderSubmitter = submitter
+}
+
 // Stop cancels in-flight RPCs and waits for the worker to leave the database.
 func (s *SyncService) Stop() {
 	s.cancel()
@@ -135,6 +142,22 @@ func (s *SyncService) performSync() {
 		return
 	}
 	started := time.Now()
+	if s.orderSubmitter != nil {
+		if !s.orderAutomationReady {
+			if _, err := s.masterPool.Exec(s.ctx, corezatca.OrderAutomationDDL); err != nil {
+				log.Printf("[ZATCA ORDER] Job installation failed: %v", err)
+			} else {
+				s.orderAutomationReady = true
+			}
+		}
+		if s.orderAutomationReady {
+			orderCtx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+			if err := corezatca.ProcessOrderAutomationBatch(orderCtx, s.masterPool, s.orderSubmitter); err != nil && orderCtx.Err() == nil {
+				log.Printf("[ZATCA ORDER] Automatic submission failed: %v", err)
+			}
+			cancel()
+		}
+	}
 	if s.zatcaCloudURL != "" {
 		if !s.zatcaSchemaReady {
 			if _, err := s.masterPool.Exec(s.ctx, ZatcaOutboxDDL); err != nil {

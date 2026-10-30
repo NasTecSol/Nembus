@@ -44,6 +44,7 @@ type LineItem struct {
 type ReceiptData struct {
 	Type          string     `json:"type"` // e.g. "Z-REPORT" or standard sales transaction
 	ReceiptNumber string     `json:"receipt_number"`
+	SalesOrderID  string     `json:"sales_order_id"` // Persisted order used to load the reported ZATCA QR
 	Cashier       string     `json:"cashier"`
 	Terminal      string     `json:"terminal"`
 	Customer      string     `json:"customer"`
@@ -53,7 +54,7 @@ type ReceiptData struct {
 	Paid          float64    `json:"paid"`     // total cash tendered
 	PaymentMethod string     `json:"payment_method"`
 	Barcode       string     `json:"barcode"`        // value encoded in barcode (e.g. receipt number)
-	QRCodeBase64  string     `json:"qr_code_base64"` // Exact ZATCA payload from signed invoice
+	QRCodeBase64  string     `json:"qr_code_base64"` // Saved signed payload set by PrintUseCase
 	Currency      string     `json:"currency"`       // e.g. "PKR"; defaults to "PKR"
 
 	// Session Summary / Z-Report fields

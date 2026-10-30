@@ -21,10 +21,12 @@ import (
 	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
+	localzatca "github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
+	corezatca "github.com/NasTecSol/nembus-core/zatca"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -274,6 +276,9 @@ func (a *App) migrate(dbURL string) error {
 	}
 	if _, err := sqlDB.Exec(sync.ZatcaOutboxDDL); err != nil {
 		return fmt.Errorf("install ZATCA sync outbox: %w", err)
+	}
+	if _, err := sqlDB.Exec(corezatca.OrderAutomationDDL); err != nil {
+		return fmt.Errorf("install automatic ZATCA order jobs: %w", err)
 	}
 
 	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
@@ -559,6 +564,7 @@ func (a *App) StartSyncService(slug string) {
 	}
 	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
 	a.syncService.ConfigureZatcaSync(a.getCloudURL())
+	a.syncService.ConfigureOrderAutomation(localzatca.NewReporter(&usecase.ZatcaConfig{LocalPOS: true}))
 
 	// Reset any sync_queue items that previously hit max_retries (e.g. due to
 	// transient cloud errors or FK constraint issues that have since been fixed)
