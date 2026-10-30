@@ -157,13 +157,41 @@ partial response as configured and allows a retry with the OTP field blank.
 4. Synchronously submits to ZATCA Clearance API (`POST /invoices/clearance/single`).
 5. On success, extracts official ZATCA stamp and attaches QR code to `invoices.metadata`.
 
-### B. B2C Simplified Tax Invoices (Offline Signing + 24h Reporting)
-1. POS terminal executes sale offline.
-2. POS queries local `zatca_document_chain` for PIH and signs transaction locally.
-3. Instantly generates Base64 TLV QR code for receipt printing.
-4. In the *same atomic transaction*, inserts transaction into `pos_transactions` and payload into `sync_queue`.
-5. Cloud server background reporting worker (`StartReportingWorker`) routinely polls pending reports and submits them to ZATCA Reporting API (`POST /invoices/reporting/single`) within 24 hours.
-6. *Chain Integrity:* Rejected invoices do **not** break the hash chain; subsequent invoices continue from the previous hash.
+### B. B2C Simplified Tax Invoices (POS signing and reporting)
+1. POS checkout saves the completed `sales_orders_v2` header and lines. The
+   request immediately attempts to sign and report through the owning POS.
+2. A database trigger also queues an order job when the header or its lines are
+   committed, including orders written by a separate client or sync event.
+   Jobs wait five seconds for separate writes, then run every 15 seconds.
+3. The worker validates persisted lines and reconciled totals, reuses any
+   existing signed document, and submits through the device's saved environment.
+   Incomplete orders and transient failures stay pending for retry.
+4. `zatca_order_jobs` records `pending`, `done`, `reported`, `rejected`,
+   `disabled`, or `delegated` and any error. `zatca_document_chain.zatca_status='reported'`
+   confirms a successful ZATCA response. Sync queue acknowledgements only
+   confirm cloud backup of the document.
+5. The cloud runs the same job worker for cloud-owned registrations. An order
+   tied to a POS-owned registration is delegated to that POS, avoiding two
+   submitters for one signing chain.
+
+The new trigger does not enqueue old historical orders when deployed. Existing
+orders can still be submitted through the explicit ZATCA order endpoint after
+review.
+
+### Printing the reported QR
+
+The POS posts `receipt.sales_order_id` to `POST /api/print/receipt`. For a
+ZATCA-enabled organization, the local print backend reads the matching
+`zatca_document_chain` row and takes its saved `qr_code_base64` only after
+`zatca_status='reported'` and `reportingStatus='REPORTED'`. It encodes that
+Base64 text in the existing ESC/POS QR command and returns the same
+`qr_code_base64` in the print response. The frontend's supplied QR is ignored
+for physical printing. If reporting is pending or failed, the receipt prints
+immediately without a QR. The response has `qr_status=not_reported` (or
+`unavailable` if the QR lookup fails), and the cashier sees a warning.
+A later manual reprint can include the QR after reporting succeeds; the POS
+does not reprint automatically. Session summaries remain printable without a
+sales-order QR.
 
 ---
 

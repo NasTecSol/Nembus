@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
@@ -345,6 +346,46 @@ func main() {
 	defer masterPool.Close()
 
 	tenantManager := manager.NewManager(masterRepo)
+	// Orders and lines can arrive through separate sync events. Persist a job on
+	// each committed change and submit once the complete order validates.
+	go func() {
+		ready := make(map[string]bool)
+		submit := cloudzatca.NewService(masterRepo, &usecase.ZatcaConfig{
+			Env: cfg.ZatcaEnv, BaseURL: cfg.ZatcaBaseURL, OrgVATID: cfg.ZatcaOrgVATID,
+		})
+		run := func() {
+			cycleCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+			defer cancel()
+			tenants, err := masterRepo.ListActiveTenants(cycleCtx)
+			if err != nil {
+				log.Printf("[ZATCA ORDER] List tenants failed: %v", err)
+				return
+			}
+			for _, tenant := range tenants {
+				pool, err := tenantManager.GetPool(cycleCtx, tenant.Slug)
+				if err != nil {
+					log.Printf("[ZATCA ORDER] Open tenant %s failed: %v", tenant.Slug, err)
+					continue
+				}
+				if !ready[tenant.Slug] {
+					if _, err := pool.Exec(cycleCtx, cloudzatca.OrderAutomationDDL); err != nil {
+						log.Printf("[ZATCA ORDER] Install jobs for %s failed: %v", tenant.Slug, err)
+						continue
+					}
+					ready[tenant.Slug] = true
+				}
+				if err := cloudzatca.ProcessOrderAutomationBatch(cycleCtx, pool, submit); err != nil && cycleCtx.Err() == nil {
+					log.Printf("[ZATCA ORDER] Tenant %s: %v", tenant.Slug, err)
+				}
+			}
+		}
+		run()
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
 
 	// Initialize Use Cases
 	userUC := usecase.NewUserUseCase()
