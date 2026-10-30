@@ -70,6 +70,9 @@ func (uc *ZatcaUseCase) GetNextICVAndPIH(ctx context.Context, deviceConfigID int
 
 // SignInvoice processes a B2B Standard Invoice, generates UBL 2.1 XML, signs it, and records the chain entry.
 func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Invoice, lines []repository.InvoiceLine, org *repository.Organization, store *repository.Store, device *repository.ZatcaDeviceConfig) (*SignedDocument, *repository.ZatcaDocumentChain, error) {
+	if err := RequireZatcaSigningOwner(device, uc.cfg); err != nil {
+		return nil, nil, err
+	}
 	enabled, err := OrganizationZatcaEnabled(org)
 	if err != nil {
 		return nil, nil, err
@@ -179,6 +182,9 @@ func (uc *ZatcaUseCase) SignInvoice(ctx context.Context, invoice *repository.Inv
 
 // SignPosTransaction processes a B2C Simplified Tax Invoice for a POS transaction, signs it, and generates the TLV QR code.
 func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.PosTransaction, lines []repository.PosTransactionLine, org *repository.Organization, device *repository.ZatcaDeviceConfig) (*SignedDocument, *repository.ZatcaDocumentChain, error) {
+	if err := RequireZatcaSigningOwner(device, uc.cfg); err != nil {
+		return nil, nil, err
+	}
 	enabled, err := OrganizationZatcaEnabled(org)
 	if err != nil {
 		return nil, nil, err
@@ -302,6 +308,9 @@ func (uc *ZatcaUseCase) SignCreditNote(
 	org *repository.Organization,
 	device *repository.ZatcaDeviceConfig,
 ) (*SignedDocument, *repository.ZatcaDocumentChain, error) {
+	if err := RequireZatcaSigningOwner(device, uc.cfg); err != nil {
+		return nil, nil, err
+	}
 	enabled, err := OrganizationZatcaEnabled(org)
 	if err != nil {
 		return nil, nil, err
