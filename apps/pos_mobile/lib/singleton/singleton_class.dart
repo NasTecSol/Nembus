@@ -32,6 +32,9 @@ class SingletonClass {
   /// Base URL for the Nembus cloud server. Used for tenant lookup (ONLINE phase).
   final String baseURL = 'https://nembus.nashrms.com';
 
+  /// JWT Auth Token for cloud API requests.
+  String? authToken;
+
   /// Direct gRPC address for raw binary backup stream (no HTTPS).
   final String grpcAddress = 'nembus.nashrms.com:50051';
 

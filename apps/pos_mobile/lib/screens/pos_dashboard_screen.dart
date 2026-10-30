@@ -9,6 +9,7 @@ import 'login_screen.dart';
 import 'pos_product_list_screen.dart';
 import 'restaurant_pos_screen.dart';
 import 'stock_count_list_screen.dart';
+import 'zatca_onboarding_screen.dart';
 
 class PosDashboardScreen extends StatefulWidget {
   final String tenantSlug;
@@ -1718,6 +1719,25 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                 await _fetchSyncQueueStatus();
               },
             ),
+            // ZATCA Phase 2 Settings Button
+            IconButton(
+              tooltip: 'ZATCA Phase 2 Settings',
+              icon: const Icon(Icons.settings_outlined, color: Colors.white70),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ZatcaOnboardingScreen(
+                      tenantId: SingletonClass().activeTenantId ?? '1',
+                      tenantSlug: widget.tenantSlug,
+                      tenantName: widget.tenantName,
+                      isFromSettings: true,
+                      storeId: widget.storeId ?? SingletonClass().activeStoreId,
+                      posTerminalId: widget.posTerminalId ?? SingletonClass().activeTerminalId,
+                    ),
+                  ),
+                );
+              },
+            ),
             // Lock Terminal Button
             IconButton(
               tooltip: 'Lock Terminal / Sign Out',
@@ -3062,11 +3082,25 @@ class _SubmenuBottomSheetState extends State<_SubmenuBottomSheet> {
                                   onPressed: () {
                                     Navigator.of(context).pop();
                                     final combined = '${widget.menu['name']} ${widget.menu['code']} ${widget.menu['route_path']}'.toLowerCase();
+                                    final isSettings = combined.contains('setting') || combined.contains('config') || combined.contains('zatca');
                                     final isStockCount = combined.contains('stock_count') || combined.contains('stock-count') || combined.contains('stock count') || combined.contains('counts') || combined.contains('inventory/counts');
                                     final isWholesale = combined.contains('wholesale') || combined.contains('b2b');
                                     final isRetail = combined.contains('retail') || combined.contains('pos') || combined.contains('sales') || combined.contains('product') || combined.contains('terminal');
                                     final isProductAction = isRetail || isWholesale;
-                                    if (isStockCount) {
+                                    if (isSettings) {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => ZatcaOnboardingScreen(
+                                            tenantId: SingletonClass().activeTenantId ?? '1',
+                                            tenantSlug: SingletonClass().activeTenantSlug ?? '',
+                                            tenantName: SingletonClass().activeTenantName ?? 'Store',
+                                            isFromSettings: true,
+                                            storeId: widget.storeId ?? SingletonClass().activeStoreId,
+                                            posTerminalId: widget.posTerminalId ?? SingletonClass().activeTerminalId,
+                                          ),
+                                        ),
+                                      );
+                                    } else if (isStockCount) {
                                       Navigator.of(context).push(
                                         MaterialPageRoute(
                                           builder: (_) => StockCountListScreen(
@@ -3133,6 +3167,7 @@ class _SubmenuBottomSheetState extends State<_SubmenuBottomSheet> {
 
                               final combinedSub = '$smName $smCode $smRoute'.toLowerCase();
                               final isCreateAction = combinedSub.contains('create') || combinedSub.contains('new') || combinedSub.contains('add');
+                              final isSettingsSub = combinedSub.contains('setting') || combinedSub.contains('config') || combinedSub.contains('zatca');
                               final isStockCountSub = !isCreateAction && (combinedSub.contains('stock_count_list') || combinedSub.contains('stock-count-list') || combinedSub.contains('stock count list') || (combinedSub.contains('list') && combinedSub.contains('count')) || combinedSub.contains('/inventory/counts/list'));
                               final isWholesale = combinedSub.contains('wholesale') || combinedSub.contains('b2b');
                               final isRetail = combinedSub.contains('retail') || combinedSub.contains('pos') || combinedSub.contains('sale') || combinedSub.contains('product') || combinedSub.contains('order') || combinedSub.contains('terminal');
@@ -3144,7 +3179,20 @@ class _SubmenuBottomSheetState extends State<_SubmenuBottomSheet> {
                                   borderRadius: BorderRadius.circular(14),
                                   onTap: () {
                                     Navigator.of(context).pop();
-                                    if (isStockCountSub) {
+                                    if (isSettingsSub) {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => ZatcaOnboardingScreen(
+                                            tenantId: SingletonClass().activeTenantId ?? '1',
+                                            tenantSlug: SingletonClass().activeTenantSlug ?? '',
+                                            tenantName: SingletonClass().activeTenantName ?? 'Store',
+                                            isFromSettings: true,
+                                            storeId: widget.storeId ?? SingletonClass().activeStoreId,
+                                            posTerminalId: widget.posTerminalId ?? SingletonClass().activeTerminalId,
+                                          ),
+                                        ),
+                                      );
+                                    } else if (isStockCountSub) {
                                       Navigator.of(context).push(
                                         MaterialPageRoute(
                                           builder: (_) => StockCountListScreen(

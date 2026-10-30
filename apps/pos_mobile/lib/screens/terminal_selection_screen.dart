@@ -6,6 +6,7 @@ import '../database/db_service.dart';
 import '../ffi/nembus_bridge.dart';
 import '../singleton/singleton_class.dart';
 import 'login_screen.dart';
+import 'zatca_onboarding_screen.dart';
 
 class TerminalSelectionScreen extends StatefulWidget {
   final String tenantSlug;
@@ -207,9 +208,11 @@ class _TerminalSelectionScreenState extends State<TerminalSelectionScreen> {
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => LoginScreen(
+          builder: (_) => ZatcaOnboardingScreen(
+            tenantId: widget.tenantId ?? SingletonClass().activeTenantId ?? '1',
             tenantSlug: widget.tenantSlug,
             tenantName: widget.tenantName,
+            isFromSettings: false,
             storeId: widget.storeId,
             storeName: widget.storeName,
             posTerminalId: terminalId,
