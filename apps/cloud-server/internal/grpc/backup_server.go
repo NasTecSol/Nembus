@@ -154,6 +154,7 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 		// Audit, telemetry & compliance chain
 		"audit_logs",
 		"zatca_document_chain",
+		"zatca_device_configs", // Credentials are restored per device over authenticated HTTPS.
 		"sync_watermarks",
 
 		// Analytics aggregates

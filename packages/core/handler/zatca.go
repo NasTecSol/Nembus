@@ -198,7 +198,7 @@ func (h *ZatcaHandler) CompleteDeviceOnboarding(c *gin.Context) {
 	}
 	completer, ok := h.onboarder.(DeviceOnboardingCompleter)
 	if !ok {
-		c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "device onboarding completion is available on the cloud-server backend", nil))
+		c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "device onboarding completion service is unavailable on this backend", nil))
 		return
 	}
 	response, err := completer.CompleteDeviceOnboardingResponse(c.Request.Context(), int32(id))
@@ -347,12 +347,12 @@ type PushSyncPayload struct {
 // PushSyncItem defines an individual item inside the POS outbox sync payload.
 // swagger:model PushSyncItem
 type PushSyncItem struct {
-	ID         int64          `json:"id" example:"101"`
-	EntityType string         `json:"entity_type" example:"pos_transaction"`
-	EntityID   int64          `json:"entity_id" example:"5001"`
-	Action     string         `json:"action" example:"INSERT"`
-	Payload    map[string]any `json:"payload"`
-	CreatedAt  time.Time      `json:"created_at" example:"2026-07-29T01:00:00Z"`
+	ID         int64           `json:"id" example:"101"`
+	EntityType string          `json:"entity_type" example:"zatca_device_configs"`
+	EntityID   int64           `json:"entity_id" example:"5001"`
+	Action     string          `json:"action" example:"INSERT"`
+	Payload    json.RawMessage `json:"payload"`
+	CreatedAt  time.Time       `json:"created_at" example:"2026-07-29T01:00:00Z"`
 }
 
 // ZatcaStatusResponse defines the response shape for ZATCA status check.
@@ -409,8 +409,8 @@ func (h *ZatcaHandler) GetConfigsDelta(c *gin.Context) {
 }
 
 // ReceivePushSync handles POST /api/zatca/sync/push (Push: POS -> Cloud)
-// @Summary      Ingest offline transaction outbox payload (Push Sync)
-// @Description  Acknowledges received outbox item IDs only. This route does not generate or submit invoices to ZATCA.
+// @Summary      Persist POS ZATCA registration and signed-document snapshots
+// @Description  Authenticated HTTPS only. Accepts zatca_device_configs and zatca_document_chain INSERT/UPDATE items whose payload contains device and optional document objects. Maps device IDs by organization/serial and acknowledges only persisted snapshots with zatca_sync_version=1. Ordinary transactions continue using the existing gRPC sync.
 // @Tags         zatca
 // @Accept       json
 // @Produce      json
@@ -421,25 +421,117 @@ func (h *ZatcaHandler) GetConfigsDelta(c *gin.Context) {
 // @Success      200  {object}  ZatcaGenericAPIResponse
 // @Failure      400  {object}  ZatcaAPIError
 // @Failure      401  {object}  ZatcaAPIError
+// @Failure      409  {object}  ZatcaAPIError
 // @Failure      500  {object}  ZatcaAPIError
 // @Router       /api/zatca/sync/push [post]
 func (h *ZatcaHandler) ReceivePushSync(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20)
 	var payload PushSyncPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid push sync payload", err.Error()))
 		return
 	}
 
+	if payload.StoreID <= 0 || len(payload.Items) == 0 || len(payload.Items) > 50 {
+		c.JSON(400, utils.NewResponse(400, "store_id and 1 to 50 ZATCA items are required", nil))
+		return
+	}
+	repo, _ := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
+	if repo == nil {
+		c.JSON(500, utils.NewResponse(500, "tenant repository is required", nil))
+		return
+	}
+	orgID, _ := middleware.GetOrganizationIDFromContext(c)
 	syncedIDs := make([]int64, 0, len(payload.Items))
 	for _, item := range payload.Items {
+		if item.ID <= 0 || (item.EntityType != "zatca_device_configs" && item.EntityType != "zatca_document_chain") || (item.Action != "INSERT" && item.Action != "UPDATE") {
+			c.JSON(400, utils.NewResponse(400, "unsupported ZATCA sync item", nil))
+			return
+		}
+		var snapshot repository.ZatcaSyncSnapshot
+		if json.Unmarshal(item.Payload, &snapshot) != nil || (item.EntityType == "zatca_document_chain" && len(snapshot.Document) == 0) {
+			c.JSON(400, utils.NewResponse(400, "invalid ZATCA snapshot", nil))
+			return
+		}
+		if err := repo.ApplyZatcaSnapshot(c.Request.Context(), payload.StoreID, orgID, snapshot); err != nil {
+			c.JSON(409, utils.NewResponse(409, "ZATCA sync rejected: "+err.Error(), gin.H{"item_id": item.ID}))
+			return
+		}
 		syncedIDs = append(syncedIDs, item.ID)
 	}
 
 	resp := utils.NewResponse(utils.CodeOK, "Sync payload ingested successfully", gin.H{
-		"synced_ids": syncedIDs,
-		"count":      len(syncedIDs),
+		"zatca_sync_version": 1,
+		"synced_ids":         syncedIDs,
+		"count":              len(syncedIDs),
 	})
 	c.JSON(resp.StatusCode, resp)
+}
+
+// GetZatcaSyncRestore returns a credential-bearing recovery page for one serial.
+// Requests must use authenticated HTTPS (HTTP is for loopback development only).
+// @Summary      Recover one POS registration and its invoice chain
+// @Description  Credential-bearing response for the authenticated tenant and organization. Requires a POS-owned cloud backup. Restore all ICV-ordered pages atomically before signing; keep through_icv fixed to the first page's head_icv. Use HTTPS and do not log or cache the response.
+// @Tags         zatca
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id header string true "Tenant identifier"
+// @Param        device_serial query string true "Physical device serial"
+// @Param        organization_id query int false "Organization ID; required for ambiguous serials"
+// @Param        after_icv query int false "Exclusive chain cursor, initially 0"
+// @Param        through_icv query int false "Fixed recovery head, initially -1"
+// @Success      200 {object} ZatcaGenericAPIResponse
+// @Failure      400 {object} ZatcaAPIError
+// @Failure      401 {object} ZatcaAPIError
+// @Failure      403 {object} ZatcaAPIError
+// @Failure      404 {object} ZatcaAPIError
+// @Failure      409 {object} ZatcaAPIError
+// @Router       /api/zatca/sync/restore [get]
+func (h *ZatcaHandler) GetZatcaSyncRestore(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	serial := c.Query("device_serial")
+	after, err := strconv.ParseInt(c.DefaultQuery("after_icv", "0"), 10, 64)
+	through, headErr := strconv.ParseInt(c.DefaultQuery("through_icv", "-1"), 10, 64)
+	org, orgErr := strconv.ParseInt(c.DefaultQuery("organization_id", "0"), 10, 32)
+	if serial == "" || err != nil || headErr != nil || orgErr != nil || after < 0 || through < -1 || org < 0 {
+		c.JSON(400, utils.NewResponse(400, "valid device_serial and restore cursors are required", nil))
+		return
+	}
+	if caller, ok := middleware.GetOrganizationIDFromContext(c); ok && caller > 0 {
+		if org > 0 && int32(org) != caller {
+			c.JSON(403, utils.NewResponse(403, "organization does not match authentication", nil))
+			return
+		}
+		org = int64(caller)
+	}
+	repo, _ := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
+	if repo == nil {
+		c.JSON(500, utils.NewResponse(500, "tenant repository is required", nil))
+		return
+	}
+	page, readErr := repo.ZatcaRecoveryPage(c.Request.Context(), serial, int32(org), after, through, 20)
+	if errors.Is(readErr, pgx.ErrNoRows) {
+		c.JSON(404, utils.NewResponse(404, "no saved ZATCA registration for this serial", nil))
+		return
+	}
+	if readErr != nil {
+		c.JSON(409, utils.NewResponse(409, "ZATCA recovery unavailable: "+readErr.Error(), nil))
+		return
+	}
+	c.JSON(200, utils.NewResponse(200, "ZATCA device recovery page", page))
+}
+
+// @Summary      Check durable ZATCA sync and secure recovery support
+// @Tags         zatca
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id header string true "Tenant identifier"
+// @Success      200 {object} ZatcaGenericAPIResponse
+// @Failure      401 {object} ZatcaAPIError
+// @Router       /api/zatca/sync/status [get]
+func (h *ZatcaHandler) GetZatcaSyncCapabilities(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.JSON(200, utils.NewResponse(200, "ZATCA sync capabilities", gin.H{"zatca_sync_version": 1, "device_recovery_over_https": true}))
 }
 
 // @Summary      Read organization enablement and device gateway status
@@ -546,12 +638,12 @@ type ZatcaOnboardRequest struct {
 	PosTerminalID  *int32 `json:"pos_terminal_id"`
 	DeviceSerial   string `json:"device_serial" binding:"required"`
 	DeviceType     string `json:"device_type" enums:"pos,cloud" example:"pos"` // "pos" or "cloud", defaults to "pos"
-	OTP            string `json:"otp" binding:"required" example:"OTP_FROM_MATCHING_PORTAL"`
+	OTP            string `json:"otp" example:"OTP_FROM_MATCHING_PORTAL"`      // Required only for a new serial; retries reuse saved credentials.
 	ZatcaEnv       string `json:"zatca_env" binding:"required,oneof=sandbox simulation production" enums:"sandbox,simulation,production" example:"simulation"`
 }
 
 // @Summary      Onboard a device completely in one call
-// @Description  Requires organization metadata.zatca.enabled=true and explicit zatca_env. Uses an OTP from the matching portal, creates/saves compliance credentials, runs six checks, then saves the reporting CSID and matching secret. HTTP 200 means reporting_ready=true. Allow up to 240 seconds; partial failures include saved device ID and completion_endpoint for recovery without a new OTP. Environment-file flags do not select enablement or gateway.
+// @Description  Requires organization metadata.zatca.enabled=true and explicit zatca_env. A new organization/device serial requires an OTP from the matching portal. Repeating the same serial resumes saved compliance credentials without an OTP; a ready device returns without another gateway call. Store, terminal, device type and environment must match the existing registration. Runs six checks and saves reporting credentials. HTTP 200 means reporting_ready=true. Allow up to 240 seconds; partial failures include saved device ID and completion_endpoint. Environment-file flags do not select enablement or gateway.
 // @Tags         zatca
 // @Produce      json
 // @Security     BearerAuth
@@ -609,6 +701,10 @@ func (h *ZatcaHandler) OnboardDevice(c *gin.Context) {
 			if errors.Is(err, usecase.ErrZatcaDisabled) {
 				status = 409
 			}
+			var responseStatus interface{ OnboardingHTTPStatus() int }
+			if errors.As(err, &responseStatus) {
+				status = responseStatus.OnboardingHTTPStatus()
+			}
 			c.JSON(status, utils.NewResponse(status, "ZATCA onboarding failed: "+err.Error(), nil))
 			return
 		}
@@ -640,7 +736,7 @@ func (h *ZatcaHandler) OnboardDevice(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "Device onboarding requires the cloud-server gateway service", nil))
+	c.JSON(http.StatusNotImplemented, utils.NewResponse(http.StatusNotImplemented, "Device onboarding service is unavailable on this backend", nil))
 }
 
 // GetTerminalZatcaConfig handles GET /api/zatca/terminals/:id

@@ -63,8 +63,30 @@ func (uc *ZatcaUseCase) SelectZatcaDevice(ctx context.Context, orgID int32, term
 	if device.OrganizationID != orgID || !device.IsActive.Bool || device.IsRevoked.Bool {
 		return device, fmt.Errorf("ZATCA device must be active, not revoked, and belong to the order organization")
 	}
+	if err := RequireZatcaSigningOwner(&device, uc.cfg); err != nil {
+		return device, err
+	}
 	if _, err := ZatcaDeviceEnvironment(&device); err != nil {
 		return device, err
 	}
 	return device, nil
+}
+
+func RequireZatcaSigningOwner(device *repository.ZatcaDeviceConfig, cfg *ZatcaConfig) error {
+	if device == nil {
+		return fmt.Errorf("ZATCA signing device is required")
+	}
+	if len(device.Metadata) == 0 {
+		return nil
+	}
+	var ownership struct {
+		Owner string `json:"signing_owner"`
+	}
+	if json.Unmarshal(device.Metadata, &ownership) != nil {
+		return fmt.Errorf("invalid device metadata")
+	}
+	if ownership.Owner == "pos" && (cfg == nil || !cfg.LocalPOS) {
+		return fmt.Errorf("this ZATCA registration is owned by its POS; use the owning POS to sign or resume onboarding")
+	}
+	return nil
 }

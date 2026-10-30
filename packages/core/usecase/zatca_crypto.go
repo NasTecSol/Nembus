@@ -21,6 +21,7 @@ import (
 
 // ZatcaConfig holds ZATCA-specific configuration extracted from the app config.
 type ZatcaConfig struct {
+	LocalPOS bool   // This process owns POS signing keys; cloud mirrors are backup/reporting only.
 	Enabled  bool   // Legacy configuration; enablement uses organization metadata.
 	Env      string // Legacy configuration; routing uses the saved device environment.
 	BaseURL  string // Legacy configuration; device gateways use the fixed environment map.

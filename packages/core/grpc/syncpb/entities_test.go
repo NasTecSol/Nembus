@@ -4,6 +4,14 @@ import (
 	"testing"
 )
 
+func TestZatcaCredentialsExcludedFromPlaintextPull(t *testing.T) {
+	for _, entity := range []string{"zatca_device_configs", "zatca_document_chain"} {
+		if IsPullEntity(entity) {
+			t.Fatalf("%s must use authenticated HTTPS device recovery", entity)
+		}
+	}
+}
+
 func TestPullEntityTypesMasterDataOrder(t *testing.T) {
 	types := PullEntityTypes()
 

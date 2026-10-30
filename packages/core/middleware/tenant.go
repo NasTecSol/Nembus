@@ -15,6 +15,7 @@ import (
 type contextKey string
 
 const RepoKey contextKey = "tenant_repo"
+const TenantSlugKey contextKey = "tenant_slug"
 
 // TenantMiddleware returns a Gin middleware that injects tenant-specific repository
 func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
@@ -54,6 +55,7 @@ func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
 		// Injects the tenant-specific repository into the request context
 		repo := repository.New(pool)
 		ctx := context.WithValue(c.Request.Context(), RepoKey, repo)
+		ctx = context.WithValue(ctx, TenantSlugKey, tenantID)
 		c.Request = c.Request.WithContext(ctx)
 
 		c.Next()

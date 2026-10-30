@@ -272,6 +272,9 @@ func (a *App) migrate(dbURL string) error {
 	if err := goose.Up(sqlDB, "migrations"); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
+	if _, err := sqlDB.Exec(sync.ZatcaOutboxDDL); err != nil {
+		return fmt.Errorf("install ZATCA sync outbox: %w", err)
+	}
 
 	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
 	for _, statement := range []string{
@@ -419,6 +422,26 @@ func (a *App) CloneTenant(slug string) string {
 		a.dbManager.GetConfig().Port,
 		tenantDBName,
 	)
+	// Confirm the cloud can durably recover credentials before replacing any
+	// local schemas. Pending ZATCA events or a newer local chain stop the clone.
+	recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancelRecovery()
+	cloudRecovery, err := sync.NewZatcaCloud(recoveryCtx, a.getCloudURL(), tenant.Slug)
+	if err != nil {
+		return fmt.Sprintf("Error preparing secure ZATCA recovery (local data preserved): %v", err)
+	}
+	if err := cloudRecovery.VerifyCapabilities(recoveryCtx); err != nil {
+		return fmt.Sprintf("Error verifying cloud ZATCA recovery (local data preserved): %v", err)
+	}
+	recoveryPool, err := pgxpool.New(recoveryCtx, tenantDBURL)
+	if err != nil {
+		return fmt.Sprintf("Error opening local recovery database: %v", err)
+	}
+	defer recoveryPool.Close()
+	deviceSerial := sync.SavedZatcaSerial(a.LoadDeviceConfig())
+	if err := sync.GuardZatcaClone(recoveryCtx, recoveryPool, a.getCloudURL(), tenant.Slug, deviceSerial); err != nil {
+		return fmt.Sprintf("Clone stopped to preserve ZATCA state: %v", err)
+	}
 
 	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
 	backupPath, err := clientbackup.DownloadBackupWithProgress(
@@ -445,6 +468,14 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error applying POS migrations to tenant database: %v", err)
 	}
 	log.Printf("POS migrations applied successfully to tenant DB [%s]", tenant.Slug)
+	if deviceSerial != "" {
+		emitProgress("zatca_recovery", 93, 0, "", 3, "Restoring this device's ZATCA registration and invoice chain...")
+		restoreCtx, cancelRestore := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancelRestore()
+		if err := sync.RecoverZatcaDevice(restoreCtx, repository.New(recoveryPool), a.getCloudURL(), tenant.Slug, deviceSerial, 0); err != nil && !errors.Is(err, sync.ErrZatcaBackupMissing) {
+			return fmt.Sprintf("Error restoring ZATCA device state; retry recovery before signing: %v", err)
+		}
+	}
 
 	// 5. Ensure the local tenant record is correct in the master DB.
 	emitProgress("finalizing", 96, 0, "", 2, "Finalizing local configuration...")
@@ -527,6 +558,7 @@ func (a *App) StartSyncService(slug string) {
 		}
 	}
 	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
+	a.syncService.ConfigureZatcaSync(a.getCloudURL())
 
 	// Reset any sync_queue items that previously hit max_retries (e.g. due to
 	// transient cloud errors or FK constraint issues that have since been fixed)
@@ -897,5 +929,3 @@ func (a *App) PrintMadaReceipt(data printing.MadaReceiptData, cfg printing.Print
 	rawBytes := printing.BuildMadaReceipt(data)
 	return printing.Print(cfg, rawBytes)
 }
-
-

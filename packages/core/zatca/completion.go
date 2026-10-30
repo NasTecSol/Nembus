@@ -101,6 +101,9 @@ func (s *OnboardingService) CompleteDeviceOnboarding(ctx context.Context, config
 	if err := usecase.RequireOrganizationZatca(ctx, repo, device.OrganizationID); err != nil {
 		return nil, err
 	}
+	if err := usecase.RequireZatcaSigningOwner(&device, s.cfg); err != nil {
+		return nil, err
+	}
 	result := &OnboardingCompletion{DeviceID: device.ID, Environment: device.ZatcaEnv.String, Stage: "compliance", Checks: []ComplianceStep{}}
 	if !device.IsActive.Bool || device.IsRevoked.Bool {
 		return result, fmt.Errorf("device must be active and not revoked")
@@ -206,7 +209,7 @@ func (s *OnboardingService) CompleteDeviceOnboarding(ctx context.Context, config
 	return result, nil
 }
 
-// JSON adapter keeps the shared handler independent of cloud-server types.
+// JSON adapter keeps the shared handler independent of gateway types.
 func (s *OnboardingService) CompleteDeviceOnboardingResponse(ctx context.Context, id int32) (json.RawMessage, error) {
 	result, err := s.CompleteDeviceOnboarding(ctx, id)
 	if result == nil {

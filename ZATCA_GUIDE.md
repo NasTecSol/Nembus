@@ -112,9 +112,39 @@ All cryptographic functions reside in `packages/core/usecase`:
 ```
 
 1. Admin inputs a 1-hour OTP from the FATOORA Portal.
-2. The Cloud server executes CSR generation and calls `POST /compliance` to obtain a Compliance CSID (CCSID).
+2. The backend receiving the request (Cloud server or local Wails POS) executes CSR generation and calls `POST /compliance` to obtain a Compliance CSID (CCSID).
 3. 6 test documents are submitted to `POST /compliance/invoices`.
 4. `POST /production/csids` exchanges the CCSID for a Production CSID (PCSID) and saves it to `zatca_device_configs`.
+
+### Local Wails onboarding
+
+The local POS supports `POST http://localhost:8080/api/zatca/onboard` using the
+same shared gateway implementation in `packages/core/zatca` as the cloud server.
+Send the tenant's registered M2M token, `x-tenant-id`, and the usual organization,
+store, terminal, serial, OTP, and explicit `zatca_env` fields. The frontend can
+keep its existing localhost onboarding URL.
+
+Local onboarding generates the keypair locally, calls the selected ZATCA
+environment directly, and saves the signing key and credential pairs in the
+request's local tenant database. It requires internet access to ZATCA. The
+existing background sync worker then backs up this registration, including its
+private key and credential secrets, to the cloud tenant over authenticated HTTPS.
+Onboarding success means the local registration is ready; cloud backup completes
+only after the sync queue receives a durable acknowledgement.
+
+If onboarding fails after compliance credentials have been saved, the frontend
+shows **Resume onboarding**. The same `POST /api/zatca/onboard` action looks up
+the organization and device serial before contacting ZATCA. Existing matching
+registrations resume with their saved credentials and do not require an OTP;
+already-ready registrations return without another gateway request. A new
+serial requires an OTP. Existing keys are preserved, and a different store,
+terminal, device type, environment, or revoked/inactive registration returns
+HTTP 409 for review instead of overwriting it.
+
+The explicit `POST /api/zatca/devices/{id}/complete-onboarding` recovery endpoint
+remains available to API clients. HTTP 200 indicates the reporting credentials
+were saved successfully (`reporting_ready=true`). The frontend never marks a
+partial response as configured and allows a retry with the OTP field blank.
 
 ---
 
@@ -140,16 +170,56 @@ All cryptographic functions reside in `packages/core/usecase`:
 ## 7. Sync Engine (Push & Pull)
 
 ### Push Mechanism (POS → Cloud)
-The Wails background worker (`SyncService`) drains `sync_queue` every 2 minutes:
-- Endpoint: `POST /api/zatca/sync/push`
-- Sends batched JSON outbox items (transactions, cashier sessions, orders).
-- Updates local `sync_queue` item status to `synced` upon acknowledgment.
+The existing Wails `SyncService` drains `sync_queue` on startup, every 15 seconds,
+and when SyncNow is requested. Cashier sessions and transactions retain their
+existing gRPC flow. ZATCA registrations and signed-document chain changes use
+the same queue, retry accounting, and worker cycle, with a separate HTTPS request:
 
-### Pull / Delta-Fetch Mechanism (Cloud → POS)
-The POS routinely polls for configuration deltas:
-- Endpoint: `GET /api/zatca/configs?store_id=X&since=<timestamp>`
-- Returns device config records updated after `since`.
-- Automatically downloads **renewed PCSID certificates** or **revocation flags** (instantly halting compromised terminals offline).
+- Endpoint: `POST /api/zatca/sync/push`, using the selected tenant's M2M token.
+- Database triggers enqueue INSERT/UPDATE references for POS device configs and
+  their document chains. Existing records for the configured terminal are backfilled.
+- Credentials and XML are read at send time; outbox payloads contain identifiers
+  rather than additional copies of secrets.
+- Devices sync before documents, then documents follow ICV order. Cloud numeric
+  IDs may differ; the receiver maps organization/serial to the cloud device.
+- The client requires `zatca_sync_version: 1` and the matching acknowledged item
+  ID before marking an event synced. The former acknowledgement-only endpoint
+  is insufficient. Failed items retain the existing retry/reset behavior.
+- Duplicate deliveries preserve the same device and ICV. Conflicting keys,
+  locations, environments, document hashes, or PIH predecessors are rejected.
+
+Mirrored registrations carry `metadata.signing_owner: "pos"`. Cloud signing and
+onboarding completion reject these keys, while reporting already signed XML
+remains available. This keeps one POS responsible for advancing that chain.
+
+### Tenant re-clone and device recovery
+
+Deploy the updated cloud server first, then rebuild/restart the POS. `CLOUD_URL`
+must resolve to the HTTPS cloud API; plaintext HTTP is permitted only on loopback
+for development. No additional sync encryption key is required.
+
+Before dropping local schemas, clone checks `GET /api/zatca/sync/status` and
+verifies that this device has no unacknowledged ZATCA events and that the cloud
+credentials and chain checkpoint match. A failed check stops the clone and
+preserves the local database. Save the device setup first: its physical serial
+is recovered from `.nembus/device_config.json`, outside the tenant database.
+
+The ordinary SQL backup excludes `zatca_device_configs` and
+`zatca_document_chain`; generic plaintext gRPC pull also excludes both. After
+the backup and migrations, clone restores only this physical device through
+`GET /api/zatca/sync/restore?device_serial=...`, using bounded ICV pages over
+authenticated HTTPS. It remaps IDs and restores the key, credentials, signed XML,
+ICV and PIH in one transaction. Interrupted recovery cannot expose a partial
+chain for signing. Restore writes do not echo back into the upload queue.
+
+If a new local installation has no registration, the localhost onboarding call
+first checks cloud recovery by organization and serial. A saved registration
+is reused without another OTP. A genuinely new serial still requires onboarding.
+Recovery refuses an existing legacy cloud registration until its owning POS has
+backed it up and established POS signing ownership. Certificates must remain
+valid and the registration must remain active; restoration does not renew or
+reactivate credentials. Preserve the serial and use one active installation per
+physical device.
 
 ---
 
@@ -162,7 +232,9 @@ API endpoints are documented in Swagger UI (`/swagger/index.html`) and included 
 | `GET` | `/api/zatca/status` | Get ZATCA feature toggle, env, base URL, and VAT ID |
 | `GET` | `/api/zatca/documents` | List saved documents with optional store and terminal filters |
 | `GET` | `/api/zatca/configs` | Delta-fetch device configs (Pull Sync) |
-| `POST` | `/api/zatca/sync/push` | Ingest offline POS outbox transactions (Push Sync) |
+| `POST` | `/api/zatca/sync/push` | Persist POS device credentials and signed-document snapshots over HTTPS |
+| `GET` | `/api/zatca/sync/status` | Check durable sync and HTTPS device recovery support |
+| `GET` | `/api/zatca/sync/restore` | Recover one physical POS registration and its ICV-ordered chain |
 
 ### Filtering saved documents
 

@@ -134,8 +134,8 @@ $appFileList = @(
     "apps/pos-client/internal/db/db_manager.go",
     "apps/pos-client/internal/updater/updater.go",
     "apps/cloud-server/main.go",
-    "apps/cloud-server/internal/zatca/service.go",
-    "apps/cloud-server/internal/zatca/client.go",
+    "packages/core/zatca/service.go",
+    "packages/core/zatca/client.go",
     "apps/pos-client/frontend/ROUTE_MAPPING.md",
     "apps/pos-client/frontend/COMPLETE_ROUTE_PATHS.md"
 )

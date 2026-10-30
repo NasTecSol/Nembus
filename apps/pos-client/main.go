@@ -224,6 +224,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
+			LocalPOS: true,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
@@ -234,6 +235,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		// Onboarding calls ZATCA directly and persists credentials in the
+		// request's local tenant repository, just like local signing/reporting.
+		zatcaHandler.SetOnboarder(zatca.NewOnboarder(zatcaCfg, cfg.CloudURL))
 		zatcaReporter := zatca.NewReporter(zatcaCfg)
 		posHandler.SetZatcaReporter(zatcaReporter)
 		cartHandler.SetZatcaReporter(zatcaReporter)
