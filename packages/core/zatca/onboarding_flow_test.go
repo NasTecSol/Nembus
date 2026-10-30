@@ -152,7 +152,7 @@ func TestSingleOnboardCallCompletesAllStepsAndPreservesRetryCredentials(t *testi
 				}
 				// Resume the saved registration, without obtaining another OTP/key/CCSID.
 				fail = false
-				if result, err := service.CompleteDeviceOnboarding(ctx, 3); err != nil || !result.ReportingReady {
+				if device, err := service.OnboardDevice(ctx, 1, nil, nil, "NEW-SINGLE-CALL-DEVICE", "pos", "", requestedEnvironment); err != nil || device.ProductionCsid.String == "" {
 					t.Fatal("resume failed", err)
 				}
 			} else {

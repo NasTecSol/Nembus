@@ -21,13 +21,16 @@ import (
 )
 
 type SyncService struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	masterPool *pgxpool.Pool
-	cloudURL   string
-	tenantSlug string
-	grpcAddr   string
-	syncMu     sync.Mutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	masterPool       *pgxpool.Pool
+	cloudURL         string
+	tenantSlug       string
+	grpcAddr         string
+	zatcaCloudURL    string
+	zatcaSchemaReady bool
+	zatcaBackfilled  bool
+	syncMu           sync.Mutex
 }
 
 type OutboxItem struct {
@@ -104,6 +107,8 @@ func (s *SyncService) Start() {
 	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s, interval: 15s)", s.tenantSlug, s.grpcAddr)
 }
 
+func (s *SyncService) ConfigureZatcaSync(cloudURL string) { s.zatcaCloudURL = cloudURL }
+
 // Stop cancels in-flight RPCs and waits for the worker to leave the database.
 func (s *SyncService) Stop() {
 	s.cancel()
@@ -130,11 +135,31 @@ func (s *SyncService) performSync() {
 		return
 	}
 	started := time.Now()
+	if s.zatcaCloudURL != "" {
+		if !s.zatcaSchemaReady {
+			if _, err := s.masterPool.Exec(s.ctx, ZatcaOutboxDDL); err != nil {
+				log.Printf("[ZATCA SYNC] Outbox installation failed: %v", err)
+			} else {
+				s.zatcaSchemaReady = true
+			}
+		}
+		if s.zatcaSchemaReady && !s.zatcaBackfilled {
+			var configured bool
+			if err := s.masterPool.QueryRow(s.ctx, `SELECT EXISTS(SELECT 1 FROM local_device_config WHERE pos_terminal_id>0 AND store_id>0)`).Scan(&configured); err == nil && configured {
+				if _, err := s.masterPool.Exec(s.ctx, backfillZatcaOutboxSQL); err != nil {
+					log.Printf("[ZATCA SYNC] Initial backup enqueue failed: %v", err)
+				} else {
+					s.zatcaBackfilled = true
+				}
+			}
+		}
+	}
 	log.Printf("[gRPC SYNC] Starting cycle for tenant %s (target %s)", s.tenantSlug, s.grpcAddr)
 	defer func() { log.Printf("[gRPC SYNC] Cycle finished in %s", time.Since(started).Round(time.Millisecond)) }()
 
 	// 1. gRPC Push Strategy (Local Outbox -> Cloud)
 	s.drainOutboxGRPC()
+	s.drainZatcaOutbox()
 
 	// 2. gRPC Pull Strategy (Cloud -> Local Watermarks Delta)
 	s.fetchDeltaGRPC()
@@ -145,6 +170,7 @@ const pendingOutboxSQL = `
 	SELECT q.id, q.entity_type, q.entity_id, q.action, q.payload, q.created_at, q.correlation_id
 	FROM sync_queue q
 	WHERE q.status = 'pending'
+	  AND q.entity_type NOT IN ('zatca_device_configs','zatca_document_chain')
 	  AND NOT EXISTS (
 		SELECT 1 FROM sync_queue parent
 		WHERE (

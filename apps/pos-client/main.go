@@ -13,7 +13,6 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	router "github.com/NasTecSol/nembus-core/routing"
 	"github.com/NasTecSol/nembus-core/usecase"
-	zatcagateway "github.com/NasTecSol/nembus-core/zatca"
 
 	_ "github.com/NasTecSol/nembus-client/docs/swagger" // Swagger generated docs
 
@@ -225,6 +224,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
+			LocalPOS: true,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
@@ -237,7 +237,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		// Onboarding calls ZATCA directly and persists credentials in the
 		// request's local tenant repository, just like local signing/reporting.
-		zatcaHandler.SetOnboarder(zatcagateway.NewOnboardingService(nil, zatcaCfg))
+		zatcaHandler.SetOnboarder(zatca.NewOnboarder(zatcaCfg, cfg.CloudURL))
 		zatcaReporter := zatca.NewReporter(zatcaCfg)
 		posHandler.SetZatcaReporter(zatcaReporter)
 		cartHandler.SetZatcaReporter(zatcaReporter)

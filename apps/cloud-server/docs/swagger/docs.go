@@ -46440,7 +46440,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Requires organization metadata.zatca.enabled=true and explicit zatca_env. Uses an OTP from the matching portal, creates/saves compliance credentials, runs six checks, then saves the reporting CSID and matching secret. HTTP 200 means reporting_ready=true. Allow up to 240 seconds; partial failures include saved device ID and completion_endpoint for recovery without a new OTP. Environment-file flags do not select enablement or gateway.",
+                "description": "Requires organization metadata.zatca.enabled=true and explicit zatca_env. A new organization/device serial requires an OTP from the matching portal. Repeating the same serial resumes saved compliance credentials without an OTP; a ready device returns without another gateway call. Store, terminal, device type and environment must match the existing registration. Runs six checks and saves reporting credentials. HTTP 200 means reporting_ready=true. Allow up to 240 seconds; partial failures include saved device ID and completion_endpoint. Environment-file flags do not select enablement or gateway.",
                 "consumes": [
                     "application/json"
                 ],
@@ -46958,7 +46958,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Acknowledges received outbox item IDs only. This route does not generate or submit invoices to ZATCA.",
+                "description": "Authenticated HTTPS only. Accepts zatca_device_configs and zatca_document_chain INSERT/UPDATE items whose payload contains device and optional document objects. Maps device IDs by organization/serial and acknowledges only persisted snapshots with zatca_sync_version=1. Ordinary transactions continue using the existing gRPC sync.",
                 "consumes": [
                     "application/json"
                 ],
@@ -46968,7 +46968,7 @@ const docTemplate = `{
                 "tags": [
                     "zatca"
                 ],
-                "summary": "Ingest offline transaction outbox payload (Push Sync)",
+                "summary": "Persist POS ZATCA registration and signed-document snapshots",
                 "parameters": [
                     {
                         "type": "string",
@@ -47013,8 +47013,142 @@ const docTemplate = `{
                             "$ref": "#/definitions/handler.ZatcaAPIError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/zatca/sync/restore": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Credential-bearing response for the authenticated tenant and organization. Requires a POS-owned cloud backup. Restore all ICV-ordered pages atomically before signing; keep through_icv fixed to the first page's head_icv. Use HTTPS and do not log or cache the response.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "zatca"
+                ],
+                "summary": "Recover one POS registration and its invoice chain",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Physical device serial",
+                        "name": "device_serial",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Organization ID; required for ambiguous serials",
+                        "name": "organization_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Exclusive chain cursor, initially 0",
+                        "name": "after_icv",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Fixed recovery head, initially -1",
+                        "name": "through_icv",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaGenericAPIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/zatca/sync/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "zatca"
+                ],
+                "summary": "Check durable ZATCA sync and secure recovery support",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaGenericAPIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handler.ZatcaAPIError"
                         }
@@ -53686,15 +53820,17 @@ const docTemplate = `{
                 },
                 "entity_type": {
                     "type": "string",
-                    "example": "pos_transaction"
+                    "example": "zatca_device_configs"
                 },
                 "id": {
                     "type": "integer",
                     "example": 101
                 },
                 "payload": {
-                    "type": "object",
-                    "additionalProperties": {}
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -57219,7 +57355,6 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "device_serial",
-                "otp",
                 "zatca_env"
             ],
             "properties": {
@@ -57239,6 +57374,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "otp": {
+                    "description": "Required only for a new serial; retries reuse saved credentials.",
                     "type": "string",
                     "example": "OTP_FROM_MATCHING_PORTAL"
                 },
