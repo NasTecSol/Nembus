@@ -10,6 +10,7 @@ package biometrics
 
 typedef int32_t (*fn_dpfj_compare)(int32_t, const uint8_t*, uint32_t, uint32_t, int32_t, const uint8_t*, uint32_t, uint32_t, uint32_t*);
 typedef int32_t (*fn_dpfj_create_fmd_from_fid)(int32_t, const uint8_t*, uint32_t, int32_t, uint8_t*, uint32_t*);
+typedef int32_t (*fn_dpfj_create_fmd_from_raw)(const uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t, int32_t, uint32_t, int32_t, uint8_t*, uint32_t*);
 typedef int32_t (*fn_dpfj_start_enrollment)(int32_t);
 typedef int32_t (*fn_dpfj_add_to_enrollment)(int32_t, const uint8_t*, uint32_t, uint32_t);
 typedef int32_t (*fn_dpfj_create_enrollment_fmd)(uint8_t*, uint32_t*);
@@ -19,9 +20,13 @@ typedef int32_t (*fn_dpfpdd_init)(void);
 typedef int32_t (*fn_dpfpdd_exit)(void);
 typedef int32_t (*fn_dpfpdd_query_devices)(uint32_t*, void*);
 typedef int32_t (*fn_dpfpdd_open)(const char*, uintptr_t*);
+typedef int32_t (*fn_dpfpdd_open_ext)(const char*, uint32_t, uintptr_t*);
 typedef int32_t (*fn_dpfpdd_close)(uintptr_t);
 typedef int32_t (*fn_dpfpdd_capture)(uintptr_t, void*, uint32_t, void*, uint32_t*, uint8_t*);
 typedef int32_t (*fn_dpfpdd_cancel)(uintptr_t);
+typedef int32_t (*fn_dpfpdd_get_device_capabilities)(uintptr_t, void*);
+typedef int32_t (*fn_dpfpdd_get_device_status)(uintptr_t, void*);
+typedef int32_t (*fn_dpfpdd_calibrate)(uintptr_t);
 
 static int32_t call_dpfj_compare(void* fn, int32_t fmt1, const uint8_t* fmd1, uint32_t len1, uint32_t v1, int32_t fmt2, const uint8_t* fmd2, uint32_t len2, uint32_t v2, uint32_t* score) {
     return ((fn_dpfj_compare)fn)(fmt1, fmd1, len1, v1, fmt2, fmd2, len2, v2, score);
@@ -29,6 +34,10 @@ static int32_t call_dpfj_compare(void* fn, int32_t fmt1, const uint8_t* fmd1, ui
 
 static int32_t call_dpfj_create_fmd_from_fid(void* fn, int32_t fid_fmt, const uint8_t* fid, uint32_t fid_len, int32_t fmd_fmt, uint8_t* fmd, uint32_t* fmd_len) {
     return ((fn_dpfj_create_fmd_from_fid)fn)(fid_fmt, fid, fid_len, fmd_fmt, fmd, fmd_len);
+}
+
+static int32_t call_dpfj_create_fmd_from_raw(void* fn, const uint8_t* img, uint32_t size, uint32_t w, uint32_t h, uint32_t dpi, int32_t pos, uint32_t cbeff, int32_t fmd_fmt, uint8_t* fmd, uint32_t* fmd_len) {
+    return ((fn_dpfj_create_fmd_from_raw)fn)(img, size, w, h, dpi, pos, cbeff, fmd_fmt, fmd, fmd_len);
 }
 
 static int32_t call_dpfj_start_enrollment(void* fn, int32_t fmd_fmt) {
@@ -63,6 +72,10 @@ static int32_t call_dpfpdd_open(void* fn, const char* name, uintptr_t* hdev) {
     return ((fn_dpfpdd_open)fn)(name, hdev);
 }
 
+static int32_t call_dpfpdd_open_ext(void* fn, const char* name, uint32_t priority, uintptr_t* hdev) {
+    return ((fn_dpfpdd_open_ext)fn)(name, priority, hdev);
+}
+
 static int32_t call_dpfpdd_close(void* fn, uintptr_t hdev) {
     return ((fn_dpfpdd_close)fn)(hdev);
 }
@@ -73,6 +86,18 @@ static int32_t call_dpfpdd_capture(void* fn, uintptr_t hdev, void* cparam, uint3
 
 static int32_t call_dpfpdd_cancel(void* fn, uintptr_t hdev) {
     return ((fn_dpfpdd_cancel)fn)(hdev);
+}
+
+static int32_t call_dpfpdd_get_device_capabilities(void* fn, uintptr_t hdev, void* caps) {
+    return ((fn_dpfpdd_get_device_capabilities)fn)(hdev, caps);
+}
+
+static int32_t call_dpfpdd_get_device_status(void* fn, uintptr_t hdev, void* status) {
+    return ((fn_dpfpdd_get_device_status)fn)(hdev, status);
+}
+
+static int32_t call_dpfpdd_calibrate(void* fn, uintptr_t hdev) {
+    return ((fn_dpfpdd_calibrate)fn)(hdev);
 }
 */
 import "C"
@@ -100,6 +125,7 @@ var (
 
 	fnCompare             unsafe.Pointer
 	fnCreateFMDFromFID    unsafe.Pointer
+	fnCreateFMDFromRaw    unsafe.Pointer
 	fnStartEnrollment     unsafe.Pointer
 	fnAddToEnrollment     unsafe.Pointer
 	fnCreateEnrollmentFMD unsafe.Pointer
@@ -109,9 +135,13 @@ var (
 	fnDPFPDDExit         unsafe.Pointer
 	fnDPFPDDQueryDevices unsafe.Pointer
 	fnDPFPDDOpen         unsafe.Pointer
+	fnDPFPDDOpenExt      unsafe.Pointer
 	fnDPFPDDClose        unsafe.Pointer
 	fnDPFPDDCapture      unsafe.Pointer
 	fnDPFPDDCancel       unsafe.Pointer
+	fnDPFPDDGetCaps      unsafe.Pointer
+	fnDPFPDDGetStatus    unsafe.Pointer
+	fnDPFPDDCalibrate    unsafe.Pointer
 )
 
 func InitRuntime() error {
@@ -178,6 +208,7 @@ func InitRuntime() error {
 		if handleDPFJ != nil {
 			fnCompare = dlsymLookup(handleDPFJ, "dpfj_compare")
 			fnCreateFMDFromFID = dlsymLookup(handleDPFJ, "dpfj_create_fmd_from_fid")
+			fnCreateFMDFromRaw = dlsymLookup(handleDPFJ, "dpfj_create_fmd_from_raw")
 			fnStartEnrollment = dlsymLookup(handleDPFJ, "dpfj_start_enrollment")
 			fnAddToEnrollment = dlsymLookup(handleDPFJ, "dpfj_add_to_enrollment")
 			fnCreateEnrollmentFMD = dlsymLookup(handleDPFJ, "dpfj_create_enrollment_fmd")
@@ -193,9 +224,13 @@ func InitRuntime() error {
 			fnDPFPDDExit = dlsymLookup(handleDPFPDD, "dpfpdd_exit")
 			fnDPFPDDQueryDevices = dlsymLookup(handleDPFPDD, "dpfpdd_query_devices")
 			fnDPFPDDOpen = dlsymLookup(handleDPFPDD, "dpfpdd_open")
+			fnDPFPDDOpenExt = dlsymLookup(handleDPFPDD, "dpfpdd_open_ext")
 			fnDPFPDDClose = dlsymLookup(handleDPFPDD, "dpfpdd_close")
 			fnDPFPDDCapture = dlsymLookup(handleDPFPDD, "dpfpdd_capture")
 			fnDPFPDDCancel = dlsymLookup(handleDPFPDD, "dpfpdd_cancel")
+			fnDPFPDDGetCaps = dlsymLookup(handleDPFPDD, "dpfpdd_get_device_capabilities")
+			fnDPFPDDGetStatus = dlsymLookup(handleDPFPDD, "dpfpdd_get_device_status")
+			fnDPFPDDCalibrate = dlsymLookup(handleDPFPDD, "dpfpdd_calibrate")
 		}
 	})
 	return runtimeErr
@@ -264,6 +299,32 @@ func rawCreateFMDFromFID(fidFormat int32, fid []byte, fmdFormat int32) ([]byte, 
 	code := int32(res)
 	if code != DPFJSuccess {
 		return nil, code, fmt.Errorf("dpfj_create_fmd_from_fid returned 0x%x", uint32(code))
+	}
+	return outBuf[:uint32(outSize)], DPFJSuccess, nil
+}
+
+func rawCreateFMDFromRaw(imageData []byte, width, height, dpi uint32, fmdFormat int32) ([]byte, int32, error) {
+	if !platformEngineAvailable() || fnCreateFMDFromRaw == nil {
+		return nil, -1, ErrEngineUnavailable
+	}
+	outBuf := make([]byte, MaxFMDSize)
+	var outSize C.uint32_t = C.uint32_t(MaxFMDSize)
+	res := C.call_dpfj_create_fmd_from_raw(
+		fnCreateFMDFromRaw,
+		(*C.uint8_t)(unsafe.Pointer(&imageData[0])),
+		C.uint32_t(len(imageData)),
+		C.uint32_t(width),
+		C.uint32_t(height),
+		C.uint32_t(dpi),
+		0,
+		0,
+		C.int32_t(fmdFormat),
+		(*C.uint8_t)(unsafe.Pointer(&outBuf[0])),
+		&outSize,
+	)
+	code := int32(res)
+	if code != DPFJSuccess {
+		return nil, code, fmt.Errorf("dpfj_create_fmd_from_raw returned 0x%x", uint32(code))
 	}
 	return outBuf[:uint32(outSize)], DPFJSuccess, nil
 }
@@ -354,6 +415,10 @@ func rawDPFPDDCapture(hDev uintptr, cparam unsafe.Pointer, timeoutMs int32, cres
 	if !platformCaptureAvailable() {
 		return -1
 	}
+	var imgPtr *C.uint8_t
+	if imgData != nil {
+		imgPtr = (*C.uint8_t)(unsafe.Pointer(imgData))
+	}
 	return int32(C.call_dpfpdd_capture(
 		fnDPFPDDCapture,
 		C.uintptr_t(hDev),
@@ -361,8 +426,102 @@ func rawDPFPDDCapture(hDev uintptr, cparam unsafe.Pointer, timeoutMs int32, cres
 		C.uint32_t(timeoutMs),
 		cresult,
 		(*C.uint32_t)(unsafe.Pointer(imgSize)),
-		(*C.uint8_t)(unsafe.Pointer(imgData)),
+		imgPtr,
 	))
+}
+
+func rawDPFPDDOpenReader(devName *byte, phDev *uintptr) int32 {
+	if !platformCaptureAvailable() {
+		return -1
+	}
+	if fnDPFPDDOpenExt != nil {
+		return int32(C.call_dpfpdd_open_ext(
+			fnDPFPDDOpenExt,
+			(*C.char)(unsafe.Pointer(devName)),
+			C.uint32_t(dpfpddPriorityExclusive),
+			(*C.uintptr_t)(unsafe.Pointer(phDev)),
+		))
+	}
+	return rawDPFPDDOpen(devName, phDev)
+}
+
+func rawDPFPDDReaderImageDPI(hDev uintptr) uint32 {
+	const defaultDPI uint32 = 500
+	if fnDPFPDDGetCaps == nil {
+		return defaultDPI
+	}
+	caps := cDPFPDDDevCaps{Size: uint32(unsafe.Sizeof(cDPFPDDDevCaps{}))}
+	rc := rawDPFPDDGetDeviceCapabilities(hDev, unsafe.Pointer(&caps))
+	if rc == dpfpddErrMoreData && caps.Size > uint32(unsafe.Sizeof(cDPFPDDDevCaps{})) {
+		buf := make([]byte, caps.Size)
+		*(*uint32)(unsafe.Pointer(&buf[0])) = caps.Size
+		rc = rawDPFPDDGetDeviceCapabilities(hDev, unsafe.Pointer(&buf[0]))
+		if rc == dpfpddSuccess && len(buf) >= 52 {
+			cnt := *(*uint32)(unsafe.Pointer(&buf[44]))
+			if cnt > 0 {
+				return *(*uint32)(unsafe.Pointer(&buf[48]))
+			}
+		}
+		return defaultDPI
+	}
+	if rc == dpfpddSuccess && caps.ResolutionCnt > 0 {
+		return caps.Resolutions[0]
+	}
+	return defaultDPI
+}
+
+func rawDPFPDDGetDeviceCapabilities(hDev uintptr, caps unsafe.Pointer) int32 {
+	if !platformCaptureAvailable() || fnDPFPDDGetCaps == nil {
+		return -1
+	}
+	return int32(C.call_dpfpdd_get_device_capabilities(
+		fnDPFPDDGetCaps,
+		C.uintptr_t(hDev),
+		caps,
+	))
+}
+
+func rawDPFPDDGetDeviceStatus(hDev uintptr, status unsafe.Pointer) int32 {
+	if !platformCaptureAvailable() || fnDPFPDDGetStatus == nil {
+		return -1
+	}
+	return int32(C.call_dpfpdd_get_device_status(
+		fnDPFPDDGetStatus,
+		C.uintptr_t(hDev),
+		status,
+	))
+}
+
+func rawDPFPDDCalibrate(hDev uintptr) int32 {
+	if !platformCaptureAvailable() || fnDPFPDDCalibrate == nil {
+		return -1
+	}
+	return int32(C.call_dpfpdd_calibrate(fnDPFPDDCalibrate, C.uintptr_t(hDev)))
+}
+
+func rawDPFPDDPrepareReaderForCapture(hDev uintptr) error {
+	st := cDPFPDDDevStatus{Size: uint32(unsafe.Sizeof(cDPFPDDDevStatus{}))}
+	rc := rawDPFPDDGetDeviceStatus(hDev, unsafe.Pointer(&st))
+	if rc == dpfpddErrMoreData {
+		buf := make([]byte, st.Size)
+		if st.Size < 12 {
+			buf = make([]byte, 64)
+		}
+		*(*uint32)(unsafe.Pointer(&buf[0])) = uint32(len(buf))
+		rc = rawDPFPDDGetDeviceStatus(hDev, unsafe.Pointer(&buf[0]))
+		if rc == dpfpddSuccess {
+			st.Status = *(*uint32)(unsafe.Pointer(&buf[4]))
+		}
+	} else if rc != dpfpddSuccess {
+		return nil
+	}
+	switch st.Status {
+	case dpfpddStatusNeedCalib, dpfpddStatusFailure:
+		if calRC := rawDPFPDDCalibrate(hDev); calRC != dpfpddSuccess {
+			return fmt.Errorf("reader calibration failed: 0x%x", uint32(calRC))
+		}
+	}
+	return nil
 }
 
 func rawDPFPDDCancel(hDev uintptr) int32 {

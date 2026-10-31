@@ -12,14 +12,14 @@ import (
 const (
 	// FMD Formats
 	FMDFormatANSI378_2004      int32 = 0x001B0001
-	FMDFormatISO19794_2_2005   int32 = 0x00010001
+	FMDFormatISO19794_2_2005   int32 = 0x01010001
 	FMDFormatDPPreRegFeatures  int32 = 0
 	FMDFormatDPRegFeatures     int32 = 1
 	FMDFormatDPVerFeatures     int32 = 2
 
 	// FID Formats
 	FIDFormatANSI381_2004    int32 = 0x001B0401
-	FIDFormatISO19794_4_2005 int32 = 0x00010401
+	FIDFormatISO19794_4_2005 int32 = 0x01010007
 
 	// Probability & Dissimilarity Thresholds
 	// DPFJ_PROBABILITY_ONE = 0x7fffffff (2,147,483,647)
@@ -54,7 +54,26 @@ var (
 	ErrBiometricNotMatched          = errors.New("fingerprint did not match any enrolled user")
 	ErrCaptureCanceled              = errors.New("fingerprint capture was canceled")
 	ErrCaptureTimeout               = errors.New("fingerprint capture timed out waiting for finger")
+	ErrReaderInUse                  = errors.New("fingerprint reader is opened by another process (on Windows, stop the Windows Biometric Service and close other apps using the scanner)")
 )
+
+// CaptureUserMessage turns capture errors into actionable text for API clients.
+func CaptureUserMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if errors.Is(err, ErrCaptureTimeout) {
+		return msg + ": start the capture request first, then place the pad of your finger flat on the sensor; if it keeps failing, stop Windows Biometric Service (WbioSrvc) and retry"
+	}
+	if errors.Is(err, ErrCaptureCanceled) {
+		return msg + " (another client sent DELETE /capture or closed the enrollment modal while this scan was active)"
+	}
+	if errors.Is(err, ErrReaderInUse) {
+		return msg
+	}
+	return msg
+}
 
 // ValidateAndDecodeFMD decodes a Base64-encoded FMD and validates its header and size.
 func ValidateAndDecodeFMD(fmdBase64 string) ([]byte, error) {

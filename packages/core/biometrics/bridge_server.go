@@ -18,6 +18,8 @@ type LocalBridgeServer struct {
 	addr       string
 	httpServer *http.Server
 
+	captureHTTPMu sync.Mutex // one blocking hardware capture at a time (POST capture / enrollment step)
+
 	enrollMu     sync.Mutex
 	enrollViews  [][]byte
 	enrollSerial string
@@ -150,17 +152,13 @@ func (b *LocalBridgeServer) handleCapture(w http.ResponseWriter, r *http.Request
 		if req.TimeoutMs <= 0 {
 			req.TimeoutMs = 15000
 		}
+		b.captureHTTPMu.Lock()
 		res, err := CaptureSingleFMD(req.TimeoutMs)
+		b.captureHTTPMu.Unlock()
 		if err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, ErrNoReaderConnected) {
-				status = http.StatusServiceUnavailable
-			} else if errors.Is(err, ErrCaptureTimeout) {
-				status = http.StatusRequestTimeout
-			}
-			writeBridgeJSON(w, status, map[string]any{
+			writeBridgeJSON(w, bridgeCaptureHTTPStatus(err), map[string]any{
 				"success": false,
-				"message": err.Error(),
+				"message": CaptureUserMessage(err),
 			})
 			return
 		}
@@ -205,11 +203,13 @@ func (b *LocalBridgeServer) handleEnrollmentStep(w http.ResponseWriter, r *http.
 		writeBridgeJSON(w, http.StatusMethodNotAllowed, map[string]any{"success": false, "message": "method not allowed"})
 		return
 	}
+	b.captureHTTPMu.Lock()
 	res, err := CaptureSingleFMD(15000)
+	b.captureHTTPMu.Unlock()
 	if err != nil {
-		writeBridgeJSON(w, http.StatusBadRequest, map[string]any{
+		writeBridgeJSON(w, bridgeCaptureHTTPStatus(err), map[string]any{
 			"success": false,
-			"message": err.Error(),
+			"message": CaptureUserMessage(err),
 		})
 		return
 	}
@@ -305,11 +305,13 @@ func (b *LocalBridgeServer) handleEnrollment(w http.ResponseWriter, r *http.Requ
 	views := make([][]byte, 0, req.Count)
 	var lastCapture *CaptureResponse
 	for len(views) < req.Count {
+		b.captureHTTPMu.Lock()
 		capRes, err := CaptureSingleFMD(15000)
+		b.captureHTTPMu.Unlock()
 		if err != nil {
-			writeBridgeJSON(w, http.StatusBadRequest, map[string]any{
+			writeBridgeJSON(w, bridgeCaptureHTTPStatus(err), map[string]any{
 				"success": false,
-				"message": err.Error(),
+				"message": CaptureUserMessage(err),
 			})
 			return
 		}
@@ -353,5 +355,21 @@ func writeBridgeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func bridgeCaptureHTTPStatus(err error) int {
+	if errors.Is(err, ErrNoReaderConnected) {
+		return http.StatusServiceUnavailable
+	}
+	if errors.Is(err, ErrReaderInUse) {
+		return http.StatusConflict
+	}
+	if errors.Is(err, ErrCaptureTimeout) {
+		return http.StatusRequestTimeout
+	}
+	if errors.Is(err, ErrCaptureCanceled) {
+		return http.StatusConflict
+	}
+	return http.StatusBadRequest
 }
 

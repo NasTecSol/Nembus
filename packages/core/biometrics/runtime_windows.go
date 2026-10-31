@@ -32,6 +32,7 @@ var (
 	procCompare             *syscall.LazyProc
 	procIdentify            *syscall.LazyProc
 	procCreateFMDFromFID    *syscall.LazyProc
+	procCreateFMDFromRaw    *syscall.LazyProc
 	procStartEnrollment     *syscall.LazyProc
 	procAddToEnrollment     *syscall.LazyProc
 	procCreateEnrollmentFMD *syscall.LazyProc
@@ -41,9 +42,13 @@ var (
 	procDPFPDDExit         *syscall.LazyProc
 	procDPFPDDQueryDevices *syscall.LazyProc
 	procDPFPDDOpen         *syscall.LazyProc
+	procDPFPDDOpenExt      *syscall.LazyProc
 	procDPFPDDClose        *syscall.LazyProc
 	procDPFPDDCapture      *syscall.LazyProc
 	procDPFPDDCancel       *syscall.LazyProc
+	procDPFPDDGetCaps      *syscall.LazyProc
+	procDPFPDDGetStatus    *syscall.LazyProc
+	procDPFPDDCalibrate    *syscall.LazyProc
 )
 
 // InitRuntime extracts embedded DigitalPersona Windows DLLs and signed USB drivers
@@ -98,6 +103,7 @@ func InitRuntime() error {
 		procCompare = dllDPFJ.NewProc("dpfj_compare")
 		procIdentify = dllDPFJ.NewProc("dpfj_identify")
 		procCreateFMDFromFID = dllDPFJ.NewProc("dpfj_create_fmd_from_fid")
+		procCreateFMDFromRaw = dllDPFJ.NewProc("dpfj_create_fmd_from_raw")
 		procStartEnrollment = dllDPFJ.NewProc("dpfj_start_enrollment")
 		procAddToEnrollment = dllDPFJ.NewProc("dpfj_add_to_enrollment")
 		procCreateEnrollmentFMD = dllDPFJ.NewProc("dpfj_create_enrollment_fmd")
@@ -113,9 +119,13 @@ func InitRuntime() error {
 		procDPFPDDExit = dllDPFPDD.NewProc("dpfpdd_exit")
 		procDPFPDDQueryDevices = dllDPFPDD.NewProc("dpfpdd_query_devices")
 		procDPFPDDOpen = dllDPFPDD.NewProc("dpfpdd_open")
+		procDPFPDDOpenExt = dllDPFPDD.NewProc("dpfpdd_open_ext")
 		procDPFPDDClose = dllDPFPDD.NewProc("dpfpdd_close")
 		procDPFPDDCapture = dllDPFPDD.NewProc("dpfpdd_capture")
 		procDPFPDDCancel = dllDPFPDD.NewProc("dpfpdd_cancel")
+		procDPFPDDGetCaps = dllDPFPDD.NewProc("dpfpdd_get_device_capabilities")
+		procDPFPDDGetStatus = dllDPFPDD.NewProc("dpfpdd_get_device_status")
+		procDPFPDDCalibrate = dllDPFPDD.NewProc("dpfpdd_calibrate")
 
 		// Stage WHQL-signed USB driver silently in background for plug-and-play
 		go stageWindowsUSBDriverOnce(runtimeDir)
@@ -193,6 +203,31 @@ func rawCreateFMDFromFID(fidFormat int32, fid []byte, fmdFormat int32) ([]byte, 
 	code := int32(r1)
 	if code != DPFJSuccess {
 		return nil, code, fmt.Errorf("dpfj_create_fmd_from_fid returned 0x%x", uint32(code))
+	}
+	return outBuf[:outSize], DPFJSuccess, nil
+}
+
+func rawCreateFMDFromRaw(imageData []byte, width, height, dpi uint32, fmdFormat int32) ([]byte, int32, error) {
+	if !platformEngineAvailable() || procCreateFMDFromRaw == nil {
+		return nil, -1, ErrEngineUnavailable
+	}
+	outBuf := make([]byte, MaxFMDSize)
+	var outSize uint32 = MaxFMDSize
+	r1, _, _ := procCreateFMDFromRaw.Call(
+		uintptr(unsafe.Pointer(&imageData[0])),
+		uintptr(len(imageData)),
+		uintptr(width),
+		uintptr(height),
+		uintptr(dpi),
+		uintptr(0), // finger_pos: DPFJ_POSITION_UNKNOWN
+		uintptr(0), // cbeff_id: 0
+		uintptr(fmdFormat),
+		uintptr(unsafe.Pointer(&outBuf[0])),
+		uintptr(unsafe.Pointer(&outSize)),
+	)
+	code := int32(r1)
+	if code != DPFJSuccess {
+		return nil, code, fmt.Errorf("dpfj_create_fmd_from_raw returned 0x%x", uint32(code))
 	}
 	return outBuf[:outSize], DPFJSuccess, nil
 }
@@ -293,15 +328,108 @@ func rawDPFPDDCapture(hDev uintptr, cparam unsafe.Pointer, timeoutMs int32, cres
 	if !platformCaptureAvailable() {
 		return -1
 	}
+	var imgPtr uintptr
+	if imgData != nil {
+		imgPtr = uintptr(unsafe.Pointer(imgData))
+	}
 	r1, _, _ := procDPFPDDCapture.Call(
 		hDev,
 		uintptr(cparam),
 		uintptr(uint32(timeoutMs)),
 		uintptr(cresult),
 		uintptr(unsafe.Pointer(imgSize)),
-		uintptr(unsafe.Pointer(imgData)),
+		imgPtr,
 	)
 	return int32(r1)
+}
+
+func rawDPFPDDOpenReader(devName *byte, phDev *uintptr) int32 {
+	if !platformCaptureAvailable() {
+		return -1
+	}
+	if procDPFPDDOpenExt != nil && procDPFPDDOpenExt.Find() == nil {
+		r1, _, _ := procDPFPDDOpenExt.Call(
+			uintptr(unsafe.Pointer(devName)),
+			uintptr(dpfpddPriorityExclusive),
+			uintptr(unsafe.Pointer(phDev)),
+		)
+		return int32(r1)
+	}
+	return rawDPFPDDOpen(devName, phDev)
+}
+
+func rawDPFPDDReaderImageDPI(hDev uintptr) uint32 {
+	const defaultDPI uint32 = 500
+	if procDPFPDDGetCaps == nil || procDPFPDDGetCaps.Find() != nil {
+		return defaultDPI
+	}
+	caps := cDPFPDDDevCaps{Size: uint32(unsafe.Sizeof(cDPFPDDDevCaps{}))}
+	rc := rawDPFPDDGetDeviceCapabilities(hDev, unsafe.Pointer(&caps))
+	if rc == dpfpddErrMoreData && caps.Size > uint32(unsafe.Sizeof(cDPFPDDDevCaps{})) {
+		buf := make([]byte, caps.Size)
+		*(*uint32)(unsafe.Pointer(&buf[0])) = caps.Size
+		rc = rawDPFPDDGetDeviceCapabilities(hDev, unsafe.Pointer(&buf[0]))
+		if rc == dpfpddSuccess && len(buf) >= 52 {
+			cnt := *(*uint32)(unsafe.Pointer(&buf[44]))
+			if cnt > 0 {
+				return *(*uint32)(unsafe.Pointer(&buf[48]))
+			}
+		}
+		return defaultDPI
+	}
+	if rc == dpfpddSuccess && caps.ResolutionCnt > 0 {
+		return caps.Resolutions[0]
+	}
+	return defaultDPI
+}
+
+func rawDPFPDDGetDeviceCapabilities(hDev uintptr, caps unsafe.Pointer) int32 {
+	if !platformCaptureAvailable() || procDPFPDDGetCaps == nil {
+		return -1
+	}
+	r1, _, _ := procDPFPDDGetCaps.Call(hDev, uintptr(caps))
+	return int32(r1)
+}
+
+func rawDPFPDDGetDeviceStatus(hDev uintptr, status unsafe.Pointer) int32 {
+	if !platformCaptureAvailable() || procDPFPDDGetStatus == nil {
+		return -1
+	}
+	r1, _, _ := procDPFPDDGetStatus.Call(hDev, uintptr(status))
+	return int32(r1)
+}
+
+func rawDPFPDDCalibrate(hDev uintptr) int32 {
+	if !platformCaptureAvailable() || procDPFPDDCalibrate == nil {
+		return -1
+	}
+	r1, _, _ := procDPFPDDCalibrate.Call(hDev)
+	return int32(r1)
+}
+
+func rawDPFPDDPrepareReaderForCapture(hDev uintptr) error {
+	st := cDPFPDDDevStatus{Size: uint32(unsafe.Sizeof(cDPFPDDDevStatus{}))}
+	rc := rawDPFPDDGetDeviceStatus(hDev, unsafe.Pointer(&st))
+	if rc == dpfpddErrMoreData {
+		buf := make([]byte, st.Size)
+		if st.Size < 12 {
+			buf = make([]byte, 64)
+		}
+		*(*uint32)(unsafe.Pointer(&buf[0])) = uint32(len(buf))
+		rc = rawDPFPDDGetDeviceStatus(hDev, unsafe.Pointer(&buf[0]))
+		if rc == dpfpddSuccess {
+			st.Status = *(*uint32)(unsafe.Pointer(&buf[4]))
+		}
+	} else if rc != dpfpddSuccess {
+		return nil
+	}
+	switch st.Status {
+	case dpfpddStatusNeedCalib, dpfpddStatusFailure:
+		if calRC := rawDPFPDDCalibrate(hDev); calRC != dpfpddSuccess {
+			return fmt.Errorf("reader calibration failed: 0x%x", uint32(calRC))
+		}
+	}
+	return nil
 }
 
 func rawDPFPDDCancel(hDev uintptr) int32 {

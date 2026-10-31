@@ -66,15 +66,44 @@ type cDPFPDDCaptureResult struct {
 	Info    cDPFPDDImageInfo
 }
 
+type cDPFPDDDevStatus struct {
+	Size           uint32
+	Status         uint32
+	FingerDetected int32
+}
+
+type cDPFPDDDevCaps struct {
+	Size               uint32
+	CanCaptureImage    int32
+	CanStreamImage     int32
+	CanExtractFeatures int32
+	CanMatch           int32
+	CanIdentify        int32
+	HasFPStorage       int32
+	IndicatorType      uint32
+	HasPwrMgmt         int32
+	HasCalibration     int32
+	PivCompliant       int32
+	ResolutionCnt      uint32
+	Resolutions        [8]uint32
+}
+
 const (
 	dpfpddSuccess          int32  = 0
 	dpfpddErrMoreData      int32  = 0x05BA000D
 	dpfpddImgFmtISO19794   uint32 = 0x01010007
+	dpfpddImgProcDefault   uint32 = 0
 	dpfpddImgProcEnhanced  uint32 = 2
 	dpfpddQualityGood      uint32 = 0
 	dpfpddQualityTimedOut  uint32 = 1
 	dpfpddQualityCanceled  uint32 = 2
 	dpfpddQualityFake      uint32 = 8
+
+	dpfpddPriorityExclusive uint32 = 4
+	dpfpddStatusReady         uint32 = 0
+	dpfpddStatusNeedCalib     uint32 = 2
+	dpfpddStatusFailure       uint32 = 3
+	dpfpddErrDeviceBusy       int32  = 0x05BA001E
 )
 
 // ReaderDeviceInfo represents an attached DigitalPersona USB fingerprint reader.
@@ -357,7 +386,10 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 
 	nameBytes := append([]byte(reader.Name), 0)
 	var hDev uintptr
-	rc := rawDPFPDDOpen(&nameBytes[0], &hDev)
+	rc := rawDPFPDDOpenReader(&nameBytes[0], &hDev)
+	if rc == dpfpddErrDeviceBusy {
+		return nil, ErrReaderInUse
+	}
 	if rc != dpfpddSuccess || hDev == 0 {
 		return nil, fmt.Errorf("dpfpdd_open(%s) failed: 0x%x", reader.Name, uint32(rc))
 	}
@@ -373,21 +405,36 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 		_ = rawDPFPDDClose(hDev)
 	}()
 
+	if err := rawDPFPDDPrepareReaderForCapture(hDev); err != nil {
+		return nil, err
+	}
+	imageRes := rawDPFPDDReaderImageDPI(hDev)
+
 	cparam := cDPFPDDCaptureParam{
 		Size:      uint32(unsafe.Sizeof(cDPFPDDCaptureParam{})),
 		ImageFmt:  dpfpddImgFmtISO19794,
-		ImageProc: dpfpddImgProcEnhanced,
-		ImageRes:  500,
+		ImageProc: dpfpddImgProcDefault,
+		ImageRes:  imageRes,
 	}
 	cresult := cDPFPDDCaptureResult{
 		Size: uint32(unsafe.Sizeof(cDPFPDDCaptureResult{})),
 	}
 	cresult.Info.Size = uint32(unsafe.Sizeof(cDPFPDDImageInfo{}))
 
-	// Allocate generous initial buffer (256 KB) so capture succeeds in a single pass
-	var imgSize uint32 = 256 * 1024
+	// Probe required image buffer size (timeout=0, no buffer), then one blocking capture.
+	var imgSize uint32
+	rc = rawDPFPDDCapture(
+		hDev,
+		unsafe.Pointer(&cparam),
+		0,
+		unsafe.Pointer(&cresult),
+		&imgSize,
+		nil,
+	)
+	if rc != dpfpddErrMoreData || imgSize == 0 {
+		return nil, fmt.Errorf("dpfpdd_capture size probe failed: 0x%x", uint32(rc))
+	}
 	imgBuf := make([]byte, imgSize)
-
 	rc = rawDPFPDDCapture(
 		hDev,
 		unsafe.Pointer(&cparam),
@@ -396,7 +443,7 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 		&imgSize,
 		&imgBuf[0],
 	)
-	if rc == dpfpddErrMoreData && imgSize > 0 {
+	if rc == dpfpddErrMoreData && imgSize > uint32(len(imgBuf)) {
 		imgBuf = make([]byte, imgSize)
 		rc = rawDPFPDDCapture(
 			hDev,
@@ -424,18 +471,32 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 		return nil, fmt.Errorf("%w (quality flags: 0x%x)", ErrPoorQualityScan, cresult.Quality)
 	}
 
-	fidData := imgBuf[:imgSize]
-
-	// Extract ISO/IEC 19794-2:2005 FMD from ISO/IEC 19794-4:2005 FID
-	engineMu.Lock()
-	fmdBytes, fmdRC, fmdErr := rawCreateFMDFromFID(FIDFormatISO19794_4_2005, fidData, FMDFormatISO19794_2_2005)
-	engineMu.Unlock()
-	if fmdErr != nil || fmdRC != DPFJSuccess {
-		return nil, fmt.Errorf("extract FMD failed: %v (0x%x)", fmdErr, uint32(fmdRC))
-	}
-
 	width := int(cresult.Info.Width)
 	height := int(cresult.Info.Height)
+	expectedSize := ISO19794_4HeaderSize + (width * height)
+	if width > 0 && height > 0 && int(imgSize) > expectedSize && len(imgBuf) >= expectedSize {
+		imgSize = uint32(expectedSize)
+	}
+	fidData := imgBuf[:imgSize]
+
+	// Extract ISO/IEC 19794-2:2005 FMD (try standard FID extraction, fallback to raw pixels)
+	engineMu.Lock()
+	fmdBytes, fmdRC, fmdErr := rawCreateFMDFromFID(FIDFormatISO19794_4_2005, fidData, FMDFormatISO19794_2_2005)
+	if (fmdErr != nil || fmdRC != DPFJSuccess) && width > 0 && height > 0 {
+		var rawPixels []byte
+		if len(fidData) >= ISO19794_4HeaderSize+(width*height) {
+			rawPixels = fidData[ISO19794_4HeaderSize : ISO19794_4HeaderSize+(width*height)]
+		} else if len(fidData) >= width*height {
+			rawPixels = fidData[:width*height]
+		}
+		if len(rawPixels) > 0 {
+			fmdBytes, fmdRC, fmdErr = rawCreateFMDFromRaw(rawPixels, uint32(width), uint32(height), imageRes, FMDFormatISO19794_2_2005)
+		}
+	}
+	engineMu.Unlock()
+	if fmdErr != nil || fmdRC != DPFJSuccess {
+		return nil, fmt.Errorf("extract FMD failed: %v (0x%x, size=%d, w=%d, h=%d)", fmdErr, uint32(fmdRC), len(fidData), width, height)
+	}
 	bmpBase64, _ := EncodeFIDToBMPBase64(fidData, width, height)
 
 	// Map score to NIST NFIQ 1..5 (1 = excellent, 2 = very good, 3 = good)
