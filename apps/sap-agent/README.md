@@ -1,71 +1,62 @@
-# Nembus SAP Sync Agent (`apps/sap-agent`)
+# Nembus SAP Agent (`apps/sap-agent`)
 
-The **SAP Sync Agent** is a bidirectional synchronization service between **SAP Business One (SAP B1)** and the **Nembus Ecosystem** (Cloud ERP & POS Desktop Client). It supersedes the legacy `SAP_To_Vtec` .NET application.
+On-prem **SAP Business One** edge agent: bulk migration, incremental master-data sync, and POS outbox posting to SAP. All **Nembus tenant data** flows through **cloud gRPC** (`SapAgentService`) and HTTP onboarding — no direct PostgreSQL to the tenant DB from the agent.
 
----
+## Architecture
 
-## Capabilities
+- **Local**: `agent_config.json`, SQLite checkpoints, optional SAP company **MSSQL** for ETL extractors, SAP **Service Layer** for incremental sync and posting.
+- **Cloud**: `SapAgentService` on cloud-server gRPC port (default `:50051`) — migration ingest, master-data upserts, SAP outbox pull/ack, reconciliation metrics, tenant resolve.
+- **Auth**: `Authorization: Bearer <JWT>` or `x-api-key` + `x-tenant-id: <tenant_slug>` on gRPC metadata.
 
-1. **Downstream Pipeline (SAP B1 $\rightarrow$ Nembus Master Data)**
-   - **Categories & Groups**: Synchronizes SAP Item Groups (`OITB`) to Nembus `product_categories`.
-   - **Units of Measure**: Synchronizes SAP UOMs (`OUOM`) to Nembus `units_of_measure`.
-   - **Products**: Synchronizes SAP Items (`OITM`) to Nembus `products` (SKU, names, Arabic foreign names, scale/weight flags).
-   - **Barcodes**: Synchronizes primary and multi-barcodes (`OBCD`) to Nembus `product_barcodes`.
-   - **Price Lists**: Synchronizes price lists (`ITM1`) to Nembus `product_prices`.
-   - **Inventory**: Syncs warehouse stock levels to Nembus `inventory_stock`.
+### gRPC (grpcurl example)
 
-2. **Upstream Pipeline (Nembus POS $\rightarrow$ SAP B1 Invoices & Payments)**
-   - **Outbox Watcher**: Monitors completed POS transactions and sales returns.
-   - **AR Invoices (`OINV`)**: Automatically creates official SAP AR Invoices with line items, VAT calculations, and POS transaction references.
-   - **AR Credit Memos (`ORIN`)**: Posts sales returns back to SAP B1 with links to original invoices (`BaseEntry`, `BaseType = 13`).
-   - **Incoming Payments (`ORCT`)**: Posts cash and card payments linked directly to the created SAP AR Invoice.
-   - **Idempotency**: Tags Nembus transactions and returns with SAP `DocEntry` and `DocNum` to prevent duplicate postings.
+```bash
+grpcurl -plaintext -H "authorization: Bearer $TOKEN" -H "x-tenant-id: stg" \
+  localhost:50051 sapagent.SapAgentService/ResolveTenant
+```
 
----
+Regenerate stubs from [`packages/core/grpc/sapagentpb/sap_agent.proto`](../../packages/core/grpc/sapagentpb/sap_agent.proto):
+
+```bash
+cd packages/core/grpc/sapagentpb
+protoc --go_out=. --go-grpc_out=. --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative sap_agent.proto
+```
+
+HTTP `POST /api/v1/migration/batch` remains for legacy agents; set `SAP_MIGRATION_HTTP_ENABLED=false` on cloud-server to disable.
 
 ## Configuration
 
-Copy `.env.example` to `.env` in `apps/sap-agent/`:
+Primary file: **`agent_config.json`** (created on first run). Important fields:
+
+| Section | Purpose |
+|---------|---------|
+| `tenant_slug` | Nembus tenant slug (same as POS `x-tenant-id`) |
+| `cloud.base_url` | Cloud HTTP base (updates, tenant list, login) |
+| `cloud.grpc_addr` | Optional gRPC override; default `{host}:50051` from `base_url` |
+| `migrator_token` / `cloud.api_key` | gRPC and migration auth |
+| `mssql` | SAP B1 company database (migration extractors) |
+| `sap_service_layer` | Incremental downstream / upstream SAP SL |
+| `sync` | Price list, warehouse, dry-run, upstream poll interval |
+
+Onboarding in the local UI resolves **`organization_id`** via gRPC `ResolveTenant` after login.
+
+## Build & run
 
 ```bash
-cp .env.example .env
+cd apps/sap-agent
+go build -o bin/sap-agent.exe cmd/agent/main.go
+./bin/sap-agent.exe                    # Windows service + UI (port 17890)
+./bin/sap-agent.exe sync-upstream      # One-shot outbox → SAP
+./bin/sap-agent.exe test-connection    # SAP SL + cloud gRPC
 ```
 
-Key environment variables:
-- `SAP_SL_URL`: SAP Service Layer endpoint (e.g. `https://192.168.1.90:50000/b1s/v1`)
-- `SAP_COMPANY_DB`: Target SAP company database (e.g. `QITAFALAELAHLTD`)
-- `SAP_USERNAME` & `SAP_PASSWORD`: SAP B1 credentials
-- `NEMBUS_DB_URL`: Local POS database (port 5433) or Cloud server (port 5432)
-- `NEMBUS_ORGANIZATION_ID`: Target tenant/organization ID (default: `1`)
-- `DOWNSTREAM_INTERVAL_SECONDS`: Frequency of master data refresh (default: `300s` / 5m)
-- `UPSTREAM_OUTBOX_POLL_MS`: Frequency of transaction outbox check (default: `3000ms` / 3s)
+Makefile target: `make build-agent` (builds `cmd/agent/main.go`).
 
----
+## Capabilities
 
-## Quick Commands
+1. **Migration (SAP MSSQL → cloud)** — ETL domains via `StreamMigrationIngest` (gzip JSON batches).
+2. **Downstream (SAP SL → cloud)** — master data via `StreamMasterDataUpsert`.
+3. **Upstream (cloud → SAP)** — `StreamSapOutbox` + `AckSapOutbox` / `HoldSapOutbox`.
+4. **Reconciliation** — SAP MSSQL counts vs cloud metrics from `GetReconciliationSummary`.
 
-From the monorepo root:
-
-```bash
-# Build the binary
-make build-agent
-
-# Run in background daemon mode
-make dev-agent
-```
-
-Direct CLI commands (inside `apps/sap-agent`):
-
-```bash
-# Test connectivity to SAP and Nembus
-go run cmd/main.go test-connection
-
-# Run one-shot master data sync (SAP -> Nembus)
-go run cmd/main.go sync-downstream
-
-# Run one-shot transaction posting (Nembus -> SAP)
-go run cmd/main.go sync-upstream
-
-# Run continuous background daemon
-go run cmd/main.go daemon
-```
+Legacy `.env` under `config/` is deprecated; use `agent_config.json` and CLI subcommands on the unified binary.

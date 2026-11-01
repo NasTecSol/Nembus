@@ -8,19 +8,18 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 
 	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap-agent/internal/cloudgrpc"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/discovery"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
 	"github.com/NasTecSol/nembus-sap-agent/internal/reconciliation"
+	"github.com/NasTecSol/nembus-sap-agent/internal/scheduler"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
 	"github.com/kardianos/service"
@@ -31,13 +30,13 @@ type Server struct {
 	engine      *etl.Engine
 	sqlite      *db.SQLiteStore
 	mssql       *db.MSSQLClient
-	cloudClient *transport.CloudClient
-	pgPool      *pgxpool.Pool
+	cloudClient *cloudgrpc.Client
+	scheduler   *scheduler.SyncScheduler
 	router      *gin.Engine
 	uiFS        embed.FS
 }
 
-func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteStore, mssql *db.MSSQLClient, cloudClient *transport.CloudClient, uiFS embed.FS) *Server {
+func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteStore, mssql *db.MSSQLClient, cloudClient *cloudgrpc.Client, sched *scheduler.SyncScheduler, uiFS embed.FS) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -48,6 +47,7 @@ func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteSto
 		sqlite:      sqlite,
 		mssql:       mssql,
 		cloudClient: cloudClient,
+		scheduler:   sched,
 		router:      r,
 		uiFS:        uiFS,
 	}
@@ -340,6 +340,13 @@ func (s *Server) handleOnboardingLogin(c *gin.Context) {
 		token = fmt.Sprintf("migrator_sys_token_%s_%d", req.TenantSlug, time.Now().Unix())
 	}
 
+	// Resolve tenant metadata via gRPC when cloud client is available
+	if s.cloudClient != nil && req.TenantSlug != "" {
+		if resolved, err := s.cloudClient.ResolveTenant(c.Request.Context(), req.TenantSlug); err == nil {
+			req.OrganizationID = int(resolved.OrganizationID)
+		}
+	}
+
 	// Update in-memory and persisted config
 	current := config.Get()
 	current.MigratorUser = req.UserLogin
@@ -486,55 +493,50 @@ func (s *Server) handleGetDomains(c *gin.Context) {
 
 func (s *Server) handleGetSyncStatus(c *gin.Context) {
 	cfg := config.Get()
-
-	// Compute sync state
+	status := map[string]any{}
+	if s.scheduler != nil {
+		status = s.scheduler.Status()
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"downstream": gin.H{
-			"status":            "active",
-			"interval_seconds":  cfg.DownstreamIntervalSec,
-			"last_sync_time":    time.Now().Add(-3 * time.Minute).Format(time.RFC3339),
-			"synced_products":   18420,
-			"synced_prices":     18420,
-			"synced_barcodes":   24650,
-			"synced_categories": 68,
-			"synced_uoms":       14,
-			"errors_count":      0,
-			"next_sync_seconds": 120,
+			"interval_seconds": cfg.DownstreamIntervalSec,
+			"last_sync_time":   status["last_downstream_at"],
 		},
 		"upstream": gin.H{
-			"status":            "active",
-			"interval_seconds":  cfg.UpstreamIntervalSec,
-			"last_sync_time":    time.Now().Add(-45 * time.Second).Format(time.RFC3339),
-			"posted_invoices":   142,
-			"posted_payments":   142,
-			"pending_outbox":    0,
-			"errors_count":      0,
-			"next_sync_seconds": 15,
+			"interval_ms":    cfg.Sync.UpstreamOutboxPollMs,
+			"last_sync_time": status["last_upstream_at"],
 		},
+		"running":    status["running"],
+		"last_error": status["last_error"],
 		"reconciliation": gin.H{
-			"auto_run":          cfg.ReconciliationAutoRun,
-			"interval_seconds":  cfg.ReconciliationIntervalSec,
-			"last_audit_score":  "99.8%",
-			"last_audit_status": "matched",
-			"last_audit_time":   time.Now().Add(-40 * time.Minute).Format(time.RFC3339),
+			"auto_run":         cfg.ReconciliationAutoRun,
+			"interval_seconds": cfg.ReconciliationIntervalSec,
 		},
 	})
 }
 
 func (s *Server) handleRunDownstreamSync(c *gin.Context) {
-	log.Println("[SAP-AGENT] Manual Downstream Master Data Sync triggered")
+	if s.scheduler == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "sync scheduler not configured"})
+		return
+	}
+	s.scheduler.TriggerDownstream(c.Request.Context())
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Downstream sync job dispatched. Synchronizing SAP Master Data to Nembus Cloud.",
+		"success":   true,
+		"message":   "Downstream sync job started (SAP master data → cloud via gRPC).",
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
 
 func (s *Server) handleRunUpstreamSync(c *gin.Context) {
-	log.Println("[SAP-AGENT] Manual Upstream Outbox Sync triggered")
+	if s.scheduler == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "sync scheduler not configured"})
+		return
+	}
+	s.scheduler.TriggerUpstream(c.Request.Context())
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Upstream sync job dispatched. Posting pending Nembus POS transactions to SAP B1.",
+		"success":   true,
+		"message":   "Upstream sync job started (cloud outbox → SAP via gRPC).",
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
@@ -664,8 +666,7 @@ func (s *Server) handleReconciliation(c *gin.Context) {
 	runID := c.Query("run_id")
 
 	cloudClient := transport.NewCloudClient(cfg.Cloud)
-	pgPool := s.getPGPool(c.Request.Context())
-	auditor := reconciliation.NewAuditEngine(mssql, cloudClient, s.sqlite, pgPool)
+	auditor := reconciliation.NewAuditEngine(mssql, cloudClient, s.sqlite, s.cloudClient)
 
 	report, err := auditor.Reconcile(c.Request.Context(), runID, cfg.Cloud.OrganizationID)
 	if err != nil {
@@ -674,40 +675,6 @@ func (s *Server) handleReconciliation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, report)
-}
-
-func (s *Server) getPGPool(ctx context.Context) *pgxpool.Pool {
-	if s.pgPool != nil {
-		return s.pgPool
-	}
-
-	dbURL := s.cfg.Cloud.DatabaseURL
-	if dbURL == "" {
-		dbURL = os.Getenv("DATABASE_URL")
-	}
-	if dbURL == "" {
-		dbURL = os.Getenv("STG_DATABASE_URL")
-	}
-	if dbURL == "" {
-		dbURL = os.Getenv("TARGET_DB_URL")
-	}
-	if dbURL == "" {
-		dbURL = os.Getenv("MASTER_DB_URL")
-	}
-	if dbURL == "" {
-		dbURL = os.Getenv("NEMBUS_DB_URL")
-	}
-	if dbURL == "" {
-		return nil
-	}
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		log.Printf("[SAP-AGENT] Warning: could not connect to PostgreSQL for audit: %v", err)
-		return nil
-	}
-	s.pgPool = pool
-	return pool
 }
 
 func (s *Server) handleGetHistory(c *gin.Context) {

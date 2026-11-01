@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -107,6 +108,13 @@ func (uc *OrganizationUseCase) CreateOrganization(ctx context.Context, name, cod
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
+
+	approvalsUC := NewApprovalsUseCase()
+	approvalsUC.SetRepository(uc.repo)
+	if err := approvalsUC.EnsureDefaultPolicies(ctx, org.ID); err != nil {
+		return utils.NewResponse(utils.CodeError, fmt.Sprintf("ensure approval policies: %v", err), nil)
+	}
+
 	return utils.NewResponse(utils.CodeCreated, "organization created successfully", orgToOutput(org))
 }
 

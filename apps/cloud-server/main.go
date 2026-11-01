@@ -8,7 +8,9 @@ import (
 
 	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/config"
+	"github.com/NasTecSol/nembus-core/grpc/auth"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+	"github.com/NasTecSol/nembus-core/grpc/sapagentpb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -265,6 +267,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		approvalsUC := usecase.NewApprovalsUseCase()
 		approvalsUC.RegisterAccommodator("goods_receipt_note", usecase.NewGoodsReceiptNoteApprovalAccommodator())
 		approvalsUC.RegisterAccommodator("catalog", usecase.NewCatalogPriceAccommodator())
+		// SAP invoice stock approvals are applied by the on-prem sap-agent after cloud review (no cloud SAP poster).
 		approvalsUC.RegisterAccommodator("sap_invoice", usecase.NewSAPInvoiceStockAccommodator())
 		approvalsHandler := handler.NewApprovalsHandler(approvalsUC)
 		router.RegisterApprovalsRoutes(api, approvalsHandler)
@@ -424,23 +427,32 @@ func main() {
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
-	// ── gRPC Backup Service ────────────────────────────────────────────────
+	// ── gRPC Backup & SAP Agent Services ───────────────────────────────────
+	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
+	sapAgentUC := usecase.NewSapAgentUseCase(tenantManager, masterRepo, sapMigrationUC)
+
 	go func() {
 		grpcAddr := ":" + cfg.GRPCPort
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
 			log.Fatalf("gRPC: failed to listen on %s: %v", grpcAddr, err)
 		}
-		grpcServer := grpc.NewServer()
+		grpcServer := grpc.NewServer(
+			grpc.ChainUnaryInterceptor(auth.UnaryServerInterceptor()),
+			grpc.ChainStreamInterceptor(auth.StreamServerInterceptor()),
+		)
 		backupSrv := grpcbackup.NewBackupServer(tenantManager, cfg.JWTSecret, cfg.PGDumpPath)
 		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
 
 		syncSrv := grpcbackup.NewSyncServer(tenantManager, masterPool)
 		syncpb.RegisterSyncServiceServer(grpcServer, syncSrv)
 
+		sapAgentSrv := grpcbackup.NewSapAgentServer(sapAgentUC)
+		sapagentpb.RegisterSapAgentServiceServer(grpcServer, sapAgentSrv)
+
 		// Enable reflection so grpcurl/Postman can discover services at runtime
 		reflection.Register(grpcServer)
-		log.Printf("✅ gRPC Backup & Sync Service listening on %s (reflection enabled)", grpcAddr)
+		log.Printf("✅ gRPC Backup, Sync & SapAgent services listening on %s (reflection enabled)", grpcAddr)
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("gRPC: serve error: %v", err)
 		}

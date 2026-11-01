@@ -2,14 +2,14 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"github.com/NasTecSol/nembus-sap-agent/config"
-	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
+	"github.com/NasTecSol/nembus-sap-agent/internal/cloudgrpc"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 )
 
@@ -21,33 +21,45 @@ type SAPClient interface {
 }
 
 type NembusClient interface {
-	FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error)
-	FetchTransactionLines(ctx context.Context, transactionID int64) ([]nembus.POSTransactionLine, error)
-	FetchTransactionPayments(ctx context.Context, transactionID int64) ([]nembus.POSPayment, error)
+	FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]cloudgrpc.POSTransaction, error)
+	FetchTransactionLines(ctx context.Context, transactionID int64) ([]cloudgrpc.POSTransactionLine, error)
+	FetchTransactionPayments(ctx context.Context, transactionID int64) ([]cloudgrpc.POSPayment, error)
 	MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error
 	FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error)
-	FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]nembus.SalesReturn, error)
-	FetchSalesReturnLines(ctx context.Context, returnID int64) ([]nembus.SalesReturnLine, error)
+	FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]cloudgrpc.SalesReturn, error)
+	FetchSalesReturnLines(ctx context.Context, returnID int64) ([]cloudgrpc.SalesReturnLine, error)
 	MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error
 	FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error)
-	HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error
+	HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []cloudgrpc.ShortageItem, summary string) error
 }
 
 type UpstreamSync struct {
-	cfg          *config.Config
+	settings     *Settings
 	sapClient    SAPClient
 	nembusClient NembusClient
 }
 
-func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient NembusClient) *UpstreamSync {
+func NewUpstreamSync(settings *Settings, sapClient SAPClient, nembusClient NembusClient) *UpstreamSync {
 	return &UpstreamSync{
-		cfg:          cfg,
+		settings:     settings,
 		sapClient:    sapClient,
 		nembusClient: nembusClient,
 	}
 }
 
 var ErrTransactionHeldForReview = errors.New("transaction held for stock review")
+
+func txMetadataBool(raw json.RawMessage, key string) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return false
+	}
+	v, ok := m[key].(bool)
+	return ok && v
+}
 
 type UpstreamStats struct {
 	TransactionsPosted int           `json:"transactions_posted"`
@@ -62,7 +74,7 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	start := time.Now()
 	stats := &UpstreamStats{}
 
-	limit := s.cfg.BatchSize
+	limit := s.settings.BatchSize
 	if limit <= 0 {
 		limit = 50
 	}
@@ -83,7 +95,7 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 				}
 				log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
 				stats.Errors++
-			} else if !s.cfg.DryRun {
+			} else if !s.settings.DryRun {
 				stats.TransactionsPosted++
 			}
 		}
@@ -100,7 +112,7 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 			if err := s.postSalesReturnToSAP(ctx, &ret); err != nil {
 				log.Printf("❌ Failed to post sales return %s (ID: %d) to SAP: %v", ret.ReturnNumber, ret.ID, err)
 				stats.Errors++
-			} else if !s.cfg.DryRun {
+			} else if !s.settings.DryRun {
 				stats.ReturnsPosted++
 			}
 		}
@@ -110,7 +122,7 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	return stats, nil
 }
 
-func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POSTransaction) error {
+func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *cloudgrpc.POSTransaction) error {
 	// 1. Fetch lines
 	lines, err := s.nembusClient.FetchTransactionLines(ctx, tx.ID)
 	if err != nil {
@@ -147,7 +159,7 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 			UnitPrice:       unitPriceNet,
 			PriceAfterVAT:   line.LineTotal / line.Quantity,
 			DiscountPercent: discountPct,
-			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
+			WarehouseCode:   s.settings.DefaultWarehouseCode,
 		})
 	}
 
@@ -166,20 +178,23 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 		DocumentLines: docLines,
 	}
 
-	whCode := s.cfg.NembusDefaultWarehouse
+	whCode := s.settings.DefaultWarehouseCode
+	forcePost := txMetadataBool(tx.Metadata, "sap_force_post")
 
 	// 2. Pre-flight stock check against SAP to avoid overselling
-	var shortages []nembus.ShortageItem
-	for _, line := range lines {
-		onHand, err := s.sapClient.CheckItemWarehouseStock(ctx, line.ProductSKU, whCode)
-		if err == nil && onHand < line.Quantity {
-			shortages = append(shortages, nembus.ShortageItem{
-				ProductID:   line.ProductID,
-				ProductSKU:  line.ProductSKU,
-				ProductName: line.ProductName,
-				Quantity:    line.Quantity,
-				SAPOnHand:   onHand,
-			})
+	var shortages []cloudgrpc.ShortageItem
+	if !forcePost {
+		for _, line := range lines {
+			onHand, err := s.sapClient.CheckItemWarehouseStock(ctx, line.ProductSKU, whCode)
+			if err == nil && onHand < line.Quantity {
+				shortages = append(shortages, cloudgrpc.ShortageItem{
+					ProductID:   line.ProductID,
+					ProductSKU:  line.ProductSKU,
+					ProductName: line.ProductName,
+					Quantity:    line.Quantity,
+					SAPOnHand:   onHand,
+				})
+			}
 		}
 	}
 
@@ -192,7 +207,7 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 		return ErrTransactionHeldForReview
 	}
 
-	if s.cfg.DryRun {
+	if s.settings.DryRun {
 		log.Printf("[DRY-RUN] Would post invoice for %s ($%.2f) to SAP", tx.TransactionNumber, tx.TotalAmount)
 		return nil
 	}
@@ -201,12 +216,12 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	sapInv, err := s.sapClient.PostInvoice(ctx, invReq)
 	if err != nil {
 		errStr := strings.ToLower(err.Error())
-		if strings.Contains(errStr, "fall below zero") || strings.Contains(errStr, "negative inventory") || strings.Contains(errStr, "code -10") || strings.Contains(errStr, "code 10") {
+		if !forcePost && (strings.Contains(errStr, "fall below zero") || strings.Contains(errStr, "negative inventory") || strings.Contains(errStr, "code -10") || strings.Contains(errStr, "code 10")) {
 			summary := fmt.Sprintf("SAP Negative Inventory Rejection on %s: %v", tx.TransactionNumber, err)
 			log.Printf("⚠️ %s. Intercepted and routing to Approval Review Queue...", summary)
-			var fallbackShortages []nembus.ShortageItem
+			var fallbackShortages []cloudgrpc.ShortageItem
 			for _, l := range lines {
-				fallbackShortages = append(fallbackShortages, nembus.ShortageItem{
+				fallbackShortages = append(fallbackShortages, cloudgrpc.ShortageItem{
 					ProductID:   l.ProductID,
 					ProductSKU:  l.ProductSKU,
 					ProductName: l.ProductName,
@@ -214,7 +229,10 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 					SAPOnHand:   0,
 				})
 			}
-			_ = s.nembusClient.HoldTransactionForStockReview(ctx, tx.ID, tx.TransactionNumber, tx.StoreID, whCode, tx.TotalAmount, fallbackShortages, summary)
+			if holdErr := s.nembusClient.HoldTransactionForStockReview(ctx, tx.ID, tx.TransactionNumber, tx.StoreID, whCode, tx.TotalAmount, fallbackShortages, summary); holdErr != nil {
+				return fmt.Errorf("sap post failed and hold for review failed: %w (hold: %v)", err, holdErr)
+			}
+			return ErrTransactionHeldForReview
 		}
 		return err
 	}
@@ -267,22 +285,22 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 
 func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) string {
 	if customerID == nil {
-		if s.cfg.NembusDefaultCustomer != "" {
-			return s.cfg.NembusDefaultCustomer
+		if s.settings.DefaultCustomerCode != "" {
+			return s.settings.DefaultCustomerCode
 		}
 		return "C000001"
 	}
 	code, err := s.nembusClient.FetchCustomerSAPCode(ctx, *customerID)
 	if err != nil || strings.TrimSpace(code) == "" {
-		if s.cfg.NembusDefaultCustomer != "" {
-			return s.cfg.NembusDefaultCustomer
+		if s.settings.DefaultCustomerCode != "" {
+			return s.settings.DefaultCustomerCode
 		}
 		return "C000001"
 	}
 	return strings.TrimSpace(code)
 }
 
-func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.SalesReturn) error {
+func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *cloudgrpc.SalesReturn) error {
 	lines, err := s.nembusClient.FetchSalesReturnLines(ctx, ret.ID)
 	if err != nil {
 		return fmt.Errorf("failed fetching return lines: %w", err)
@@ -318,7 +336,7 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 			Quantity:        line.Quantity,
 			UnitPrice:       line.UnitPrice,
 			PriceAfterVAT:   priceAfterVAT,
-			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
+			WarehouseCode:   s.settings.DefaultWarehouseCode,
 		}
 		if baseDocEntry != nil {
 			baseType := 13 // 13 = A/R Invoice
@@ -346,7 +364,7 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 		DocumentLines: docLines,
 	}
 
-	if s.cfg.DryRun {
+	if s.settings.DryRun {
 		log.Printf("[DRY-RUN] Would post Credit Note for %s ($%.2f) to SAP", ret.ReturnNumber, ret.TotalRefundAmount)
 		return nil
 	}

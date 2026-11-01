@@ -31,6 +31,18 @@ Postman collection and environment for testing the **NEMBUS** backend API and th
 | `biometric_bridge_url` | Local Fingerprint Hardware Bridge base URL                  | `http://127.0.0.1:5050`                 |
 | `tenant_id`            | Tenant identifier (slug) for `x-tenant-id`                  | `default` (must exist in DB)            |
 | `token`                | JWT from **Auth → Login**                                   | Set after login                         |
+
+## SAP Agent gRPC (sap-agent)
+
+Cloud-server exposes **`sapagent.SapAgentService`** on the gRPC port (environment `GRPCPort`, often `50051`). Use **grpcurl** with reflection enabled:
+
+```bash
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext -H "authorization: Bearer {{token}}" -H "x-tenant-id: {{tenant_id}}" \
+  localhost:50051 sapagent.SapAgentService/ResolveTenant
+```
+
+RPCs: `ResolveTenant`, `StreamMigrationIngest`, `StreamMasterDataUpsert`, `StreamSapOutbox`, `AckSapOutbox`, `HoldSapOutbox`, `GetReconciliationSummary`. Proto: `packages/core/grpc/sapagentpb/sap_agent.proto`.
 | `authorization_token`  | Supervisor override token (`X-Authorization-Token`)         | Auto-saved by Authorize Action requests |
 | `fmd_base64`           | Captured/consolidated ISO 19794-2:2005 fingerprint template | Auto-saved by Bridge Capture/Enrollment |
 | `store_id`             | Store ID for store-scoped requests                          | `1` (see sample data below)             |

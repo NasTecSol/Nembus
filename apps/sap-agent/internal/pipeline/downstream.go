@@ -6,21 +6,21 @@ import (
 	"log"
 	"time"
 
-	"github.com/NasTecSol/nembus-sap-agent/config"
-	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
+	"github.com/NasTecSol/nembus-core/usecase"
+	"github.com/NasTecSol/nembus-sap-agent/internal/cloudgrpc"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 )
 
 type DownstreamSync struct {
-	cfg          *config.Config
+	settings     *Settings
 	sapClient    *sap.Client
-	nembusClient *nembus.Client
+	nembusClient cloudgrpc.CloudGateway
 	lastSyncTime time.Time
 }
 
-func NewDownstreamSync(cfg *config.Config, sapClient *sap.Client, nembusClient *nembus.Client) *DownstreamSync {
+func NewDownstreamSync(settings *Settings, sapClient *sap.Client, nembusClient cloudgrpc.CloudGateway) *DownstreamSync {
 	return &DownstreamSync{
-		cfg:          cfg,
+		settings:     settings,
 		sapClient:    sapClient,
 		nembusClient: nembusClient,
 	}
@@ -79,7 +79,7 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 
 	// 3. Sync Products, Barcodes, and Prices in batches
 	skip := 0
-	top := s.cfg.BatchSize
+	top := s.settings.BatchSize
 	if top <= 0 {
 		top = 100
 	}
@@ -110,7 +110,7 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 			}
 
 			// Tax category default
-			taxCatID := s.cfg.NembusTaxCategoryID
+			taxCatID := s.settings.TaxCategoryID
 
 			// Check if weighted / scale item
 			isWeighted := false
@@ -118,7 +118,7 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 				isWeighted = true
 			}
 
-			if s.cfg.DryRun {
+			if s.settings.DryRun {
 				log.Printf("[DRY-RUN] Would upsert product SKU: %s (%s)", item.ItemCode, item.ItemName)
 				stats.Products++
 				continue
@@ -130,7 +130,25 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 				costPrice = item.MovingAveragePrice
 			}
 
-			prodID, err := s.nembusClient.UpsertProduct(ctx, item.ItemCode, item.ItemName, item.ForeignName, categoryID, baseUoMID, &taxCatID, isWeighted, costPrice)
+			rules, requiresApproval, err := s.nembusClient.GetApprovalPolicyRules(ctx, "catalog", "price_change")
+			if err != nil {
+				log.Printf("⚠️ Failed to load price-change approval policy for SKU %s: %v", item.ItemCode, err)
+			}
+			policy := usecase.ParseCatalogPricePolicy(rules, requiresApproval)
+
+			existingProductID, currentCost, foundProduct, _ := s.nembusClient.LookupProductBySKU(ctx, item.ItemCode)
+			skipCostUpdate := false
+			if review, reason := policy.CostIncreaseNeedsReview(currentCost, costPrice); review {
+				log.Printf("⚠️ %s for SKU %s. Routing to approval review...", reason, item.ItemCode)
+				if foundProduct {
+					if err := s.nembusClient.SubmitPriceApprovalRequest(ctx, existingProductID, item.ItemCode, s.settings.PriceListID, nil, nil, nil, &currentCost, &costPrice, reason); err != nil {
+						log.Printf("⚠️ Failed to submit cost approval for SKU %s: %v", item.ItemCode, err)
+					}
+				}
+				skipCostUpdate = true
+			}
+
+			prodID, err := s.nembusClient.UpsertProduct(ctx, item.ItemCode, item.ItemName, item.ForeignName, categoryID, baseUoMID, &taxCatID, isWeighted, costPrice, skipCostUpdate)
 			if err != nil {
 				log.Printf("❌ Failed to upsert product SKU %s: %v", item.ItemCode, err)
 				continue
@@ -153,38 +171,15 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 				}
 			}
 
-			// Query approval policy rules for catalog price changes
-			rules, requiresApproval, _ := s.nembusClient.GetApprovalPolicyRules(ctx, "catalog", "price_change")
-			priceDropRequiresApproval := true
-			costIncreaseThresholdPct := 10.0
-			belowCostRequiresApproval := true
+			// Query approval policy rules for catalog price changes (reuse policy loaded above)
+			priceDropRequiresApproval := policy.PriceDropRequiresApproval
+			belowCostRequiresApproval := policy.BelowCostRequiresApproval
 
-			if requiresApproval && rules != nil {
-				if v, ok := rules["price_drop_requires_approval"].(bool); ok {
-					priceDropRequiresApproval = v
-				}
-				if v, ok := rules["cost_increase_threshold_pct"].(float64); ok {
-					costIncreaseThresholdPct = v
-				}
-				if v, ok := rules["below_cost_requires_approval"].(bool); ok {
-					belowCostRequiresApproval = v
-				}
-			}
-
-			// Check Cost Price Governance
-			currentCost, _ := s.nembusClient.GetProductCostPrice(ctx, prodID)
-			if requiresApproval && currentCost > 0 && costPrice > currentCost {
-				pctIncrease := ((costPrice - currentCost) / currentCost) * 100.0
-				if pctIncrease >= costIncreaseThresholdPct {
-					reason := fmt.Sprintf("Cost price increased by %.1f%% (from %.2f to %.2f, threshold: %.1f%%)", pctIncrease, currentCost, costPrice, costIncreaseThresholdPct)
-					log.Printf("⚠️ %s for SKU %s. Routing to approval review...", reason, item.ItemCode)
-					_ = s.nembusClient.SubmitPriceApprovalRequest(ctx, prodID, item.ItemCode, s.cfg.NembusPriceListID, nil, nil, nil, &currentCost, &costPrice, reason)
-				}
-			}
+			currentCost, _ = s.nembusClient.GetProductCostPrice(ctx, prodID)
 
 			// Sync Prices with Governance
 			for _, price := range item.ItemPrices {
-				if price.PriceList == int(s.cfg.NembusPriceListID) && price.Price > 0 {
+				if price.PriceList == int(s.settings.PriceListID) && price.Price > 0 {
 					var uomEntry *int32
 					if price.UoMEntry != nil {
 						if uid, exists := uomMap[*price.UoMEntry]; exists {
@@ -192,12 +187,12 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 						}
 					}
 
-					oldPrice, priceExists, _ := s.nembusClient.GetActiveProductPrice(ctx, prodID, s.cfg.NembusPriceListID)
+					oldPrice, priceExists, _ := s.nembusClient.GetActiveProductPrice(ctx, prodID, s.settings.PriceListID)
 
 					priceReviewTriggered := false
 					var priceReviewReason string
 
-					if requiresApproval && priceExists && oldPrice > 0 {
+					if policy.RequiresApproval && priceExists && oldPrice > 0 {
 						if priceDropRequiresApproval && price.Price < oldPrice {
 							priceReviewTriggered = true
 							priceReviewReason = fmt.Sprintf("Selling price dropped from %.2f to %.2f", oldPrice, price.Price)
@@ -209,9 +204,11 @@ func (s *DownstreamSync) SyncAll(ctx context.Context, fullSync bool) (*SyncStats
 
 					if priceReviewTriggered {
 						log.Printf("⚠️ %s for SKU %s. Holding active POS price at %.2f and routing to approval review...", priceReviewReason, item.ItemCode, oldPrice)
-						_ = s.nembusClient.SubmitPriceApprovalRequest(ctx, prodID, item.ItemCode, s.cfg.NembusPriceListID, uomEntry, &oldPrice, &price.Price, &currentCost, &costPrice, priceReviewReason)
+						if err := s.nembusClient.SubmitPriceApprovalRequest(ctx, prodID, item.ItemCode, s.settings.PriceListID, uomEntry, &oldPrice, &price.Price, &currentCost, &costPrice, priceReviewReason); err != nil {
+							log.Printf("⚠️ Failed to submit price approval for SKU %s: %v", item.ItemCode, err)
+						}
 					} else {
-						if err := s.nembusClient.UpsertProductPrice(ctx, prodID, s.cfg.NembusPriceListID, uomEntry, price.Price); err == nil {
+						if err := s.nembusClient.UpsertProductPrice(ctx, prodID, s.settings.PriceListID, uomEntry, price.Price); err == nil {
 							stats.Prices++
 						}
 					}

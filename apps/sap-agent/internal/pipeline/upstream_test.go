@@ -11,10 +11,26 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
-	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
+	"github.com/NasTecSol/nembus-sap-agent/internal/cloudgrpc"
 	"github.com/NasTecSol/nembus-sap-agent/internal/pipeline"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 )
+
+func settingsFromLegacy(cfg *config.Config) *pipeline.Settings {
+	if cfg == nil {
+		cfg = &config.Config{BatchSize: 50}
+	}
+	return &pipeline.Settings{
+		OrganizationID:       cfg.NembusOrganizationID,
+		BatchSize:            cfg.BatchSize,
+		DryRun:               cfg.DryRun,
+		PriceListID:          cfg.NembusPriceListID,
+		TaxCategoryID:        cfg.NembusTaxCategoryID,
+		DefaultCustomerCode:  cfg.NembusDefaultCustomer,
+		DefaultWarehouseCode: cfg.NembusDefaultWarehouse,
+		UpstreamOutboxPollMs: cfg.UpstreamOutboxPollMs,
+	}
+}
 
 // MockSAPClient implements pipeline.SAPClient
 type MockSAPClient struct {
@@ -53,14 +69,14 @@ func (m *MockSAPClient) CheckItemWarehouseStock(ctx context.Context, itemCode, w
 
 // MockNembusClient implements pipeline.NembusClient
 type MockNembusClient struct {
-	unpostedPOSTransactions   []nembus.POSTransaction
-	txLines                   map[int64][]nembus.POSTransactionLine
-	txPayments                map[int64][]nembus.POSPayment
+	unpostedPOSTransactions   []cloudgrpc.POSTransaction
+	txLines                   map[int64][]cloudgrpc.POSTransactionLine
+	txPayments                map[int64][]cloudgrpc.POSPayment
 	markedTransactions        map[int64]markedSAPDoc
 	heldTransactions          map[int64]string
 
-	unpostedSalesReturns      []nembus.SalesReturn
-	returnLines               map[int64][]nembus.SalesReturnLine
+	unpostedSalesReturns      []cloudgrpc.SalesReturn
+	returnLines               map[int64][]cloudgrpc.SalesReturnLine
 	markedReturns             map[int64]markedSAPDoc
 	originalSAPDocEntries     map[int32]int
 
@@ -76,24 +92,24 @@ type markedSAPDoc struct {
 
 func newMockNembusClient() *MockNembusClient {
 	return &MockNembusClient{
-		txLines:               make(map[int64][]nembus.POSTransactionLine),
-		txPayments:            make(map[int64][]nembus.POSPayment),
+		txLines:               make(map[int64][]cloudgrpc.POSTransactionLine),
+		txPayments:            make(map[int64][]cloudgrpc.POSPayment),
 		markedTransactions:    make(map[int64]markedSAPDoc),
-		returnLines:           make(map[int64][]nembus.SalesReturnLine),
+		returnLines:           make(map[int64][]cloudgrpc.SalesReturnLine),
 		markedReturns:         make(map[int64]markedSAPDoc),
 		originalSAPDocEntries: make(map[int32]int),
 	}
 }
 
-func (m *MockNembusClient) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error) {
+func (m *MockNembusClient) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]cloudgrpc.POSTransaction, error) {
 	return m.unpostedPOSTransactions, nil
 }
 
-func (m *MockNembusClient) FetchTransactionLines(ctx context.Context, transactionID int64) ([]nembus.POSTransactionLine, error) {
+func (m *MockNembusClient) FetchTransactionLines(ctx context.Context, transactionID int64) ([]cloudgrpc.POSTransactionLine, error) {
 	return m.txLines[transactionID], nil
 }
 
-func (m *MockNembusClient) FetchTransactionPayments(ctx context.Context, transactionID int64) ([]nembus.POSPayment, error) {
+func (m *MockNembusClient) FetchTransactionPayments(ctx context.Context, transactionID int64) ([]cloudgrpc.POSPayment, error) {
 	return m.txPayments[transactionID], nil
 }
 
@@ -102,7 +118,7 @@ func (m *MockNembusClient) MarkTransactionPostedToSAP(ctx context.Context, trans
 	return nil
 }
 
-func (m *MockNembusClient) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error {
+func (m *MockNembusClient) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []cloudgrpc.ShortageItem, summary string) error {
 	if m.heldTransactions == nil {
 		m.heldTransactions = make(map[int64]string)
 	}
@@ -114,14 +130,14 @@ func (m *MockNembusClient) FetchCustomerSAPCode(ctx context.Context, customerID 
 	return "C_TEST", nil
 }
 
-func (m *MockNembusClient) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]nembus.SalesReturn, error) {
+func (m *MockNembusClient) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]cloudgrpc.SalesReturn, error) {
 	if m.fetchUnpostedReturnsErr != nil {
 		return nil, m.fetchUnpostedReturnsErr
 	}
 	return m.unpostedSalesReturns, nil
 }
 
-func (m *MockNembusClient) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]nembus.SalesReturnLine, error) {
+func (m *MockNembusClient) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]cloudgrpc.SalesReturnLine, error) {
 	if m.fetchReturnLinesErr != nil {
 		return nil, m.fetchReturnLinesErr
 	}
@@ -194,7 +210,7 @@ func TestProcessOutbox_LinkedReturnPosting(t *testing.T) {
 	reason := "Damaged item"
 	customerID := int32(101)
 
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                    10,
 			ReturnNumber:          "RET-2026-001",
@@ -210,7 +226,7 @@ func TestProcessOutbox_LinkedReturnPosting(t *testing.T) {
 		},
 	}
 
-	mockNembus.returnLines[10] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[10] = []cloudgrpc.SalesReturnLine{
 		{
 			ID:            101,
 			ReturnID:      10,
@@ -234,7 +250,7 @@ func TestProcessOutbox_LinkedReturnPosting(t *testing.T) {
 		NembusDefaultCustomer:  "C-DEFAULT",
 	}
 
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -297,7 +313,7 @@ func TestProcessOutbox_StandaloneReturnPosting(t *testing.T) {
 	mockSAP := &MockSAPClient{}
 	mockNembus := newMockNembusClient()
 
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                    20,
 			ReturnNumber:          "RET-STANDALONE-001",
@@ -311,7 +327,7 @@ func TestProcessOutbox_StandaloneReturnPosting(t *testing.T) {
 		},
 	}
 
-	mockNembus.returnLines[20] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[20] = []cloudgrpc.SalesReturnLine{
 		{
 			ID:           201,
 			ReturnID:     20,
@@ -328,7 +344,7 @@ func TestProcessOutbox_StandaloneReturnPosting(t *testing.T) {
 		BatchSize: 10,
 	}
 
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -354,7 +370,7 @@ func TestProcessOutbox_DryRun(t *testing.T) {
 	mockSAP := &MockSAPClient{}
 	mockNembus := newMockNembusClient()
 
-	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+	mockNembus.unpostedPOSTransactions = []cloudgrpc.POSTransaction{
 		{
 			ID:                15,
 			TransactionNumber: "TX-DRYRUN",
@@ -363,11 +379,11 @@ func TestProcessOutbox_DryRun(t *testing.T) {
 			TransactionDate:   time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.txLines[15] = []nembus.POSTransactionLine{
+	mockNembus.txLines[15] = []cloudgrpc.POSTransactionLine{
 		{ID: 151, TransactionID: 15, ProductSKU: "SKU-TX", Quantity: 1.0, UnitPrice: 100.0, LineTotal: 100.0},
 	}
 
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                30,
 			ReturnNumber:      "RET-DRYRUN",
@@ -376,7 +392,7 @@ func TestProcessOutbox_DryRun(t *testing.T) {
 			ReturnDate:        time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[30] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[30] = []cloudgrpc.SalesReturnLine{
 		{ID: 301, ReturnID: 30, ProductSKU: "SKU-D", Quantity: 1.0, UnitPrice: 200.0, RefundAmount: 200.0},
 	}
 
@@ -385,7 +401,7 @@ func TestProcessOutbox_DryRun(t *testing.T) {
 		DryRun:    true,
 	}
 
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -421,7 +437,7 @@ func TestProcessOutbox_CreditMemoFailure(t *testing.T) {
 	}
 	mockNembus := newMockNembusClient()
 
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                40,
 			ReturnNumber:      "RET-FAIL",
@@ -429,12 +445,12 @@ func TestProcessOutbox_CreditMemoFailure(t *testing.T) {
 			TotalRefundAmount: 50.0,
 		},
 	}
-	mockNembus.returnLines[40] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[40] = []cloudgrpc.SalesReturnLine{
 		{ID: 401, ReturnID: 40, ProductSKU: "SKU-FAIL", Quantity: 1.0, UnitPrice: 50.0, RefundAmount: 50.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -488,7 +504,7 @@ func TestProcessOutbox_ReturnInvalidQuantity(t *testing.T) {
 	mockSAP := &MockSAPClient{}
 	mockNembus := newMockNembusClient()
 
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                50,
 			ReturnNumber:      "RET-ZERO-QTY",
@@ -497,12 +513,12 @@ func TestProcessOutbox_ReturnInvalidQuantity(t *testing.T) {
 			ReturnDate:        time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[50] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[50] = []cloudgrpc.SalesReturnLine{
 		{ID: 501, ReturnID: 50, ProductSKU: "SKU-INV", Quantity: 0.0, UnitPrice: 50.0, RefundAmount: 50.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -528,7 +544,7 @@ func TestProcessOutbox_ReturnNegativeRefundAmount(t *testing.T) {
 	mockSAP := &MockSAPClient{}
 	mockNembus := newMockNembusClient()
 
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                60,
 			ReturnNumber:      "RET-NEG-AMT",
@@ -537,12 +553,12 @@ func TestProcessOutbox_ReturnNegativeRefundAmount(t *testing.T) {
 			ReturnDate:        time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[60] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[60] = []cloudgrpc.SalesReturnLine{
 		{ID: 601, ReturnID: 60, ProductSKU: "SKU-NEG", Quantity: 1.0, UnitPrice: 25.0, RefundAmount: -25.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -569,7 +585,7 @@ func TestProcessOutbox_ReturnUnresolvedOriginalDocEntry(t *testing.T) {
 	mockNembus := newMockNembusClient()
 
 	origTxID := int32(9999) // Non-existent in mock originalSAPDocEntries (resolves to 0)
-	mockNembus.unpostedSalesReturns = []nembus.SalesReturn{
+	mockNembus.unpostedSalesReturns = []cloudgrpc.SalesReturn{
 		{
 			ID:                    70,
 			ReturnNumber:          "RET-UNRESOLVED-ENTRY",
@@ -579,12 +595,12 @@ func TestProcessOutbox_ReturnUnresolvedOriginalDocEntry(t *testing.T) {
 			ReturnDate:            time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC),
 		},
 	}
-	mockNembus.returnLines[70] = []nembus.SalesReturnLine{
+	mockNembus.returnLines[70] = []cloudgrpc.SalesReturnLine{
 		{ID: 701, ReturnID: 70, ProductSKU: "SKU-UNRES", Quantity: 2.0, UnitPrice: 40.0, RefundAmount: 80.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10}
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)
@@ -625,10 +641,41 @@ func (s *stockShortageSAPClient) CheckItemWarehouseStock(ctx context.Context, it
 	return s.onHandStock, nil
 }
 
+func TestProcessOutbox_ForcePostSkipsStockHold(t *testing.T) {
+	mockSAP := &stockShortageSAPClient{onHandStock: 0.0}
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []cloudgrpc.POSTransaction{
+		{
+			ID:                99,
+			TransactionNumber: "TX-FORCE-001",
+			TransactionDate:   time.Now(),
+			TotalAmount:       200.0,
+			Status:            "completed",
+			Metadata:          json.RawMessage(`{"sap_force_post":true,"sap_sync_state":"ready_for_sap_post"}`),
+		},
+	}
+	mockNembus.txLines[99] = []cloudgrpc.POSTransactionLine{
+		{ID: 991, TransactionID: 99, ProductSKU: "SKU-DEPLETED", Quantity: 5.0, UnitPrice: 40.0, LineTotal: 200.0},
+	}
+
+	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
+	stats, err := sync.ProcessOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected ProcessOutbox error: %v", err)
+	}
+	if stats.TransactionsPosted != 1 {
+		t.Fatalf("expected force-posted transaction, got posted=%d held=%d", stats.TransactionsPosted, stats.TransactionsHeld)
+	}
+	if _, held := mockNembus.heldTransactions[99]; held {
+		t.Fatal("force post should not hold for stock review")
+	}
+}
+
 func TestProcessOutbox_StockShortageHold(t *testing.T) {
 	mockSAP := &stockShortageSAPClient{onHandStock: 0.0}
 	mockNembus := newMockNembusClient()
-	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+	mockNembus.unpostedPOSTransactions = []cloudgrpc.POSTransaction{
 		{
 			ID:                88,
 			TransactionNumber: "TX-HOLD-001",
@@ -637,12 +684,12 @@ func TestProcessOutbox_StockShortageHold(t *testing.T) {
 			Status:            "completed",
 		},
 	}
-	mockNembus.txLines[88] = []nembus.POSTransactionLine{
+	mockNembus.txLines[88] = []cloudgrpc.POSTransactionLine{
 		{ID: 881, TransactionID: 88, ProductSKU: "SKU-DEPLETED", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
 	}
 
 	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
-	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+	sync := pipeline.NewUpstreamSync(settingsFromLegacy(cfg), mockSAP, mockNembus)
 	ctx := context.Background()
 
 	stats, err := sync.ProcessOutbox(ctx)

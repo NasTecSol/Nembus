@@ -13,7 +13,6 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl/extractors"
-	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap/mappings"
 )
@@ -68,7 +67,7 @@ type Engine struct {
 	cfg         *config.AgentConfig
 	mssql       *db.MSSQLClient
 	sqlite      *db.SQLiteStore
-	cloudClient *transport.CloudClient
+	cloudClient MigrationSender
 
 	listeners   map[chan ProgressEvent]struct{}
 	listenersMu sync.RWMutex
@@ -78,7 +77,7 @@ type Engine struct {
 	currentRunID    string
 }
 
-func NewEngine(cfg *config.AgentConfig, mssql *db.MSSQLClient, sqlite *db.SQLiteStore, cloudClient *transport.CloudClient) *Engine {
+func NewEngine(cfg *config.AgentConfig, mssql *db.MSSQLClient, sqlite *db.SQLiteStore, cloudClient MigrationSender) *Engine {
 	return &Engine{
 		cfg:         cfg,
 		mssql:       mssql,
@@ -105,12 +104,11 @@ func (e *Engine) getMSSQLClient() (*db.MSSQLClient, error) {
 
 // getCloudClient returns the engine's shared CloudClient, creating one if not yet initialized.
 // This avoids allocating a new http.Client (with its connection pool) on every domain step.
-func (e *Engine) getCloudClient() *transport.CloudClient {
+func (e *Engine) getCloudClient() MigrationSender {
 	if e.cloudClient != nil {
 		return e.cloudClient
 	}
-	e.cloudClient = transport.NewCloudClient(config.Get().Cloud)
-	return e.cloudClient
+	panic("migration cloud client not configured")
 }
 
 func (e *Engine) Subscribe() chan ProgressEvent {

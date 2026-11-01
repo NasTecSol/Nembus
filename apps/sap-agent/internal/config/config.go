@@ -21,11 +21,28 @@ type MSSQLConfig struct {
 
 type CloudConfig struct {
 	BaseURL            string `json:"base_url"`
+	GRPCAddr           string `json:"grpc_addr,omitempty"`
 	APIKey             string `json:"api_key"`
 	AppUpdateClientKey string `json:"app_update_client_key,omitempty"`
 	OrganizationID     int    `json:"organization_id"`
 	TimeoutSeconds     int    `json:"timeout_seconds"`
-	DatabaseURL        string `json:"database_url,omitempty"`
+}
+
+type SAPServiceLayerConfig struct {
+	URL             string `json:"url"`
+	CompanyDB       string `json:"company_db"`
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	InsecureSkipSSL bool   `json:"insecure_skip_ssl"`
+}
+
+type SyncConfig struct {
+	PriceListID          int32  `json:"price_list_id"`
+	TaxCategoryID        int32  `json:"tax_category_id"`
+	DefaultCustomerCode  string `json:"default_customer_code"`
+	DefaultWarehouseCode string `json:"default_warehouse_code"`
+	DryRun               bool   `json:"dry_run"`
+	UpstreamOutboxPollMs int    `json:"upstream_outbox_poll_ms"`
 }
 
 type AgentConfig struct {
@@ -69,6 +86,8 @@ type AgentConfig struct {
 
 	MSSQL MSSQLConfig `json:"mssql"`
 	Cloud CloudConfig `json:"cloud"`
+	SAP   SAPServiceLayerConfig `json:"sap_service_layer"`
+	Sync  SyncConfig            `json:"sync"`
 }
 
 var (
@@ -101,11 +120,11 @@ func DefaultConfig() *AgentConfig {
 		ReconciliationIntervalSec: 3600,
 		ReconciliationAutoRun:     true,
 		MSSQL: MSSQLConfig{
-			Host:                   "192.168.18.77",
+			Host:                   "",
 			Port:                   1433,
-			User:                   "admin",
-			Password:               "nastecsol",
-			Database:               "Qadsiya",
+			User:                   "",
+			Password:               "",
+			Database:               "",
 			Encrypt:                false,
 			TrustServerCertificate: true,
 			ConnectionTimeout:      15,
@@ -116,6 +135,17 @@ func DefaultConfig() *AgentConfig {
 			AppUpdateClientKey: "nembus-pos-update-client-key-default",
 			OrganizationID:     1,
 			TimeoutSeconds:     60,
+		},
+		SAP: SAPServiceLayerConfig{
+			URL:             "https://127.0.0.1:50000/b1s/v1",
+			InsecureSkipSSL: true,
+		},
+		Sync: SyncConfig{
+			PriceListID:          1,
+			TaxCategoryID:        1,
+			DefaultCustomerCode:  "C000001",
+			DefaultWarehouseCode: "01",
+			UpstreamOutboxPollMs: 3000,
 		},
 	}
 }

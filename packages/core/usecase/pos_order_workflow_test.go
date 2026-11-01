@@ -39,6 +39,7 @@ type workflowMockDBTX struct {
 	// Recorded metadata updates
 	updatedPosMetadata    []repository.UpdatePosTransactionMetadataParams
 	updatedReturnMetadata []repository.UpdateSalesReturnMetadataParams
+	catalogPriceUpserts   int
 
 	// Keypair for device signing
 	privateKeyPEM       string
@@ -509,6 +510,18 @@ func (r *workflowMockRow) Scan(dest ...interface{}) error {
 				_ = totPtr.Scan("115.00")
 			}
 		}
+		return nil
+
+	case strings.Contains(s, "UpsertProductPrice") || strings.Contains(s, "INSERT INTO product_prices"):
+		r.mock.catalogPriceUpserts++
+		if len(dest) >= 1 {
+			if idPtr, ok := dest[0].(*int32); ok {
+				*idPtr = 1
+			}
+		}
+		return nil
+
+	case strings.Contains(s, "UpdateProductCostPrice") || (strings.Contains(s, "UPDATE products") && strings.Contains(s, "cost_price")):
 		return nil
 
 	case strings.Contains(s, "UpdatePOSTransactionStatus"):

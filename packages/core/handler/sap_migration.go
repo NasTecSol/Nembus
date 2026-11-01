@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,10 @@ func NewSAPMigrationHandler(uc *usecase.SAPMigrationUseCase) *SAPMigrationHandle
 }
 
 func (h *SAPMigrationHandler) IngestBatch(c *gin.Context) {
+	if os.Getenv("SAP_MIGRATION_HTTP_ENABLED") == "false" {
+		c.JSON(http.StatusGone, gin.H{"error": "HTTP migration ingest disabled; use SapAgent gRPC StreamMigrationIngest"})
+		return
+	}
 	var reader io.Reader = c.Request.Body
 
 	// Handle Gzip Content-Encoding if sent by agent

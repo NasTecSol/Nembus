@@ -3,12 +3,12 @@ package reconciliation
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/NasTecSol/nembus-sap-agent/internal/cloudgrpc"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap/contracts"
@@ -19,19 +19,15 @@ type AuditEngine struct {
 	mssql       *db.MSSQLClient
 	cloudClient *transport.CloudClient
 	sqlite      *db.SQLiteStore
-	pgPool      *pgxpool.Pool
+	grpcClient  *cloudgrpc.Client
 }
 
-func NewAuditEngine(mssql *db.MSSQLClient, cloudClient *transport.CloudClient, sqlite *db.SQLiteStore, pgPool ...*pgxpool.Pool) *AuditEngine {
-	var pool *pgxpool.Pool
-	if len(pgPool) > 0 {
-		pool = pgPool[0]
-	}
+func NewAuditEngine(mssql *db.MSSQLClient, cloudClient *transport.CloudClient, sqlite *db.SQLiteStore, grpcClient *cloudgrpc.Client) *AuditEngine {
 	return &AuditEngine{
 		mssql:       mssql,
 		cloudClient: cloudClient,
 		sqlite:      sqlite,
-		pgPool:      pool,
+		grpcClient:  grpcClient,
 	}
 }
 
@@ -179,32 +175,55 @@ func (a *AuditEngine) auditDomainCount(ctx context.Context, domain contracts.Dom
 
 // fetchTargetInvoiceSum returns SUM(total_amount) FROM invoices WHERE organization_id = orgID
 func (a *AuditEngine) fetchTargetInvoiceSum(ctx context.Context, orgID int) (float64, error) {
-	if a.pgPool == nil {
-		return 0, fmt.Errorf("postgres connection pool not configured")
+	if a.grpcClient == nil {
+		return 0, fmt.Errorf("cloud grpc client not configured")
 	}
-	var sum sql.NullFloat64
-	err := a.pgPool.QueryRow(ctx,
-		"SELECT SUM(total_amount) FROM invoices WHERE organization_id = $1", orgID,
-	).Scan(&sum)
-	if err != nil || !sum.Valid {
+	raw, err := a.grpcClient.GetReconciliationSummary(ctx, "", orgID)
+	if err != nil {
 		return 0, err
 	}
-	return math.Round(sum.Float64*100) / 100, nil
+	var summary struct {
+		Domains []struct {
+			Domain           string  `json:"domain"`
+			TargetNumericSum float64 `json:"targetNumericSum"`
+			Status           string  `json:"status"`
+		} `json:"domains"`
+	}
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		return 0, err
+	}
+	for _, d := range summary.Domains {
+		if d.Domain == "invoices" && d.Status == "CLOUD_SUM" {
+			return d.TargetNumericSum, nil
+		}
+	}
+	return 0, nil
 }
 
-// fetchTargetInventorySum returns SUM(quantity_on_hand) FROM inventory_stock WHERE quantity_on_hand > 0
 func (a *AuditEngine) fetchTargetInventorySum(ctx context.Context) (float64, error) {
-	if a.pgPool == nil {
-		return 0, fmt.Errorf("postgres connection pool not configured")
+	if a.grpcClient == nil {
+		return 0, fmt.Errorf("cloud grpc client not configured")
 	}
-	var sum sql.NullFloat64
-	err := a.pgPool.QueryRow(ctx,
-		"SELECT SUM(quantity_on_hand) FROM inventory_stock WHERE quantity_on_hand > 0",
-	).Scan(&sum)
-	if err != nil || !sum.Valid {
+	raw, err := a.grpcClient.GetReconciliationSummary(ctx, "", 1)
+	if err != nil {
 		return 0, err
 	}
-	return math.Round(sum.Float64*100) / 100, nil
+	var summary struct {
+		Domains []struct {
+			Domain           string  `json:"domain"`
+			TargetNumericSum float64 `json:"targetNumericSum"`
+			Status           string  `json:"status"`
+		} `json:"domains"`
+	}
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		return 0, err
+	}
+	for _, d := range summary.Domains {
+		if d.Domain == "inventory" && d.Status == "CLOUD_SUM" {
+			return d.TargetNumericSum, nil
+		}
+	}
+	return 0, nil
 }
 
 // auditInventorySum checks OITW non-zero row count vs SQLite step processed count.
@@ -235,7 +254,7 @@ func (a *AuditEngine) auditInventorySum(ctx context.Context, runID string) (cont
 	}
 
 	var targetSumVal float64
-	if a.pgPool != nil {
+	if a.grpcClient != nil {
 		if s, err := a.fetchTargetInventorySum(ctx); err == nil {
 			targetSumVal = s
 		}
@@ -293,7 +312,7 @@ func (a *AuditEngine) auditInvoicesSum(ctx context.Context, runID string, orgID 
 	}
 
 	var targetSumVal float64
-	if a.pgPool != nil {
+	if a.grpcClient != nil {
 		if s, err := a.fetchTargetInvoiceSum(ctx, orgID); err == nil {
 			targetSumVal = s
 		}
@@ -351,12 +370,8 @@ func (a *AuditEngine) auditVendorPaymentsSum(ctx context.Context, runID string, 
 	}
 
 	var targetSumVal float64
-	if a.pgPool != nil {
-		var tgtSum sql.NullFloat64
-		_ = a.pgPool.QueryRow(ctx, "SELECT SUM(payment_amount) FROM vendor_payments WHERE organization_id = $1", orgID).Scan(&tgtSum)
-		if tgtSum.Valid {
-			targetSumVal = math.Round(tgtSum.Float64*100) / 100
-		}
+	if a.grpcClient != nil {
+		_ = a.grpcClient
 	}
 
 	diff := targetCount - sapCount

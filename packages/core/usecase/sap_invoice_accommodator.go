@@ -53,6 +53,28 @@ func (a *SAPInvoiceStockAccommodator) SetPoster(p SAPInvoicePoster) {
 	a.poster = p
 }
 
+func mergePosTransactionMetadata(ctx context.Context, repo *repository.Queries, txID int32, patch map[string]any) error {
+	tx, err := repo.GetPosTransaction(ctx, txID)
+	if err != nil {
+		return err
+	}
+	merged := map[string]any{}
+	if len(tx.Metadata) > 0 {
+		_ = json.Unmarshal(tx.Metadata, &merged)
+	}
+	for k, v := range patch {
+		merged[k] = v
+	}
+	rawMeta, err := json.Marshal(merged)
+	if err != nil {
+		return err
+	}
+	return repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
+		ID:       txID,
+		Metadata: rawMeta,
+	})
+}
+
 func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *repository.Queries, req repository.ApprovalRequest, reviewerID int32) error {
 	if repo == nil {
 		return errors.New("repository is not configured")
@@ -65,38 +87,28 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 		return errors.New("transaction_id is required in payload")
 	}
 
+	txID := int32(payload.TransactionID)
+
 	// If poster is available, execute verified post to SAP
 	if a.poster != nil {
 		docEntry, docNum, err := a.poster.PostHeldInvoiceToSAP(ctx, payload.TransactionID, false)
 		if err != nil {
 			return fmt.Errorf("failed posting held invoice to SAP: %w", err)
 		}
-		meta := map[string]any{
+		return mergePosTransactionMetadata(ctx, repo, txID, map[string]any{
 			"sap_doc_entry":  docEntry,
 			"sap_doc_num":    docNum,
 			"sap_sync_state": "synced",
 			"sap_posted_at":  time.Now().Format(time.RFC3339),
 			"approved_by":    reviewerID,
-		}
-		rawMeta, _ := json.Marshal(meta)
-		_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-			ID:       int32(payload.TransactionID),
-			Metadata: rawMeta,
-		})
-	} else {
-		// Offline / queue approval marking
-		meta := map[string]any{
-			"sap_sync_state": "approved_pending_upload",
-			"approved_by":    reviewerID,
-			"approved_at":    time.Now().Format(time.RFC3339),
-		}
-		rawMeta, _ := json.Marshal(meta)
-		_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-			ID:       int32(payload.TransactionID),
-			Metadata: rawMeta,
 		})
 	}
-	return nil
+
+	return mergePosTransactionMetadata(ctx, repo, txID, map[string]any{
+		"sap_sync_state": "ready_for_sap_post",
+		"approved_by":    reviewerID,
+		"approved_at":    time.Now().Format(time.RFC3339),
+	})
 }
 
 func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *repository.Queries, req repository.ApprovalRequest, notes string) error {
@@ -110,6 +122,8 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 	if payload.TransactionID <= 0 {
 		return errors.New("transaction_id is required in payload")
 	}
+
+	txID := int32(payload.TransactionID)
 
 	// 1. Create internal inventory adjustments for variance
 	for _, item := range payload.ShortageItems {
@@ -142,35 +156,24 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 		}
 	}
 
-	// 2. Force-post to SAP if poster configured, otherwise record adjusted state
+	// 2. Force-post to SAP if poster configured, otherwise queue agent force post
 	if a.poster != nil {
 		docEntry, docNum, err := a.poster.PostHeldInvoiceToSAP(ctx, payload.TransactionID, true)
 		if err == nil {
-			meta := map[string]any{
+			return mergePosTransactionMetadata(ctx, repo, txID, map[string]any{
 				"sap_doc_entry":  docEntry,
 				"sap_doc_num":    docNum,
 				"sap_sync_state": "force_synced_after_adjustment",
 				"rejected_notes": notes,
 				"sap_posted_at":  time.Now().Format(time.RFC3339),
-			}
-			rawMeta, _ := json.Marshal(meta)
-			_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-				ID:       int32(payload.TransactionID),
-				Metadata: rawMeta,
 			})
-			return nil
 		}
 	}
 
-	meta := map[string]any{
-		"sap_sync_state": "adjustment_created_pending_force",
+	return mergePosTransactionMetadata(ctx, repo, txID, map[string]any{
+		"sap_sync_state": "ready_for_sap_post",
+		"sap_force_post": true,
 		"rejected_notes": notes,
 		"adjusted_at":    time.Now().Format(time.RFC3339),
-	}
-	rawMeta, _ := json.Marshal(meta)
-	_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-		ID:       int32(payload.TransactionID),
-		Metadata: rawMeta,
 	})
-	return nil
 }

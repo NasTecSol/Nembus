@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package sapagent;
+
+option go_package = "github.com/NasTecSol/nembus-core/grpc/sapagentpb";
+
+// SapAgentService is the production integration surface for on-prem SAP agents.
+service SapAgentService {
+  rpc ResolveTenant(TenantResolveRequest) returns (TenantResolveResponse);
+  rpc StreamMigrationIngest(stream MigrationChunk) returns (MigrationIngestAck);
+  rpc StreamMasterDataUpsert(stream MasterDataUpsert) returns (stream MasterDataUpsertAck);
+  rpc StreamSapOutbox(SapOutboxRequest) returns (stream SapOutboxEvent);
+  rpc AckSapOutbox(AckSapOutboxRequest) returns (AckSapOutboxResponse);
+  rpc HoldSapOutbox(HoldSapOutboxRequest) returns (HoldSapOutboxResponse);
+  rpc GetReconciliationSummary(ReconciliationRequest) returns (ReconciliationSummary);
+}
+
+message TenantResolveRequest {
+  string tenant_slug = 1;
+}
+
+message TenantResolveResponse {
+  string tenant_slug = 1;
+  string tenant_name = 2;
+  int32 organization_id = 3;
+  int32 default_store_id = 4;
+}
+
+message MigrationChunk {
+  string tenant_slug = 1;
+  int32 organization_id = 2;
+  string batch_id = 3;
+  string run_id = 4;
+  string domain = 5;
+  int32 sequence_number = 6;
+  bool is_last_batch = 7;
+  bytes payload_gzip = 8;
+  string request_id = 9;
+}
+
+message MigrationIngestAck {
+  bool success = 1;
+  string batch_id = 2;
+  string domain = 3;
+  int32 records_staged = 4;
+  int32 records_merged = 5;
+  int32 records_failed = 6;
+  int32 records_skipped = 7;
+  string error_message = 8;
+  repeated string errors = 9;
+}
+
+message MasterDataUpsert {
+  string tenant_slug = 1;
+  int32 organization_id = 2;
+  string operation = 3;
+  bytes payload_json = 4;
+}
+
+message MasterDataUpsertAck {
+  bool success = 1;
+  string operation = 2;
+  int32 entity_id = 3;
+  string error_message = 4;
+  bytes result_json = 5;
+}
+
+message SapOutboxRequest {
+  string tenant_slug = 1;
+  int32 limit = 2;
+}
+
+message SapOutboxEvent {
+  string entity_type = 1;
+  int64 entity_id = 2;
+  bytes payload_json = 3;
+  bytes lines_json = 4;
+  bytes payments_json = 5;
+}
+
+message SapOutboxAckItem {
+  string entity_type = 1;
+  int64 entity_id = 2;
+  int32 sap_doc_entry = 3;
+  int32 sap_doc_num = 4;
+}
+
+message AckSapOutboxRequest {
+  string tenant_slug = 1;
+  int32 organization_id = 2;
+  repeated SapOutboxAckItem items = 3;
+}
+
+message AckSapOutboxResponse {
+  int32 acknowledged = 1;
+}
+
+message HoldSapOutboxRequest {
+  string tenant_slug = 1;
+  int32 organization_id = 2;
+  string entity_type = 3;
+  int64 entity_id = 4;
+  string transaction_number = 5;
+  int32 store_id = 6;
+  string warehouse_code = 7;
+  double total_amount = 8;
+  string summary = 9;
+  bytes shortage_items_json = 10;
+}
+
+message HoldSapOutboxResponse {
+  bool success = 1;
+}
+
+message ReconciliationRequest {
+  string tenant_slug = 1;
+  int32 organization_id = 2;
+  string run_id = 3;
+}
+
+message DomainReconciliationRow {
+  string domain = 1;
+  int64 sap_source_count = 2;
+  int64 target_count = 3;
+  int64 difference = 4;
+  double sap_numeric_sum = 5;
+  double target_numeric_sum = 6;
+  double sum_difference = 7;
+  string status = 8;
+  string notes = 9;
+}
+
+message ReconciliationSummary {
+  string run_id = 1;
+  int32 organization_id = 2;
+  string generated_at_rfc3339 = 3;
+  repeated DomainReconciliationRow domains = 4;
+}

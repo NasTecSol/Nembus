@@ -621,6 +621,40 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 		for _, item := range payload.PriceItems {
 			metaBytes, _ := json.Marshal(item.Metadata)
+			pricePolicy := LoadCatalogPricePolicy(ctx, tx, int32(payload.OrganizationID))
+
+			var productID int32
+			var oldPrice, costPrice float64
+			var priceExists bool
+			_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+				return r.Scan(&productID, &costPrice, &oldPrice)
+			}, `
+				SELECT p.id, COALESCE(p.cost_price, 0), COALESCE(pp.price, 0)
+				FROM products p
+				LEFT JOIN price_lists pl ON pl.code = $3
+				LEFT JOIN product_prices pp ON pp.product_id = p.id AND pp.price_list_id = pl.id AND pp.is_active = true
+				WHERE p.organization_id = $1 AND p.sku = $2
+				LIMIT 1`, payload.OrganizationID, item.ProductSKU, item.PriceListCode)
+			if productID > 0 && oldPrice > 0 {
+				priceExists = true
+			}
+
+			if review, reason := pricePolicy.PriceChangeNeedsReview(oldPrice, item.Price, costPrice, priceExists); review {
+				reqPayload, _ := json.Marshal(map[string]any{
+					"product_id": productID, "product_sku": item.ProductSKU,
+					"price_list_code": item.PriceListCode, "old_price": oldPrice, "new_price": item.Price,
+					"old_cost_price": costPrice, "new_cost_price": costPrice, "reason": reason,
+					"source": "sap_migration",
+				})
+				if err := SubmitPendingCatalogPriceApproval(ctx, tx, int32(payload.OrganizationID), productID, item.ProductSKU, reqPayload, reason); err != nil {
+					failed++
+					errs = append(errs, fmt.Sprintf("price_item %s@%s approval: %v", item.ProductSKU, item.PriceListCode, err))
+				} else {
+					skipped++
+				}
+				continue
+			}
+
 			_ = execWithSavepoint(ctx, tx, `
 				DELETE FROM product_prices 
 				WHERE product_id = (SELECT id FROM products WHERE organization_id = $1 AND sku = $2)

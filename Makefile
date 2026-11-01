@@ -43,7 +43,7 @@ build-client:
 
 build-agent:
 	@echo "==> Building SAP agent..."
-	@cd apps/sap-agent && go build -o bin/sap-agent cmd/main.go
+	@cd apps/sap-agent && go build -o bin/sap-agent cmd/agent/main.go
 
 dev-server:
 	@cd apps/cloud-server && go run main.go dev
@@ -52,7 +52,7 @@ dev-client:
 	@cd apps/pos-client && wails dev
 
 dev-agent:
-	@cd apps/sap-agent && go run cmd/main.go daemon
+	@cd apps/sap-agent && go run cmd/agent/main.go
 
 sync-notebook:
 	@echo "==> Bundling NotebookLM context sources..."
