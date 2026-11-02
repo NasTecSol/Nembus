@@ -22,7 +22,7 @@ func RunElevatedWinBioCapture(unitID uint32, timeoutMs int) (*biometrics.Capture
 	_ = os.Remove(resultFile)
 
 	args := fmt.Sprintf(
-		`--winbio-capture-worker --unit-id=%d --timeout-ms=%d --result-file=%s`,
+		`--winbio-capture-worker --unit-id=%d --timeout-ms=%d --result-file="%s"`,
 		unitID,
 		timeoutMs,
 		resultFile,
@@ -63,7 +63,10 @@ func RunElevatedWinBioCapture(unitID uint32, timeoutMs int) (*biometrics.Capture
 // RunWinBioCaptureWorker is invoked by the elevated --winbio-capture-worker process.
 func RunWinBioCaptureWorker(unitID uint32, timeoutMs int, resultFile string) error {
 	_ = biometrics.InitRuntime()
-	res, err := biometrics.CaptureWinBioSampleDirect(unitID, timeoutMs)
+	// System-pool WinBio capture requires the calling process to own foreground
+	// focus. The elevated worker has its own process, so it must show the same
+	// capture dialog instead of calling the direct, no-dialog variant.
+	res, err := biometrics.CaptureWinBioSample(unitID, timeoutMs)
 	payload := map[string]any{"success": err == nil, "message": ""}
 	if err != nil {
 		payload["message"] = err.Error()
