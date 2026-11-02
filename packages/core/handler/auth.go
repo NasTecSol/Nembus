@@ -118,3 +118,77 @@ func (h *AuthHandler) AuthorizeAction(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// LoginWithBiometric handles POST /api/auth/login/biometric
+// @Summary      Biometric login (1:1 or 1:N touch-only)
+// @Description  Authenticates using an ISO/IEC 19794-2:2005 probe FMD. Omit user_login for 1:N identification across active enrolled users.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        request      body      BiometricLoginRequest  true  "Probe FMD"
+// @Success      200  {object}  BiometricLoginResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Router       /api/auth/login/biometric [post]
+func (h *AuthHandler) LoginWithBiometric(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req struct {
+		FMDBase64 string `json:"fmd_base64" binding:"required"`
+		UserLogin string `json:"user_login,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "fmd_base64 is required", nil))
+		return
+	}
+
+	resp := h.useCase.LoginWithBiometric(c.Request.Context(), req.FMDBase64, req.UserLogin)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// AuthorizeActionWithBiometric handles POST /api/auth/authorize-action/biometric
+// @Summary      Supervisor override via fingerprint
+// @Description  Identifies a supervisor by fingerprint (1:1 if supervisor_login provided, else 1:N) and mints a 5-minute X-Authorization-Token when the matched user holds permission_code.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        request      body      BiometricAuthorizeActionRequest  true  "Supervisor fingerprint authorization"
+// @Success      200  {object}  AuthorizeActionResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      403  {object}  ErrorResponse
+// @Router       /api/auth/authorize-action/biometric [post]
+func (h *AuthHandler) AuthorizeActionWithBiometric(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req struct {
+		FMDBase64       string `json:"fmd_base64" binding:"required"`
+		SupervisorLogin string `json:"supervisor_login,omitempty"`
+		PermissionCode  string `json:"permission_code" binding:"required"`
+		CashierID       *int32 `json:"cashier_id,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "fmd_base64 and permission_code are required", nil))
+		return
+	}
+
+	resp := h.useCase.AuthorizeActionWithBiometric(
+		c.Request.Context(),
+		req.FMDBase64,
+		req.SupervisorLogin,
+		req.PermissionCode,
+		req.CashierID,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
