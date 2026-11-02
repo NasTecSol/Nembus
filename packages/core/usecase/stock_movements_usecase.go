@@ -484,6 +484,57 @@ func (uc *StockMovementsUseCase) GetStockMovement(ctx context.Context, id string
 	return utils.NewResponse(utils.CodeOK, "stock movement fetched", stockMovementBasicToOutput(row))
 }
 
+// ListStockMovementReferenceTypes returns the reference types used by this tenant.
+func (uc *StockMovementsUseCase) ListStockMovementReferenceTypes(ctx context.Context) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	types, err := uc.repo.ListStockMovementReferenceTypes(ctx)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	if types == nil {
+		types = []string{}
+	}
+	return utils.NewResponse(utils.CodeOK, "stock movement reference types fetched", types)
+}
+
+// ListStockMovementsByReferenceType lists matching movements with filtered pagination totals.
+func (uc *StockMovementsUseCase) ListStockMovementsByReferenceType(ctx context.Context, referenceType string, page, limit int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	referenceType = strings.TrimSpace(referenceType)
+	if referenceType == "" {
+		return utils.NewResponse(utils.CodeBadReq, "reference_type is required", nil)
+	}
+	p, l, offset := calcPagination(page, limit)
+	ref := pgtype.Text{String: referenceType, Valid: true}
+	totalCount, err := uc.repo.CountStockMovementsByReferenceType(ctx, ref)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	rows, err := uc.repo.ListStockMovementsByReferenceType(ctx, repository.ListStockMovementsByReferenceTypeParams{
+		ReferenceType: ref,
+		Limit:         l,
+		Offset:        offset,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	out := make([]StockMovementReadOutput, len(rows))
+	for i := range rows {
+		out[i] = stockMovementReadToOutput(repository.ListStockMovementsRow(rows[i]))
+	}
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementReadListResponse{
+		Data:       out,
+		TotalCount: totalCount,
+		Page:       p,
+		Limit:      l,
+		TotalPages: calcTotalPages(totalCount, l),
+	})
+}
+
 // ListStockMovements lists stock movements with pagination.
 func (uc *StockMovementsUseCase) ListStockMovements(ctx context.Context, page, limit int32) *repository.Response {
 	if resp := uc.repoOrErr(); resp != nil {
@@ -498,11 +549,11 @@ func (uc *StockMovementsUseCase) ListStockMovements(ctx context.Context, page, l
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-	out := make([]StockMovementOutput, len(rows))
+	out := make([]StockMovementReadOutput, len(rows))
 	for i := range rows {
-		out[i] = stockMovementBasicToOutput(rows[i])
+		out[i] = stockMovementReadToOutput(repository.ListStockMovementsRow(rows[i]))
 	}
-	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementListResponse{
+	return utils.NewResponse(utils.CodeOK, "stock movements fetched", StockMovementReadListResponse{
 		Data:       out,
 		TotalCount: totalCount,
 		Page:       p,

@@ -152,3 +152,94 @@ SELECT
     SUM(quantity_allocated) AS total_allocated
 FROM inventory_stock
 WHERE store_id = $1;
+
+-- name: GetInventoryTotals :one
+WITH scope AS (
+    SELECT sqlc.arg('organization_id')::int AS organization_id,
+           sqlc.arg('store_id')::int AS store_id,
+           sqlc.arg('storage_location_id')::int AS storage_location_id,
+           sqlc.arg('price_list_id')::int AS price_list_id
+), scoped_stores AS (
+    SELECT st.id, st.name
+    FROM stores st, scope sc
+    WHERE st.organization_id = sc.organization_id
+      AND (sc.store_id = 0 OR st.id = sc.store_id)
+), stock AS (
+    SELECT s.store_id, s.product_id, s.product_variant_id,
+           SUM(COALESCE(s.quantity_on_hand, 0)) AS units,
+           SUM(COALESCE(s.quantity_available, 0)) AS available_units
+    FROM inventory_stock s
+    JOIN scoped_stores st ON st.id = s.store_id
+    JOIN products p ON p.id = s.product_id
+    CROSS JOIN scope sc
+    WHERE p.organization_id = sc.organization_id AND p.track_inventory = true
+      AND (sc.storage_location_id = 0 OR s.storage_location_id = sc.storage_location_id)
+    GROUP BY s.store_id, s.product_id, s.product_variant_id
+), valued_stock AS (
+    SELECT s.*, NULLIF(to_jsonb(p)->>'cost_price', '')::numeric AS unit_cost,
+           sale.price AS unit_sale_price
+    FROM stock s
+    JOIN products p ON p.id = s.product_id
+    CROSS JOIN scope sc
+    LEFT JOIN LATERAL (
+        SELECT pp.price
+        FROM product_prices pp
+        WHERE pp.product_id = p.id AND pp.price_list_id = sc.price_list_id
+          AND (pp.product_variant_id = s.product_variant_id OR pp.product_variant_id IS NULL)
+          AND (pp.uom_id = p.base_uom_id OR pp.uom_id IS NULL)
+          AND pp.is_active = true
+          AND (pp.valid_from IS NULL OR pp.valid_from <= CURRENT_DATE)
+          AND (pp.valid_to IS NULL OR pp.valid_to >= CURRENT_DATE)
+          AND COALESCE(pp.min_quantity, 1) <= 1
+          AND (pp.max_quantity IS NULL OR pp.max_quantity >= 1)
+        ORDER BY (pp.product_variant_id IS NOT NULL) DESC,
+                 (pp.uom_id IS NOT NULL) DESC, pp.min_quantity DESC NULLS LAST,
+                 pp.valid_from DESC NULLS LAST, pp.updated_at DESC NULLS LAST, pp.id DESC
+        LIMIT 1
+    ) sale ON true
+), store_totals AS (
+    SELECT st.id AS store_id, st.name AS store_name,
+           COUNT(DISTINCT v.product_id) AS product_count,
+           COALESCE(SUM(v.units), 0) AS total_units,
+           COALESCE(SUM(v.available_units), 0) AS total_available_units,
+           COALESCE(SUM(v.units * v.unit_cost), 0) AS total_cost_value,
+           COALESCE(SUM(v.units * v.unit_sale_price), 0) AS total_sale_value,
+           COALESCE(SUM(ABS(v.units)) FILTER (WHERE v.unit_cost IS NULL), 0) AS units_missing_cost_price,
+           COALESCE(SUM(ABS(v.units)) FILTER (WHERE v.unit_sale_price IS NULL), 0) AS units_missing_sale_price
+    FROM scoped_stores st
+    LEFT JOIN valued_stock v ON v.store_id = st.id
+    GROUP BY st.id, st.name
+)
+SELECT
+    EXISTS(SELECT 1 FROM organizations o WHERE o.id = sc.organization_id)::boolean AS organization_exists,
+    (sc.store_id = 0 OR EXISTS(SELECT 1 FROM scoped_stores))::boolean AS store_exists,
+    (sc.storage_location_id = 0 OR EXISTS(
+        SELECT 1 FROM storage_locations sl
+        JOIN scoped_stores st ON st.id = sl.store_id
+        WHERE sl.id = sc.storage_location_id AND sl.store_id = sc.store_id
+    ))::boolean AS location_exists,
+    EXISTS(
+        SELECT 1 FROM price_lists pl JOIN organizations o ON o.id = sc.organization_id
+        WHERE pl.id = sc.price_list_id AND pl.is_active = true
+          AND pl.currency_code = o.currency_code
+          AND (pl.valid_from IS NULL OR pl.valid_from <= CURRENT_DATE)
+          AND (pl.valid_to IS NULL OR pl.valid_to >= CURRENT_DATE)
+    )::boolean AS price_list_valid,
+    jsonb_build_object(
+        'organization_id', sc.organization_id,
+        'store_id', NULLIF(sc.store_id, 0),
+        'storage_location_id', NULLIF(sc.storage_location_id, 0),
+        'price_list_id', sc.price_list_id,
+        'currency_code', (SELECT o.currency_code FROM organizations o WHERE o.id = sc.organization_id),
+        'quantity_basis', 'quantity_on_hand',
+        'product_count', (SELECT COUNT(DISTINCT product_id) FROM stock),
+        'store_count', (SELECT COUNT(*) FROM scoped_stores),
+        'total_units', (SELECT COALESCE(SUM(total_units), 0) FROM store_totals),
+        'total_available_units', (SELECT COALESCE(SUM(total_available_units), 0) FROM store_totals),
+        'total_cost_value', (SELECT COALESCE(SUM(total_cost_value), 0) FROM store_totals),
+        'total_sale_value', (SELECT COALESCE(SUM(total_sale_value), 0) FROM store_totals),
+        'units_missing_cost_price', (SELECT COALESCE(SUM(units_missing_cost_price), 0) FROM store_totals),
+        'units_missing_sale_price', (SELECT COALESCE(SUM(units_missing_sale_price), 0) FROM store_totals),
+        'stores', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.store_id), '[]'::jsonb) FROM store_totals t)
+    )::jsonb AS data
+FROM scope sc;

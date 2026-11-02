@@ -46,6 +46,10 @@ type mockZatcaRow struct {
 func (r *mockZatcaRow) Scan(dest ...interface{}) error {
 	s := r.sql
 	switch {
+	case strings.Contains(s, "GetStore"):
+		*dest[0].(*int32) = 1
+		*dest[1].(*int32) = 1
+		return nil
 	case strings.Contains(s, "GetNextICV") || strings.Contains(s, "COALESCE(MAX(icv), 0) + 1"):
 		if len(dest) > 0 {
 			if ptr, ok := dest[0].(*int32); ok {
@@ -181,6 +185,7 @@ func TestZatcaSignCreditNote(t *testing.T) {
 
 	salesReturn := repository.SalesReturn{
 		ID:                42,
+		StoreID:           1,
 		ReturnNumber:      "RET-2026-0042",
 		ReturnDate:        pgtype.Timestamp{Time: time.Now(), Valid: true},
 		Subtotal:          pgtype.Numeric{Valid: true},
@@ -212,11 +217,13 @@ func TestZatcaSignCreditNote(t *testing.T) {
 		Code:      "ORG-100",
 		TaxID:     pgtype.Text{String: "310123456700003", Valid: true},
 		LegalName: pgtype.Text{String: "Nembus Supermarkets Ltd", Valid: true},
+		Metadata:  []byte(testZatcaSellerMetadata),
 	}
 
 	device := repository.ZatcaDeviceConfig{
-		ID:            5,
-		PrivateKeyPem: pemStr,
+		ID:             5,
+		PrivateKeyPem:  pemStr,
+		ComplianceCsid: pgtype.Text{String: testZatcaCertificate(t, key), Valid: true},
 	}
 
 	signedDoc, chainEntry, err := zatcaUC.SignCreditNote(
@@ -337,4 +344,3 @@ func TestZatcaCreditNoteMissingBillingReferenceGuard(t *testing.T) {
 		t.Error("Expected no ZATCA chain entry created for unreferenced credit note")
 	}
 }
-

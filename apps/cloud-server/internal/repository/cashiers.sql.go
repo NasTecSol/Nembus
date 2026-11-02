@@ -271,7 +271,7 @@ INSERT INTO cashier_sessions (
 ) VALUES (
     $1, $2, $3, $4, $5, 'open', $6
 )
-RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at
+RETURNING id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at
 `
 
 type CreateCashierSessionParams struct {
@@ -306,6 +306,8 @@ func (q *Queries) CreateCashierSession(ctx context.Context, arg CreateCashierSes
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -498,7 +500,7 @@ func (q *Queries) DeleteCashier(ctx context.Context, id int32) error {
 
 const getActiveSessionByCashier = `-- name: GetActiveSessionByCashier :one
 
-SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at FROM cashier_sessions
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at FROM cashier_sessions
 WHERE cashier_id = $1 
   AND status = 'open'
 ORDER BY opening_time DESC
@@ -525,6 +527,8 @@ func (q *Queries) GetActiveSessionByCashier(ctx context.Context, cashierID int32
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -533,7 +537,7 @@ func (q *Queries) GetActiveSessionByCashier(ctx context.Context, cashierID int32
 }
 
 const getActiveSessionByCashierAndTerminal = `-- name: GetActiveSessionByCashierAndTerminal :one
-SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at FROM cashier_sessions
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at FROM cashier_sessions
 WHERE cashier_id = $1 
   AND pos_terminal_id = $2
   AND status = 'open'
@@ -562,6 +566,8 @@ func (q *Queries) GetActiveSessionByCashierAndTerminal(ctx context.Context, arg 
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -960,7 +966,7 @@ func (q *Queries) GetCashierWithUserDetails(ctx context.Context, id int32) (GetC
 
 const getOpenSessionsForStore = `-- name: GetOpenSessionsForStore :many
 SELECT 
-    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.opened_by_supervisor_id, cs.closed_by_supervisor_id, cs.metadata, cs.created_at, cs.updated_at,
     c.cashier_code,
     u.first_name || ' ' || u.last_name as cashier_name,
     pt.terminal_code,
@@ -975,24 +981,26 @@ ORDER BY cs.opening_time DESC
 `
 
 type GetOpenSessionsForStoreRow struct {
-	ID              int32            `json:"id"`
-	CashierID       int32            `json:"cashier_id"`
-	PosTerminalID   int32            `json:"pos_terminal_id"`
-	SessionNumber   string           `json:"session_number"`
-	OpeningTime     pgtype.Timestamp `json:"opening_time"`
-	ClosingTime     pgtype.Timestamp `json:"closing_time"`
-	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
-	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
-	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
-	Variance        pgtype.Numeric   `json:"variance"`
-	Status          pgtype.Text      `json:"status"`
-	Metadata        json.RawMessage  `json:"metadata"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
-	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
-	CashierCode     string           `json:"cashier_code"`
-	CashierName     interface{}      `json:"cashier_name"`
-	TerminalCode    string           `json:"terminal_code"`
-	TerminalName    pgtype.Text      `json:"terminal_name"`
+	ID                   int32            `json:"id"`
+	CashierID            int32            `json:"cashier_id"`
+	PosTerminalID        int32            `json:"pos_terminal_id"`
+	SessionNumber        string           `json:"session_number"`
+	OpeningTime          pgtype.Timestamp `json:"opening_time"`
+	ClosingTime          pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance       pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance       pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance      pgtype.Numeric   `json:"expected_balance"`
+	Variance             pgtype.Numeric   `json:"variance"`
+	Status               pgtype.Text      `json:"status"`
+	OpenedBySupervisorID pgtype.Int4      `json:"opened_by_supervisor_id"`
+	ClosedBySupervisorID pgtype.Int4      `json:"closed_by_supervisor_id"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	CashierCode          string           `json:"cashier_code"`
+	CashierName          interface{}      `json:"cashier_name"`
+	TerminalCode         string           `json:"terminal_code"`
+	TerminalName         pgtype.Text      `json:"terminal_name"`
 }
 
 // Get all currently open sessions for a store
@@ -1017,6 +1025,8 @@ func (q *Queries) GetOpenSessionsForStore(ctx context.Context, storeID int32) ([
 			&i.ExpectedBalance,
 			&i.Variance,
 			&i.Status,
+			&i.OpenedBySupervisorID,
+			&i.ClosedBySupervisorID,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1037,7 +1047,7 @@ func (q *Queries) GetOpenSessionsForStore(ctx context.Context, storeID int32) ([
 
 const getSessionByID = `-- name: GetSessionByID :one
 
-SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at FROM cashier_sessions
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at FROM cashier_sessions
 WHERE id = $1
 `
 
@@ -1058,6 +1068,8 @@ func (q *Queries) GetSessionByID(ctx context.Context, id int32) (CashierSession,
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1066,7 +1078,7 @@ func (q *Queries) GetSessionByID(ctx context.Context, id int32) (CashierSession,
 }
 
 const getSessionByNumber = `-- name: GetSessionByNumber :one
-SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at FROM cashier_sessions
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at FROM cashier_sessions
 WHERE session_number = $1
 `
 
@@ -1086,6 +1098,8 @@ func (q *Queries) GetSessionByNumber(ctx context.Context, sessionNumber string) 
 		&i.ExpectedBalance,
 		&i.Variance,
 		&i.Status,
+		&i.OpenedBySupervisorID,
+		&i.ClosedBySupervisorID,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1247,7 +1261,7 @@ func (q *Queries) GetSessionTransactionSummary(ctx context.Context, cashierSessi
 
 const getSessionsByStatus = `-- name: GetSessionsByStatus :many
 SELECT 
-    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.metadata, cs.created_at, cs.updated_at,
+    cs.id, cs.cashier_id, cs.pos_terminal_id, cs.session_number, cs.opening_time, cs.closing_time, cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.variance, cs.status, cs.opened_by_supervisor_id, cs.closed_by_supervisor_id, cs.metadata, cs.created_at, cs.updated_at,
     c.cashier_code,
     u.first_name || ' ' || u.last_name as cashier_name,
     pt.terminal_code
@@ -1266,23 +1280,25 @@ type GetSessionsByStatusParams struct {
 }
 
 type GetSessionsByStatusRow struct {
-	ID              int32            `json:"id"`
-	CashierID       int32            `json:"cashier_id"`
-	PosTerminalID   int32            `json:"pos_terminal_id"`
-	SessionNumber   string           `json:"session_number"`
-	OpeningTime     pgtype.Timestamp `json:"opening_time"`
-	ClosingTime     pgtype.Timestamp `json:"closing_time"`
-	OpeningBalance  pgtype.Numeric   `json:"opening_balance"`
-	ClosingBalance  pgtype.Numeric   `json:"closing_balance"`
-	ExpectedBalance pgtype.Numeric   `json:"expected_balance"`
-	Variance        pgtype.Numeric   `json:"variance"`
-	Status          pgtype.Text      `json:"status"`
-	Metadata        json.RawMessage  `json:"metadata"`
-	CreatedAt       pgtype.Timestamp `json:"created_at"`
-	UpdatedAt       pgtype.Timestamp `json:"updated_at"`
-	CashierCode     string           `json:"cashier_code"`
-	CashierName     interface{}      `json:"cashier_name"`
-	TerminalCode    string           `json:"terminal_code"`
+	ID                   int32            `json:"id"`
+	CashierID            int32            `json:"cashier_id"`
+	PosTerminalID        int32            `json:"pos_terminal_id"`
+	SessionNumber        string           `json:"session_number"`
+	OpeningTime          pgtype.Timestamp `json:"opening_time"`
+	ClosingTime          pgtype.Timestamp `json:"closing_time"`
+	OpeningBalance       pgtype.Numeric   `json:"opening_balance"`
+	ClosingBalance       pgtype.Numeric   `json:"closing_balance"`
+	ExpectedBalance      pgtype.Numeric   `json:"expected_balance"`
+	Variance             pgtype.Numeric   `json:"variance"`
+	Status               pgtype.Text      `json:"status"`
+	OpenedBySupervisorID pgtype.Int4      `json:"opened_by_supervisor_id"`
+	ClosedBySupervisorID pgtype.Int4      `json:"closed_by_supervisor_id"`
+	Metadata             json.RawMessage  `json:"metadata"`
+	CreatedAt            pgtype.Timestamp `json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
+	CashierCode          string           `json:"cashier_code"`
+	CashierName          interface{}      `json:"cashier_name"`
+	TerminalCode         string           `json:"terminal_code"`
 }
 
 // Get sessions by status for a store
@@ -1307,6 +1323,8 @@ func (q *Queries) GetSessionsByStatus(ctx context.Context, arg GetSessionsByStat
 			&i.ExpectedBalance,
 			&i.Variance,
 			&i.Status,
+			&i.OpenedBySupervisorID,
+			&i.ClosedBySupervisorID,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1751,7 +1769,7 @@ func (q *Queries) ListAllCashiers(ctx context.Context) ([]Cashier, error) {
 }
 
 const listCashierSessions = `-- name: ListCashierSessions :many
-SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at FROM cashier_sessions
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at FROM cashier_sessions
 WHERE cashier_id = $1
 ORDER BY opening_time DESC
 LIMIT $2 OFFSET $3
@@ -1785,6 +1803,8 @@ func (q *Queries) ListCashierSessions(ctx context.Context, arg ListCashierSessio
 			&i.ExpectedBalance,
 			&i.Variance,
 			&i.Status,
+			&i.OpenedBySupervisorID,
+			&i.ClosedBySupervisorID,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1948,7 +1968,7 @@ func (q *Queries) ListCashiersWithUserDetails(ctx context.Context, storeID int32
 }
 
 const listSessionsByDateRange = `-- name: ListSessionsByDateRange :many
-SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, metadata, created_at, updated_at FROM cashier_sessions
+SELECT id, cashier_id, pos_terminal_id, session_number, opening_time, closing_time, opening_balance, closing_balance, expected_balance, variance, status, opened_by_supervisor_id, closed_by_supervisor_id, metadata, created_at, updated_at FROM cashier_sessions
 WHERE cashier_id = $1
   AND opening_time::date BETWEEN $2 AND $3
 ORDER BY opening_time DESC
@@ -1982,6 +2002,8 @@ func (q *Queries) ListSessionsByDateRange(ctx context.Context, arg ListSessionsB
 			&i.ExpectedBalance,
 			&i.Variance,
 			&i.Status,
+			&i.OpenedBySupervisorID,
+			&i.ClosedBySupervisorID,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,

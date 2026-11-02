@@ -47,6 +47,21 @@ After adding or modifying Swagger annotations in your handlers:
 
 2. Restart the server to see the changes
 
+## Biometric verification endpoints
+
+After `make swagger`, the **auth** and **biometrics** tags include:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/login/biometric` | 1:1 or 1:N fingerprint login (`fmd_base64`, optional `user_login`) |
+| POST | `/api/auth/authorize-action/biometric` | Supervisor override via fingerprint + `permission_code` |
+| GET | `/api/users/{id}/biometrics` | List enrolled fingers (metadata only) |
+| POST | `/api/users/{id}/biometrics/enroll` | Enroll consolidated ISO FMD (`biometrics.enroll` or matching `X-Authorization-Token`) |
+| POST | `/api/biometrics/enroll` | Same enroll body without path user id |
+| DELETE | `/api/users/{id}/biometrics/{fingerIndex}` | Soft-deactivate a finger template |
+
+Local hardware capture (POS / enrollment station) uses the embedded bridge at `http://127.0.0.1:5050/api/v1` (`/device`, `/capture`, `/enrollment/*`); that bridge is not part of the cloud OpenAPI surface.
+
 ## Swagger Annotations
 
 Swagger annotations are added to handler functions using comments. Example:

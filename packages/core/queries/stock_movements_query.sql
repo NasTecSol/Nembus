@@ -36,8 +36,69 @@ WHERE stock_movements.id = $1;
 -- name: CountStockMovements :one
 SELECT COUNT(*) FROM stock_movements;
 
+-- name: ListStockMovementReferenceTypes :many
+SELECT DISTINCT reference_type::text AS reference_type
+FROM stock_movements
+WHERE reference_type IS NOT NULL AND btrim(reference_type) <> ''
+ORDER BY reference_type;
+
+-- name: CountStockMovementsByReferenceType :one
+SELECT COUNT(*) FROM stock_movements
+WHERE reference_type = $1;
+
+-- name: ListStockMovementsByReferenceType :many
+SELECT
+    stock_movements.id,
+    stock_movements.movement_type,
+    stock_movements.reference_type,
+    COALESCE(stock_movements.reference_id::text, '')::text AS reference_id,
+    stock_movements.product_id,
+    stock_movements.product_variant_id,
+    stock_movements.from_store_id,
+    stock_movements.to_store_id,
+    stock_movements.from_location_id,
+    stock_movements.to_location_id,
+    stock_movements.quantity,
+    stock_movements.uom_id,
+    stock_movements.batch_number,
+    stock_movements.serial_number,
+    stock_movements.movement_date,
+    stock_movements.posted_by,
+    stock_movements.status,
+    stock_movements.cost_per_unit,
+    stock_movements.total_value,
+    stock_movements.metadata,
+    stock_movements.created_at,
+    stock_movements.updated_at
+FROM stock_movements
+WHERE reference_type = $1
+ORDER BY movement_date DESC, id DESC
+LIMIT $2 OFFSET $3;
+
 -- name: ListStockMovements :many
-SELECT stock_movements.*
+SELECT
+    stock_movements.id,
+    stock_movements.movement_type,
+    stock_movements.reference_type,
+    COALESCE(stock_movements.reference_id::text, '')::text AS reference_id,
+    stock_movements.product_id,
+    stock_movements.product_variant_id,
+    stock_movements.from_store_id,
+    stock_movements.to_store_id,
+    stock_movements.from_location_id,
+    stock_movements.to_location_id,
+    stock_movements.quantity,
+    stock_movements.uom_id,
+    stock_movements.batch_number,
+    stock_movements.serial_number,
+    stock_movements.movement_date,
+    stock_movements.posted_by,
+    stock_movements.status,
+    stock_movements.cost_per_unit,
+    stock_movements.total_value,
+    stock_movements.metadata,
+    stock_movements.created_at,
+    stock_movements.updated_at
 FROM stock_movements
 ORDER BY stock_movements.movement_date DESC
 LIMIT $1 OFFSET $2;

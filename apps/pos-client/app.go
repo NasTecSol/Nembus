@@ -21,10 +21,13 @@ import (
 	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
+	"github.com/NasTecSol/nembus-core/biometrics"
+	localzatca "github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
+	corezatca "github.com/NasTecSol/nembus-core/zatca"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,31 +41,56 @@ var migrations embed.FS
 
 // App struct
 type App struct {
-	ctx           context.Context
-	dbManager     *db.DBManager
-	masterRepo    *repository.Queries
-	masterPool    *pgxpool.Pool
-	tenantManager *manager.Manager
-	syncService   *sync.SyncService
-	geideaClient  *geidea.Client
-	cfg           *config.Config
-	version       string
-	appKey        string
-	cloudURL      string
+	ctx             context.Context
+	dbManager       *db.DBManager
+	masterRepo      *repository.Queries
+	masterPool      *pgxpool.Pool
+	tenantManager   *manager.Manager
+	syncService     *sync.SyncService
+	geideaClient    *geidea.Client
+	biometricBridge *biometrics.LocalBridgeServer
+	cfg             *config.Config
+	version         string
+	appKey          string
+	cloudURL        string
 }
 
 // NewApp creates a new App application struct
 func NewApp(version, appKey, cloudURL string) *App {
+	cfg := config.LoadConfig("development")
 	return &App{
 		version:  version,
 		appKey:   appKey,
 		cloudURL: cloudURL,
+		cfg:      cfg,
 	}
+}
+
+// getCloudURL safely resolves the cloud server URL
+func (a *App) getCloudURL() string {
+	if a.cloudURL != "" {
+		return a.cloudURL
+	}
+	if a.cfg != nil && a.cfg.CloudURL != "" {
+		return a.cfg.CloudURL
+	}
+	return "https://nembus.nashrms.com"
 }
 
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Initialize embedded DigitalPersona runtime and start in-process local bridge on 127.0.0.1:5050
+	if err := biometrics.InitRuntime(); err != nil {
+		log.Printf("[Biometrics] Warning: embedded runtime extraction failed: %v", err)
+	} else {
+		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
+	}
+	a.biometricBridge = biometrics.NewLocalBridgeServer("127.0.0.1:5050")
+	if err := a.biometricBridge.StartIfPortFree(); err != nil {
+		log.Printf("[Biometrics] Warning: local bridge server failed to start: %v", err)
+	}
 
 	// Clean up legacy executable backups from previous update cycles
 	updater.CleanupOldExecutables()
@@ -104,10 +132,7 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 		}, nil
 	}
 
-	cloudURL := a.cloudURL
-	if cloudURL == "" && a.cfg != nil {
-		cloudURL = a.cfg.CloudURL
-	}
+	cloudURL := a.getCloudURL()
 	appKey := a.appKey
 	if appKey == "" && a.cfg != nil {
 		appKey = a.cfg.AppUpdateClientKey
@@ -138,6 +163,9 @@ func (a *App) beforeClose(ctx context.Context) (prevent bool) {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	if a.biometricBridge != nil {
+		_ = a.biometricBridge.Stop(ctx)
+	}
 	if a.syncService != nil {
 		a.syncService.Stop()
 	}
@@ -262,6 +290,12 @@ func (a *App) migrate(dbURL string) error {
 	if err := goose.Up(sqlDB, "migrations"); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
+	if _, err := sqlDB.Exec(sync.ZatcaOutboxDDL); err != nil {
+		return fmt.Errorf("install ZATCA sync outbox: %w", err)
+	}
+	if _, err := sqlDB.Exec(corezatca.OrderAutomationDDL); err != nil {
+		return fmt.Errorf("install automatic ZATCA order jobs: %w", err)
+	}
 
 	// Ensure legacy DB triggers that double-count cashier session balances or inventory are dropped
 	for _, statement := range []string{
@@ -280,7 +314,7 @@ func (a *App) migrate(dbURL string) error {
 
 // FetchCloudTenants fetches available tenants from the cloud URL
 func (a *App) FetchCloudTenants(slug string) interface{} {
-	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
+	url := fmt.Sprintf("%s/api/tenants/%s", a.getCloudURL(), slug)
 	log.Printf("Fetching cloud tenant from: %s", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -344,7 +378,7 @@ func (a *App) CloneTenant(slug string) string {
 
 	// 1. Fetch Tenant details from cloud
 	emitProgress("metadata", 12, 0, "", 28, fmt.Sprintf("Fetching tenant details for [%s]...", slug))
-	url := fmt.Sprintf("%s/api/tenants/%s", a.cfg.CloudURL, slug)
+	url := fmt.Sprintf("%s/api/tenants/%s", a.getCloudURL(), slug)
 	log.Printf("Fetching tenant details for [%s] from: %s", slug, url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -409,6 +443,26 @@ func (a *App) CloneTenant(slug string) string {
 		a.dbManager.GetConfig().Port,
 		tenantDBName,
 	)
+	// Confirm the cloud can durably recover credentials before replacing any
+	// local schemas. Pending ZATCA events or a newer local chain stop the clone.
+	recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancelRecovery()
+	cloudRecovery, err := sync.NewZatcaCloud(recoveryCtx, a.getCloudURL(), tenant.Slug)
+	if err != nil {
+		return fmt.Sprintf("Error preparing secure ZATCA recovery (local data preserved): %v", err)
+	}
+	if err := cloudRecovery.VerifyCapabilities(recoveryCtx); err != nil {
+		return fmt.Sprintf("Error verifying cloud ZATCA recovery (local data preserved): %v", err)
+	}
+	recoveryPool, err := pgxpool.New(recoveryCtx, tenantDBURL)
+	if err != nil {
+		return fmt.Sprintf("Error opening local recovery database: %v", err)
+	}
+	defer recoveryPool.Close()
+	deviceSerial := sync.SavedZatcaSerial(a.LoadDeviceConfig())
+	if err := sync.GuardZatcaClone(recoveryCtx, recoveryPool, a.getCloudURL(), tenant.Slug, deviceSerial); err != nil {
+		return fmt.Sprintf("Clone stopped to preserve ZATCA state: %v", err)
+	}
 
 	log.Printf("CloneTenant: downloading backup for [%s] via gRPC from %s", tenant.Slug, a.cfg.GRPCAddr)
 	backupPath, err := clientbackup.DownloadBackupWithProgress(
@@ -435,6 +489,14 @@ func (a *App) CloneTenant(slug string) string {
 		return fmt.Sprintf("Error applying POS migrations to tenant database: %v", err)
 	}
 	log.Printf("POS migrations applied successfully to tenant DB [%s]", tenant.Slug)
+	if deviceSerial != "" {
+		emitProgress("zatca_recovery", 93, 0, "", 3, "Restoring this device's ZATCA registration and invoice chain...")
+		restoreCtx, cancelRestore := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancelRestore()
+		if err := sync.RecoverZatcaDevice(restoreCtx, repository.New(recoveryPool), a.getCloudURL(), tenant.Slug, deviceSerial, 0); err != nil && !errors.Is(err, sync.ErrZatcaBackupMissing) {
+			return fmt.Sprintf("Error restoring ZATCA device state; retry recovery before signing: %v", err)
+		}
+	}
 
 	// 5. Ensure the local tenant record is correct in the master DB.
 	emitProgress("finalizing", 96, 0, "", 2, "Finalizing local configuration...")
@@ -517,6 +579,8 @@ func (a *App) StartSyncService(slug string) {
 		}
 	}
 	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
+	a.syncService.ConfigureZatcaSync(a.getCloudURL())
+	a.syncService.ConfigureOrderAutomation(localzatca.NewReporter(&usecase.ZatcaConfig{LocalPOS: true}))
 
 	// Reset any sync_queue items that previously hit max_retries (e.g. due to
 	// transient cloud errors or FK constraint issues that have since been fixed)
@@ -887,5 +951,3 @@ func (a *App) PrintMadaReceipt(data printing.MadaReceiptData, cfg printing.Print
 	rawBytes := printing.BuildMadaReceipt(data)
 	return printing.Print(cfg, rawBytes)
 }
-
-

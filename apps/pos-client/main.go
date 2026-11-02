@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
@@ -115,6 +116,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		authHandler := handler.NewAuthHandler(authUC)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/login/biometric", authHandler.LoginWithBiometric)
+		auth.POST("/authorize-action", authHandler.AuthorizeAction)
+		auth.POST("/authorize-action/biometric", authHandler.AuthorizeActionWithBiometric)
 	}
 
 	publicTenants := r.Group("/api/tenants")
@@ -131,6 +135,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 	{
 		userHandler := handler.NewUserHandler(userUC)
 		router.RegisterUserRoutes(api, userHandler)
+		biometricHandler := handler.NewBiometricHandler(usecase.NewBiometricUseCase())
+		router.RegisterBiometricRoutes(api, biometricHandler)
 		moduleHandler := handler.NewModuleHandler(moduleUC)
 		router.RegisterModuleRoutes(api, moduleHandler)
 		imageHandler := handler.NewImageHandler(imageUC)
@@ -223,14 +229,25 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
-			Enabled:  cfg.ZatcaEnabled,
+			LocalPOS: true,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
 		}
 		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		posHandler.SetZatcaConfig(zatcaCfg)
+		cartHandler.SetZatcaConfig(zatcaCfg)
+		orderHandler.SetZatcaConfig(zatcaCfg)
 		zatcaUC.SetRepository(masterRepo)
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		// Onboarding calls ZATCA directly and persists credentials in the
+		// request's local tenant repository, just like local signing/reporting.
+		zatcaHandler.SetOnboarder(zatca.NewOnboarder(zatcaCfg, cfg.CloudURL))
+		zatcaReporter := zatca.NewReporter(zatcaCfg)
+		posHandler.SetZatcaReporter(zatcaReporter)
+		cartHandler.SetZatcaReporter(zatcaReporter)
+		orderHandler.SetZatcaReporter(zatcaReporter)
+		zatcaHandler.SetOrderReporter(zatcaReporter)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 
 		// Notification Center Routes (In-App Bell & Notifications)

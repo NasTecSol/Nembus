@@ -5,7 +5,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
+	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
@@ -15,9 +17,9 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	router "github.com/NasTecSol/nembus-core/routing"
 	"github.com/NasTecSol/nembus-core/usecase"
+	cloudzatca "github.com/NasTecSol/nembus-core/zatca"
 	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
 	"github.com/NasTecSol/nembus-server/internal/notification"
-	cloudzatca "github.com/NasTecSol/nembus-server/internal/zatca"
 
 	_ "github.com/NasTecSol/nembus-server/docs/swagger" // Swagger generated docs
 
@@ -41,7 +43,7 @@ import (
 // @license.name  MIT
 // @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host      localhost:8080
+// Swagger uses the serving origin, including the configured port.
 // @BasePath  /
 
 // @securityDefinitions.apikey BearerAuth
@@ -85,7 +87,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -108,10 +110,12 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 	{
 		authHandler := handler.NewAuthHandler(authUC)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/login/biometric", authHandler.LoginWithBiometric)
 		// Supervisor override: authenticate a supervisor and obtain a short-lived
 		// authorization token for a restricted action (e.g. sales return).
 		// Does NOT require the cashier's JWT — the supervisor credentials are self-authenticating.
 		auth.POST("/authorize-action", authHandler.AuthorizeAction)
+		auth.POST("/authorize-action/biometric", authHandler.AuthorizeActionWithBiometric)
 	}
 
 	publicTenants := r.Group("/api/tenants")
@@ -143,6 +147,8 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 	{
 		userHandler := handler.NewUserHandler(userUC)
 		router.RegisterUserRoutes(api, userHandler)
+		biometricHandler := handler.NewBiometricHandler(usecase.NewBiometricUseCase())
+		router.RegisterBiometricRoutes(api, biometricHandler)
 		moduleHandler := handler.NewModuleHandler(moduleUC)
 		router.RegisterModuleRoutes(api, moduleHandler)
 		imageHandler := handler.NewImageHandler(imageUC)
@@ -242,7 +248,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 		// [NEW] M2M Token management
 		m2mHandler := handler.NewM2MHandler()
-		router.RegisterM2MRoutes(api, m2mHandler)
+		router.RegisterM2MRoutes(r.Group("/api"), m2mHandler)
 
 		// [NEW] Warehouse Logistics (Transfer Requests, Goods Receipt Notes & Purchase Orders)
 		transferRequestsHandler := handler.NewTransferRequestsHandler(transferRequestsUC)
@@ -266,7 +272,6 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 		// ZATCA Phase 2 + Sync Routes
 		zatcaCfg := &usecase.ZatcaConfig{
-			Enabled:  cfg.ZatcaEnabled,
 			Env:      cfg.ZatcaEnv,
 			BaseURL:  cfg.ZatcaBaseURL,
 			OrgVATID: cfg.ZatcaOrgVATID,
@@ -276,6 +281,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
 		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
 		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
+		zatcaHandler.SetSubmitter(zatcaService)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
 
 		// Notification Center & Outbox Routes
@@ -337,6 +343,12 @@ func main() {
 	cfg := config.LoadConfig(env)
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
 
+	if err := biometrics.InitRuntime(); err != nil {
+		log.Printf("[Biometrics] Warning: embedded runtime extraction failed: %v", err)
+	} else {
+		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
+	}
+
 	ctx := context.Background()
 	masterPool, masterRepo, err := setupDatabase(ctx, cfg)
 	if err != nil {
@@ -345,6 +357,46 @@ func main() {
 	defer masterPool.Close()
 
 	tenantManager := manager.NewManager(masterRepo)
+	// Orders and lines can arrive through separate sync events. Persist a job on
+	// each committed change and submit once the complete order validates.
+	go func() {
+		ready := make(map[string]bool)
+		submit := cloudzatca.NewService(masterRepo, &usecase.ZatcaConfig{
+			Env: cfg.ZatcaEnv, BaseURL: cfg.ZatcaBaseURL, OrgVATID: cfg.ZatcaOrgVATID,
+		})
+		run := func() {
+			cycleCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+			defer cancel()
+			tenants, err := masterRepo.ListActiveTenants(cycleCtx)
+			if err != nil {
+				log.Printf("[ZATCA ORDER] List tenants failed: %v", err)
+				return
+			}
+			for _, tenant := range tenants {
+				pool, err := tenantManager.GetPool(cycleCtx, tenant.Slug)
+				if err != nil {
+					log.Printf("[ZATCA ORDER] Open tenant %s failed: %v", tenant.Slug, err)
+					continue
+				}
+				if !ready[tenant.Slug] {
+					if _, err := pool.Exec(cycleCtx, cloudzatca.OrderAutomationDDL); err != nil {
+						log.Printf("[ZATCA ORDER] Install jobs for %s failed: %v", tenant.Slug, err)
+						continue
+					}
+					ready[tenant.Slug] = true
+				}
+				if err := cloudzatca.ProcessOrderAutomationBatch(cycleCtx, pool, submit); err != nil && cycleCtx.Err() == nil {
+					log.Printf("[ZATCA ORDER] Tenant %s: %v", tenant.Slug, err)
+				}
+			}
+		}
+		run()
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
 
 	// Initialize Use Cases
 	userUC := usecase.NewUserUseCase()
@@ -399,18 +451,6 @@ func main() {
 
 	// BackupUseCase talks to the local gRPC backup server (same process)
 	backupUC := usecase.NewBackupUseCase(tenantManager, "localhost:"+cfg.GRPCPort)
-
-	// ZATCA Phase 2 Cloud Service & Reporting Worker
-	zatcaCfg := &usecase.ZatcaConfig{
-		Enabled:  cfg.ZatcaEnabled,
-		Env:      cfg.ZatcaEnv,
-		BaseURL:  cfg.ZatcaBaseURL,
-		OrgVATID: cfg.ZatcaOrgVATID,
-	}
-	zatcaSvc := cloudzatca.NewService(masterRepo, zatcaCfg)
-	if cfg.ZatcaEnabled {
-		zatcaSvc.StartReportingWorker(ctx)
-	}
 
 	// ── Notification Center WebSocket Hub & Outbox Dispatcher ──────────
 	wsHub := notification.NewWebSocketHub()

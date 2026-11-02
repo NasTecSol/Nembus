@@ -5,6 +5,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type CashierSessionUseCase struct {
@@ -105,4 +106,32 @@ func (uc *CashierSessionUseCase) GetCashierSessions(ctx context.Context, arg rep
 		return utils.NewResponse(utils.CodeError, "failed to get cashier sessions", err.Error())
 	}
 	return utils.NewResponse(utils.CodeOK, "cashier sessions fetched successfully", sessions)
+}
+
+func (uc *CashierSessionUseCase) SetSessionOpenedSupervisor(ctx context.Context, sessionID int32, supervisorUserID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	err := uc.repo.SetCashierSessionOpenedSupervisor(ctx, repository.SetCashierSessionOpenedSupervisorParams{
+		ID:                   sessionID,
+		OpenedBySupervisorID: pgtype.Int4{Int32: supervisorUserID, Valid: supervisorUserID > 0},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to record opening supervisor", err.Error())
+	}
+	return utils.NewResponse(utils.CodeOK, "opening supervisor recorded", nil)
+}
+
+func (uc *CashierSessionUseCase) SetSessionClosedSupervisor(ctx context.Context, sessionID int32, supervisorUserID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	err := uc.repo.SetCashierSessionClosedSupervisor(ctx, repository.SetCashierSessionClosedSupervisorParams{
+		ID:                   sessionID,
+		ClosedBySupervisorID: pgtype.Int4{Int32: supervisorUserID, Valid: supervisorUserID > 0},
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to record closing supervisor", err.Error())
+	}
+	return utils.NewResponse(utils.CodeOK, "closing supervisor recorded", nil)
 }

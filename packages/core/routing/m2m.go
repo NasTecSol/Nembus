@@ -2,11 +2,13 @@ package router
 
 import (
 	"github.com/NasTecSol/nembus-core/handler"
+	"github.com/NasTecSol/nembus-core/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterM2MRoutes(r *gin.RouterGroup, h *handler.M2MHandler) {
-	r.POST("/m2m/tokens", h.CreateToken)
-	r.GET("/m2m/tokens", h.ListTokens)
+// RegisterM2MRoutes uses the shared key for both issuance and listing.
+func RegisterM2MRoutes(api *gin.RouterGroup, h *handler.M2MHandler) {
+	api.POST("/m2m/tokens", middleware.M2MAPIKeyMiddleware(), h.CreateToken)
+	api.GET("/m2m/tokens", middleware.M2MAPIKeyMiddleware(), h.ListTokens)
 }

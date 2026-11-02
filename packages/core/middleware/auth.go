@@ -452,6 +452,45 @@ func RequireAuthorizationToken(permissionCode string) gin.HandlerFunc {
 	}
 }
 
+// ParseOptionalAuthorizationToken extracts the supervisor user ID from X-Authorization-Token
+// if the header is present and valid.
+func ParseOptionalAuthorizationToken(c *gin.Context) (int32, bool) {
+	if authUserID, exists := c.Get("authorized_by_user_id"); exists {
+		if id, ok := authUserID.(int32); ok && id > 0 {
+			return id, true
+		}
+	}
+	tokenString := c.GetHeader("X-Authorization-Token")
+	if tokenString == "" {
+		return 0, false
+	}
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return 0, false
+	}
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(jwtSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return 0, false
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0, false
+	}
+	isAuthToken, _ := claims["is_authorization_token"].(bool)
+	if !isAuthToken {
+		return 0, false
+	}
+	if userID, ok := claims["authorized_by_user_id"].(float64); ok && int32(userID) > 0 {
+		return int32(userID), true
+	}
+	return 0, false
+}
+
 // AgentAPIKeyMiddleware authenticates automated agents (such as sap-agent)
 // using AGENT_API_KEY, MIGRATION_API_KEY, x-api-key header, or Bearer JWT token with Migrator/auto-user identity.
 func AgentAPIKeyMiddleware() gin.HandlerFunc {
