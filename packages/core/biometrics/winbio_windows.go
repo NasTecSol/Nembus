@@ -38,9 +38,11 @@ const (
 	winbioPurposeVerify uint32 = 0x00000001
 	winbioPurposeEnroll uint32 = 0x00000002
 
-	// WINBIO_BIR_DATA_FLAGS for WinBioCaptureSample
-	winbioDataFlagRaw       uint32 = 0x08000000
-	winbioDataFlagProcessed uint32 = 0x20000000
+	// WINBIO_BIR_DATA_FLAGS from winbio_types.h. These are bit masks, not
+	// HRESULT-style values; passing the wrong bits makes WinBioCaptureSample
+	// reject the request with WINBIO_E_INVALID_PARAMETER.
+	winbioDataFlagRaw       uint32 = 0x00000020
+	winbioDataFlagProcessed uint32 = 0x00000080
 
 	winbioSOk            uint32 = 0
 	winbioEInvalidArg    uint32 = 0x80070057
