@@ -6976,6 +6976,30 @@ definitions:
       response:
         $ref: '#/definitions/handler.ZatcaGatewayData'
     type: object
+  handler.ZatcaDeviceListAPIResponse:
+    properties:
+      data:
+        $ref: '#/definitions/handler.ZatcaDeviceListData'
+      message:
+        example: Registered ZATCA devices
+        type: string
+      statusCode:
+        example: 200
+        type: integer
+    type: object
+  handler.ZatcaDeviceListData:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/handler.ZatcaRegisteredDeviceData'
+        type: array
+      store_id:
+        example: 2
+        type: integer
+      total:
+        example: 1
+        type: integer
+    type: object
   handler.ZatcaDocumentAPIResponse:
     properties:
       data:
@@ -7299,6 +7323,71 @@ definitions:
       qr_code_base64:
         type: string
     type: object
+  handler.ZatcaRegisteredDeviceData:
+    properties:
+      created_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      csid_expiry:
+        format: date-time
+        type: string
+        x-nullable: true
+      device_serial:
+        example: EGS-POS-08
+        type: string
+      device_type:
+        example: pos
+        type: string
+      id:
+        example: 3
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      is_revoked:
+        example: false
+        type: boolean
+      organization_id:
+        example: 1
+        type: integer
+      organization_zatca_enabled:
+        example: true
+        type: boolean
+      pos_terminal_id:
+        example: 8
+        type: integer
+        x-nullable: true
+      reporting_ready:
+        example: true
+        type: boolean
+      store_id:
+        example: 2
+        type: integer
+      store_name:
+        example: Main Store
+        type: string
+      terminal_code:
+        example: POS-01
+        type: string
+        x-nullable: true
+      terminal_name:
+        example: Counter 1
+        type: string
+        x-nullable: true
+      updated_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      zatca_env:
+        enum:
+        - sandbox
+        - simulation
+        - production
+        example: simulation
+        type: string
+        x-nullable: true
+    type: object
   handler.ZatcaStatusAPIResponse:
     properties:
       data:
@@ -7318,6 +7407,9 @@ definitions:
       device_id:
         example: 3
         type: integer
+      device_serial:
+        example: POS-01
+        type: string
       enabled:
         example: true
         type: boolean
@@ -7342,8 +7434,14 @@ definitions:
         type: integer
       organization_required:
         type: boolean
+      pos_terminal_id:
+        example: 2
+        type: integer
       reporting_ready:
         type: boolean
+      store_id:
+        example: 1
+        type: integer
       vat_id:
         example: "310123456700003"
         type: string
@@ -25770,8 +25868,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Builds an ESC/POS receipt using the organisation's branding and
-        sends it to the configured thermal printer.
+      description: Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization,
+        the server loads a saved signed QR only when the order is reported. Pending
+        or failed reporting prints without a QR so checkout is not blocked. Caller-supplied
+        qr_code_base64 is ignored. The response includes qr_status.
       parameters:
       - description: Tenant identifier
         in: header
@@ -38704,6 +38804,62 @@ paths:
       summary: Get ZATCA device configuration deltas (Pull Sync)
       tags:
       - zatca
+  /api/zatca/devices:
+    get:
+      description: Returns saved ZATCA device registrations for the requested store
+        within the authenticated user's organization and tenant. Optionally filter
+        by POS terminal; both filters use AND. Includes terminal name/code, device
+        serial, environment, active/revoked flags, credential expiry and reporting
+        readiness. Includes incomplete, inactive, expired and revoked registrations
+        so backoffice users can inspect them; reporting_ready is true only when organization
+        ZATCA is enabled and valid reporting credentials are active. Empty or unmatched
+        stores/terminals return devices=[] and total=0. Ordered by terminal ID then
+        newest device ID. Available even when organization ZATCA is disabled. Reads
+        saved state only; never calls ZATCA or returns certificates, private keys,
+        secrets or raw metadata. Requires a user JWT with an organization_id claim.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: store_id
+        required: true
+        type: integer
+      - description: POS terminal ID within the requested store
+        in: query
+        maximum: 2147483647
+        minimum: 1
+        name: pos_terminal_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ZatcaDeviceListAPIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ZatcaAPIError'
+      security:
+      - BearerAuth: []
+      summary: List registered ZATCA devices by store and terminal
+      tags:
+      - zatca
   /api/zatca/devices/{id}/complete-onboarding:
     post:
       description: Recovery only. Reuses saved compliance credentials, request ID,
@@ -39144,6 +39300,10 @@ paths:
         in: query
         name: device_id
         type: integer
+      - description: Physical device serial; requires organization_id
+        in: query
+        name: device_serial
+        type: string
       - description: Organization ID when device_id is omitted
         in: query
         name: organization_id
