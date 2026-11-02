@@ -26939,7 +26939,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Builds an ESC/POS receipt using the organisation's branding and sends it to the configured thermal printer.",
+                "description": "Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization, the server loads a saved signed QR only when the order is reported. Pending or failed reporting prints without a QR so checkout is not blocked. Caller-supplied qr_code_base64 is ignored. The response includes qr_status.",
                 "consumes": [
                     "application/json"
                 ],
@@ -46666,6 +46666,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/zatca/devices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns saved ZATCA device registrations for the requested store within the authenticated user's organization and tenant. Optionally filter by POS terminal; both filters use AND. Includes terminal name/code, device serial, environment, active/revoked flags, credential expiry and reporting readiness. Includes incomplete, inactive, expired and revoked registrations so backoffice users can inspect them; reporting_ready is true only when organization ZATCA is enabled and valid reporting credentials are active. Empty or unmatched stores/terminals return devices=[] and total=0. Ordered by terminal ID then newest device ID. Available even when organization ZATCA is disabled. Reads saved state only; never calls ZATCA or returns certificates, private keys, secrets or raw metadata. Requires a user JWT with an organization_id claim.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "zatca"
+                ],
+                "summary": "List registered ZATCA devices by store and terminal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "POS terminal ID within the requested store",
+                        "name": "pos_terminal_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaDeviceListAPIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ZatcaAPIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/zatca/devices/{id}/complete-onboarding": {
             "post": {
                 "security": [
@@ -47286,6 +47355,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Saved device configuration ID; determines organization and gateway",
                         "name": "device_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Physical device serial; requires organization_id",
+                        "name": "device_serial",
                         "in": "query"
                     },
                     {
@@ -57582,6 +57657,41 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.ZatcaDeviceListAPIResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/handler.ZatcaDeviceListData"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Registered ZATCA devices"
+                },
+                "statusCode": {
+                    "type": "integer",
+                    "example": 200
+                }
+            }
+        },
+        "handler.ZatcaDeviceListData": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ZatcaRegisteredDeviceData"
+                    }
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.ZatcaDocumentAPIResponse": {
             "type": "object",
             "properties": {
@@ -58031,6 +58141,91 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.ZatcaRegisteredDeviceData": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "csid_expiry": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "device_serial": {
+                    "type": "string",
+                    "example": "EGS-POS-08"
+                },
+                "device_type": {
+                    "type": "string",
+                    "example": "pos"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "is_revoked": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "organization_zatca_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 8
+                },
+                "reporting_ready": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "store_name": {
+                    "type": "string",
+                    "example": "Main Store"
+                },
+                "terminal_code": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "POS-01"
+                },
+                "terminal_name": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "Counter 1"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "zatca_env": {
+                    "type": "string",
+                    "enum": [
+                        "sandbox",
+                        "simulation",
+                        "production"
+                    ],
+                    "x-nullable": true,
+                    "example": "simulation"
+                }
+            }
+        },
         "handler.ZatcaStatusAPIResponse": {
             "type": "object",
             "properties": {
@@ -58057,6 +58252,10 @@ const docTemplate = `{
                 "device_id": {
                     "type": "integer",
                     "example": 3
+                },
+                "device_serial": {
+                    "type": "string",
+                    "example": "POS-01"
                 },
                 "enabled": {
                     "type": "boolean",
@@ -58090,8 +58289,16 @@ const docTemplate = `{
                 "organization_required": {
                     "type": "boolean"
                 },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "example": 2
+                },
                 "reporting_ready": {
                     "type": "boolean"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 1
                 },
                 "vat_id": {
                     "type": "string",

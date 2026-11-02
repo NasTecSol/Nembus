@@ -10,6 +10,7 @@ func RegisterZatcaRoutes(rg *gin.RouterGroup, h *handler.ZatcaHandler) {
 	zatca := rg.Group("/zatca")
 	{
 		zatca.GET("/status", h.GetZatcaStatus)
+		zatca.GET("/devices", h.ListZatcaDevices)
 		zatca.GET("/documents", h.ListZatcaDocuments)
 		zatca.GET("/receipt-qr", h.GetReceiptQR)
 		zatca.GET("/configs", h.GetConfigsDelta)    // Delta-Fetch (Pull: Cloud -> POS)
