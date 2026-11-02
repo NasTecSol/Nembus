@@ -26,8 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata wget postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /var/cache/nembus && chmod 777 /var/cache/nembus
+RUN mkdir -p /var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64 && \
+    chmod -R 777 /var/cache/nembus && \
+    echo "/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64" > /etc/ld.so.conf.d/nembus_biometrics.conf && \
+    ldconfig
 ENV XDG_CACHE_HOME=/var/cache/nembus
+ENV LD_LIBRARY_PATH=/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64:${LD_LIBRARY_PATH}
 
 COPY --from=build /app/server /app/server
 
