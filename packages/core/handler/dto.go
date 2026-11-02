@@ -55,6 +55,64 @@ type AuthorizeActionResponse struct {
 	ExpiresAt          string `json:"expires_at" example:"2026-09-15T13:25:00Z"`
 }
 
+// BiometricLoginRequest is the body for POST /api/auth/login/biometric.
+type BiometricLoginRequest struct {
+	FMDBase64 string `json:"fmd_base64" binding:"required" example:"Rk1SAA..."`
+	UserLogin string `json:"user_login,omitempty" example:"cashier_jane"`
+}
+
+// BiometricLoginResponse is returned after successful biometric authentication.
+type BiometricLoginResponse struct {
+	StatusCode int    `json:"statusCode" example:"200"`
+	Message    string `json:"message" example:"biometric login successful"`
+	Data       struct {
+		Token          string `json:"token" example:"eyJhbGci..."`
+		UserID         int32  `json:"user_id" example:"12"`
+		UserLogin      string `json:"user_login" example:"cashier_jane"`
+		OrganizationID int32  `json:"organization_id" example:"1"`
+		MatchedFinger  int16  `json:"matched_finger_index" example:"2"`
+	} `json:"data"`
+}
+
+// BiometricAuthorizeActionRequest is the body for POST /api/auth/authorize-action/biometric.
+type BiometricAuthorizeActionRequest struct {
+	FMDBase64       string `json:"fmd_base64" binding:"required" example:"Rk1SAA..."`
+	SupervisorLogin string `json:"supervisor_login,omitempty" example:"supervisor_jane"`
+	PermissionCode  string `json:"permission_code" binding:"required" example:"pos:void_transactions"`
+	CashierID       *int32 `json:"cashier_id,omitempty" example:"5"`
+}
+
+// EnrollFingerRequest enrolls a consolidated ISO FMD for a user finger.
+type EnrollFingerRequest struct {
+	UserID         int32    `json:"user_id" example:"12"`
+	FingerIndex    int16    `json:"finger_index" example:"2"`
+	FMDBase64      string   `json:"fmd_base64" example:"Rk1SAA..."`
+	ViewFMDsBase64 []string `json:"view_fmds_base64,omitempty"`
+	QualityScore   int16    `json:"quality_score,omitempty" example:"1"`
+	ReaderSerial   string   `json:"reader_serial,omitempty" example:"5000216000000000"`
+}
+
+// EnrollFingerResponse wraps enrolled finger metadata.
+type EnrollFingerResponse struct {
+	StatusCode int    `json:"statusCode" example:"200"`
+	Message    string `json:"message" example:"biometric fingerprint enrolled successfully"`
+	Data       struct {
+		ID           int32  `json:"id" example:"1"`
+		UserID       int32  `json:"user_id" example:"12"`
+		FingerIndex  int16  `json:"finger_index" example:"2"`
+		FingerName   string `json:"finger_name" example:"Right Index"`
+		QualityScore int16  `json:"quality_score" example:"1"`
+		IsActive     bool   `json:"is_active" example:"true"`
+	} `json:"data"`
+}
+
+// ListUserBiometricsResponse lists enrolled fingers for a user.
+type ListUserBiometricsResponse struct {
+	StatusCode int                              `json:"statusCode" example:"200"`
+	Message    string                           `json:"message" example:"user biometrics fetched successfully"`
+	Data       []usecase.EnrolledFingerSummary  `json:"data"`
+}
+
 // CreateUserRequest represents user creation request
 type CreateUserRequest struct {
 	FirstName    string  `json:"first_name" binding:"required" example:"John"`
@@ -1168,6 +1226,7 @@ type OpenCashierSessionRequest struct {
 	PosTerminalID  int32  `json:"pos_terminal_id" binding:"required" example:"1"`
 	SessionNumber  string `json:"session_number" binding:"required" example:"SES-20261026-001"`
 	OpeningBalance string `json:"opening_balance" binding:"required" example:"100.00"`
+	SupervisorID   *int32 `json:"supervisor_id,omitempty"`
 }
 
 type CloseCashierSessionRequest struct {
@@ -1176,6 +1235,7 @@ type CloseCashierSessionRequest struct {
 	Variance        string          `json:"variance,omitempty" example:"0.00"`                   // Optional; server computes at close
 	ClosingNote     string          `json:"closing_note,omitempty" example:"All good"`
 	ClosedBy        int64           `json:"closed_by" binding:"required" example:"1"`
+	SupervisorID    *int32          `json:"supervisor_id,omitempty"`
 	Metadata        json.RawMessage `json:"metadata,omitempty"`
 }
 

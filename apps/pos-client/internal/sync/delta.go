@@ -151,6 +151,9 @@ func (s *SyncService) saveDeltaPageContext(ctx context.Context, storeID int32, e
 		_ = tx.Rollback(rollbackCtx)
 	}()
 	if len(events) > 0 {
+		if _, err := tx.Exec(ctx, "SET LOCAL nembus.sync_applier = 'true'"); err != nil {
+			return err
+		}
 		query, err := deltaUpsertSQL(ctx, tx, entity)
 		if err != nil {
 			return err
@@ -199,6 +202,9 @@ func deltaUpsertSQL(ctx context.Context, tx pgx.Tx, entity string) (string, erro
 			return "", err
 		}
 		quoted := pgx.Identifier{column}.Sanitize()
+		if entity == "user_biometric_templates" && column == "id" {
+			continue
+		}
 		columns = append(columns, quoted)
 		if column != "id" && column != "created_at" {
 			updates = append(updates, quoted+"=EXCLUDED."+quoted)
@@ -212,6 +218,13 @@ func deltaUpsertSQL(ctx context.Context, tx pgx.Tx, entity string) (string, erro
 	}
 	table := pgx.Identifier{entity}.Sanitize()
 	cols := strings.Join(columns, ",")
+	conflictTarget := "id"
+	if entity == "user_biometric_templates" {
+		conflictTarget = "user_id, finger_index"
+		return fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_record(NULL::%s,$1::json)
+		ON CONFLICT(%s) DO UPDATE SET %s
+		WHERE EXCLUDED.updated_at >= %s.updated_at`, table, cols, cols, table, conflictTarget, strings.Join(updates, ","), table), nil
+	}
 	return fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_record(NULL::%s,$1::json)
-		ON CONFLICT(id) DO UPDATE SET %s`, table, cols, cols, table, strings.Join(updates, ",")), nil
+		ON CONFLICT(%s) DO UPDATE SET %s`, table, cols, cols, table, conflictTarget, strings.Join(updates, ",")), nil
 }
