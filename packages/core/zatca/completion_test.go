@@ -80,6 +80,12 @@ type completionDB struct {
 }
 
 func (db *completionDB) QueryRow(_ context.Context, sql string, args ...interface{}) pgx.Row {
+	if strings.Contains(sql, "GetZatcaDeviceConfigBySerial") {
+		if db.device.ID == 0 {
+			return missingOrganizationRow{}
+		}
+		return submissionRow{db.device}
+	}
 	if strings.Contains(sql, "GetZatcaDeviceConfig") {
 		return submissionRow{db.device}
 	}

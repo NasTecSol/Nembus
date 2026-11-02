@@ -40,7 +40,6 @@ func PullEntityTypes() []string {
 		"inventory_stock",
 		"stock_movements",
 		"organizations",
-		"zatca_device_configs",
 	}
 }
 

@@ -84,6 +84,13 @@ func TestLocalOnboardingHTTPPersistsCredentialsInRequestTenant(t *testing.T) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), middleware.RepoKey, repository.New(db)))
 	})
 	router.RegisterZatcaRoutes(engine.Group("/api"), h)
+	missingOTP := httptest.NewRecorder()
+	initial := httptest.NewRequest("POST", "/api/zatca/onboard", strings.NewReader(`{"organization_id":1,"store_id":17,"pos_terminal_id":18,"device_serial":"LOCAL-POS-18","device_type":"pos","zatca_env":"simulation"}`))
+	initial.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(missingOTP, initial)
+	if missingOTP.Code != 400 || !strings.Contains(missingOTP.Body.String(), "Enter a fresh OTP") || credentials != 0 || db.creates != 0 {
+		t.Fatalf("new registration should request an OTP before contacting ZATCA: HTTP %d %s", missingOTP.Code, missingOTP.Body)
+	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest("POST", "/api/zatca/onboard", strings.NewReader(`{"organization_id":1,"store_id":17,"pos_terminal_id":18,"device_serial":"LOCAL-POS-18","device_type":"pos","otp":"654321","zatca_env":"simulation"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -99,6 +106,16 @@ func TestLocalOnboardingHTTPPersistsCredentialsInRequestTenant(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), "PRIVATE KEY") || strings.Contains(recorder.Body.String(), "local-production-secret") {
 		t.Fatal("private credentials leaked into HTTP response")
+	}
+	// The frontend can repeat the same onboarding action after refresh, without
+	// an OTP. A ready device must not consume another OTP or replace its key.
+	savedKey := db.device.PrivateKeyPem
+	repeated := httptest.NewRecorder()
+	retry := httptest.NewRequest("POST", "/api/zatca/onboard", strings.NewReader(`{"organization_id":1,"store_id":17,"pos_terminal_id":18,"device_serial":"LOCAL-POS-18","device_type":"pos","zatca_env":"simulation"}`))
+	retry.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(repeated, retry)
+	if repeated.Code != 200 || credentials != 1 || checks != 6 || exchanges != 1 || db.creates != 1 || db.device.PrivateKeyPem != savedKey {
+		t.Fatalf("repeat onboarding did not reuse the ready registration: HTTP %d %s", repeated.Code, repeated.Body)
 	}
 	// Recovery is available on the same local backend and reuses its saved device.
 	resume := httptest.NewRecorder()
