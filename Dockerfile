@@ -1,8 +1,10 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.25-bookworm AS build
 
 WORKDIR /app
 
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates tzdata build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace configuration and module dependencies.
 COPY go.work go.work.sum* ./
@@ -29,8 +31,9 @@ RUN $(go env GOPATH)/bin/swag init \
     --parseInternal
 
 # Build the API server.
+# CGO is required: the biometric engine dlopen()s the vendored FingerJet (glibc) libraries.
 RUN mkdir -p /out && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" \
     -o /out/server main.go
 
@@ -44,15 +47,20 @@ RUN wget -qO /out/atlas https://release.ariga.io/atlas/atlas-linux-amd64-latest 
     chmod +x /out/atlas
 
 # Production runtime container.
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
     wget \
-    postgresql-client
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Writable cache dir where the embedded biometric libraries are extracted at runtime.
+RUN mkdir -p /var/cache/nembus && chmod 777 /var/cache/nembus
+ENV XDG_CACHE_HOME=/var/cache/nembus
 
 # Application and migration executables.
 COPY --from=build /out/server /app/server
