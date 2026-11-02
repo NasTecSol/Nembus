@@ -226,7 +226,7 @@
             "url": "{{base_url}}/api/auth/authorize-action/biometric",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fmd_base64\": \"{{fmd_base64}}\",\n  \"supervisor_login\": \"supervisor_jane\",\n  \"permission_code\": \"biometrics.enroll\",\n  \"cashier_id\": 1\n}"
+              "raw": "{\n  \"fmd_base64\": \"{{fmd_base64}}\",\n  \"supervisor_login\": \"supervisor_jane\",\n  \"permission_code\": \"users:enroll\",\n  \"cashier_id\": 1\n}"
             },
             "description": "Identifies a supervisor by fingerprint (1:1 if `supervisor_login` provided, else 1:N across active enrolled users) and mints a 5-minute `X-Authorization-Token` when the matched user holds `permission_code`. Auto-saves `authorization_token` to environment/collection variables."
           },
@@ -466,7 +466,7 @@
               "mode": "raw",
               "raw": "{\n  \"user_id\": 1,\n  \"finger_index\": 2,\n  \"fmd_base64\": \"{{fmd_base64}}\",\n  \"quality_score\": 90,\n  \"reader_serial\": \"5000216000000000\"\n}"
             },
-            "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after an organization-wide 1:N duplicate check. Requires `biometrics.enroll` permission or an `X-Authorization-Token` scoped to `biometrics.enroll`.\n\n**NIST `finger_index` values:**\n- `1`–`5`: Right Thumb (1), Right Index (2), Right Middle (3), Right Ring (4), Right Little (5)\n- `6`–`10`: Left Thumb (6), Left Index (7), Left Middle (8), Left Ring (9), Left Little (10)"
+            "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after an organization-wide 1:N duplicate check. Requires `users:enroll` permission or an `X-Authorization-Token` scoped to `users:enroll`.\n\n**NIST `finger_index` values:**\n- `1`–`5`: Right Thumb (1), Right Index (2), Right Middle (3), Right Ring (4), Right Little (5)\n- `6`–`10`: Left Thumb (6), Left Index (7), Left Middle (8), Left Ring (9), Left Little (10)"
           }
         },
         {
@@ -515,7 +515,7 @@
               }
             ],
             "url": "{{base_url}}/api/users/{{user_id}}/biometrics/2",
-            "description": "Soft-deactivates (`is_active = false`) the specified finger template (`fingerIndex` 1–10) for sync propagation. Requires `biometrics.enroll` permission."
+            "description": "Soft-deactivates (`is_active = false`) the specified finger template (`fingerIndex` 1–10) for sync propagation. Requires `users:enroll` permission."
           }
         }
       ]
