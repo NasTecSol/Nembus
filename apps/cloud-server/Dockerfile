@@ -1,8 +1,10 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.25-bookworm AS build
 
 WORKDIR /app
 
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates tzdata build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -14,13 +16,18 @@ COPY . .
 RUN go install github.com/swaggo/swag/cmd/swag@latest
 RUN $(go env GOPATH)/bin/swag init -g main.go -d ./,../../packages/core/handler -o docs/swagger --parseDependency --parseInternal
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o server .
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o server .
 
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata wget postgresql-client
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates tzdata wget postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /var/cache/nembus && chmod 777 /var/cache/nembus
+ENV XDG_CACHE_HOME=/var/cache/nembus
 
 COPY --from=build /app/server /app/server
 

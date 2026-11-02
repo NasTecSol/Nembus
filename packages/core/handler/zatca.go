@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -541,6 +542,7 @@ func (h *ZatcaHandler) GetZatcaSyncCapabilities(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        x-tenant-id header string true "Tenant identifier"
 // @Param        device_id query int false "Saved device configuration ID; determines organization and gateway"
+// @Param        device_serial query string false "Physical device serial; requires organization_id"
 // @Param        organization_id query int false "Organization ID when device_id is omitted"
 // @Success      200 {object} ZatcaStatusAPIResponse
 // @Failure      400 {object} ZatcaAPIError
@@ -579,6 +581,37 @@ func (h *ZatcaHandler) GetZatcaStatus(c *gin.Context) {
 		}
 		baseURL, _ := usecase.ZatcaEnvironmentBaseURL(environment)
 		data["device_id"], data["env"], data["base_url"] = device.ID, environment, baseURL
+	} else if serial := strings.TrimSpace(c.Query("device_serial")); serial != "" {
+		id, err := strconv.ParseInt(c.Query("organization_id"), 10, 32)
+		if err != nil || id <= 0 {
+			c.JSON(400, utils.NewResponse(400, "valid organization_id is required with device_serial", nil))
+			return
+		}
+		if caller, ok := middleware.GetOrganizationIDFromContext(c); ok && caller > 0 && caller != int32(id) {
+			c.JSON(403, utils.NewResponse(403, "organization does not match authenticated organization", nil))
+			return
+		}
+		if repo == nil {
+			c.JSON(500, utils.NewResponse(500, "tenant repository is required", nil))
+			return
+		}
+		config, err := repo.GetZatcaDeviceConfigBySerial(c.Request.Context(), repository.GetZatcaDeviceConfigBySerialParams{OrganizationID: int32(id), DeviceSerial: serial})
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(404, utils.NewResponse(404, "device not found", nil))
+			return
+		}
+		if err != nil {
+			c.JSON(500, utils.NewResponse(500, "failed to read device registration", nil))
+			return
+		}
+		device, orgID = &config, config.OrganizationID
+		environment, err := usecase.ZatcaDeviceEnvironment(device)
+		if err != nil {
+			c.JSON(422, utils.NewResponse(422, err.Error(), nil))
+			return
+		}
+		baseURL, _ := usecase.ZatcaEnvironmentBaseURL(environment)
+		data["device_id"], data["env"], data["base_url"] = device.ID, environment, baseURL
 	} else if raw := c.Query("organization_id"); raw != "" {
 		id, err := strconv.ParseInt(raw, 10, 32)
 		if err != nil || id <= 0 {
@@ -610,6 +643,9 @@ func (h *ZatcaHandler) GetZatcaStatus(c *gin.Context) {
 		}
 		data["organization_id"], data["enabled"], data["vat_id"] = orgID, enabled, org.TaxID.String
 		if device != nil {
+			data["device_serial"] = device.DeviceSerial
+			data["store_id"] = device.StoreID
+			data["pos_terminal_id"] = device.PosTerminalID
 			var credentials struct {
 				Secret string `json:"production_secret"`
 			}

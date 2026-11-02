@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && cgo
 
 package biometrics
 
@@ -106,6 +106,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -205,6 +206,11 @@ func InitRuntime() error {
 		dpfjPath := C.CString(filepath.Join(runtimeDir, "libdpfj.so.3.0.0"))
 		handleDPFJ = C.dlopen(dpfjPath, C.RTLD_NOW|C.RTLD_GLOBAL)
 		C.free(unsafe.Pointer(dpfjPath))
+		if handleDPFJ == nil {
+			if msg := C.dlerror(); msg != nil {
+				log.Printf("[Biometrics] dlopen libdpfj failed: %s", C.GoString(msg))
+			}
+		}
 		if handleDPFJ != nil {
 			fnCompare = dlsymLookup(handleDPFJ, "dpfj_compare")
 			fnCreateFMDFromFID = dlsymLookup(handleDPFJ, "dpfj_create_fmd_from_fid")
