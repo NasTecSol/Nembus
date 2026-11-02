@@ -1,13 +1,13 @@
 -- Biometric enrollment permission and supervisor/admin role grants
 INSERT INTO permissions (name, code, description)
-VALUES ('Enroll Biometrics', 'biometrics.enroll', 'Enroll or deactivate user fingerprint templates')
+VALUES ('Enroll Biometrics', 'users:enroll', 'Enroll or deactivate user fingerprint templates')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
-WHERE p.code = 'biometrics.enroll'
+WHERE p.code = 'users:enroll'
   AND r.code IN ('admin', 'super_admin', 'supervisor', 'store_manager')
   AND NOT EXISTS (
     SELECT 1 FROM role_permissions rp

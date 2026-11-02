@@ -31,14 +31,14 @@ func (h *BiometricHandler) getRepositoryFromContext(c *gin.Context) *repository.
 
 // EnrollFinger handles POST /api/users/:id/biometrics/enroll (and POST /api/biometrics/enroll)
 // @Summary      Enroll user fingerprint template
-// @Description  Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token scoped to biometrics.enroll.
+// @Description  Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires users:enroll permission or X-Authorization-Token scoped to users:enroll.
 // @Tags         biometrics
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        x-tenant-id  header    string  true  "Tenant identifier"
 // @Param        Authorization header   string  true  "Bearer JWT"
-// @Param        X-Authorization-Token header string false "Optional supervisor override token (biometrics.enroll)"
+// @Param        X-Authorization-Token header string false "Optional supervisor override token (users:enroll)"
 // @Param        id           path      int     false "User ID (when using /users/:id/biometrics/enroll)"
 // @Param        request      body      EnrollFingerRequest  true  "Enrollment payload"
 // @Success      200  {object}  EnrollFingerResponse
@@ -117,7 +117,7 @@ func (h *BiometricHandler) ListUserBiometrics(c *gin.Context) {
 
 // DeleteUserBiometric handles DELETE /api/users/:id/biometrics/:fingerIndex
 // @Summary      Deactivate a user fingerprint template
-// @Description  Soft-deactivates the template (is_active=false) for sync propagation. Requires biometrics.enroll permission.
+// @Description  Soft-deactivates the template (is_active=false) for sync propagation. Requires users:enroll permission.
 // @Tags         biometrics
 // @Produce      json
 // @Security     BearerAuth
