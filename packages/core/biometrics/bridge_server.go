@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,6 +17,7 @@ import (
 // directly from the embedded DigitalPersona runtime libraries (dpfpdd + dpfj).
 type LocalBridgeServer struct {
 	addr       string
+	mux        *http.ServeMux
 	httpServer *http.Server
 
 	captureHTTPMu sync.Mutex // one blocking hardware capture at a time (POST capture / enrollment step)
@@ -30,8 +32,8 @@ func NewLocalBridgeServer(addr string) *LocalBridgeServer {
 	if addr == "" {
 		addr = "127.0.0.1:5050"
 	}
-	b := &LocalBridgeServer{addr: addr}
 	mux := http.NewServeMux()
+	b := &LocalBridgeServer{addr: addr, mux: mux}
 	mux.HandleFunc("/api/v1/device", b.withCORS(b.handleDevice))
 	mux.HandleFunc("/api/v1/device/info", b.withCORS(b.handleDeviceInfo))
 	mux.HandleFunc("/api/v1/capture", b.withCORS(b.handleCapture))
@@ -47,13 +49,24 @@ func NewLocalBridgeServer(addr string) *LocalBridgeServer {
 	return b
 }
 
-// StartIfPortFree starts the embedded hardware bridge on 127.0.0.1:5050 if no external
-// fingerprint_server daemon is already listening on that port.
-func (b *LocalBridgeServer) StartIfPortFree() error {
+// Mux returns the underlying HTTP ServeMux to register custom or extended routes.
+func (b *LocalBridgeServer) Mux() *http.ServeMux {
+	return b.mux
+}
+
+// HandleFunc registers a CORS-wrapped HTTP handler on the bridge mux.
+func (b *LocalBridgeServer) HandleFunc(pattern string, handler http.HandlerFunc) {
+	b.mux.HandleFunc(pattern, b.withCORS(handler))
+}
+
+// StartIfPortFree starts the embedded hardware bridge when the listen address is free.
+// It returns started=true when this instance is listening, or started=false when another
+// process already holds the port (err is nil in that case).
+func (b *LocalBridgeServer) StartIfPortFree() (started bool, err error) {
 	ln, err := net.Listen("tcp", b.addr)
 	if err != nil {
-		log.Printf("[BiometricBridge] Port %s already in use (external bridge active): %v", b.addr, err)
-		return nil
+		log.Printf("[BiometricBridge] Port %s already in use: %v", b.addr, err)
+		return false, nil
 	}
 	log.Printf("[BiometricBridge] Embedded plug-and-play hardware bridge listening on http://%s/api/v1", b.addr)
 	go func() {
@@ -61,7 +74,12 @@ func (b *LocalBridgeServer) StartIfPortFree() error {
 			log.Printf("[BiometricBridge] Server stopped: %v", serveErr)
 		}
 	}()
-	return nil
+	return true, nil
+}
+
+// Addr returns the configured listen address (host:port).
+func (b *LocalBridgeServer) Addr() string {
+	return b.addr
 }
 
 // Stop gracefully shuts down the embedded hardware bridge.
@@ -78,6 +96,9 @@ func (b *LocalBridgeServer) withCORS(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Authorization-Token")
+		if r.Header.Get("Access-Control-Request-Private-Network") == "true" {
+			w.Header().Set("Access-Control-Allow-Private-Network", "true")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -125,13 +146,15 @@ func (b *LocalBridgeServer) handleDeviceInfo(w http.ResponseWriter, r *http.Requ
 	}
 	d := devices[0]
 	writeBridgeJSON(w, http.StatusOK, map[string]any{
-		"success":       true,
-		"name":          d.Name,
-		"vendor_name":   d.VendorName,
-		"product_name":  d.ProductName,
-		"serial_number": d.SerialNum,
-		"vendor_id":     d.VendorID,
-		"product_id":    d.ProductID,
+		"success":          true,
+		"name":             d.Name,
+		"vendor_name":      d.VendorName,
+		"product_name":     d.ProductName,
+		"serial_number":    d.SerialNum,
+		"vendor_id":        d.VendorID,
+		"product_id":       d.ProductID,
+		"firmware_version": d.FirmwareVersion,
+		"hardware_version": d.HardwareVersion,
 	})
 }
 
@@ -152,29 +175,69 @@ func (b *LocalBridgeServer) handleCapture(w http.ResponseWriter, r *http.Request
 		if req.TimeoutMs <= 0 {
 			req.TimeoutMs = 15000
 		}
-		b.captureHTTPMu.Lock()
-		res, err := CaptureSingleFMD(req.TimeoutMs)
-		b.captureHTTPMu.Unlock()
-		if err != nil {
-			writeBridgeJSON(w, bridgeCaptureHTTPStatus(err), map[string]any{
-				"success": false,
-				"message": CaptureUserMessage(err),
-			})
-			return
+
+		type captureOut struct {
+			res *CaptureResponse
+			err error
 		}
-		writeBridgeJSON(w, http.StatusOK, map[string]any{
-			"success":      true,
-			"fmd":          res.FMDBase64,
-			"fmd_base64":   res.FMDBase64,
-			"bmp":          res.BMPBase64,
-			"image_base64": res.BMPBase64,
-			"quality":      res.NFIQScore,
-			"quality_score": res.NFIQScore,
-			"nfiq_score":   res.NFIQScore,
-			"reader_serial": res.ReaderSerial,
-			"width":        res.Width,
-			"height":       res.Height,
-		})
+		ch := make(chan captureOut, 1)
+		go func() {
+			b.captureHTTPMu.Lock()
+			defer b.captureHTTPMu.Unlock()
+			res, err := CaptureSingleFMD(req.TimeoutMs)
+			ch <- captureOut{res: res, err: err}
+		}()
+
+		watchdogMs := req.TimeoutMs + 8000
+		if watchdogMs < 12000 {
+			watchdogMs = 12000
+		}
+		// WBF capture may prompt for UAC elevation on access-denied fallback.
+		if devices, qErr := QueryDevices(); qErr == nil && len(devices) > 0 && strings.HasPrefix(devices[0].Name, "WBF:") {
+			if watchdogMs < req.TimeoutMs+90000 {
+				watchdogMs = req.TimeoutMs + 90000
+			}
+		}
+		timer := time.NewTimer(time.Duration(watchdogMs) * time.Millisecond)
+		defer timer.Stop()
+
+		select {
+		case out := <-ch:
+			if out.err != nil {
+				writeBridgeJSON(w, bridgeCaptureHTTPStatus(out.err), map[string]any{
+					"success": false,
+					"message": CaptureUserMessage(out.err),
+				})
+				return
+			}
+			res := out.res
+			writeBridgeJSON(w, http.StatusOK, map[string]any{
+				"success":       true,
+				"fmd":           res.FMDBase64,
+				"fmd_base64":    res.FMDBase64,
+				"bmp":           res.BMPBase64,
+				"image_base64":  res.BMPBase64,
+				"quality":       res.NFIQScore,
+				"quality_score": res.NFIQScore,
+				"nfiq_score":    res.NFIQScore,
+				"reader_serial": res.ReaderSerial,
+				"width":         res.Width,
+				"height":        res.Height,
+			})
+		case <-timer.C:
+			log.Printf("[BiometricBridge] Capture watchdog fired after %dms — canceling hardware capture", watchdogMs)
+			_ = CancelActiveCapture()
+			writeBridgeJSON(w, http.StatusRequestTimeout, map[string]any{
+				"success": false,
+				"message": "Capture timed out waiting for a good fingerprint scan. Press the sensor firmly until the light stays on, then retry. If this repeats, run Install / Repair Drivers (Biometric class) and replug USB.",
+			})
+		case <-r.Context().Done():
+			_ = CancelActiveCapture()
+			writeBridgeJSON(w, http.StatusRequestTimeout, map[string]any{
+				"success": false,
+				"message": "Capture request canceled",
+			})
+		}
 	default:
 		writeBridgeJSON(w, http.StatusMethodNotAllowed, map[string]any{"success": false, "message": "method not allowed"})
 	}
