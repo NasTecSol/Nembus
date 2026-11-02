@@ -1,0 +1,147 @@
+{
+  "info": {
+    "name": "Nembus - Organization ZATCA Enable/Disable",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Read or change the organization-wide ZATCA switch in metadata. Missing flags are disabled. Enable before onboarding or invoice submission. Requests need normal bearer auth and tenant headers."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tenant",
+      "value": "stgin"
+    },
+    {
+      "key": "organization_id",
+      "value": "1"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Read organization ZATCA switch",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/organizations/{{organization_id}}/zatca"
+      }
+    },
+    {
+      "name": "Enable ZATCA for organization",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/organizations/{{organization_id}}/zatca",
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"enabled\": true\n}"
+        },
+        "description": "Updates only organizations.metadata.zatca.enabled. No credential/document deletion."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Organization switch saved', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.enabled).to.eql(true); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Disable ZATCA for organization",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/organizations/{{organization_id}}/zatca",
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"enabled\": false\n}"
+        },
+        "description": "Updates only organizations.metadata.zatca.enabled. No credential/document deletion."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Organization switch saved', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.enabled).to.eql(false); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read organization-aware ZATCA status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/status?organization_id={{organization_id}}"
+      }
+    }
+  ]
+}

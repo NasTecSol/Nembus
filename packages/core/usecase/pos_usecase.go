@@ -11,6 +11,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -622,31 +623,31 @@ func toPosTransactionOutput(txn repository.PosTransaction) PosTransactionOutput 
 
 // PosTransactionWithLinesOutput is the API response shape for a POS transaction with lines.
 type PosTransactionWithLinesOutput struct {
-	ID               int32            `json:"id"`
-	StoreID          int32            `json:"store_id"`
-	CashierID        int32            `json:"cashier_id"`
-	CashierSessionID int32            `json:"cashier_session_id"`
-	CustomerID       pgtype.Int4      `json:"customer_id"`
-	PosTerminalID    pgtype.Int4      `json:"pos_terminal_id"`
-	TransactionNumber string          `json:"transaction_number"`
-	TransactionDate  pgtype.Timestamp `json:"transaction_date"`
-	TransactionType  pgtype.Text      `json:"transaction_type"`
-	Subtotal         pgtype.Numeric   `json:"subtotal"`
-	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
-	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
-	TotalAmount      pgtype.Numeric   `json:"total_amount"`
-	TotalCost        pgtype.Numeric   `json:"total_cost"`
-	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
-	ChangeGiven      pgtype.Numeric   `json:"change_given"`
-	Status           pgtype.Text      `json:"status"`
-	PriceListID      pgtype.Int4      `json:"price_list_id"`
-	SalesOrderID     pgtype.UUID      `json:"sales_order_id"`
-	SourceCartID     pgtype.UUID      `json:"source_cart_id"`
-	VoidedBy         pgtype.Int4      `json:"voided_by"`
-	VoidedAt         pgtype.Timestamp `json:"voided_at"`
-	Metadata         json.RawMessage  `json:"metadata"`
-	CreatedAt        pgtype.Timestamp `json:"created_at"`
-	Lines            json.RawMessage  `json:"lines"`
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	PosTerminalID     pgtype.Int4      `json:"pos_terminal_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	TransactionType   pgtype.Text      `json:"transaction_type"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	TotalCost         pgtype.Numeric   `json:"total_cost"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric   `json:"change_given"`
+	Status            pgtype.Text      `json:"status"`
+	PriceListID       pgtype.Int4      `json:"price_list_id"`
+	SalesOrderID      pgtype.UUID      `json:"sales_order_id"`
+	SourceCartID      pgtype.UUID      `json:"source_cart_id"`
+	VoidedBy          pgtype.Int4      `json:"voided_by"`
+	VoidedAt          pgtype.Timestamp `json:"voided_at"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CreatedAt         pgtype.Timestamp `json:"created_at"`
+	Lines             json.RawMessage  `json:"lines"`
 }
 
 func linesToJSONRawMessage(v interface{}) json.RawMessage {
@@ -685,9 +686,22 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		return utils.NewResponse(utils.CodeBadReq, "at least one line is required", nil)
 	}
 
-	_, err := uc.repo.GetStore(ctx, in.StoreID)
+	store, err := uc.repo.GetStore(ctx, in.StoreID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeNotFound, "store not found", nil)
+	}
+	var zatcaEnabled bool
+	if uc.zatcaUC != nil && uc.zatcaUC.GetConfig() != nil {
+		var err error
+		zatcaEnabled, err = OrganizationZatcaEnabledByID(ctx, uc.repo, store.OrganizationID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+		}
+		if zatcaEnabled {
+			if err := uc.zatcaUC.validatePOSCheckout(ctx, in, &store); err != nil {
+				return utils.NewResponse(utils.CodeBadReq, "ZATCA checkout validation failed: "+err.Error(), nil)
+			}
+		}
 	}
 
 	transactionNumber := strings.TrimSpace(in.TransactionNumber)
@@ -850,7 +864,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	}
 
 	// 2. F2.5: Dual Order Harmonization: Create sales_orders_v2 record and link
-	store, _ := uc.repo.GetStore(ctx, in.StoreID)
+	var salesOrderError error
 	orderNum := fmt.Sprintf("SO-%s", header.TransactionNumber)
 	counterAddress := json.RawMessage([]byte(fmt.Sprintf(`{"type":"pos_counter","store_id":%d}`, in.StoreID)))
 	orderArg := repository.CreateSalesOrderV2Params{
@@ -875,18 +889,22 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	}
 	soV2, err := uc.repo.CreateSalesOrderV2(ctx, orderArg)
 	if err != nil {
+		salesOrderError = err
 		fmt.Printf("Warning: failed to create sales_orders_v2 for pos transaction: %v\n", err)
 	} else {
-		_, _ = uc.repo.UpdateOrderTotals(ctx, repository.UpdateOrderTotalsParams{
+		_, totalsErr := uc.repo.UpdateOrderTotals(ctx, repository.UpdateOrderTotalsParams{
 			ID:             soV2.ID,
 			Subtotal:       in.Subtotal,
 			DiscountAmount: in.DiscountAmount,
 			TaxAmount:      in.TaxAmount,
 			TotalAmount:    in.TotalAmount,
 		})
+		if totalsErr != nil {
+			salesOrderError = totalsErr
+		}
 
 		for idx, l := range createdLines {
-			_, _ = uc.repo.CreateSalesOrderLineV2(ctx, repository.CreateSalesOrderLineV2Params{
+			_, lineErr := uc.repo.CreateSalesOrderLineV2(ctx, repository.CreateSalesOrderLineV2Params{
 				SalesOrderID:     soV2.ID,
 				OrganizationID:   store.OrganizationID,
 				LineNumber:       int32(idx + 1),
@@ -901,6 +919,9 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 				LineStatus:       pgtype.Text{String: "fulfilled", Valid: true},
 				UnitCost:         l.CostPrice,
 			})
+			if lineErr != nil {
+				salesOrderError = lineErr
+			}
 		}
 
 		_ = uc.repo.LinkPosTransactionToSalesOrder(ctx, repository.LinkPosTransactionToSalesOrderParams{
@@ -910,44 +931,29 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		header.SalesOrderID = pgtype.UUID{Bytes: soV2.ID, Valid: true}
 	}
 
-	// 3. F2.2: ZATCA Phase 2 POS Integration
-	var qrCode string
-	var zatcaUUID string
-	if uc.zatcaUC != nil && uc.zatcaUC.GetConfig() != nil && uc.zatcaUC.GetConfig().Enabled {
-		org, orgErr := uc.repo.GetOrganization(ctx, store.OrganizationID)
-		if orgErr == nil {
-			device, devErr := uc.repo.GetActivePosDevice(ctx, repository.GetActivePosDeviceParams{
-				OrganizationID: store.OrganizationID,
-				PosTerminalID:  pgtype.Int4{Int32: in.PosTerminalID, Valid: true},
-			})
-			if devErr != nil {
-				device, devErr = uc.repo.GetActiveCloudDevice(ctx, store.OrganizationID)
+	// ZATCA reads the persisted sales order and lines, never POS copies.
+	var qrCode, zatcaUUID, zatcaError string
+	if zatcaEnabled {
+		if salesOrderError != nil {
+			zatcaError = "Sales order persistence failed: " + salesOrderError.Error()
+		} else if !header.SalesOrderID.Valid {
+			zatcaError = "Sales order creation/linking failed; no ZATCA invoice was generated"
+		} else {
+			entry, signErr := uc.zatcaUC.EnsureSalesOrderDocument(ctx, uuid.UUID(header.SalesOrderID.Bytes))
+			if signErr != nil {
+				zatcaError = "ZATCA sales order generation failed: " + signErr.Error()
 			}
-			if devErr == nil {
-				signedDoc, _, signErr := uc.zatcaUC.SignPosTransaction(ctx, &header, createdLines, &org, &device)
-				if signErr == nil && signedDoc != nil {
-					qrCode = signedDoc.QRCode
-					zatcaUUID = signedDoc.ZatcaUUID
-
-					var metaMap map[string]interface{}
-					if len(header.Metadata) > 0 {
-						_ = json.Unmarshal(header.Metadata, &metaMap)
-					}
-					if metaMap == nil {
-						metaMap = make(map[string]interface{})
-					}
-					metaMap["qr_code_base64"] = signedDoc.QRCode
-					metaMap["icv"] = signedDoc.ICV
-					metaMap["zatca_uuid"] = signedDoc.ZatcaUUID
-					if updatedMeta, mErr := json.Marshal(metaMap); mErr == nil {
-						header.Metadata = updatedMeta
-						if uErr := uc.repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-							ID:       header.ID,
-							Metadata: updatedMeta,
-						}); uErr != nil {
-							fmt.Printf("Warning: failed to persist pos_transaction metadata: %v\n", uErr)
-						}
-					}
+			if signErr == nil && entry != nil {
+				qrCode, zatcaUUID = entry.QrCodeBase64.String, entry.ZatcaUuid.String()
+				var metadata map[string]interface{}
+				_ = json.Unmarshal(header.Metadata, &metadata)
+				if metadata == nil {
+					metadata = map[string]interface{}{}
+				}
+				metadata["qr_code_base64"], metadata["zatca_uuid"], metadata["icv"] = qrCode, zatcaUUID, entry.Icv
+				header.Metadata, _ = json.Marshal(metadata)
+				if err := uc.repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{ID: header.ID, Metadata: header.Metadata}); err != nil {
+					zatcaError = "Signed order saved but transaction QR metadata update failed: " + err.Error()
 				}
 			}
 		}
@@ -996,15 +1002,17 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		Lines:          createdLines,
 		QRCode:         qrCode,
 		ZatcaUUID:      zatcaUUID,
+		ZatcaError:     zatcaError,
 	})
 }
 
 // CreateTransactionOutput is the output response payload for CreateTransaction.
 type CreateTransactionOutput struct {
 	repository.PosTransaction
-	Lines     []repository.PosTransactionLine `json:"lines"`
-	QRCode    string                          `json:"qr_code,omitempty"`
-	ZatcaUUID string                          `json:"zatca_uuid,omitempty"`
+	Lines      []repository.PosTransactionLine `json:"lines"`
+	QRCode     string                          `json:"qr_code,omitempty"`
+	ZatcaUUID  string                          `json:"zatca_uuid,omitempty"`
+	ZatcaError string                          `json:"zatca_error,omitempty"`
 }
 
 type PosTransactionResult = CreateTransactionOutput

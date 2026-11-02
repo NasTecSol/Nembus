@@ -44,6 +44,7 @@ type LineItem struct {
 type ReceiptData struct {
 	Type          string     `json:"type"` // e.g. "Z-REPORT" or standard sales transaction
 	ReceiptNumber string     `json:"receipt_number"`
+	SalesOrderID  string     `json:"sales_order_id"` // Persisted order used to load the reported ZATCA QR
 	Cashier       string     `json:"cashier"`
 	Terminal      string     `json:"terminal"`
 	Customer      string     `json:"customer"`
@@ -52,8 +53,9 @@ type ReceiptData struct {
 	TaxRate       float64    `json:"tax_rate"` // e.g. 0.05 for 5 %
 	Paid          float64    `json:"paid"`     // total cash tendered
 	PaymentMethod string     `json:"payment_method"`
-	Barcode       string     `json:"barcode"`  // value encoded in barcode (e.g. receipt number)
-	Currency      string     `json:"currency"` // e.g. "PKR"; defaults to "PKR"
+	Barcode       string     `json:"barcode"`        // value encoded in barcode (e.g. receipt number)
+	QRCodeBase64  string     `json:"qr_code_base64"` // Saved signed payload set by PrintUseCase
+	Currency      string     `json:"currency"`       // e.g. "PKR"; defaults to "PKR"
 
 	// Session Summary / Z-Report fields
 	OpeningBalance    float64 `json:"opening_balance"`
@@ -197,6 +199,14 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 		p(tmpl.Footer.Website + "\n")
 	}
 	w(Divider())
+
+	if data.QRCodeBase64 != "" {
+		nl()
+		w(CmdAlign("center"))
+		w(CmdQRCode(data.QRCodeBase64))
+		nl()
+		nl()
+	}
 
 	// ── BARCODE ─────────────────────────────────────────────────────────
 	barcodeValue := data.Barcode

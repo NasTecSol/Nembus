@@ -14,8 +14,13 @@ import (
 )
 
 type CartHandler struct {
-	useCase *usecase.CartUseCase
+	useCase       *usecase.CartUseCase
+	zatcaCfg      *usecase.ZatcaConfig
+	zatcaReporter OrderZatcaReporter
 }
+
+func (h *CartHandler) SetZatcaConfig(cfg *usecase.ZatcaConfig)      { h.zatcaCfg = cfg }
+func (h *CartHandler) SetZatcaReporter(reporter OrderZatcaReporter) { h.zatcaReporter = reporter }
 
 func NewCartHandler(uc *usecase.CartUseCase) *CartHandler {
 	return &CartHandler{useCase: uc}
@@ -109,7 +114,7 @@ func (h *CartHandler) AddToCart(c *gin.Context) {
 
 // ConvertToOrder handles POST /api/carts/:id/checkout
 // @Summary      Convert cart to order
-// @Description  Convert an existing cart into a sales order
+// @Description  Convert a cart into a sales order and automatically attempt ZATCA reporting when enabled and the device is ready. Inspect the top-level zatca result; manual order submit remains available for retry.
 // @Tags         carts
 // @Accept       json
 // @Produce      json
@@ -137,7 +142,18 @@ func (h *CartHandler) ConvertToOrder(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ConvertToOrder(c.Request.Context(), id)
+	uc := usecase.NewCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetZatcaConfig(h.zatcaCfg)
+	resp := uc.ConvertToOrder(c.Request.Context(), id)
+	if h.zatcaReporter != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if data, ok := resp.Data.(map[string]interface{}); ok {
+			if orderID, ok := data["order_id"].(uuid.UUID); ok {
+				c.JSON(resp.StatusCode, gin.H{"statusCode": resp.StatusCode, "message": resp.Message, "data": resp.Data, "zatca": autoReportSalesOrder(c.Request.Context(), h.zatcaReporter, orderID)})
+				return
+			}
+		}
+	}
 	c.JSON(resp.StatusCode, resp)
 }
 

@@ -53,6 +53,11 @@ DECLARE
     entity_name VARCHAR(50);
     prio INTEGER := 5;
 BEGIN
+    -- Prevent echo-loop re-queuing when rows are applied from Cloud StreamPull
+    IF current_setting('nembus.sync_applier', true) = 'true' THEN
+        RETURN NEW;
+    END IF;
+
     entity_name := TG_ARGV[0];
     IF entity_name = 'pos_transactions' OR entity_name = 'pos_payments' OR entity_name = 'sales_returns' THEN
         prio := 10;
@@ -71,6 +76,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
+
+-- Automatically enqueue user biometric templates into sync_queue
+DROP TRIGGER IF EXISTS trg_sync_user_biometric_templates ON user_biometric_templates;
+CREATE TRIGGER trg_sync_user_biometric_templates
+    AFTER INSERT OR UPDATE ON user_biometric_templates
+    FOR EACH ROW
+    EXECUTE FUNCTION trg_enqueue_sync_outbox('user_biometric_templates');
 
 -- Automatically enqueue POS transactions into sync_queue
 DROP TRIGGER IF EXISTS trg_sync_pos_transactions ON pos_transactions;
@@ -123,6 +135,7 @@ CREATE TRIGGER trg_sync_stock_movements
     EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
 
 -- +goose Down
+DROP TRIGGER IF EXISTS trg_sync_user_biometric_templates ON user_biometric_templates;
 DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
 DROP TRIGGER IF EXISTS trg_sync_sales_return_lines ON sales_return_lines;
 DROP TRIGGER IF EXISTS trg_sync_sales_returns ON sales_returns;

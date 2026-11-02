@@ -3,10 +3,10 @@ package handler
 import (
 	"net/http"
 
+	"github.com/NasTecSol/nembus-client/utils"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
-	"github.com/NasTecSol/nembus-client/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,7 +33,7 @@ func (h *PrintHandler) getRepositoryFromContext(c *gin.Context) *repository.Quer
 
 // PrintReceipt handles POST /api/print/receipt
 // @Summary      Print a receipt
-// @Description  Builds an ESC/POS receipt using the organisation's branding and sends it to the configured thermal printer.
+// @Description  Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization, the server loads a saved signed QR only when the order is reported. Pending or failed reporting prints without a QR so checkout is not blocked. Caller-supplied qr_code_base64 is ignored. The response includes qr_status.
 // @Tags         print
 // @Accept       json
 // @Produce      json

@@ -14,9 +14,14 @@ func PullEntityTypes() []string {
 		"product_categories",
 		"payment_terms",
 		"users",
+		"roles",
+		"permissions",
+		"role_permissions",
+		"user_roles",
 		"cashiers",
 		"business_partners",
 		"partner_addresses",
+		"user_biometric_templates",
 		"price_lists",
 		"products",
 		"product_variants",
@@ -34,7 +39,7 @@ func PullEntityTypes() []string {
 		"stock_count_lines",
 		"inventory_stock",
 		"stock_movements",
-		"zatca_device_configs",
+		"organizations",
 	}
 }
 

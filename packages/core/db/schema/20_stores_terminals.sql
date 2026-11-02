@@ -71,6 +71,30 @@ CREATE TABLE user_store_access (
     UNIQUE(user_id, store_id)
 );
 
+CREATE TABLE user_biometric_templates (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    finger_index SMALLINT NOT NULL CHECK (finger_index BETWEEN 1 AND 10),
+    fmd_format VARCHAR(50) NOT NULL DEFAULT 'ISO_19794_2_2005',
+    fmd_base64 TEXT NOT NULL,
+    quality_score SMALLINT CHECK (quality_score BETWEEN 1 AND 5),
+    reader_serial VARCHAR(128),
+    enrolled_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, finger_index)
+);
+
+CREATE INDEX idx_user_biometric_templates_org_active
+    ON user_biometric_templates(organization_id, is_active);
+CREATE INDEX idx_user_biometric_templates_user
+    ON user_biometric_templates(user_id) WHERE is_active = true;
+CREATE INDEX idx_user_biometric_templates_updated_at
+    ON user_biometric_templates(updated_at);
+
 CREATE TABLE cashiers (
     id            SERIAL PRIMARY KEY,
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -109,6 +133,8 @@ CREATE TABLE cashier_sessions (
     expected_balance DECIMAL(15,2),
     variance DECIMAL(15,2),
     status VARCHAR(20) DEFAULT 'open',
+    opened_by_supervisor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    closed_by_supervisor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- ✅ new column for triggers

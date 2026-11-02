@@ -1,0 +1,169 @@
+{
+  "info": {
+    "name": "Nembus - ZATCA Sales Order Test",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "ZATCA source is sales_orders_v2 + sales_order_lines_v2. Set an existing complete order UUID and the simulation device configuration. No new status, OTP or transaction creation is required. Generate signs once; submit reports that saved XML. Restaurant-specific checkout is excluded. First enable the organization through PUT /api/organizations/{id}/zatca with {\"enabled\":true}. ZATCA_ENABLED in the environment file no longer controls this feature."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tenant",
+      "value": "stgin"
+    },
+    {
+      "key": "sales_order_id",
+      "value": ""
+    },
+    {
+      "key": "organization_id",
+      "value": "1"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1 - Confirm simulation environment",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/status?organization_id={{organization_id}}",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Simulation enabled', function () { const d=pm.response.json().data; pm.expect(d.enabled).to.eql(true); pm.expect(d.environment_source).to.eql('device_config'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Inspect saved order and lines",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/orders/{{sales_order_id}}",
+        "description": ""
+      }
+    },
+    {
+      "name": "3 - Generate or reuse signed ORDER invoice",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/orders/{{sales_order_id}}/generate",
+        "description": "No body. Uses the persisted order and all lines. New entity ID is the order UUID. Linked historical POS invoices are reused without issuing again."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Order document ready', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.entity_type).to.be.oneOf(['sales_order_v2','pos_transaction']); pm.collectionVariables.set('zatca_uuid',d.zatca_uuid); pm.collectionVariables.set('zatca_hash',d.xml_hash); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Report order invoice to simulation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/orders/{{sales_order_id}}/submit",
+        "description": "No body. Uses saved reporting CSID/secret. Already-reported documents return success without a new gateway call."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('ZATCA reported the invoice', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.zatca_response.reportingStatus).to.eql('REPORTED'); pm.expect(d.zatca_response.validationResults.errorMessages).to.have.lengthOf(0); if (pm.collectionVariables.get('zatca_uuid')) { pm.expect(d.zatca_uuid).to.eql(pm.collectionVariables.get('zatca_uuid')); pm.expect(d.xml_hash).to.eql(pm.collectionVariables.get('zatca_hash')); } });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - Read saved receipt QR by order",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/receipt-qr?sales_order_id={{sales_order_id}}",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Saved QR available', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.qr_code_base64).to.be.a('string').and.not.empty; });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Optional - Compliance check (does not report)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/orders/{{sales_order_id}}/check",
+        "description": "No body. Calls compliance/invoices with compliance credentials. On fully onboarded devices ZATCA may return Submitted before; use the reporting request to test a normal sale."
+      }
+    }
+  ]
+}
