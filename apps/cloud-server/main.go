@@ -377,6 +377,11 @@ func main() {
 	} else {
 		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
 	}
+	if biometrics.IsEngineAvailable() {
+		log.Printf("[Biometrics] Matching engine available")
+	} else {
+		log.Printf("[Biometrics] Warning: matching engine UNAVAILABLE; biometric login/enrollment will fail on this server")
+	}
 
 	ctx := context.Background()
 	masterPool, masterRepo, err := setupDatabase(ctx, cfg)
