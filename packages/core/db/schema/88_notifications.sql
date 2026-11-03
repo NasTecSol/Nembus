@@ -17,7 +17,8 @@ INSERT INTO notification_event_types (id, category, description) VALUES
     ('po.rejected', 'procurement', 'Purchase Order rejected'),
     ('grn.posted', 'inventory', 'Goods Receipt Note posted'),
     ('inventory.low_stock', 'inventory', 'Item quantity at or below reorder level'),
-    ('pos.receipt', 'sales', 'Customer POS E-Receipt')
+    ('pos.receipt', 'sales', 'Customer POS E-Receipt'),
+    ('customer.created', 'crm', 'New Customer Onboarded / Created')
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Channel Configurations per Tenant (AWS SES, Meta WhatsApp, WebSocket)

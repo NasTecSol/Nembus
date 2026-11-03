@@ -22,12 +22,26 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
+# Use the official PostgreSQL repository so pg_dump supports newer tenant databases.
+ARG PG_CLIENT_MAJOR=18
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tzdata wget postgresql-client \
+    ca-certificates tzdata wget \
+    && mkdir -p /usr/share/postgresql-common/pgdg \
+    && wget -qO /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && printf '%s\n' 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-${PG_CLIENT_MAJOR} \
+    && /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/pg_dump --version \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /var/cache/nembus && chmod 777 /var/cache/nembus
+RUN mkdir -p /var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64 && \
+    chmod -R 777 /var/cache/nembus && \
+    echo "/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64" > /etc/ld.so.conf.d/nembus_biometrics.conf && \
+    ldconfig
 ENV XDG_CACHE_HOME=/var/cache/nembus
+ENV LD_LIBRARY_PATH=/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64:${LD_LIBRARY_PATH}
 
 COPY --from=build /app/server /app/server
 

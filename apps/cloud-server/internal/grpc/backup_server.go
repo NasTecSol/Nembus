@@ -5,12 +5,14 @@
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -155,7 +157,7 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 		"audit_logs",
 		"zatca_document_chain",
 		"zatca_device_configs", // Credentials are restored per device over authenticated HTTPS.
-		"zatca_order_jobs", // Submission attempts belong to the source runtime.
+		"zatca_order_jobs",     // Submission attempts belong to the source runtime.
 		"sync_watermarks",
 
 		// Analytics aggregates
@@ -189,10 +191,9 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to open pg_dump stdout: %v", err)
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to open pg_dump stderr: %v", err)
-	}
+	// Drain stderr while stdout streams so a full stderr pipe cannot block pg_dump.
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
 		return status.Errorf(codes.Internal, "failed to start pg_dump: %v", err)
@@ -244,13 +245,12 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 		}
 	}
 
-	// Drain stderr for logging
-	if errBytes, _ := io.ReadAll(stderr); len(errBytes) > 0 {
-		log.Printf("[backup] pg_dump stderr for tenant %s: %s", req.TenantSlug, errBytes)
+	waitErr := cmd.Wait()
+	if stderr.Len() > 0 {
+		log.Printf("[backup] pg_dump stderr for tenant %s: %s", req.TenantSlug, stderr.String())
 	}
-
-	if err := cmd.Wait(); err != nil {
-		return status.Errorf(codes.Internal, "pg_dump exited with error: %v", err)
+	if waitErr != nil {
+		return status.Errorf(codes.Internal, "pg_dump exited with error: %v; %s", waitErr, backupFailureHint(stderr.String()))
 	}
 
 	// Send the final sentinel chunk
@@ -293,4 +293,25 @@ func (s *BackupServer) validateToken(token string) error {
 	// })
 	// if err != nil || !parsed.Valid { return fmt.Errorf("invalid JWT") }
 	return nil
+}
+
+// Return fixed diagnostic messages; raw stderr can contain tenant connection details.
+func backupFailureHint(stderr string) string {
+	detail := strings.ToLower(stderr)
+	switch {
+	case strings.Contains(detail, "server version mismatch"):
+		return "Cloud backup PostgreSQL version mismatch: configure PG_DUMP_PATH on the cloud server to use pg_dump matching the database server's major version."
+	case strings.Contains(detail, "password authentication failed"), strings.Contains(detail, "no password supplied"), strings.Contains(detail, "no pg_hba.conf entry"), strings.Contains(detail, "authentication failed"):
+		return "Cloud backup database authentication failed: check the tenant database credentials and PostgreSQL access rules on the cloud server."
+	case strings.Contains(detail, "permission denied"), strings.Contains(detail, "must be owner"), strings.Contains(detail, "row-level security"):
+		return "Cloud backup database permissions are insufficient: check the backup user's access to the tenant database objects."
+	case strings.Contains(detail, "does not exist") && strings.Contains(detail, "database"):
+		return "Cloud backup tenant database was not found: check the tenant database configuration on the cloud server."
+	case strings.Contains(detail, "connection refused"), strings.Contains(detail, "could not translate host name"), strings.Contains(detail, "could not connect"), strings.Contains(detail, "connection to server"), strings.Contains(detail, "timeout expired"), strings.Contains(detail, "network is unreachable"):
+		return "Cloud backup database connection failed: check the tenant database address, availability, and network access from the cloud server."
+	case strings.Contains(detail, "no space left on device"):
+		return "Cloud backup failed because the server reported insufficient disk space."
+	default:
+		return "Cloud backup generation failed; the cloud server administrator must inspect the pg_dump stderr log for this tenant."
+	}
 }

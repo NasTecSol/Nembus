@@ -88,8 +88,11 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
 	}
 	a.biometricBridge = biometrics.NewLocalBridgeServer("127.0.0.1:5050")
-	if err := a.biometricBridge.StartIfPortFree(); err != nil {
+	started, err := a.biometricBridge.StartIfPortFree()
+	if err != nil {
 		log.Printf("[Biometrics] Warning: local bridge server failed to start: %v", err)
+	} else if !started {
+		log.Printf("[Biometrics] Warning: port 127.0.0.1:5050 already in use; embedded POS bridge not started")
 	}
 
 	// Clean up legacy executable backups from previous update cycles
@@ -287,7 +290,9 @@ func (a *App) migrate(dbURL string) error {
 		return fmt.Errorf("failed to set dialect: %v", err)
 	}
 
-	if err := goose.Up(sqlDB, "migrations"); err != nil {
+	// POS extensions use a high version; allow newer timestamped migrations to run
+	// even when their versions sort before the already-applied extensions.
+	if err := goose.Up(sqlDB, "migrations", goose.WithAllowMissing()); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
 	if _, err := sqlDB.Exec(sync.ZatcaOutboxDDL); err != nil {
