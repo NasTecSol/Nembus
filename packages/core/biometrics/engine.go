@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -99,7 +102,8 @@ const (
 	dpfpddQualityCanceled  uint32 = 2
 	dpfpddQualityFake      uint32 = 8
 
-	dpfpddPriorityExclusive uint32 = 4
+	dpfpddPriorityCooperative uint32 = 2
+	dpfpddPriorityExclusive   uint32 = 4
 	dpfpddStatusReady         uint32 = 0
 	dpfpddStatusNeedCalib     uint32 = 2
 	dpfpddStatusFailure       uint32 = 3
@@ -108,12 +112,14 @@ const (
 
 // ReaderDeviceInfo represents an attached DigitalPersona USB fingerprint reader.
 type ReaderDeviceInfo struct {
-	Name        string `json:"name"`
-	VendorName  string `json:"vendor_name"`
-	ProductName string `json:"product_name"`
-	SerialNum   string `json:"serial_number"`
-	VendorID    uint16 `json:"vendor_id"`
-	ProductID   uint16 `json:"product_id"`
+	Name              string `json:"name"`
+	VendorName        string `json:"vendor_name"`
+	ProductName       string `json:"product_name"`
+	SerialNum         string `json:"serial_number"`
+	VendorID          uint16 `json:"vendor_id"`
+	ProductID         uint16 `json:"product_id"`
+	FirmwareVersion   string `json:"firmware_version,omitempty"`
+	HardwareVersion   string `json:"hardware_version,omitempty"`
 }
 
 // CaptureResponse holds the result of a single fingerprint scan.
@@ -130,12 +136,22 @@ type CaptureResponse struct {
 }
 
 var (
-	engineMu      sync.Mutex
-	captureMu     sync.Mutex
-	activeDevMu   sync.Mutex
-	activeDevHdl  uintptr
-	dpfpddInited  bool
+	engineMu               sync.Mutex
+	captureMu              sync.Mutex
+	activeDevMu            sync.Mutex
+	activeDevHdl           uintptr
+	dpfpddInited           bool
+	hardwareCaptureActive  atomic.Bool
 )
+
+func formatDPFPDDVersion(v cDPFPDDVerInfo) string {
+	return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Maintenance)
+}
+
+// HardwareCaptureActive reports whether a blocking fingerprint capture is in progress locally.
+func HardwareCaptureActive() bool {
+	return hardwareCaptureActive.Load()
+}
 
 // IsEngineAvailable reports whether the FingerJet matching library (dpfj.dll / libdpfj.so) is loaded.
 func IsEngineAvailable() bool {
@@ -299,12 +315,44 @@ func ensureDPFPDDInitialized() error {
 	return nil
 }
 
+// appendWinBioReaderDevices adds synthetic reader entries for units enumerated by Windows Biometric Framework.
+func appendWinBioReaderDevices(result []ReaderDeviceInfo) []ReaderDeviceInfo {
+	wbfDevs, _ := QueryWinBioDevices()
+	for _, w := range wbfDevs {
+		vendorName := w.Manufacturer
+		if vendorName == "" {
+			vendorName = "DigitalPersona"
+		}
+		prodName := w.Model
+		if prodName == "" {
+			prodName = w.Description
+		}
+		if prodName == "" {
+			prodName = "U.are.U 4500 (WBF Mode)"
+		}
+		result = append(result, ReaderDeviceInfo{
+			Name:            fmt.Sprintf("WBF:%d:%s", w.UnitID, w.InstanceID),
+			VendorName:      vendorName,
+			ProductName:     prodName,
+			SerialNum:       w.SerialNumber,
+			VendorID:        0x05BA,
+			ProductID:       0x000A,
+			FirmwareVersion: "WBF-WinBio",
+			HardwareVersion: "WBF-Native",
+		})
+	}
+	return result
+}
+
 // QueryDevices enumerates connected DigitalPersona USB fingerprint readers.
 func QueryDevices() ([]ReaderDeviceInfo, error) {
 	captureMu.Lock()
 	defer captureMu.Unlock()
 
 	if err := ensureDPFPDDInitialized(); err != nil {
+		if wbf := appendWinBioReaderDevices(nil); len(wbf) > 0 {
+			return wbf, nil
+		}
 		return nil, err
 	}
 
@@ -327,10 +375,16 @@ func QueryDevices() ([]ReaderDeviceInfo, error) {
 		_ = rawDPFPDDExit()
 		dpfpddInited = false
 		if err := ensureDPFPDDInitialized(); err != nil {
+			if wbf := appendWinBioReaderDevices(nil); len(wbf) > 0 {
+				return wbf, nil
+			}
 			return nil, err
 		}
 		rc = rawDPFPDDQueryDevices(&devCnt, unsafe.Pointer(&infos[0]))
 		if rc != dpfpddSuccess {
+			if wbf := appendWinBioReaderDevices(nil); len(wbf) > 0 {
+				return wbf, nil
+			}
 			return nil, fmt.Errorf("dpfpdd_query_devices failed: 0x%x", uint32(rc))
 		}
 	}
@@ -339,19 +393,40 @@ func QueryDevices() ([]ReaderDeviceInfo, error) {
 	for i := uint32(0); i < devCnt && i < uint32(len(infos)); i++ {
 		d := infos[i]
 		result = append(result, ReaderDeviceInfo{
-			Name:        cBytesToString(d.Name[:]),
-			VendorName:  cBytesToString(d.Descr.VendorName[:]),
-			ProductName: cBytesToString(d.Descr.ProductName[:]),
-			SerialNum:   cBytesToString(d.Descr.SerialNum[:]),
-			VendorID:    d.ID.VendorID,
-			ProductID:   d.ID.ProductID,
+			Name:            cBytesToString(d.Name[:]),
+			VendorName:      cBytesToString(d.Descr.VendorName[:]),
+			ProductName:     cBytesToString(d.Descr.ProductName[:]),
+			SerialNum:       cBytesToString(d.Descr.SerialNum[:]),
+			VendorID:        d.ID.VendorID,
+			ProductID:       d.ID.ProductID,
+			FirmwareVersion: formatDPFPDDVersion(d.Ver.FwVer),
+			HardwareVersion: formatDPFPDDVersion(d.Ver.HwVer),
 		})
 	}
+
+	if len(result) == 0 {
+		result = appendWinBioReaderDevices(result)
+	}
+
 	return result, nil
 }
 
-// CancelActiveCapture cancels an in-progress blocking dpfpdd_capture call immediately in-process.
+func parseWBFUnitID(readerName string) (uint32, error) {
+	rest, ok := strings.CutPrefix(readerName, "WBF:")
+	if !ok {
+		return 0, fmt.Errorf("invalid WBF reader name %q", readerName)
+	}
+	idPart, _, _ := strings.Cut(rest, ":")
+	id, err := strconv.ParseUint(strings.TrimSpace(idPart), 10, 32)
+	if err != nil || id == 0 {
+		return 0, fmt.Errorf("invalid WBF unit id in %q", readerName)
+	}
+	return uint32(id), nil
+}
+
+// CancelActiveCapture cancels an in-progress blocking capture call immediately in-process.
 func CancelActiveCapture() error {
+	_ = CancelWinBioCapture()
 	activeDevMu.Lock()
 	hDev := activeDevHdl
 	activeDevMu.Unlock()
@@ -377,12 +452,23 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 	}
 	reader := devices[0]
 
-	captureMu.Lock()
-	defer captureMu.Unlock()
-
 	if timeoutMs <= 0 {
 		timeoutMs = 10000
 	}
+
+	// If reader is bound to Windows Biometric Framework (WBF), capture via WinBio API
+	if strings.HasPrefix(reader.Name, "WBF:") {
+		unitID, err := parseWBFUnitID(reader.Name)
+		if err != nil {
+			return nil, err
+		}
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		return CaptureWinBioSample(unitID, timeoutMs)
+	}
+
+	captureMu.Lock()
+	defer captureMu.Unlock()
 
 	nameBytes := append([]byte(reader.Name), 0)
 	var hDev uintptr
@@ -435,6 +521,8 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 		return nil, fmt.Errorf("dpfpdd_capture size probe failed: 0x%x", uint32(rc))
 	}
 	imgBuf := make([]byte, imgSize)
+	hardwareCaptureActive.Store(true)
+	defer hardwareCaptureActive.Store(false)
 	rc = rawDPFPDDCapture(
 		hDev,
 		unsafe.Pointer(&cparam),
@@ -456,6 +544,12 @@ func CaptureSingleFMD(timeoutMs int) (*CaptureResponse, error) {
 	}
 
 	if rc != dpfpddSuccess {
+		if cresult.Quality == dpfpddQualityTimedOut {
+			return nil, ErrCaptureTimeout
+		}
+		if cresult.Quality == dpfpddQualityCanceled {
+			return nil, ErrCaptureCanceled
+		}
 		return nil, fmt.Errorf("dpfpdd_capture failed: 0x%x", uint32(rc))
 	}
 	if cresult.Quality == dpfpddQualityCanceled {

@@ -348,12 +348,19 @@ func rawDPFPDDOpenReader(devName *byte, phDev *uintptr) int32 {
 		return -1
 	}
 	if procDPFPDDOpenExt != nil && procDPFPDDOpenExt.Find() == nil {
-		r1, _, _ := procDPFPDDOpenExt.Call(
-			uintptr(unsafe.Pointer(devName)),
-			uintptr(dpfpddPriorityExclusive),
-			uintptr(unsafe.Pointer(phDev)),
-		)
-		return int32(r1)
+		var last int32 = -1
+		for _, pri := range []uint32{dpfpddPriorityExclusive, dpfpddPriorityCooperative} {
+			r1, _, _ := procDPFPDDOpenExt.Call(
+				uintptr(unsafe.Pointer(devName)),
+				uintptr(pri),
+				uintptr(unsafe.Pointer(phDev)),
+			)
+			last = int32(r1)
+			if last == dpfpddSuccess && *phDev != 0 {
+				return last
+			}
+		}
+		return last
 	}
 	return rawDPFPDDOpen(devName, phDev)
 }
