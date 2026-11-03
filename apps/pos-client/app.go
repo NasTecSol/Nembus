@@ -287,7 +287,9 @@ func (a *App) migrate(dbURL string) error {
 		return fmt.Errorf("failed to set dialect: %v", err)
 	}
 
-	if err := goose.Up(sqlDB, "migrations"); err != nil {
+	// POS extensions use a high version; allow newer timestamped migrations to run
+	// even when their versions sort before the already-applied extensions.
+	if err := goose.Up(sqlDB, "migrations", goose.WithAllowMissing()); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
 	if _, err := sqlDB.Exec(sync.ZatcaOutboxDDL); err != nil {
