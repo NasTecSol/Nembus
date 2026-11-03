@@ -66,7 +66,9 @@ func TestReceiptParametersAndSummary(t *testing.T) {
 		Currency:  "SAR",
 		Lines:     []receiptLine{{Name: "Tea", Qty: "2", Total: "10"}},
 	})
-	if len(params) != 5 || params[0] != "Main" || params[1] != "POS-9" || params[2] != "2026-11-03" || params[3] != "Tea x2 10.00" || params[4] != "11.50 SAR" {
+	if len(params) != 7 ||
+		params[0] != "Main" || params[1] != "POS-9" || params[2] != "2026-11-03" ||
+		params[3] != "Tea x2 10.00" || params[4] != "1.50" || params[5] != "11.50" || params[6] != "SAR" {
 		t.Fatalf("parameters: %#v", params)
 	}
 	long := summarizeItems([]receiptLine{{Name: strings.Repeat("A", 1000), Qty: "1", Total: "1"}})
@@ -107,7 +109,7 @@ func TestReceiptTemplateIncludesQRHeader(t *testing.T) {
 	if err != nil || mediaID != "media-1" || mediaHits != 1 {
 		t.Fatalf("upload media id=%s hits=%d err=%v", mediaID, mediaHits, err)
 	}
-	params := []string{"Main", "POS-9", "2026-11-03", "Tea x2 10.00", "11.50 SAR"}
+	params := []string{"Main", "POS-9", "2026-11-03", "Tea x2 10.00", "1.50", "11.50", "SAR"}
 	resp, err := client.SendTemplateMessageWithHeader(context.Background(), "+966 50 000 0001", "pos_receipt", "en", params, mediaID)
 	if err != nil || resp == nil || len(resp.Messages) != 1 || resp.Messages[0].ID != "wamid.1" {
 		t.Fatalf("send template: %+v err=%v", resp, err)
