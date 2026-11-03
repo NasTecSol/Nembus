@@ -282,6 +282,34 @@ func (a *App) migrate(dbURL string) error {
 		`); err != nil {
 			return fmt.Errorf("failed to initialize restored migration baseline: %w", db.WithStorageHint(err))
 		}
+
+		// Synchronize table sequences to MAX(id) before running pending migrations
+		// to avoid duplicate key errors on tables whose dump had stale sequences.
+		_, _ = sqlDB.Exec(`
+			DO $$
+			DECLARE
+				r RECORD;
+				max_id BIGINT;
+				has_rows BOOLEAN;
+				seq_name TEXT;
+			BEGIN
+				FOR r IN (
+					SELECT c.table_name, c.column_name
+					FROM information_schema.columns c
+					JOIN information_schema.tables t 
+					  ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+					WHERE c.table_schema = 'public' 
+					  AND t.table_type = 'BASE TABLE'
+					  AND c.column_default LIKE 'nextval(%'
+				) LOOP
+					seq_name := pg_get_serial_sequence(quote_ident(r.table_name), r.column_name);
+					IF seq_name IS NOT NULL THEN
+						EXECUTE format('SELECT COALESCE(MAX(%I), 1), (MAX(%I) IS NOT NULL) FROM %I', r.column_name, r.column_name, r.table_name) INTO max_id, has_rows;
+						EXECUTE format('SELECT setval(%L, %s, %s)', seq_name, max_id, has_rows);
+					END IF;
+				END LOOP;
+			END $$;
+		`)
 	}
 
 	goose.SetBaseFS(migrations)

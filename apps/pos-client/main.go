@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/NasTecSol/nembus-client/internal/config"
 	"github.com/NasTecSol/nembus-client/internal/zatca"
@@ -26,6 +27,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
@@ -299,6 +301,9 @@ func main() {
 	// Wails Setup
 	app := NewApp(Version, AppUpdateKey, CloudURL)
 
+	userDataDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "Nembus", "WebView2")
+	_ = os.MkdirAll(userDataDir, 0755)
+
 	err := wails.Run(&options.App{
 		Title:  "NEMBUS",
 		Width:  1024,
@@ -307,9 +312,13 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
+		OnStartup: app.startup,
 		Bind: []interface{}{
 			app,
+		},
+		Windows: &windows.Options{
+			WebviewUserDataPath:  userDataDir,
+			WebviewGpuIsDisabled: true,
 		},
 	})
 

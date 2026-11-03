@@ -332,6 +332,38 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 		}
 	}
 
+	// Synchronize all table sequences to MAX(id) so that restored tables
+	// whose dump files contained stale setval calls do not suffer duplicate key
+	// violations during subsequent inserts or migrations.
+	syncSeqSQL := `
+		DO $$
+		DECLARE
+			r RECORD;
+			max_id BIGINT;
+			has_rows BOOLEAN;
+			seq_name TEXT;
+		BEGIN
+			FOR r IN (
+				SELECT c.table_name, c.column_name
+				FROM information_schema.columns c
+				JOIN information_schema.tables t 
+				  ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+				WHERE c.table_schema = 'public' 
+				  AND t.table_type = 'BASE TABLE'
+				  AND c.column_default LIKE 'nextval(%'
+			) LOOP
+				seq_name := pg_get_serial_sequence(quote_ident(r.table_name), r.column_name);
+				IF seq_name IS NOT NULL THEN
+					EXECUTE format('SELECT COALESCE(MAX(%I), 1), (MAX(%I) IS NOT NULL) FROM %I', r.column_name, r.column_name, r.table_name) INTO max_id, has_rows;
+					EXECUTE format('SELECT setval(%L, %s, %s)', seq_name, max_id, has_rows);
+				END IF;
+			END LOOP;
+		END $$;
+	`
+	if _, err := conn.Exec(ctx, syncSeqSQL); err != nil {
+		log.Printf("Warning: failed to synchronize table sequences post-restore: %v", err)
+	}
+
 	return nil
 }
 

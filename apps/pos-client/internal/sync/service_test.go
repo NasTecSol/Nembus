@@ -42,13 +42,17 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	defer pool.Close()
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE carts (id uuid PRIMARY KEY);
-		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
+		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text, created_at timestamptz DEFAULT now());
 		CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
+		CREATE TABLE pos_transaction_lines (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, line_number integer DEFAULT 1);
+		CREATE TABLE pos_payments (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, amount numeric DEFAULT 0);
 		CREATE TABLE sales_returns (id bigint PRIMARY KEY, return_number text, status text);
 		CREATE TABLE sales_return_lines (id bigint PRIMARY KEY, return_id bigint REFERENCES sales_returns(id), line_number integer);
 		INSERT INTO carts VALUES ('00000000-0000-0000-0000-000000000001');
 		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
 		INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
+		INSERT INTO pos_transaction_lines (id, transaction_id) VALUES (8, 7);
+		INSERT INTO pos_payments (id, transaction_id) VALUES (9, 7);
 		CREATE TABLE sync_queue (id bigint PRIMARY KEY, entity_type text, entity_id bigint, action text,
 			payload jsonb, created_at timestamp DEFAULT now(), correlation_id text, status text);
 		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
@@ -68,11 +72,16 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parents) != 2 || parents[0].EntityType != "carts" || parents[1].EntityType != "sales_orders_v2" {
-		t.Fatalf("expected one cart before order, got %+v", parents)
+	if len(parents) != 4 {
+		t.Fatalf("expected cart, order, lines, and payment parents, got %d: %+v", len(parents), parents)
+	}
+	if parents[0].EntityType != "carts" || parents[1].EntityType != "sales_orders_v2" ||
+		parents[2].EntityType != "pos_transaction_lines" || parents[3].EntityType != "pos_payments" {
+		t.Fatalf("unexpected parent ordering: %+v", parents)
 	}
 	for _, p := range parents {
-		if p.ID != item.ID || (p.EntityType == "carts" && p.Action != "INSERT") || (p.EntityType == "sales_orders_v2" && p.Action != "POS_CHECKOUT") || !json.Valid(p.Payload) {
+		if p.ID != item.ID || (p.EntityType == "sales_orders_v2" && p.Action != "POS_CHECKOUT") ||
+			(p.EntityType != "sales_orders_v2" && p.Action != "INSERT") || !json.Valid(p.Payload) {
 			t.Fatalf("invalid parent event: %+v", p)
 		}
 	}
@@ -95,7 +104,7 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	// The order's source cart must also be sent if an older POS payload omits it.
 	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002"}`)
 	parents, err = s.transactionParents(item)
-	if err != nil || len(parents) != 2 {
+	if err != nil || len(parents) != 4 {
 		t.Fatalf("order-only reference: parents=%+v err=%v", parents, err)
 	}
 	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":null,"source_cart_id":null}`)

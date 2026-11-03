@@ -29,6 +29,9 @@ Write-Host "=== Starting Wails Dev Fresh Clean ===" -ForegroundColor Blue
 Write-Host "Stopping any running Nembus, Wails, or PostgreSQL processes..." -ForegroundColor Yellow
 Stop-Process -Name "NEMBUS" -ErrorAction SilentlyContinue
 Stop-Process -Name "wails" -ErrorAction SilentlyContinue
+$pgCtl = Join-Path $Home ".nembus\data\bin\bin\pg_ctl.exe"
+$pgData = Join-Path $Home ".nembus\data\pgdata"
+if (Test-Path $pgCtl) { & $pgCtl stop -D $pgData -m immediate 2>$null }
 Stop-Process -Name "postgres" -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
@@ -103,6 +106,8 @@ if ($ResetDb) {
     $postgresData = Join-Path $Home ".nembus\data"
     Write-Host "Removing local database data directory: $postgresData" -ForegroundColor Yellow
     Remove-DirectorySafe -Path $postgresData
+    Remove-DirectorySafe -Path (Join-Path $env:APPDATA "NembusPOS.exe")
+    Remove-DirectorySafe -Path (Join-Path $env:LOCALAPPDATA "Nembus\WebView2")
 
     # Remove Setup Done marker to force setup wizard on launch
     $setupMarker = Join-Path $Home ".nembus\.setup_done"

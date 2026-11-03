@@ -71,6 +71,9 @@ if (Test-Path $CoreMigrations) {
         $funcPattern = '(?ms)(CREATE (?:OR REPLACE )?FUNCTION (?:(?:"public"|public)\.)?"?[^"\(]+"?[ ]*\([^\)]*\)[^\$]*?\$\$.*?\$\$;)'
         $content = [System.Text.RegularExpressions.Regex]::Replace($content, $funcPattern, "-- +goose StatementBegin`n`$1`n-- +goose StatementEnd")
 
+        $doPattern = '(?ms)(DO \$\$.*?\$\$;)'
+        $content = [System.Text.RegularExpressions.Regex]::Replace($content, $doPattern, "-- +goose StatementBegin`n`$1`n-- +goose StatementEnd")
+
         # Add Goose Up header if not present
         if (-not ($content.StartsWith("-- +goose Up"))) {
             $content = "-- +goose Up`n" + $content

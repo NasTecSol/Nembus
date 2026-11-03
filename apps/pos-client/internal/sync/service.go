@@ -335,6 +335,7 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 		return nil, nil
 	}
 	var refs struct {
+		ID           int64   `json:"id"`
 		SalesOrderID *string `json:"sales_order_id"`
 		SourceCartID *string `json:"source_cart_id"`
 	}
@@ -344,22 +345,44 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 	if refs.SalesOrderID == nil && refs.SourceCartID == nil {
 		return nil, nil
 	}
+	orderIDParam := refs.SalesOrderID
+	cartIDParam := refs.SourceCartID
 	rows, err := s.masterPool.Query(ctx, `
+		WITH ctx AS (
+			SELECT
+				COALESCE($1::uuid, (
+					SELECT o.id FROM sales_orders_v2 o
+					WHERE ($2::uuid IS NOT NULL AND o.source_cart_id = $2::uuid)
+					ORDER BY o.created_at DESC NULLS LAST
+					LIMIT 1
+				)) AS order_id,
+				COALESCE($2::uuid, (
+					SELECT o.source_cart_id FROM sales_orders_v2 o WHERE o.id = $1::uuid
+				)) AS cart_id,
+				$3::bigint AS transaction_id
+		)
 		SELECT entity_type, payload FROM (
 			SELECT 1 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
-			FROM carts c
-			WHERE c.id = $2::uuid OR c.id = (
-				SELECT source_cart_id FROM sales_orders_v2 WHERE id = $1::uuid
-			)
+			FROM carts c, ctx
+			WHERE ctx.cart_id IS NOT NULL AND c.id = ctx.cart_id
 			UNION ALL
 			SELECT 2 AS seq, 'sales_orders_v2', json_build_object(
 				'order', row_to_json(o),
 				'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
 					FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
 			)::text
-			FROM sales_orders_v2 o WHERE o.id = $1::uuid
-		) parents ORDER BY seq;
-	`, refs.SalesOrderID, refs.SourceCartID)
+			FROM sales_orders_v2 o, ctx
+			WHERE ctx.order_id IS NOT NULL AND o.id = ctx.order_id
+			UNION ALL
+			SELECT 3 AS seq, 'pos_transaction_lines', row_to_json(l)::text
+			FROM pos_transaction_lines l, ctx
+			WHERE ctx.transaction_id > 0 AND l.transaction_id = ctx.transaction_id
+			UNION ALL
+			SELECT 4 AS seq, 'pos_payments', row_to_json(p)::text
+			FROM pos_payments p, ctx
+			WHERE ctx.transaction_id > 0 AND p.transaction_id = ctx.transaction_id
+		) parents ORDER BY seq, payload;
+	`, orderIDParam, cartIDParam, refs.ID)
 	if err != nil {
 		return nil, fmt.Errorf("read transaction parents: %w", err)
 	}
