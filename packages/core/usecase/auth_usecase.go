@@ -199,10 +199,16 @@ func (uc *AuthUseCase) LoginWithBiometric(ctx context.Context, fmdBase64 string,
 		for _, t := range templates {
 			candBytes, decErr := biometrics.ValidateAndDecodeFMD(t.FmdBase64)
 			if decErr != nil {
+				log.Printf("[BIOMETRICS] 1:1 decode candidate template failed (id=%d): %v", t.ID, decErr)
 				continue
 			}
-			_, ok, cmpErr := biometrics.Compare(probeFMD, candBytes, biometrics.DefaultMaxFalseMatchScore)
-			if cmpErr == nil && ok {
+			score, ok, cmpErr := biometrics.Compare(probeFMD, candBytes, biometrics.DefaultMaxFalseMatchScore)
+			if cmpErr != nil {
+				log.Printf("[BIOMETRICS] 1:1 Compare error (template_id=%d, finger=%d): %v", t.ID, t.FingerIndex, cmpErr)
+				continue
+			}
+			if ok {
+				log.Printf("[BIOMETRICS] 1:1 match found for user %s (finger=%d, score=%d)", user.Username, t.FingerIndex, score)
 				matched = true
 				matchedUserID = user.ID
 				matchedUsername = user.Username
@@ -229,7 +235,11 @@ func (uc *AuthUseCase) LoginWithBiometric(ctx context.Context, fmdBase64 string,
 			}
 		}
 		bestIdx, _, idErr := biometrics.Identify(probeFMD, candidates, biometrics.DefaultMaxFalseMatchScore)
-		if idErr != nil || bestIdx < 0 || bestIdx >= len(validRows) {
+		if idErr != nil {
+			log.Printf("[BIOMETRICS] 1:N Identify failed: %v", idErr)
+			return utils.NewResponse(utils.CodeUnauthorized, "fingerprint did not match any active user", nil)
+		}
+		if bestIdx < 0 || bestIdx >= len(validRows) {
 			return utils.NewResponse(utils.CodeUnauthorized, "fingerprint did not match any active user", nil)
 		}
 		row := validRows[bestIdx]
@@ -298,10 +308,16 @@ func (uc *AuthUseCase) AuthorizeActionWithBiometric(
 		for _, t := range templates {
 			candBytes, decErr := biometrics.ValidateAndDecodeFMD(t.FmdBase64)
 			if decErr != nil {
+				log.Printf("[BIOMETRICS] supervisor override decode template failed (id=%d): %v", t.ID, decErr)
 				continue
 			}
-			_, ok, cmpErr := biometrics.Compare(probeFMD, candBytes, biometrics.DefaultMaxFalseMatchScore)
-			if cmpErr == nil && ok {
+			score, ok, cmpErr := biometrics.Compare(probeFMD, candBytes, biometrics.DefaultMaxFalseMatchScore)
+			if cmpErr != nil {
+				log.Printf("[BIOMETRICS] supervisor override Compare error: %v", cmpErr)
+				continue
+			}
+			if ok {
+				log.Printf("[BIOMETRICS] supervisor override match found for %s (finger=%d, score=%d)", supervisor.Username, t.FingerIndex, score)
 				matched = true
 				matchedSupervisorID = supervisor.ID
 				matchedSupervisorLogin = supervisor.Username
