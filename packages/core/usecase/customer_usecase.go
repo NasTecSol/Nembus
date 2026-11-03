@@ -3,7 +3,9 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
@@ -186,6 +188,28 @@ func (uc *CustomerUseCase) CreateCustomer(
 	})
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	if phoneVal.Valid && strings.TrimSpace(phoneVal.String) != "" {
+		payloadMap := map[string]interface{}{
+			"customer_id":     customer.ID,
+			"customer_code":   customer.CustomerCode,
+			"customer_name":   customer.Name,
+			"customer_phone":  phoneVal.String,
+			"organization_id": customer.OrganizationID,
+		}
+		if emailVal.Valid && strings.TrimSpace(emailVal.String) != "" {
+			payloadMap["customer_email"] = emailVal.String
+		}
+		payloadBytes, _ := json.Marshal(payloadMap)
+		_, _ = uc.repo.EnqueueNotificationEvent(ctx, repository.EnqueueNotificationEventParams{
+			OrganizationID: customer.OrganizationID,
+			EventTypeID:    "customer.created",
+			EntityType:     "customer",
+			EntityID:       strconv.FormatInt(int64(customer.ID), 10),
+			IdempotencyKey: fmt.Sprintf("customer-created-%d", customer.ID),
+			Payload:        payloadBytes,
+		})
 	}
 
 	return utils.NewResponse(utils.CodeCreated, "customer created successfully", customerToOutput(customer))

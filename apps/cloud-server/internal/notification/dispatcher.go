@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -13,32 +14,51 @@ import (
 )
 
 type Dispatcher struct {
+	pools   func(context.Context) ([]*pgxpool.Pool, error)
 	pool    *pgxpool.Pool
 	notifUC *usecase.NotificationUseCase
 	wsHub   *WebSocketHub
 }
 
-func NewDispatcher(pool *pgxpool.Pool, notifUC *usecase.NotificationUseCase, wsHub *WebSocketHub) *Dispatcher {
-	return &Dispatcher{
-		pool:    pool,
-		notifUC: notifUC,
-		wsHub:   wsHub,
-	}
+// NewDispatcher polls every active tenant database. POS receipts are written
+// to the tenant that received the sale, not the master database.
+func NewDispatcher(pools func(context.Context) ([]*pgxpool.Pool, error), wsHub *WebSocketHub) *Dispatcher {
+	return &Dispatcher{pools: pools, wsHub: wsHub}
 }
 
 func (d *Dispatcher) Start(ctx context.Context) {
 	log.Println("[NotificationDispatcher] Background outbox dispatcher started.")
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
+	d.runOnce(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("[NotificationDispatcher] Dispatcher stopping on context cancellation.")
 			return
 		case <-ticker.C:
-			d.processPendingEvents(ctx)
+			d.runOnce(ctx)
 		}
+	}
+}
+
+func (d *Dispatcher) runOnce(ctx context.Context) {
+	if d.pools == nil {
+		return
+	}
+	pools, err := d.pools(ctx)
+	if err != nil {
+		log.Printf("[NotificationDispatcher] List tenant pools: %v", err)
+		return
+	}
+	for _, pool := range pools {
+		if pool == nil {
+			continue
+		}
+		d.pool = pool
+		d.notifUC = usecase.NewNotificationUseCase(repository.New(pool))
+		d.processPendingEvents(ctx)
 	}
 }
 
@@ -58,6 +78,19 @@ func (d *Dispatcher) processSingleEvent(ctx context.Context, event repository.No
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		log.Printf("[NotificationDispatcher] Error parsing payload for event %s: %v", event.ID, err)
 		_, _ = d.notifUC.MarkEventFailed(ctx, event.ID)
+		return
+	}
+
+	if event.EventTypeID == "pos.receipt" {
+		if d.dispatchPosReceipt(ctx, event, payload) {
+			rules, ruleErr := d.notifUC.ListRulesForEvent(ctx, event.OrganizationID, event.EventTypeID)
+			if ruleErr == nil {
+				for _, rule := range rules {
+					d.dispatchByRule(ctx, event, rule, payload)
+				}
+			}
+			_, _ = d.notifUC.MarkEventCompleted(ctx, event.ID)
+		}
 		return
 	}
 
@@ -81,24 +114,6 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 	orgID := event.OrganizationID
 
 	switch event.EventTypeID {
-	case "pos.receipt":
-		// Customer digital receipt
-		custPhone, _ := payload["customer_phone"].(string)
-		totalAmount := fmt.Sprintf("%v", payload["total_amount"])
-		txNum := fmt.Sprintf("%v", payload["transaction_number"])
-
-		if custPhone != "" {
-			d.sendWhatsAppMessage(ctx, orgID, event, custPhone,
-				fmt.Sprintf("Thank you for your purchase! Receipt #%s for SAR %s has been processed.", txNum, totalAmount))
-		}
-
-		custEmail, _ := payload["customer_email"].(string)
-		if custEmail != "" {
-			d.sendEmailMessage(ctx, orgID, event, custEmail,
-				fmt.Sprintf("Your Digital Receipt #%s", txNum),
-				fmt.Sprintf("<h3>Thank you for your purchase!</h3><p>Transaction <b>#%s</b> for SAR <b>%s</b> is confirmed.</p>", txNum, totalAmount))
-		}
-
 	case "po.submitted", "po.approved", "po.rejected":
 		poNum := fmt.Sprintf("%v", payload["po_number"])
 		status := fmt.Sprintf("%v", payload["status"])
@@ -142,6 +157,13 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 			"message":    msg,
 			"created_at": time.Now(),
 		})
+
+	case "customer.created":
+		custName, _ := payload["customer_name"].(string)
+		custPhone, _ := payload["customer_phone"].(string)
+		if custPhone != "" {
+			d.sendWhatsAppMessage(ctx, orgID, event, custPhone, customerWelcomeMessage(custName))
+		}
 	}
 }
 
@@ -152,6 +174,9 @@ func (d *Dispatcher) dispatchByRule(ctx context.Context, event repository.Notifi
 	_ = json.Unmarshal(rule.Channels, &channelList)
 
 	for _, channel := range channelList {
+		if event.EventTypeID == "pos.receipt" && usecase.CanonicalChannelType(channel) == "whatsapp_cloud" {
+			continue
+		}
 		switch channel {
 		case "websocket":
 			if rule.TargetRoleID.Valid {
@@ -184,8 +209,12 @@ func (d *Dispatcher) dispatchByRule(ctx context.Context, event repository.Notifi
 				recipientPhone, _ = payload["partner_phone"].(string)
 			}
 			if recipientPhone != "" {
-				d.sendWhatsAppMessage(ctx, orgID, event, recipientPhone,
-					fmt.Sprintf("Update regarding %s %s: Notification event %s.", event.EntityType, event.EntityID, event.EventTypeID))
+				msgText := fmt.Sprintf("Update regarding %s %s: Notification event %s.", event.EntityType, event.EntityID, event.EventTypeID)
+				if event.EventTypeID == "customer.created" {
+					custName, _ := payload["customer_name"].(string)
+					msgText = customerWelcomeMessage(custName)
+				}
+				d.sendWhatsAppMessage(ctx, orgID, event, recipientPhone, msgText)
 			}
 
 		case "email_ses":
@@ -238,6 +267,14 @@ func (d *Dispatcher) sendWhatsAppMessage(ctx context.Context, orgID int32, event
 		ProviderMessageID: providerID,
 		ErrorMessage:      errMsg,
 	})
+}
+
+func customerWelcomeMessage(name string) string {
+	clean := strings.TrimSpace(name)
+	if clean == "" {
+		clean = "Valued Customer"
+	}
+	return fmt.Sprintf("Welcome to Nembus, %s! Thank you for joining us. We are delighted to serve you.", clean)
 }
 
 func (d *Dispatcher) sendEmailMessage(ctx context.Context, orgID int32, event repository.NotificationEvent, email, subject, htmlBody string) {
