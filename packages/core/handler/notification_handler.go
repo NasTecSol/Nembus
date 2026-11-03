@@ -274,8 +274,33 @@ func (h *NotificationHandler) MarkAllAsRead(c *gin.Context) {
 // -----------------------------------------------------
 
 type UpsertChannelRequest struct {
-	IsActive bool            `json:"is_active" example:"true"`
-	Config   json.RawMessage `json:"config" binding:"required"`
+	IsActive  bool            `json:"is_active" example:"true"`
+	IsEnabled *bool           `json:"is_enabled,omitempty"`
+	Config    json.RawMessage `json:"config" binding:"required"`
+}
+
+func (r UpsertChannelRequest) enabled() bool {
+	if r.IsEnabled != nil {
+		return *r.IsEnabled
+	}
+	return r.IsActive
+}
+
+func presentChannel(ch *repository.NotificationChannel) NotificationChannelItem {
+	item := NotificationChannelItem{
+		ID:             ch.ID,
+		OrganizationID: ch.OrganizationID,
+		ChannelType:    usecase.PublicChannelType(ch.ChannelType),
+		IsEnabled:      ch.IsActive.Valid && ch.IsActive.Bool,
+		Config:         ch.Config,
+	}
+	if ch.UpdatedAt.Valid {
+		item.UpdatedAt = ch.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00")
+	}
+	if item.Config == nil {
+		item.Config = json.RawMessage(`{}`)
+	}
+	return item
 }
 
 // ListChannels lists all configured notification channels
@@ -301,8 +326,12 @@ func (h *NotificationHandler) ListChannels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	out := make([]NotificationChannelItem, 0, len(channels))
+	for i := range channels {
+		out = append(out, presentChannel(&channels[i]))
+	}
 
-	c.JSON(http.StatusOK, gin.H{"channels": channels})
+	c.JSON(http.StatusOK, gin.H{"channels": out})
 }
 
 // GetChannel gets the configuration of a specific notification channel
@@ -325,13 +354,13 @@ func (h *NotificationHandler) GetChannel(c *gin.Context) {
 	}
 
 	chType := c.Param("type")
-	ch, err := h.uc.GetChannel(c.Request.Context(), orgID, chType)
+	ch, err := h.uc.GetChannel(c.Request.Context(), orgID, usecase.CanonicalChannelType(chType))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, ch)
+	c.JSON(http.StatusOK, presentChannel(ch))
 }
 
 // UpsertChannel creates or updates a notification channel configuration
@@ -356,20 +385,20 @@ func (h *NotificationHandler) UpsertChannel(c *gin.Context) {
 		return
 	}
 
-	chType := c.Param("type")
+	chType := usecase.CanonicalChannelType(c.Param("type"))
 	var req UpsertChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ch, err := h.uc.UpsertChannel(c.Request.Context(), orgID, chType, req.IsActive, req.Config)
+	ch, err := h.uc.UpsertChannel(c.Request.Context(), orgID, chType, req.enabled(), req.Config)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, ch)
+	c.JSON(http.StatusOK, presentChannel(ch))
 }
 
 // -----------------------------------------------------

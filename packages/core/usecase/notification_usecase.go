@@ -264,14 +264,21 @@ func (uc *NotificationUseCase) GetChannel(ctx context.Context, orgID int32, chan
 	if uc.repo == nil {
 		return nil, errors.New("repository not configured")
 	}
-	ch, err := uc.repo.GetNotificationChannel(ctx, repository.GetNotificationChannelParams{
-		OrganizationID: orgID,
-		ChannelType:    channelType,
-	})
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for _, name := range ChannelLookupNames(channelType) {
+		ch, err := uc.repo.GetNotificationChannel(ctx, repository.GetNotificationChannelParams{
+			OrganizationID: orgID,
+			ChannelType:    name,
+		})
+		if err == nil {
+			return &ch, nil
+		}
+		lastErr = err
 	}
-	return &ch, nil
+	if lastErr == nil {
+		lastErr = errors.New("channel not found")
+	}
+	return nil, lastErr
 }
 
 func (uc *NotificationUseCase) ListChannels(ctx context.Context, orgID int32) ([]repository.NotificationChannel, error) {
@@ -288,6 +295,7 @@ func (uc *NotificationUseCase) UpsertChannel(ctx context.Context, orgID int32, c
 	if config == nil {
 		config = json.RawMessage("{}")
 	}
+	channelType = CanonicalChannelType(channelType)
 	ch, err := uc.repo.UpsertNotificationChannel(ctx, repository.UpsertNotificationChannelParams{
 		OrganizationID: orgID,
 		ChannelType:    channelType,
@@ -341,6 +349,7 @@ func (uc *NotificationUseCase) UpsertTemplate(ctx context.Context, in UpsertTemp
 	if in.Locale == "" {
 		in.Locale = "en"
 	}
+	in.ChannelType = CanonicalChannelType(in.ChannelType)
 
 	params := repository.UpsertNotificationTemplateParams{
 		OrganizationID: in.OrganizationID,

@@ -69,3 +69,15 @@ func TestSESClientMissingConfig(t *testing.T) {
 		t.Errorf("expected credentials error, got %v", err)
 	}
 }
+
+func TestCustomerCreatedWelcomeMessageFormat(t *testing.T) {
+	custName := "Ahmad Al-Ghamdi"
+	msg := customerWelcomeMessage(custName)
+	if !strings.Contains(msg, custName) {
+		t.Fatalf("expected message to contain customer name %q, got: %s", custName, msg)
+	}
+	emptyMsg := customerWelcomeMessage("")
+	if !strings.Contains(emptyMsg, "Valued Customer") {
+		t.Fatalf("expected default name fallback, got: %s", emptyMsg)
+	}
+}

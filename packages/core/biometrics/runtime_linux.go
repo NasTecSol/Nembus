@@ -108,6 +108,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"unsafe"
@@ -193,6 +194,12 @@ func InitRuntime() error {
 				_ = os.Remove(linkPath)
 				_ = os.Symlink(target, linkPath)
 			}
+		}
+
+		// Register runtimeDir with the system dynamic linker cache so internal dlopen() calls
+		// made by libdpfj (e.g. dlopen("libdpfr7.so")) can resolve recognition engine dependencies.
+		if err := os.WriteFile("/etc/ld.so.conf.d/nembus_biometrics.conf", []byte(runtimeDir+"\n"), 0644); err == nil {
+			_ = exec.Command("ldconfig").Run()
 		}
 
 		// Preload dependent recognition engines into global symbol space
