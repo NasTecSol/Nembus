@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // DigitalPersona FingerJet Engine & Capture Constants (from dpfj.h & dpfpdd.h)
@@ -71,6 +72,9 @@ func CaptureUserMessage(err error) string {
 	}
 	if errors.Is(err, ErrReaderInUse) {
 		return msg
+	}
+	if strings.Contains(msg, "0x80070005") || strings.Contains(strings.ToLower(msg), "access denied") {
+		return msg + ": for WBF readers, run Nembus Biometric Agent as Administrator (right-click → Run as administrator) or close Windows Hello / other apps using the sensor"
 	}
 	return msg
 }

@@ -1,10 +1,10 @@
 go 1.25.0
 
 use (
+	./apps/biometric-agent
 	./apps/cloud-server
 	./apps/pos-client
 	./apps/sap-agent
 	./packages/core
 	./packages/sap
 )
-
