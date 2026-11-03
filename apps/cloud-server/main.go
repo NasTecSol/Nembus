@@ -490,8 +490,22 @@ func main() {
 	wsHub := notification.NewWebSocketHub()
 	go wsHub.Run(ctx.Done())
 
-	notifUC := usecase.NewNotificationUseCase(masterRepo)
-	dispatcher := notification.NewDispatcher(masterPool, notifUC, wsHub)
+	dispatcher := notification.NewDispatcher(func(c context.Context) ([]*pgxpool.Pool, error) {
+		tenants, err := masterRepo.ListActiveTenants(c)
+		if err != nil {
+			return nil, err
+		}
+		pools := make([]*pgxpool.Pool, 0, len(tenants))
+		for _, tenant := range tenants {
+			pool, err := tenantManager.GetPool(c, tenant.Slug)
+			if err != nil {
+				log.Printf("[NotificationDispatcher] Open tenant %s failed: %v", tenant.Slug, err)
+				continue
+			}
+			pools = append(pools, pool)
+		}
+		return pools, nil
+	}, wsHub)
 	go dispatcher.Start(ctx)
 
 	// Setup Router

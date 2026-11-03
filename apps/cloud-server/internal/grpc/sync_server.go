@@ -236,6 +236,9 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 		// can hide rejected updates, or replace the cause with SQLSTATE 25P02.
 		return fmt.Errorf("failed to upsert %s (action=%s): %w", entityType, action, err)
 	}
+	if entityType == "pos_transactions" {
+		enqueuePosReceiptAfterSync(ctx, pool, payload)
+	}
 	return nil
 }
 
