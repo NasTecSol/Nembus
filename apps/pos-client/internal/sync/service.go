@@ -361,11 +361,11 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 				) AS cart_id
 		)
 		SELECT entity_type, payload FROM (
-			SELECT 1 AS seq, 'sales_orders_v2', json_build_object(
+			SELECT 1 AS seq, 'sales_orders_v2' AS entity_type, json_build_object(
 				'order', row_to_json(o),
 				'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
 					FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
-			)::text
+			)::text AS payload
 			FROM sales_orders_v2 o, ctx
 			WHERE ctx.order_id IS NOT NULL AND o.id = ctx.order_id
 			UNION ALL
