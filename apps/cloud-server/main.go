@@ -536,6 +536,7 @@ func main() {
 	}()
 
 	// Start HTTP Server
+	log.Printf("Starting HTTP server on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal("failed to run server:", err)
 	}
