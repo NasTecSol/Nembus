@@ -91,7 +91,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -128,6 +128,9 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug)
 		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
 	}
+
+	// Local onboarding bootstraps a locally signed JWT using the shared M2M key.
+	router.RegisterM2MRoutes(r.Group("/api"), handler.NewM2MHandler())
 
 	api := r.Group("/api")
 	api.Use(middleware.JWTAuthMiddleware())

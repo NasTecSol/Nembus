@@ -117,10 +117,10 @@ func main() {
 		Token:      tokenString,
 	}
 
-	// Check if client ID already exists
+	// Rotate only the matching tenant/client pair; other tenants may reuse the ID.
 	updated := false
 	for i, c := range registry.Clients {
-		if c.ClientID == *clientID {
+		if c.TenantID == *tenantID && c.ClientID == *clientID {
 			registry.Clients[i] = newClient
 			updated = true
 			break

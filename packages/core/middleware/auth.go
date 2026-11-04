@@ -19,7 +19,6 @@ const UserIDKey contextKey = "user_id"
 const OrgIDKey contextKey = "organization_id"
 const ClaimsKey contextKey = "jwt_claims"
 
-
 type M2MClient struct {
 	ClientID   string   `json:"client_id"`
 	ClientName string   `json:"client_name"`
@@ -60,7 +59,7 @@ func LoadM2MClients() ([]M2MClient, error) {
 	return loadM2MClients()
 }
 
-// SaveM2MClient safely registers or updates an M2M client in the config file
+// SaveM2MClient registers or rotates only the matching tenant/client pair.
 func SaveM2MClient(client M2MClient) error {
 	m2mMutex.Lock()
 	defer m2mMutex.Unlock()
@@ -72,7 +71,7 @@ func SaveM2MClient(client M2MClient) error {
 
 	updated := false
 	for i, c := range clients {
-		if c.ClientID == client.ClientID {
+		if c.TenantID == client.TenantID && c.ClientID == client.ClientID {
 			clients[i] = client
 			updated = true
 			break
@@ -198,6 +197,14 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 				return
 			}
 
+			// Tenant identity comes from the signed JWT, never the request header.
+			tenantID, _ := claims["tenant_id"].(string)
+			if tenantID == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid M2M token: missing tenant_id"})
+				c.Abort()
+				return
+			}
+
 			// Load clients from config (thread-safe)
 			clients, err := LoadM2MClients()
 			if err != nil {
@@ -209,7 +216,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 
 			var matchedClient *M2MClient
 			for _, client := range clients {
-				if client.ClientID == clientID {
+				if client.TenantID == tenantID && client.ClientID == clientID {
 					matchedClient = &client
 					break
 				}
@@ -429,9 +436,9 @@ func RequireAuthorizationToken(permissionCode string) gin.HandlerFunc {
 		tokenPermCode, _ := claims["permission_code"].(string)
 		if tokenPermCode != permissionCode {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error":             "authorization token does not cover the required permission",
-				"required":          permissionCode,
-				"token_covers":      tokenPermCode,
+				"error":        "authorization token does not cover the required permission",
+				"required":     permissionCode,
+				"token_covers": tokenPermCode,
 			})
 			c.Abort()
 			return
@@ -559,4 +566,3 @@ func AgentAPIKeyMiddleware() gin.HandlerFunc {
 		c.Abort()
 	}
 }
-
