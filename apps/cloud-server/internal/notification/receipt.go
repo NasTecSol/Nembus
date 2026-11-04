@@ -246,7 +246,8 @@ func receiptParameters(receipt saleReceipt) []string {
 	if currency == "" {
 		currency = "SAR"
 	}
-	return []string{store, receipt.Number, receipt.Date, items, moneyText(receipt.Tax), moneyText(receipt.Total), currency}
+	total := fmt.Sprintf("%s %s", moneyText(receipt.Total), currency)
+	return []string{store, receipt.Number, receipt.Date, items, total}
 }
 
 func summarizeItems(lines []receiptLine) string {

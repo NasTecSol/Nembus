@@ -2,16 +2,16 @@
 INSERT INTO pos_transactions (
     store_id, cashier_id, cashier_session_id, customer_id, 
     pos_terminal_id, sales_order_id, source_cart_id,
-    transaction_number, total_amount, status
+    transaction_number, total_amount, status, metadata
 )
 SELECT 
-    store_id, cashier_id, COALESCE(
-        (SELECT id FROM cashier_sessions WHERE status = 'open' AND cashier_id = o.cashier_id LIMIT 1),
-        (SELECT id FROM cashier_sessions WHERE status = 'open' AND store_id = o.store_id LIMIT 1),
-        (SELECT id FROM cashier_sessions WHERE status = 'open' ORDER BY opening_time DESC LIMIT 1)
+    o.store_id, o.cashier_id, COALESCE(
+        (SELECT cs.id FROM cashier_sessions cs JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id WHERE cs.status = 'open' AND cs.cashier_id = o.cashier_id AND pt.store_id = o.store_id ORDER BY cs.opening_time DESC LIMIT 1),
+        (SELECT cs.id FROM cashier_sessions cs JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id WHERE cs.status = 'open' AND pt.store_id = o.store_id ORDER BY cs.opening_time DESC LIMIT 1)
     ),
-    customer_id, pos_terminal_id, id, source_cart_id,
-    'TXN-' || order_number, total_amount, 'completed'
+    o.customer_id, o.pos_terminal_id, o.id, o.source_cart_id,
+    'TXN-' || o.order_number, o.total_amount, 'completed',
+    COALESCE(o.metadata, '{}'::jsonb)
 FROM sales_orders_v2 o
 WHERE o.id = $1
 RETURNING *;

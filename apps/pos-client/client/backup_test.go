@@ -23,7 +23,7 @@ func (e *recordingExecutor) Exec(_ context.Context, sql string, _ ...any) (pgcon
 }
 
 func TestExecuteStatementsStopsOnFailure(t *testing.T) {
-	for _, code := range []string{"53100", "23505", "42P01", "42P07"} {
+	for _, code := range []string{"53100", "23503", "23505", "42P01", "42P07"} {
 		t.Run(code, func(t *testing.T) {
 			failure := &pgconn.PgError{Code: code, Message: "restore failed"}
 			exec := &recordingExecutor{failAt: 2, err: failure}
