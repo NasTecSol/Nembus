@@ -151,11 +151,19 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 
 // ApplyUpdate downloads release binary, verifies SHA-256, and restarts application
 func (a *App) ApplyUpdate(downloadURL string, checksumSha256 string) error {
+	a.stopEmbeddedServices()
 	appKey := a.appKey
 	if appKey == "" && a.cfg != nil {
 		appKey = a.cfg.AppUpdateClientKey
 	}
 	return updater.ApplyUpdate(downloadURL, checksumSha256, appKey)
+}
+
+// PrepareForUpdate stops background workers and the embedded database before replacing
+// the executable. The frontend should call SaveDeviceConfig (via deviceConfig.save) first.
+func (a *App) PrepareForUpdate() string {
+	a.stopEmbeddedServices()
+	return "OK"
 }
 
 // domReady is called after front-end resources have been loaded
@@ -164,9 +172,7 @@ func (a App) domReady(ctx context.Context) {
 
 // beforeClose is called when the application is about to quit
 func (a *App) beforeClose(ctx context.Context) (prevent bool) {
-	if a.dbManager != nil {
-		_ = a.dbManager.Stop()
-	}
+	a.stopEmbeddedServices()
 	return false
 }
 
@@ -175,11 +181,17 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.biometricBridge != nil {
 		_ = a.biometricBridge.Stop(ctx)
 	}
+	a.stopEmbeddedServices()
+}
+
+func (a *App) stopEmbeddedServices() {
 	if a.syncService != nil {
 		a.syncService.Stop()
+		a.syncService = nil
 	}
 	if a.dbManager != nil {
 		_ = a.dbManager.Stop()
+		a.dbManager = nil
 	}
 }
 

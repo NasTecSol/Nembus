@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/updater"
 	"github.com/NasTecSol/nembus-core/biometrics/installer"
 	"github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/handler"
@@ -320,6 +321,7 @@ func main() {
 	}
 
 	cfg := config.LoadConfig(env)
+	updater.PersistLaunchArgs(flag.Args())
 
 	// Allow overriding the build-time version via environment variable so that
 	// the update checker works like production during local development.
@@ -341,6 +343,8 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
+		OnBeforeClose:    app.beforeClose,
+		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
