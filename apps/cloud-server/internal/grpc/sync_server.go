@@ -239,6 +239,9 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	if entityType == "pos_transactions" {
 		enqueuePosReceiptAfterSync(ctx, pool, payload)
 	}
+	if entityType == "pos_transaction_lines" {
+		EnqueuePosReceiptAfterLineSync(ctx, pool, payload)
+	}
 	return nil
 }
 

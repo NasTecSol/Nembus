@@ -1090,7 +1090,8 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 
 	var posTxnID *int32
 
-	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled
+	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled.
+	// WhatsApp receipts are enqueued on cloud after upstream gRPC sync only.
 	if cart.Channel.Valid && strings.EqualFold(strings.TrimSpace(cart.Channel.String), "pos") {
 		posTxn, err := uc.repo.CreateTransactionFromOrder(ctx, orderID)
 		if err != nil {
