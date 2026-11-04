@@ -44,11 +44,18 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		CREATE TABLE carts (id uuid PRIMARY KEY);
 		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
 		CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
+		CREATE TABLE pos_transactions (
+			id bigint PRIMARY KEY,
+			sales_order_id uuid REFERENCES sales_orders_v2(id),
+			source_cart_id uuid REFERENCES carts(id)
+		);
 		CREATE TABLE sales_returns (id bigint PRIMARY KEY, return_number text, status text);
 		CREATE TABLE sales_return_lines (id bigint PRIMARY KEY, return_id bigint REFERENCES sales_returns(id), line_number integer);
 		INSERT INTO carts VALUES ('00000000-0000-0000-0000-000000000001');
 		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
 		INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
+		INSERT INTO pos_transactions (id, sales_order_id, source_cart_id)
+		VALUES (7, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
 		CREATE TABLE sync_queue (id bigint PRIMARY KEY, entity_type text, entity_id bigint, action text,
 			payload jsonb, created_at timestamp DEFAULT now(), correlation_id text, status text);
 		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
