@@ -335,31 +335,45 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 		return nil, nil
 	}
 	var refs struct {
+		ID           int64   `json:"id"`
 		SalesOrderID *string `json:"sales_order_id"`
 		SourceCartID *string `json:"source_cart_id"`
 	}
 	if err := json.Unmarshal(item.Payload, &refs); err != nil {
 		return nil, fmt.Errorf("invalid transaction payload: %w", err)
 	}
-	if refs.SalesOrderID == nil && refs.SourceCartID == nil {
+	if refs.SalesOrderID == nil && refs.SourceCartID == nil && refs.ID == 0 {
 		return nil, nil
 	}
 	rows, err := s.masterPool.Query(ctx, `
+		WITH pt AS (
+			SELECT sales_order_id, source_cart_id
+			FROM pos_transactions
+			WHERE id = $3
+		),
+		ctx AS (
+			SELECT
+				COALESCE($1::uuid, (SELECT sales_order_id FROM pt)) AS order_id,
+				COALESCE(
+					$2::uuid,
+					(SELECT source_cart_id FROM pt),
+					(SELECT o.source_cart_id FROM sales_orders_v2 o WHERE o.id = COALESCE($1::uuid, (SELECT sales_order_id FROM pt)))
+				) AS cart_id
+		)
 		SELECT entity_type, payload FROM (
 			SELECT 1 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
-			FROM carts c
-			WHERE c.id = $2::uuid OR c.id = (
-				SELECT source_cart_id FROM sales_orders_v2 WHERE id = $1::uuid
-			)
+			FROM carts c, ctx
+			WHERE ctx.cart_id IS NOT NULL AND c.id = ctx.cart_id
 			UNION ALL
 			SELECT 2 AS seq, 'sales_orders_v2', json_build_object(
 				'order', row_to_json(o),
 				'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
 					FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
 			)::text
-			FROM sales_orders_v2 o WHERE o.id = $1::uuid
+			FROM sales_orders_v2 o, ctx
+			WHERE ctx.order_id IS NOT NULL AND o.id = ctx.order_id
 		) parents ORDER BY seq;
-	`, refs.SalesOrderID, refs.SourceCartID)
+	`, refs.SalesOrderID, refs.SourceCartID, refs.ID)
 	if err != nil {
 		return nil, fmt.Errorf("read transaction parents: %w", err)
 	}
