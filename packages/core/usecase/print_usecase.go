@@ -8,7 +8,6 @@ import (
 	"github.com/NasTecSol/nembus-client/utils"
 	"github.com/NasTecSol/nembus-core/printing"
 	"github.com/NasTecSol/nembus-core/repository"
-	"github.com/google/uuid"
 )
 
 // PrintUseCase orchestrates receipt printing by fetching organisation branding
@@ -60,21 +59,26 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 		if err != nil {
 			qrStatus = "unavailable"
 		} else if enabled {
-			qrStatus = "not_reported"
-			orderID := strings.TrimSpace(input.Receipt.SalesOrderID)
-			if orderID == "" {
-				orderID = strings.TrimSpace(input.Receipt.ReceiptNumber)
-			}
-			if _, err := uuid.Parse(orderID); err != nil {
+			state, err := uc.repo.GetReceiptZatcaState(tx, input.OrgID,
+				input.Receipt.SalesOrderID, input.Receipt.ReceiptNumber)
+			switch {
+			case err != nil:
+				// A missing/invalid sale or failed lookup is not proof that
+				// the transaction's terminal was unregistered.
 				qrStatus = "unavailable"
-			} else {
-				qr, err := uc.repo.GetReportedSalesOrderQR(tx, input.OrgID, orderID)
-				if err != nil || len(qr) > 2000 {
+			case state.Reported:
+				// Historical reported invoices retain their exact saved QR
+				// even after the device is deactivated or revoked.
+				if state.QRCode == "" || len(state.QRCode) > 2000 {
 					qrStatus = "unavailable"
-				} else if qr != "" {
-					input.Receipt.QRCodeBase64 = qr
+				} else {
+					input.Receipt.QRCodeBase64 = state.QRCode
 					qrStatus = "included"
 				}
+			case state.RegisteredPOS:
+				qrStatus = "not_reported"
+			default:
+				qrStatus = "not_applicable"
 			}
 		}
 	}

@@ -63,7 +63,10 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	}
 
 	// Ensure required columns / schema patches exist
-	manager.PatchDatabase(ctx, pool)
+	if err := manager.PatchDatabase(ctx, pool); err != nil {
+		pool.Close()
+		return nil, nil, err
+	}
 
 	// Initialize SQLC repository
 	queries := repository.New(pool)
@@ -536,6 +539,7 @@ func main() {
 	}()
 
 	// Start HTTP Server
+	log.Printf("Starting HTTP server on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal("failed to run server:", err)
 	}
