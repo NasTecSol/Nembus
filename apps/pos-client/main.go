@@ -67,7 +67,9 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	_, _ = pool.Exec(ctx, "DROP FUNCTION IF EXISTS update_cashier_session_balance();")
 
 	// Ensure required columns / schema patches exist
-	manager.PatchDatabase(ctx, pool)
+	if err := manager.PatchDatabase(ctx, pool); err != nil {
+		log.Fatalf("Failed to patch local database: %v", err)
+	}
 
 	// Initialize SQLC repository
 	queries := repository.New(pool)

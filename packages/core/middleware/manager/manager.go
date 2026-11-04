@@ -46,7 +46,10 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 	}
 
 	// Ensure required columns / schema patches exist
-	PatchDatabase(ctx, pool)
+	if err := PatchDatabase(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 
 	// Cache the pool for future use
 	m.pools.Store(slug, pool)
@@ -55,9 +58,9 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 
 // PatchDatabase applies non-destructive idempotent schema patches to ensure
 // compatibility across existing tenant and master databases.
-func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) {
+func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
-		return
+		return nil
 	}
 	queries := []string{
 		`ALTER TABLE IF EXISTS transfer_requests ADD COLUMN IF NOT EXISTS is_stock_reserved BOOLEAN NOT NULL DEFAULT false;`,
@@ -134,6 +137,7 @@ func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) {
 	for _, q := range queries {
 		_, _ = pool.Exec(ctx, q)
 	}
+	return RepairNullTaxOrderTotals(ctx, pool)
 }
 
 // GetTenantDSN returns the raw connection string (DSN) for a tenant without
