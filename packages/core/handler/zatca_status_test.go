@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -18,22 +19,93 @@ import (
 
 type statusDeviceDB struct {
 	repository.DBTX
-	device repository.ZatcaDeviceConfig
+	device     repository.ZatcaDeviceConfig
+	enabled    *bool
+	err        error
+	serialArgs []interface{}
 }
-type statusDeviceRow struct{ value interface{} }
+type statusDeviceRow struct {
+	value interface{}
+	err   error
+}
 
 func (db *statusDeviceDB) QueryRow(_ context.Context, sql string, args ...interface{}) pgx.Row {
 	if strings.Contains(sql, "GetOrganization") {
-		return statusDeviceRow{repository.Organization{ID: 1, Metadata: []byte(`{"zatca":{"enabled":true}}`)}}
+		if db.enabled != nil && !*db.enabled {
+			return statusDeviceRow{value: repository.Organization{ID: 1, Metadata: []byte(`{"zatca":{"enabled":false}}`)}}
+		}
+		return statusDeviceRow{value: repository.Organization{ID: 1, Metadata: []byte(`{"zatca":{"enabled":true}}`)}}
 	}
-	return statusDeviceRow{db.device}
+	if strings.Contains(sql, "GetZatcaDeviceConfigBySerial") {
+		db.serialArgs = args
+	}
+	return statusDeviceRow{value: db.device, err: db.err}
 }
 func (row statusDeviceRow) Scan(dest ...interface{}) error {
+	if row.err != nil {
+		return row.err
+	}
 	value := reflect.ValueOf(row.value)
 	for i, target := range dest {
 		reflect.ValueOf(target).Elem().Set(value.Field(i))
 	}
 	return nil
+}
+
+func TestStatusLooksUpSerialWithinOrganization(t *testing.T) {
+	for _, scenario := range []struct {
+		name, query    string
+		enabled, ready bool
+		err            error
+		code           int
+	}{
+		{"ready", "?organization_id=1&device_serial=%20POS-01%20", true, true, nil, 200},
+		{"incomplete", "?organization_id=1&device_serial=POS-01", true, false, nil, 200},
+		{"disabled", "?organization_id=1&device_serial=POS-01", false, true, nil, 200},
+		{"missing", "?organization_id=1&device_serial=POS-01", true, false, pgx.ErrNoRows, 404},
+		{"database failure", "?organization_id=1&device_serial=POS-01", true, false, errors.New("database unavailable"), 500},
+		{"organization required", "?device_serial=POS-01", true, false, nil, 400},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			device := repository.ZatcaDeviceConfig{ID: 3, OrganizationID: 1, DeviceSerial: "POS-01", ZatcaEnv: pgtype.Text{String: "simulation", Valid: true}, IsActive: pgtype.Bool{Bool: true, Valid: true}, ComplianceCsid: pgtype.Text{String: "compliance", Valid: true}, Metadata: []byte(`{"production_secret":"do-not-leak"}`)}
+			if scenario.ready {
+				device.ProductionCsid = pgtype.Text{String: "production", Valid: true}
+			}
+			db := &statusDeviceDB{device: device, enabled: &scenario.enabled, err: scenario.err}
+			h := NewZatcaHandler(usecase.NewZatcaUseCase(&usecase.ZatcaConfig{}))
+			engine := gin.New()
+			engine.Use(func(c *gin.Context) {
+				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), middleware.RepoKey, repository.New(db)))
+			})
+			engine.GET("/status", h.GetZatcaStatus)
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, httptest.NewRequest("GET", "/status"+scenario.query, nil))
+			if recorder.Code != scenario.code {
+				t.Fatalf("code=%d body=%s", recorder.Code, recorder.Body)
+			}
+			if scenario.code != 400 && !reflect.DeepEqual(db.serialArgs, []interface{}{int32(1), "POS-01"}) {
+				t.Fatalf("unscoped lookup: %v", db.serialArgs)
+			}
+			if strings.Contains(recorder.Body.String(), "do-not-leak") {
+				t.Fatal("credential leaked")
+			}
+			if scenario.code == 200 {
+				var response struct {
+					Data struct {
+						Enabled        bool `json:"enabled"`
+						ReportingReady bool `json:"reporting_ready"`
+						DeviceID       int  `json:"device_id"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if response.Data.Enabled != scenario.enabled || response.Data.ReportingReady != (scenario.enabled && scenario.ready) || response.Data.DeviceID != 3 {
+					t.Fatalf("unexpected status: %s", recorder.Body)
+				}
+			}
+		})
+	}
 }
 
 func TestStatusUsesRequestedDeviceEnvironmentAndNeverGlobalGateway(t *testing.T) {

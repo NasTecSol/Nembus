@@ -126,6 +126,10 @@ func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`ALTER TABLE IF EXISTS rfq_response_items ADD COLUMN IF NOT EXISTS uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE RESTRICT;`,
+		`ALTER TABLE IF EXISTS pos_transactions ADD COLUMN IF NOT EXISTS sales_order_id UUID;`,
+		`ALTER TABLE IF EXISTS pos_transactions ADD COLUMN IF NOT EXISTS source_cart_id UUID;`,
+		`ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS loyalty_tier VARCHAR(20) DEFAULT 'bronze';`,
+		`INSERT INTO notification_event_types (id, category, description) VALUES ('customer.created', 'crm', 'New Customer Onboarded / Created') ON CONFLICT (id) DO NOTHING;`,
 	}
 	for _, q := range queries {
 		_, _ = pool.Exec(ctx, q)

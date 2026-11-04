@@ -106,7 +106,9 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"unsafe"
@@ -194,6 +196,12 @@ func InitRuntime() error {
 			}
 		}
 
+		// Register runtimeDir with the system dynamic linker cache so internal dlopen() calls
+		// made by libdpfj (e.g. dlopen("libdpfr7.so")) can resolve recognition engine dependencies.
+		if err := os.WriteFile("/etc/ld.so.conf.d/nembus_biometrics.conf", []byte(runtimeDir+"\n"), 0644); err == nil {
+			_ = exec.Command("ldconfig").Run()
+		}
+
 		// Preload dependent recognition engines into global symbol space
 		for _, dep := range []string{"libdpfr6.so.3.0.0", "libdpfr7.so.3.0.0", "libtfm.so", "libdpuvc.so.3.1.1"} {
 			cPath := C.CString(filepath.Join(runtimeDir, dep))
@@ -205,6 +213,11 @@ func InitRuntime() error {
 		dpfjPath := C.CString(filepath.Join(runtimeDir, "libdpfj.so.3.0.0"))
 		handleDPFJ = C.dlopen(dpfjPath, C.RTLD_NOW|C.RTLD_GLOBAL)
 		C.free(unsafe.Pointer(dpfjPath))
+		if handleDPFJ == nil {
+			if msg := C.dlerror(); msg != nil {
+				log.Printf("[Biometrics] dlopen libdpfj failed: %s", C.GoString(msg))
+			}
+		}
 		if handleDPFJ != nil {
 			fnCompare = dlsymLookup(handleDPFJ, "dpfj_compare")
 			fnCreateFMDFromFID = dlsymLookup(handleDPFJ, "dpfj_create_fmd_from_fid")

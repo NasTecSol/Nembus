@@ -1,8 +1,10 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.25-bookworm AS build
 
 WORKDIR /app
 
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates tzdata build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace configuration and module dependencies.
 COPY go.work go.work.sum* ./
@@ -29,8 +31,9 @@ RUN $(go env GOPATH)/bin/swag init \
     --parseInternal
 
 # Build the API server.
+# CGO is required: the biometric engine dlopen()s the vendored FingerJet (glibc) libraries.
 RUN mkdir -p /out && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" \
     -o /out/server main.go
 
@@ -44,15 +47,33 @@ RUN wget -qO /out/atlas https://release.ariga.io/atlas/atlas-linux-amd64-latest 
     chmod +x /out/atlas
 
 # Production runtime container.
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache \
-    ca-certificates \
-    tzdata \
-    wget \
-    postgresql-client
+# Use the official PostgreSQL repository so pg_dump supports newer tenant databases.
+ARG PG_CLIENT_MAJOR=18
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates tzdata wget \
+    && mkdir -p /usr/share/postgresql-common/pgdg \
+    && wget -qO /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+        https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && printf '%s\n' 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-${PG_CLIENT_MAJOR} \
+    && /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/pg_dump --version \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PG_DUMP_PATH=/usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/pg_dump
+
+# Writable cache dir where the embedded biometric libraries are extracted at runtime.
+RUN mkdir -p /var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64 && \
+    chmod -R 777 /var/cache/nembus && \
+    echo "/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64" > /etc/ld.so.conf.d/nembus_biometrics.conf && \
+    ldconfig
+ENV XDG_CACHE_HOME=/var/cache/nembus
+ENV LD_LIBRARY_PATH=/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64:${LD_LIBRARY_PATH}
 
 # Application and migration executables.
 COPY --from=build /out/server /app/server

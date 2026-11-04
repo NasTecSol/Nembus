@@ -324,6 +324,35 @@ func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
 }
 
+// Keep diagnostics on the same database session that failed installation. Never
+// log the tenant connection string: it contains database credentials.
+func installTenantOrderAutomation(ctx context.Context, pool *pgxpool.Pool, slug string) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, cloudzatca.OrderAutomationDDL); err != nil {
+		var database, role, sessionRole, server, searchPath, table, owner string
+		var canReference, canTrigger bool
+		diagnosticErr := conn.QueryRow(ctx, `SELECT current_database(), current_user::text, session_user::text,
+ COALESCE(inet_server_addr()::text,'local-socket'), current_setting('search_path'),
+ COALESCE(to_regclass('sales_orders_v2')::text,'missing'),
+ COALESCE((SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid=to_regclass('sales_orders_v2')),'missing'),
+ COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'REFERENCES'),false),
+ COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'TRIGGER'),false)`).Scan(
+			&database, &role, &sessionRole, &server, &searchPath, &table, &owner, &canReference, &canTrigger)
+		if diagnosticErr != nil {
+			log.Printf("[ZATCA ORDER] Connection diagnostic for %s failed: %v", slug, diagnosticErr)
+		} else {
+			log.Printf("[ZATCA ORDER] Connection diagnostic tenant=%q host=%q database=%q role=%q session_role=%q server=%q search_path=%q table=%q owner=%q references=%t trigger=%t",
+				slug, pool.Config().ConnConfig.Host, database, role, sessionRole, server, searchPath, table, owner, canReference, canTrigger)
+		}
+		return err
+	}
+	return nil
+}
+
 func main() {
 	env := "development"
 	if len(os.Args) > 1 {
@@ -347,6 +376,11 @@ func main() {
 		log.Printf("[Biometrics] Warning: embedded runtime extraction failed: %v", err)
 	} else {
 		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
+	}
+	if biometrics.IsEngineAvailable() {
+		log.Printf("[Biometrics] Matching engine available")
+	} else {
+		log.Printf("[Biometrics] Warning: matching engine UNAVAILABLE; biometric login/enrollment will fail on this server")
 	}
 
 	ctx := context.Background()
@@ -379,7 +413,7 @@ func main() {
 					continue
 				}
 				if !ready[tenant.Slug] {
-					if _, err := pool.Exec(cycleCtx, cloudzatca.OrderAutomationDDL); err != nil {
+					if err := installTenantOrderAutomation(cycleCtx, pool, tenant.Slug); err != nil {
 						log.Printf("[ZATCA ORDER] Install jobs for %s failed: %v", tenant.Slug, err)
 						continue
 					}
@@ -456,8 +490,22 @@ func main() {
 	wsHub := notification.NewWebSocketHub()
 	go wsHub.Run(ctx.Done())
 
-	notifUC := usecase.NewNotificationUseCase(masterRepo)
-	dispatcher := notification.NewDispatcher(masterPool, notifUC, wsHub)
+	dispatcher := notification.NewDispatcher(func(c context.Context) ([]*pgxpool.Pool, error) {
+		tenants, err := masterRepo.ListActiveTenants(c)
+		if err != nil {
+			return nil, err
+		}
+		pools := make([]*pgxpool.Pool, 0, len(tenants))
+		for _, tenant := range tenants {
+			pool, err := tenantManager.GetPool(c, tenant.Slug)
+			if err != nil {
+				log.Printf("[NotificationDispatcher] Open tenant %s failed: %v", tenant.Slug, err)
+				continue
+			}
+			pools = append(pools, pool)
+		}
+		return pools, nil
+	}, wsHub)
 	go dispatcher.Start(ctx)
 
 	// Setup Router

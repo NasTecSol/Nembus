@@ -1,4 +1,4 @@
-.PHONY: sync-core generate-core generate-client build-server build-client dev-server dev-client tidy swagger db-diff db-migrate db-status db-hash db-lint sqlc verify test
+.PHONY: sync-core generate-core generate-client build-server build-client build-agent build-biometric-agent dev-server dev-client dev-agent dev-biometric-agent tidy swagger db-diff db-migrate db-status db-hash db-lint sqlc verify test
 
 # Database / Atlas Commands
 db-diff:
@@ -45,6 +45,10 @@ build-agent:
 	@echo "==> Building SAP agent..."
 	@cd apps/sap-agent && go build -o bin/sap-agent cmd/main.go
 
+build-biometric-agent:
+	@echo "==> Building Biometric agent..."
+	@cd apps/biometric-agent && go build -o bin/nembus-biometric-agent.exe .
+
 dev-server:
 	@cd apps/cloud-server && go run main.go dev
 
@@ -53,6 +57,9 @@ dev-client:
 
 dev-agent:
 	@cd apps/sap-agent && go run cmd/main.go daemon
+
+dev-biometric-agent:
+	@cd apps/biometric-agent && go run . --setup
 
 sync-notebook:
 	@echo "==> Bundling NotebookLM context sources..."
@@ -64,6 +71,7 @@ tidy:
 	@cd apps/cloud-server && go mod tidy
 	@cd apps/pos-client && go mod tidy
 	@cd apps/sap-agent && go mod tidy
+	@cd apps/biometric-agent && go mod tidy
 
 swagger:
 	@echo "==> Generating Swagger documentation..."
@@ -73,6 +81,7 @@ test:
 	@echo "==> Running tests across packages..."
 	@cd packages/core && go test ./...
 	@cd apps/cloud-server && go test ./...
+	@cd apps/biometric-agent && go test ./...
 
 db-validate:
 	@echo "==> Validating Atlas migration integrity..."

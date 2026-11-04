@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nembus | DigitalPersona Biometric Device Setup & Diagnostics</title>
+  <style>
+    :root {
+      --bg: #090D16;
+      --card-bg: #111726;
+      --card-border: #1E293B;
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+      --primary: #00E5B0;
+      --primary-glow: rgba(0, 229, 176, 0.25);
+      --accent: #00B4D8;
+      --warning: #FFB703;
+      --danger: #FF4757;
+      --success: #10B981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 32px 16px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 860px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--card-border); }
+    .logo-group { display: flex; align-items: center; gap: 14px; }
+    .logo-badge { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, #00E5B0 0%, #0077B6 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px var(--primary-glow); }
+    .logo-badge svg { width: 26px; height: 26px; fill: #090D16; }
+    h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .subtitle { font-size: 13px; color: var(--text-muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 20px; position: relative; }
+    .card-title { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .status-badge.ok { background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .status-badge.warn { background: rgba(255, 183, 3, 0.15); color: #FFB703; border: 1px solid rgba(255, 183, 3, 0.3); }
+    .status-badge.err { background: rgba(255, 71, 87, 0.15); color: #FF4757; border: 1px solid rgba(255, 71, 87, 0.3); }
+    .item-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+    .item-row:last-child { border-bottom: none; }
+    .item-label { color: var(--text-muted); }
+    .item-val { font-weight: 500; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-primary { background: var(--primary); color: #090D16; }
+    .btn-primary:hover { opacity: 0.9; box-shadow: 0 0 15px var(--primary-glow); }
+    .btn-secondary { background: #1E293B; color: var(--text); border: 1px solid #334155; }
+    .btn-secondary:hover { background: #334155; }
+    .btn-danger { background: rgba(255, 71, 87, 0.2); color: var(--danger); border: 1px solid rgba(255, 71, 87, 0.4); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .test-box { text-align: center; padding: 24px; background: rgba(0, 0, 0, 0.25); border-radius: 12px; border: 1px dashed var(--card-border); margin-top: 14px; position: relative; overflow: hidden; }
+    .sensor-visualizer { width: 80px; height: 100px; margin: 0 auto 16px; border: 2px solid #334155; border-radius: 12px; position: relative; background: #0F172A; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
+    .sensor-visualizer.active { border-color: var(--primary); box-shadow: 0 0 25px var(--primary-glow); }
+    .sensor-visualizer svg { width: 50px; height: 65px; fill: #475569; transition: all 0.3s; }
+    .sensor-visualizer.active svg { fill: var(--primary); }
+    .scan-line { position: absolute; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #FFFFFF, transparent); top: 0; opacity: 0; }
+    .sensor-visualizer.scanning .scan-line { opacity: 1; animation: scan 1.4s infinite ease-in-out; }
+    @keyframes scan { 0% { top: 10%; } 50% { top: 90%; } 100% { top: 10%; } }
+    .log-box { font-family: ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; background: #050811; padding: 12px; border-radius: 6px; border: 1px solid #1E293B; max-height: 120px; overflow-y: auto; text-align: left; margin-top: 12px; color: #A5B4FC; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-group">
+        <div class="logo-badge">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+        </div>
+        <div>
+          <h1>Nembus Biometric Setup & Diagnostics</h1>
+          <div class="subtitle">DigitalPersona U.are.U Hardware Bridge v3.4.0</div>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-secondary" onclick="refreshStatus()">🔄 Refresh Status</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Card 1: Driver & DLL Status -->
+      <div class="card">
+        <div class="card-title">
+          <span>Kernel Driver & Runtime</span>
+          <span id="driverBadge" class="status-badge warn">Checking...</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">USB Driver</span>
+          <span class="item-val" id="driverName">UsbdpFP.sys</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Matching Engine</span>
+          <span class="item-val">DigitalPersona FingerJet v7</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Runtime DLLs</span>
+          <span class="item-val" id="dllStatus">Checking...</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Admin Privileges</span>
+          <span class="item-val" id="adminStatus">-</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label" id="readerCountLabel">Readers (SDK / WinBio)</span>
+          <span class="item-val" id="sdkCount">-</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Windows USB (PnP)</span>
+          <span class="item-val" id="pnpReader">-</span>
+        </div>
+        <p id="driverMessage" style="font-size: 12px; color: var(--warning); margin-top: 12px; line-height: 1.45;"></p>
+        <div style="margin-top: 18px; display: flex; gap: 10px;">
+          <button id="btnInstallDrivers" class="btn btn-primary" onclick="installDrivers()">⚡ Install / Repair Drivers</button>
+        </div>
+      </div>
+
+      <!-- Card 2: Device Hardware -->
+      <div class="card">
+        <div class="card-title">
+          <span>Connected Scanner</span>
+          <span id="deviceBadge" class="status-badge warn">Checking...</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Device Model</span>
+          <span class="item-val" id="deviceModel">Loading status...</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Serial Number</span>
+          <span class="item-val" id="deviceSerial">-</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Firmware</span>
+          <span class="item-val" id="deviceFirmware">-</span>
+        </div>
+        <div class="item-row">
+          <span class="item-label">Bridge Endpoint</span>
+          <span class="item-val" id="bridgeEndpoint">http://127.0.0.1:5050</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3: Interactive Live Sensor Test -->
+    <div class="card">
+      <div class="card-title">
+        <span>Hardware Calibration & Test Scan</span>
+        <span id="testStatusBadge" class="status-badge ok">Ready for test</span>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Perform a test capture to calibrate scanner optics, verify biometric minutiae extraction, and check ISO FMD template generation.
+        The reader LED typically illuminates only during an active capture (test scan), not while idle.
+      </p>
+
+      <div class="test-box">
+        <div id="sensorVisual" class="sensor-visualizer">
+          <div class="scan-line"></div>
+          <svg viewBox="0 0 24 24"><path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.09.18-.26.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.96-.08.14-.23.22-.39.22zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.58 1.06 1 1.55 1.78 2.33.2.2.2.51 0 .71-.1.1-.23.15-.36.15z"/></svg>
+        </div>
+
+        <div id="testMsg" style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Sensor Idle</div>
+        <button id="btnTestCapture" class="btn btn-primary" onclick="startTestCapture()">🧪 Test Sensor Capture</button>
+        <button id="btnCancelCapture" class="btn btn-danger" style="margin-left: 8px;" onclick="cancelTestCapture()" disabled>Cancel</button>
+        <div id="testLog" class="log-box" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function refreshStatus() {
+      try {
+        const res = await fetch('/api/v1/setup/status');
+        const data = await res.json();
+
+        const driverBadge = document.getElementById('driverBadge');
+        const sdkCount = data.driver?.sdk_device_count ?? data.diagnostics?.device_count ?? 0;
+        const winBioNative = !!data.driver?.winbio_native_mode;
+        const wbfDetected = !!data.driver?.wbf_reader_detected;
+        const readerReady = data.device?.connected === true || !!data.driver?.reader_ready;
+
+        document.getElementById('sdkCount').textContent = String(sdkCount);
+
+        let driverMsg = data.driver?.message || '';
+        if (winBioNative) {
+          document.getElementById('readerCountLabel').textContent = 'Readers (WinBio native)';
+          if (!data.driver?.is_admin) {
+            driverMsg += ' If test capture fails, approve the UAC prompt for elevated capture or restart the agent as Administrator.';
+          }
+        } else {
+          document.getElementById('readerCountLabel').textContent = 'Readers (SDK / WinBio)';
+        }
+        document.getElementById('driverMessage').textContent = driverMsg;
+
+        const needsLegacyRepair = !!data.driver?.needs_driver_repair && !wbfDetected;
+
+        if (needsLegacyRepair) {
+          driverBadge.className = 'status-badge err';
+          driverBadge.textContent = 'Legacy Driver Setup';
+        } else if (winBioNative && readerReady) {
+          driverBadge.className = 'status-badge ok';
+          driverBadge.textContent = 'WinBio Ready';
+        } else if (wbfDetected && sdkCount > 0) {
+          driverBadge.className = 'status-badge ok';
+          driverBadge.textContent = 'WBF Active & Ready';
+        } else if (data.driver?.installed && sdkCount > 0) {
+          driverBadge.className = 'status-badge ok';
+          driverBadge.textContent = 'Installed & Active';
+        } else if (sdkCount > 0) {
+          driverBadge.className = 'status-badge ok';
+          driverBadge.textContent = 'Reader Ready';
+        } else if (wbfDetected && data.driver?.unsupported_wbf) {
+          driverBadge.className = 'status-badge err';
+          driverBadge.textContent = 'WinBio Service';
+        } else {
+          driverBadge.className = 'status-badge err';
+          driverBadge.textContent = 'Setup Required';
+        }
+
+        document.getElementById('dllStatus').textContent = data.driver?.dlls_available
+          ? 'Loaded (dpfpdd.dll, dpfj.dll)'
+          : 'Not loaded — install runtime or use WinBio capture path';
+        document.getElementById('adminStatus').textContent = data.driver?.is_admin
+          ? 'Yes (Elevated)'
+          : 'Standard user (UAC may appear for WBF capture)';
+
+        const usb = (data.driver?.usb_readers || [])[0];
+        if (usb) {
+          const stack = usb.reader_stack ? `, stack: ${usb.reader_stack}` : '';
+          document.getElementById('pnpReader').textContent =
+            `${usb.friendly_name || 'DigitalPersona USB'} — ${usb.class || 'Unknown class'} (${usb.status || 'Unknown'})${stack}`;
+        } else {
+          document.getElementById('pnpReader').textContent = 'Not detected on USB bus';
+        }
+
+        const devBadge = document.getElementById('deviceBadge');
+        if (readerReady) {
+          devBadge.className = 'status-badge ok';
+          if (winBioNative) {
+            devBadge.textContent = 'Connected (WinBio)';
+          } else if (data.device?.firmware_version?.includes('WBF') || data.device?.hardware_version?.includes('WBF')) {
+            devBadge.textContent = 'Connected (WBF)';
+          } else {
+            devBadge.textContent = 'Connected';
+          }
+          document.getElementById('deviceModel').textContent = data.device?.model || 'DigitalPersona U.are.U';
+          document.getElementById('deviceSerial').textContent = data.device?.serial_number || 'N/A';
+          document.getElementById('deviceFirmware').textContent =
+            data.device?.firmware_version || data.device?.hardware_version || 'N/A';
+          document.getElementById('sensorVisual').classList.add('active');
+        } else {
+          devBadge.className = data.driver?.unsupported_wbf ? 'status-badge err' : (needsLegacyRepair ? 'status-badge err' : 'status-badge warn');
+          devBadge.textContent = data.driver?.unsupported_wbf
+            ? 'WinBio not enumerating'
+            : (needsLegacyRepair ? 'Legacy driver rebind needed' : 'Not detected');
+          const usbName = usb?.friendly_name;
+          if (wbfDetected && sdkCount === 0) {
+            document.getElementById('deviceModel').textContent =
+              `${usbName || 'U.are.U reader'} — WBF mode (WinBio service must enumerate the unit)`;
+          } else if (usbName && !wbfDetected) {
+            document.getElementById('deviceModel').textContent =
+              `${usbName} on USB — legacy DigitalPersona driver not bound`;
+          } else {
+            document.getElementById('deviceModel').textContent = 'Plug in a DigitalPersona U.are.U USB reader';
+          }
+          document.getElementById('deviceSerial').textContent = data.device?.error || diagHint(data) || '-';
+          document.getElementById('deviceFirmware').textContent = '-';
+          document.getElementById('sensorVisual').classList.remove('active');
+        }
+      } catch (err) {
+        console.error('Failed to query status:', err);
+        document.getElementById('deviceBadge').textContent = 'Bridge offline';
+        document.getElementById('deviceModel').textContent = 'Cannot reach local agent — is nembus-biometric-agent running?';
+      }
+    }
+
+    async function installDrivers() {
+      const btn = document.getElementById('btnInstallDrivers');
+      btn.disabled = true;
+      btn.textContent = '⏳ Invoking UAC Installer...';
+      try {
+        const res = await fetch('/api/v1/setup/install-drivers', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message || 'Driver setup launched. Please accept the Windows UAC elevation prompt if shown.');
+        setTimeout(refreshStatus, 3000);
+      } catch (err) {
+        alert('Failed to trigger driver installer: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Install / Repair Drivers';
+      }
+    }
+
+    let activeCaptureAbort = null;
+
+    function diagHint(data) {
+      if (data.diagnostics?.query_error) return data.diagnostics.query_error;
+      if (data.driver.unsupported_wbf) {
+        return 'WBF hardware visible to Windows but WinBio service did not enumerate a unit — restart WbioSrvc or replug USB';
+      }
+      return '';
+    }
+
+    async function cancelTestCapture() {
+      if (activeCaptureAbort) {
+        activeCaptureAbort.abort();
+      }
+      try {
+        await fetch('/api/v1/capture', { method: 'DELETE' });
+      } catch (_) { /* ignore */ }
+    }
+
+    async function startTestCapture() {
+      const btn = document.getElementById('btnTestCapture');
+      const cancelBtn = document.getElementById('btnCancelCapture');
+      const visual = document.getElementById('sensorVisual');
+      const msg = document.getElementById('testMsg');
+      const log = document.getElementById('testLog');
+      const timeoutMs = 15000;
+
+      btn.disabled = true;
+      cancelBtn.disabled = false;
+      visual.classList.add('scanning', 'active');
+      msg.textContent = '👉 When the Nembus capture window appears, place your finger on the reader...';
+      log.style.display = 'block';
+      log.textContent = `[Test] Initiating hardware capture (timeout: ${timeoutMs / 1000}s)...\n`;
+
+      try {
+        const statusRes = await fetch('/api/v1/setup/status');
+        const statusData = await statusRes.json();
+        const captureReady = statusData.device?.connected === true || statusData.driver?.reader_ready === true;
+        if (!captureReady) {
+          msg.textContent = '⚠️ Fix reader detection before testing (see messages above).';
+          log.textContent += '[Test] Blocked: no reader available for capture.\n';
+          visual.classList.remove('scanning');
+          btn.disabled = false;
+          cancelBtn.disabled = true;
+          return;
+        }
+      } catch (_) {
+        /* proceed if status check fails */
+      }
+
+      activeCaptureAbort = new AbortController();
+      const clientTimer = setTimeout(() => activeCaptureAbort?.abort(), timeoutMs + 12000);
+
+      try {
+        const res = await fetch('/api/v1/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timeout: timeoutMs }),
+          signal: activeCaptureAbort.signal,
+        });
+        const data = await res.json();
+        if (data.success) {
+          const nfiq = data.nfiq_score ?? data.quality ?? data.nfiq;
+          msg.textContent = '✅ Fingerprint Captured Successfully!';
+          log.textContent += `[Test] Success!\n[Test] NFIQ Image Quality: ${nfiq} (1=Best, 5=Poor)\n[Test] ISO FMD Size: ${data.fmd_base64 ? data.fmd_base64.length : 0} chars (Base64)\n[Test] Ready for Cloud Backoffice authentication!`;
+        } else {
+          msg.textContent = '⚠️ ' + (data.message || 'Capture failed');
+          log.textContent += `[Test] Failed: ${data.message}\n`;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          msg.textContent = '⚠️ Capture timed out or was canceled';
+          log.textContent += '[Test] Timed out — try holding finger flat on the sensor until the light stays on.\n';
+          await cancelTestCapture();
+        } else {
+          msg.textContent = '❌ Capture Error: ' + err.message;
+          log.textContent += `[Test] Network/Bridge Error: ${err.message}\n`;
+        }
+      } finally {
+        clearTimeout(clientTimer);
+        activeCaptureAbort = null;
+        visual.classList.remove('scanning');
+        btn.disabled = false;
+        cancelBtn.disabled = true;
+      }
+    }
+
+    // Initialize on load & poll periodically
+    document.getElementById('bridgeEndpoint').textContent = window.location.origin;
+    refreshStatus();
+    setInterval(refreshStatus, 4000);
+  </script>
+</body>
+</html>
+

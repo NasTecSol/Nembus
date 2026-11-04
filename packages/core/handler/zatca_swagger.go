@@ -29,6 +29,9 @@ type ZatcaStatusData struct {
 	OrganizationID       *int32 `json:"organization_id,omitempty" example:"1"`
 	OrganizationRequired bool   `json:"organization_required,omitempty"`
 	DeviceID             *int32 `json:"device_id,omitempty" example:"3"`
+	DeviceSerial         string `json:"device_serial,omitempty" example:"POS-01"`
+	StoreID              *int32 `json:"store_id,omitempty" example:"1"`
+	PosTerminalID        *int32 `json:"pos_terminal_id,omitempty" example:"2"`
 	Env                  string `json:"env,omitempty" enums:"sandbox,simulation,production" example:"simulation"`
 	BaseURL              string `json:"base_url,omitempty" example:"https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation"`
 	VatID                string `json:"vat_id,omitempty" example:"310123456700003"`
@@ -39,6 +42,38 @@ type ZatcaStatusAPIResponse struct {
 	StatusCode int             `json:"statusCode" example:"200"`
 	Message    string          `json:"message" example:"ZATCA status"`
 	Data       ZatcaStatusData `json:"data"`
+}
+
+type ZatcaRegisteredDeviceData struct {
+	ID                  int32   `json:"id" example:"3"`
+	OrganizationID      int32   `json:"organization_id" example:"1"`
+	StoreID             int32   `json:"store_id" example:"2"`
+	StoreName           string  `json:"store_name" example:"Main Store"`
+	PosTerminalID       *int32  `json:"pos_terminal_id" example:"8" extensions:"x-nullable"`
+	TerminalName        *string `json:"terminal_name" example:"Counter 1" extensions:"x-nullable"`
+	TerminalCode        *string `json:"terminal_code" example:"POS-01" extensions:"x-nullable"`
+	DeviceSerial        string  `json:"device_serial" example:"EGS-POS-08"`
+	DeviceType          string  `json:"device_type" example:"pos"`
+	ZatcaEnv            *string `json:"zatca_env" enums:"sandbox,simulation,production" example:"simulation" extensions:"x-nullable"`
+	IsActive            bool    `json:"is_active" example:"true"`
+	IsRevoked           bool    `json:"is_revoked" example:"false"`
+	OrganizationEnabled bool    `json:"organization_zatca_enabled" example:"true"`
+	ReportingReady      bool    `json:"reporting_ready" example:"true"`
+	CsidExpiry          *string `json:"csid_expiry" format:"date-time" extensions:"x-nullable"`
+	CreatedAt           *string `json:"created_at" format:"date-time" extensions:"x-nullable"`
+	UpdatedAt           *string `json:"updated_at" format:"date-time" extensions:"x-nullable"`
+}
+
+type ZatcaDeviceListData struct {
+	Devices []ZatcaRegisteredDeviceData `json:"devices"`
+	Total   int                         `json:"total" example:"1"`
+	StoreID int32                       `json:"store_id" example:"2"`
+}
+
+type ZatcaDeviceListAPIResponse struct {
+	StatusCode int                 `json:"statusCode" example:"200"`
+	Message    string              `json:"message" example:"Registered ZATCA devices"`
+	Data       ZatcaDeviceListData `json:"data"`
 }
 
 type ZatcaValidationMessage struct {

@@ -12,10 +12,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const PermissionBiometricsEnroll = "biometrics.enroll"
+const PermissionBiometricsEnroll = "users:enroll"
 
-// ActorCanEnrollBiometrics returns the acting user ID when the caller holds biometrics.enroll
-// via JWT session or a valid X-Authorization-Token scoped to biometrics.enroll.
+// ActorCanEnrollBiometrics returns the acting user ID when the caller holds users:enroll
+// via JWT session or a valid X-Authorization-Token scoped to users:enroll.
 func ActorCanEnrollBiometrics(c *gin.Context, repo *repository.Queries) (int32, bool) {
 	if repo == nil {
 		return 0, false
