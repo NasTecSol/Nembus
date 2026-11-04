@@ -184,7 +184,6 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-
 type statementExecutor interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
@@ -201,7 +200,7 @@ func executeStatements(ctx context.Context, conn statementExecutor, sql string) 
 			continue
 		}
 
-		if _, err := conn.Exec(ctx, stmt); err != nil {
+		if err := executeRestoreStatement(ctx, conn, stmt); err != nil {
 			// The public schema is recreated locally, so its CREATE SCHEMA
 			// statement in a dump can legitimately report duplicate_schema.
 			var pgErr *pgconn.PgError
@@ -265,6 +264,7 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 	var inCopy bool
 	var copyCmd string
 	var copyData bytes.Buffer
+	skipAdministrativeSection := false
 
 	for scanner.Scan() {
 		lineBytes := scanner.Bytes()
@@ -287,6 +287,16 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 				copyData.Write(lineBytes)
 				copyData.WriteByte('\n')
 			}
+			continue
+		}
+
+		// pg_dump includes provider monitoring and cloud migration metadata.
+		// Filter complete sections, including COPY rows, without matching names
+		// embedded in application function bodies or application data values.
+		if header := dumpSectionHeader.FindStringSubmatch(trimmed); header != nil {
+			skipAdministrativeSection = isAdministrativeDumpSection(header[1], header[2], header[3])
+		}
+		if skipAdministrativeSection {
 			continue
 		}
 
@@ -332,7 +342,9 @@ func restoreSQL(sqlFilePath, dbURL string) error {
 		}
 	}
 
-	return nil
+	// COPY preserves explicit IDs, including any stale sequence state from the
+	// source tenant. Repair counters before migrations insert new local rows.
+	return repairRestoredSequences(ctx, conn)
 }
 
 // splitSQL splits a SQL file on top-level semicolons.
@@ -344,16 +356,15 @@ func splitSQL(sql string) []string {
 	inDollar := false
 	dollarTag := ""
 
-	runes := []rune(sql)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
+	for i := 0; i < len(sql); i++ {
+		r := sql[i]
 
 		if inSingle {
-			cur.WriteRune(r)
+			cur.WriteByte(r)
 			if r == '\'' {
 				// Handle escaped quotes ''
-				if i+1 < len(runes) && runes[i+1] == '\'' {
-					cur.WriteRune(runes[i+1])
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					cur.WriteByte(sql[i+1])
 					i++
 				} else {
 					inSingle = false
@@ -363,16 +374,11 @@ func splitSQL(sql string) []string {
 		}
 
 		if inDollar {
-			cur.WriteRune(r)
+			cur.WriteByte(r)
 			// Check if we hit the closing dollar tag
-			rest := string(runes[i:])
-			if strings.HasPrefix(rest, dollarTag) {
-				// Skip the rest of the tag
-				tagRunes := []rune(dollarTag)
-				for j := 1; j < len(tagRunes); j++ {
-					cur.WriteRune(runes[i+j])
-				}
-				i += len(tagRunes) - 1
+			if strings.HasPrefix(sql[i:], dollarTag) {
+				cur.WriteString(dollarTag[1:])
+				i += len(dollarTag) - 1
 				inDollar = false
 				dollarTag = ""
 			}
@@ -381,19 +387,18 @@ func splitSQL(sql string) []string {
 
 		if r == '\'' {
 			inSingle = true
-			cur.WriteRune(r)
+			cur.WriteByte(r)
 			continue
 		}
 
 		// Detect dollar-quote tag: $tag$ or $$
 		if r == '$' {
-			rest := string(runes[i:])
-			match := dollarQuoteRegex.FindString(rest)
+			match := dollarQuoteRegex.FindString(sql[i:])
 			if match != "" {
 				inDollar = true
 				dollarTag = match
 				cur.WriteString(match)
-				i += len([]rune(match)) - 1
+				i += len(match) - 1
 				continue
 			}
 		}
@@ -407,7 +412,7 @@ func splitSQL(sql string) []string {
 			continue
 		}
 
-		cur.WriteRune(r)
+		cur.WriteByte(r)
 	}
 
 	if stmt := strings.TrimSpace(cur.String()); stmt != "" {

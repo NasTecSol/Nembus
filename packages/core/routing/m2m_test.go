@@ -123,3 +123,110 @@ func TestM2MTokenAuthentication(t *testing.T) {
 		})
 	}
 }
+
+// Reusing a client ID across tenants must never rotate another tenant's token.
+func TestM2MRegistrationIsolationByTenant(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("JWT_SECRET", "tenant-isolation-test-secret")
+	r := gin.New()
+	RegisterM2MRoutes(r.Group("/api"), handler.NewM2MHandler())
+	r.GET("/protected", middleware.JWTAuthMiddleware(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"tenant_id": c.GetHeader("x-tenant-id")})
+	})
+	issue := func(tenant, name string) middleware.M2MClient {
+		t.Helper()
+		body, err := json.Marshal(handler.CreateM2MRequest{ClientID: "pos-app", ClientName: name, Years: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/m2m/tokens", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-m2m-key", middleware.M2MAPIKey)
+		req.Header.Set("x-tenant-id", tenant)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("issuance for %s failed: HTTP %d", tenant, w.Code)
+		}
+		var client middleware.M2MClient
+		if err := json.Unmarshal(w.Body.Bytes(), &client); err != nil {
+			t.Fatal(err)
+		}
+		return client
+	}
+	check := func(token, tenant string, status int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		// A caller's header must not select a different tenant from the signed token.
+		req.Header.Set("x-tenant-id", "different-tenant")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != status {
+			t.Fatalf("authentication for %s: HTTP %d, want %d", tenant, w.Code, status)
+		}
+		if status == http.StatusOK {
+			var result struct {
+				TenantID string `json:"tenant_id"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.TenantID != tenant {
+				t.Fatalf("authenticated tenant = %s, want %s", result.TenantID, tenant)
+			}
+		}
+	}
+	qitaf := issue("qitaf", "POS App")
+	sap := issue("sap", "POS App")
+	check(qitaf.Token, "qitaf", http.StatusOK)
+	check(sap.Token, "sap", http.StatusOK)
+	for _, client := range []middleware.M2MClient{qitaf, sap} {
+		req := httptest.NewRequest(http.MethodGet, "/api/m2m/tokens", nil)
+		req.Header.Set("x-m2m-key", middleware.M2MAPIKey)
+		req.Header.Set("x-tenant-id", client.TenantID)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		var listed []middleware.M2MClient
+		if w.Code != http.StatusOK {
+			t.Fatalf("listing failed: HTTP %d", w.Code)
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
+			t.Fatal(err)
+		}
+		if len(listed) != 1 || listed[0].Token != client.Token || listed[0].TenantID != client.TenantID {
+			t.Fatalf("registration for %s was replaced or leaked across tenants", client.TenantID)
+		}
+	}
+	// Intentional rotation is confined to the matching tenant/client pair.
+	rotated := issue("qitaf", "POS App Rotated")
+	check(qitaf.Token, "qitaf", http.StatusUnauthorized)
+	check(rotated.Token, "qitaf", http.StatusOK)
+	check(sap.Token, "sap", http.StatusOK)
+	clients, err := middleware.LoadM2MClients()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clients) != 2 {
+		t.Fatalf("rotation created duplicate registrations: %d", len(clients))
+	}
+
+	// A signed token with an absent or unknown tenant cannot borrow the other
+	// tenant's registration even if its client ID exists and its whitelist is empty.
+	for _, client := range clients {
+		client.Token = ""
+		if err := middleware.SaveM2MClient(client); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tenant := range []string{"", "unknown"} {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"client_id": "pos-app", "is_m2m": true, "tenant_id": tenant,
+		})
+		signed, err := token.SignedString([]byte("tenant-isolation-test-secret"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(signed, tenant, http.StatusUnauthorized)
+	}
+}
