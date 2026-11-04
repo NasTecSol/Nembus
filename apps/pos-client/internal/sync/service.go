@@ -319,11 +319,11 @@ func (s *SyncService) drainOutboxGRPC() {
 	}
 }
 
-// transactionParents returns the local cart and order referenced by a POS
-// transaction in FK order. UUID identities stay in the JSON payload; EntityID
-// is only a numeric diagnostic field in the current protocol.
 var errCheckoutNotReady = errors.New("checkout is not fulfilled locally yet")
 
+// transactionParents returns checkout prerequisites for a POS transaction.
+// Cart and order reference each other (converted_to_order_id / source_cart_id), so
+// cloud sync sends: cart without conversion link, POS_CHECKOUT order, then cart UPDATE.
 func (s *SyncService) transactionParents(item OutboxItem) ([]OutboxItem, error) {
 	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
 	defer cancel()
@@ -361,49 +361,93 @@ func (s *SyncService) transactionParentsContext(ctx context.Context, item Outbox
 				) AS cart_id
 		)
 		SELECT entity_type, payload FROM (
-			SELECT 1 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
-			FROM carts c, ctx
-			WHERE ctx.cart_id IS NOT NULL AND c.id = ctx.cart_id
-			UNION ALL
-			SELECT 2 AS seq, 'sales_orders_v2', json_build_object(
+			SELECT 1 AS seq, 'sales_orders_v2', json_build_object(
 				'order', row_to_json(o),
 				'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
 					FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
 			)::text
 			FROM sales_orders_v2 o, ctx
 			WHERE ctx.order_id IS NOT NULL AND o.id = ctx.order_id
+			UNION ALL
+			SELECT 2 AS seq, 'carts' AS entity_type, row_to_json(c)::text AS payload
+			FROM carts c, ctx
+			WHERE ctx.cart_id IS NOT NULL AND c.id = ctx.cart_id
 		) parents ORDER BY seq;
 	`, refs.SalesOrderID, refs.SourceCartID, refs.ID)
 	if err != nil {
 		return nil, fmt.Errorf("read transaction parents: %w", err)
 	}
 	defer rows.Close()
-	var parents []OutboxItem
+
+	base := OutboxItem{ID: item.ID, CreatedAt: item.CreatedAt, CorrelationID: item.CorrelationID}
+	var orderPayload, cartPayload json.RawMessage
 	for rows.Next() {
-		parent := OutboxItem{ID: item.ID, Action: "INSERT", CreatedAt: item.CreatedAt, CorrelationID: item.CorrelationID}
-		var payload string
-		if err := rows.Scan(&parent.EntityType, &payload); err != nil {
+		var entityType, payload string
+		if err := rows.Scan(&entityType, &payload); err != nil {
 			return nil, fmt.Errorf("read transaction parent: %w", err)
 		}
-		parent.Payload = json.RawMessage(payload)
-		if parent.EntityType == "sales_orders_v2" {
+		switch entityType {
+		case "sales_orders_v2":
 			var checkout struct {
 				Order struct {
 					FulfillmentStatus string `json:"fulfillment_status"`
 					OrderStatus       string `json:"order_status"`
 				} `json:"order"`
 			}
-			if err := json.Unmarshal(parent.Payload, &checkout); err != nil {
+			if err := json.Unmarshal([]byte(payload), &checkout); err != nil {
 				return nil, err
 			}
 			if checkout.Order.FulfillmentStatus != "fulfilled" || checkout.Order.OrderStatus != "fulfilled" {
 				return nil, errCheckoutNotReady
 			}
-			parent.Action = "POS_CHECKOUT"
+			orderPayload = json.RawMessage(payload)
+		case "carts":
+			cartPayload = json.RawMessage(payload)
 		}
-		parents = append(parents, parent)
 	}
-	return parents, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if orderPayload == nil && cartPayload == nil {
+		return nil, nil
+	}
+
+	var parents []OutboxItem
+	if cartPayload != nil {
+		stripped, err := stripCartConvertedOrderLink(cartPayload)
+		if err != nil {
+			return nil, fmt.Errorf("strip cart order link: %w", err)
+		}
+		parents = append(parents, OutboxItem{
+			ID: item.ID, EntityType: "carts", Action: "INSERT",
+			Payload: stripped, CreatedAt: base.CreatedAt, CorrelationID: base.CorrelationID,
+		})
+	}
+	if orderPayload != nil {
+		parents = append(parents, OutboxItem{
+			ID: item.ID, EntityType: "sales_orders_v2", Action: "POS_CHECKOUT",
+			Payload: orderPayload, CreatedAt: base.CreatedAt, CorrelationID: base.CorrelationID,
+		})
+	}
+	if cartPayload != nil {
+		parents = append(parents, OutboxItem{
+			ID: item.ID, EntityType: "carts", Action: "UPDATE",
+			Payload: cartPayload, CreatedAt: base.CreatedAt, CorrelationID: base.CorrelationID,
+		})
+	}
+	return parents, nil
+}
+
+// stripCartConvertedOrderLink clears converted_to_order_id so cloud can insert the
+// cart before the sales order exists. The link is restored in a follow-up UPDATE.
+func stripCartConvertedOrderLink(cartPayload json.RawMessage) (json.RawMessage, error) {
+	var cart map[string]json.RawMessage
+	if err := json.Unmarshal(cartPayload, &cart); err != nil {
+		return nil, err
+	}
+	cart["converted_to_order_id"] = json.RawMessage("null")
+	cart["converted_at"] = json.RawMessage("null")
+	return json.Marshal(cart)
 }
 
 func pushOutboxItem(stream syncpb.SyncService_StreamPushClient, item OutboxItem, storeID int32, tenantSlug string) error {
