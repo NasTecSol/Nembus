@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NasTecSol/nembus-biometric-agent/installer"
+	"github.com/NasTecSol/nembus-core/biometrics/installer"
 	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/getlantern/systray"
 )
