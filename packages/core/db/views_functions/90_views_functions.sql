@@ -11,7 +11,7 @@ DECLARE
 BEGIN
     -- Calculate subtotal and tax from order lines
     SELECT 
-        COALESCE(SUM(line_total - tax_amount), 0),
+        COALESCE(SUM(line_total - COALESCE(tax_amount, 0)), 0),
         COALESCE(SUM(tax_amount), 0)
     INTO v_subtotal, v_tax_amount
     FROM sales_order_lines_v2
