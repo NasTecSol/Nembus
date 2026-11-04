@@ -41,7 +41,11 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	}
 	defer pool.Close()
 	_, err = pool.Exec(ctx, `
-		CREATE TABLE carts (id uuid PRIMARY KEY);
+		CREATE TABLE carts (
+			id uuid PRIMARY KEY,
+			converted_to_order_id uuid,
+			converted_at timestamptz
+		);
 		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
 		CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
 		CREATE TABLE pos_transactions (
@@ -49,11 +53,17 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 			sales_order_id uuid REFERENCES sales_orders_v2(id),
 			source_cart_id uuid REFERENCES carts(id)
 		);
+		CREATE TABLE pos_transaction_lines (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, line_number integer DEFAULT 1);
+		CREATE TABLE pos_payments (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, amount numeric DEFAULT 0);
 		CREATE TABLE sales_returns (id bigint PRIMARY KEY, return_number text, status text);
 		CREATE TABLE sales_return_lines (id bigint PRIMARY KEY, return_id bigint REFERENCES sales_returns(id), line_number integer);
-		INSERT INTO carts VALUES ('00000000-0000-0000-0000-000000000001');
+		INSERT INTO carts (id) VALUES ('00000000-0000-0000-0000-000000000001');
 		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
+		UPDATE carts SET converted_to_order_id = '00000000-0000-0000-0000-000000000002' WHERE id = '00000000-0000-0000-0000-000000000001';
+		ALTER TABLE carts ADD CONSTRAINT fk_carts_converted_to_order FOREIGN KEY (converted_to_order_id) REFERENCES sales_orders_v2(id);
 		INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
+		INSERT INTO pos_transaction_lines (id, transaction_id) VALUES (8, 7);
+		INSERT INTO pos_payments (id, transaction_id) VALUES (9, 7);
 		INSERT INTO pos_transactions (id, sales_order_id, source_cart_id)
 		VALUES (7, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
 		CREATE TABLE sync_queue (id bigint PRIMARY KEY, entity_type text, entity_id bigint, action text,
@@ -75,13 +85,23 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parents) != 2 || parents[0].EntityType != "carts" || parents[1].EntityType != "sales_orders_v2" {
-		t.Fatalf("expected one cart before order, got %+v", parents)
+	if len(parents) != 3 ||
+		parents[0].EntityType != "carts" || parents[0].Action != "INSERT" ||
+		parents[1].EntityType != "sales_orders_v2" || parents[1].Action != "POS_CHECKOUT" ||
+		parents[2].EntityType != "carts" || parents[2].Action != "UPDATE" {
+		t.Fatalf("expected cart stub, checkout, cart restore; got %+v", parents)
 	}
 	for _, p := range parents {
-		if p.ID != item.ID || (p.EntityType == "carts" && p.Action != "INSERT") || (p.EntityType == "sales_orders_v2" && p.Action != "POS_CHECKOUT") || !json.Valid(p.Payload) {
+		if p.ID != item.ID || !json.Valid(p.Payload) {
 			t.Fatalf("invalid parent event: %+v", p)
 		}
+	}
+	var strippedCart map[string]json.RawMessage
+	if err := json.Unmarshal(parents[0].Payload, &strippedCart); err != nil {
+		t.Fatal(err)
+	}
+	if string(strippedCart["converted_to_order_id"]) != "null" {
+		t.Fatalf("first cart push must omit converted_to_order_id: %s", parents[0].Payload)
 	}
 	var snapshot struct {
 		Order json.RawMessage   `json:"order"`
@@ -89,6 +109,14 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	}
 	if err := json.Unmarshal(parents[1].Payload, &snapshot); err != nil || len(snapshot.Lines) != 1 {
 		t.Fatalf("missing checkout lines: %s", parents[1].Payload)
+	}
+	var restoredCart map[string]json.RawMessage
+	if err := json.Unmarshal(parents[2].Payload, &restoredCart); err != nil {
+		t.Fatal(err)
+	}
+	var restoredOrderID string
+	if err := json.Unmarshal(restoredCart["converted_to_order_id"], &restoredOrderID); err != nil || restoredOrderID == "" {
+		t.Fatalf("final cart push must restore converted_to_order_id: %s", parents[2].Payload)
 	}
 	if _, err := pool.Exec(ctx, "UPDATE sales_orders_v2 SET fulfillment_status='unfulfilled'"); err != nil {
 		t.Fatal(err)
@@ -102,10 +130,10 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	// The order's source cart must also be sent if an older POS payload omits it.
 	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002"}`)
 	parents, err = s.transactionParents(item)
-	if err != nil || len(parents) != 2 {
+	if err != nil || len(parents) != 3 {
 		t.Fatalf("order-only reference: parents=%+v err=%v", parents, err)
 	}
-	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":null,"source_cart_id":null}`)
+	item.Payload = json.RawMessage(`{"id":999,"sales_order_id":null,"source_cart_id":null}`)
 	parents, err = s.transactionParents(item)
 	if err != nil || len(parents) != 0 {
 		t.Fatalf("direct POS sale: parents=%+v err=%v", parents, err)
@@ -164,6 +192,24 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	}
 	if ids := eligible(); len(ids) != 4 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 || ids[3] != 6 {
 		t.Fatalf("child sales_return_lines must become eligible after sales_returns synced; eligible=%v", ids)
+	}
+}
+
+func TestStripCartConvertedOrderLink(t *testing.T) {
+	stripped, err := stripCartConvertedOrderLink(json.RawMessage(`{
+		"id":"00000000-0000-0000-0000-000000000001",
+		"converted_to_order_id":"00000000-0000-0000-0000-000000000002",
+		"converted_at":"2026-11-04T00:00:00Z"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cart map[string]json.RawMessage
+	if err := json.Unmarshal(stripped, &cart); err != nil {
+		t.Fatal(err)
+	}
+	if string(cart["converted_to_order_id"]) != "null" || string(cart["converted_at"]) != "null" {
+		t.Fatalf("expected null conversion fields, got %s", stripped)
 	}
 }
 
