@@ -33,7 +33,7 @@ func (h *PrintHandler) getRepositoryFromContext(c *gin.Context) *repository.Quer
 
 // PrintReceipt handles POST /api/print/receipt
 // @Summary      Print a receipt
-// @Description  Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization, the server loads a saved signed QR only when the order is reported. Pending or failed reporting prints without a QR so checkout is not blocked. Caller-supplied qr_code_base64 is ignored. The response includes qr_status.
+// @Description  Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization, the saved sale determines its store/terminal registration. Unregistered POS sales print normally with qr_status=not_applicable. Reported invoices retain their saved signed QR; registered sales with pending or failed reporting print without a QR so checkout is not blocked. Caller-supplied qr_code_base64 is ignored. The response includes qr_status.
 // @Tags         print
 // @Accept       json
 // @Produce      json

@@ -63,7 +63,10 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 	}
 
 	// Ensure required columns / schema patches exist
-	manager.PatchDatabase(ctx, pool)
+	if err := manager.PatchDatabase(ctx, pool); err != nil {
+		pool.Close()
+		return nil, nil, err
+	}
 
 	// Initialize SQLC repository
 	queries := repository.New(pool)
