@@ -34,45 +34,46 @@ func handleMockTerminalConn(conn net.Conn) {
 	defer conn.Close()
 
 	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil || n == 0 {
-		return
+	for {
+		n, err := conn.Read(buf)
+		if err != nil || n == 0 {
+			return
+		}
+		req := buf[:n]
+
+		_, _ = conn.Write([]byte{ByteACK})
+		time.Sleep(10 * time.Millisecond)
+
+		if len(req) >= 7 && req[2] == 0x03 && req[5] == 0x04 {
+			resp, _ := hex.DecodeString("DF85023030AA010002FF39C4")
+			_, _ = conn.Write(resp)
+			continue
+		}
+		if len(req) >= 7 && req[2] == 0x03 && req[5] == 0x07 {
+			resp, _ := hex.DecodeString("DF291036333435303030313031343536393638DF2A0F363530393939303030393131202020")
+			_, _ = conn.Write(resp)
+			continue
+		}
+		if len(req) >= 7 && req[2] == 0x03 && req[5] == 0x0A {
+			resp, _ := hex.DecodeString("DF291036333435303030313031343536393638DF2A0F363530393939303030393131202020DF870442534642")
+			_, _ = conn.Write(resp)
+			continue
+		}
+
+		// Purchase / default flow (first message only in legacy tests)
+		break
 	}
 
-	req := buf[:n]
-
-	// 1. Send immediate ACK (0x06)
-	_, _ = conn.Write([]byte{ByteACK})
-	time.Sleep(20 * time.Millisecond)
-
-	// Check if this is a Status Check request
-	if len(req) >= 4 && req[2] == 0x03 && req[5] == 0x04 {
-		// Terminal Available response: DF 85 02 30 30 AA 01 00 02 FF 39 C4
-		resp, _ := hex.DecodeString("DF85023030AA010002FF39C4")
-		_, _ = conn.Write(resp)
-		return
-	}
-
-	// 2. Stream intermediate progress events
-	// Swipe/Insert: 01 00 02 FF 41 BE
+	// Legacy purchase simulation for TestClientPurchaseFlow
 	_, _ = conn.Write([]byte{0x01, 0x00, 0x02, 0xFF, 0x41, 0x02 ^ 0xFF ^ 0x41})
 	time.Sleep(30 * time.Millisecond)
-
-	// PIN Entry: 01 00 02 FF 43 BC
 	_, _ = conn.Write([]byte{0x01, 0x00, 0x02, 0xFF, 0x43, 0x02 ^ 0xFF ^ 0x43})
 	time.Sleep(30 * time.Millisecond)
-
-	// Connecting to SAMA: 01 00 02 FF 46 BB
 	_, _ = conn.Write([]byte{0x01, 0x00, 0x02, 0xFF, 0x46, 0x02 ^ 0xFF ^ 0x46})
 	time.Sleep(30 * time.Millisecond)
-
-	// Waiting Response: 01 00 02 FF 79 84
 	_, _ = conn.Write([]byte{0x01, 0x00, 0x02, 0xFF, 0x79, 0x02 ^ 0xFF ^ 0x79})
 	time.Sleep(30 * time.Millisecond)
 
-	// 3. Send final transaction response (Approved SAR 50.00 on mada card)
-	// DF02 (Masked Card), DF04 (50.00 SAR), DF0B (STAN), DF0C (DateTime), DF0E (Expiry),
-	// DF25 (RRN), DF26 (Auth), DF27 (000), DF29 (TID), DF82 (P1), DF81 (ECR)
 	sampleResp := "DF0210353838382A2A2A2A2A2A2A2A33323235" +
 		"DF0406000000005000" +
 		"DF0B06303030303438" +
@@ -87,7 +88,6 @@ func handleMockTerminalConn(conn net.Conn) {
 		"DF880435343131" +
 		"DF903C5350414E7C4449505045447C41303030303030323238313031307C303834303034313030307C45383030" +
 		"DF811030303030303030303030303030303031"
-
 	finalBytes, _ := hex.DecodeString(sampleResp)
 	_, _ = conn.Write(finalBytes)
 }
@@ -166,6 +166,17 @@ func TestClientCheckStatus(t *testing.T) {
 	}
 	if !ok {
 		t.Errorf("expected CheckStatus=true, got false")
+	}
+
+	probe, err := client.ProbeConnection(context.Background())
+	if err != nil {
+		t.Fatalf("ProbeConnection error: %v", err)
+	}
+	if !probe.OK {
+		t.Errorf("expected probe OK, got false: %s", probe.Message)
+	}
+	if probe.TerminalID == "" {
+		t.Errorf("expected terminal ID from probe")
 	}
 }
 
