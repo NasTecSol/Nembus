@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 
 	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/updater"
+	"github.com/NasTecSol/nembus-core/biometrics/installer"
 	"github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -276,9 +279,37 @@ func healthCheck(c *gin.Context) {
 }
 
 func main() {
+	flagInstallWorker := flag.Bool("install-drivers-worker", false, "Internal elevated worker for DigitalPersona driver installation")
+	flagWinBioCaptureWorker := flag.Bool("winbio-capture-worker", false, "Internal elevated worker for WBF fingerprint capture")
+	flagWinBioUnitID := flag.Uint("unit-id", 0, "WinBio unit id for capture worker")
+	flagWinBioTimeoutMs := flag.Int("timeout-ms", 15000, "Capture timeout for capture worker")
+	flagWinBioResultFile := flag.String("result-file", "", "JSON result path for capture worker")
+	flag.Parse()
+
+	if *flagWinBioCaptureWorker {
+		if *flagWinBioResultFile == "" || *flagWinBioUnitID == 0 {
+			log.Fatalf("[POS] --winbio-capture-worker requires --unit-id and --result-file")
+		}
+		if err := installer.RunWinBioCaptureWorker(uint32(*flagWinBioUnitID), *flagWinBioTimeoutMs, *flagWinBioResultFile); err != nil {
+			log.Fatalf("[POS] WinBio capture worker failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	if *flagInstallWorker {
+		log.Printf("[POS] Running elevated DigitalPersona driver installation worker...")
+		if err := installer.InstallDrivers(); err != nil {
+			log.Fatalf("[POS] Elevated driver installation failed: %v", err)
+		}
+		log.Printf("[POS] Driver installation completed.")
+		os.Exit(0)
+	}
+
 	env := "development"
-	if len(os.Args) > 1 {
-		arg := os.Args[1]
+	if os.Getenv("ENV") != "" {
+		env = os.Getenv("ENV")
+	}
+	for _, arg := range flag.Args() {
 		switch arg {
 		case "stg":
 			env = "stg"
@@ -287,11 +318,10 @@ func main() {
 		case "prod":
 			env = "prod"
 		}
-	} else if os.Getenv("ENV") != "" {
-		env = os.Getenv("ENV")
 	}
 
 	cfg := config.LoadConfig(env)
+	updater.PersistLaunchArgs(flag.Args())
 
 	// Allow overriding the build-time version via environment variable so that
 	// the update checker works like production during local development.
@@ -313,6 +343,8 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
+		OnBeforeClose:    app.beforeClose,
+		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
 		},

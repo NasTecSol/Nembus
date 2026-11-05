@@ -76,6 +76,15 @@ func CheckForUpdate(currentVersion, cloudURL, clientKey string) (*UpdateInfo, er
 		info.DownloadURL = baseURL + info.DownloadURL
 	}
 
+	cleanCurr := strings.TrimPrefix(currentVersion, "v")
+	if info.MinSupportedVersion != "" {
+		minVer := strings.TrimPrefix(info.MinSupportedVersion, "v")
+		if isVersionNewer(cleanCurr, minVer) {
+			info.HasUpdate = true
+			info.IsMandatory = true
+		}
+	}
+
 	return &info, nil
 }
 
@@ -163,8 +172,8 @@ func ApplyUpdate(downloadURL, expectedChecksum, clientKey string) error {
 		return fmt.Errorf("failed to replace executable: %w", err)
 	}
 
-	// Spawn new process
-	cmd := exec.Command(exePath)
+	restartArgs := LoadLaunchArgs()
+	cmd := exec.Command(exePath, restartArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

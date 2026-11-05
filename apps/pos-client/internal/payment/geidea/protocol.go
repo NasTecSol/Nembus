@@ -185,6 +185,54 @@ func BuildGetTerminalIDBuffer() []byte {
 	return append([]byte{ByteSOH, 0x00}, append(payload, lrc)...)
 }
 
+// BuildGetMerchantInfoBuffer creates the buffer to query merchant/terminal registration details
+func BuildGetMerchantInfoBuffer() []byte {
+	// Frame: 01 00 03 FF 01 0A F7
+	payload := []byte{0x03, 0xFF, 0x01, 0x0A}
+	lrc := CalculateLRC(payload)
+	return append([]byte{ByteSOH, 0x00}, append(payload, lrc)...)
+}
+
+// ParseTerminalIdentityFromBuffer extracts TID/MID and optional merchant text from a TLV response
+func ParseTerminalIdentityFromBuffer(buf []byte) (terminalID, merchantID, merchantInfo string) {
+	tlvs := ExtractTLVs(buf)
+	if tag, ok := tlvs["DF29"]; ok {
+		terminalID = strings.TrimSpace(tag.Value)
+	}
+	if tag, ok := tlvs["DF2A"]; ok {
+		merchantID = strings.TrimSpace(tag.Value)
+	}
+	// Merchant info responses may include multiple DF tags; expose a readable summary
+	var parts []string
+	for _, key := range []string{"DF29", "DF2A", "DF86", "DF87", "DF88"} {
+		if tag, ok := tlvs[key]; ok && strings.TrimSpace(tag.Value) != "" {
+			parts = append(parts, fmt.Sprintf("%s=%s", key, strings.TrimSpace(tag.Value)))
+		}
+	}
+	if len(parts) > 0 {
+		merchantInfo = strings.Join(parts, " | ")
+	}
+	return terminalID, merchantID, merchantInfo
+}
+
+// IsCommunicationOKResponse reports terminal availability (CHECK STATUS / DF85)
+func IsCommunicationOKResponse(buf []byte) bool {
+	if bytes.Contains(buf, []byte{0xDF, 0x85}) {
+		return true
+	}
+	if bytes.Contains(buf, []byte{ByteACK}) && len(buf) >= 1 {
+		return true
+	}
+	return false
+}
+
+// HasTerminalIdentityTLV returns true when DF29 (terminal ID) is present
+func HasTerminalIdentityTLV(buf []byte) bool {
+	tlvs := ExtractTLVs(buf)
+	_, ok := tlvs["DF29"]
+	return ok
+}
+
 // BuildSetSettingBuffer creates the buffer to set menu, printer, and baud rate
 func BuildSetSettingBuffer(menu bool, printer bool, speedOption int) []byte {
 	menuByte := byte(0x30)
