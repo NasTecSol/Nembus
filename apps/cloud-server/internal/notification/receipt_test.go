@@ -77,6 +77,26 @@ func TestReceiptParametersAndSummary(t *testing.T) {
 	}
 }
 
+func TestReceiptParametersForTextTemplate(t *testing.T) {
+	tmpl := &repository.NotificationTemplate{
+		MetaTemplateName: pgtype.Text{String: "nembus_receipt_txt", Valid: true},
+		BodyTemplate:     "🛒Details :\nReceipt: {{1}}\nDate: {{2}}\nTotal: {{3}}\nThank you for shopping with us",
+	}
+	receipt := saleReceipt{
+		Number:   "REC-1001",
+		Date:     "2026-11-05",
+		Total:    "15.00",
+		Currency: "SAR",
+	}
+	params := receiptParametersForTemplate(tmpl, receipt)
+	if len(params) != 3 {
+		t.Fatalf("expected 3 params, got %d: %#v", len(params), params)
+	}
+	if params[0] != "REC-1001" || params[1] != "2026-11-05" || params[2] != "15.00 SAR" {
+		t.Fatalf("unexpected params: %#v", params)
+	}
+}
+
 func TestReceiptTemplateIncludesQRHeader(t *testing.T) {
 	var got map[string]interface{}
 	var mediaHits int

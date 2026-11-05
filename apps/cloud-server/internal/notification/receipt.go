@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/usecase"
@@ -88,7 +89,10 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 	}
 
 	missingQR := strings.TrimSpace(receipt.QR) == ""
-	if (missingQR || len(receipt.Lines) == 0) && receiptRetries(event) < maxReceiptNotReady {
+	templateName := strings.ToLower(strings.TrimSpace(tmpl.MetaTemplateName.String))
+	isTextOnlyTemplate := strings.Contains(templateName, "receipt_txt") || strings.Contains(templateName, "_txt")
+
+	if !isTextOnlyTemplate && (missingQR || len(receipt.Lines) == 0) && receiptRetries(event) < maxReceiptNotReady {
 		d.deferReceipt(ctx, event.ID)
 		return false
 	}
@@ -101,7 +105,9 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 	client := NewWhatsAppClient(waCfg)
 	headerID := ""
 	note := ""
-	if !missingQR {
+	if isTextOnlyTemplate {
+		headerID = ""
+	} else if !missingQR {
 		png, renderErr := RenderZATCAQR(receipt.QR)
 		if renderErr != nil {
 			note = "ZATCA QR could not be rendered: " + renderErr.Error()
@@ -118,7 +124,8 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 	if language == "" {
 		language = "en"
 	}
-	resp, sendErr := client.SendTemplateMessageWithHeader(ctx, receipt.Phone, strings.TrimSpace(tmpl.MetaTemplateName.String), language, receiptParameters(receipt), headerID)
+	params := receiptParametersForTemplate(tmpl, receipt)
+	resp, sendErr := client.SendTemplateMessageWithHeader(ctx, receipt.Phone, strings.TrimSpace(tmpl.MetaTemplateName.String), language, params, headerID)
 	status := "sent"
 	var providerID *string
 	if sendErr != nil {
@@ -248,6 +255,29 @@ func receiptParameters(receipt saleReceipt) []string {
 	}
 	total := fmt.Sprintf("%s %s", moneyText(receipt.Total), currency)
 	return []string{store, receipt.Number, receipt.Date, items, total}
+}
+
+func receiptParametersForTemplate(tmpl *repository.NotificationTemplate, receipt saleReceipt) []string {
+	currency := receipt.Currency
+	if currency == "" {
+		currency = "SAR"
+	}
+	total := fmt.Sprintf("%s %s", moneyText(receipt.Total), currency)
+
+	if tmpl != nil {
+		name := strings.ToLower(strings.TrimSpace(tmpl.MetaTemplateName.String))
+		body := tmpl.BodyTemplate
+		// If template is nembus_receipt_txt or has 3 parameters: {{1}}=Receipt, {{2}}=Date, {{3}}=Total
+		if strings.Contains(name, "receipt_txt") || (!strings.Contains(body, "{{4}}") && strings.Contains(body, "{{3}}")) {
+			dateStr := strings.TrimSpace(receipt.Date)
+			if dateStr == "" {
+				dateStr = time.Now().Format("2006-01-02")
+			}
+			return []string{receipt.Number, dateStr, total}
+		}
+	}
+
+	return receiptParameters(receipt)
 }
 
 func summarizeItems(lines []receiptLine) string {

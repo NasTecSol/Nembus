@@ -330,7 +330,7 @@ func main() {
 	}
 
 	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
-
+log.Printf("hello")
 	// Wails Setup
 	app := NewApp(Version, AppUpdateKey, CloudURL)
 
