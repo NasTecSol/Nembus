@@ -89,8 +89,8 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 	}
 
 	missingQR := strings.TrimSpace(receipt.QR) == ""
-	templateName := strings.ToLower(strings.TrimSpace(tmpl.MetaTemplateName.String))
-	isTextOnlyTemplate := strings.Contains(templateName, "receipt_txt") || strings.Contains(templateName, "_txt")
+	metaTemplateLower := strings.ToLower(strings.TrimSpace(tmpl.MetaTemplateName.String))
+	isTextOnlyTemplate := strings.Contains(metaTemplateLower, "receipt_txt") || strings.Contains(metaTemplateLower, "_txt")
 
 	if !isTextOnlyTemplate && (missingQR || len(receipt.Lines) == 0) && receiptRetries(event) < maxReceiptNotReady {
 		d.deferReceipt(ctx, event.ID)
@@ -120,12 +120,13 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 		note = "ZATCA QR was not available; template sent without the image header"
 	}
 
-	language := tmpl.Locale
-	if language == "" {
-		language = "en"
-	}
 	params := receiptParametersForTemplate(tmpl, receipt)
-	resp, sendErr := client.SendTemplateMessageWithHeader(ctx, receipt.Phone, strings.TrimSpace(tmpl.MetaTemplateName.String), language, params, headerID)
+	metaTemplateName := strings.TrimSpace(tmpl.MetaTemplateName.String)
+	languageCodes := WhatsAppLanguageCodesToTry(tmpl.Locale)
+	resp, sendErr := client.SendTemplateMessageWithHeaderLocales(ctx, receipt.Phone, metaTemplateName, languageCodes, params, headerID)
+	if sendErr != nil && isWhatsAppError132001(sendErr) {
+		sendErr = fmt.Errorf("%w (template %q, tried languages %v; confirm Meta WABA matches notification channel phone_number_id and set notification_templates.locale to the exact code from GET /{waba-id}/message_templates)", sendErr, metaTemplateName, languageCodes)
+	}
 	status := "sent"
 	var providerID *string
 	if sendErr != nil {
