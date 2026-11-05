@@ -91,6 +91,72 @@ func (c *WhatsAppClient) SendTemplateMessageWithHeader(ctx context.Context, reci
 	return c.postMessage(ctx, c.graphURL("messages"), templateMessageBody(recipientPhone, templateName, languageCode, parameters, headerImageID))
 }
 
+// WhatsAppLanguageCodesToTry returns locale codes to attempt when sending a Meta template.
+// Meta treats en and en_US as different translations; 132001 often means the code does not match approval.
+func WhatsAppLanguageCodesToTry(primary string) []string {
+	primary = strings.TrimSpace(primary)
+	if primary == "" {
+		primary = "en"
+	}
+	out := []string{primary}
+	add := func(code string) {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == code {
+				return
+			}
+		}
+		out = append(out, code)
+	}
+	norm := strings.ToLower(strings.ReplaceAll(primary, "-", "_"))
+	switch norm {
+	case "en":
+		add("en_US")
+		add("en_GB")
+	case "en_us":
+		add("en_US")
+		add("en")
+	case "en_gb":
+		add("en_GB")
+		add("en")
+	case "ar":
+		add("ar_SA")
+	case "ar_sa":
+		add("ar_SA")
+		add("ar")
+	}
+	return out
+}
+
+func isWhatsAppError132001(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "132001")
+}
+
+// SendTemplateMessageWithHeaderLocales tries each language code until one succeeds.
+// Only error 132001 triggers the next locale; other errors fail immediately.
+func (c *WhatsAppClient) SendTemplateMessageWithHeaderLocales(ctx context.Context, recipientPhone, templateName string, languageCodes []string, parameters []string, headerImageID string) (*WhatsAppResponse, error) {
+	if len(languageCodes) == 0 {
+		languageCodes = []string{"en"}
+	}
+	var lastErr error
+	var lastResp *WhatsAppResponse
+	for _, code := range languageCodes {
+		resp, err := c.SendTemplateMessageWithHeader(ctx, recipientPhone, templateName, code, parameters, headerImageID)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		lastResp = resp
+		if !isWhatsAppError132001(err) {
+			return resp, err
+		}
+	}
+	return lastResp, lastErr
+}
+
 func templateMessageBody(recipientPhone, templateName, languageCode string, parameters []string, headerImageID string) map[string]interface{} {
 	cleanPhone := cleanPhoneNumber(recipientPhone)
 	var bodyParams []map[string]string
