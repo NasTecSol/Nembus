@@ -22,6 +22,8 @@ import (
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
 	"github.com/NasTecSol/nembus-core/biometrics"
+	biometricsetup "github.com/NasTecSol/nembus-core/biometrics/setup"
+	biometricinstaller "github.com/NasTecSol/nembus-core/biometrics/installer"
 	localzatca "github.com/NasTecSol/nembus-client/internal/zatca"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
@@ -87,12 +89,16 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
 	}
+	biometrics.WinBioElevatedCaptureFunc = biometricinstaller.RunElevatedWinBioCapture
 	a.biometricBridge = biometrics.NewLocalBridgeServer("127.0.0.1:5050")
+	biometricsetup.AttachHandlers(a.biometricBridge)
 	started, err := a.biometricBridge.StartIfPortFree()
 	if err != nil {
 		log.Printf("[Biometrics] Warning: local bridge server failed to start: %v", err)
 	} else if !started {
 		log.Printf("[Biometrics] Warning: port 127.0.0.1:5050 already in use; embedded POS bridge not started")
+	} else {
+		log.Printf("[Biometrics] Setup API available at http://127.0.0.1:5050/api/v1/setup/status")
 	}
 
 	// Clean up legacy executable backups from previous update cycles
@@ -145,11 +151,19 @@ func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
 
 // ApplyUpdate downloads release binary, verifies SHA-256, and restarts application
 func (a *App) ApplyUpdate(downloadURL string, checksumSha256 string) error {
+	a.stopEmbeddedServices()
 	appKey := a.appKey
 	if appKey == "" && a.cfg != nil {
 		appKey = a.cfg.AppUpdateClientKey
 	}
 	return updater.ApplyUpdate(downloadURL, checksumSha256, appKey)
+}
+
+// PrepareForUpdate stops background workers and the embedded database before replacing
+// the executable. The frontend should call SaveDeviceConfig (via deviceConfig.save) first.
+func (a *App) PrepareForUpdate() string {
+	a.stopEmbeddedServices()
+	return "OK"
 }
 
 // domReady is called after front-end resources have been loaded
@@ -158,9 +172,7 @@ func (a App) domReady(ctx context.Context) {
 
 // beforeClose is called when the application is about to quit
 func (a *App) beforeClose(ctx context.Context) (prevent bool) {
-	if a.dbManager != nil {
-		_ = a.dbManager.Stop()
-	}
+	a.stopEmbeddedServices()
 	return false
 }
 
@@ -169,11 +181,17 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.biometricBridge != nil {
 		_ = a.biometricBridge.Stop(ctx)
 	}
+	a.stopEmbeddedServices()
+}
+
+func (a *App) stopEmbeddedServices() {
 	if a.syncService != nil {
 		a.syncService.Stop()
+		a.syncService = nil
 	}
 	if a.dbManager != nil {
 		_ = a.dbManager.Stop()
+		a.dbManager = nil
 	}
 }
 
@@ -858,6 +876,11 @@ func (a *App) GetDevToken() string {
 
 // GeideaConfigure configures or updates the terminal parameters (TCP or Serial COM).
 func (a *App) GeideaConfigure(cfg geidea.TerminalConfig) string {
+	if cfg.Enabled != nil && !*cfg.Enabled {
+		a.geideaClient = nil
+		log.Printf("[GEIDEA] Terminal integration disabled on this device")
+		return "OK"
+	}
 	if a.geideaClient == nil {
 		a.geideaClient = geidea.NewClient(cfg)
 	} else {
@@ -868,12 +891,16 @@ func (a *App) GeideaConfigure(cfg geidea.TerminalConfig) string {
 	return "OK"
 }
 
-// GeideaCheckStatus tests connectivity to the physical terminal.
-func (a *App) GeideaCheckStatus() (bool, error) {
+// GeideaCheckStatus tests connectivity and returns terminal identity when available.
+func (a *App) GeideaCheckStatus() (*geidea.ConnectionCheckResult, error) {
 	if a.geideaClient == nil {
-		return false, fmt.Errorf("geidea terminal is not configured")
+		return nil, fmt.Errorf("geidea terminal is not configured")
 	}
-	return a.geideaClient.CheckStatus(a.ctx)
+	cfg := a.geideaClient.Config()
+	if cfg != nil && cfg.Enabled != nil && !*cfg.Enabled {
+		return nil, fmt.Errorf("geidea payments are disabled on this device")
+	}
+	return a.geideaClient.ProbeConnection(a.ctx)
 }
 
 // GeideaPurchase initiates a card purchase with live status event streaming to the frontend.

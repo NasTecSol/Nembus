@@ -42,6 +42,14 @@ func (c *Client) UpdateConfig(cfg TerminalConfig) {
 	c.config = cfg
 }
 
+// Config returns a copy of the current terminal configuration
+func (c *Client) Config() *TerminalConfig {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cfg := c.config
+	return &cfg
+}
+
 // openTransport opens the appropriate transport (TCP or Serial) based on configuration
 func (c *Client) openTransport(ctx context.Context) (Transport, error) {
 	c.mu.Lock()
@@ -255,31 +263,133 @@ func (c *Client) Cancel(ctx context.Context) error {
 	return nil
 }
 
-// CheckStatus pings the terminal to verify connectivity
-func (c *Client) CheckStatus(ctx context.Context) (bool, error) {
-	statusBuf := BuildCheckStatusBuffer()
+const probeTimeoutSeconds = 15
+
+// readUntil accumulates bytes from the terminal until done returns true or the context expires.
+func readUntil(ctx context.Context, transport Transport, done func([]byte) bool) ([]byte, error) {
+	readChunk := make([]byte, 1024)
+	var accumulated []byte
+	ackReceived := false
+
+	for {
+		select {
+		case <-ctx.Done():
+			if len(accumulated) > 0 && done(accumulated) {
+				return accumulated, nil
+			}
+			return accumulated, fmt.Errorf("timeout waiting for terminal response: %w", ctx.Err())
+		default:
+		}
+
+		_ = transport.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		n, err := transport.Read(readChunk)
+		if n > 0 {
+			chunk := readChunk[:n]
+			if !ackReceived {
+				for i, b := range chunk {
+					if b == ByteACK {
+						ackReceived = true
+						chunk = chunk[i+1:]
+						break
+					} else if b == ByteNAK {
+						return nil, fmt.Errorf("terminal rejected message with NAK (0x15)")
+					}
+				}
+			}
+			if len(chunk) > 0 {
+				accumulated = append(accumulated, chunk...)
+			}
+			if done(accumulated) {
+				return accumulated, nil
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				if len(accumulated) > 0 && done(accumulated) {
+					return accumulated, nil
+				}
+				break
+			}
+			continue
+		}
+	}
+
+	if len(accumulated) > 0 && done(accumulated) {
+		return accumulated, nil
+	}
+	return accumulated, fmt.Errorf("no valid response from terminal")
+}
+
+func (c *Client) sendAndRead(ctx context.Context, transport Transport, req []byte, done func([]byte) bool) ([]byte, error) {
+	if err := transport.Write(req); err != nil {
+		return nil, fmt.Errorf("failed to send request to terminal: %w", err)
+	}
+	return readUntil(ctx, transport, done)
+}
+
+// ProbeConnection verifies connectivity and reads terminal / merchant identifiers when available.
+func (c *Client) ProbeConnection(ctx context.Context) (*ConnectionCheckResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeoutSeconds*time.Second)
+	defer cancel()
 
 	transport, err := c.openTransport(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer transport.Close()
 
-	if err := transport.Write(statusBuf); err != nil {
+	statusResp, err := c.sendAndRead(ctx, transport, BuildCheckStatusBuffer(), IsCommunicationOKResponse)
+	if err != nil {
+		return nil, fmt.Errorf("check status failed: %w", err)
+	}
+	if !IsCommunicationOKResponse(statusResp) {
+		return &ConnectionCheckResult{
+			OK:      false,
+			Message: "terminal did not respond with Communication OK (DF85)",
+		}, nil
+	}
+
+	result := &ConnectionCheckResult{
+		OK:      true,
+		Message: "Communication OK",
+	}
+
+	if tidResp, err := c.sendAndRead(ctx, transport, BuildGetTerminalIDBuffer(), func(b []byte) bool {
+		return HasTerminalIdentityTLV(b) || bytes.Contains(b, []byte{0xDF, 0x29})
+	}); err == nil {
+		tid, mid, _ := ParseTerminalIdentityFromBuffer(tidResp)
+		result.TerminalID = tid
+		result.MerchantID = mid
+	}
+
+	if merchResp, err := c.sendAndRead(ctx, transport, BuildGetMerchantInfoBuffer(), func(b []byte) bool {
+		return len(ExtractTLVs(b)) > 0
+	}); err == nil {
+		tid, mid, info := ParseTerminalIdentityFromBuffer(merchResp)
+		if result.TerminalID == "" {
+			result.TerminalID = tid
+		}
+		if result.MerchantID == "" {
+			result.MerchantID = mid
+		}
+		if info != "" {
+			result.MerchantInfo = info
+		}
+	}
+
+	if result.TerminalID != "" {
+		result.Message = fmt.Sprintf("Communication OK — Terminal ID %s", result.TerminalID)
+	}
+
+	return result, nil
+}
+
+// CheckStatus pings the terminal to verify connectivity (legacy bool API)
+func (c *Client) CheckStatus(ctx context.Context) (bool, error) {
+	res, err := c.ProbeConnection(ctx)
+	if err != nil {
 		return false, err
 	}
-
-	readBuf := make([]byte, 128)
-	_ = transport.SetReadDeadline(time.Now().Add(3 * time.Second))
-	n, err := transport.Read(readBuf)
-	if err != nil {
-		return false, fmt.Errorf("no response from terminal: %w", err)
-	}
-
-	resp := readBuf[:n]
-	// If response contains ACK (0x06) or 0xDF 0x85 (Terminal Available tag)
-	if bytes.Contains(resp, []byte{ByteACK}) || bytes.Contains(resp, []byte{0xDF, 0x85}) {
-		return true, nil
-	}
-	return false, nil
+	return res.OK, nil
 }
