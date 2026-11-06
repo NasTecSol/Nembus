@@ -225,6 +225,15 @@ func deltaUpsertSQL(ctx context.Context, tx pgx.Tx, entity string) (string, erro
 		ON CONFLICT(%s) DO UPDATE SET %s
 		WHERE EXCLUDED.updated_at >= %s.updated_at`, table, cols, cols, table, conflictTarget, strings.Join(updates, ","), table), nil
 	}
+	if entity == "customers" {
+		// A cloud delta must not replace a locally created customer whose
+		// outbox item has not been acknowledged yet (including exhausted retries).
+		return fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_record(NULL::%s,$1::json)
+		ON CONFLICT(id) DO UPDATE SET %s
+		WHERE NOT EXISTS (SELECT 1 FROM sync_queue q WHERE q.entity_type='customers'
+		AND q.entity_id=%s.id AND q.status IN ('pending','failed'))`,
+			table, cols, cols, table, strings.Join(updates, ","), table), nil
+	}
 	return fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM json_populate_record(NULL::%s,$1::json)
 		ON CONFLICT(%s) DO UPDATE SET %s`, table, cols, cols, table, conflictTarget, strings.Join(updates, ",")), nil
 }
