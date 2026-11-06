@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -121,6 +122,7 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 	// Dynamic ingestion routing by entity type
 	switch event.EntityType {
 	case "pos_transactions", "pos_transaction_lines", "pos_payments", "cashier_sessions",
+		"customers",
 		"sales_returns", "sales_return_lines", "stock_movements",
 		"carts", "sales_orders_v2", "sales_order_lines_v2", "draft_cart_templates", "restaurant_orders", "restaurant_order_items",
 		"kiosk_sessions", "stock_counts", "stock_count_lines", "waste_logs", "user_biometric_templates":
@@ -200,6 +202,12 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	if len(payload) == 0 {
 		return fmt.Errorf("empty sync payload for %s", entityType)
 	}
+	if entityType == "customers" {
+		if action != "INSERT" {
+			return fmt.Errorf("unsupported customer sync action: %s", action)
+		}
+		return upsertCreatedCustomer(ctx, pool, payload)
+	}
 	validTables := map[string]bool{
 		"pos_transactions": true, "pos_transaction_lines": true, "pos_payments": true,
 		"sales_returns": true, "sales_return_lines": true, "stock_movements": true,
@@ -241,6 +249,43 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 	}
 	if entityType == "pos_transaction_lines" {
 		EnqueuePosReceiptAfterLineSync(ctx, pool, payload)
+	}
+	return nil
+}
+
+// A customer ID is referenced by carts, orders, and transactions. A cloned POS
+// can generate the same serial ID as a cloud write made after cloning, so never
+// overwrite a different cloud customer merely because the numeric ID matches.
+func upsertCreatedCustomer(ctx context.Context, pool *pgxpool.Pool, payload []byte) error {
+	var incoming struct {
+		ID             int32  `json:"id"`
+		OrganizationID int32  `json:"organization_id"`
+		CustomerCode   string `json:"customer_code"`
+	}
+	if err := json.Unmarshal(payload, &incoming); err != nil {
+		return fmt.Errorf("invalid customer sync payload: %w", err)
+	}
+	if incoming.ID <= 0 || incoming.OrganizationID <= 0 || incoming.CustomerCode == "" {
+		return fmt.Errorf("customer sync requires id, organization_id, and customer_code")
+	}
+	var insertedID int32
+	err := pool.QueryRow(ctx, `INSERT INTO customers
+		SELECT * FROM json_populate_record(NULL::customers, $1::json)
+		ON CONFLICT (id) DO NOTHING RETURNING id`, string(payload)).Scan(&insertedID)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("failed to insert customer %d: %w", incoming.ID, err)
+	}
+	var organizationID int32
+	var customerCode string
+	if err := pool.QueryRow(ctx, `SELECT organization_id, customer_code FROM customers WHERE id=$1`, incoming.ID).
+		Scan(&organizationID, &customerCode); err != nil {
+		return fmt.Errorf("read existing customer %d: %w", incoming.ID, err)
+	}
+	if organizationID != incoming.OrganizationID || customerCode != incoming.CustomerCode {
+		return fmt.Errorf("customer ID %d already belongs to another cloud customer; resolve the ID collision before syncing dependent sales", incoming.ID)
 	}
 	return nil
 }
