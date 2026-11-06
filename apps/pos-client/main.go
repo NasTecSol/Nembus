@@ -182,6 +182,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		restaurantHandler := handler.NewRestaurantHandler(restaurantUC)
 		router.RegisterRestaurantRoutes(api, restaurantHandler)
 		customerHandler := handler.NewCustomerHandler(customerUC)
+		customerHandler.EnableLocalCreationSync()
 		router.RegisterCustomerRoutes(api, customerHandler)
 		businessPartnerHandler := handler.NewBusinessPartnerHandler(businessPartnerUC)
 		router.RegisterBusinessPartnerRoutes(api, businessPartnerHandler)
