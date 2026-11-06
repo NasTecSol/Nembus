@@ -201,6 +201,10 @@ const pendingOutboxSQL = `
 			AND parent.entity_type = 'pos_transactions'
 			AND parent.entity_id = (q.payload->>'transaction_id')::bigint)
 			OR
+			(q.entity_type IN ('pos_transactions', 'sales_returns')
+			AND parent.entity_type = 'customers'
+			AND parent.entity_id = (q.payload->>'customer_id')::bigint)
+			OR
 			(q.entity_type = 'sales_return_lines'
 			AND parent.entity_type = 'sales_returns'
 			AND parent.entity_id = (q.payload->>'return_id')::bigint)

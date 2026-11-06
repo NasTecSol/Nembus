@@ -193,6 +193,21 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 	if ids := eligible(); len(ids) != 4 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 || ids[3] != 6 {
 		t.Fatalf("child sales_return_lines must become eligible after sales_returns synced; eligible=%v", ids)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_queue(id,entity_type,entity_id,action,payload,status) VALUES
+		(7,'customers',12,'INSERT','{"id":12,"organization_id":1,"customer_code":"POS-12"}','pending'),
+		(8,'pos_transactions',12,'INSERT','{"id":12,"customer_id":12}','pending'),
+		(9,'sales_returns',12,'INSERT','{"id":12,"customer_id":12}','pending')`); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 5 || ids[4] != 7 {
+		t.Fatalf("customer must go before its sale and return; eligible=%v", ids)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='synced' WHERE id=7"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 6 || ids[4] != 8 || ids[5] != 9 {
+		t.Fatalf("sale and return should unlock after customer acknowledgment; eligible=%v", ids)
+	}
 }
 
 func TestStripCartConvertedOrderLink(t *testing.T) {
@@ -218,6 +233,9 @@ func TestPendingOutboxSQLStructure(t *testing.T) {
 		"q.entity_type IN ('pos_transaction_lines', 'pos_payments')",
 		"parent.entity_type = 'pos_transactions'",
 		"parent.entity_id = (q.payload->>'transaction_id')::bigint",
+		"q.entity_type IN ('pos_transactions', 'sales_returns')",
+		"parent.entity_type = 'customers'",
+		"parent.entity_id = (q.payload->>'customer_id')::bigint",
 		"q.entity_type = 'sales_return_lines'",
 		"parent.entity_type = 'sales_returns'",
 		"parent.entity_id = (q.payload->>'return_id')::bigint",

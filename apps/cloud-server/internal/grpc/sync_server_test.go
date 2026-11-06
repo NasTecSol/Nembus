@@ -88,6 +88,66 @@ func TestCheckoutParentsBeforePOS(t *testing.T) {
 	}
 }
 
+func TestCustomerCreationSyncPreservesIdentity(t *testing.T) {
+	dsn := os.Getenv("NEMBUS_SYNC_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set NEMBUS_SYNC_TEST_DATABASE_URL to run PostgreSQL integration tests")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := fmt.Sprintf("customer_sync_test_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE") }()
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `CREATE TABLE customers (
+		id integer PRIMARY KEY, organization_id integer NOT NULL,
+		customer_code text NOT NULL, name text NOT NULL,
+		UNIQUE (organization_id, customer_code))`); err != nil {
+		t.Fatal(err)
+	}
+	s := &SyncServer{}
+	created := []byte(`{"id":101,"organization_id":1,"customer_code":"POS-101","name":"From POS"}`)
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", created); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE customers SET name='Edited in cloud' WHERE id=101`); err != nil {
+		t.Fatal(err)
+	}
+	// Retrying creation acknowledges the same identity without reverting a
+	// cloud-side edit made after the first successful push.
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", created); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	if err := pool.QueryRow(ctx, `SELECT name FROM customers WHERE id=101`).Scan(&name); err != nil || name != "Edited in cloud" {
+		t.Fatalf("customer creation retry changed cloud data: name=%q err=%v", name, err)
+	}
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", []byte(`{"id":101,"organization_id":1,"customer_code":"OTHER","name":"Collision"}`)); err == nil || !strings.Contains(err.Error(), "ID collision") {
+		t.Fatalf("expected customer ID collision, got %v", err)
+	}
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "INSERT", []byte(`{"id":102,"organization_id":1,"customer_code":"POS-101","name":"Duplicate"}`)); err == nil {
+		t.Fatal("duplicate customer code was accepted under a different ID")
+	}
+	if err := s.upsertEntityJSON(ctx, pool, "customers", "UPDATE", created); err == nil {
+		t.Fatal("unexpected customer update was accepted")
+	}
+}
+
 func TestUpsertAcceptedEntityTypes(t *testing.T) {
 	s := &SyncServer{}
 	ctx := context.Background()
