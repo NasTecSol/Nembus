@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +27,7 @@ const (
 type CloudClient struct {
 	cfg        config.CloudConfig
 	httpClient *http.Client
+	mu         sync.RWMutex
 }
 
 func NewCloudClient(cfg config.CloudConfig) *CloudClient {
@@ -39,6 +42,32 @@ func NewCloudClient(cfg config.CloudConfig) *CloudClient {
 			Timeout: timeout,
 		},
 	}
+}
+
+// BaseURL returns the currently configured Cloud API base URL.
+func (c *CloudClient) BaseURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cfg.BaseURL
+}
+
+// Config returns the current CloudConfig snapshot.
+func (c *CloudClient) Config() config.CloudConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cfg
+}
+
+// UpdateConfig updates the cloud configuration (e.g. when modified via Wizard or Settings).
+func (c *CloudClient) UpdateConfig(cfg config.CloudConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cfg = cfg
+	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	c.httpClient.Timeout = timeout
 }
 
 // isRetryableStatus returns true for HTTP status codes that indicate a
@@ -110,7 +139,16 @@ func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts
 		return nil, false, fmt.Errorf("failed to finalize gzip stream: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/v1/migration/batch", c.cfg.BaseURL)
+	c.mu.RLock()
+	cfg := c.cfg
+	c.mu.RUnlock()
+
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = strings.TrimRight(config.Get().Cloud.BaseURL, "/")
+	}
+
+	url := fmt.Sprintf("%s/api/v1/migration/batch", baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &compressed)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to create http request: %w", err)
@@ -119,10 +157,19 @@ func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("X-Request-ID", requestID)
-	req.Header.Set("x-tenant-id", fmt.Sprintf("%d", c.cfg.OrganizationID))
-	if c.cfg.APIKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
-		req.Header.Set("x-api-key", c.cfg.APIKey)
+
+	tenantSlug := strings.TrimSpace(config.Get().TenantSlug)
+	if tenantSlug != "" {
+		req.Header.Set("x-tenant-slug", tenantSlug)
+		req.Header.Set("x-tenant-id", tenantSlug)
+	} else {
+		req.Header.Set("x-tenant-id", fmt.Sprintf("%d", cfg.OrganizationID))
+	}
+	req.Header.Set("x-organization-id", fmt.Sprintf("%d", cfg.OrganizationID))
+
+	if cfg.APIKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.APIKey))
+		req.Header.Set("x-api-key", cfg.APIKey)
 	}
 
 	httpResp, err := c.httpClient.Do(req)
@@ -152,7 +199,15 @@ func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts
 
 // PingCloud tests connectivity and authentication against the cloud server.
 func (c *CloudClient) PingCloud(ctx context.Context) (bool, string, error) {
-	url := fmt.Sprintf("%s/health", c.cfg.BaseURL)
+	c.mu.RLock()
+	baseURL := strings.TrimRight(c.cfg.BaseURL, "/")
+	c.mu.RUnlock()
+
+	if baseURL == "" {
+		baseURL = strings.TrimRight(config.Get().Cloud.BaseURL, "/")
+	}
+
+	url := fmt.Sprintf("%s/health", baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false, "", err

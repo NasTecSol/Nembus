@@ -122,6 +122,13 @@ func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
 	}, nil
 }
 
+func NewClientWithPool(cfg *config.Config, pool *pgxpool.Pool) *Client {
+	return &Client{
+		cfg:  cfg,
+		pool: pool,
+	}
+}
+
 func (c *Client) Close() {
 	if c.pool != nil {
 		c.pool.Close()

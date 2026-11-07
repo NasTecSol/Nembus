@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 )
@@ -37,14 +38,24 @@ type UpstreamSync struct {
 	cfg          *config.Config
 	sapClient    SAPClient
 	nembusClient NembusClient
+	sqlite       *db.SQLiteStore
 }
 
-func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient NembusClient) *UpstreamSync {
+func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient NembusClient, sqliteStore ...*db.SQLiteStore) *UpstreamSync {
+	var store *db.SQLiteStore
+	if len(sqliteStore) > 0 {
+		store = sqliteStore[0]
+	}
 	return &UpstreamSync{
 		cfg:          cfg,
 		sapClient:    sapClient,
 		nembusClient: nembusClient,
+		sqlite:       store,
 	}
+}
+
+func (s *UpstreamSync) SetSQLite(store *db.SQLiteStore) {
+	s.sqlite = store
 }
 
 var ErrTransactionHeldForReview = errors.New("transaction held for stock review")
@@ -189,6 +200,9 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 		if err := s.nembusClient.HoldTransactionForStockReview(ctx, tx.ID, tx.TransactionNumber, tx.StoreID, whCode, tx.TotalAmount, shortages, summary); err != nil {
 			return fmt.Errorf("failed holding transaction for review: %w", err)
 		}
+		if s.sqlite != nil {
+			_ = s.sqlite.RecordUpstreamDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, nil, nil, "held", summary)
+		}
 		return ErrTransactionHeldForReview
 	}
 
@@ -215,6 +229,9 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 				})
 			}
 			_ = s.nembusClient.HoldTransactionForStockReview(ctx, tx.ID, tx.TransactionNumber, tx.StoreID, whCode, tx.TotalAmount, fallbackShortages, summary)
+		}
+		if s.sqlite != nil {
+			_ = s.sqlite.RecordUpstreamDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, nil, nil, "failed", err.Error())
 		}
 		return err
 	}
@@ -262,7 +279,11 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	}
 
 	// 6. Mark transaction as synced in Nembus
-	return s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
+	err = s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
+	if err == nil && s.sqlite != nil {
+		_ = s.sqlite.RecordUpstreamDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, &sapInv.DocEntry, &sapInv.DocNum, "posted", "")
+	}
+	return err
 }
 
 func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) string {
@@ -353,12 +374,19 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 
 	sapMemo, err := s.sapClient.PostCreditMemo(ctx, memoReq)
 	if err != nil {
+		if s.sqlite != nil {
+			_ = s.sqlite.RecordUpstreamDispatch(ctx, ret.ReturnNumber, ret.ReturnDate, ret.TotalRefundAmount, nil, nil, "failed", err.Error())
+		}
 		return err
 	}
 
 	log.Printf(" Credit Note created in SAP B1! DocEntry: %d, DocNum: %d (Ref: %s)",
 		sapMemo.DocEntry, sapMemo.DocNum, ret.ReturnNumber)
 
-	return s.nembusClient.MarkSalesReturnPostedToSAP(ctx, ret.ID, sapMemo.DocEntry, sapMemo.DocNum)
+	err = s.nembusClient.MarkSalesReturnPostedToSAP(ctx, ret.ID, sapMemo.DocEntry, sapMemo.DocNum)
+	if err == nil && s.sqlite != nil {
+		_ = s.sqlite.RecordUpstreamDispatch(ctx, ret.ReturnNumber, ret.ReturnDate, ret.TotalRefundAmount, &sapMemo.DocEntry, &sapMemo.DocNum, "posted", "")
+	}
+	return err
 }
 
