@@ -362,6 +362,35 @@ func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, doma
 	})
 }
 
+// migrationIngestChunkSize caps cloud batch payloads so nginx/upstream ingest
+// finishes before typical reverse-proxy read timeouts (504). Configured batch_size
+// is still honored when it is below the per-domain cap.
+func migrationIngestChunkSize(domain contracts.DomainType, configured int) int {
+	if configured <= 0 {
+		configured = 500
+	}
+	cap := configured
+	switch domain {
+	case contracts.DomainProducts:
+		if cap > 50 {
+			cap = 50
+		}
+	case contracts.DomainBarcodes:
+		if cap > 200 {
+			cap = 200
+		}
+	case contracts.DomainInventory, contracts.DomainPartners, contracts.DomainBPAddresses:
+		if cap > 100 {
+			cap = 100
+		}
+	case contracts.DomainPriceLists:
+		if cap > 150 {
+			cap = 150
+		}
+	}
+	return cap
+}
+
 // executeDomainStep runs the extract-transform-load pipeline for a single domain.
 // Returns (processed, failed, watermark, error).
 // watermark is a string cursor (e.g. last DocDate, last ItemCode) enabling delta runs.
@@ -374,10 +403,7 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 	cloudClient := e.getCloudClient()
 	cloudCfg := config.Get().Cloud
 
-	batchSize := e.cfg.BatchSize
-	if batchSize <= 0 {
-		batchSize = 500
-	}
+	batchSize := migrationIngestChunkSize(domain, e.cfg.BatchSize)
 
 	// defaultStoreCode is used to associate cashiers with a primary store.
 	// Configurable via agent_config.json; falls back to "01".
