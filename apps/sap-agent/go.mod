@@ -3,6 +3,7 @@ module github.com/NasTecSol/nembus-sap-agent
 go 1.25.0
 
 require (
+	github.com/NasTecSol/nembus-core v0.0.0
 	github.com/NasTecSol/nembus-sap v0.0.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0

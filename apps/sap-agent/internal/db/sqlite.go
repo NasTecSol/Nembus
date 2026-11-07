@@ -58,6 +58,18 @@ type MigrationLog struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type UpstreamDispatch struct {
+	ID                int64      `json:"id"`
+	TransactionNumber string     `json:"transaction_number"`
+	TransactionDate   time.Time  `json:"transaction_date"`
+	Amount            float64    `json:"amount"`
+	SAPDocEntry       *int       `json:"sap_doc_entry,omitempty"`
+	SAPDocNum         *int       `json:"sap_doc_num,omitempty"`
+	Status            string     `json:"status"` // "posted", "held", "failed"
+	ErrorMessage      string     `json:"error_message,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+}
+
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	dir := filepath.Dir(dbPath)
 	if dir != "." && dir != "" {
@@ -126,6 +138,19 @@ func (s *SQLiteStore) initSchema() error {
 
 	CREATE INDEX IF NOT EXISTS idx_logs_run_id ON migration_logs(run_id, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_steps_run_domain ON migration_steps(run_id, domain);
+
+	CREATE TABLE IF NOT EXISTS upstream_dispatches (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		transaction_number TEXT UNIQUE NOT NULL,
+		transaction_date DATETIME NOT NULL,
+		amount REAL NOT NULL,
+		sap_doc_entry INTEGER,
+		sap_doc_num INTEGER,
+		status TEXT NOT NULL,
+		error_message TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_upstream_created_at ON upstream_dispatches(id DESC);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -456,6 +481,92 @@ func (s *SQLiteStore) GetLastCompletedStep(ctx context.Context, orgID int, domai
 	}
 
 	return &step, nil
+}
+
+func (s *SQLiteStore) RecordUpstreamDispatch(ctx context.Context, txNum string, txDate time.Time, amount float64, docEntry, docNum *int, status, errMsg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO upstream_dispatches (transaction_number, transaction_date, amount, sap_doc_entry, sap_doc_num, status, error_message, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	ON CONFLICT(transaction_number) DO UPDATE SET
+		sap_doc_entry = excluded.sap_doc_entry,
+		sap_doc_num = excluded.sap_doc_num,
+		status = excluded.status,
+		error_message = excluded.error_message,
+		created_at = CURRENT_TIMESTAMP;
+	`
+	_, err := s.db.ExecContext(ctx, query, txNum, txDate, amount, docEntry, docNum, status, errMsg)
+	return err
+}
+
+func (s *SQLiteStore) GetUpstreamDispatches(ctx context.Context, limit int) ([]UpstreamDispatch, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+	SELECT id, transaction_number, transaction_date, amount, sap_doc_entry, sap_doc_num, status, error_message, created_at
+	FROM upstream_dispatches
+	ORDER BY id DESC
+	LIMIT ?;
+	`
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []UpstreamDispatch
+	for rows.Next() {
+		var d UpstreamDispatch
+		var docEntry, docNum sql.NullInt64
+		var errMsg sql.NullString
+		if err := rows.Scan(&d.ID, &d.TransactionNumber, &d.TransactionDate, &d.Amount, &docEntry, &docNum, &d.Status, &errMsg, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		if docEntry.Valid {
+			v := int(docEntry.Int64)
+			d.SAPDocEntry = &v
+		}
+		if docNum.Valid {
+			v := int(docNum.Int64)
+			d.SAPDocNum = &v
+		}
+		if errMsg.Valid {
+			d.ErrorMessage = errMsg.String
+		}
+		list = append(list, d)
+	}
+	return list, rows.Err()
+}
+
+func (s *SQLiteStore) GetUpstreamStats(ctx context.Context) (posted int, held int, errors int, lastFlush *time.Time, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	row := s.db.QueryRowContext(ctx, `
+		SELECT 
+			COALESCE(SUM(CASE WHEN status = 'posted' THEN 1 ELSE 0 END), 0) AS posted_count,
+			COALESCE(SUM(CASE WHEN status = 'held' THEN 1 ELSE 0 END), 0) AS held_count,
+			COALESCE(SUM(CASE WHEN status = 'failed' OR status = 'error' THEN 1 ELSE 0 END), 0) AS error_count,
+			MAX(created_at) AS last_flush
+		FROM upstream_dispatches;
+	`)
+
+	var lf sql.NullTime
+	err = row.Scan(&posted, &held, &errors, &lf)
+	if err != nil {
+		return 0, 0, 0, nil, err
+	}
+	if lf.Valid {
+		lastFlush = &lf.Time
+	}
+	return posted, held, errors, lastFlush, nil
 }
 
 func (s *SQLiteStore) Close() error {

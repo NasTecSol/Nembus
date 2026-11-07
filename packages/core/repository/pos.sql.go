@@ -40,6 +40,23 @@ func (q *Queries) GetPosTransactionLineByID(ctx context.Context, id int32) (PosT
 	return i, err
 }
 
+const patchPosTransactionMetadata = `-- name: PatchPosTransactionMetadata :exec
+UPDATE pos_transactions
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type PatchPosTransactionMetadataParams struct {
+	ID      int32           `json:"id"`
+	Column2 json.RawMessage `json:"column_2"`
+}
+
+func (q *Queries) PatchPosTransactionMetadata(ctx context.Context, arg PatchPosTransactionMetadataParams) error {
+	_, err := q.db.Exec(ctx, patchPosTransactionMetadata, arg.ID, arg.Column2)
+	return err
+}
+
 const updatePosTransactionMetadata = `-- name: UpdatePosTransactionMetadata :exec
 
 UPDATE pos_transactions SET metadata = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1
