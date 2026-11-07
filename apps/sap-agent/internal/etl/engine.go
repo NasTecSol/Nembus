@@ -573,20 +573,32 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		if len(barcodes) == 0 {
 			return 0, 0, "", nil
 		}
-		payload := &contracts.MigrationBatchPayload{
-			BatchID:        uuid.New().String(),
-			RunID:          runID,
-			OrganizationID: cloudCfg.OrganizationID,
-			Domain:         domain,
-			Barcodes:       barcodes,
-			IsLastBatch:    true,
-			Timestamp:      time.Now(),
+		var totalStaged, totalFailed int64
+		for i := 0; i < len(barcodes); i += batchSize {
+			end := i + batchSize
+			if end > len(barcodes) {
+				end = len(barcodes)
+			}
+			chunk := barcodes[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				Barcodes:       chunk,
+				IsLastBatch:    end == len(barcodes),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, totalFailed, "", err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+			totalFailed += int64(resp.RecordsFailed)
+			e.broadcastProgress(runID, domain, totalStaged, int64(len(barcodes)))
 		}
-		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
-		if err != nil {
-			return 0, 0, "", err
-		}
-		return int64(resp.RecordsStaged), int64(resp.RecordsFailed), "", nil
+		return totalStaged, totalFailed, "", nil
 
 	case contracts.DomainInventory:
 		ext := extractors.NewInventoryExtractor(mssqlClient)
