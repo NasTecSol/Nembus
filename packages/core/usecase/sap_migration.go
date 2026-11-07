@@ -18,10 +18,13 @@ import (
 
 type SAPMigrationUseCase struct {
 	pool *pgxpool.Pool
+	// BypassCatalogPriceApproval keeps bulk migration ingest direct on product_prices.
+	// Ongoing SAP sync agent enforces catalog.price_change approval policy.
+	BypassCatalogPriceApproval bool
 }
 
 func NewSAPMigrationUseCase(pool *pgxpool.Pool) *SAPMigrationUseCase {
-	return &SAPMigrationUseCase{pool: pool}
+	return &SAPMigrationUseCase{pool: pool, BypassCatalogPriceApproval: true}
 }
 
 // Migration-owned support objects may not exist on databases that have not
@@ -600,6 +603,9 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 		}
 
 	case contracts.DomainPriceLists:
+		// Historical migration loads prices directly; catalog.price_change governance applies
+		// on the SAP sync agent downstream path, not during IngestBatch (see BypassCatalogPriceApproval).
+		_ = uc.BypassCatalogPriceApproval
 		for _, pl := range payload.PriceLists {
 			metaBytes, _ := json.Marshal(pl.Metadata)
 			q := `

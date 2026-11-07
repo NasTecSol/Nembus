@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -22,8 +23,10 @@ type ShortageItemInfo struct {
 
 // SAPInvoiceStockPayload carries held invoice information for stock review.
 type SAPInvoiceStockPayload struct {
-	TransactionID     int64              `json:"transaction_id"`
-	TransactionNumber string             `json:"transaction_number"`
+	TransactionID     int64              `json:"transaction_id,omitempty"`
+	TransactionNumber string             `json:"transaction_number,omitempty"`
+	SalesOrderID      string             `json:"sales_order_id,omitempty"`
+	OrderNumber       string             `json:"order_number,omitempty"`
 	StoreID           int32              `json:"store_id"`
 	WarehouseCode     string             `json:"warehouse_code"`
 	TotalAmount       float64            `json:"total_amount"`
@@ -61,11 +64,15 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 	if err := json.Unmarshal(req.Payload, &payload); err != nil {
 		return fmt.Errorf("invalid sap invoice stock payload: %w", err)
 	}
-	if payload.TransactionID <= 0 {
-		return errors.New("transaction_id is required in payload")
+
+	if payload.SalesOrderID != "" {
+		return a.accommodateSalesOrder(ctx, repo, payload, reviewerID)
 	}
 
-	// If poster is available, execute verified post to SAP
+	if payload.TransactionID <= 0 {
+		return errors.New("transaction_id or sales_order_id is required in payload")
+	}
+
 	if a.poster != nil {
 		docEntry, docNum, err := a.poster.PostHeldInvoiceToSAP(ctx, payload.TransactionID, false)
 		if err != nil {
@@ -84,19 +91,35 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 			Metadata: rawMeta,
 		})
 	} else {
-		// Offline / queue approval marking
 		meta := map[string]any{
 			"sap_sync_state": "approved_pending_upload",
 			"approved_by":    reviewerID,
 			"approved_at":    time.Now().Format(time.RFC3339),
 		}
 		rawMeta, _ := json.Marshal(meta)
-		_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-			ID:       int32(payload.TransactionID),
-			Metadata: rawMeta,
+		_ = repo.PatchPosTransactionMetadata(ctx, repository.PatchPosTransactionMetadataParams{
+			ID:      int32(payload.TransactionID),
+			Column2: rawMeta,
 		})
 	}
 	return nil
+}
+
+func (a *SAPInvoiceStockAccommodator) accommodateSalesOrder(ctx context.Context, repo *repository.Queries, payload SAPInvoiceStockPayload, reviewerID int32) error {
+	orderID, err := uuid.Parse(payload.SalesOrderID)
+	if err != nil {
+		return fmt.Errorf("invalid sales_order_id: %w", err)
+	}
+	meta := map[string]any{
+		"sap_sync_state": "approved_pending_upload",
+		"approved_by":    reviewerID,
+		"approved_at":    time.Now().Format(time.RFC3339),
+	}
+	rawMeta, _ := json.Marshal(meta)
+	return repo.PatchSalesOrderV2Metadata(ctx, repository.PatchSalesOrderV2MetadataParams{
+		ID:      orderID,
+		Column2: rawMeta,
+	})
 }
 
 func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *repository.Queries, req repository.ApprovalRequest, notes string) error {
@@ -107,11 +130,28 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 	if err := json.Unmarshal(req.Payload, &payload); err != nil {
 		return fmt.Errorf("invalid sap invoice stock payload: %w", err)
 	}
+
+	if payload.SalesOrderID != "" {
+		orderID, err := uuid.Parse(payload.SalesOrderID)
+		if err != nil {
+			return fmt.Errorf("invalid sales_order_id: %w", err)
+		}
+		meta := map[string]any{
+			"sap_sync_state": "adjustment_created_pending_force",
+			"rejected_notes": notes,
+			"rejected_at":    time.Now().Format(time.RFC3339),
+		}
+		rawMeta, _ := json.Marshal(meta)
+		return repo.PatchSalesOrderV2Metadata(ctx, repository.PatchSalesOrderV2MetadataParams{
+			ID:      orderID,
+			Column2: rawMeta,
+		})
+	}
+
 	if payload.TransactionID <= 0 {
 		return errors.New("transaction_id is required in payload")
 	}
 
-	// 1. Create internal inventory adjustments for variance
 	for _, item := range payload.ShortageItems {
 		if item.ProductID > 0 {
 			qtyNumeric := pgtype.Numeric{}
@@ -142,7 +182,6 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 		}
 	}
 
-	// 2. Force-post to SAP if poster configured, otherwise record adjusted state
 	if a.poster != nil {
 		docEntry, docNum, err := a.poster.PostHeldInvoiceToSAP(ctx, payload.TransactionID, true)
 		if err == nil {
@@ -168,9 +207,9 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 		"adjusted_at":    time.Now().Format(time.RFC3339),
 	}
 	rawMeta, _ := json.Marshal(meta)
-	_ = repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{
-		ID:       int32(payload.TransactionID),
-		Metadata: rawMeta,
+	_ = repo.PatchPosTransactionMetadata(ctx, repository.PatchPosTransactionMetadataParams{
+		ID:      int32(payload.TransactionID),
+		Column2: rawMeta,
 	})
 	return nil
 }

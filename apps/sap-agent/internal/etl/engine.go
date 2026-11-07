@@ -103,13 +103,31 @@ func (e *Engine) getMSSQLClient() (*db.MSSQLClient, error) {
 	return client, nil
 }
 
-// getCloudClient returns the engine's shared CloudClient, creating one if not yet initialized.
+// UpdateCloudConfig updates the cloud configuration on the active engine and client.
+func (e *Engine) UpdateCloudConfig(cfg config.CloudConfig) {
+	e.activeRunMu.Lock()
+	defer e.activeRunMu.Unlock()
+	if e.cfg != nil {
+		e.cfg.Cloud = cfg
+	}
+	if e.cloudClient != nil {
+		e.cloudClient.UpdateConfig(cfg)
+	} else {
+		e.cloudClient = transport.NewCloudClient(cfg)
+	}
+}
+
+// getCloudClient returns the engine's shared CloudClient, synchronized with the latest configuration.
 // This avoids allocating a new http.Client (with its connection pool) on every domain step.
 func (e *Engine) getCloudClient() *transport.CloudClient {
-	if e.cloudClient != nil {
+	currentCloud := config.Get().Cloud
+	if e.cloudClient == nil {
+		e.cloudClient = transport.NewCloudClient(currentCloud)
 		return e.cloudClient
 	}
-	e.cloudClient = transport.NewCloudClient(config.Get().Cloud)
+	if currentCloud.BaseURL != "" && e.cloudClient.BaseURL() != currentCloud.BaseURL {
+		e.cloudClient.UpdateConfig(currentCloud)
+	}
 	return e.cloudClient
 }
 
@@ -148,6 +166,15 @@ func (e *Engine) StartMigration(parentCtx context.Context, mode contracts.Migrat
 
 	if e.activeRunCancel != nil {
 		return nil, fmt.Errorf("a migration run is already currently executing")
+	}
+
+	// Always sync with the latest active configuration
+	latestCfg := config.Get()
+	e.cfg = latestCfg
+	if e.cloudClient != nil {
+		e.cloudClient.UpdateConfig(latestCfg.Cloud)
+	} else {
+		e.cloudClient = transport.NewCloudClient(latestCfg.Cloud)
 	}
 
 	if len(selectedDomains) == 0 {
@@ -335,6 +362,35 @@ func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, doma
 	})
 }
 
+// migrationIngestChunkSize caps cloud batch payloads so nginx/upstream ingest
+// finishes before typical reverse-proxy read timeouts (504). Configured batch_size
+// is still honored when it is below the per-domain cap.
+func migrationIngestChunkSize(domain contracts.DomainType, configured int) int {
+	if configured <= 0 {
+		configured = 500
+	}
+	cap := configured
+	switch domain {
+	case contracts.DomainProducts:
+		if cap > 50 {
+			cap = 50
+		}
+	case contracts.DomainBarcodes:
+		if cap > 200 {
+			cap = 200
+		}
+	case contracts.DomainInventory, contracts.DomainPartners, contracts.DomainBPAddresses:
+		if cap > 100 {
+			cap = 100
+		}
+	case contracts.DomainPriceLists:
+		if cap > 150 {
+			cap = 150
+		}
+	}
+	return cap
+}
+
 // executeDomainStep runs the extract-transform-load pipeline for a single domain.
 // Returns (processed, failed, watermark, error).
 // watermark is a string cursor (e.g. last DocDate, last ItemCode) enabling delta runs.
@@ -347,10 +403,7 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 	cloudClient := e.getCloudClient()
 	cloudCfg := config.Get().Cloud
 
-	batchSize := e.cfg.BatchSize
-	if batchSize <= 0 {
-		batchSize = 500
-	}
+	batchSize := migrationIngestChunkSize(domain, e.cfg.BatchSize)
 
 	// defaultStoreCode is used to associate cashiers with a primary store.
 	// Configurable via agent_config.json; falls back to "01".
@@ -505,6 +558,7 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		if err != nil {
 			return 0, 0, "", err
 		}
+
 		var totalStaged int64
 		var lastWatermark string
 		for i := 0; i < len(products); i += batchSize {
@@ -545,20 +599,32 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		if len(barcodes) == 0 {
 			return 0, 0, "", nil
 		}
-		payload := &contracts.MigrationBatchPayload{
-			BatchID:        uuid.New().String(),
-			RunID:          runID,
-			OrganizationID: cloudCfg.OrganizationID,
-			Domain:         domain,
-			Barcodes:       barcodes,
-			IsLastBatch:    true,
-			Timestamp:      time.Now(),
+		var totalStaged, totalFailed int64
+		for i := 0; i < len(barcodes); i += batchSize {
+			end := i + batchSize
+			if end > len(barcodes) {
+				end = len(barcodes)
+			}
+			chunk := barcodes[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				Barcodes:       chunk,
+				IsLastBatch:    end == len(barcodes),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, totalFailed, "", err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+			totalFailed += int64(resp.RecordsFailed)
+			e.broadcastProgress(runID, domain, totalStaged, int64(len(barcodes)))
 		}
-		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
-		if err != nil {
-			return 0, 0, "", err
-		}
-		return int64(resp.RecordsStaged), int64(resp.RecordsFailed), "", nil
+		return totalStaged, totalFailed, "", nil
 
 	case contracts.DomainInventory:
 		ext := extractors.NewInventoryExtractor(mssqlClient)
