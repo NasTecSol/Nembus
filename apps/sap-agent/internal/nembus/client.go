@@ -3,11 +3,14 @@ package nembus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -94,6 +97,28 @@ type ShortageItem struct {
 	ProductName string  `json:"product_name"`
 	Quantity    float64 `json:"quantity"`
 	SAPOnHand   float64 `json:"sap_on_hand"`
+}
+
+type SalesOrderV2 struct {
+	ID            uuid.UUID
+	OrderNumber   string
+	StoreID       int32
+	CustomerID    *int32
+	OrderDate     time.Time
+	TotalAmount   float64
+	PaymentStatus string
+	Metadata      json.RawMessage
+}
+
+type SalesOrderLineV2 struct {
+	ProductID   int32
+	ProductSKU  string
+	ProductName string
+	Quantity    float64
+	UnitPrice   float64
+	TaxAmount   float64
+	LineTotal   float64
+	LineNumber  int
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -250,7 +275,7 @@ func (c *Client) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([
 		FROM pos_transactions
 		WHERE status = 'completed'
 		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
-		  AND (metadata->>'sap_sync_state' IS NULL OR metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force'))
+		  AND (metadata->>'sap_sync_state' IS NULL OR metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload'))
 		ORDER BY id ASC
 		LIMIT $1
 	`
@@ -488,16 +513,28 @@ func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, 
 	return err
 }
 
-// GetActiveProductPrice looks up the currently active price for a product on a price list.
-func (c *Client) GetActiveProductPrice(ctx context.Context, productID, priceListID int32) (float64, bool, error) {
+// GetActiveProductPrice looks up the currently active price for a product on a price list and optional UOM.
+func (c *Client) GetActiveProductPrice(ctx context.Context, productID, priceListID int32, uomID *int32) (float64, bool, error) {
 	var price float64
-	err := c.pool.QueryRow(ctx, `
-		SELECT price FROM product_prices
-		WHERE product_id = $1 AND price_list_id = $2 AND is_active = true
-		LIMIT 1
-	`, productID, priceListID).Scan(&price)
+	var err error
+	if uomID != nil {
+		err = c.pool.QueryRow(ctx, `
+			SELECT price FROM product_prices
+			WHERE product_id = $1 AND price_list_id = $2 AND uom_id = $3 AND is_active = true
+			LIMIT 1
+		`, productID, priceListID, *uomID).Scan(&price)
+	} else {
+		err = c.pool.QueryRow(ctx, `
+			SELECT price FROM product_prices
+			WHERE product_id = $1 AND price_list_id = $2 AND uom_id IS NULL AND is_active = true
+			LIMIT 1
+		`, productID, priceListID).Scan(&price)
+	}
 	if err != nil {
-		return 0, false, nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, nil
+		}
+		return 0, false, err
 	}
 	return price, true, nil
 }
@@ -506,6 +543,18 @@ func (c *Client) GetActiveProductPrice(ctx context.Context, productID, priceList
 func (c *Client) GetProductCostPrice(ctx context.Context, productID int32) (float64, error) {
 	var cost float64
 	err := c.pool.QueryRow(ctx, `SELECT COALESCE(cost_price, 0) FROM products WHERE id = $1`, productID).Scan(&cost)
+	return cost, err
+}
+
+func (c *Client) GetProductCostPriceBySKU(ctx context.Context, sku string) (float64, error) {
+	var cost float64
+	err := c.pool.QueryRow(ctx, `
+		SELECT COALESCE(cost_price, 0) FROM products
+		WHERE organization_id = $1 AND sku = $2
+	`, c.cfg.NembusOrganizationID, sku).Scan(&cost)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
 	return cost, err
 }
 
@@ -519,7 +568,10 @@ func (c *Client) GetApprovalPolicyRules(ctx context.Context, domain, action stri
 		LIMIT 1
 	`, c.cfg.NembusOrganizationID, domain, action).Scan(&requiresApproval, &rawRules)
 	if err != nil {
-		return nil, false, nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("load approval policy: %w", err)
 	}
 	if !requiresApproval {
 		return nil, false, nil
@@ -531,7 +583,7 @@ func (c *Client) GetApprovalPolicyRules(ctx context.Context, domain, action stri
 	return rules, true, nil
 }
 
-// SubmitPriceApprovalRequest creates a pending price/cost review request.
+// SubmitPriceApprovalRequest creates or updates a pending price/cost review request.
 func (c *Client) SubmitPriceApprovalRequest(ctx context.Context, productID int32, sku string, priceListID int32, uomID *int32, oldPrice, newPrice, oldCost, newCost *float64, reason string) error {
 	payload, _ := json.Marshal(map[string]any{
 		"product_id":     productID,
@@ -546,7 +598,27 @@ func (c *Client) SubmitPriceApprovalRequest(ctx context.Context, productID int32
 	})
 	entityID := fmt.Sprintf("%d", productID)
 	summary := fmt.Sprintf("Price/Cost revision for SKU %s: %s", sku, reason)
-	query := `
+
+	var existingID int64
+	err := c.pool.QueryRow(ctx, `
+		SELECT id FROM approval_requests
+		WHERE organization_id = $1 AND domain = 'catalog' AND action = 'price_change'
+		  AND entity_type = 'product' AND entity_id = $2 AND status = 'pending'
+		ORDER BY id DESC LIMIT 1
+	`, c.cfg.NembusOrganizationID, entityID).Scan(&existingID)
+	if err == nil && existingID > 0 {
+		_, err = c.pool.Exec(ctx, `
+			UPDATE approval_requests
+			SET payload = $3, summary = $4, updated_at = CURRENT_TIMESTAMP
+			WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+		`, existingID, c.cfg.NembusOrganizationID, payload, summary)
+		return err
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	_, err = c.pool.Exec(ctx, `
 		INSERT INTO approval_requests (
 			organization_id, domain, action, entity_type, entity_id,
 			status, required_permission, summary, payload, metadata
@@ -554,9 +626,202 @@ func (c *Client) SubmitPriceApprovalRequest(ctx context.Context, productID int32
 			$1, 'catalog', 'price_change', 'product', $2,
 			'pending', 'catalog:pricing:approve', $3, $4, '{}'::jsonb
 		)
-		ON CONFLICT DO NOTHING
+	`, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	return err
+}
+
+func (c *Client) FetchApprovedPendingPOSTransactions(ctx context.Context, limit int) ([]POSTransaction, error) {
+	query := `
+		SELECT id, store_id, cashier_id, cashier_session_id, customer_id,
+		       transaction_number, transaction_date, subtotal, discount_amount,
+		       tax_amount, total_amount, amount_paid, status, metadata
+		FROM pos_transactions
+		WHERE status = 'completed'
+		  AND metadata->>'sap_sync_state' = 'approved_pending_upload'
+		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
+		ORDER BY id ASC
+		LIMIT $1
 	`
-	_, err := c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	return c.scanPOSTransactions(ctx, query, limit)
+}
+
+func (c *Client) scanPOSTransactions(ctx context.Context, query string, limit int) ([]POSTransaction, error) {
+	rows, err := c.pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []POSTransaction
+	for rows.Next() {
+		var t POSTransaction
+		if err := rows.Scan(
+			&t.ID, &t.StoreID, &t.CashierID, &t.CashierSessionID, &t.CustomerID,
+			&t.TransactionNumber, &t.TransactionDate, &t.Subtotal, &t.DiscountAmount,
+			&t.TaxAmount, &t.TotalAmount, &t.AmountPaid, &t.Status, &t.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, t)
+	}
+	return list, rows.Err()
+}
+
+func (c *Client) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]SalesOrderV2, error) {
+	query := `
+		SELECT o.id, o.order_number, COALESCE(o.store_id, 0), o.customer_id,
+		       o.order_date, COALESCE(o.total_amount, 0), COALESCE(o.payment_status::text, ''),
+		       COALESCE(o.metadata, '{}'::jsonb)
+		FROM sales_orders_v2 o
+		WHERE o.organization_id = $1
+		  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
+		  AND (o.metadata->>'sap_sync_state' IS NULL OR o.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload'))
+		  AND (
+		    o.fulfillment_status = 'fulfilled'
+		    OR o.order_status IN ('confirmed', 'fulfilled')
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM pos_transactions pt WHERE pt.sales_order_id = o.id
+		  )
+		ORDER BY o.order_date ASC
+		LIMIT $2
+	`
+	rows, err := c.pool.Query(ctx, query, c.cfg.NembusOrganizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []SalesOrderV2
+	for rows.Next() {
+		var o SalesOrderV2
+		var customerID *int32
+		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
+			return nil, err
+		}
+		o.CustomerID = customerID
+		list = append(list, o)
+	}
+	return list, rows.Err()
+}
+
+func (c *Client) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit int) ([]SalesOrderV2, error) {
+	query := `
+		SELECT o.id, o.order_number, COALESCE(o.store_id, 0), o.customer_id,
+		       o.order_date, COALESCE(o.total_amount, 0), COALESCE(o.payment_status::text, ''),
+		       COALESCE(o.metadata, '{}'::jsonb)
+		FROM sales_orders_v2 o
+		WHERE o.organization_id = $1
+		  AND o.metadata->>'sap_sync_state' = 'approved_pending_upload'
+		  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
+		  AND NOT EXISTS (
+		    SELECT 1 FROM pos_transactions pt WHERE pt.sales_order_id = o.id
+		  )
+		ORDER BY o.order_date ASC
+		LIMIT $2
+	`
+	rows, err := c.pool.Query(ctx, query, c.cfg.NembusOrganizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []SalesOrderV2
+	for rows.Next() {
+		var o SalesOrderV2
+		var customerID *int32
+		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
+			return nil, err
+		}
+		o.CustomerID = customerID
+		list = append(list, o)
+	}
+	return list, rows.Err()
+}
+
+func (c *Client) FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UUID) ([]SalesOrderLineV2, error) {
+	query := `
+		SELECT l.product_id, COALESCE(p.sku, l.product_sku, ''), COALESCE(p.name, l.product_name, ''),
+		       l.quantity_ordered, l.unit_price, COALESCE(l.tax_amount, 0), COALESCE(l.line_total, 0),
+		       COALESCE(l.line_number, 0)
+		FROM sales_order_lines_v2 l
+		LEFT JOIN products p ON p.id = l.product_id
+		WHERE l.sales_order_id = $1
+		ORDER BY l.line_number, l.id
+	`
+	rows, err := c.pool.Query(ctx, query, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lines []SalesOrderLineV2
+	for rows.Next() {
+		var l SalesOrderLineV2
+		if err := rows.Scan(
+			&l.ProductID, &l.ProductSKU, &l.ProductName,
+			&l.Quantity, &l.UnitPrice, &l.TaxAmount, &l.LineTotal, &l.LineNumber,
+		); err != nil {
+			return nil, err
+		}
+		lines = append(lines, l)
+	}
+	return lines, rows.Err()
+}
+
+func (c *Client) MarkSalesOrderPostedToSAP(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) error {
+	metaPatch, _ := json.Marshal(map[string]any{
+		"sap_doc_entry":  sapDocEntry,
+		"sap_doc_num":    sapDocNum,
+		"sap_posted_at":  time.Now().Format(time.RFC3339),
+		"sap_sync_state": "synced",
+	})
+
+	query := `
+		UPDATE sales_orders_v2
+		SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := c.pool.Exec(ctx, query, orderID, metaPatch)
+	return err
+}
+
+func (c *Client) HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.UUID, orderNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
+	metaPatch, _ := json.Marshal(map[string]any{
+		"sap_sync_state": "held_stock",
+		"held_reason":    summary,
+		"held_at":        time.Now().Format(time.RFC3339),
+	})
+	_, err := c.pool.Exec(ctx, `
+		UPDATE sales_orders_v2
+		SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb, updated_at = NOW()
+		WHERE id = $1
+	`, orderID, metaPatch)
+	if err != nil {
+		return fmt.Errorf("failed updating sales order metadata: %w", err)
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"sales_order_id": orderID.String(),
+		"order_number":   orderNum,
+		"store_id":       storeID,
+		"warehouse_code": whCode,
+		"total_amount":   totalAmount,
+		"shortage_items": shortageItems,
+		"reason":         summary,
+	})
+
+	entityID := orderID.String()
+	query := `
+		INSERT INTO approval_requests (
+			organization_id, domain, action, entity_type, entity_id,
+			status, required_permission, summary, payload, metadata
+		) VALUES (
+			$1, 'sap_invoice', 'stock_hold', 'sales_order_v2', $2,
+			'pending', 'sap:invoice:override', $3, $4, '{}'::jsonb
+		)
+	`
+	_, err = c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, summary, payload)
 	return err
 }
 

@@ -8,10 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"encoding/json"
+
 	"github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
+	"github.com/google/uuid"
 )
 
 type SAPClient interface {
@@ -22,6 +25,7 @@ type SAPClient interface {
 }
 
 type NembusClient interface {
+	FetchApprovedPendingPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error)
 	FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error)
 	FetchTransactionLines(ctx context.Context, transactionID int64) ([]nembus.POSTransactionLine, error)
 	FetchTransactionPayments(ctx context.Context, transactionID int64) ([]nembus.POSPayment, error)
@@ -32,6 +36,11 @@ type NembusClient interface {
 	MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error
 	FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error)
 	HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error
+	FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit int) ([]nembus.SalesOrderV2, error)
+	FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]nembus.SalesOrderV2, error)
+	FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UUID) ([]nembus.SalesOrderLineV2, error)
+	MarkSalesOrderPostedToSAP(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) error
+	HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.UUID, orderNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error
 }
 
 type UpstreamSync struct {
@@ -58,15 +67,32 @@ func (s *UpstreamSync) SetSQLite(store *db.SQLiteStore) {
 	s.sqlite = store
 }
 
-var ErrTransactionHeldForReview = errors.New("transaction held for stock review")
+var (
+	ErrTransactionHeldForReview = errors.New("transaction held for stock review")
+	ErrOrderHeldForReview       = errors.New("sales order held for stock review")
+)
 
 type UpstreamStats struct {
 	TransactionsPosted int           `json:"transactions_posted"`
 	TransactionsHeld   int           `json:"transactions_held,omitempty"`
+	OrdersPosted       int           `json:"orders_posted,omitempty"`
+	OrdersHeld         int           `json:"orders_held,omitempty"`
 	ReturnsPosted      int           `json:"returns_posted"`
 	PaymentsPosted     int           `json:"payments_posted,omitempty"`
 	Errors             int           `json:"errors"`
 	Duration           time.Duration `json:"duration"`
+}
+
+func skipSAPStockPreflight(metadata json.RawMessage) bool {
+	if len(metadata) == 0 {
+		return false
+	}
+	var m map[string]any
+	if err := json.Unmarshal(metadata, &m); err != nil {
+		return false
+	}
+	state, _ := m["sap_sync_state"].(string)
+	return state == "approved_pending_upload"
 }
 
 func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error) {
@@ -78,7 +104,32 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 		limit = 50
 	}
 
-	// 1. Fetch unposted completed POS transactions from Nembus
+	approvedPOS, err := s.nembusClient.FetchApprovedPendingPOSTransactions(ctx, limit)
+	if err != nil {
+		return stats, fmt.Errorf("failed to fetch approved pending POS transactions: %w", err)
+	}
+	for _, tx := range approvedPOS {
+		if err := s.postTransactionToSAP(ctx, &tx); err != nil {
+			log.Printf("❌ Failed to post approved transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+			stats.Errors++
+		} else if !s.cfg.DryRun {
+			stats.TransactionsPosted++
+		}
+	}
+
+	approvedOrders, err := s.nembusClient.FetchApprovedPendingSalesOrdersV2(ctx, limit)
+	if err != nil {
+		return stats, fmt.Errorf("failed to fetch approved pending sales orders: %w", err)
+	}
+	for _, order := range approvedOrders {
+		if err := s.postSalesOrderToSAP(ctx, &order); err != nil {
+			log.Printf("❌ Failed to post approved sales order %s to SAP: %v", order.OrderNumber, err)
+			stats.Errors++
+		} else if !s.cfg.DryRun {
+			stats.OrdersPosted++
+		}
+	}
+
 	txs, err := s.nembusClient.FetchUnpostedPOSTransactions(ctx, limit)
 	if err != nil {
 		return stats, fmt.Errorf("failed to fetch unposted transactions: %w", err)
@@ -100,7 +151,27 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 		}
 	}
 
-	// 2. Fetch unposted completed sales returns from Nembus
+	salesOrders, oErr := s.nembusClient.FetchUnpostedSalesOrdersV2(ctx, limit)
+	if oErr != nil {
+		log.Printf("⚠️ Failed to fetch unposted sales orders: %v", oErr)
+		stats.Errors++
+	} else if len(salesOrders) > 0 {
+		log.Printf("⬆️ [Nembus Orders -> SAP] Found %d unposted sales order(s). Processing...", len(salesOrders))
+		for _, order := range salesOrders {
+			if err := s.postSalesOrderToSAP(ctx, &order); err != nil {
+				if errors.Is(err, ErrOrderHeldForReview) {
+					stats.OrdersHeld++
+					continue
+				}
+				log.Printf("❌ Failed to post sales order %s to SAP: %v", order.OrderNumber, err)
+				stats.Errors++
+			} else if !s.cfg.DryRun {
+				stats.OrdersPosted++
+			}
+		}
+	}
+
+	// Fetch unposted completed sales returns from Nembus
 	returns, rErr := s.nembusClient.FetchUnpostedSalesReturns(ctx, limit)
 	if rErr != nil {
 		log.Printf("⚠️ Failed to fetch unposted sales returns: %v", rErr)
@@ -179,18 +250,19 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 
 	whCode := s.cfg.NembusDefaultWarehouse
 
-	// 2. Pre-flight stock check against SAP to avoid overselling
 	var shortages []nembus.ShortageItem
-	for _, line := range lines {
-		onHand, err := s.sapClient.CheckItemWarehouseStock(ctx, line.ProductSKU, whCode)
-		if err == nil && onHand < line.Quantity {
-			shortages = append(shortages, nembus.ShortageItem{
-				ProductID:   line.ProductID,
-				ProductSKU:  line.ProductSKU,
-				ProductName: line.ProductName,
-				Quantity:    line.Quantity,
-				SAPOnHand:   onHand,
-			})
+	if !skipSAPStockPreflight(tx.Metadata) {
+		for _, line := range lines {
+			onHand, err := s.sapClient.CheckItemWarehouseStock(ctx, line.ProductSKU, whCode)
+			if err == nil && onHand < line.Quantity {
+				shortages = append(shortages, nembus.ShortageItem{
+					ProductID:   line.ProductID,
+					ProductSKU:  line.ProductSKU,
+					ProductName: line.ProductName,
+					Quantity:    line.Quantity,
+					SAPOnHand:   onHand,
+				})
+			}
 		}
 	}
 
@@ -388,5 +460,115 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 		_ = s.sqlite.RecordUpstreamDispatch(ctx, ret.ReturnNumber, ret.ReturnDate, ret.TotalRefundAmount, &sapMemo.DocEntry, &sapMemo.DocNum, "posted", "")
 	}
 	return err
+}
+
+func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.SalesOrderV2) error {
+	lines, err := s.nembusClient.FetchSalesOrderLinesV2(ctx, order.ID)
+	if err != nil {
+		return fmt.Errorf("failed fetching sales order lines: %w", err)
+	}
+	if len(lines) == 0 {
+		return fmt.Errorf("sales order %s has no line items", order.OrderNumber)
+	}
+
+	var docLines []sap.SAPDocumentLine
+	for idx, line := range lines {
+		if line.Quantity <= 0 {
+			continue
+		}
+		unitPriceNet := line.UnitPrice
+		if line.TaxAmount > 0 && line.Quantity > 0 {
+			unitPriceNet = (line.LineTotal - line.TaxAmount) / line.Quantity
+			if unitPriceNet <= 0 {
+				unitPriceNet = line.UnitPrice
+			}
+		}
+		lineNum := idx
+		priceAfterVAT := line.LineTotal / line.Quantity
+		docLines = append(docLines, sap.SAPDocumentLine{
+			LineNum:         &lineNum,
+			ItemCode:        line.ProductSKU,
+			ItemDescription: line.ProductName,
+			Quantity:        line.Quantity,
+			UnitPrice:       unitPriceNet,
+			PriceAfterVAT:   priceAfterVAT,
+			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
+		})
+	}
+	if len(docLines) == 0 {
+		return fmt.Errorf("sales order %s has no billable lines", order.OrderNumber)
+	}
+
+	cardCode := s.resolveCardCode(ctx, order.CustomerID)
+	invDate := order.OrderDate.Format("2006-01-02")
+	invReq := &sap.SAPInvoiceRequest{
+		CardCode:      cardCode,
+		DocDate:       invDate,
+		DocDueDate:    invDate,
+		TaxDate:       invDate,
+		NumAtCard:     order.OrderNumber,
+		Reference2:    order.OrderNumber,
+		Comments:      fmt.Sprintf("Nembus Sales Order: %s", order.OrderNumber),
+		DocumentLines: docLines,
+	}
+
+	whCode := s.cfg.NembusDefaultWarehouse
+	var shortages []nembus.ShortageItem
+	if !skipSAPStockPreflight(order.Metadata) {
+		for _, line := range lines {
+			if line.Quantity <= 0 {
+				continue
+			}
+			onHand, err := s.sapClient.CheckItemWarehouseStock(ctx, line.ProductSKU, whCode)
+			if err == nil && onHand < line.Quantity {
+				shortages = append(shortages, nembus.ShortageItem{
+					ProductID:   line.ProductID,
+					ProductSKU:  line.ProductSKU,
+					ProductName: line.ProductName,
+					Quantity:    line.Quantity,
+					SAPOnHand:   onHand,
+				})
+			}
+		}
+	}
+
+	if len(shortages) > 0 {
+		summary := fmt.Sprintf("SAP Stock Shortage on order %s: %d item(s) below required quantity in warehouse %s", order.OrderNumber, len(shortages), whCode)
+		log.Printf("⚠️ %s. Routing to Approval Review Queue...", summary)
+		if err := s.nembusClient.HoldSalesOrderForStockReview(ctx, order.ID, order.OrderNumber, order.StoreID, whCode, order.TotalAmount, shortages, summary); err != nil {
+			return fmt.Errorf("failed holding sales order for review: %w", err)
+		}
+		return ErrOrderHeldForReview
+	}
+
+	if s.cfg.DryRun {
+		log.Printf("[DRY-RUN] Would post OINV for sales order %s ($%.2f) to SAP", order.OrderNumber, order.TotalAmount)
+		return nil
+	}
+
+	sapInv, err := s.sapClient.PostInvoice(ctx, invReq)
+	if err != nil {
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "fall below zero") || strings.Contains(errStr, "negative inventory") || strings.Contains(errStr, "code -10") || strings.Contains(errStr, "code 10") {
+			summary := fmt.Sprintf("SAP Negative Inventory Rejection on order %s: %v", order.OrderNumber, err)
+			var fallback []nembus.ShortageItem
+			for _, l := range lines {
+				fallback = append(fallback, nembus.ShortageItem{
+					ProductID:   l.ProductID,
+					ProductSKU:  l.ProductSKU,
+					ProductName: l.ProductName,
+					Quantity:    l.Quantity,
+					SAPOnHand:   0,
+				})
+			}
+			_ = s.nembusClient.HoldSalesOrderForStockReview(ctx, order.ID, order.OrderNumber, order.StoreID, whCode, order.TotalAmount, fallback, summary)
+		}
+		return err
+	}
+
+	log.Printf(" Invoice created in SAP B1 from sales order! DocEntry: %d, DocNum: %d (Ref: %s)",
+		sapInv.DocEntry, sapInv.DocNum, order.OrderNumber)
+
+	return s.nembusClient.MarkSalesOrderPostedToSAP(ctx, order.ID, sapInv.DocEntry, sapInv.DocNum)
 }
 
