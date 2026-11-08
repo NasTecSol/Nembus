@@ -124,6 +124,7 @@ type SyncService struct {
 	syncMu               sync.Mutex
 	connMu               sync.Mutex
 	conn                 *grpc.ClientConn
+	sessionPullAckCh     chan int64
 }
 
 type QuarantinedOutboxItem struct {
@@ -171,12 +172,33 @@ func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug stri
 	workerCtx, cancel := context.WithCancel(ctx)
 
 	return &SyncService{
-		ctx:        workerCtx,
-		cancel:     cancel,
-		masterPool: pool,
-		cloudURL:   cloudURL,
-		tenantSlug: slug,
-		grpcAddr:   grpcTarget,
+		ctx:              workerCtx,
+		cancel:           cancel,
+		masterPool:       pool,
+		cloudURL:         cloudURL,
+		tenantSlug:       slug,
+		grpcAddr:         grpcTarget,
+		sessionPullAckCh: make(chan int64, 8),
+	}
+}
+
+// enqueuePullAckSeq notifies the active StreamSession (if any) that the POS applied
+// change_log events through the given sequence watermark.
+func (s *SyncService) enqueuePullAckSeq(seq int64) {
+	if s == nil || seq <= 0 || s.sessionPullAckCh == nil {
+		return
+	}
+	select {
+	case s.sessionPullAckCh <- seq:
+	default:
+		select {
+		case <-s.sessionPullAckCh:
+		default:
+		}
+		select {
+		case s.sessionPullAckCh <- seq:
+		default:
+		}
 	}
 }
 
@@ -371,6 +393,19 @@ func (s *SyncService) runSessionLoop() {
 		}
 
 		attempt = 0
+		go func(sendStream syncpb.SyncService_StreamSessionClient) {
+			for {
+				select {
+				case <-sessionCtx.Done():
+					return
+				case seq := <-s.sessionPullAckCh:
+					_ = sendStream.Send(&syncpb.SessionClientMsg{
+						Msg: &syncpb.SessionClientMsg_PullAckSeq{PullAckSeq: seq},
+					})
+				}
+			}
+		}(stream)
+
 		for {
 			msg, recvErr := stream.Recv()
 			if recvErr != nil {

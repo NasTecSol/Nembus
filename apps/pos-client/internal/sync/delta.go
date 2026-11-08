@@ -194,6 +194,7 @@ func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int
 			return err
 		}
 		s.lastAppliedSeq.Store(nextSeq)
+		s.enqueuePullAckSeq(nextSeq)
 		totalApplied += len(events)
 
 		if len(events) == 0 || isSnapshotMode || len(events) < syncpb.PullPageLimit {
