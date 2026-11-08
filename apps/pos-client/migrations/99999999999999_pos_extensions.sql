@@ -15,9 +15,10 @@ CREATE TABLE IF NOT EXISTS local_printer_configs (
 -- Offline operation queue for sync tracking (Transactional Outbox)
 CREATE TABLE IF NOT EXISTS sync_queue (
     id              BIGSERIAL    PRIMARY KEY,
+    outbox_uuid     UUID         NOT NULL DEFAULT gen_random_uuid(),
     entity_type     VARCHAR(50)  NOT NULL,
     entity_id       BIGINT       NOT NULL,
-    action          VARCHAR(20)  NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE'
+    action          VARCHAR(20)  NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE', 'POS_CHECKOUT'
     payload         JSONB        NOT NULL,
     status          VARCHAR(20)  DEFAULT 'pending',
     priority        INTEGER      DEFAULT 0,         -- Higher = process first
@@ -25,13 +26,20 @@ CREATE TABLE IF NOT EXISTS sync_queue (
     max_retries     INTEGER      DEFAULT 5,
     retry_count     INTEGER      DEFAULT 0,
     last_error      TEXT,
+    error_class     VARCHAR(32),
+    next_attempt_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    quarantined_at  TIMESTAMPTZ,
     created_at      TIMESTAMPTZ  DEFAULT NOW(),
     synced_at       TIMESTAMPTZ
 );
 
--- Index for efficient outbox draining (pending items, highest priority first)
+-- Index for efficient outbox draining (pending items ready for attempt, highest priority first)
 CREATE INDEX IF NOT EXISTS idx_sync_queue_pending
-    ON sync_queue(status, priority DESC, created_at ASC)
+    ON sync_queue(status, next_attempt_at ASC, priority DESC, id ASC)
+    WHERE status = 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_sync_queue_correlation
+    ON sync_queue(correlation_id, id)
     WHERE status = 'pending';
 
 -- Local POS terminal hardware identity with ZATCA sync tracking
@@ -40,6 +48,7 @@ CREATE TABLE IF NOT EXISTS local_device_config (
     device_name         VARCHAR(100) NOT NULL,
     store_id            INTEGER      REFERENCES stores(id),
     pos_terminal_id     INTEGER      REFERENCES pos_terminals(id),
+    sync_token          TEXT,                                 -- Per-terminal gRPC sync auth token (Phase 4)
     last_zatca_sync_at  TIMESTAMPTZ  DEFAULT '1970-01-01',   -- Delta-fetch watermark
     zatca_enabled       BOOLEAN      DEFAULT false,           -- Local ZATCA toggle
     created_at          TIMESTAMPTZ  DEFAULT NOW()
@@ -52,8 +61,10 @@ RETURNS TRIGGER AS $$
 DECLARE
     entity_name VARCHAR(50);
     prio INTEGER := 5;
+    corr_id VARCHAR(100);
+    existing_id BIGINT;
 BEGIN
-    -- Prevent echo-loop re-queuing when rows are applied from Cloud StreamPull
+    -- Prevent echo-loop re-queuing when rows are applied from Cloud StreamPull/StreamChanges
     IF current_setting('nembus.sync_applier', true) = 'true' THEN
         RETURN NEW;
     END IF;
@@ -63,15 +74,34 @@ BEGIN
         prio := 10;
     END IF;
 
-    INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority)
-    VALUES (
-        entity_name,
-        NEW.id,
-        TG_OP,
-        row_to_json(NEW)::jsonb,
-        'pending',
-        prio
-    );
+    corr_id := COALESCE(NULLIF(current_setting('nembus.correlation_id', true), ''), pg_current_xact_id()::text);
+
+    -- Coalesce same-(correlation_id, entity_type, entity_id) pending rows within the same transaction
+    SELECT id INTO existing_id
+    FROM sync_queue
+    WHERE correlation_id = corr_id
+      AND entity_type = entity_name
+      AND entity_id = NEW.id
+      AND status = 'pending'
+    ORDER BY id DESC
+    LIMIT 1;
+
+    IF existing_id IS NOT NULL THEN
+        UPDATE sync_queue
+        SET payload = row_to_json(NEW)::jsonb
+        WHERE id = existing_id;
+    ELSE
+        INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority, correlation_id)
+        VALUES (
+            entity_name,
+            NEW.id,
+            TG_OP,
+            row_to_json(NEW)::jsonb,
+            'pending',
+            prio,
+            corr_id
+        );
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -87,7 +117,7 @@ CREATE TRIGGER trg_sync_user_biometric_templates
 -- Automatically enqueue POS transactions into sync_queue
 DROP TRIGGER IF EXISTS trg_sync_pos_transactions ON pos_transactions;
 CREATE TRIGGER trg_sync_pos_transactions
-    AFTER INSERT ON pos_transactions
+    AFTER INSERT OR UPDATE ON pos_transactions
     FOR EACH ROW
     EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_transactions');
 

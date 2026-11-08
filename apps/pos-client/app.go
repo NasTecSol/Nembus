@@ -313,6 +313,9 @@ func (a *App) migrate(dbURL string) error {
 	if err := goose.Up(sqlDB, "migrations", goose.WithAllowMissing()); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", db.WithStorageHint(err))
 	}
+	if _, err := sqlDB.Exec(sync.OutboxResilienceDDL); err != nil {
+		return fmt.Errorf("install sync outbox resilience columns: %w", err)
+	}
 	if _, err := sqlDB.Exec(sync.ZatcaOutboxDDL); err != nil {
 		return fmt.Errorf("install ZATCA sync outbox: %w", err)
 	}
@@ -862,6 +865,24 @@ func (a *App) SaveDeviceConfig(configJSON string) string {
 	}
 
 	return "OK"
+}
+
+// GetSyncQueueStatus returns the current pending and quarantined counts plus
+// details of quarantined outbox entries for the POS header badge.
+func (a *App) GetSyncQueueStatus() (*sync.SyncQueueStatus, error) {
+	if a.syncService == nil {
+		return &sync.SyncQueueStatus{QuarantinedItems: []sync.QuarantinedOutboxItem{}}, nil
+	}
+	return a.syncService.GetQueueStatus(a.ctx)
+}
+
+// RetryQuarantinedSyncItems resets the specified quarantined sync_queue IDs (or all
+// when ids is empty) back to pending and triggers an immediate sync cycle.
+func (a *App) RetryQuarantinedSyncItems(ids []int64) (int64, error) {
+	if a.syncService == nil {
+		return 0, fmt.Errorf("sync service is not running")
+	}
+	return a.syncService.RetryQuarantinedItems(a.ctx, ids)
 }
 
 // GetDevToken generates a valid development JWT token for local testing and Postman/Wails calls.

@@ -114,6 +114,8 @@ CREATE TABLE pos_terminals (
     terminal_code VARCHAR(50) NOT NULL,
     terminal_name VARCHAR(100),
     device_id VARCHAR(100),
+    sync_token_hash VARCHAR(64),
+    token_issued_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

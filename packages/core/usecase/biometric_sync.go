@@ -8,7 +8,6 @@ import (
 
 	"github.com/NasTecSol/nembus-core/biometrics"
 	"github.com/NasTecSol/nembus-core/repository"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // syncedBiometricRow mirrors JSON payloads from sync_queue / StreamPull.
@@ -30,8 +29,8 @@ type syncedBiometricRow struct {
 
 // ApplyUserBiometricTemplateFromSync upserts a template pushed from POS with org-wide duplicate
 // detection and last-write-wins on updated_at.
-func ApplyUserBiometricTemplateFromSync(ctx context.Context, pool *pgxpool.Pool, payload []byte) error {
-	if pool == nil {
+func ApplyUserBiometricTemplateFromSync(ctx context.Context, db repository.DBTX, payload []byte) error {
+	if db == nil {
 		return fmt.Errorf("database pool is nil")
 	}
 	var row syncedBiometricRow
@@ -53,7 +52,7 @@ func ApplyUserBiometricTemplateFromSync(ctx context.Context, pool *pgxpool.Pool,
 		return biometrics.ErrEngineUnavailable
 	}
 
-	q := repository.New(pool)
+	q := repository.New(db)
 	orgTemplates, err := q.ListActiveBiometricTemplatesByOrg(ctx, row.OrganizationID)
 	if err == nil && len(orgTemplates) > 0 {
 		candidates := make([][]byte, 0, len(orgTemplates))
@@ -129,7 +128,7 @@ ON CONFLICT (user_id, finger_index) DO UPDATE SET
 	updated_at = EXCLUDED.updated_at
 WHERE EXCLUDED.updated_at >= user_biometric_templates.updated_at;
 `
-	tag, err := pool.Exec(ctx, upsertSQL,
+	tag, err := db.Exec(ctx, upsertSQL,
 		row.OrganizationID, row.UserID, row.FingerIndex, fmdFormat, row.FMDBase64,
 		quality, readerSerial, enrolledBy, row.IsActive, string(meta),
 		createdAt, updatedAt,

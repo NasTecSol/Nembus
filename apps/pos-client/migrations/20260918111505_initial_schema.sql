@@ -7361,7 +7361,6 @@ CREATE INDEX IF NOT EXISTS idx_sales_orders_v2_sap_doc_num ON sales_orders_v2 ((
 -- ---------------------------------------------------------------------
 -- Ensure partner_addresses unique constraint for idempotent address upserts
 -- ---------------------------------------------------------------------
--- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -7371,7 +7370,6 @@ BEGIN
             UNIQUE (partner_id, address_type, address_name);
     END IF;
 END $$;
--- +goose StatementEnd
 
 -- =====================================================================
 -- Merged from: 20260926000001_products_cost_price.sql
