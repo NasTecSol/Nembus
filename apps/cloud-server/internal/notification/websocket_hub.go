@@ -2,8 +2,10 @@ package notification
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,26 +22,31 @@ var upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	Hub    *WebSocketHub
-	Conn   *websocket.Conn
-	Send   chan []byte
-	OrgID  int32
-	UserID int32
+	Hub        *WebSocketHub
+	Conn       *websocket.Conn
+	Send       chan []byte
+	TenantSlug string
+	OrgID      int32
+	UserID     int32
 }
 
 type WebSocketHub struct {
 	clients    map[*Client]bool
-	orgClients map[int32]map[*Client]bool
+	orgClients map[string]map[*Client]bool
 	broadcast  chan []byte
 	register   chan *Client
 	unregister chan *Client
 	mu         sync.RWMutex
 }
 
+func orgAudienceKey(tenantSlug string, orgID int32) string {
+	return fmt.Sprintf("%s:%d", strings.TrimSpace(tenantSlug), orgID)
+}
+
 func NewWebSocketHub() *WebSocketHub {
 	return &WebSocketHub{
 		clients:    make(map[*Client]bool),
-		orgClients: make(map[int32]map[*Client]bool),
+		orgClients: make(map[string]map[*Client]bool),
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -56,35 +63,36 @@ func (h *WebSocketHub) Run(stopCh <-chan struct{}) {
 				_ = client.Conn.Close()
 			}
 			h.clients = make(map[*Client]bool)
-			h.orgClients = make(map[int32]map[*Client]bool)
+			h.orgClients = make(map[string]map[*Client]bool)
 			h.mu.Unlock()
 			return
 
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
-			if _, ok := h.orgClients[client.OrgID]; !ok {
-				h.orgClients[client.OrgID] = make(map[*Client]bool)
+			key := orgAudienceKey(client.TenantSlug, client.OrgID)
+			if _, ok := h.orgClients[key]; !ok {
+				h.orgClients[key] = make(map[*Client]bool)
 			}
-			h.orgClients[client.OrgID][client] = true
+			h.orgClients[key][client] = true
 			h.mu.Unlock()
-			log.Printf("[WebSocketHub] Client registered: OrgID=%d UserID=%d", client.OrgID, client.UserID)
+			log.Printf("[WebSocketHub] Client registered: tenant=%s OrgID=%d UserID=%d", client.TenantSlug, client.OrgID, client.UserID)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				if orgMap, exists := h.orgClients[client.OrgID]; exists {
+				key := orgAudienceKey(client.TenantSlug, client.OrgID)
+				if orgMap, exists := h.orgClients[key]; exists {
 					delete(orgMap, client)
 					if len(orgMap) == 0 {
-						delete(h.orgClients, client.OrgID)
+						delete(h.orgClients, key)
 					}
 				}
 				close(client.Send)
-				_ = client.Conn.Close()
 			}
 			h.mu.Unlock()
-			log.Printf("[WebSocketHub] Client disconnected: OrgID=%d UserID=%d", client.OrgID, client.UserID)
+			log.Printf("[WebSocketHub] Client disconnected: tenant=%s OrgID=%d UserID=%d", client.TenantSlug, client.OrgID, client.UserID)
 
 		case message := <-h.broadcast:
 			h.mu.RLock()
@@ -101,8 +109,12 @@ func (h *WebSocketHub) Run(stopCh <-chan struct{}) {
 	}
 }
 
-// BroadcastToOrg sends a JSON payload to all connected clients in a specific organization
-func (h *WebSocketHub) BroadcastToOrg(orgID int32, payload interface{}) {
+// BroadcastToOrg sends a JSON payload to connected clients in a tenant organization.
+func (h *WebSocketHub) BroadcastToOrg(tenantSlug string, orgID int32, payload interface{}) {
+	tenantSlug = strings.TrimSpace(tenantSlug)
+	if tenantSlug == "" {
+		return
+	}
 	bytes, err := json.Marshal(payload)
 	if err != nil {
 		return
@@ -111,7 +123,7 @@ func (h *WebSocketHub) BroadcastToOrg(orgID int32, payload interface{}) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	orgMap, ok := h.orgClients[orgID]
+	orgMap, ok := h.orgClients[orgAudienceKey(tenantSlug, orgID)]
 	if !ok {
 		return
 	}
@@ -125,8 +137,12 @@ func (h *WebSocketHub) BroadcastToOrg(orgID int32, payload interface{}) {
 	}
 }
 
-// SendToUser sends a JSON payload to a specific user in an organization
-func (h *WebSocketHub) SendToUser(orgID, userID int32, payload interface{}) {
+// SendToUser sends a JSON payload to a specific user in a tenant organization.
+func (h *WebSocketHub) SendToUser(tenantSlug string, orgID, userID int32, payload interface{}) {
+	tenantSlug = strings.TrimSpace(tenantSlug)
+	if tenantSlug == "" {
+		return
+	}
 	bytes, err := json.Marshal(payload)
 	if err != nil {
 		return
@@ -135,7 +151,7 @@ func (h *WebSocketHub) SendToUser(orgID, userID int32, payload interface{}) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	orgMap, ok := h.orgClients[orgID]
+	orgMap, ok := h.orgClients[orgAudienceKey(tenantSlug, orgID)]
 	if !ok {
 		return
 	}
@@ -202,8 +218,8 @@ func (c *Client) writePump() {
 	}
 }
 
-// ServeWs handles WebSocket handshake requests
-func (h *WebSocketHub) ServeWs(c *gin.Context, orgID, userID int32) {
+// ServeWs handles WebSocket handshake requests for a tenant-bound client.
+func (h *WebSocketHub) ServeWs(c *gin.Context, tenantSlug string, orgID, userID int32) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("[WebSocketHub] Upgrade failed: %v", err)
@@ -211,14 +227,14 @@ func (h *WebSocketHub) ServeWs(c *gin.Context, orgID, userID int32) {
 	}
 
 	client := &Client{
-		Hub:    h,
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-		OrgID:  orgID,
-		UserID: userID,
+		Hub:        h,
+		Conn:       conn,
+		Send:       make(chan []byte, 256),
+		TenantSlug: tenantSlug,
+		OrgID:      orgID,
+		UserID:     userID,
 	}
-
-	h.register <- client
+	client.Hub.register <- client
 
 	go client.writePump()
 	go client.readPump()

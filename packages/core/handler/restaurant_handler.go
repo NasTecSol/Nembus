@@ -24,6 +24,10 @@ func NewRestaurantHandler(uc *usecase.RestaurantUseCase) *RestaurantHandler {
 	return &RestaurantHandler{useCase: uc}
 }
 
+func (h *RestaurantHandler) uc(repo *repository.Queries) *usecase.RestaurantUseCase {
+	return usecase.NewRestaurantUseCaseWithRepo(repo)
+}
+
 func (h *RestaurantHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
 	repo, ok := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
 	if !ok {
@@ -55,7 +59,6 @@ func (h *RestaurantHandler) ListTables(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -63,7 +66,7 @@ func (h *RestaurantHandler) ListTables(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListTables(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).ListTables(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -87,7 +90,6 @@ func (h *RestaurantHandler) GetTable(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -95,7 +97,7 @@ func (h *RestaurantHandler) GetTable(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetTable(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetTable(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -120,7 +122,6 @@ func (h *RestaurantHandler) CreateTable(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateRestaurantTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -141,7 +142,7 @@ func (h *RestaurantHandler) CreateTable(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateTable(c.Request.Context(), params)
+	resp := h.uc(repo).CreateTable(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -165,7 +166,6 @@ func (h *RestaurantHandler) UpdateTable(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -192,7 +192,7 @@ func (h *RestaurantHandler) UpdateTable(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateTable(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateTable(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -215,7 +215,6 @@ func (h *RestaurantHandler) DeleteTable(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -223,7 +222,7 @@ func (h *RestaurantHandler) DeleteTable(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteTable(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteTable(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -248,7 +247,6 @@ func (h *RestaurantHandler) ListMenuCategories(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -256,7 +254,7 @@ func (h *RestaurantHandler) ListMenuCategories(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListMenuCategories(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).ListMenuCategories(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -280,7 +278,6 @@ func (h *RestaurantHandler) GetMenuCategory(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -288,7 +285,7 @@ func (h *RestaurantHandler) GetMenuCategory(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetMenuCategory(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetMenuCategory(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -311,7 +308,6 @@ func (h *RestaurantHandler) CreateMenuCategory(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateMenuCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -336,7 +332,7 @@ func (h *RestaurantHandler) CreateMenuCategory(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateMenuCategory(c.Request.Context(), params)
+	resp := h.uc(repo).CreateMenuCategory(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -360,7 +356,6 @@ func (h *RestaurantHandler) UpdateMenuCategory(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -391,7 +386,7 @@ func (h *RestaurantHandler) UpdateMenuCategory(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateMenuCategory(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateMenuCategory(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -414,7 +409,6 @@ func (h *RestaurantHandler) DeleteMenuCategory(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -422,7 +416,7 @@ func (h *RestaurantHandler) DeleteMenuCategory(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteMenuCategory(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteMenuCategory(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -447,7 +441,6 @@ func (h *RestaurantHandler) ListMenuItems(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	categoryID, err := strconv.ParseInt(c.Param("category_id"), 10, 32)
 	if err != nil {
@@ -455,7 +448,7 @@ func (h *RestaurantHandler) ListMenuItems(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListMenuItems(c.Request.Context(), int32(categoryID))
+	resp := h.uc(repo).ListMenuItems(c.Request.Context(), int32(categoryID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -479,7 +472,6 @@ func (h *RestaurantHandler) GetMenuItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("item_id")
 	if idStr == "" {
@@ -491,7 +483,7 @@ func (h *RestaurantHandler) GetMenuItem(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetMenuItem(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetMenuItem(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -515,7 +507,6 @@ func (h *RestaurantHandler) GetMenuItemFullDetails(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("id")
 	if idStr == "" {
@@ -527,7 +518,7 @@ func (h *RestaurantHandler) GetMenuItemFullDetails(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetMenuItemFullDetails(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetMenuItemFullDetails(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -550,7 +541,6 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateMenuItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -601,7 +591,7 @@ func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
 		}
 	}
 
-	resp := h.useCase.CreateMenuItem(c.Request.Context(), params, comboInputs)
+	resp := h.uc(repo).CreateMenuItem(c.Request.Context(), params, comboInputs)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -625,7 +615,6 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("item_id")
 	if idStr == "" {
@@ -686,7 +675,7 @@ func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
 		}
 	}
 
-	resp := h.useCase.UpdateMenuItem(c.Request.Context(), params, comboInputs)
+	resp := h.uc(repo).UpdateMenuItem(c.Request.Context(), params, comboInputs)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -709,7 +698,6 @@ func (h *RestaurantHandler) DeleteMenuItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("item_id")
 	if idStr == "" {
@@ -721,7 +709,7 @@ func (h *RestaurantHandler) DeleteMenuItem(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteMenuItem(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteMenuItem(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -744,7 +732,6 @@ func (h *RestaurantHandler) ListComboComponents(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	idStr := c.Param("item_id")
 	if idStr == "" {
@@ -756,7 +743,7 @@ func (h *RestaurantHandler) ListComboComponents(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListComboComponents(c.Request.Context(), int32(id))
+	resp := h.uc(repo).ListComboComponents(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -781,7 +768,6 @@ func (h *RestaurantHandler) ListModifiers(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	itemID, err := strconv.ParseInt(c.Param("item_id"), 10, 32)
 	if err != nil {
@@ -789,7 +775,7 @@ func (h *RestaurantHandler) ListModifiers(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListModifiers(c.Request.Context(), int32(itemID))
+	resp := h.uc(repo).ListModifiers(c.Request.Context(), int32(itemID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -812,7 +798,6 @@ func (h *RestaurantHandler) ListStoreModifiers(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -820,7 +805,7 @@ func (h *RestaurantHandler) ListStoreModifiers(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListModifiersByStore(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).ListModifiersByStore(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -845,7 +830,6 @@ func (h *RestaurantHandler) GetModifier(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
 	if err != nil {
@@ -853,7 +837,7 @@ func (h *RestaurantHandler) GetModifier(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetModifier(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetModifier(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -876,7 +860,6 @@ func (h *RestaurantHandler) CreateModifier(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateMenuItemModifierRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -899,7 +882,7 @@ func (h *RestaurantHandler) CreateModifier(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateModifier(c.Request.Context(), params)
+	resp := h.uc(repo).CreateModifier(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -923,7 +906,6 @@ func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
 	if err != nil {
@@ -952,7 +934,7 @@ func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateModifier(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateModifier(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -975,7 +957,6 @@ func (h *RestaurantHandler) DeleteModifier(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
 	if err != nil {
@@ -983,7 +964,7 @@ func (h *RestaurantHandler) DeleteModifier(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteModifier(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteModifier(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1010,7 +991,6 @@ func (h *RestaurantHandler) GetFullMenu(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -1026,7 +1006,7 @@ func (h *RestaurantHandler) GetFullMenu(c *gin.Context) {
 	}
 	includeUnavail := c.Query("include_unavailable") == "true"
 
-	resp := h.useCase.GetFullMenu(c.Request.Context(), int32(storeID), categoryID, includeUnavail)
+	resp := h.uc(repo).GetFullMenu(c.Request.Context(), int32(storeID), categoryID, includeUnavail)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1052,7 +1032,6 @@ func (h *RestaurantHandler) GetKdsOrders(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -1068,7 +1047,7 @@ func (h *RestaurantHandler) GetKdsOrders(c *gin.Context) {
 		statuses = []string{"pending", "confirmed", "preparing"}
 	}
 
-	resp := h.useCase.GetKdsOrders(c.Request.Context(), int32(storeID), statuses)
+	resp := h.uc(repo).GetKdsOrders(c.Request.Context(), int32(storeID), statuses)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1093,7 +1072,6 @@ func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateRestaurantOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1132,7 +1110,7 @@ func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateOrder(c.Request.Context(), params)
+	resp := h.uc(repo).CreateOrder(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1156,7 +1134,6 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1198,7 +1175,7 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateOrder(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateOrder(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1221,7 +1198,6 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1229,7 +1205,7 @@ func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteOrder(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteOrder(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1252,7 +1228,6 @@ func (h *RestaurantHandler) ListOrders(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeIDStr := c.Query("store_id")
 	if storeIDStr == "" {
@@ -1269,7 +1244,7 @@ func (h *RestaurantHandler) ListOrders(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListOrders(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).ListOrders(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1311,7 +1286,6 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1319,7 +1293,7 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetOrder(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetOrder(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1343,7 +1317,6 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1357,7 +1330,7 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.UpdateOrderStatus(c.Request.Context(), int32(id), req.Status)
+	resp := h.uc(repo).UpdateOrderStatus(c.Request.Context(), int32(id), req.Status)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1381,7 +1354,6 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1395,7 +1367,7 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.SettleOrder(c.Request.Context(), int32(id), req.PosTransactionID)
+	resp := h.uc(repo).SettleOrder(c.Request.Context(), int32(id), req.PosTransactionID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1418,7 +1390,6 @@ func (h *RestaurantHandler) CreateOnlineOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateOnlineOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1457,7 +1428,7 @@ func (h *RestaurantHandler) CreateOnlineOrder(c *gin.Context) {
 		}
 	}
 
-	resp := h.useCase.CreateOnlineOrder(c.Request.Context(), req.StoreID, req.CustomerID, items)
+	resp := h.uc(repo).CreateOnlineOrder(c.Request.Context(), req.StoreID, req.CustomerID, items)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1483,7 +1454,6 @@ func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
 	if err != nil {
@@ -1491,7 +1461,7 @@ func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetOrderItem(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetOrderItem(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1515,7 +1485,6 @@ func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
 	if err != nil {
@@ -1558,7 +1527,7 @@ func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateOrderItem(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateOrderItem(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1581,7 +1550,6 @@ func (h *RestaurantHandler) DeleteOrderItem(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
 	if err != nil {
@@ -1589,7 +1557,7 @@ func (h *RestaurantHandler) DeleteOrderItem(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteOrderItem(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteOrderItem(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1614,7 +1582,6 @@ func (h *RestaurantHandler) CreateWasteLog(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateWasteLogRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1646,7 +1613,7 @@ func (h *RestaurantHandler) CreateWasteLog(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateWasteLog(c.Request.Context(), params)
+	resp := h.uc(repo).CreateWasteLog(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1670,7 +1637,6 @@ func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
 	if err != nil {
@@ -1678,7 +1644,7 @@ func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetWasteLog(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetWasteLog(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1702,7 +1668,6 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
 	if err != nil {
@@ -1740,7 +1705,7 @@ func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateWasteLog(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateWasteLog(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1763,7 +1728,6 @@ func (h *RestaurantHandler) DeleteWasteLog(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
 	if err != nil {
@@ -1771,7 +1735,7 @@ func (h *RestaurantHandler) DeleteWasteLog(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteWasteLog(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteWasteLog(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1794,11 +1758,10 @@ func (h *RestaurantHandler) GetWasteReport(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, _ := strconv.ParseInt(c.Param("store_id"), 10, 32)
 
-	resp := h.useCase.GetWasteReport(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).GetWasteReport(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1823,7 +1786,6 @@ func (h *RestaurantHandler) ListRecipes(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -1837,7 +1799,7 @@ func (h *RestaurantHandler) ListRecipes(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListRecipes(c.Request.Context(), store.OrganizationID)
+	resp := h.uc(repo).ListRecipes(c.Request.Context(), store.OrganizationID)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1861,7 +1823,6 @@ func (h *RestaurantHandler) GetRecipe(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	if err != nil {
@@ -1869,7 +1830,7 @@ func (h *RestaurantHandler) GetRecipe(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetRecipe(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetRecipe(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1892,7 +1853,6 @@ func (h *RestaurantHandler) CreateRecipe(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateRecipeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1920,7 +1880,7 @@ func (h *RestaurantHandler) CreateRecipe(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateRecipe(c.Request.Context(), params)
+	resp := h.uc(repo).CreateRecipe(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1944,7 +1904,6 @@ func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	if err != nil {
@@ -1978,7 +1937,7 @@ func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateRecipe(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateRecipe(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2001,7 +1960,6 @@ func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	if err != nil {
@@ -2009,7 +1967,7 @@ func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteRecipe(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteRecipe(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2033,7 +1991,6 @@ func (h *RestaurantHandler) AddRecipeIngredient(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, _ := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
 	var req CreateRecipeIngredientRequest
@@ -2059,7 +2016,7 @@ func (h *RestaurantHandler) AddRecipeIngredient(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.AddRecipeIngredient(c.Request.Context(), params)
+	resp := h.uc(repo).AddRecipeIngredient(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2085,7 +2042,6 @@ func (h *RestaurantHandler) GetRecipeIngredient(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
 	if err != nil {
@@ -2093,7 +2049,7 @@ func (h *RestaurantHandler) GetRecipeIngredient(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetRecipeIngredient(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetRecipeIngredient(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2117,7 +2073,6 @@ func (h *RestaurantHandler) UpdateRecipeIngredient(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
 	if err != nil {
@@ -2148,7 +2103,7 @@ func (h *RestaurantHandler) UpdateRecipeIngredient(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateRecipeIngredient(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateRecipeIngredient(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2171,7 +2126,6 @@ func (h *RestaurantHandler) DeleteRecipeIngredient(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
 	if err != nil {
@@ -2179,7 +2133,7 @@ func (h *RestaurantHandler) DeleteRecipeIngredient(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteRecipeIngredient(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteRecipeIngredient(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2204,7 +2158,6 @@ func (h *RestaurantHandler) CreateKioskSession(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateKioskSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -2224,7 +2177,7 @@ func (h *RestaurantHandler) CreateKioskSession(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.CreateKioskSession(c.Request.Context(), params)
+	resp := h.uc(repo).CreateKioskSession(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2248,7 +2201,6 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
 	if err != nil {
@@ -2271,7 +2223,7 @@ func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
 		params.Metadata = []byte("{}")
 	}
 
-	resp := h.useCase.UpdateKioskSession(c.Request.Context(), params)
+	resp := h.uc(repo).UpdateKioskSession(c.Request.Context(), params)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2294,7 +2246,6 @@ func (h *RestaurantHandler) DeleteKioskSession(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
 	if err != nil {
@@ -2302,7 +2253,7 @@ func (h *RestaurantHandler) DeleteKioskSession(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteKioskSession(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteKioskSession(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2326,10 +2277,9 @@ func (h *RestaurantHandler) GetKioskSession(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	token := c.Param("token")
-	resp := h.useCase.GetKioskSession(c.Request.Context(), token)
+	resp := h.uc(repo).GetKioskSession(c.Request.Context(), token)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2353,10 +2303,9 @@ func (h *RestaurantHandler) GetKioskSessionByID(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, _ := strconv.ParseInt(c.Param("session_id"), 10, 32)
-	resp := h.useCase.GetKioskSessionByID(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetKioskSessionByID(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2381,7 +2330,6 @@ func (h *RestaurantHandler) CreateMenuModifierGroup(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateMenuModifierGroupRequest
 	if err := c.BindJSON(&req); err != nil {
@@ -2405,7 +2353,7 @@ func (h *RestaurantHandler) CreateMenuModifierGroup(c *gin.Context) {
 		displayOrder = pgtype.Int4{Int32: *req.DisplayOrder, Valid: true}
 	}
 
-	resp := h.useCase.CreateMenuModifierGroup(c.Request.Context(), repository.CreateMenuModifierGroupParams{
+	resp := h.uc(repo).CreateMenuModifierGroup(c.Request.Context(), repository.CreateMenuModifierGroupParams{
 		StoreID:       req.StoreID,
 		Name:          req.Name,
 		Code:          req.Code,
@@ -2439,7 +2387,6 @@ func (h *RestaurantHandler) GetMenuModifierGroup(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -2447,7 +2394,7 @@ func (h *RestaurantHandler) GetMenuModifierGroup(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetMenuModifierGroup(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetMenuModifierGroup(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2470,7 +2417,6 @@ func (h *RestaurantHandler) ListMenuModifierGroupsByStore(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
 	if err != nil {
@@ -2478,7 +2424,7 @@ func (h *RestaurantHandler) ListMenuModifierGroupsByStore(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListMenuModifierGroupsByStore(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).ListMenuModifierGroupsByStore(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2503,7 +2449,6 @@ func (h *RestaurantHandler) UpdateMenuModifierGroup(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -2524,7 +2469,7 @@ func (h *RestaurantHandler) UpdateMenuModifierGroup(c *gin.Context) {
 	}
 
 	// Fetch existing group to check current properties if fields are omitted in PUT payload
-	existingGroupResp := h.useCase.GetMenuModifierGroup(c.Request.Context(), int32(id))
+	existingGroupResp := h.uc(repo).GetMenuModifierGroup(c.Request.Context(), int32(id))
 	if existingGroupResp.StatusCode != 200 {
 		c.JSON(existingGroupResp.StatusCode, existingGroupResp)
 		return
@@ -2560,7 +2505,7 @@ func (h *RestaurantHandler) UpdateMenuModifierGroup(c *gin.Context) {
 		displayOrder = pgtype.Int4{Int32: *req.DisplayOrder, Valid: true}
 	}
 
-	resp := h.useCase.UpdateMenuModifierGroup(c.Request.Context(), repository.UpdateMenuModifierGroupParams{
+	resp := h.uc(repo).UpdateMenuModifierGroup(c.Request.Context(), repository.UpdateMenuModifierGroupParams{
 		ID:            int32(id),
 		Name:          name,
 		Code:          code,
@@ -2593,7 +2538,6 @@ func (h *RestaurantHandler) DeleteMenuModifierGroup(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -2601,7 +2545,7 @@ func (h *RestaurantHandler) DeleteMenuModifierGroup(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteMenuModifierGroup(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteMenuModifierGroup(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2626,7 +2570,6 @@ func (h *RestaurantHandler) CreateRestaurantPromotion(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateRestaurantPromotionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -2703,7 +2646,7 @@ func (h *RestaurantHandler) CreateRestaurantPromotion(c *gin.Context) {
 		arg.ValidTo = vt
 	}
 
-	resp := h.useCase.CreateRestaurantPromotion(c.Request.Context(), arg)
+	resp := h.uc(repo).CreateRestaurantPromotion(c.Request.Context(), arg)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2726,7 +2669,6 @@ func (h *RestaurantHandler) GetRestaurantPromotion(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -2734,7 +2676,7 @@ func (h *RestaurantHandler) GetRestaurantPromotion(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetRestaurantPromotion(c.Request.Context(), int32(id))
+	resp := h.uc(repo).GetRestaurantPromotion(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2758,7 +2700,6 @@ func (h *RestaurantHandler) GetRestaurantPromotionByCode(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	code := c.Param("code")
 	storeIDStr := c.Query("store_id")
@@ -2768,7 +2709,7 @@ func (h *RestaurantHandler) GetRestaurantPromotionByCode(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.GetRestaurantPromotionByCode(c.Request.Context(), code, int32(storeID))
+	resp := h.uc(repo).GetRestaurantPromotionByCode(c.Request.Context(), code, int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2790,7 +2731,6 @@ func (h *RestaurantHandler) ListActiveRestaurantPromotions(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeIDStr := c.Query("store_id")
 	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
@@ -2799,7 +2739,7 @@ func (h *RestaurantHandler) ListActiveRestaurantPromotions(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.ListActiveRestaurantPromotions(c.Request.Context(), int32(storeID))
+	resp := h.uc(repo).ListActiveRestaurantPromotions(c.Request.Context(), int32(storeID))
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2823,7 +2763,6 @@ func (h *RestaurantHandler) ListAllRestaurantPromotions(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	storeIDStr := c.Query("store_id")
 	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
@@ -2835,7 +2774,7 @@ func (h *RestaurantHandler) ListAllRestaurantPromotions(c *gin.Context) {
 	limit64, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
 	offset64, _ := strconv.ParseInt(c.DefaultQuery("offset", "0"), 10, 32)
 
-	resp := h.useCase.ListAllRestaurantPromotions(c.Request.Context(), repository.ListAllRestaurantPromotionsParams{
+	resp := h.uc(repo).ListAllRestaurantPromotions(c.Request.Context(), repository.ListAllRestaurantPromotionsParams{
 		StoreID: int32(storeID),
 		Limit:   int32(limit64),
 		Offset:  int32(offset64),
@@ -2863,7 +2802,6 @@ func (h *RestaurantHandler) UpdateRestaurantPromotion(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -2934,7 +2872,7 @@ func (h *RestaurantHandler) UpdateRestaurantPromotion(c *gin.Context) {
 		arg.ValidTo = vt
 	}
 
-	resp := h.useCase.UpdateRestaurantPromotion(c.Request.Context(), arg)
+	resp := h.uc(repo).UpdateRestaurantPromotion(c.Request.Context(), arg)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -2957,7 +2895,6 @@ func (h *RestaurantHandler) UpdateRestaurantPromotionStatus(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -2976,7 +2913,7 @@ func (h *RestaurantHandler) UpdateRestaurantPromotionStatus(c *gin.Context) {
 		isActive = *req.IsActive
 	}
 
-	resp := h.useCase.UpdateRestaurantPromotionStatus(c.Request.Context(), repository.UpdateRestaurantPromotionStatusParams{
+	resp := h.uc(repo).UpdateRestaurantPromotionStatus(c.Request.Context(), repository.UpdateRestaurantPromotionStatusParams{
 		ID:       int32(id),
 		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
 	})
@@ -3001,7 +2938,6 @@ func (h *RestaurantHandler) DeleteRestaurantPromotion(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
 	if err != nil {
@@ -3009,7 +2945,7 @@ func (h *RestaurantHandler) DeleteRestaurantPromotion(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.DeleteRestaurantPromotion(c.Request.Context(), int32(id))
+	resp := h.uc(repo).DeleteRestaurantPromotion(c.Request.Context(), int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 

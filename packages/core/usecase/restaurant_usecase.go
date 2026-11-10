@@ -21,6 +21,11 @@ func NewRestaurantUseCase() *RestaurantUseCase {
 	return &RestaurantUseCase{}
 }
 
+// NewRestaurantUseCaseWithRepo returns a request-scoped use case bound to the tenant repository.
+func NewRestaurantUseCaseWithRepo(repo *repository.Queries) *RestaurantUseCase {
+	return &RestaurantUseCase{repo: repo}
+}
+
 func (uc *RestaurantUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
 }
@@ -556,32 +561,96 @@ func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, pos
 
 // === Online Orders ===
 
+func sumRestaurantOrderLineAmounts(items []repository.CreateRestaurantOrderItemParams) (subtotal, discount, tax, total *big.Rat) {
+	sub := new(big.Rat)
+	disc := new(big.Rat)
+	taxR := new(big.Rat)
+	for _, item := range items {
+		sub.Add(sub, numericToRat(item.Subtotal))
+		disc.Add(disc, numericToRat(item.DiscountAmount))
+		taxR.Add(taxR, numericToRat(item.TaxAmount))
+	}
+	lineTotal := new(big.Rat).Add(sub, taxR)
+	lineTotal.Sub(lineTotal, disc)
+	return sub, disc, taxR, lineTotal
+}
+
 func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int32, customerID *int32, items []repository.CreateRestaurantOrderItemParams) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
+	if len(items) == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "at least one order item is required", nil)
+	}
+
+	subR, discR, taxR, totalR := sumRestaurantOrderLineAmounts(items)
+	subtotal, err := uc.repo.ParseNumeric(ctx, subR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order subtotal: "+err.Error(), nil)
+	}
+	discount, err := uc.repo.ParseNumeric(ctx, discR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order discount: "+err.Error(), nil)
+	}
+	tax, err := uc.repo.ParseNumeric(ctx, taxR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order tax: "+err.Error(), nil)
+	}
+	total, err := uc.repo.ParseNumeric(ctx, totalR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order total: "+err.Error(), nil)
+	}
 
 	orderParams := repository.CreateRestaurantOrderParams{
-		StoreID:     storeID,
-		OrderNumber: fmt.Sprintf("WEB-%d", time.Now().Unix()),
-		OrderSource: "online",
-		Status:      "pending",
-		OrderedAt:   pgtype.Timestamp{Time: time.Now(), Valid: true},
+		StoreID:        storeID,
+		OrderNumber:    fmt.Sprintf("WEB-%d", time.Now().UnixNano()),
+		OrderSource:    "online",
+		Status:         "pending",
+		Subtotal:       subtotal,
+		DiscountAmount: discount,
+		TaxAmount:      tax,
+		TotalAmount:    total,
+		OrderedAt:      pgtype.Timestamp{Time: time.Now(), Valid: true},
 	}
 	if customerID != nil {
 		orderParams.CustomerID = pgtype.Int4{Int32: *customerID, Valid: true}
 	}
 
-	order, err := uc.repo.CreateRestaurantOrder(ctx, orderParams)
+	createWithRepo := func(active *repository.Queries) (*repository.RestaurantOrder, error) {
+		order, err := active.CreateRestaurantOrder(ctx, orderParams)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			item.OrderID = order.ID
+			if _, err := active.CreateRestaurantOrderItem(ctx, item); err != nil {
+				return nil, err
+			}
+		}
+		return &order, nil
+	}
+
+	if pool := resolvePoolFromContext(ctx, nil); pool != nil {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to begin online order transaction: "+err.Error(), nil)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		order, err := createWithRepo(uc.repo.WithTx(tx))
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to commit online order: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeCreated, "online order created successfully", order)
+	}
+
+	order, err := createWithRepo(uc.repo)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
-
-	for _, item := range items {
-		item.OrderID = order.ID
-		_, _ = uc.repo.CreateRestaurantOrderItem(ctx, item)
-	}
-
 	return utils.NewResponse(utils.CodeCreated, "online order created successfully", order)
 }
 

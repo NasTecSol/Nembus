@@ -160,8 +160,10 @@ func main() {
 		log.Println("==================================================")
 
 		if *declarativeMode {
-			if err := applyPreDeclarativePatches(ctx, masterURL); err != nil {
-				log.Fatalf("❌ Master database pre-declarative patches failed: %v", err)
+			if !*statusOnly {
+				if err := applyPreDeclarativePatches(ctx, masterURL); err != nil {
+					log.Fatalf("❌ Master database pre-declarative patches failed: %v", err)
+				}
 			}
 			if err := executeAtlasDeclarative(atlasBin, masterURL, absSchemaPath, devURL, *statusOnly); err != nil {
 				log.Fatalf("❌ Master database declarative schema sync failed: %v", err)
@@ -224,16 +226,18 @@ func main() {
 		}
 
 		if *declarativeMode {
-			if err := applyPreDeclarativePatches(ctx, tenantURL); err != nil {
-				if isUnreachableDBHost(err) {
-					log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
-					log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
-					skippedCount++
+			if !*statusOnly {
+				if err := applyPreDeclarativePatches(ctx, tenantURL); err != nil {
+					if isUnreachableDBHost(err) {
+						log.Printf("⚠ Skipping tenant %s: database host is unreachable (%v).\n", tenant.Slug, err)
+						log.Printf("  Fix db_conn_str or set is_active = false for this tenant in the master DB.\n")
+						skippedCount++
+						continue
+					}
+					log.Printf("❌ Pre-declarative patches failed for tenant %s: %v\n", tenant.Slug, err)
+					failedCount++
 					continue
 				}
-				log.Printf("❌ Pre-declarative patches failed for tenant %s: %v\n", tenant.Slug, err)
-				failedCount++
-				continue
 			}
 			err = executeAtlasDeclarative(atlasBin, tenantURL, absSchemaPath, devURL, *statusOnly)
 			if err != nil {
@@ -380,7 +384,32 @@ func resolveBaseline(ctx context.Context, dbURL, explicit, firstMig string) (str
 	if objectCount == 0 {
 		return "", nil
 	}
+	missing, err := legacySchemaMissingModuleTables(ctx, pool)
+	if err != nil {
+		return "", err
+	}
+	if missing {
+		return "", fmt.Errorf("database has schema objects but is missing module tables (restaurant_orders and/or transfer_requests); use -declarative or apply pending migrations before baselining")
+	}
 	return firstMig, nil
+}
+
+// legacySchemaMissingModuleTables reports whether a non-empty legacy database is missing
+// tables introduced after the initial retail baseline (so blind baselining would skip them).
+func legacySchemaMissingModuleTables(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
+	var hasCore, hasRestaurant, hasTransfer bool
+	err := pool.QueryRow(ctx, `SELECT
+		EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'products'),
+		EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'restaurant_orders'),
+		EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'transfer_requests')
+	`).Scan(&hasCore, &hasRestaurant, &hasTransfer)
+	if err != nil {
+		return false, fmt.Errorf("check module tables: %w", err)
+	}
+	if !hasCore {
+		return false, nil
+	}
+	return !hasRestaurant || !hasTransfer, nil
 }
 
 // logBaseline prints which baseline strategy is used for the current database.

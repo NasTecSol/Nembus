@@ -64,7 +64,7 @@ func (c *ZatcaCloud) refreshToken(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("x-tenant-id", c.tenant)
-	req.Header.Set("x-m2m-key", middleware.M2MAPIKey)
+	req.Header.Set("x-m2m-key", middleware.ExpectedM2MAPIKey())
 	res, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("fetch cloud application registration: %w", err)

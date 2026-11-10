@@ -56,8 +56,8 @@ func TestWebSocketHubLifecycle(t *testing.T) {
 	go hub.Run(stopCh)
 
 	// Broadcast when empty should not panic
-	hub.BroadcastToOrg(1, map[string]string{"test": "ok"})
-	hub.SendToUser(1, 10, map[string]string{"test": "user_ok"})
+	hub.BroadcastToOrg("tenant-a", 1, map[string]string{"test": "ok"})
+	hub.SendToUser("tenant-a", 1, 10, map[string]string{"test": "user_ok"})
 
 	close(stopCh)
 }

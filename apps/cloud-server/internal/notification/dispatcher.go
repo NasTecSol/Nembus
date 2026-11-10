@@ -13,16 +13,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// TenantPool pairs a tenant slug with its database pool for outbox dispatch.
+type TenantPool struct {
+	Slug string
+	Pool *pgxpool.Pool
+}
+
 type Dispatcher struct {
-	pools   func(context.Context) ([]*pgxpool.Pool, error)
-	pool    *pgxpool.Pool
-	notifUC *usecase.NotificationUseCase
-	wsHub   *WebSocketHub
+	pools      func(context.Context) ([]TenantPool, error)
+	pool       *pgxpool.Pool
+	tenantSlug string
+	notifUC    *usecase.NotificationUseCase
+	wsHub      *WebSocketHub
 }
 
 // NewDispatcher polls every active tenant database. POS receipts are written
 // to the tenant that received the sale, not the master database.
-func NewDispatcher(pools func(context.Context) ([]*pgxpool.Pool, error), wsHub *WebSocketHub) *Dispatcher {
+func NewDispatcher(pools func(context.Context) ([]TenantPool, error), wsHub *WebSocketHub) *Dispatcher {
 	return &Dispatcher{pools: pools, wsHub: wsHub}
 }
 
@@ -47,17 +54,18 @@ func (d *Dispatcher) runOnce(ctx context.Context) {
 	if d.pools == nil {
 		return
 	}
-	pools, err := d.pools(ctx)
+	tenantPools, err := d.pools(ctx)
 	if err != nil {
 		log.Printf("[NotificationDispatcher] List tenant pools: %v", err)
 		return
 	}
-	for _, pool := range pools {
-		if pool == nil {
+	for _, tp := range tenantPools {
+		if tp.Pool == nil {
 			continue
 		}
-		d.pool = pool
-		d.notifUC = usecase.NewNotificationUseCase(repository.New(pool))
+		d.pool = tp.Pool
+		d.tenantSlug = tp.Slug
+		d.notifUC = usecase.NewNotificationUseCase(repository.New(tp.Pool))
 		d.processPendingEvents(ctx)
 	}
 }
@@ -121,7 +129,7 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 		msg := fmt.Sprintf("Purchase order %s status updated to %s.", poNum, status)
 
 		// Broadcast to staff in organization via WebSocket
-		d.wsHub.BroadcastToOrg(orgID, map[string]interface{}{
+		d.wsHub.BroadcastToOrg(d.tenantSlug, orgID, map[string]interface{}{
 			"type":       event.EventTypeID,
 			"event_id":   event.ID,
 			"title":      title,
@@ -134,7 +142,7 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 		title := "Goods Receipt Note Posted"
 		msg := fmt.Sprintf("GRN %s has been successfully posted to inventory.", grnNum)
 
-		d.wsHub.BroadcastToOrg(orgID, map[string]interface{}{
+		d.wsHub.BroadcastToOrg(d.tenantSlug, orgID, map[string]interface{}{
 			"type":       event.EventTypeID,
 			"event_id":   event.ID,
 			"title":      title,
@@ -150,7 +158,7 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 		title := fmt.Sprintf("Low Stock Alert: %s", prodName)
 		msg := fmt.Sprintf("Item %s at store %s has only %s units remaining (reorder level: %s).", prodName, storeName, avail, reorder)
 
-		d.wsHub.BroadcastToOrg(orgID, map[string]interface{}{
+		d.wsHub.BroadcastToOrg(d.tenantSlug, orgID, map[string]interface{}{
 			"type":       event.EventTypeID,
 			"event_id":   event.ID,
 			"title":      title,
@@ -186,7 +194,7 @@ func (d *Dispatcher) dispatchByRule(ctx context.Context, event repository.Notifi
 						title := fmt.Sprintf("Notification: %s", event.EventTypeID)
 						msg := fmt.Sprintf("Event %s triggered for %s #%s", event.EventTypeID, event.EntityType, event.EntityID)
 						_, _ = d.notifUC.CreateInAppNotification(ctx, orgID, u.ID, &event.ID, title, msg, nil)
-						d.wsHub.SendToUser(orgID, u.ID, map[string]interface{}{
+						d.wsHub.SendToUser(d.tenantSlug, orgID, u.ID, map[string]interface{}{
 							"type":       event.EventTypeID,
 							"event_id":   event.ID,
 							"title":      title,
@@ -196,7 +204,7 @@ func (d *Dispatcher) dispatchByRule(ctx context.Context, event repository.Notifi
 					}
 				}
 			} else {
-				d.wsHub.BroadcastToOrg(orgID, map[string]interface{}{
+				d.wsHub.BroadcastToOrg(d.tenantSlug, orgID, map[string]interface{}{
 					"type":     event.EventTypeID,
 					"event_id": event.ID,
 					"payload":  payload,
