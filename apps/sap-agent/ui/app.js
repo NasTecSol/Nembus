@@ -70,9 +70,10 @@
             });
         });
 
-        document.getElementById('btn-re-run-wizard')?.addEventListener('click', () => {
+        document.getElementById('btn-re-run-wizard')?.addEventListener('click', async () => {
             switchTab('tab-onboarding');
             goToWizardStep(1);
+            await loadConfigAndStatus();
         });
 
         document.getElementById('btn-quick-sync')?.addEventListener('click', () => {
@@ -112,6 +113,7 @@
         if (tabId === 'tab-history') loadHistory();
         if (tabId === 'tab-dashboard') refreshDashboard();
         if (tabId === 'tab-downstream') renderDownstreamDomains();
+        if (tabId === 'tab-upstream') loadUpstreamOutbox();
     }
 
     // -------------------------------------------------------------
@@ -289,7 +291,48 @@
             }
         });
 
-        document.getElementById('btn-step1-next')?.addEventListener('click', () => {
+        // Cloud URL live synchronization
+        document.getElementById('ob-cloud-url')?.addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            setVal('cfg-cloud-url', val);
+            setTxt('sum-cloud', val || '-');
+        });
+
+        document.getElementById('cfg-cloud-url')?.addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            setVal('ob-cloud-url', val);
+            setTxt('sum-cloud', val || '-');
+        });
+
+        document.getElementById('btn-step1-next')?.addEventListener('click', async () => {
+            const cloudUrl = getVal('ob-cloud-url');
+            if (cloudUrl) {
+                try {
+                    await fetch('/api/v1/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            cloud: {
+                                base_url: cloudUrl,
+                                database_url: getVal('ob-cloud-dburl'),
+                                timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
+                            },
+                            mssql: {
+                                host: getVal('ob-mssql-host'),
+                                port: parseInt(getVal('ob-mssql-port')) || 1433,
+                                user: getVal('ob-mssql-user'),
+                                password: getVal('ob-mssql-password'),
+                                database: getVal('ob-mssql-database'),
+                                trust_server_certificate: document.getElementById('ob-mssql-trust')?.checked,
+                                encrypt: document.getElementById('ob-mssql-encrypt')?.checked
+                            }
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Auto-save step 1 config error:', e);
+                }
+            }
+
             setVal('ob-mapped-company', getVal('ob-mssql-database'));
             goToWizardStep(2);
             fetchDiscoveredTenants();
@@ -619,9 +662,12 @@
 
         setButtonLoading(btn, true);
 
+        const cloudUrl = getVal('ob-cloud-url') || getVal('cfg-cloud-url') || (state.config && state.config.cloud && state.config.cloud.base_url) || '';
+
         const payload = {
             mode: modeSelect.value || 'full',
-            domains: Array.from(state.selectedDomains)
+            domains: Array.from(state.selectedDomains),
+            base_url: cloudUrl
         };
 
         try {
@@ -819,8 +865,12 @@
         try {
             const res = await fetch('/api/v1/sync/downstream/run', { method: 'POST' });
             const data = await res.json();
-            showToast(data.message, 'success');
-            appendLog('INFO', 'Downstream Master Sync job initiated');
+            if (data.success) {
+                showToast(data.message, 'success');
+                appendLog('INFO', data.message);
+            } else {
+                showToast(data.message, 'warning');
+            }
         } catch (err) {
             showToast(`Sync trigger failed: ${err.message}`, 'error');
         } finally {
@@ -834,12 +884,60 @@
         try {
             const res = await fetch('/api/v1/sync/upstream/run', { method: 'POST' });
             const data = await res.json();
-            showToast(data.message, 'success');
-            appendLog('INFO', 'Upstream Outbox posting job initiated');
+            showToast(data.message, data.success ? 'success' : 'warning');
+            appendLog('INFO', `Upstream sync: ${data.message}`);
+            await loadUpstreamOutbox();
         } catch (err) {
             showToast(`Flush failed: ${err.message}`, 'error');
         } finally {
             setButtonLoading(btn, false);
+        }
+    }
+
+    async function loadUpstreamOutbox() {
+        try {
+            const res = await fetch('/api/v1/sync/upstream/outbox');
+            const data = await res.json();
+            const table = document.getElementById('upstream-outbox-table');
+            if (!table) return;
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+
+            if (!data.dispatches || data.dispatches.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No upstream POS dispatches recorded yet. Completed POS tickets will appear here once flushed to SAP.</td></tr>';
+                return;
+            }
+
+            let pending = 0, synced = 0, errors = 0;
+            tbody.innerHTML = data.dispatches.map(d => {
+                let badge = '<span class="badge badge-success">Posted to SAP</span>';
+                if (d.status === 'held') {
+                    pending++;
+                    badge = '<span class="badge badge-warning">Stock Shortage (Held)</span>';
+                } else if (d.status === 'failed' || d.status === 'error') {
+                    errors++;
+                    badge = `<span class="badge badge-danger" title="${escapeHtml(d.error_message || '')}">Failed</span>`;
+                } else {
+                    synced++;
+                }
+                const dateStr = d.transaction_date ? new Date(d.transaction_date).toLocaleString() : '-';
+                return `
+                    <tr>
+                        <td><code>${escapeHtml(d.transaction_number || '')}</code></td>
+                        <td>${dateStr}</td>
+                        <td>SAR ${(d.amount || 0).toFixed(2)}</td>
+                        <td>${d.sap_doc_entry || '-'}</td>
+                        <td>${d.sap_doc_num || '-'}</td>
+                        <td>${badge}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            setTxt('up-pending-count', pending);
+            setTxt('up-synced-count', synced);
+            setTxt('up-error-count', errors);
+        } catch (err) {
+            console.error('Failed to load upstream outbox:', err);
         }
     }
 

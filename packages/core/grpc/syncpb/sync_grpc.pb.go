@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SyncService_StreamPush_FullMethodName = "/sync.SyncService/StreamPush"
-	SyncService_StreamPull_FullMethodName = "/sync.SyncService/StreamPull"
+	SyncService_StreamPush_FullMethodName    = "/sync.SyncService/StreamPush"
+	SyncService_StreamPull_FullMethodName    = "/sync.SyncService/StreamPull"
+	SyncService_StreamChanges_FullMethodName = "/sync.SyncService/StreamChanges"
+	SyncService_StreamSession_FullMethodName = "/sync.SyncService/StreamSession"
 )
 
 // SyncServiceClient is the client API for SyncService service.
@@ -31,8 +33,12 @@ const (
 type SyncServiceClient interface {
 	// Client-to-Cloud push stream for local outbox items
 	StreamPush(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SyncEvent, SyncAck], error)
-	// Cloud-to-Client pull stream for incremental delta updates
+	// Cloud-to-Client pull stream for incremental delta updates (legacy)
 	StreamPull(ctx context.Context, in *PullRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyncEvent], error)
+	// Cloud-to-Client pull stream for gap-safe monotonic change_log events (Phase 3)
+	StreamChanges(ctx context.Context, in *StreamChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangeEvent], error)
+	// Persistent bidirectional session stream for windowed push + server change notifications (Phase 4)
+	StreamSession(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SessionClientMsg, SessionServerMsg], error)
 }
 
 type syncServiceClient struct {
@@ -75,6 +81,38 @@ func (c *syncServiceClient) StreamPull(ctx context.Context, in *PullRequest, opt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type SyncService_StreamPullClient = grpc.ServerStreamingClient[SyncEvent]
 
+func (c *syncServiceClient) StreamChanges(ctx context.Context, in *StreamChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangeEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &SyncService_ServiceDesc.Streams[2], SyncService_StreamChanges_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamChangesRequest, ChangeEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SyncService_StreamChangesClient = grpc.ServerStreamingClient[ChangeEvent]
+
+func (c *syncServiceClient) StreamSession(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SessionClientMsg, SessionServerMsg], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &SyncService_ServiceDesc.Streams[3], SyncService_StreamSession_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SessionClientMsg, SessionServerMsg]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SyncService_StreamSessionClient = grpc.BidiStreamingClient[SessionClientMsg, SessionServerMsg]
+
 // SyncServiceServer is the server API for SyncService service.
 // All implementations must embed UnimplementedSyncServiceServer
 // for forward compatibility.
@@ -83,8 +121,12 @@ type SyncService_StreamPullClient = grpc.ServerStreamingClient[SyncEvent]
 type SyncServiceServer interface {
 	// Client-to-Cloud push stream for local outbox items
 	StreamPush(grpc.BidiStreamingServer[SyncEvent, SyncAck]) error
-	// Cloud-to-Client pull stream for incremental delta updates
+	// Cloud-to-Client pull stream for incremental delta updates (legacy)
 	StreamPull(*PullRequest, grpc.ServerStreamingServer[SyncEvent]) error
+	// Cloud-to-Client pull stream for gap-safe monotonic change_log events (Phase 3)
+	StreamChanges(*StreamChangesRequest, grpc.ServerStreamingServer[ChangeEvent]) error
+	// Persistent bidirectional session stream for windowed push + server change notifications (Phase 4)
+	StreamSession(grpc.BidiStreamingServer[SessionClientMsg, SessionServerMsg]) error
 	mustEmbedUnimplementedSyncServiceServer()
 }
 
@@ -100,6 +142,12 @@ func (UnimplementedSyncServiceServer) StreamPush(grpc.BidiStreamingServer[SyncEv
 }
 func (UnimplementedSyncServiceServer) StreamPull(*PullRequest, grpc.ServerStreamingServer[SyncEvent]) error {
 	return status.Error(codes.Unimplemented, "method StreamPull not implemented")
+}
+func (UnimplementedSyncServiceServer) StreamChanges(*StreamChangesRequest, grpc.ServerStreamingServer[ChangeEvent]) error {
+	return status.Error(codes.Unimplemented, "method StreamChanges not implemented")
+}
+func (UnimplementedSyncServiceServer) StreamSession(grpc.BidiStreamingServer[SessionClientMsg, SessionServerMsg]) error {
+	return status.Error(codes.Unimplemented, "method StreamSession not implemented")
 }
 func (UnimplementedSyncServiceServer) mustEmbedUnimplementedSyncServiceServer() {}
 func (UnimplementedSyncServiceServer) testEmbeddedByValue()                     {}
@@ -140,6 +188,24 @@ func _SyncService_StreamPull_Handler(srv interface{}, stream grpc.ServerStream) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type SyncService_StreamPullServer = grpc.ServerStreamingServer[SyncEvent]
 
+func _SyncService_StreamChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamChangesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SyncServiceServer).StreamChanges(m, &grpc.GenericServerStream[StreamChangesRequest, ChangeEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SyncService_StreamChangesServer = grpc.ServerStreamingServer[ChangeEvent]
+
+func _SyncService_StreamSession_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(SyncServiceServer).StreamSession(&grpc.GenericServerStream[SessionClientMsg, SessionServerMsg]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SyncService_StreamSessionServer = grpc.BidiStreamingServer[SessionClientMsg, SessionServerMsg]
+
 // SyncService_ServiceDesc is the grpc.ServiceDesc for SyncService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -158,6 +224,17 @@ var SyncService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "StreamPull",
 			Handler:       _SyncService_StreamPull_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamChanges",
+			Handler:       _SyncService_StreamChanges_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamSession",
+			Handler:       _SyncService_StreamSession_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "packages/core/grpc/syncpb/sync.proto",

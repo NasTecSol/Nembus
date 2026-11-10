@@ -230,7 +230,7 @@ WHERE cart_id = $1;
 
 -- name: GetCartTotals :one
 SELECT 
-    COALESCE(SUM(line_total - tax_amount), 0) as subtotal,
+    COALESCE(SUM(line_total - COALESCE(tax_amount, 0)), 0) as subtotal,
     COALESCE(SUM(discount_amount), 0) as total_discount,
     COALESCE(SUM(tax_amount), 0) as total_tax,
     COALESCE(SUM(line_total), 0) as total
@@ -475,6 +475,12 @@ WHERE store_id = $1
 ORDER BY order_date
 LIMIT $2 OFFSET $3;
 
+-- name: PatchSalesOrderV2Metadata :exec
+UPDATE sales_orders_v2
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
 -- name: UpdateSalesOrderV2 :one
 UPDATE sales_orders_v2
 SET customer_id = $2,
@@ -675,7 +681,7 @@ WHERE id = $1;
 
 -- name: GetOrderLineTotals :one
 SELECT 
-    COALESCE(SUM(line_total - tax_amount), 0) as subtotal,
+    COALESCE(SUM(line_total - COALESCE(tax_amount, 0)), 0) as subtotal,
     COALESCE(SUM(discount_amount), 0) as total_discount,
     COALESCE(SUM(tax_amount), 0) as total_tax,
     COALESCE(SUM(line_total), 0) as total

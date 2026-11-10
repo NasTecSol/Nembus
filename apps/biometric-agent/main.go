@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NasTecSol/nembus-biometric-agent/installer"
-	"github.com/NasTecSol/nembus-biometric-agent/setup"
+	"github.com/NasTecSol/nembus-core/biometrics/installer"
+	"github.com/NasTecSol/nembus-core/biometrics/setup"
 	"github.com/NasTecSol/nembus-biometric-agent/tray"
 	"github.com/NasTecSol/nembus-core/biometrics"
 )

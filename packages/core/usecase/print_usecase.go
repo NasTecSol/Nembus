@@ -8,7 +8,6 @@ import (
 	"github.com/NasTecSol/nembus-client/utils"
 	"github.com/NasTecSol/nembus-core/printing"
 	"github.com/NasTecSol/nembus-core/repository"
-	"github.com/google/uuid"
 )
 
 // PrintUseCase orchestrates receipt printing by fetching organisation branding
@@ -51,8 +50,9 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 		return utils.NewResponse(utils.CodeNotFound,
 			fmt.Sprintf("organisation %d not found: %s", input.OrgID, err.Error()), nil)
 	}
-	// The QR on a tax receipt must be the order's saved signed QR, and its
-	// report must be accepted. Never accept an arbitrary QR from the browser.
+	// The QR on a tax receipt must come from the saved signed document. A
+	// registered POS may print it while reporting is pending. Never accept an
+	// arbitrary QR from the browser.
 	input.Receipt.QRCodeBase64 = ""
 	qrStatus := "not_applicable"
 	if !strings.EqualFold(input.Receipt.Type, "Z-REPORT") && !strings.Contains(strings.ToUpper(input.Receipt.Type), "SUMMARY") {
@@ -60,21 +60,31 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 		if err != nil {
 			qrStatus = "unavailable"
 		} else if enabled {
-			qrStatus = "not_reported"
-			orderID := strings.TrimSpace(input.Receipt.SalesOrderID)
-			if orderID == "" {
-				orderID = strings.TrimSpace(input.Receipt.ReceiptNumber)
-			}
-			if _, err := uuid.Parse(orderID); err != nil {
+			state, err := uc.repo.GetReceiptZatcaState(tx, input.OrgID,
+				input.Receipt.SalesOrderID, input.Receipt.ReceiptNumber)
+			switch {
+			case err != nil:
+				// A missing/invalid sale or failed lookup is not proof that
+				// the transaction's terminal was unregistered.
 				qrStatus = "unavailable"
-			} else {
-				qr, err := uc.repo.GetReportedSalesOrderQR(tx, input.OrgID, orderID)
-				if err != nil || len(qr) > 2000 {
+			case state.Reported:
+				// Historical reported invoices retain their exact saved QR
+				// even after the device is deactivated or revoked.
+				if state.QRCode == "" || len(state.QRCode) > 2000 {
 					qrStatus = "unavailable"
-				} else if qr != "" {
-					input.Receipt.QRCodeBase64 = qr
+				} else {
+					input.Receipt.QRCodeBase64 = state.QRCode
 					qrStatus = "included"
 				}
+			case state.RegisteredPOS:
+				if state.QRCode != "" && len(state.QRCode) <= 2000 {
+					input.Receipt.QRCodeBase64 = state.QRCode
+					qrStatus = "pending"
+				} else {
+					qrStatus = "not_reported"
+				}
+			default:
+				qrStatus = "not_applicable"
 			}
 		}
 	}
@@ -113,7 +123,9 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 	}
 
 	message := "receipt printed successfully"
-	if qrStatus == "not_reported" || qrStatus == "unavailable" {
+	if qrStatus == "pending" {
+		message = "receipt printed with ZATCA QR; reporting is still pending"
+	} else if qrStatus == "not_reported" || qrStatus == "unavailable" {
 		message = "receipt printed without ZATCA QR; reporting is not complete or QR is unavailable"
 	}
 	return utils.NewResponse(utils.CodeOK, message, map[string]interface{}{

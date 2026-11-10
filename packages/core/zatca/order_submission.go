@@ -16,6 +16,13 @@ func (s *Service) orderDocument(ctx context.Context, id uuid.UUID) (*repository.
 	if !ok || repo == nil {
 		return nil, nil, fmt.Errorf("tenant repository is required for order ZATCA")
 	}
+	order, err := repo.GetSalesOrderV2(ctx, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load sales order before ZATCA submission: %w", err)
+	}
+	if order.FulfillmentStatus != repository.FulfillmentStatusFulfilled {
+		return nil, nil, fmt.Errorf("sales order must be fulfilled before ZATCA submission")
+	}
 	uc := usecase.NewZatcaUseCase(s.cfg)
 	uc.SetRepository(repo)
 	entry, err := uc.EnsureSalesOrderDocument(ctx, id)

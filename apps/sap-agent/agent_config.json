@@ -1,4 +1,5 @@
 {
+  "version": "v1.0.0",
   "port": 17890,
   "sqlite_path": "agent.db",
   "batch_size": 500,
@@ -9,13 +10,13 @@
   "invoice_start_date": "2026-10-01",
   "stock_movement_start_date": "2024-03-01",
   "onboarding_completed": true,
-  "tenant_slug": "nastecsol-main",
+  "tenant_slug": "stg",
   "tenant_name": "stg",
   "sap_company_db": "Qadsiya",
   "migrator_user": "admin",
   "migrator_password": "123456",
   "migrator_role": "auto-user",
-  "migrator_token": "migrator_sys_token_nastecsol-main_1792410202",
+  "migrator_token": "migrator_sys_token_stg_1793952549",
   "sap_user_mapping": "manager",
   "downstream_interval_sec": 300,
   "upstream_interval_sec": 60,
@@ -29,11 +30,11 @@
     "database": "Qadsiya",
     "encrypt": false,
     "trust_server_certificate": true,
-    "connection_timeout_seconds": 60
+    "connection_timeout_seconds": 15
   },
   "cloud": {
-    "base_url": "http://localhost:8080",
-    "api_key": "migrator_sys_token_nastecsol-main_1792410202",
+    "base_url": "https://nembus.nashrms.com",
+    "api_key": "migrator_sys_token_stg_1793952549",
     "organization_id": 1,
     "timeout_seconds": 60
   }

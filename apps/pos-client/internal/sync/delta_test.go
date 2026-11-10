@@ -145,6 +145,52 @@ func TestDeltaDataAndWatermarkCommitTogether(t *testing.T) {
 	}
 }
 
+func TestCustomerPullDoesNotOverwriteUnsentLocalCreation(t *testing.T) {
+	dsn := os.Getenv("NEMBUS_SYNC_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set NEMBUS_SYNC_TEST_DATABASE_URL to run PostgreSQL integration tests")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := fmt.Sprintf("customer_pull_test_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE") }()
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `
+		CREATE TABLE customers (id integer PRIMARY KEY, organization_id integer, customer_code text, name text);
+		CREATE TABLE sync_queue (entity_type text, entity_id bigint, status text);
+		CREATE TABLE sync_watermarks (entity_type text, store_id integer, last_sync_at timestamptz,
+			metadata jsonb, UNIQUE(entity_type,store_id));
+		INSERT INTO customers VALUES (12,1,'POS-12','Local customer');
+		INSERT INTO sync_queue VALUES ('customers',12,'failed')`); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSyncService(ctx, pool, "localhost:50051", "test")
+	event := &syncpb.SyncEvent{EntityId: 12, PayloadJson: []byte(`{"id":12,"organization_id":1,"customer_code":"CLOUD-12","name":"Cloud customer"}`)}
+	if err := s.saveDeltaPage(1, "customers", time.Now().UTC(), []*syncpb.SyncEvent{event}, 0); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	if err := pool.QueryRow(ctx, `SELECT name FROM customers WHERE id=12`).Scan(&name); err != nil || name != "Local customer" {
+		t.Fatalf("unsent customer was overwritten: name=%q err=%v", name, err)
+	}
+}
+
 type backlogSyncServer struct {
 	syncpb.UnimplementedSyncServiceServer
 	timestamp time.Time

@@ -201,8 +201,20 @@ var CardSchemeNames = map[string]string{
 	"GN": "GCC Net",
 }
 
+// ConnectionCheckResult is returned after probing the physical terminal
+type ConnectionCheckResult struct {
+	OK           bool   `json:"ok"`
+	Message      string `json:"message"`
+	TerminalID   string `json:"terminal_id,omitempty"`
+	MerchantID   string `json:"merchant_id,omitempty"`
+	MerchantInfo string `json:"merchant_info,omitempty"`
+}
+
 // TerminalConfig holds connection parameters
 type TerminalConfig struct {
+	// Enabled turns Geidea EFT integration on for this device (defaults true when unset)
+	Enabled *bool `json:"enabled,omitempty"`
+
 	// Mode is "network" (TCP) or "serial" (COM port)
 	Mode string `json:"mode"`
 

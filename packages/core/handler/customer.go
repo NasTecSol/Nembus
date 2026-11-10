@@ -10,17 +10,26 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type CustomerHandler struct {
-	useCase *usecase.CustomerUseCase
+	useCase           *usecase.CustomerUseCase
+	localCreationSync bool
 }
 
 func NewCustomerHandler(uc *usecase.CustomerUseCase) *CustomerHandler {
 	return &CustomerHandler{
 		useCase: uc,
 	}
+}
+
+// EnableLocalCreationSync is used by the POS server; cloud customer creation
+// continues to use its normal repository path.
+func (h *CustomerHandler) EnableLocalCreationSync() {
+	h.localCreationSync = true
 }
 
 func (h *CustomerHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
@@ -53,7 +62,30 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
+	createUC := h.useCase
+	var tx pgx.Tx
+	if h.localCreationSync {
+		pool, ok := c.Request.Context().Value(middleware.PoolKey).(*pgxpool.Pool)
+		if !ok || pool == nil {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "tenant database not available", nil))
+			return
+		}
+		var err error
+		tx, err = pool.Begin(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, err.Error(), nil))
+			return
+		}
+		defer tx.Rollback(c.Request.Context())
+		if err := prepareLocalCustomerID(c.Request.Context(), tx); err != nil {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, err.Error(), nil))
+			return
+		}
+		createUC = usecase.NewCustomerUseCase()
+		createUC.SetRepository(repo.WithTx(tx))
+	} else {
+		h.useCase.SetRepository(repo)
+	}
 
 	var req CreateCustomerRequest
 	if err := c.BindJSON(&req); err != nil {
@@ -87,7 +119,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.CreateCustomer(
+	resp := createUC.CreateCustomer(
 		c.Request.Context(),
 		req.OrganizationID,
 		req.CustomerCode,
@@ -102,6 +134,24 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 		req.IsActive,
 		metaBytes,
 	)
+	if tx != nil && resp.StatusCode < 400 {
+		customer, ok := resp.Data.(usecase.CustomerOutput)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "customer creation returned no ID", nil))
+			return
+		}
+		if _, err := tx.Exec(c.Request.Context(), `
+			INSERT INTO sync_queue (entity_type, entity_id, action, payload, status, priority)
+			SELECT 'customers', id, 'INSERT', row_to_json(customers)::jsonb, 'pending', 10
+			FROM customers WHERE id = $1`, customer.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "customer sync queue failed: "+err.Error(), nil))
+			return
+		}
+		if err := tx.Commit(c.Request.Context()); err != nil {
+			c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "customer commit failed: "+err.Error(), nil))
+			return
+		}
+	}
 	c.JSON(resp.StatusCode, resp)
 }
 

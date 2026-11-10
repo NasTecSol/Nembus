@@ -2670,7 +2670,7 @@ func (q *Queries) GetCartItemCount(ctx context.Context, cartID uuid.UUID) (GetCa
 
 const getCartTotals = `-- name: GetCartTotals :one
 SELECT 
-    COALESCE(SUM(line_total - tax_amount), 0) as subtotal,
+    COALESCE(SUM(line_total - COALESCE(tax_amount, 0)), 0) as subtotal,
     COALESCE(SUM(discount_amount), 0) as total_discount,
     COALESCE(SUM(tax_amount), 0) as total_tax,
     COALESCE(SUM(line_total), 0) as total
@@ -3239,7 +3239,7 @@ func (q *Queries) GetOrderLineMargin(ctx context.Context, salesOrderID uuid.UUID
 
 const getOrderLineTotals = `-- name: GetOrderLineTotals :one
 SELECT 
-    COALESCE(SUM(line_total - tax_amount), 0) as subtotal,
+    COALESCE(SUM(line_total - COALESCE(tax_amount, 0)), 0) as subtotal,
     COALESCE(SUM(discount_amount), 0) as total_discount,
     COALESCE(SUM(tax_amount), 0) as total_tax,
     COALESCE(SUM(line_total), 0) as total
@@ -6071,6 +6071,23 @@ type MergeGuestCartToCustomerParams struct {
 // Merge guest cart into customer cart when user logs in
 func (q *Queries) MergeGuestCartToCustomer(ctx context.Context, arg MergeGuestCartToCustomerParams) error {
 	_, err := q.db.Exec(ctx, mergeGuestCartToCustomer, arg.CartID, arg.CartID_2)
+	return err
+}
+
+const patchSalesOrderV2Metadata = `-- name: PatchSalesOrderV2Metadata :exec
+UPDATE sales_orders_v2
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type PatchSalesOrderV2MetadataParams struct {
+	ID      uuid.UUID       `json:"id"`
+	Column2 json.RawMessage `json:"column_2"`
+}
+
+func (q *Queries) PatchSalesOrderV2Metadata(ctx context.Context, arg PatchSalesOrderV2MetadataParams) error {
+	_, err := q.db.Exec(ctx, patchSalesOrderV2Metadata, arg.ID, arg.Column2)
 	return err
 }
 

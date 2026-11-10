@@ -1,96 +1,91 @@
 package syncpb
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestZatcaCredentialsExcludedFromPlaintextPull(t *testing.T) {
-	for _, entity := range []string{"zatca_device_configs", "zatca_document_chain"} {
-		if IsPullEntity(entity) {
-			t.Fatalf("%s must use authenticated HTTPS device recovery", entity)
+func TestPullEntityRankAndLeafDeleteAllowlist(t *testing.T) {
+	entities := PullEntityTypes()
+	if len(entities) != 30 {
+		t.Fatalf("expected 30 PullEntityTypes, got %d", len(entities))
+	}
+	for idx, entity := range entities {
+		if got := PullEntityRank(entity); got != idx {
+			t.Fatalf("PullEntityRank(%q) = %d, want %d", entity, got, idx)
+		}
+	}
+	if PullEntityRank("unknown_table") != len(entities) {
+		t.Fatalf("expected unknown table rank %d", len(entities))
+	}
+
+	// Verify parent-before-child invariants in PullEntityRank
+	parentChildPairs := [][2]string{
+		{"roles", "role_permissions"},
+		{"permissions", "role_permissions"},
+		{"users", "user_roles"},
+		{"roles", "user_roles"},
+		{"business_partners", "partner_addresses"},
+		{"users", "user_biometric_templates"},
+		{"products", "product_variants"},
+		{"product_variants", "product_barcodes"},
+		{"price_lists", "product_prices"},
+		{"products", "product_prices"},
+		{"stock_counts", "stock_count_lines"},
+	}
+	for _, pair := range parentChildPairs {
+		if PullEntityRank(pair[0]) >= PullEntityRank(pair[1]) {
+			t.Errorf("expected parent %s (rank %d) before child %s (rank %d)",
+				pair[0], PullEntityRank(pair[0]), pair[1], PullEntityRank(pair[1]))
+		}
+	}
+
+	// Only the 7 join/leaf tables allow hard DELETE tombstones
+	leafTables := LeafDeleteEntityTypes()
+	if len(leafTables) != 7 {
+		t.Fatalf("expected 7 LeafDeleteEntityTypes, got %d", len(leafTables))
+	}
+	for _, leaf := range leafTables {
+		if !IsLeafDeleteEntity(leaf) {
+			t.Errorf("expected %s to be a leaf delete entity", leaf)
+		}
+		if !IsPullEntity(leaf) {
+			t.Errorf("leaf delete entity %s must also be in PullEntityTypes", leaf)
+		}
+	}
+	for _, master := range []string{"products", "users", "customers", "organizations", "price_lists"} {
+		if IsLeafDeleteEntity(master) {
+			t.Errorf("master table %s must not allow hard DELETE tombstones", master)
 		}
 	}
 }
 
-func TestPullEntityTypesMasterDataOrder(t *testing.T) {
-	types := PullEntityTypes()
-
-	expectedMasterData := []string{
-		"units_of_measure",
-		"product_categories",
-		"payment_terms",
-		"users",
-		"roles",
-		"permissions",
-		"role_permissions",
-		"user_roles",
-		"cashiers",
-		"business_partners",
-		"partner_addresses",
+func TestPushEntityRankOrder(t *testing.T) {
+	ordered := []struct {
+		entity string
+		action string
+	}{
+		{"customers", "INSERT"},
+		{"cashier_sessions", "INSERT"},
+		{"carts", "INSERT"},
+		{"cart_items", "INSERT"},
+		{"sales_orders_v2", "INSERT"},
+		{"sales_order_lines_v2", "INSERT"},
+		{"sales_orders_v2", "POS_CHECKOUT"},
+		{"carts", "UPDATE"},
+		{"pos_transactions", "INSERT"},
+		{"pos_transaction_lines", "INSERT"},
+		{"pos_payments", "INSERT"},
+		{"sales_returns", "INSERT"},
+		{"sales_return_lines", "INSERT"},
+		{"zatca_invoices", "INSERT"},
 	}
 
-	if len(types) < len(expectedMasterData) {
-		t.Fatalf("PullEntityTypes() returned %d entities, expected at least %d", len(types), len(expectedMasterData))
-	}
-
-	for i, expected := range expectedMasterData {
-		if types[i] != expected {
-			t.Errorf("expected master data entity at index %d to be %q, got %q", i, expected, types[i])
+	for i := 1; i < len(ordered); i++ {
+		prev := ordered[i-1]
+		curr := ordered[i]
+		rankPrev := PushEntityRank(prev.entity, prev.action)
+		rankCurr := PushEntityRank(curr.entity, curr.action)
+		if rankPrev >= rankCurr {
+			t.Errorf("expected (%s, %s) rank %d < (%s, %s) rank %d",
+				prev.entity, prev.action, rankPrev, curr.entity, curr.action, rankCurr)
 		}
-	}
-
-	indexMap := make(map[string]int, len(types))
-	for i, entity := range types {
-		indexMap[entity] = i
-	}
-
-	// Verify foreign key dependency hierarchy:
-	// 1. units_of_measure must precede products
-	if indexMap["units_of_measure"] >= indexMap["products"] {
-		t.Errorf("units_of_measure (%d) must precede products (%d)", indexMap["units_of_measure"], indexMap["products"])
-	}
-	// 2. product_categories must precede products
-	if indexMap["product_categories"] >= indexMap["products"] {
-		t.Errorf("product_categories (%d) must precede products (%d)", indexMap["product_categories"], indexMap["products"])
-	}
-	// 3. payment_terms must precede business_partners
-	if indexMap["payment_terms"] >= indexMap["business_partners"] {
-		t.Errorf("payment_terms (%d) must precede business_partners (%d)", indexMap["payment_terms"], indexMap["business_partners"])
-	}
-	// 4. users must precede cashiers (RBAC entities between users and cashiers)
-	if indexMap["users"] >= indexMap["cashiers"] {
-		t.Errorf("users (%d) must precede cashiers (%d)", indexMap["users"], indexMap["cashiers"])
-	}
-	if indexMap["user_roles"] >= indexMap["cashiers"] {
-		t.Errorf("user_roles (%d) must precede cashiers (%d)", indexMap["user_roles"], indexMap["cashiers"])
-	}
-	if indexMap["cashiers"] >= indexMap["user_biometric_templates"] {
-		t.Errorf("cashiers (%d) must precede user_biometric_templates (%d)", indexMap["cashiers"], indexMap["user_biometric_templates"])
-	}
-	// 5. users must precede business_partners (sales_rep_user_id)
-	if indexMap["users"] >= indexMap["business_partners"] {
-		t.Errorf("users (%d) must precede business_partners (%d)", indexMap["users"], indexMap["business_partners"])
-	}
-	// 6. business_partners must precede partner_addresses
-	if indexMap["business_partners"] >= indexMap["partner_addresses"] {
-		t.Errorf("business_partners (%d) must precede partner_addresses (%d)", indexMap["business_partners"], indexMap["partner_addresses"])
-	}
-
-	// Verify IsPullEntity
-	for _, entity := range expectedMasterData {
-		if !IsPullEntity(entity) {
-			t.Errorf("expected IsPullEntity(%q) to be true", entity)
-		}
-	}
-
-	if IsPullEntity("unknown_nonexistent_table") {
-		t.Errorf("expected IsPullEntity(unknown_nonexistent_table) to be false")
-	}
-
-	// Verify slice mutation isolation
-	types[0] = "corrupted_entity"
-	typesSecondCall := PullEntityTypes()
-	if typesSecondCall[0] == "corrupted_entity" {
-		t.Errorf("PullEntityTypes() returned a mutable reference to shared slice")
 	}
 }

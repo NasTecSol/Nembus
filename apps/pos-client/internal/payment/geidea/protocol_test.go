@@ -88,6 +88,15 @@ func TestBuildCancelBuffer(t *testing.T) {
 	}
 }
 
+func TestBuildGetMerchantInfoBuffer(t *testing.T) {
+	buf := BuildGetMerchantInfoBuffer()
+	expectedHex := "010003ff010af7"
+	gotHex := hex.EncodeToString(buf)
+	if gotHex != expectedHex {
+		t.Errorf("expected %s, got %s", expectedHex, gotHex)
+	}
+}
+
 func TestBuildCheckStatusBuffer(t *testing.T) {
 	buf := BuildCheckStatusBuffer()
 	expectedHex := "010003ff0104f9"

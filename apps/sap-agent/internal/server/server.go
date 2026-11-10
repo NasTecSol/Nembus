@@ -9,32 +9,38 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-
 	"github.com/NasTecSol/nembus-sap/contracts"
+	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/discovery"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
+	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
+	"github.com/NasTecSol/nembus-sap-agent/internal/pipeline"
 	"github.com/NasTecSol/nembus-sap-agent/internal/reconciliation"
+	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
 	"github.com/kardianos/service"
 )
 
 type Server struct {
-	cfg         *config.AgentConfig
-	engine      *etl.Engine
-	sqlite      *db.SQLiteStore
-	mssql       *db.MSSQLClient
-	cloudClient *transport.CloudClient
-	pgPool      *pgxpool.Pool
-	router      *gin.Engine
-	uiFS        embed.FS
+	cfg          *config.AgentConfig
+	engine       *etl.Engine
+	sqlite       *db.SQLiteStore
+	mssql        *db.MSSQLClient
+	cloudClient  *transport.CloudClient
+	upstreamSync *pipeline.UpstreamSync
+	upstreamMu   sync.Mutex
+	pgPool       *pgxpool.Pool
+	router       *gin.Engine
+	uiFS         embed.FS
 }
 
 func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteStore, mssql *db.MSSQLClient, cloudClient *transport.CloudClient, uiFS embed.FS) *Server {
@@ -102,6 +108,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/sync/status", s.handleGetSyncStatus)
 		api.POST("/sync/downstream/run", s.handleRunDownstreamSync)
 		api.POST("/sync/upstream/run", s.handleRunUpstreamSync)
+		api.GET("/sync/upstream/outbox", s.handleGetUpstreamOutbox)
 
 		// Migration Control (ETL)
 		api.POST("/migration/start", s.handleStartMigration)
@@ -121,9 +128,60 @@ func (s *Server) setupRoutes() {
 	}
 }
 
+// DownstreamMasterDomains defines the core master data domains synchronized from SAP to Nembus
+var DownstreamMasterDomains = []contracts.DomainType{
+	contracts.DomainUOM,
+	contracts.DomainUOMGroups,
+	contracts.DomainCategories,
+	contracts.DomainBrands,
+	contracts.DomainProducts,
+	contracts.DomainBarcodes,
+	contracts.DomainPriceLists,
+	contracts.DomainInventory,
+}
+
 func (s *Server) Start(port int) error {
+	go s.startDownstreamScheduler()
+	go s.startUpstreamScheduler()
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	return s.router.Run(addr)
+}
+
+func (s *Server) startDownstreamScheduler() {
+	time.Sleep(15 * time.Second)
+	for {
+		cfg := config.Get()
+		interval := cfg.DownstreamIntervalSec
+		if interval <= 0 {
+			interval = 300
+		}
+
+		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
+			log.Printf("[SAP-AGENT] Running scheduled downstream sync (interval: %ds)...", interval)
+			if _, err := s.engine.StartMigration(context.Background(), contracts.MigrationModeIncremental, DownstreamMasterDomains); err != nil {
+				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
+			}
+		}
+
+		time.Sleep(time.Duration(interval) * time.Second)
+	}
+}
+
+func (s *Server) startUpstreamScheduler() {
+	time.Sleep(25 * time.Second)
+	for {
+		cfg := config.Get()
+		interval := cfg.UpstreamIntervalSec
+		if interval <= 0 {
+			interval = 60
+		}
+
+		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
+			_, _ = s.runUpstreamSync(context.Background())
+		}
+
+		time.Sleep(time.Duration(interval) * time.Second)
+	}
 }
 
 // Handlers
@@ -184,6 +242,14 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 		return
 	}
 
+	s.cfg = current
+	if s.engine != nil {
+		s.engine.UpdateCloudConfig(current.Cloud)
+	}
+	if s.cloudClient != nil {
+		s.cloudClient.UpdateConfig(current.Cloud)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"success": true, "config": current})
 }
 
@@ -228,6 +294,16 @@ func (s *Server) handleOnboardingTenants(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err == nil && req.BaseURL != "" {
 		cfg.BaseURL = req.BaseURL
+		current := config.Get()
+		current.Cloud.BaseURL = req.BaseURL
+		_ = config.SaveConfig(current)
+		s.cfg = current
+		if s.engine != nil {
+			s.engine.UpdateCloudConfig(current.Cloud)
+		}
+		if s.cloudClient != nil {
+			s.cloudClient.UpdateConfig(current.Cloud)
+		}
 	}
 
 	url := fmt.Sprintf("%s/api/tenants/active", cfg.BaseURL)
@@ -342,6 +418,9 @@ func (s *Server) handleOnboardingLogin(c *gin.Context) {
 
 	// Update in-memory and persisted config
 	current := config.Get()
+	if req.BaseURL != "" {
+		current.Cloud.BaseURL = req.BaseURL
+	}
 	current.MigratorUser = req.UserLogin
 	current.MigratorPassword = req.Password
 	current.MigratorRole = "auto-user"
@@ -354,6 +433,13 @@ func (s *Server) handleOnboardingLogin(c *gin.Context) {
 		current.TenantSlug = req.TenantSlug
 	}
 	_ = config.SaveConfig(current)
+	s.cfg = current
+	if s.engine != nil {
+		s.engine.UpdateCloudConfig(current.Cloud)
+	}
+	if s.cloudClient != nil {
+		s.cloudClient.UpdateConfig(current.Cloud)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -446,6 +532,14 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		return
 	}
 
+	s.cfg = current
+	if s.engine != nil {
+		s.engine.UpdateCloudConfig(current.Cloud)
+	}
+	if s.cloudClient != nil {
+		s.cloudClient.UpdateConfig(current.Cloud)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Onboarding finalized successfully! System pipelines and security layer activated.",
@@ -487,6 +581,12 @@ func (s *Server) handleGetDomains(c *gin.Context) {
 func (s *Server) handleGetSyncStatus(c *gin.Context) {
 	cfg := config.Get()
 
+	posted, held, errors, lastFlush, _ := s.sqlite.GetUpstreamStats(c.Request.Context())
+	lastFlushStr := time.Now().Add(-1 * time.Minute).Format(time.RFC3339)
+	if lastFlush != nil {
+		lastFlushStr = lastFlush.Format(time.RFC3339)
+	}
+
 	// Compute sync state
 	c.JSON(http.StatusOK, gin.H{
 		"downstream": gin.H{
@@ -504,11 +604,11 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 		"upstream": gin.H{
 			"status":            "active",
 			"interval_seconds":  cfg.UpstreamIntervalSec,
-			"last_sync_time":    time.Now().Add(-45 * time.Second).Format(time.RFC3339),
-			"posted_invoices":   142,
-			"posted_payments":   142,
-			"pending_outbox":    0,
-			"errors_count":      0,
+			"last_sync_time":    lastFlushStr,
+			"posted_invoices":   posted,
+			"posted_payments":   posted,
+			"pending_outbox":    held,
+			"errors_count":      errors,
 			"next_sync_seconds": 15,
 		},
 		"reconciliation": gin.H{
@@ -523,20 +623,120 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 
 func (s *Server) handleRunDownstreamSync(c *gin.Context) {
 	log.Println("[SAP-AGENT] Manual Downstream Master Data Sync triggered")
+
+	var req struct {
+		Domains []contracts.DomainType `json:"domains"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	domains := req.Domains
+	if len(domains) == 0 {
+		domains = DownstreamMasterDomains
+	}
+
+	run, err := s.engine.StartMigration(c.Request.Context(), contracts.MigrationModeIncremental, domains)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("Failed to start downstream sync: %v", err),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Downstream sync job dispatched. Synchronizing SAP Master Data to Nembus Cloud.",
+		"success":   true,
+		"message":   fmt.Sprintf("Downstream sync started (Run ID: %s)", run.ID),
+		"run_id":    run.ID,
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
 
+func (s *Server) handleGetUpstreamOutbox(c *gin.Context) {
+	if s.sqlite == nil {
+		c.JSON(http.StatusOK, gin.H{"success": true, "dispatches": []interface{}{}})
+		return
+	}
+	dispatches, err := s.sqlite.GetUpstreamDispatches(c.Request.Context(), 50)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error(), "dispatches": []interface{}{}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "dispatches": dispatches})
+}
+
 func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 	log.Println("[SAP-AGENT] Manual Upstream Outbox Sync triggered")
+	stats, err := s.runUpstreamSync(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("Upstream sync notice: %v", err),
+			"stats":   stats,
+		})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Upstream sync job dispatched. Posting pending Nembus POS transactions to SAP B1.",
+		"success":   true,
+		"message":   fmt.Sprintf("Upstream sync completed: %d transactions posted, %d returns posted, %d errors", stats.TransactionsPosted, stats.ReturnsPosted, stats.Errors),
+		"stats":     stats,
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
+}
+
+func (s *Server) runUpstreamSync(ctx context.Context) (*pipeline.UpstreamStats, error) {
+	s.upstreamMu.Lock()
+	defer s.upstreamMu.Unlock()
+
+	cfg := config.Get()
+	if s.upstreamSync == nil {
+		pipeCfg := &legacyconfig.Config{
+			SAPServiceLayerURL:     fmt.Sprintf("https://%s:50000/b1s/v1", cfg.MSSQL.Host),
+			SAPCompanyDB:           cfg.SAPCompanyDB,
+			SAPUsername:            cfg.SAPUserMapping,
+			SAPInsecureSkipSSL:     true,
+			SAPMSSQLEnabled:        true,
+			SAPMSSQLHost:           cfg.MSSQL.Host,
+			SAPMSSQLPort:           cfg.MSSQL.Port,
+			SAPMSSQLDatabase:       cfg.MSSQL.Database,
+			SAPMSSQLUser:           cfg.MSSQL.User,
+			SAPMSSQLPassword:       cfg.MSSQL.Password,
+			NembusOrganizationID:   int32(cfg.Cloud.OrganizationID),
+			NembusStoreID:          1,
+			NembusDefaultCustomer:  "C000001",
+			NembusDefaultWarehouse: cfg.DefaultStoreCode,
+			BatchSize:              cfg.BatchSize,
+		}
+		if pipeCfg.NembusDefaultWarehouse == "" {
+			pipeCfg.NembusDefaultWarehouse = "01"
+		}
+		if pipeCfg.SAPCompanyDB == "" {
+			pipeCfg.SAPCompanyDB = cfg.MSSQL.Database
+		}
+
+		sapClient, err := sap.NewClient(pipeCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize SAP client for upstream: %w", err)
+		}
+
+		var nembusClient pipeline.NembusClient
+		if s.pgPool != nil {
+			nembusClient = nembus.NewClientWithPool(pipeCfg, s.pgPool)
+		} else if cfg.Cloud.DatabaseURL != "" {
+			pool, err := pgxpool.New(ctx, cfg.Cloud.DatabaseURL)
+			if err == nil {
+				s.pgPool = pool
+				nembusClient = nembus.NewClientWithPool(pipeCfg, pool)
+			}
+		}
+
+		if nembusClient == nil {
+			return &pipeline.UpstreamStats{}, nil
+		}
+
+		s.upstreamSync = pipeline.NewUpstreamSync(pipeCfg, sapClient, nembusClient, s.sqlite)
+	}
+
+	return s.upstreamSync.ProcessOutbox(ctx)
 }
 
 
@@ -570,6 +770,22 @@ func (s *Server) handleTestCloud(c *gin.Context) {
 	var req config.CloudConfig
 	if err := c.ShouldBindJSON(&req); err == nil && req.BaseURL != "" {
 		cfg = req
+		current := config.Get()
+		current.Cloud.BaseURL = req.BaseURL
+		if req.DatabaseURL != "" {
+			current.Cloud.DatabaseURL = req.DatabaseURL
+		}
+		if req.TimeoutSeconds > 0 {
+			current.Cloud.TimeoutSeconds = req.TimeoutSeconds
+		}
+		_ = config.SaveConfig(current)
+		s.cfg = current
+		if s.engine != nil {
+			s.engine.UpdateCloudConfig(current.Cloud)
+		}
+		if s.cloudClient != nil {
+			s.cloudClient.UpdateConfig(current.Cloud)
+		}
 	}
 
 	client := transport.NewCloudClient(cfg)
@@ -611,12 +827,31 @@ func (s *Server) handleDiscovery(c *gin.Context) {
 
 func (s *Server) handleStartMigration(c *gin.Context) {
 	var req struct {
-		Mode    contracts.MigrationMode `json:"mode"`
-		Domains []contracts.DomainType  `json:"domains"`
+		Mode     contracts.MigrationMode `json:"mode"`
+		Domains  []contracts.DomainType  `json:"domains"`
+		BaseURL  string                  `json:"base_url"`
+		CloudURL string                  `json:"cloud_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	targetURL := req.BaseURL
+	if targetURL == "" {
+		targetURL = req.CloudURL
+	}
+	if targetURL != "" {
+		current := config.Get()
+		current.Cloud.BaseURL = targetURL
+		_ = config.SaveConfig(current)
+		s.cfg = current
+		if s.engine != nil {
+			s.engine.UpdateCloudConfig(current.Cloud)
+		}
+		if s.cloudClient != nil {
+			s.cloudClient.UpdateConfig(current.Cloud)
+		}
 	}
 
 	run, err := s.engine.StartMigration(c.Request.Context(), req.Mode, req.Domains)
