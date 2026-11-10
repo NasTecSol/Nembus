@@ -73,7 +73,7 @@ func TestOrderCheckAndSubmitUseSavedDocumentAndMatchingCredentialPairs(t *testin
 		_, _ = w.Write([]byte(`{"reportingStatus":"REPORTED","validationResults":{"status":"PASS","errorMessages":[]}}`))
 	}))
 	defer gateway.Close()
-	db := &orderSubmissionDB{order: repository.SalesOrdersV2{ID: id}, submissionDB: submissionDB{
+	db := &orderSubmissionDB{order: repository.SalesOrdersV2{ID: id, FulfillmentStatus: repository.FulfillmentStatusFulfilled}, submissionDB: submissionDB{
 		chain:  repository.ZatcaDocumentChain{ID: 1, EntityType: usecase.ZatcaSalesOrderEntity, EntityID: id.String(), OrganizationID: 1, DeviceConfigID: 3, ZatcaUuid: docID, XmlHash: "saved-order-hash", SignedXml: pgtype.Text{String: "saved-order-xml", Valid: true}},
 		device: repository.ZatcaDeviceConfig{ID: 3, OrganizationID: 1, IsActive: pgtype.Bool{Bool: true, Valid: true}, ZatcaEnv: pgtype.Text{String: "simulation", Valid: true}, ComplianceCsid: pgtype.Text{String: "ccsid", Valid: true}, ProductionCsid: pgtype.Text{String: "pcsid", Valid: true}, Metadata: []byte(`{"compliance_secret":"cc-secret","production_secret":"pc-secret","onboarding_stage":"production"}`)},
 	}}
