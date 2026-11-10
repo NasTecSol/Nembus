@@ -717,6 +717,22 @@ type CashierSession struct {
 	UpdatedAt            pgtype.Timestamp `json:"updated_at"`
 }
 
+type ChangeLog struct {
+	Seq        int64           `json:"seq"`
+	EntityType string          `json:"entity_type"`
+	EntityID   int64           `json:"entity_id"`
+	Op         string          `json:"op"`
+	Payload    json.RawMessage `json:"payload"`
+	ChangedAt  time.Time       `json:"changed_at"`
+}
+
+type ChangeLogMetum struct {
+	ID               int16     `json:"id"`
+	CompactedUpToSeq int64     `json:"compacted_up_to_seq"`
+	MinRetainedSeq   int64     `json:"min_retained_seq"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 type ChartOfAccount struct {
 	ID              int32            `json:"id"`
 	OrganizationID  int32            `json:"organization_id"`
@@ -1501,15 +1517,17 @@ type PosPayment struct {
 }
 
 type PosTerminal struct {
-	ID           int32            `json:"id"`
-	StoreID      int32            `json:"store_id"`
-	TerminalCode string           `json:"terminal_code"`
-	TerminalName pgtype.Text      `json:"terminal_name"`
-	DeviceID     pgtype.Text      `json:"device_id"`
-	IsActive     pgtype.Bool      `json:"is_active"`
-	Metadata     json.RawMessage  `json:"metadata"`
-	CreatedAt    pgtype.Timestamp `json:"created_at"`
-	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	ID            int32              `json:"id"`
+	StoreID       int32              `json:"store_id"`
+	TerminalCode  string             `json:"terminal_code"`
+	TerminalName  pgtype.Text        `json:"terminal_name"`
+	DeviceID      pgtype.Text        `json:"device_id"`
+	SyncTokenHash pgtype.Text        `json:"sync_token_hash"`
+	TokenIssuedAt pgtype.Timestamptz `json:"token_issued_at"`
+	IsActive      pgtype.Bool        `json:"is_active"`
+	Metadata      json.RawMessage    `json:"metadata"`
+	CreatedAt     pgtype.Timestamp   `json:"created_at"`
+	UpdatedAt     pgtype.Timestamp   `json:"updated_at"`
 }
 
 type PosTransaction struct {
@@ -2738,6 +2756,16 @@ type SubmenuPermission struct {
 	SubmenuID    int32           `json:"submenu_id"`
 	PermissionID int32           `json:"permission_id"`
 	Metadata     json.RawMessage `json:"metadata"`
+}
+
+type SyncInbox struct {
+	OutboxUuid uuid.UUID   `json:"outbox_uuid"`
+	DeviceID   string      `json:"device_id"`
+	StoreID    int32       `json:"store_id"`
+	BatchID    pgtype.Text `json:"batch_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   int64       `json:"entity_id"`
+	AppliedAt  time.Time   `json:"applied_at"`
 }
 
 type SyncWatermark struct {

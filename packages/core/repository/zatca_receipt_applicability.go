@@ -54,6 +54,30 @@ func (q *Queries) GetReceiptZatcaState(ctx context.Context, organizationID int32
    WHERE s.organization_id=$1 AND $2::uuid IS NULL AND t.transaction_number=$3
  ), sale AS (
    SELECT * FROM sale_candidates ORDER BY priority LIMIT 1
+ ), saved_document AS (
+   SELECT c.qr_code_base64, c.id AS sort_id, 0 AS source_priority
+   FROM zatca_document_chain c JOIN sale s ON s.organization_id=c.organization_id
+   WHERE NULLIF(c.qr_code_base64,'') IS NOT NULL
+     AND ((c.entity_type='sales_order_v2' AND c.entity_id=s.order_id::text)
+       OR (c.entity_type='pos_transaction' AND
+           (c.entity_id=s.transaction_id::text OR EXISTS (
+              SELECT 1 FROM pos_transactions t
+              WHERE t.sales_order_id=s.order_id AND t.id::text=c.entity_id
+                AND t.store_id=s.store_id AND t.pos_terminal_id=s.pos_terminal_id
+           ))))
+   UNION ALL
+   -- POS checkout also persists the signed order QR in transaction metadata.
+   -- That snapshot can be available before the document-chain sync reaches
+   -- the database serving receipt printing.
+   SELECT NULLIF(t.metadata->>'qr_code_base64',''), t.id::bigint, 1
+   FROM pos_transactions t JOIN sale s ON t.id::bigint=s.transaction_id
+   WHERE NULLIF(t.metadata->>'qr_code_base64','') IS NOT NULL
+   UNION ALL
+   SELECT NULLIF(t.metadata->>'qr_code_base64',''), t.id::bigint, 1
+   FROM pos_transactions t JOIN sale s ON t.sales_order_id=s.order_id
+   WHERE NULLIF(t.metadata->>'qr_code_base64','') IS NOT NULL
+     AND t.store_id=s.store_id AND t.pos_terminal_id=s.pos_terminal_id
+   ORDER BY source_priority, sort_id DESC LIMIT 1
  ), reported_document AS (
    SELECT c.qr_code_base64
    FROM zatca_document_chain c JOIN sale s ON s.organization_id=c.organization_id
@@ -67,7 +91,8 @@ func (q *Queries) GetReceiptZatcaState(ctx context.Context, organizationID int32
            ))))
    ORDER BY c.id DESC LIMIT 1
  )
- SELECT COALESCE((SELECT qr_code_base64 FROM reported_document),''),
+ SELECT COALESCE((SELECT qr_code_base64 FROM reported_document),
+                 (SELECT qr_code_base64 FROM saved_document),''),
         EXISTS(SELECT 1 FROM reported_document),
         EXISTS(SELECT 1 FROM zatca_device_configs d
                WHERE d.organization_id=s.organization_id AND d.store_id=s.store_id

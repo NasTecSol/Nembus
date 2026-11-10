@@ -37,6 +37,11 @@ type SyncEvent struct {
 	ChunkOffset   uint64                 `protobuf:"varint,10,opt,name=chunk_offset,json=chunkOffset,proto3" json:"chunk_offset,omitempty"`      // Byte offset for chunked messages (0 if unchunked)
 	IsLastChunk   bool                   `protobuf:"varint,11,opt,name=is_last_chunk,json=isLastChunk,proto3" json:"is_last_chunk,omitempty"`    // True if last chunk or single-chunk message
 	CorrelationId string                 `protobuf:"bytes,12,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"` // Group identifier for atomic transaction batches
+	OutboxUuid    string                 `protobuf:"bytes,13,opt,name=outbox_uuid,json=outboxUuid,proto3" json:"outbox_uuid,omitempty"`          // Globally unique outbox item UUID for idempotent inbox deduplication
+	DeviceId      string                 `protobuf:"bytes,14,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`                // POS device identifier
+	BatchId       string                 `protobuf:"bytes,15,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`                   // Correlation batch identifier (empty = legacy single-event apply)
+	BatchSize     int32                  `protobuf:"varint,16,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`            // Total events in this correlation batch
+	SeqInBatch    int32                  `protobuf:"varint,17,opt,name=seq_in_batch,json=seqInBatch,proto3" json:"seq_in_batch,omitempty"`       // 1-based position within the batch (1..batch_size)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -155,16 +160,55 @@ func (x *SyncEvent) GetCorrelationId() string {
 	return ""
 }
 
-// SyncAck acknowledges receipt and processing of a SyncEvent
+func (x *SyncEvent) GetOutboxUuid() string {
+	if x != nil {
+		return x.OutboxUuid
+	}
+	return ""
+}
+
+func (x *SyncEvent) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *SyncEvent) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *SyncEvent) GetBatchSize() int32 {
+	if x != nil {
+		return x.BatchSize
+	}
+	return 0
+}
+
+func (x *SyncEvent) GetSeqInBatch() int32 {
+	if x != nil {
+		return x.SeqInBatch
+	}
+	return 0
+}
+
+// SyncAck acknowledges receipt and processing of a SyncEvent or atomic correlation batch
 type SyncAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`                                        // ID matching SyncEvent
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`                                        // ID matching SyncEvent (last event ID for batch acks)
 	EntityType    string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`       // Entity type acknowledged
 	EntityId      int64                  `protobuf:"varint,3,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`            // Entity primary key ID
 	Success       bool                   `protobuf:"varint,4,opt,name=success,proto3" json:"success,omitempty"`                              // True if successfully applied
 	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Error details if failed
 	Sha256        string                 `protobuf:"bytes,6,opt,name=sha256,proto3" json:"sha256,omitempty"`                                 // SHA-256 checksum verified by receiver
 	ProcessedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=processed_at,json=processedAt,proto3" json:"processed_at,omitempty"`    // Processing completion timestamp
+	BatchId       string                 `protobuf:"bytes,8,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`                // Correlation batch ID acknowledged
+	OutboxUuid    string                 `protobuf:"bytes,9,opt,name=outbox_uuid,json=outboxUuid,proto3" json:"outbox_uuid,omitempty"`       // Outbox UUID acknowledged (or failed item's UUID)
+	FailedSeq     int32                  `protobuf:"varint,10,opt,name=failed_seq,json=failedSeq,proto3" json:"failed_seq,omitempty"`        // 1-based seq_in_batch of offending event on batch failure
+	SqlState      string                 `protobuf:"bytes,11,opt,name=sql_state,json=sqlState,proto3" json:"sql_state,omitempty"`            // 5-char PostgreSQL SQLSTATE if failed due to DB error
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,7 +292,35 @@ func (x *SyncAck) GetProcessedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// PullRequest initiates incremental delta-fetch from Cloud
+func (x *SyncAck) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *SyncAck) GetOutboxUuid() string {
+	if x != nil {
+		return x.OutboxUuid
+	}
+	return ""
+}
+
+func (x *SyncAck) GetFailedSeq() int32 {
+	if x != nil {
+		return x.FailedSeq
+	}
+	return 0
+}
+
+func (x *SyncAck) GetSqlState() string {
+	if x != nil {
+		return x.SqlState
+	}
+	return ""
+}
+
+// PullRequest initiates incremental delta-fetch from Cloud (legacy)
 type PullRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TenantSlug    string                 `protobuf:"bytes,1,opt,name=tenant_slug,json=tenantSlug,proto3" json:"tenant_slug,omitempty"`    // Tenant slug
@@ -325,11 +397,408 @@ func (x *PullRequest) GetLimit() int32 {
 	return 0
 }
 
+// StreamChangesRequest initiates gap-safe change_log pull from Cloud
+type StreamChangesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantSlug    string                 `protobuf:"bytes,1,opt,name=tenant_slug,json=tenantSlug,proto3" json:"tenant_slug,omitempty"` // Tenant slug
+	StoreId       int32                  `protobuf:"varint,2,opt,name=store_id,json=storeId,proto3" json:"store_id,omitempty"`         // Local store ID
+	FromSeq       int64                  `protobuf:"varint,3,opt,name=from_seq,json=fromSeq,proto3" json:"from_seq,omitempty"`         // Exclusive lower bound change_log sequence cursor
+	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`                            // Maximum events to stream in this page
+	DeviceId      string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`       // POS device identifier
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamChangesRequest) Reset() {
+	*x = StreamChangesRequest{}
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamChangesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamChangesRequest) ProtoMessage() {}
+
+func (x *StreamChangesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamChangesRequest.ProtoReflect.Descriptor instead.
+func (*StreamChangesRequest) Descriptor() ([]byte, []int) {
+	return file_packages_core_grpc_syncpb_sync_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StreamChangesRequest) GetTenantSlug() string {
+	if x != nil {
+		return x.TenantSlug
+	}
+	return ""
+}
+
+func (x *StreamChangesRequest) GetStoreId() int32 {
+	if x != nil {
+		return x.StoreId
+	}
+	return 0
+}
+
+func (x *StreamChangesRequest) GetFromSeq() int64 {
+	if x != nil {
+		return x.FromSeq
+	}
+	return 0
+}
+
+func (x *StreamChangesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *StreamChangesRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+// ChangeEvent represents a single change_log entry streamed from Cloud to POS
+type ChangeEvent struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Seq            int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`                                               // Monotonic change_log sequence ID
+	EntityType     string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`                // Replicated entity table name
+	EntityId       int64                  `protobuf:"varint,3,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`                     // Primary key ID
+	Op             string                 `protobuf:"bytes,4,opt,name=op,proto3" json:"op,omitempty"`                                                  // INSERT, UPDATE, or DELETE
+	PayloadJson    []byte                 `protobuf:"bytes,5,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`             // Row JSON payload (null/optional for DELETE)
+	Sha256         string                 `protobuf:"bytes,6,opt,name=sha256,proto3" json:"sha256,omitempty"`                                          // SHA-256 hex checksum of payload_json
+	ChangedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=changed_at,json=changedAt,proto3" json:"changed_at,omitempty"`                   // Timestamp when the change was recorded
+	IsSnapshotMode bool                   `protobuf:"varint,8,opt,name=is_snapshot_mode,json=isSnapshotMode,proto3" json:"is_snapshot_mode,omitempty"` // True when catching up across compacted change_log history
+	SnapshotMaxSeq int64                  `protobuf:"varint,9,opt,name=snapshot_max_seq,json=snapshotMaxSeq,proto3" json:"snapshot_max_seq,omitempty"` // Target sequence cursor to advance to once snapshot catchup finishes
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ChangeEvent) Reset() {
+	*x = ChangeEvent{}
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeEvent) ProtoMessage() {}
+
+func (x *ChangeEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeEvent.ProtoReflect.Descriptor instead.
+func (*ChangeEvent) Descriptor() ([]byte, []int) {
+	return file_packages_core_grpc_syncpb_sync_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ChangeEvent) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *ChangeEvent) GetEntityType() string {
+	if x != nil {
+		return x.EntityType
+	}
+	return ""
+}
+
+func (x *ChangeEvent) GetEntityId() int64 {
+	if x != nil {
+		return x.EntityId
+	}
+	return 0
+}
+
+func (x *ChangeEvent) GetOp() string {
+	if x != nil {
+		return x.Op
+	}
+	return ""
+}
+
+func (x *ChangeEvent) GetPayloadJson() []byte {
+	if x != nil {
+		return x.PayloadJson
+	}
+	return nil
+}
+
+func (x *ChangeEvent) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *ChangeEvent) GetChangedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ChangedAt
+	}
+	return nil
+}
+
+func (x *ChangeEvent) GetIsSnapshotMode() bool {
+	if x != nil {
+		return x.IsSnapshotMode
+	}
+	return false
+}
+
+func (x *ChangeEvent) GetSnapshotMaxSeq() int64 {
+	if x != nil {
+		return x.SnapshotMaxSeq
+	}
+	return 0
+}
+
+// SessionClientMsg is sent by POS over the persistent StreamSession RPC
+type SessionClientMsg struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*SessionClientMsg_PushEvent
+	//	*SessionClientMsg_PullAckSeq
+	Msg           isSessionClientMsg_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionClientMsg) Reset() {
+	*x = SessionClientMsg{}
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionClientMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionClientMsg) ProtoMessage() {}
+
+func (x *SessionClientMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionClientMsg.ProtoReflect.Descriptor instead.
+func (*SessionClientMsg) Descriptor() ([]byte, []int) {
+	return file_packages_core_grpc_syncpb_sync_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SessionClientMsg) GetMsg() isSessionClientMsg_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *SessionClientMsg) GetPushEvent() *SyncEvent {
+	if x != nil {
+		if x, ok := x.Msg.(*SessionClientMsg_PushEvent); ok {
+			return x.PushEvent
+		}
+	}
+	return nil
+}
+
+func (x *SessionClientMsg) GetPullAckSeq() int64 {
+	if x != nil {
+		if x, ok := x.Msg.(*SessionClientMsg_PullAckSeq); ok {
+			return x.PullAckSeq
+		}
+	}
+	return 0
+}
+
+type isSessionClientMsg_Msg interface {
+	isSessionClientMsg_Msg()
+}
+
+type SessionClientMsg_PushEvent struct {
+	PushEvent *SyncEvent `protobuf:"bytes,1,opt,name=push_event,json=pushEvent,proto3,oneof"`
+}
+
+type SessionClientMsg_PullAckSeq struct {
+	PullAckSeq int64 `protobuf:"varint,2,opt,name=pull_ack_seq,json=pullAckSeq,proto3,oneof"`
+}
+
+func (*SessionClientMsg_PushEvent) isSessionClientMsg_Msg() {}
+
+func (*SessionClientMsg_PullAckSeq) isSessionClientMsg_Msg() {}
+
+// SessionServerMsg is sent by Cloud over the persistent StreamSession RPC
+type SessionServerMsg struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*SessionServerMsg_PushAck
+	//	*SessionServerMsg_ChangesAvailable
+	Msg           isSessionServerMsg_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionServerMsg) Reset() {
+	*x = SessionServerMsg{}
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionServerMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionServerMsg) ProtoMessage() {}
+
+func (x *SessionServerMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionServerMsg.ProtoReflect.Descriptor instead.
+func (*SessionServerMsg) Descriptor() ([]byte, []int) {
+	return file_packages_core_grpc_syncpb_sync_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SessionServerMsg) GetMsg() isSessionServerMsg_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *SessionServerMsg) GetPushAck() *SyncAck {
+	if x != nil {
+		if x, ok := x.Msg.(*SessionServerMsg_PushAck); ok {
+			return x.PushAck
+		}
+	}
+	return nil
+}
+
+func (x *SessionServerMsg) GetChangesAvailable() *ChangesAvailableNotification {
+	if x != nil {
+		if x, ok := x.Msg.(*SessionServerMsg_ChangesAvailable); ok {
+			return x.ChangesAvailable
+		}
+	}
+	return nil
+}
+
+type isSessionServerMsg_Msg interface {
+	isSessionServerMsg_Msg()
+}
+
+type SessionServerMsg_PushAck struct {
+	PushAck *SyncAck `protobuf:"bytes,1,opt,name=push_ack,json=pushAck,proto3,oneof"`
+}
+
+type SessionServerMsg_ChangesAvailable struct {
+	ChangesAvailable *ChangesAvailableNotification `protobuf:"bytes,2,opt,name=changes_available,json=changesAvailable,proto3,oneof"`
+}
+
+func (*SessionServerMsg_PushAck) isSessionServerMsg_Msg() {}
+
+func (*SessionServerMsg_ChangesAvailable) isSessionServerMsg_Msg() {}
+
+// ChangesAvailableNotification wakes connected POS terminals when new change_log rows commit
+type ChangesAvailableNotification struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LatestSeq     int64                  `protobuf:"varint,1,opt,name=latest_seq,json=latestSeq,proto3" json:"latest_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangesAvailableNotification) Reset() {
+	*x = ChangesAvailableNotification{}
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangesAvailableNotification) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangesAvailableNotification) ProtoMessage() {}
+
+func (x *ChangesAvailableNotification) ProtoReflect() protoreflect.Message {
+	mi := &file_packages_core_grpc_syncpb_sync_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangesAvailableNotification.ProtoReflect.Descriptor instead.
+func (*ChangesAvailableNotification) Descriptor() ([]byte, []int) {
+	return file_packages_core_grpc_syncpb_sync_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ChangesAvailableNotification) GetLatestSeq() int64 {
+	if x != nil {
+		return x.LatestSeq
+	}
+	return 0
+}
+
 var File_packages_core_grpc_syncpb_sync_proto protoreflect.FileDescriptor
 
 const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\n" +
-	"$packages/core/grpc/syncpb/sync.proto\x12\x04sync\x1a\x1fgoogle/protobuf/timestamp.proto\"\x91\x03\n" +
+	"$packages/core/grpc/syncpb/sync.proto\x12\x04sync\x1a\x1fgoogle/protobuf/timestamp.proto\"\xab\x04\n" +
 	"\tSyncEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -346,7 +815,15 @@ const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\fchunk_offset\x18\n" +
 	" \x01(\x04R\vchunkOffset\x12\"\n" +
 	"\ris_last_chunk\x18\v \x01(\bR\visLastChunk\x12%\n" +
-	"\x0ecorrelation_id\x18\f \x01(\tR\rcorrelationId\"\xed\x01\n" +
+	"\x0ecorrelation_id\x18\f \x01(\tR\rcorrelationId\x12\x1f\n" +
+	"\voutbox_uuid\x18\r \x01(\tR\n" +
+	"outboxUuid\x12\x1b\n" +
+	"\tdevice_id\x18\x0e \x01(\tR\bdeviceId\x12\x19\n" +
+	"\bbatch_id\x18\x0f \x01(\tR\abatchId\x12\x1d\n" +
+	"\n" +
+	"batch_size\x18\x10 \x01(\x05R\tbatchSize\x12 \n" +
+	"\fseq_in_batch\x18\x11 \x01(\x05R\n" +
+	"seqInBatch\"\xe5\x02\n" +
 	"\aSyncAck\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -355,19 +832,60 @@ const file_packages_core_grpc_syncpb_sync_proto_rawDesc = "" +
 	"\asuccess\x18\x04 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x12\x16\n" +
 	"\x06sha256\x18\x06 \x01(\tR\x06sha256\x12=\n" +
-	"\fprocessed_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vprocessedAt\"\xb4\x01\n" +
+	"\fprocessed_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vprocessedAt\x12\x19\n" +
+	"\bbatch_id\x18\b \x01(\tR\abatchId\x12\x1f\n" +
+	"\voutbox_uuid\x18\t \x01(\tR\n" +
+	"outboxUuid\x12\x1d\n" +
+	"\n" +
+	"failed_seq\x18\n" +
+	" \x01(\x05R\tfailedSeq\x12\x1b\n" +
+	"\tsql_state\x18\v \x01(\tR\bsqlState\"\xb4\x01\n" +
 	"\vPullRequest\x12\x1f\n" +
 	"\vtenant_slug\x18\x01 \x01(\tR\n" +
 	"tenantSlug\x12\x19\n" +
 	"\bstore_id\x18\x02 \x01(\x05R\astoreId\x120\n" +
 	"\x05since\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12!\n" +
 	"\fentity_types\x18\x04 \x03(\tR\ventityTypes\x12\x14\n" +
-	"\x05limit\x18\x05 \x01(\x05R\x05limit2s\n" +
+	"\x05limit\x18\x05 \x01(\x05R\x05limit\"\xa0\x01\n" +
+	"\x14StreamChangesRequest\x12\x1f\n" +
+	"\vtenant_slug\x18\x01 \x01(\tR\n" +
+	"tenantSlug\x12\x19\n" +
+	"\bstore_id\x18\x02 \x01(\x05R\astoreId\x12\x19\n" +
+	"\bfrom_seq\x18\x03 \x01(\x03R\afromSeq\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x1b\n" +
+	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\"\xb7\x02\n" +
+	"\vChangeEvent\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x1f\n" +
+	"\ventity_type\x18\x02 \x01(\tR\n" +
+	"entityType\x12\x1b\n" +
+	"\tentity_id\x18\x03 \x01(\x03R\bentityId\x12\x0e\n" +
+	"\x02op\x18\x04 \x01(\tR\x02op\x12!\n" +
+	"\fpayload_json\x18\x05 \x01(\fR\vpayloadJson\x12\x16\n" +
+	"\x06sha256\x18\x06 \x01(\tR\x06sha256\x129\n" +
+	"\n" +
+	"changed_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tchangedAt\x12(\n" +
+	"\x10is_snapshot_mode\x18\b \x01(\bR\x0eisSnapshotMode\x12(\n" +
+	"\x10snapshot_max_seq\x18\t \x01(\x03R\x0esnapshotMaxSeq\"o\n" +
+	"\x10SessionClientMsg\x120\n" +
+	"\n" +
+	"push_event\x18\x01 \x01(\v2\x0f.sync.SyncEventH\x00R\tpushEvent\x12\"\n" +
+	"\fpull_ack_seq\x18\x02 \x01(\x03H\x00R\n" +
+	"pullAckSeqB\x05\n" +
+	"\x03msg\"\x98\x01\n" +
+	"\x10SessionServerMsg\x12*\n" +
+	"\bpush_ack\x18\x01 \x01(\v2\r.sync.SyncAckH\x00R\apushAck\x12Q\n" +
+	"\x11changes_available\x18\x02 \x01(\v2\".sync.ChangesAvailableNotificationH\x00R\x10changesAvailableB\x05\n" +
+	"\x03msg\"=\n" +
+	"\x1cChangesAvailableNotification\x12\x1d\n" +
+	"\n" +
+	"latest_seq\x18\x01 \x01(\x03R\tlatestSeq2\xfa\x01\n" +
 	"\vSyncService\x120\n" +
 	"\n" +
 	"StreamPush\x12\x0f.sync.SyncEvent\x1a\r.sync.SyncAck(\x010\x01\x122\n" +
 	"\n" +
-	"StreamPull\x12\x11.sync.PullRequest\x1a\x0f.sync.SyncEvent0\x01B.Z,github.com/NasTecSol/nembus-core/grpc/syncpbb\x06proto3"
+	"StreamPull\x12\x11.sync.PullRequest\x1a\x0f.sync.SyncEvent0\x01\x12@\n" +
+	"\rStreamChanges\x12\x1a.sync.StreamChangesRequest\x1a\x11.sync.ChangeEvent0\x01\x12C\n" +
+	"\rStreamSession\x12\x16.sync.SessionClientMsg\x1a\x16.sync.SessionServerMsg(\x010\x01B.Z,github.com/NasTecSol/nembus-core/grpc/syncpbb\x06proto3"
 
 var (
 	file_packages_core_grpc_syncpb_sync_proto_rawDescOnce sync.Once
@@ -381,26 +899,39 @@ func file_packages_core_grpc_syncpb_sync_proto_rawDescGZIP() []byte {
 	return file_packages_core_grpc_syncpb_sync_proto_rawDescData
 }
 
-var file_packages_core_grpc_syncpb_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_packages_core_grpc_syncpb_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_packages_core_grpc_syncpb_sync_proto_goTypes = []any{
-	(*SyncEvent)(nil),             // 0: sync.SyncEvent
-	(*SyncAck)(nil),               // 1: sync.SyncAck
-	(*PullRequest)(nil),           // 2: sync.PullRequest
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*SyncEvent)(nil),                    // 0: sync.SyncEvent
+	(*SyncAck)(nil),                      // 1: sync.SyncAck
+	(*PullRequest)(nil),                  // 2: sync.PullRequest
+	(*StreamChangesRequest)(nil),         // 3: sync.StreamChangesRequest
+	(*ChangeEvent)(nil),                  // 4: sync.ChangeEvent
+	(*SessionClientMsg)(nil),             // 5: sync.SessionClientMsg
+	(*SessionServerMsg)(nil),             // 6: sync.SessionServerMsg
+	(*ChangesAvailableNotification)(nil), // 7: sync.ChangesAvailableNotification
+	(*timestamppb.Timestamp)(nil),        // 8: google.protobuf.Timestamp
 }
 var file_packages_core_grpc_syncpb_sync_proto_depIdxs = []int32{
-	3, // 0: sync.SyncEvent.event_time:type_name -> google.protobuf.Timestamp
-	3, // 1: sync.SyncAck.processed_at:type_name -> google.protobuf.Timestamp
-	3, // 2: sync.PullRequest.since:type_name -> google.protobuf.Timestamp
-	0, // 3: sync.SyncService.StreamPush:input_type -> sync.SyncEvent
-	2, // 4: sync.SyncService.StreamPull:input_type -> sync.PullRequest
-	1, // 5: sync.SyncService.StreamPush:output_type -> sync.SyncAck
-	0, // 6: sync.SyncService.StreamPull:output_type -> sync.SyncEvent
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	8,  // 0: sync.SyncEvent.event_time:type_name -> google.protobuf.Timestamp
+	8,  // 1: sync.SyncAck.processed_at:type_name -> google.protobuf.Timestamp
+	8,  // 2: sync.PullRequest.since:type_name -> google.protobuf.Timestamp
+	8,  // 3: sync.ChangeEvent.changed_at:type_name -> google.protobuf.Timestamp
+	0,  // 4: sync.SessionClientMsg.push_event:type_name -> sync.SyncEvent
+	1,  // 5: sync.SessionServerMsg.push_ack:type_name -> sync.SyncAck
+	7,  // 6: sync.SessionServerMsg.changes_available:type_name -> sync.ChangesAvailableNotification
+	0,  // 7: sync.SyncService.StreamPush:input_type -> sync.SyncEvent
+	2,  // 8: sync.SyncService.StreamPull:input_type -> sync.PullRequest
+	3,  // 9: sync.SyncService.StreamChanges:input_type -> sync.StreamChangesRequest
+	5,  // 10: sync.SyncService.StreamSession:input_type -> sync.SessionClientMsg
+	1,  // 11: sync.SyncService.StreamPush:output_type -> sync.SyncAck
+	0,  // 12: sync.SyncService.StreamPull:output_type -> sync.SyncEvent
+	4,  // 13: sync.SyncService.StreamChanges:output_type -> sync.ChangeEvent
+	6,  // 14: sync.SyncService.StreamSession:output_type -> sync.SessionServerMsg
+	11, // [11:15] is the sub-list for method output_type
+	7,  // [7:11] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_packages_core_grpc_syncpb_sync_proto_init() }
@@ -408,13 +939,21 @@ func file_packages_core_grpc_syncpb_sync_proto_init() {
 	if File_packages_core_grpc_syncpb_sync_proto != nil {
 		return
 	}
+	file_packages_core_grpc_syncpb_sync_proto_msgTypes[5].OneofWrappers = []any{
+		(*SessionClientMsg_PushEvent)(nil),
+		(*SessionClientMsg_PullAckSeq)(nil),
+	}
+	file_packages_core_grpc_syncpb_sync_proto_msgTypes[6].OneofWrappers = []any{
+		(*SessionServerMsg_PushAck)(nil),
+		(*SessionServerMsg_ChangesAvailable)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_packages_core_grpc_syncpb_sync_proto_rawDesc), len(file_packages_core_grpc_syncpb_sync_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

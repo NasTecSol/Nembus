@@ -62,4 +62,4 @@ catalog dependencies outside the pull list may cause foreign-key failures,
 and the current availability-schedule schema has no `updated_at` (reported as
 an entity error). Promotion price-generation triggers still run locally and
 can regenerate price row identities. Stock reconciliation business logic is
-unchanged. This work does not add store filtering or a change-log protocol.
+unchanged. For change-log sync, quarantine, and terminal sync tokens, see [SYNC_HARDENING.md](./SYNC_HARDENING.md).

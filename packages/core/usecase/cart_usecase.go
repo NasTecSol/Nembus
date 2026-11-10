@@ -13,11 +13,14 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type CartUseCase struct {
 	repo     *repository.Queries
+	pool     *pgxpool.Pool
 	zatcaCfg *ZatcaConfig
 }
 
@@ -29,6 +32,10 @@ func NewCartUseCase() *CartUseCase {
 
 func (uc *CartUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
+}
+
+func (uc *CartUseCase) SetPool(pool *pgxpool.Pool) {
+	uc.pool = pool
 }
 
 func (uc *CartUseCase) repoOrErr() *repository.Response {
@@ -963,9 +970,24 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		return utils.NewResponse(utils.CodeError, "failed to fetch cart items", nil)
 	}
 
+	activeRepo := uc.repo
+	var tx pgx.Tx
+	var corrID string
+	if pool := resolvePoolFromContext(ctx, uc.pool); pool != nil {
+		startedTx, txErr := pool.Begin(ctx)
+		if txErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to begin cart conversion transaction: "+txErr.Error(), nil)
+		}
+		tx = startedTx
+		defer func() { _ = tx.Rollback(ctx) }()
+		corrID = uuid.NewString()
+		_, _ = tx.Exec(ctx, "SELECT set_config('nembus.correlation_id', $1, true)", corrID)
+		activeRepo = uc.repo.WithTx(tx)
+	}
+
 	// 3. Convert Cart to Order Header using the new generated business logic query
 	orderNumber := fmt.Sprintf("ORD-%s", time.Now().Format("20060102150405"))
-	convertedCart, err := uc.repo.ConvertCartToOrder(ctx, repository.ConvertCartToOrderParams{
+	convertedCart, err := activeRepo.ConvertCartToOrder(ctx, repository.ConvertCartToOrderParams{
 		ID:          cartID,
 		OrderNumber: orderNumber,
 	})
@@ -1017,7 +1039,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 		var taxRate pgtype.Numeric
 		taxRate = pgtype.Numeric{Valid: false}
 		if item.TaxCategoryID.Valid {
-			taxCategory, err := uc.repo.GetTaxCategory(ctx, item.TaxCategoryID.Int32)
+			taxCategory, err := activeRepo.GetTaxCategory(ctx, item.TaxCategoryID.Int32)
 			if err == nil {
 				taxRate = taxCategory.TaxRate
 			}
@@ -1062,7 +1084,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 			Metadata:             item.Metadata,
 		}
 
-		_, err = uc.repo.CreateSalesOrderLineV2(ctx, arg)
+		_, err = activeRepo.CreateSalesOrderLineV2(ctx, arg)
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, "order created but a line could not be saved; repair the order before ZATCA generation", map[string]interface{}{"order_id": orderID, "error": err.Error()})
 		}
@@ -1071,21 +1093,24 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 	var enabled bool
 	var enableErr error
 	if uc.zatcaCfg != nil {
-		enabled, enableErr = OrganizationZatcaEnabledByID(ctx, uc.repo, cart.OrganizationID)
+		enabled, enableErr = OrganizationZatcaEnabledByID(ctx, activeRepo, cart.OrganizationID)
 	}
 	if uc.zatcaCfg != nil && enableErr != nil {
 		zatcaError = enableErr.Error()
 	}
 	if uc.zatcaCfg != nil && enableErr == nil && enabled {
-		zatcaUC := NewZatcaUseCase(uc.zatcaCfg)
-		zatcaUC.SetRepository(uc.repo)
-		entry, err := zatcaUC.EnsureSalesOrderDocument(ctx, orderID)
-		if err != nil {
-			zatcaError = err.Error()
-		} else {
+		_ = runInSavepoint(ctx, tx, "sp_cart_zatca_sign", func() error {
+			zatcaUC := NewZatcaUseCase(uc.zatcaCfg)
+			zatcaUC.SetRepository(activeRepo)
+			entry, err := zatcaUC.EnsureSalesOrderDocument(ctx, orderID)
+			if err != nil {
+				zatcaError = err.Error()
+				return err
+			}
 			qrCode = entry.QrCodeBase64.String
 			zatcaUUID = entry.ZatcaUuid.String()
-		}
+			return nil
+		})
 	}
 
 	var posTxnID *int32
@@ -1093,20 +1118,23 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 	// 5. If sales_channel is 'pos', sync to POS transaction and record payment when cart was settled.
 	// WhatsApp receipts are enqueued on cloud after upstream gRPC sync only.
 	if cart.Channel.Valid && strings.EqualFold(strings.TrimSpace(cart.Channel.String), "pos") {
-		posTxn, err := uc.repo.CreateTransactionFromOrder(ctx, orderID)
-		if err != nil {
-			fmt.Printf("Warning: failed to create POS transaction: %s\n", err.Error())
-		} else {
+		_ = runInSavepoint(ctx, tx, "sp_cart_pos_txn", func() error {
+			posTxn, err := activeRepo.CreateTransactionFromOrder(ctx, orderID)
+			if err != nil {
+				fmt.Printf("Warning: failed to create POS transaction: %s\n", err.Error())
+				return err
+			}
 			posTxnID = &posTxn.ID
-			err = uc.repo.SyncTransactionLinesFromOrder(ctx, repository.SyncTransactionLinesFromOrderParams{
+			err = activeRepo.SyncTransactionLinesFromOrder(ctx, repository.SyncTransactionLinesFromOrderParams{
 				TransactionID: posTxn.ID,
 				SalesOrderID:  orderID,
 			})
 			if err != nil {
 				fmt.Printf("Warning: failed to sync POS transaction lines: %s\n", err.Error())
+				return err
 			}
 			// If the cart had payment method/gateway set (settled), insert pos_payment for reconciliation
-			order, err := uc.repo.GetSalesOrderV2(ctx, orderID)
+			order, err := activeRepo.GetSalesOrderV2(ctx, orderID)
 			if err == nil && order.TotalAmount.Valid {
 				paymentMethod := "cash"
 				if order.PaymentMethod.Valid && order.PaymentMethod.String != "" {
@@ -1116,7 +1144,7 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 				if order.PaymentGateway.Valid {
 					gateway = order.PaymentGateway
 				}
-				_ = uc.repo.AddPaymentToTransaction(ctx, repository.AddPaymentToTransactionParams{
+				_ = activeRepo.AddPaymentToTransaction(ctx, repository.AddPaymentToTransactionParams{
 					TransactionID:   posTxn.ID,
 					PaymentMethod:   paymentMethod,
 					PaymentGateway:  gateway,
@@ -1126,12 +1154,26 @@ func (uc *CartUseCase) ConvertToOrder(ctx context.Context, cartID uuid.UUID) *re
 				})
 				// Session expected_balance updated for cash payments
 				if strings.EqualFold(strings.TrimSpace(paymentMethod), "cash") && posTxn.CashierSessionID != 0 {
-					_ = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+					_ = activeRepo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
 						ID:              posTxn.CashierSessionID,
 						ExpectedBalance: order.TotalAmount,
 					})
 				}
 			}
+			return nil
+		})
+	}
+
+	if tx != nil {
+		entityRefID := int64(0)
+		if posTxnID != nil {
+			entityRefID = int64(*posTxnID)
+		}
+		if posTxnID != nil {
+			enqueuePOSCheckoutOutboxTx(ctx, tx, corrID, entityRefID, orderID, &cartID)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to commit cart conversion transaction: "+err.Error(), nil)
 		}
 	}
 

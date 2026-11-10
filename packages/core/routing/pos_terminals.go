@@ -18,6 +18,7 @@ func RegisterPosTerminalsRoutes(r *gin.RouterGroup, h *handler.PosTerminalsHandl
 		terminals.PUT("/:id", h.UpdatePOSTerminal)
 		terminals.DELETE("/:id", h.DeletePOSTerminal)
 		terminals.PATCH("/:id/active", h.TogglePOSTerminalActive)
+		terminals.POST("/:id/issue-sync-token", h.IssuePOSTerminalSyncToken)
 		terminals.POST("/:id/assign-cashiers", h.AssignCashiersToPOSTerminal)
 		terminals.GET("/:id/cashiers", h.GetCashiersForPOSTerminal)
 		terminals.DELETE("/:id/cashiers/:cashier_id", h.RemoveCashierFromPOSTerminal)

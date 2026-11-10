@@ -10,6 +10,7 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PosTerminalsHandler holds the POS terminals use case.
@@ -107,6 +108,39 @@ func (h *PosTerminalsHandler) GetPOSTerminal(c *gin.Context) {
 		return
 	}
 	resp := h.useCase.GetPOSTerminal(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// IssuePOSTerminalSyncToken handles POST /api/pos/terminals/:id/issue-sync-token
+// @Summary      Issue gRPC sync token for POS terminal
+// @Description  Generates a new per-terminal sync token for gRPC StreamPush/StreamChanges/StreamSession. Returns the raw token once; only its SHA-256 hash is stored. Re-issuing revokes the previous token.
+// @Tags         pos-terminals
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true  "Tenant identifier"
+// @Param        Authorization header    string  true  "Bearer token"
+// @Param        id            path      int     true  "Terminal ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/pos/terminals/{id}/issue-sync-token [post]
+func (h *PosTerminalsHandler) IssuePOSTerminalSyncToken(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid terminal id", nil))
+		return
+	}
+	pool, _ := c.Request.Context().Value(middleware.PoolKey).(*pgxpool.Pool)
+	resp := h.useCase.IssuePOSTerminalSyncToken(c.Request.Context(), pool, int32(id))
 	c.JSON(resp.StatusCode, resp)
 }
 

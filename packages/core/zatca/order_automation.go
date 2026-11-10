@@ -42,6 +42,13 @@ BEGIN
   IF TG_OP='DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
  END IF;
+ -- Only finalized fulfillment can create an invoice submission job. Line
+ -- edits after fulfillment still refresh the job so the final invoice is used.
+ IF TG_TABLE_NAME='sales_orders_v2' THEN
+  IF NEW.fulfillment_status IS DISTINCT FROM 'fulfilled' THEN RETURN NEW; END IF;
+ ELSE
+  IF NOT EXISTS(SELECT 1 FROM sales_orders_v2 WHERE id=order_key AND fulfillment_status='fulfilled') THEN RETURN NEW; END IF;
+ END IF;
  INSERT INTO zatca_order_jobs(order_id,next_attempt_at)
  SELECT order_key,now()+interval '5 seconds'
  WHERE EXISTS(SELECT 1 FROM sales_orders_v2 WHERE id=order_key)
@@ -104,6 +111,16 @@ func ProcessOrderAutomationBatch(ctx context.Context, pool *pgxpool.Pool, submit
 	for _, current := range jobs {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		var fulfilled bool
+		if err := conn.QueryRow(ctx, `SELECT fulfillment_status='fulfilled' FROM sales_orders_v2 WHERE id=$1`, current.id).Scan(&fulfilled); err != nil {
+			return err
+		}
+		if !fulfilled {
+			if _, err := conn.Exec(ctx, `UPDATE zatca_order_jobs SET status='not_fulfilled',last_error=NULL,updated_at=now() WHERE order_id=$1 AND revision=$2`, current.id, current.revision); err != nil {
+				return err
+			}
+			continue
 		}
 		// POS checkout orders belong to the terminal even if their device
 		// registration has not reached cloud yet. An existing POS-owned signed
