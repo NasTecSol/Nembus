@@ -13,11 +13,14 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 	"github.com/google/uuid"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PosUseCase struct {
 	repo    *repository.Queries
+	pool    *pgxpool.Pool
 	zatcaUC *ZatcaUseCase
 }
 
@@ -27,6 +30,10 @@ func NewPosUseCase() *PosUseCase {
 
 func (uc *PosUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
+}
+
+func (uc *PosUseCase) SetPool(pool *pgxpool.Pool) {
+	uc.pool = pool
 }
 
 func (uc *PosUseCase) SetZatcaUseCase(zuc *ZatcaUseCase) {
@@ -753,7 +760,22 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		params.PriceListID = pgtype.Int4{Int32: *in.PriceListID, Valid: true}
 	}
 
-	header, err := uc.repo.CreatePosTransaction(ctx, params)
+	activeRepo := uc.repo
+	var tx pgx.Tx
+	var corrID string
+	if pool := resolvePoolFromContext(ctx, uc.pool); pool != nil {
+		startedTx, txErr := pool.Begin(ctx)
+		if txErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to begin checkout transaction: "+txErr.Error(), nil)
+		}
+		tx = startedTx
+		defer func() { _ = tx.Rollback(ctx) }()
+		corrID = uuid.NewString()
+		_, _ = tx.Exec(ctx, "SELECT set_config('nembus.correlation_id', $1, true)", corrID)
+		activeRepo = uc.repo.WithTx(tx)
+	}
+
+	header, err := activeRepo.CreatePosTransaction(ctx, params)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create transaction: "+err.Error(), nil)
 	}
@@ -799,7 +821,7 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			lineParams.UomID = pgtype.Int4{Int32: *line.UomID, Valid: true}
 		}
 
-		createdLine, err := uc.repo.CreatePosTransactionLine(ctx, lineParams)
+		createdLine, err := activeRepo.CreatePosTransactionLine(ctx, lineParams)
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create line %d: %s", lineNo, err.Error()), nil)
 		}
@@ -823,12 +845,15 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			}
 		}
 
-		_, _ = uc.repo.AdjustInventoryStockByProductAndStore(ctx, repository.AdjustInventoryStockByProductAndStoreParams{
-			ProductID:         line.ProductID,
-			ProductVariantID:  variantID,
-			StoreID:           in.StoreID,
-			QuantityOnHand:    negQty,
-			QuantityAvailable: negQty,
+		_ = runInSavepoint(ctx, tx, "sp_pos_stock_adjust", func() error {
+			_, err := activeRepo.AdjustInventoryStockByProductAndStore(ctx, repository.AdjustInventoryStockByProductAndStoreParams{
+				ProductID:         line.ProductID,
+				ProductVariantID:  variantID,
+				StoreID:           in.StoreID,
+				QuantityOnHand:    negQty,
+				QuantityAvailable: negQty,
+			})
+			return err
 		})
 
 		var uomID pgtype.Int4
@@ -844,22 +869,25 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			serialNum = pgtype.Text{String: strings.TrimSpace(*line.SerialNumber), Valid: true}
 		}
 
-		_, _ = uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
-			MovementType:     "pos_sale",
-			ReferenceType:    pgtype.Text{String: "pos_transaction", Valid: true},
-			ReferenceID:      pgtype.Int4{Int32: header.ID, Valid: true},
-			ProductID:        line.ProductID,
-			ProductVariantID: variantID,
-			FromStoreID:      pgtype.Int4{Int32: in.StoreID, Valid: true},
-			Quantity:         line.Quantity,
-			UomID:            uomID,
-			BatchNumber:      batchNum,
-			SerialNumber:     serialNum,
-			MovementDate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
-			Status:           pgtype.Text{String: "completed", Valid: true},
-			CostPerUnit:      line.CostPrice,
-			TotalValue:       line.LineTotal,
-			Metadata:         json.RawMessage([]byte("{}")),
+		_ = runInSavepoint(ctx, tx, "sp_pos_stock_movement", func() error {
+			_, err := activeRepo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
+				MovementType:     "pos_sale",
+				ReferenceType:    pgtype.Text{String: "pos_transaction", Valid: true},
+				ReferenceID:      pgtype.Int4{Int32: header.ID, Valid: true},
+				ProductID:        line.ProductID,
+				ProductVariantID: variantID,
+				FromStoreID:      pgtype.Int4{Int32: in.StoreID, Valid: true},
+				Quantity:         line.Quantity,
+				UomID:            uomID,
+				BatchNumber:      batchNum,
+				SerialNumber:     serialNum,
+				MovementDate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
+				Status:           pgtype.Text{String: "completed", Valid: true},
+				CostPerUnit:      line.CostPrice,
+				TotalValue:       line.LineTotal,
+				Metadata:         json.RawMessage([]byte("{}")),
+			})
+			return err
 		})
 	}
 
@@ -887,12 +915,13 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 	if in.CustomerID != nil {
 		orderArg.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
 	}
-	soV2, err := uc.repo.CreateSalesOrderV2(ctx, orderArg)
-	if err != nil {
-		salesOrderError = err
-		fmt.Printf("Warning: failed to create sales_orders_v2 for pos transaction: %v\n", err)
-	} else {
-		_, totalsErr := uc.repo.UpdateOrderTotals(ctx, repository.UpdateOrderTotalsParams{
+	salesOrderError = runInSavepoint(ctx, tx, "sp_pos_sales_order", func() error {
+		soV2, err := activeRepo.CreateSalesOrderV2(ctx, orderArg)
+		if err != nil {
+			fmt.Printf("Warning: failed to create sales_orders_v2 for pos transaction: %v\n", err)
+			return err
+		}
+		_, totalsErr := activeRepo.UpdateOrderTotals(ctx, repository.UpdateOrderTotalsParams{
 			ID:             soV2.ID,
 			Subtotal:       in.Subtotal,
 			DiscountAmount: in.DiscountAmount,
@@ -900,11 +929,11 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 			TotalAmount:    in.TotalAmount,
 		})
 		if totalsErr != nil {
-			salesOrderError = totalsErr
+			return totalsErr
 		}
 
 		for idx, l := range createdLines {
-			_, lineErr := uc.repo.CreateSalesOrderLineV2(ctx, repository.CreateSalesOrderLineV2Params{
+			_, lineErr := activeRepo.CreateSalesOrderLineV2(ctx, repository.CreateSalesOrderLineV2Params{
 				SalesOrderID:     soV2.ID,
 				OrganizationID:   store.OrganizationID,
 				LineNumber:       int32(idx + 1),
@@ -920,16 +949,19 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 				UnitCost:         l.CostPrice,
 			})
 			if lineErr != nil {
-				salesOrderError = lineErr
+				return lineErr
 			}
 		}
 
-		_ = uc.repo.LinkPosTransactionToSalesOrder(ctx, repository.LinkPosTransactionToSalesOrderParams{
+		if err := activeRepo.LinkPosTransactionToSalesOrder(ctx, repository.LinkPosTransactionToSalesOrderParams{
 			ID:           header.ID,
 			SalesOrderID: pgtype.UUID{Bytes: soV2.ID, Valid: true},
-		})
+		}); err != nil {
+			return err
+		}
 		header.SalesOrderID = pgtype.UUID{Bytes: soV2.ID, Valid: true}
-	}
+		return nil
+	})
 
 	// ZATCA reads the persisted sales order and lines, never POS copies.
 	var qrCode, zatcaUUID, zatcaError string
@@ -939,28 +971,47 @@ func (uc *PosUseCase) CreateTransaction(ctx context.Context, in *PosCreateTransa
 		} else if !header.SalesOrderID.Valid {
 			zatcaError = "Sales order creation/linking failed; no ZATCA invoice was generated"
 		} else {
-			entry, signErr := uc.zatcaUC.EnsureSalesOrderDocument(ctx, uuid.UUID(header.SalesOrderID.Bytes))
-			if signErr != nil {
-				zatcaError = "ZATCA sales order generation failed: " + signErr.Error()
-			}
-			if signErr == nil && entry != nil {
-				qrCode, zatcaUUID = entry.QrCodeBase64.String, entry.ZatcaUuid.String()
-				var metadata map[string]interface{}
-				_ = json.Unmarshal(header.Metadata, &metadata)
-				if metadata == nil {
-					metadata = map[string]interface{}{}
+			_ = runInSavepoint(ctx, tx, "sp_pos_zatca_sign", func() error {
+				zatcaRunner := NewZatcaUseCase(uc.zatcaUC.GetConfig())
+				zatcaRunner.SetRepository(activeRepo)
+				entry, signErr := zatcaRunner.EnsureSalesOrderDocument(ctx, uuid.UUID(header.SalesOrderID.Bytes))
+				if signErr != nil {
+					zatcaError = "ZATCA sales order generation failed: " + signErr.Error()
+					return signErr
 				}
-				metadata["qr_code_base64"], metadata["zatca_uuid"], metadata["icv"] = qrCode, zatcaUUID, entry.Icv
-				header.Metadata, _ = json.Marshal(metadata)
-				if err := uc.repo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{ID: header.ID, Metadata: header.Metadata}); err != nil {
-					zatcaError = "Signed order saved but transaction QR metadata update failed: " + err.Error()
+				if entry != nil {
+					qrCode, zatcaUUID = entry.QrCodeBase64.String, entry.ZatcaUuid.String()
+					var metadata map[string]interface{}
+					_ = json.Unmarshal(header.Metadata, &metadata)
+					if metadata == nil {
+						metadata = map[string]interface{}{}
+					}
+					metadata["qr_code_base64"], metadata["zatca_uuid"], metadata["icv"] = qrCode, zatcaUUID, entry.Icv
+					header.Metadata, _ = json.Marshal(metadata)
+					if err := activeRepo.UpdatePosTransactionMetadata(ctx, repository.UpdatePosTransactionMetadataParams{ID: header.ID, Metadata: header.Metadata}); err != nil {
+						zatcaError = "Signed order saved but transaction QR metadata update failed: " + err.Error()
+						return err
+					}
 				}
-			}
+				return nil
+			})
 		}
 	}
 	// POS E-Receipt outbox events are enqueued on cloud after upstream gRPC sync.
 
-	updateSessionBalanceForTransaction(ctx, uc.repo, in.CashierSessionID, in.Metadata, in.TotalAmount)
+	_ = runInSavepoint(ctx, tx, "sp_pos_session_balance", func() error {
+		updateSessionBalanceForTransaction(ctx, activeRepo, in.CashierSessionID, in.Metadata, in.TotalAmount)
+		return nil
+	})
+
+	if tx != nil {
+		if header.SalesOrderID.Valid {
+			enqueuePOSCheckoutOutboxTx(ctx, tx, corrID, int64(header.ID), uuid.UUID(header.SalesOrderID.Bytes), nil)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to commit checkout transaction: "+err.Error(), nil)
+		}
+	}
 
 	return utils.NewResponse(utils.CodeCreated, "transaction created", CreateTransactionOutput{
 		PosTransaction: header,

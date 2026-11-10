@@ -90,7 +90,9 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 
 	missingQR := strings.TrimSpace(receipt.QR) == ""
 	metaTemplateLower := strings.ToLower(strings.TrimSpace(tmpl.MetaTemplateName.String))
-	isTextOnlyTemplate := strings.Contains(metaTemplateLower, "receipt_txt") || strings.Contains(metaTemplateLower, "_txt")
+	isTextOnlyTemplate := strings.Contains(metaTemplateLower, "receipt_txt") ||
+		strings.Contains(metaTemplateLower, "_txt") ||
+		(!strings.Contains(tmpl.BodyTemplate, "{{4}}") && strings.Contains(tmpl.BodyTemplate, "{{3}}"))
 
 	if !isTextOnlyTemplate && (missingQR || len(receipt.Lines) == 0) && receiptRetries(event) < maxReceiptNotReady {
 		d.deferReceipt(ctx, event.ID)
@@ -124,6 +126,11 @@ func (d *Dispatcher) dispatchPosReceipt(ctx context.Context, event repository.No
 	metaTemplateName := strings.TrimSpace(tmpl.MetaTemplateName.String)
 	languageCodes := WhatsAppLanguageCodesToTry(tmpl.Locale)
 	resp, sendErr := client.SendTemplateMessageWithHeaderLocales(ctx, receipt.Phone, metaTemplateName, languageCodes, params, headerID)
+	if sendErr != nil && isWhatsAppError132001(sendErr) && len(params) == 3 && metaTemplateName != "jaspers_market_order_confirmation_v1" {
+		if fallbackResp, fallbackErr := client.SendTemplateMessageWithHeaderLocales(ctx, receipt.Phone, "jaspers_market_order_confirmation_v1", []string{"en_US"}, params, ""); fallbackErr == nil {
+			resp, sendErr = fallbackResp, nil
+		}
+	}
 	if sendErr != nil && isWhatsAppError132001(sendErr) {
 		sendErr = fmt.Errorf("%w (template %q, tried languages %v; confirm Meta WABA matches notification channel phone_number_id and set notification_templates.locale to the exact code from GET /{waba-id}/message_templates)", sendErr, metaTemplateName, languageCodes)
 	}
@@ -235,8 +242,9 @@ func ruleRequiresWhatsAppOptIn(raw json.RawMessage) bool {
 	return ok && flag
 }
 
-func resolveCustomerPhone(metadataPhone, orderPhone, customerPhone string) string {
-	for _, phone := range []string{metadataPhone, orderPhone, customerPhone} {
+func resolveCustomerPhone(metadataPhone, orderPhone, customerPhone string, extraPhones ...string) string {
+	candidates := append([]string{metadataPhone, orderPhone, customerPhone}, extraPhones...)
+	for _, phone := range candidates {
 		if strings.TrimSpace(phone) != "" {
 			return strings.TrimSpace(phone)
 		}
@@ -345,7 +353,7 @@ func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.N
 	}
 
 	var receipt saleReceipt
-	var status, orderPhone, customerPhone, salesOrderID, metaPhone, metaQR, metaCurrency string
+	var status, orderPhone, cartPhone, customerPhone, salesOrderID, metaPhone, metaQR, metaCurrency string
 	var meta []byte
 	var voidedAt *string
 	err := pool.QueryRow(ctx, `
@@ -359,17 +367,19 @@ func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.N
 			COALESCE(pt.transaction_date::text, ''),
 			COALESCE(pt.metadata, '{}'::jsonb),
 			COALESCE(pt.sales_order_id::text, ''),
-			COALESCE(so.customer_phone, ''),
+			COALESCE(NULLIF(so.customer_phone, ''), so.metadata->>'customer_phone', ''),
+			COALESCE(NULLIF(cart.guest_phone, ''), cart.metadata->>'customer_phone', ''),
 			COALESCE(cu.phone, '')
 		FROM pos_transactions pt
 		JOIN stores s ON s.id = pt.store_id
 		LEFT JOIN sales_orders_v2 so ON so.id = pt.sales_order_id
-		LEFT JOIN customers cu ON cu.id = pt.customer_id
+		LEFT JOIN carts cart ON cart.id = COALESCE(pt.source_cart_id, so.source_cart_id)
+		LEFT JOIN customers cu ON cu.id = COALESCE(pt.customer_id, so.customer_id, cart.customer_id)
 		WHERE pt.id = $1
 	`, txID).Scan(
 		&receipt.Number, &receipt.StoreName, &status, &voidedAt,
 		&receipt.Tax, &receipt.Total, &receipt.Date, &meta, &salesOrderID,
-		&orderPhone, &customerPhone,
+		&orderPhone, &cartPhone, &customerPhone,
 	)
 	if err != nil {
 		return saleReceipt{}, err
@@ -393,7 +403,8 @@ func loadSaleReceipt(ctx context.Context, pool *pgxpool.Pool, event repository.N
 			receipt.OptIn = opted
 		}
 	}
-	receipt.Phone = resolveCustomerPhone(metaPhone, orderPhone, customerPhone)
+	payloadPhone, _ := payload["customer_phone"].(string)
+	receipt.Phone = resolveCustomerPhone(metaPhone, orderPhone, customerPhone, cartPhone, payloadPhone)
 	receipt.Currency = metaCurrency
 	if receipt.Currency == "" {
 		receipt.Currency = "SAR"

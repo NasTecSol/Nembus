@@ -28,6 +28,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -136,7 +137,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 
 	// SAP Migration Batch Ingestion (agent -> cloud) - Secured with AgentAPIKeyMiddleware
 	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
-	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC)
+	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC, tenantManager, masterPool)
 	apiV1 := r.Group("/api/v1")
 	apiV1.Use(middleware.AgentAPIKeyMiddleware())
 	router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
@@ -516,18 +517,31 @@ func main() {
 	// Serve the images folder under /images URL path
 	r.Static("/images", "./images") // <-- this makes /images/* accessible
 
-	// ── gRPC Backup Service ────────────────────────────────────────────────
+	// ── gRPC Backup & Sync Service ─────────────────────────────────────────
 	go func() {
 		grpcAddr := ":" + cfg.GRPCPort
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
 			log.Fatalf("gRPC: failed to listen on %s: %v", grpcAddr, err)
 		}
-		grpcServer := grpc.NewServer()
+		var serverOpts []grpc.ServerOption
+		certFile := os.Getenv("GRPC_TLS_CERT_FILE")
+		keyFile := os.Getenv("GRPC_TLS_KEY_FILE")
+		if certFile != "" && keyFile != "" {
+			creds, tlsErr := credentials.NewServerTLSFromFile(certFile, keyFile)
+			if tlsErr != nil {
+				log.Fatalf("gRPC: failed to load TLS credentials: %v", tlsErr)
+			}
+			serverOpts = append(serverOpts, grpc.Creds(creds))
+		}
+		grpcServer := grpc.NewServer(serverOpts...)
 		backupSrv := grpcbackup.NewBackupServer(tenantManager, cfg.JWTSecret, cfg.PGDumpPath)
 		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
 
 		syncSrv := grpcbackup.NewSyncServer(tenantManager, masterPool)
+		if os.Getenv("NEMBUS_REQUIRE_SYNC_TOKEN") == "true" {
+			syncSrv.SetRequireTokenAuth(true)
+		}
 		syncpb.RegisterSyncServiceServer(grpcServer, syncSrv)
 
 		// Enable reflection so grpcurl/Postman can discover services at runtime
@@ -535,6 +549,30 @@ func main() {
 		log.Printf("✅ gRPC Backup & Sync Service listening on %s (reflection enabled)", grpcAddr)
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("gRPC: serve error: %v", err)
+		}
+	}()
+
+	// ── Periodic change_log compaction & sync_inbox retention worker ───────
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				maintCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+				tenants, err := masterRepo.ListActiveTenants(maintCtx)
+				if err == nil {
+					for _, t := range tenants {
+						if tPool, err := tenantManager.GetPool(maintCtx, t.Slug); err == nil && tPool != nil {
+							_, _ = grpcbackup.CompactChangeLog(maintCtx, tPool, 30*24*time.Hour)
+							_, _ = grpcbackup.CleanupSyncInbox(maintCtx, tPool, 30*24*time.Hour)
+						}
+					}
+				}
+				cancel()
+			}
 		}
 	}()
 

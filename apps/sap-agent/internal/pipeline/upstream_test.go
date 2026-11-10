@@ -14,13 +14,15 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
 	"github.com/NasTecSol/nembus-sap-agent/internal/pipeline"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
+	"github.com/google/uuid"
 )
 
 // MockSAPClient implements pipeline.SAPClient
 type MockSAPClient struct {
-	postInvoiceFunc        func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
+	postInvoiceFunc         func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
 	postIncomingPaymentFunc func(ctx context.Context, payment *sap.SAPPaymentRequest) (*sap.SAPPaymentResponse, error)
-	postCreditMemoFunc     func(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
+	postCreditMemoFunc      func(ctx context.Context, memo *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error)
+	stockBySKU              map[string]float64
 
 	postedCreditMemos []*sap.SAPInvoiceRequest
 }
@@ -48,25 +50,41 @@ func (m *MockSAPClient) PostCreditMemo(ctx context.Context, memo *sap.SAPInvoice
 }
 
 func (m *MockSAPClient) CheckItemWarehouseStock(ctx context.Context, itemCode, warehouseCode string) (float64, error) {
+	if m.stockBySKU != nil {
+		if v, ok := m.stockBySKU[itemCode]; ok {
+			return v, nil
+		}
+		if v, ok := m.stockBySKU["*"]; ok {
+			return v, nil
+		}
+	}
 	return 999.0, nil
 }
 
 // MockNembusClient implements pipeline.NembusClient
 type MockNembusClient struct {
-	unpostedPOSTransactions   []nembus.POSTransaction
-	txLines                   map[int64][]nembus.POSTransactionLine
-	txPayments                map[int64][]nembus.POSPayment
-	markedTransactions        map[int64]markedSAPDoc
-	heldTransactions          map[int64]string
+	unpostedPOSTransactions        []nembus.POSTransaction
+	approvedPendingPOSTransactions []nembus.POSTransaction
+	txLines                        map[int64][]nembus.POSTransactionLine
+	txPayments                     map[int64][]nembus.POSPayment
+	markedTransactions             map[int64]markedSAPDoc
+	heldTransactions               map[int64]string
 
-	unpostedSalesReturns      []nembus.SalesReturn
-	returnLines               map[int64][]nembus.SalesReturnLine
-	markedReturns             map[int64]markedSAPDoc
-	originalSAPDocEntries     map[int32]int
+	unpostedSalesOrders        []nembus.SalesOrderV2
+	approvedPendingSalesOrders []nembus.SalesOrderV2
+	salesOrderLines            map[uuid.UUID][]nembus.SalesOrderLineV2
+	markedSalesOrders          map[uuid.UUID]markedSAPDoc
+	heldSalesOrders            map[uuid.UUID]string
 
-	fetchUnpostedReturnsErr   error
-	fetchReturnLinesErr       error
-	markReturnPostedErr       error
+	unpostedSalesReturns  []nembus.SalesReturn
+	returnLines           map[int64][]nembus.SalesReturnLine
+	markedReturns         map[int64]markedSAPDoc
+	originalSAPDocEntries map[int32]int
+
+	stockBySKU            map[string]float64
+	fetchUnpostedReturnsErr error
+	fetchReturnLinesErr     error
+	markReturnPostedErr     error
 }
 
 type markedSAPDoc struct {
@@ -79,10 +97,17 @@ func newMockNembusClient() *MockNembusClient {
 		txLines:               make(map[int64][]nembus.POSTransactionLine),
 		txPayments:            make(map[int64][]nembus.POSPayment),
 		markedTransactions:    make(map[int64]markedSAPDoc),
+		salesOrderLines:       make(map[uuid.UUID][]nembus.SalesOrderLineV2),
+		markedSalesOrders:     make(map[uuid.UUID]markedSAPDoc),
 		returnLines:           make(map[int64][]nembus.SalesReturnLine),
 		markedReturns:         make(map[int64]markedSAPDoc),
 		originalSAPDocEntries: make(map[int32]int),
+		stockBySKU:            map[string]float64{"*": 999},
 	}
+}
+
+func (m *MockNembusClient) FetchApprovedPendingPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error) {
+	return m.approvedPendingPOSTransactions, nil
 }
 
 func (m *MockNembusClient) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]nembus.POSTransaction, error) {
@@ -142,6 +167,87 @@ func (m *MockNembusClient) FetchOriginalSAPDocEntry(ctx context.Context, origina
 		return 0, nil
 	}
 	return entry, nil
+}
+
+func (m *MockNembusClient) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit int) ([]nembus.SalesOrderV2, error) {
+	return m.approvedPendingSalesOrders, nil
+}
+
+func (m *MockNembusClient) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]nembus.SalesOrderV2, error) {
+	return m.unpostedSalesOrders, nil
+}
+
+func (m *MockNembusClient) FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UUID) ([]nembus.SalesOrderLineV2, error) {
+	return m.salesOrderLines[orderID], nil
+}
+
+func (m *MockNembusClient) MarkSalesOrderPostedToSAP(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) error {
+	m.markedSalesOrders[orderID] = markedSAPDoc{DocEntry: sapDocEntry, DocNum: sapDocNum}
+	return nil
+}
+
+func (m *MockNembusClient) HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.UUID, orderNum string, storeID int32, whCode string, totalAmount float64, shortageItems []nembus.ShortageItem, summary string) error {
+	if m.heldSalesOrders == nil {
+		m.heldSalesOrders = make(map[uuid.UUID]string)
+	}
+	m.heldSalesOrders[orderID] = summary
+	return nil
+}
+
+func TestSalesOrderUpstream_StockShortageHold(t *testing.T) {
+	orderID := uuid.New()
+	mockNembus := newMockNembusClient()
+	mockSAP := &MockSAPClient{stockBySKU: map[string]float64{"SKU-1": 0}}
+	mockNembus.unpostedSalesOrders = []nembus.SalesOrderV2{{
+		ID:          orderID,
+		OrderNumber: "SO-100",
+		StoreID:     1,
+		OrderDate:   time.Now(),
+		TotalAmount: 50,
+	}}
+	mockNembus.salesOrderLines[orderID] = []nembus.SalesOrderLineV2{{
+		ProductID: 1, ProductSKU: "SKU-1", ProductName: "Widget", Quantity: 2, UnitPrice: 25, LineTotal: 50,
+	}}
+
+	sync := pipeline.NewUpstreamSync(&config.Config{NembusDefaultWarehouse: "WH1", BatchSize: 10}, mockSAP, mockNembus)
+	stats, err := sync.ProcessOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if stats.OrdersHeld != 1 {
+		t.Fatalf("expected 1 order held, got %d", stats.OrdersHeld)
+	}
+	if _, ok := mockNembus.heldSalesOrders[orderID]; !ok {
+		t.Fatal("expected sales order held for review")
+	}
+}
+
+func TestSalesOrderUpstream_PostsWhenStockAvailable(t *testing.T) {
+	orderID := uuid.New()
+	mockNembus := newMockNembusClient()
+	mockSAP := &MockSAPClient{stockBySKU: map[string]float64{"SKU-2": 100}}
+	mockNembus.unpostedSalesOrders = []nembus.SalesOrderV2{{
+		ID:          orderID,
+		OrderNumber: "SO-200",
+		StoreID:     1,
+		OrderDate:   time.Now(),
+		TotalAmount: 40,
+	}}
+	mockNembus.salesOrderLines[orderID] = []nembus.SalesOrderLineV2{{
+		ProductID: 2, ProductSKU: "SKU-2", ProductName: "Gadget", Quantity: 1, UnitPrice: 40, LineTotal: 40,
+	}}
+
+	sync := pipeline.NewUpstreamSync(&config.Config{NembusDefaultWarehouse: "WH1", BatchSize: 10}, mockSAP, mockNembus)
+	stats, err := sync.ProcessOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if stats.OrdersPosted != 1 {
+		t.Fatalf("expected 1 order posted, got %d", stats.OrdersPosted)
+	}
+	if _, ok := mockNembus.markedSalesOrders[orderID]; !ok {
+		t.Fatal("expected sales order marked posted to SAP")
+	}
 }
 
 func TestBoundaryDecoupling_ZeroSyncQueueReferences(t *testing.T) {

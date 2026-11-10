@@ -45,8 +45,8 @@ func (uc *ZatcaUseCase) IssuedTransactionDocument(ctx context.Context, txn *repo
 	return entry, err
 }
 
-// EnsureSalesOrderDocument reads persisted orders and lines. Presence and valid
-// totals determine readiness; no additional order/payment status is required.
+// EnsureSalesOrderDocument reads persisted orders and lines and prepares the
+// signed QR. ZATCA submission itself is held until order fulfillment.
 // Existing documents are returned unchanged, including historical POS invoices.
 func (uc *ZatcaUseCase) EnsureSalesOrderDocument(ctx context.Context, id uuid.UUID) (*repository.ZatcaDocumentChain, error) {
 	if uc.cfg == nil {

@@ -22,7 +22,7 @@ INSERT INTO pos_terminals (
     metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6
-) RETURNING id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at
+) RETURNING id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at
 `
 
 type CreatePOSTerminalParams struct {
@@ -50,6 +50,8 @@ func (q *Queries) CreatePOSTerminal(ctx context.Context, arg CreatePOSTerminalPa
 		&i.TerminalCode,
 		&i.TerminalName,
 		&i.DeviceID,
+		&i.SyncTokenHash,
+		&i.TokenIssuedAt,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -69,7 +71,7 @@ func (q *Queries) DeletePOSTerminal(ctx context.Context, id int32) error {
 }
 
 const getPOSTerminal = `-- name: GetPOSTerminal :one
-SELECT id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at FROM pos_terminals
+SELECT id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at FROM pos_terminals
 WHERE id = $1
 `
 
@@ -82,6 +84,8 @@ func (q *Queries) GetPOSTerminal(ctx context.Context, id int32) (PosTerminal, er
 		&i.TerminalCode,
 		&i.TerminalName,
 		&i.DeviceID,
+		&i.SyncTokenHash,
+		&i.TokenIssuedAt,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -91,7 +95,7 @@ func (q *Queries) GetPOSTerminal(ctx context.Context, id int32) (PosTerminal, er
 }
 
 const getPOSTerminalByCode = `-- name: GetPOSTerminalByCode :one
-SELECT id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at FROM pos_terminals
+SELECT id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at FROM pos_terminals
 WHERE store_id = $1 AND terminal_code = $2
 `
 
@@ -109,6 +113,8 @@ func (q *Queries) GetPOSTerminalByCode(ctx context.Context, arg GetPOSTerminalBy
 		&i.TerminalCode,
 		&i.TerminalName,
 		&i.DeviceID,
+		&i.SyncTokenHash,
+		&i.TokenIssuedAt,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -118,7 +124,7 @@ func (q *Queries) GetPOSTerminalByCode(ctx context.Context, arg GetPOSTerminalBy
 }
 
 const listActivePOSTerminalsByStore = `-- name: ListActivePOSTerminalsByStore :many
-SELECT id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at FROM pos_terminals
+SELECT id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at FROM pos_terminals
 WHERE store_id = $1 AND is_active = true
 ORDER BY terminal_code
 `
@@ -138,6 +144,8 @@ func (q *Queries) ListActivePOSTerminalsByStore(ctx context.Context, storeID int
 			&i.TerminalCode,
 			&i.TerminalName,
 			&i.DeviceID,
+			&i.SyncTokenHash,
+			&i.TokenIssuedAt,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -154,7 +162,7 @@ func (q *Queries) ListActivePOSTerminalsByStore(ctx context.Context, storeID int
 }
 
 const listPOSTerminals = `-- name: ListPOSTerminals :many
-SELECT id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at FROM pos_terminals
+SELECT id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at FROM pos_terminals
 ORDER BY terminal_code
 `
 
@@ -173,6 +181,8 @@ func (q *Queries) ListPOSTerminals(ctx context.Context) ([]PosTerminal, error) {
 			&i.TerminalCode,
 			&i.TerminalName,
 			&i.DeviceID,
+			&i.SyncTokenHash,
+			&i.TokenIssuedAt,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -189,7 +199,7 @@ func (q *Queries) ListPOSTerminals(ctx context.Context) ([]PosTerminal, error) {
 }
 
 const listPOSTerminalsByStore = `-- name: ListPOSTerminalsByStore :many
-SELECT id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at FROM pos_terminals
+SELECT id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at FROM pos_terminals
 WHERE store_id = $1
 ORDER BY terminal_code
 `
@@ -209,6 +219,8 @@ func (q *Queries) ListPOSTerminalsByStore(ctx context.Context, storeID int32) ([
 			&i.TerminalCode,
 			&i.TerminalName,
 			&i.DeviceID,
+			&i.SyncTokenHash,
+			&i.TokenIssuedAt,
 			&i.IsActive,
 			&i.Metadata,
 			&i.CreatedAt,
@@ -228,7 +240,7 @@ const togglePOSTerminalActive = `-- name: TogglePOSTerminalActive :one
 UPDATE pos_terminals
 SET is_active = $2
 WHERE id = $1
-RETURNING id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at
+RETURNING id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at
 `
 
 type TogglePOSTerminalActiveParams struct {
@@ -245,6 +257,8 @@ func (q *Queries) TogglePOSTerminalActive(ctx context.Context, arg TogglePOSTerm
 		&i.TerminalCode,
 		&i.TerminalName,
 		&i.DeviceID,
+		&i.SyncTokenHash,
+		&i.TokenIssuedAt,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,
@@ -261,7 +275,7 @@ SET
     is_active = $4,
     metadata = $5
 WHERE id = $1
-RETURNING id, store_id, terminal_code, terminal_name, device_id, is_active, metadata, created_at, updated_at
+RETURNING id, store_id, terminal_code, terminal_name, device_id, sync_token_hash, token_issued_at, is_active, metadata, created_at, updated_at
 `
 
 type UpdatePOSTerminalParams struct {
@@ -287,6 +301,8 @@ func (q *Queries) UpdatePOSTerminal(ctx context.Context, arg UpdatePOSTerminalPa
 		&i.TerminalCode,
 		&i.TerminalName,
 		&i.DeviceID,
+		&i.SyncTokenHash,
+		&i.TokenIssuedAt,
 		&i.IsActive,
 		&i.Metadata,
 		&i.CreatedAt,

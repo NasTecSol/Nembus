@@ -4670,3 +4670,140 @@ LEFT JOIN output_vat ov ON ov.organization_id = ap.organization_id AND ov.store_
 LEFT JOIN input_vat iv ON iv.organization_id = ap.organization_id AND iv.store_id = ap.store_id AND iv.period_month = ap.period_month
 GROUP BY ap.organization_id, ap.store_id, s.name, ap.period_month
 ORDER BY ap.period_month DESC, s.name;
+
+-- =====================================================================
+-- 7. Cloud Change Log Trigger Function & Triggers (Phase 3 & Phase 4)
+-- =====================================================================
+CREATE OR REPLACE FUNCTION "public"."trg_record_change_log"() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_entity_type VARCHAR(50);
+    v_entity_id   BIGINT;
+    v_payload     JSONB;
+    v_seq         BIGINT;
+BEGIN
+    -- Suppress recording when POS applies pulled deltas locally or on POS local DB
+    IF current_setting('nembus.sync_applier', true) = 'true'
+       OR current_setting('nembus.suppress_change_log', true) = 'true'
+       OR to_regclass('public.local_device_config') IS NOT NULL THEN
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    v_entity_type := TG_ARGV[0];
+    IF TG_OP = 'DELETE' THEN
+        v_entity_id := OLD.id;
+        v_payload := to_jsonb(OLD);
+    ELSE
+        v_entity_id := NEW.id;
+        v_payload := to_jsonb(NEW);
+    END IF;
+
+    -- Serialize seq allocation with commit/read snapshot locks for gap-safe StreamChanges
+    PERFORM pg_advisory_xact_lock(hashtext('nembus.change_log_seq'));
+
+    INSERT INTO change_log (entity_type, entity_id, op, payload, changed_at)
+    VALUES (v_entity_type, v_entity_id, TG_OP, v_payload, NOW())
+    RETURNING seq INTO v_seq;
+
+    PERFORM pg_notify('nembus_changes', v_seq::text);
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Master/transactional pulled entities (soft-delete via is_active=false; AFTER INSERT OR UPDATE)
+DROP TRIGGER IF EXISTS trg_change_log_units_of_measure ON units_of_measure;
+CREATE TRIGGER trg_change_log_units_of_measure AFTER INSERT OR UPDATE ON units_of_measure FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('units_of_measure');
+
+DROP TRIGGER IF EXISTS trg_change_log_product_categories ON product_categories;
+CREATE TRIGGER trg_change_log_product_categories AFTER INSERT OR UPDATE ON product_categories FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('product_categories');
+
+DROP TRIGGER IF EXISTS trg_change_log_payment_terms ON payment_terms;
+CREATE TRIGGER trg_change_log_payment_terms AFTER INSERT OR UPDATE ON payment_terms FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('payment_terms');
+
+DROP TRIGGER IF EXISTS trg_change_log_users ON users;
+CREATE TRIGGER trg_change_log_users AFTER INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('users');
+
+DROP TRIGGER IF EXISTS trg_change_log_roles ON roles;
+CREATE TRIGGER trg_change_log_roles AFTER INSERT OR UPDATE ON roles FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('roles');
+
+DROP TRIGGER IF EXISTS trg_change_log_permissions ON permissions;
+CREATE TRIGGER trg_change_log_permissions AFTER INSERT OR UPDATE ON permissions FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('permissions');
+
+DROP TRIGGER IF EXISTS trg_change_log_cashiers ON cashiers;
+CREATE TRIGGER trg_change_log_cashiers AFTER INSERT OR UPDATE ON cashiers FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('cashiers');
+
+DROP TRIGGER IF EXISTS trg_change_log_business_partners ON business_partners;
+CREATE TRIGGER trg_change_log_business_partners AFTER INSERT OR UPDATE ON business_partners FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('business_partners');
+
+DROP TRIGGER IF EXISTS trg_change_log_price_lists ON price_lists;
+CREATE TRIGGER trg_change_log_price_lists AFTER INSERT OR UPDATE ON price_lists FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('price_lists');
+
+DROP TRIGGER IF EXISTS trg_change_log_products ON products;
+CREATE TRIGGER trg_change_log_products AFTER INSERT OR UPDATE ON products FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('products');
+
+DROP TRIGGER IF EXISTS trg_change_log_product_variants ON product_variants;
+CREATE TRIGGER trg_change_log_product_variants AFTER INSERT OR UPDATE ON product_variants FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('product_variants');
+
+DROP TRIGGER IF EXISTS trg_change_log_customers ON customers;
+CREATE TRIGGER trg_change_log_customers AFTER INSERT OR UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('customers');
+
+DROP TRIGGER IF EXISTS trg_change_log_recipes ON recipes;
+CREATE TRIGGER trg_change_log_recipes AFTER INSERT OR UPDATE ON recipes FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('recipes');
+
+DROP TRIGGER IF EXISTS trg_change_log_menu_items ON menu_items;
+CREATE TRIGGER trg_change_log_menu_items AFTER INSERT OR UPDATE ON menu_items FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('menu_items');
+
+DROP TRIGGER IF EXISTS trg_change_log_menu_modifier_groups ON menu_modifier_groups;
+CREATE TRIGGER trg_change_log_menu_modifier_groups AFTER INSERT OR UPDATE ON menu_modifier_groups FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('menu_modifier_groups');
+
+DROP TRIGGER IF EXISTS trg_change_log_combo_bundles ON combo_bundles;
+CREATE TRIGGER trg_change_log_combo_bundles AFTER INSERT OR UPDATE ON combo_bundles FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('combo_bundles');
+
+DROP TRIGGER IF EXISTS trg_change_log_promotions ON promotions;
+CREATE TRIGGER trg_change_log_promotions AFTER INSERT OR UPDATE ON promotions FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('promotions');
+
+DROP TRIGGER IF EXISTS trg_change_log_restaurant_promotions ON restaurant_promotions;
+CREATE TRIGGER trg_change_log_restaurant_promotions AFTER INSERT OR UPDATE ON restaurant_promotions FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('restaurant_promotions');
+
+DROP TRIGGER IF EXISTS trg_change_log_stock_counts ON stock_counts;
+CREATE TRIGGER trg_change_log_stock_counts AFTER INSERT OR UPDATE ON stock_counts FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('stock_counts');
+
+DROP TRIGGER IF EXISTS trg_change_log_stock_count_lines ON stock_count_lines;
+CREATE TRIGGER trg_change_log_stock_count_lines AFTER INSERT OR UPDATE ON stock_count_lines FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('stock_count_lines');
+
+DROP TRIGGER IF EXISTS trg_change_log_inventory_stock ON inventory_stock;
+CREATE TRIGGER trg_change_log_inventory_stock AFTER INSERT OR UPDATE ON inventory_stock FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('inventory_stock');
+
+DROP TRIGGER IF EXISTS trg_change_log_stock_movements ON stock_movements;
+CREATE TRIGGER trg_change_log_stock_movements AFTER INSERT OR UPDATE ON stock_movements FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('stock_movements');
+
+DROP TRIGGER IF EXISTS trg_change_log_organizations ON organizations;
+CREATE TRIGGER trg_change_log_organizations AFTER INSERT OR UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('organizations');
+
+-- Join/leaf pulled entities (hard DELETE tombstones allowed; AFTER INSERT OR UPDATE OR DELETE)
+DROP TRIGGER IF EXISTS trg_change_log_role_permissions ON role_permissions;
+CREATE TRIGGER trg_change_log_role_permissions AFTER INSERT OR UPDATE OR DELETE ON role_permissions FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('role_permissions');
+
+DROP TRIGGER IF EXISTS trg_change_log_user_roles ON user_roles;
+CREATE TRIGGER trg_change_log_user_roles AFTER INSERT OR UPDATE OR DELETE ON user_roles FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('user_roles');
+
+DROP TRIGGER IF EXISTS trg_change_log_partner_addresses ON partner_addresses;
+CREATE TRIGGER trg_change_log_partner_addresses AFTER INSERT OR UPDATE OR DELETE ON partner_addresses FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('partner_addresses');
+
+DROP TRIGGER IF EXISTS trg_change_log_user_biometric_templates ON user_biometric_templates;
+CREATE TRIGGER trg_change_log_user_biometric_templates AFTER INSERT OR UPDATE OR DELETE ON user_biometric_templates FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('user_biometric_templates');
+
+DROP TRIGGER IF EXISTS trg_change_log_product_barcodes ON product_barcodes;
+CREATE TRIGGER trg_change_log_product_barcodes AFTER INSERT OR UPDATE OR DELETE ON product_barcodes FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('product_barcodes');
+
+DROP TRIGGER IF EXISTS trg_change_log_menu_item_availability_schedules ON menu_item_availability_schedules;
+CREATE TRIGGER trg_change_log_menu_item_availability_schedules AFTER INSERT OR UPDATE OR DELETE ON menu_item_availability_schedules FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('menu_item_availability_schedules');
+
+DROP TRIGGER IF EXISTS trg_change_log_product_prices ON product_prices;
+CREATE TRIGGER trg_change_log_product_prices AFTER INSERT OR UPDATE OR DELETE ON product_prices FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('product_prices');

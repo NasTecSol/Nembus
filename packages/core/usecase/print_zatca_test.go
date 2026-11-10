@@ -51,7 +51,7 @@ func TestPrintReceiptDoesNotBlockOnZatcaReportingPostgres(t *testing.T) {
 	_, err = pool.Exec(ctx, `CREATE TABLE organizations(id int PRIMARY KEY,name text,code text,legal_name text,tax_id text,currency_code text,fiscal_year_variant text,is_active bool,metadata jsonb,created_at timestamp,updated_at timestamp);
 CREATE TABLE stores(id int PRIMARY KEY,organization_id int);
 CREATE TABLE sales_orders_v2(id uuid PRIMARY KEY,organization_id int,store_id int,pos_terminal_id int,order_number text);
-CREATE TABLE pos_transactions(id int PRIMARY KEY,sales_order_id uuid,store_id int,pos_terminal_id int,transaction_number text);
+CREATE TABLE pos_transactions(id int PRIMARY KEY,sales_order_id uuid,store_id int,pos_terminal_id int,transaction_number text,metadata jsonb DEFAULT '{}');
 CREATE TABLE zatca_device_configs(organization_id int,store_id int,pos_terminal_id int,device_type text,is_active bool,is_revoked bool);
 CREATE TABLE zatca_document_chain(id bigserial PRIMARY KEY,entity_type text,entity_id text,organization_id int,zatca_status text,zatca_response jsonb,qr_code_base64 text);
 INSERT INTO organizations(id,name,code,metadata) VALUES
@@ -95,16 +95,16 @@ INSERT INTO zatca_device_configs VALUES
 	unsignedID := addOrder(1, 8, "", "")
 	transactionRegisteredID := addOrder(1, 99, "", "")
 	transactionUnregisteredID := addOrder(1, 8, "", "")
-	if _, err := pool.Exec(ctx, `INSERT INTO pos_transactions VALUES
-      (4,$1,1,8,'TXN-ACTUAL-REGISTERED'),(5,$2,2,99,'TXN-ACTUAL-UNREGISTERED')`, transactionRegisteredID, transactionUnregisteredID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO pos_transactions(id,sales_order_id,store_id,pos_terminal_id,transaction_number,metadata) VALUES
+	      (4,$1,1,8,'TXN-ACTUAL-REGISTERED','{"qr_code_base64":"transaction-qr"}'),(5,$2,2,99,'TXN-ACTUAL-UNREGISTERED','{}')`, transactionRegisteredID, transactionUnregisteredID); err != nil {
 		t.Fatal(err)
 	}
 	historicalID := addOrder(1, 10, "reported", "historical-qr")
 	deletedDeviceID := addOrder(1, 20, "reported", "historical-qr")
 	missingQRID := addOrder(1, 10, "reported", "")
 	oversizedQRID := addOrder(1, 10, "reported", strings.Repeat("x", 2001))
-	if _, err := pool.Exec(ctx, `INSERT INTO pos_transactions VALUES
- (1,NULL,1,99,'TXN-UNREGISTERED'),(2,$1,1,8,'TXN-PENDING'),(3,NULL,1,10,'TXN-LEGACY')`, pendingID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO pos_transactions(id,sales_order_id,store_id,pos_terminal_id,transaction_number,metadata) VALUES
+	 (1,NULL,1,99,'TXN-UNREGISTERED','{}'),(2,$1,1,8,'TXN-PENDING','{"qr_code_base64":"transaction-qr"}'),(3,NULL,1,10,'TXN-LEGACY','{}')`, pendingID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO zatca_document_chain(entity_type,entity_id,organization_id,zatca_status,zatca_response,qr_code_base64)
@@ -140,10 +140,10 @@ INSERT INTO zatca_device_configs VALUES
 		name, order, number, receiptType, want, qr string
 		org                                        int32
 	}{
-		{name: "pending", order: pendingID, want: "not_reported"},
-		{name: "failed", order: failedID, want: "not_reported"},
+		{name: "pending", order: pendingID, want: "pending", qr: "signed-qr"},
+		{name: "failed", order: failedID, want: "pending", qr: "signed-qr"},
 		{name: "registered without document", order: unsignedID, want: "not_reported"},
-		{name: "actual transaction registered", order: transactionRegisteredID, want: "not_reported"},
+		{name: "actual transaction registered", order: transactionRegisteredID, want: "pending", qr: "transaction-qr"},
 		{name: "actual transaction unregistered", order: transactionUnregisteredID, want: "not_applicable"},
 		{name: "reported", order: reportedID, want: "included", qr: "signed-qr"},
 		{name: "unregistered terminal", order: noRegistrationID, want: "not_applicable"},
@@ -166,7 +166,7 @@ INSERT INTO zatca_device_configs VALUES
 		{name: "order UUID fallback", number: reportedID, want: "included", qr: "signed-qr"},
 		{name: "order number fallback", number: "SO-" + reportedID, want: "included", qr: "signed-qr"},
 		{name: "standalone unregistered POS transaction", number: "TXN-UNREGISTERED", want: "not_applicable"},
-		{name: "transaction linked to pending order", number: "TXN-PENDING", want: "not_reported"},
+		{name: "transaction linked to pending order", number: "TXN-PENDING", want: "pending", qr: "signed-qr"},
 		{name: "reported legacy POS transaction", number: "TXN-LEGACY", want: "included", qr: "legacy-qr"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

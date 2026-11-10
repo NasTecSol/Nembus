@@ -556,3 +556,37 @@ CREATE TABLE sync_watermarks (
     UNIQUE(entity_type, store_id)
 );
 
+-- Cloud inbox for effectively-once deduplication of POS outbox items (Phase 2)
+CREATE TABLE sync_inbox (
+    outbox_uuid     UUID PRIMARY KEY,
+    device_id       VARCHAR(100) NOT NULL,
+    store_id        INTEGER NOT NULL,
+    batch_id        VARCHAR(100),
+    entity_type     VARCHAR(50) NOT NULL,
+    entity_id       BIGINT NOT NULL,
+    applied_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_sync_inbox_applied_at ON sync_inbox(applied_at);
+CREATE INDEX idx_sync_inbox_batch_id ON sync_inbox(batch_id) WHERE batch_id IS NOT NULL;
+
+-- Cloud change log for gap-safe sequential delta pull and tombstones (Phase 3)
+CREATE TABLE change_log (
+    seq             BIGSERIAL PRIMARY KEY,
+    entity_type     VARCHAR(50) NOT NULL,
+    entity_id       BIGINT NOT NULL,
+    op              VARCHAR(10) NOT NULL CHECK (op IN ('INSERT', 'UPDATE', 'DELETE')),
+    payload         JSONB,
+    changed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_change_log_entity_seq ON change_log(entity_type, entity_id, seq DESC);
+
+CREATE TABLE change_log_meta (
+    id                  SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    compacted_up_to_seq BIGINT NOT NULL DEFAULT 0,
+    min_retained_seq    BIGINT NOT NULL DEFAULT 0,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
