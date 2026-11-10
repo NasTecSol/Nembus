@@ -1,0 +1,194 @@
+package handler
+
+import (
+	"net/http"
+
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/usecase"
+	"github.com/NasTecSol/nembus-core/utils" // Assuming your NewResponse is here
+
+	"github.com/gin-gonic/gin"
+)
+
+// AuthHandler holds the auth use case
+type AuthHandler struct {
+	useCase *usecase.AuthUseCase
+}
+
+// NewAuthHandler creates a new auth handler instance
+func NewAuthHandler(uc *usecase.AuthUseCase) *AuthHandler {
+	return &AuthHandler{
+		useCase: uc,
+	}
+}
+
+// getRepositoryFromContext extracts repository from Gin context
+func (h *AuthHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
+	repo, ok := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "repository not found in context"})
+		c.Abort()
+		return nil
+	}
+	return repo
+}
+
+// Login handles POST /login
+// @Summary      User login
+// @Description  Authenticate user and receive JWT token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        request      body      LoginRequest  true  "Login credentials"
+// @Success      200  {object}  LoginResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Router       /api/auth/login [post]
+func (h *AuthHandler) Login(c *gin.Context) {
+	// Get repository from context and set it on use case
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return // Error already handled in getRepositoryFromContext
+	}
+	h.useCase.SetRepository(repo)
+
+	// Bind JSON input
+	var req struct {
+		UserLogin string `json:"user_login" binding:"required"`
+		Password  string `json:"password" binding:"required"`
+	}
+
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
+		return
+	}
+
+	// Call UseCase
+	response := h.useCase.Login(c.Request.Context(), req.UserLogin, req.Password)
+	if response.StatusCode != utils.CodeOK {
+		c.JSON(response.StatusCode, response)
+		return
+	}
+
+	// Respond with token
+	c.JSON(response.StatusCode, response)
+}
+
+// AuthorizeAction handles POST /api/auth/authorize-action
+// @Summary      Supervisor override authorization
+// @Description  A supervisor authenticates with their own credentials and authorizes a specific
+//
+//	action for the current cashier session. Returns a short-lived authorization token
+//	(5-minute TTL) that must be sent in the X-Authorization-Token header when calling
+//	the restricted endpoint (e.g. POST /api/pos/returns).
+//
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        x-tenant-id  header    string                  true  "Tenant identifier"
+// @Param        request      body      AuthorizeActionRequest  true  "Supervisor credentials and permission code"
+// @Success      200          {object}  AuthorizeActionResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      403          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/auth/authorize-action [post]
+func (h *AuthHandler) AuthorizeAction(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req AuthorizeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	resp := h.useCase.AuthorizeAction(
+		c.Request.Context(),
+		req.SupervisorLogin,
+		req.SupervisorPassword,
+		req.PermissionCode,
+		req.CashierID,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// LoginWithBiometric handles POST /api/auth/login/biometric
+// @Summary      Biometric login (1:1 or 1:N touch-only)
+// @Description  Authenticates using an ISO/IEC 19794-2:2005 probe FMD. Omit user_login for 1:N identification across active enrolled users.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        request      body      BiometricLoginRequest  true  "Probe FMD"
+// @Success      200  {object}  BiometricLoginResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Router       /api/auth/login/biometric [post]
+func (h *AuthHandler) LoginWithBiometric(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req struct {
+		FMDBase64 string `json:"fmd_base64" binding:"required"`
+		UserLogin string `json:"user_login,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "fmd_base64 is required", nil))
+		return
+	}
+
+	resp := h.useCase.LoginWithBiometric(c.Request.Context(), req.FMDBase64, req.UserLogin)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// AuthorizeActionWithBiometric handles POST /api/auth/authorize-action/biometric
+// @Summary      Supervisor override via fingerprint
+// @Description  Identifies a supervisor by fingerprint (1:1 if supervisor_login provided, else 1:N) and mints a 5-minute X-Authorization-Token when the matched user holds permission_code.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        request      body      BiometricAuthorizeActionRequest  true  "Supervisor fingerprint authorization"
+// @Success      200  {object}  AuthorizeActionResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      403  {object}  ErrorResponse
+// @Router       /api/auth/authorize-action/biometric [post]
+func (h *AuthHandler) AuthorizeActionWithBiometric(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	var req struct {
+		FMDBase64       string `json:"fmd_base64" binding:"required"`
+		SupervisorLogin string `json:"supervisor_login,omitempty"`
+		PermissionCode  string `json:"permission_code" binding:"required"`
+		CashierID       *int32 `json:"cashier_id,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "fmd_base64 and permission_code are required", nil))
+		return
+	}
+
+	resp := h.useCase.AuthorizeActionWithBiometric(
+		c.Request.Context(),
+		req.FMDBase64,
+		req.SupervisorLogin,
+		req.PermissionCode,
+		req.CashierID,
+	)
+	c.JSON(resp.StatusCode, resp)
+}
+

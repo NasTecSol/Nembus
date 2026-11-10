@@ -1,0 +1,15 @@
+{
+  "clients": [
+    {
+      "client_id": "example-billing-service",
+      "client_name": "Example Billing Integration",
+      "tenant_id": "example-tenant",
+      "scopes": [
+        "products:read",
+        "orders:write"
+      ],
+      "is_active": true,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_token_signature_here"
+    }
+  ]
+}

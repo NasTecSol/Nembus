@@ -1,316 +1,176 @@
-# NEMBUS Backend  
-**Nasar Entity-driven Modular Business Unified System**
+# Nembus Monorepo
 
-A scalable, clean-architecture backend built with **Go**, **PostgreSQL**, **SQLC**, and **Gin**, designed for enterprise-grade business systems such as ERP, HR, POS, and IAM platforms.
-
----
-
-## 🚀 Tech Stack
-
-| Layer | Technology |
-|-----|-----------|
-| Language | Go (Golang) |
-| Web Framework | Gin |
-| Database | PostgreSQL |
-| Query Layer | SQLC |
-| Architecture | Clean Architecture / Repository Pattern |
-| Config | Environment Variables |
-| API Style | REST (JSON) |
-| Auth (optional) | JWT / Middleware based |
-| Migrations | golang-migrate / goose (optional) |
+Welcome to the **Nembus Monorepo**, uniting the Cloud ERP Backend service and the POS Desktop client application into a single, high-performance Go Workspace.
 
 ---
 
-## 🧠 Architectural Philosophy
-
-This project follows **Clean Architecture principles** inspired by:
-- Robert C. Martin (Uncle Bob)
-- Domain-Driven Design (DDD)
-- Enterprise Application Architecture patterns
-
-### Key Goals:
-- **Separation of concerns**
-- **Database-agnostic business logic**
-- **Testability**
-- **Scalability**
-- **Long-term maintainability**
-
----
-
-## 📂 Project Structure
+## Workspace Architecture
 
 ```
-
-.
-├── cmd/
-│   └── server/
-│       └── main.go          # Application entry point
+nembus-monorepo/
+├── go.work                         # Go Workspace definition
+├── Makefile                        # Root automation task runner
+├── Dockerfile                      # Production build container for cloud deployment
+├── .gitmodules                     # Submodule configuration for POS Angular frontend
+├── .gitattributes                  # Enforces LF line endings for SQL & Atlas files (cross-platform)
+├── atlas.hcl                       # Root Atlas configuration (multi-env)
 │
-├── internal/
-│   ├── config/              # Environment & config loading
-│   │   └── config.go
-│   │
-│   ├── database/
-│   │   ├── migrations/      # SQL migrations
-│   │   └── postgres.go
-│   │
-│   ├── domain/              # Core business entities
-│   │   └── user.go
-│   │
-│   ├── repository/          # Data access layer (SQLC wrappers)
-│   │   └── user_repository.go
-│   │
-│   ├── service/             # Business logic layer
-│   │   └── user_service.go
-│   │
-│   ├── handler/             # HTTP handlers (Gin)
-│   │   └── user_handler.go
-│   │
-│   ├── middleware/          # Auth, logging, recovery
-│   │   └── auth.go
-│   │
-│   └── router/              # Route definitions
-│       └── router.go
+├── packages/
+│   └── core/                       # Shared domain module: github.com/NasTecSol/nembus-core
+│       ├── atlas.hcl               # Atlas config for core (local & stg envs)
+│       ├── sqlc.yaml               # sqlc code generation config
+│       ├── db/
+│       │   ├── schema/             # Canonical SQL schema source files (10 files)
+│       │   └── migrations/         # Atlas-managed versioned migrations + atlas.sum
+│       ├── queries/                # SQL query files (sqlc source)
+│       ├── repository/             # SQLC-generated models & queries
+│       ├── config/                 # Base configuration struct
+│       ├── usecase/                # Domain business logic usecases
+│       ├── handler/                # REST API handlers
+│       ├── middleware/             # JWT, Tenant, Logger middleware
+│       ├── routing/                # Router initialization helpers
+│       ├── printing/               # Thermal printer ESC/POS engine
+│       └── grpc/backuppb/          # gRPC Protobuf definitions
 │
-├── sql/
-│   ├── queries/             # SQLC queries
-│   │   └── user.sql
-│   └── schema/              # SQL schema
-│       └── user.sql
+├── apps/
+│   ├── cloud-server/               # Cloud ERP Server: github.com/NasTecSol/nembus-server
+│   │   ├── main.go                 # Cloud server entry point (HTTP + gRPC)
+│   │   ├── internal/grpc/          # gRPC backup server service
+│   │   ├── docs/                   # Swagger OpenAPI definitions
+│   │   └── cmd/                    # Cloud CLI utilities (backup-client, etc.)
+│   │
+│   └── pos-client/                 # POS Desktop App: github.com/NasTecSol/nembus-client
+│       ├── main.go                 # Wails desktop app entry point
+│       ├── app.go                  # Embedded PostgreSQL & sync engine lifecycle
+│       ├── wails.json              # Wails desktop project configuration
+│       ├── migrations/             # POS-specific schema extensions
+│       ├── frontend/               # Angular GUI (Git Submodule: NasTecSol/NPOS-Bofc)
+│       └── scripts/sync_core.ps1   # Core schema sync utility
 │
-├── sqlc.yaml                # SQLC configuration
-├── go.mod
-├── go.sum
-├── .env.example
-└── README.md
-
+└── .github/
+    └── workflows/
+        └── db-validate.yml         # CI: validates migrations, applies schema, checks sqlc freshness
 ```
 
 ---
 
-## 🔄 Request Flow (High Level)
+## Database Migrations (Atlas)
 
-```
+Database schema is managed with **[Atlas](https://atlasgo.io/)** using versioned migrations stored in `packages/core/db/migrations/`.
 
-HTTP Request
-↓
-Gin Router
-↓
-Middleware (Auth / Logging)
-↓
-Handler (HTTP layer)
-↓
-Service (Business logic)
-↓
-Repository (SQLC)
-↓
-PostgreSQL
+### Directory Layout
 
-````
+| Path | Purpose |
+|:---|:---|
+| `packages/core/db/schema/` | Canonical SQL schema definitions (source of truth) |
+| `packages/core/db/migrations/` | Versioned migration files generated by Atlas |
+| `packages/core/db/migrations/atlas.sum` | Checksum file — do not edit manually |
+| `packages/core/atlas.hcl` | Atlas environment config (`local`, `stg`) |
 
----
+### Local Development Workflow
 
-## 🗄️ Database & SQLC
+> **Prerequisites**: Atlas CLI installed (`go install ariga.io/atlas/cmd/atlas@latest`), local PostgreSQL running.
 
-### Why SQLC?
-- Compile-time safety for SQL
-- No ORM magic
-- Full control over queries
-- Excellent performance
-
-### Example SQLC Query
-
-```sql
--- name: GetUserByID :one
-SELECT id, email, name
-FROM users
-WHERE id = $1;
-````
-
-SQLC generates **type-safe Go code** automatically.
-
----
-
-## ⚙️ Environment Configuration
-
-NEMBUS supports multiple environments (development, staging, production) with environment-specific configuration files.
-
-### Setup
-
-1. **Development**: Create `configs/.env.dev`
-2. **Staging**: Create `configs/.env.stg`
-3. **Production**: Use system environment variables or secure config management
-
-### Configuration Files
-
-See [ENVIRONMENTS.md](ENVIRONMENTS.md) for detailed environment configuration guide.
-
-### Quick Example
-
-```env
-ENV=development
-PORT=8080
-MASTER_DB_URL=postgres://user:pass@localhost:5432/dbname?sslmode=disable
-JWT_SECRET=your-secret-key-minimum-32-characters-long
-```
-
-### Makefile Commands
+> ⚠️ **Version alignment**: The CI workflow pins a specific Atlas version
+> (`ariga/setup-atlas` in `.github/workflows/db-validate.yml`). Atlas changed its
+> migration **checksum algorithm** between releases, so a `atlas.sum` generated by
+> a different version than CI will fail validation with `checksum mismatch`.
+> Always keep your local Atlas on the same version as CI, and after upgrading run
+> `atlas migrate hash` (see below) before pushing.
 
 ```bash
-make dev              # Run in development mode
-make stg              # Run in staging mode
-make build            # Build application
-make swagger          # Generate API documentation
-make migrate-all      # Run all migrations
+# 1. Navigate to the core package
+cd packages/core
+
+# 2. Generate a new migration after editing db/schema/*.sql
+atlas migrate diff <migration_name> --env local
+
+# 3. Apply pending migrations to your local DB
+atlas migrate apply --env local
+
+# 4. Validate checksums
+atlas migrate validate --dir "file://db/migrations"
 ```
 
-See `make help` for all available commands.
+### Regenerating the Checksum (atlas.sum)
 
----
-
-## ▶️ Running the Application
-
-### Quick Start
+If you manually edit a migration file (not recommended), re-hash from `packages/core`:
 
 ```bash
-# Install dependencies
-make deps
-
-# Run in development mode
-make dev
-
-# Or run in staging mode
-make stg
+cd packages/core
+atlas migrate hash --dir "file://db/migrations"
 ```
 
-### Detailed Setup
+> ⚠️ **Never manually edit committed migration files.** Always create a new migration via `atlas migrate diff` instead.
 
-1. **Install Dependencies**
-   ```bash
-   make deps
-   # or
-   go mod tidy
-   ```
+### Windows: Line Endings & BOM
 
-2. **Setup Environment Configuration**
-   - Copy `configs/.env.example` to `configs/.env.dev` for development
-   - Update database connection strings and secrets
+The repo's `.gitattributes` enforces **LF line endings** for all `*.sql` files and `atlas.sum`. This ensures `atlas.sum` checksums match between Windows (local) and Linux (CI).
 
-3. **Run Database Migrations**
-   ```bash
-   make migrate-master    # Master database
-   make migrate-tenants   # Tenant databases
-   # or
-   make migrate-all       # All databases
-   ```
-
-4. **Generate SQLC Code** (if needed)
-   ```bash
-   make sqlc
-   # or
-   sqlc generate
-   ```
-
-5. **Start the Server**
-   ```bash
-   make dev    # Development mode
-   make stg    # Staging mode
-   make run    # Using .env file
-   ```
-
-Server will start at: `http://localhost:8080`
-
-### API Documentation (Swagger)
-
-1. **Generate Swagger Documentation**
-   ```bash
-   make swagger
-   # or
-   make install-swagger  # Install Swagger CLI first
-   swag init -g main.go -o docs/swagger
-   ```
-
-2. **Access Swagger UI**
-   - Start the server: `make dev`
-   - Open browser: `http://localhost:8080/swagger/index.html`
-
-See [docs/SWAGGER.md](docs/SWAGGER.md) for more details.
+- Atlas migration files must be saved as **UTF-8 without BOM**.
+- Recommended VS Code settings:
+  ```json
+  "files.encoding": "utf8",
+  "files.insertFinalNewline": true
+  ```
 
 ---
 
-## 🔐 Middleware
+## CI/CD — GitHub Actions
 
-Supported middleware pattern:
+### DB Schema, Migration & Tenant Apply (`db-validate.yml`)
 
-* JWT authentication
-* Request logging
-* Panic recovery
-* Role-based access control (RBAC)
+Triggered on **push to `junction`** that touches `packages/core/db/schema/**` or
+`packages/core/db/migrations/**`. Runs on `ubuntu-latest` with two PostgreSQL 16
+service containers (a scratch dev DB for Atlas diffing and a throwaway DB for
+fresh-migration testing).
 
-Example:
+| Step | What it does |
+|:---|:---|
+| Generate Migration | If `db/schema` changed, `atlas migrate diff` creates a new versioned migration (`schema_<timestamp>`) — not committed yet |
+| Validate Checksums | `atlas migrate validate` — ensures `atlas.sum` is consistent |
+| Test Fresh Migration | `atlas migrate apply` against a clean Postgres 16 DB — proves the migration works from scratch |
+| Commit Back | Only after validation passes, the generated migration + `atlas.sum` are committed back to `junction` via `GITHUB_TOKEN` (pushes made with it do **not** re-trigger workflows) |
+| Apply on Instance | Builds `migrate-tenants`, scp's the binary + migrations to the EC2 instance, and runs it over SSH (`localhost`) — applies to the master DB, then every **active** tenant database (reads `tenants.db_conn_str` from the master DB) |
+| Verify sqlc Freshness | Re-runs `sqlc generate` and diffs `repository/` — fails if generated code is stale |
+| Run Core & Server Tests | `go test -v ./...` for both `packages/core` and `apps/cloud-server` |
 
-```go
-router.Use(middleware.JWTAuth())
-```
-
----
-
-## 🧪 Testing Strategy
-
-* **Unit tests** for services
-* **Repository tests** with test database
-* **Handler tests** using `httptest`
-* SQLC enables mocking DB logic cleanly
-
----
-
-## 📦 Use Cases
-
-This backend architecture is suitable for:
-
-* ERP Systems
-* HR Management Systems
-* POS Systems
-* Inventory & Procurement
-* IAM / Access Control Systems
-* SaaS Multi-Tenant Platforms
+> **Required secrets**:
+> - `MASTER_DB_URL` — master DB connection URL **as seen from the instance**
+>   (e.g. `postgres://user:pass@localhost:5432/masterDB?sslmode=disable`),
+>   because the apply step executes on the same host as the Postgres
+>   containers. Adjust the port if your container publishes a different one.
+> - `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` — SSH access to the instance
+>   (already used by `deploy-pos-api.yml`).
+>
+> The apply step also ensures the **pinned Atlas version** (`v1.3.0`) is
+> installed on the instance (`~/bin/atlas`), since older versions compute
+> different migration checksums and would reject `atlas.sum`.
 
 ---
 
-## 🛣️ Roadmap
+## Quick Reference Commands
 
-* [ ] Multi-tenancy support
-* [ ] Role & permission engine
-* [ ] Event-driven modules
-* [ ] Audit logs
-* [ ] API versioning
-* [ ] GraphQL gateway (optional)
+All commands can be run via `make` from the monorepo root or using `go` / `wails` directly:
 
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit with clear messages
-4. Submit a Pull Request
+| Action | Makefile Command | Direct Command |
+|:---|:---|:---|
+| **Build Cloud Server** | `make build-server` | `cd apps/cloud-server && go build -o bin/nembus-server main.go` |
+| **Build POS Client (Exe)** | `make build-client` | `cd apps/pos-client && wails build` |
+| **Run Cloud Server (Dev)** | `make dev-server` | `cd apps/cloud-server && go run main.go dev` |
+| **Run POS Client (Dev)** | `make dev-client` | `cd apps/pos-client && wails dev` |
+| **Sync Core Schema** | `make sync-core` | `cd apps/pos-client && powershell -ExecutionPolicy Bypass -File scripts/sync_core.ps1` |
+| **Tidy Workspace** | `make tidy` | `go work sync` |
+| **New Migration** | — | `cd packages/core && atlas migrate diff <name> --env local` |
+| **Apply Migrations** | — | `cd packages/core && atlas migrate apply --env local` |
+| **Regenerate sqlc** | — | `cd packages/core && sqlc generate` |
 
 ---
 
-## 📜 License
+## Documentation Links
 
-MIT License © Nasar Tech
-
-```
-
----
-
-If you want, next we can:
-- Align this README **exactly** with `go-clean-template`
-- Add **API versioning conventions**
-- Add **RBAC + policy engine section**
-- Design a **mono-repo vs multi-repo strategy**
-- Create **Makefile + Docker setup**
-
-Just say the word 🚀
-```
+- **[Developer Setup Guide](SETUP_GUIDE.md)**: Complete guide to installing dependencies, building the Wails desktop app on Windows, and running local development environments.
+- **[Core Schema Sync Guide](SYNC_CORE_GUIDE.md)**: Detailed instructions on propagating core schema and query updates from `packages/core` to `apps/pos-client`.
+- **[Notification Center & Outbox Engine Guide](NOTIFICATION_ENGINE_GUIDE.md)**: Architecture, channels (WhatsApp, AWS SES, WebSocket), and routing rule reference.
+- **[ZATCA Integration Guide](ZATCA_GUIDE.md)**: Saudi e-invoicing (ZATCA) integration reference.
+- **[Atlas Docs](https://atlasgo.io/versioned/intro)**: Official Atlas versioned migration documentation.

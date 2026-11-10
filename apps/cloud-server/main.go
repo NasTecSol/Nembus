@@ -1,0 +1,591 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/NasTecSol/nembus-core/biometrics"
+	"github.com/NasTecSol/nembus-core/config"
+	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/NasTecSol/nembus-core/handler"
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/NasTecSol/nembus-core/repository"
+	router "github.com/NasTecSol/nembus-core/routing"
+	"github.com/NasTecSol/nembus-core/usecase"
+	cloudzatca "github.com/NasTecSol/nembus-core/zatca"
+	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
+	"github.com/NasTecSol/nembus-server/internal/notification"
+
+	_ "github.com/NasTecSol/nembus-server/docs/swagger" // Swagger generated docs
+
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/reflection"
+)
+
+// @title           NEMBUS API
+// @version         1.0
+// @description     NEMBUS Backend API - Nasar Entity-driven Modular Business Unified System
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  MIT
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// Swagger uses the serving origin, including the configured port.
+// @BasePath  /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
+// setupDatabase initializes and returns the master database connection pool and repository
+func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *repository.Queries, error) {
+	if cfg.MasterDBURL == "" {
+		log.Fatal("MASTER_DB_URL is not set")
+	}
+
+	pool, err := pgxpool.New(ctx, cfg.MasterDBURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Ensure required columns / schema patches exist
+	if err := manager.PatchDatabase(ctx, pool); err != nil {
+		pool.Close()
+		return nil, nil, err
+	}
+
+	// Initialize SQLC repository
+	queries := repository.New(pool)
+
+	return pool, queries, nil
+}
+
+// setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
+func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, invoiceUC *usecase.InvoiceUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, uomPackagingTemplateUC *usecase.UomPackagingTemplateUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, stockMovementsUC *usecase.StockMovementsUseCase, stockCountsUC *usecase.StockCountsUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, productCategoryUC *usecase.ProductCategoryUseCase, backupUC *usecase.BackupUseCase, transferRequestsUC *usecase.TransferRequestsUseCase, goodsReceiptNotesUC *usecase.GoodsReceiptNotesUseCase, purchaseOrdersUC *usecase.PurchaseOrdersUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, wsHub *notification.WebSocketHub, cfg *config.Config) *gin.Engine {
+	if cfg.Env == "production" || cfg.Env == "prod" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := gin.Default()
+
+	r.Use(func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
+	r.Use(middleware.LoggerMiddleware())
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/health", healthCheck)
+
+	devHandler := handler.NewDevHandler()
+	r.GET("/api/dev/token", devHandler.GetDevToken)
+
+	auth := r.Group("/api/auth")
+	auth.Use(middleware.TenantMiddleware(tenantManager))
+	{
+		authHandler := handler.NewAuthHandler(authUC)
+		auth.POST("/login", authHandler.Login)
+		auth.POST("/login/biometric", authHandler.LoginWithBiometric)
+		// Supervisor override: authenticate a supervisor and obtain a short-lived
+		// authorization token for a restricted action (e.g. sales return).
+		// Does NOT require the cashier's JWT — the supervisor credentials are self-authenticating.
+		auth.POST("/authorize-action", authHandler.AuthorizeAction)
+		auth.POST("/authorize-action/biometric", authHandler.AuthorizeActionWithBiometric)
+	}
+
+	publicTenants := r.Group("/api/tenants")
+	publicTenants.Use(middleware.MasterRepositoryMiddleware(masterRepo))
+	{
+		tenantHandler := handler.NewTenantHandler(tenantUC)
+		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug)
+		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
+	}
+
+	// App Releases & Auto-Update Endpoints (CI/CD upload and POS client check/download)
+	releaseUC := usecase.NewReleaseUseCase(masterRepo, cfg.UpdatesStorageDir)
+	releaseHandler := handler.NewReleaseHandler(releaseUC, cfg)
+	router.RegisterReleaseRoutes(r, releaseHandler)
+
+	// SAP Migration Batch Ingestion (agent -> cloud) - Secured with AgentAPIKeyMiddleware
+	sapMigrationUC := usecase.NewSAPMigrationUseCase(masterPool)
+	sapMigrationHandler := handler.NewSAPMigrationHandler(sapMigrationUC, tenantManager, masterPool)
+	apiV1 := r.Group("/api/v1")
+	apiV1.Use(middleware.AgentAPIKeyMiddleware())
+	router.RegisterSAPMigrationRoutes(apiV1, sapMigrationHandler)
+	apiMigration := r.Group("/api")
+	apiMigration.Use(middleware.AgentAPIKeyMiddleware())
+	router.RegisterSAPMigrationRoutes(apiMigration, sapMigrationHandler)
+
+	api := r.Group("/api")
+	api.Use(middleware.JWTAuthMiddleware())
+	api.Use(middleware.TenantMiddleware(tenantManager))
+	{
+		userHandler := handler.NewUserHandler(userUC)
+		router.RegisterUserRoutes(api, userHandler)
+		biometricHandler := handler.NewBiometricHandler(usecase.NewBiometricUseCase())
+		router.RegisterBiometricRoutes(api, biometricHandler)
+		moduleHandler := handler.NewModuleHandler(moduleUC)
+		router.RegisterModuleRoutes(api, moduleHandler)
+		imageHandler := handler.NewImageHandler(imageUC)
+		router.RegisterImageRoutes(api, imageHandler)
+		organizationHandler := handler.NewOrganizationHandler(orgUC)
+		router.RegisterOrganizationRoutes(api, organizationHandler)
+		navigationHandler := handler.NewNavigationHandler(navigationUC, roleUC, userUC)
+		router.RegisterNavigationRoutes(api, navigationHandler)
+		permissionHandler := handler.NewPermissionHandler(permissionUC)
+		router.RegisterPermissionRoutes(api, permissionHandler)
+		roleHandler := handler.NewRoleHandler(roleUC)
+		router.RegisterRoleRoutes(api, roleHandler)
+		menuHandler := handler.NewMenuHandler(menuUC)
+		router.RegisterMenuRoutes(api, menuHandler)
+		submenuHandler := handler.NewSubmenuHandler(submenuUC)
+		router.RegisterSubmenuRoutes(api, submenuHandler)
+		posHandler := handler.NewPosHandler(posUC, posPaymentUC)
+		router.RegisterPosRoutes(api, posHandler)
+		salesReturnHandler := handler.NewSalesReturnHandler(salesReturnUC)
+		router.RegisterSalesReturnRoutes(api, salesReturnHandler)
+		posTerminalsHandler := handler.NewPosTerminalsHandler(posTerminalsUC)
+		router.RegisterPosTerminalsRoutes(api, posTerminalsHandler)
+		geideaPaymentHandler := handler.NewGeideaPaymentHandler(usecase.NewGeideaPaymentUseCase(masterRepo))
+		router.RegisterGeideaPaymentRoutes(api, geideaPaymentHandler)
+		storageLocationsHandler := handler.NewStorageLocationsHandler(storageLocationsUC)
+		router.RegisterStorageLocationsRoutes(api, storageLocationsHandler)
+		tenantHandler := handler.NewTenantHandler(tenantUC)
+		router.RegisterTenantRoutes(api, tenantHandler)
+		storeHandler := handler.NewStoreHandler(storesUC)
+		router.RegisterStoreRoutes(api, storeHandler)
+		priceListsHandler := handler.NewPriceListsHandler(priceListsUC)
+		router.RegisterPriceListRoutes(api, priceListsHandler)
+		taxCategoriesHandler := handler.NewTaxCategoriesHandler(taxCategoriesUC)
+		router.RegisterTaxCategoryRoutes(api, taxCategoriesHandler)
+		uomHandler := handler.NewUOMHandler(uomUC)
+		router.RegisterUOMRoutes(api, uomHandler)
+		uomPackagingTemplateHandler := handler.NewUomPackagingTemplateHandler(uomPackagingTemplateUC)
+		router.RegisterUomPackagingTemplateRoutes(api, uomPackagingTemplateHandler)
+		restaurantHandler := handler.NewRestaurantHandler(restaurantUC)
+		router.RegisterRestaurantRoutes(api, restaurantHandler)
+		customerHandler := handler.NewCustomerHandler(customerUC)
+		router.RegisterCustomerRoutes(api, customerHandler)
+		businessPartnerHandler := handler.NewBusinessPartnerHandler(businessPartnerUC)
+		router.RegisterBusinessPartnerRoutes(api, businessPartnerHandler)
+		bpPriceContractHandler := handler.NewBPPriceContractHandler(bpPriceContractUC)
+		router.RegisterBPPriceContractRoutes(api, bpPriceContractHandler)
+		paymentTermsHandler := handler.NewPaymentTermsHandler(paymentTermsUC)
+		router.RegisterPaymentTermRoutes(api, paymentTermsHandler)
+
+		// [NEW] Cart and Order Modules
+		cartHandler := handler.NewCartHandler(cartUC)
+		router.RegisterCartRoutes(api, cartHandler)
+		orderHandler := handler.NewOrderHandler(orderUC)
+		router.RegisterOrderRoutes(api, orderHandler)
+		invoiceHandler := handler.NewInvoiceHandler(invoiceUC)
+		router.RegisterInvoiceRoutes(api, invoiceHandler)
+
+		cashierSessionHandler := handler.NewCashierSessionHandler(cashierSessionUC)
+		router.RegisterCashierSessionRoutes(api, cashierSessionHandler)
+
+		productBarcodeHandler := handler.NewProductBarcodeHandler(productBarcodeUC)
+		router.RegisterProductBarcodeRoutes(api, productBarcodeHandler)
+		// Brand and Cashier routes
+		brandHandler := handler.NewBrandHandler(brandUC)
+		router.RegisterBrandRoutes(api, brandHandler)
+		cashierHandler := handler.NewCashierHandler(cashierUC)
+		router.RegisterCashierRoutes(api, cashierHandler)
+		productPricingHandler := handler.NewProductPricingHandler(productPricingUC)
+		router.RegisterProductPricingRoutes(api, productPricingHandler)
+		inventoryStockHandler := handler.NewInventoryStockHandler(inventoryStockUC)
+		router.RegisterInventoryStockRoutes(api, inventoryStockHandler)
+		stockMovementsHandler := handler.NewStockMovementHandler(stockMovementsUC)
+		router.RegisterStockMovementRoutes(api, stockMovementsHandler)
+		stockCountsHandler := handler.NewStockCountsHandler(stockCountsUC)
+		router.RegisterStockCountRoutes(api, stockCountsHandler)
+		productVariantHandler := handler.NewProductVariantHandler(productVariantUC)
+		router.RegisterProductVariantRoutes(api, productVariantHandler)
+
+		// [NEW] Promotions module
+		promotionHandler := handler.NewPromotionHandler(promotionUC)
+		router.RegisterPromotionRoutes(api, promotionHandler)
+
+		// [NEW] Loyalty Rules module
+		loyaltyHandler := handler.NewLoyaltyHandler(loyaltyUC)
+		router.RegisterLoyaltyRoutes(api, loyaltyHandler)
+
+		// [NEW] Product Catalog module (admin: products + embedded variants)
+		productCatalogHandler := handler.NewProductCatalogHandler(productCatalogUC)
+		router.RegisterProductCatalogRoutes(api, productCatalogHandler)
+
+		productCategoryHandler := handler.NewProductCategoryHandler(productCategoryUC)
+		router.RegisterProductCategoryRoutes(api, productCategoryHandler)
+
+		// [NEW] Backup management (status, grpc-info, server-side trigger)
+		backupHandler := handler.NewBackupHandler(backupUC)
+		router.RegisterBackupRoutes(api, backupHandler)
+
+		// [NEW] M2M Token management
+		m2mHandler := handler.NewM2MHandler()
+		router.RegisterM2MRoutes(r.Group("/api"), m2mHandler)
+
+		// [NEW] Warehouse Logistics (Transfer Requests, Goods Receipt Notes & Purchase Orders)
+		transferRequestsHandler := handler.NewTransferRequestsHandler(transferRequestsUC)
+		router.RegisterTransferRequestRoutes(api, transferRequestsHandler)
+
+		goodsReceiptNotesHandler := handler.NewGoodsReceiptNotesHandler(goodsReceiptNotesUC)
+		router.RegisterGoodsReceiptNoteRoutes(api, goodsReceiptNotesHandler)
+
+		purchaseOrdersHandler := handler.NewPurchaseOrdersHandler(purchaseOrdersUC)
+		router.RegisterPurchaseOrderRoutes(api, purchaseOrdersHandler)
+
+		rfqHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
+		router.RegisterRFQRoutes(api, rfqHandler)
+
+		approvalsUC := usecase.NewApprovalsUseCase()
+		approvalsUC.RegisterAccommodator("goods_receipt_note", usecase.NewGoodsReceiptNoteApprovalAccommodator())
+		approvalsUC.RegisterAccommodator("catalog", usecase.NewCatalogPriceAccommodator())
+		approvalsUC.RegisterAccommodator("sap_invoice", usecase.NewSAPInvoiceStockAccommodator())
+		approvalsHandler := handler.NewApprovalsHandler(approvalsUC)
+		router.RegisterApprovalsRoutes(api, approvalsHandler)
+
+		// ZATCA Phase 2 + Sync Routes
+		zatcaCfg := &usecase.ZatcaConfig{
+			Env:      cfg.ZatcaEnv,
+			BaseURL:  cfg.ZatcaBaseURL,
+			OrgVATID: cfg.ZatcaOrgVATID,
+		}
+		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		zatcaUC.SetRepository(masterRepo)
+		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		zatcaService := cloudzatca.NewService(masterRepo, zatcaCfg)
+		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
+		zatcaHandler.SetSubmitter(zatcaService)
+		router.RegisterZatcaRoutes(api, zatcaHandler)
+
+		// Notification Center & Outbox Routes
+		notifUC := usecase.NewNotificationUseCase(masterRepo)
+		notifHandler := handler.NewNotificationHandler(notifUC)
+		router.RegisterNotificationRoutes(api, notifHandler)
+
+		if wsHub != nil {
+			api.GET("/ws/notifications", func(c *gin.Context) {
+				orgID, ok := middleware.GetOrganizationIDFromContext(c)
+				if !ok {
+					c.JSON(401, gin.H{"error": "organization claim missing"})
+					return
+				}
+				uid, ok := middleware.GetUserIDFromContext(c)
+				if !ok {
+					c.JSON(401, gin.H{"error": "user claim missing"})
+					return
+				}
+				var n int
+				_, _ = os.Stdout.WriteString("")
+				for _, ch := range uid {
+					if ch >= '0' && ch <= '9' {
+						n = n*10 + int(ch-'0')
+					}
+				}
+				tenantSlug, _ := c.Request.Context().Value(middleware.TenantSlugKey).(string)
+				if tenantSlug == "" {
+					tenantSlug = c.GetHeader("x-tenant-id")
+				}
+				wsHub.ServeWs(c, tenantSlug, orgID, int32(n))
+			})
+		}
+	}
+
+	publicRFQHandler := handler.NewRFQHandler(usecase.NewRFQUseCase(), tenantManager)
+	publicRFQRoutes := r.Group("/api/public")
+	router.RegisterPublicRFQRoutes(publicRFQRoutes, publicRFQHandler)
+
+	return r
+}
+
+func healthCheck(c *gin.Context) {
+	c.JSON(200, gin.H{"status": "OK"})
+}
+
+// Keep diagnostics on the same database session that failed installation. Never
+// log the tenant connection string: it contains database credentials.
+func installTenantOrderAutomation(ctx context.Context, pool *pgxpool.Pool, slug string) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, cloudzatca.OrderAutomationDDL); err != nil {
+		var database, role, sessionRole, server, searchPath, table, owner string
+		var canReference, canTrigger bool
+		diagnosticErr := conn.QueryRow(ctx, `SELECT current_database(), current_user::text, session_user::text,
+ COALESCE(inet_server_addr()::text,'local-socket'), current_setting('search_path'),
+ COALESCE(to_regclass('sales_orders_v2')::text,'missing'),
+ COALESCE((SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid=to_regclass('sales_orders_v2')),'missing'),
+ COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'REFERENCES'),false),
+ COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'TRIGGER'),false)`).Scan(
+			&database, &role, &sessionRole, &server, &searchPath, &table, &owner, &canReference, &canTrigger)
+		if diagnosticErr != nil {
+			log.Printf("[ZATCA ORDER] Connection diagnostic for %s failed: %v", slug, diagnosticErr)
+		} else {
+			log.Printf("[ZATCA ORDER] Connection diagnostic tenant=%q host=%q database=%q role=%q session_role=%q server=%q search_path=%q table=%q owner=%q references=%t trigger=%t",
+				slug, pool.Config().ConnConfig.Host, database, role, sessionRole, server, searchPath, table, owner, canReference, canTrigger)
+		}
+		return err
+	}
+	return nil
+}
+
+func main() {
+	env := "development"
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		switch arg {
+		case "stg":
+			env = "stg"
+		case "dev":
+			env = "dev"
+		case "prod":
+			env = "prod"
+		}
+	} else if os.Getenv("ENV") != "" {
+		env = os.Getenv("ENV")
+	}
+
+	cfg := config.LoadConfig(env)
+	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
+
+	if err := biometrics.InitRuntime(); err != nil {
+		log.Printf("[Biometrics] Warning: embedded runtime extraction failed: %v", err)
+	} else {
+		log.Printf("[Biometrics] Embedded DigitalPersona runtime initialized at %s", biometrics.RuntimeDir())
+	}
+	if biometrics.IsEngineAvailable() {
+		log.Printf("[Biometrics] Matching engine available")
+	} else {
+		log.Printf("[Biometrics] Warning: matching engine UNAVAILABLE; biometric login/enrollment will fail on this server")
+	}
+
+	ctx := context.Background()
+	masterPool, masterRepo, err := setupDatabase(ctx, cfg)
+	if err != nil {
+		log.Fatalf("Unable to connect to Master DB: %v", err)
+	}
+	defer masterPool.Close()
+
+	tenantManager := manager.NewManager(masterRepo)
+	// Orders and lines can arrive through separate sync events. Persist a job on
+	// each committed change and submit once the complete order validates.
+	go func() {
+		ready := make(map[string]bool)
+		submit := cloudzatca.NewService(masterRepo, &usecase.ZatcaConfig{
+			Env: cfg.ZatcaEnv, BaseURL: cfg.ZatcaBaseURL, OrgVATID: cfg.ZatcaOrgVATID,
+		})
+		run := func() {
+			cycleCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+			defer cancel()
+			tenants, err := masterRepo.ListActiveTenants(cycleCtx)
+			if err != nil {
+				log.Printf("[ZATCA ORDER] List tenants failed: %v", err)
+				return
+			}
+			for _, tenant := range tenants {
+				pool, err := tenantManager.GetPool(cycleCtx, tenant.Slug)
+				if err != nil {
+					log.Printf("[ZATCA ORDER] Open tenant %s failed: %v", tenant.Slug, err)
+					continue
+				}
+				if !ready[tenant.Slug] {
+					if err := installTenantOrderAutomation(cycleCtx, pool, tenant.Slug); err != nil {
+						log.Printf("[ZATCA ORDER] Install jobs for %s failed: %v", tenant.Slug, err)
+						continue
+					}
+					ready[tenant.Slug] = true
+				}
+				if err := cloudzatca.ProcessOrderAutomationBatch(cycleCtx, pool, submit); err != nil && cycleCtx.Err() == nil {
+					log.Printf("[ZATCA ORDER] Tenant %s: %v", tenant.Slug, err)
+				}
+			}
+		}
+		run()
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
+
+	// Initialize Use Cases
+	userUC := usecase.NewUserUseCase()
+	orgUC := usecase.NewOrganizationUseCase()
+	authUC := usecase.NewAuthUseCase()
+	moduleUC := usecase.NewModuleUseCase()
+	imageUC := usecase.NewImageUseCase()
+	navigationUC := usecase.NewNavigationUseCase()
+	permissionUC := usecase.NewPermissionUseCase()
+	roleUC := usecase.NewRoleUseCase()
+	menuUC := usecase.NewMenuUseCase()
+	submenuUC := usecase.NewSubmenuUseCase()
+	posUC := usecase.NewPosUseCase()
+	posPaymentUC := usecase.NewPosPaymentUseCase()
+	posTerminalsUC := usecase.NewPosTerminalsUseCase()
+	storageLocationsUC := usecase.NewStorageLocationsUseCase()
+	tenantUC := usecase.NewTenantUseCase()
+	storesUC := usecase.NewStoreUseCase()
+	restaurantUC := usecase.NewRestaurantUseCase()
+	customerUC := usecase.NewCustomerUseCase()
+	businessPartnerUC := usecase.NewBusinessPartnerUseCase()
+	bpPriceContractUC := usecase.NewBPPriceContractUseCase()
+	paymentTermsUC := usecase.NewPaymentTermsUseCase()
+	uomUC := usecase.NewUOMUseCase()
+	uomPackagingTemplateUC := usecase.NewUomPackagingTemplateUseCase()
+	priceListsUC := usecase.NewPriceListsUseCase()
+	taxCategoriesUC := usecase.NewTaxCategoriesUseCase()
+
+	// [NEW]
+	cartUC := usecase.NewCartUseCase()
+	orderUC := usecase.NewOrderUseCase()
+	invoiceUC := usecase.NewInvoiceUseCase()
+	salesReturnUC := usecase.NewSalesReturnUseCase()
+	cashierSessionUC := usecase.NewCashierSessionUseCase()
+	productBarcodeUC := usecase.NewProductBarcodeUseCase()
+	brandUC := usecase.NewBrandUseCase()
+	cashierUC := usecase.NewCashierUseCase()
+	productPricingUC := usecase.NewProductPricingUseCase()
+	inventoryStockUC := usecase.NewInventoryStockUseCase()
+	stockMovementsUC := usecase.NewStockMovementsUseCase()
+	stockCountsUC := usecase.NewStockCountsUseCase()
+	productVariantUC := usecase.NewProductVariantUseCase()
+
+	promotionUC := usecase.NewPromotionUseCase()
+	loyaltyUC := usecase.NewLoyaltyUseCase()
+	productCatalogUC := usecase.NewProductCatalogUseCase()
+	productCategoryUC := usecase.NewProductCategoryUseCase()
+
+	transferRequestsUC := usecase.NewTransferRequestsUseCase()
+	goodsReceiptNotesUC := usecase.NewGoodsReceiptNotesUseCase()
+	purchaseOrdersUC := usecase.NewPurchaseOrdersUseCase()
+
+	// BackupUseCase talks to the local gRPC backup server (same process)
+	backupUC := usecase.NewBackupUseCase(tenantManager, "localhost:"+cfg.GRPCPort)
+
+	// ── Notification Center WebSocket Hub & Outbox Dispatcher ──────────
+	wsHub := notification.NewWebSocketHub()
+	go wsHub.Run(ctx.Done())
+
+	dispatcher := notification.NewDispatcher(func(c context.Context) ([]notification.TenantPool, error) {
+		tenants, err := masterRepo.ListActiveTenants(c)
+		if err != nil {
+			return nil, err
+		}
+		pools := make([]notification.TenantPool, 0, len(tenants))
+		for _, tenant := range tenants {
+			pool, err := tenantManager.GetPool(c, tenant.Slug)
+			if err != nil {
+				log.Printf("[NotificationDispatcher] Open tenant %s failed: %v", tenant.Slug, err)
+				continue
+			}
+			pools = append(pools, notification.TenantPool{Slug: tenant.Slug, Pool: pool})
+		}
+		return pools, nil
+	}, wsHub)
+	go dispatcher.Start(ctx)
+
+	// Setup Router
+	r := setupRouter(tenantManager, masterPool, masterRepo, userUC, orgUC, authUC, moduleUC, imageUC, navigationUC, permissionUC, roleUC, menuUC, submenuUC, posUC, posPaymentUC, salesReturnUC, posTerminalsUC, storageLocationsUC, tenantUC, storesUC, cartUC, orderUC, invoiceUC, restaurantUC, customerUC, uomUC, uomPackagingTemplateUC, priceListsUC, taxCategoriesUC, cashierSessionUC, brandUC, cashierUC, productBarcodeUC, productPricingUC, inventoryStockUC, stockMovementsUC, stockCountsUC, productVariantUC, promotionUC, loyaltyUC, productCatalogUC, productCategoryUC, backupUC, transferRequestsUC, goodsReceiptNotesUC, purchaseOrdersUC, businessPartnerUC, bpPriceContractUC, paymentTermsUC, wsHub, cfg)
+	// Serve the images folder under /images URL path
+	r.Static("/images", "./images") // <-- this makes /images/* accessible
+
+	// ── gRPC Backup & Sync Service ─────────────────────────────────────────
+	go func() {
+		grpcAddr := ":" + cfg.GRPCPort
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			log.Fatalf("gRPC: failed to listen on %s: %v", grpcAddr, err)
+		}
+		var serverOpts []grpc.ServerOption
+		certFile := os.Getenv("GRPC_TLS_CERT_FILE")
+		keyFile := os.Getenv("GRPC_TLS_KEY_FILE")
+		if certFile != "" && keyFile != "" {
+			creds, tlsErr := credentials.NewServerTLSFromFile(certFile, keyFile)
+			if tlsErr != nil {
+				log.Fatalf("gRPC: failed to load TLS credentials: %v", tlsErr)
+			}
+			serverOpts = append(serverOpts, grpc.Creds(creds))
+		}
+		grpcServer := grpc.NewServer(serverOpts...)
+		backupSrv := grpcbackup.NewBackupServer(tenantManager, cfg.JWTSecret, cfg.PGDumpPath)
+		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
+
+		syncSrv := grpcbackup.NewSyncServer(tenantManager, masterPool)
+		requireSyncToken := !strings.EqualFold(strings.TrimSpace(os.Getenv("NEMBUS_REQUIRE_SYNC_TOKEN")), "false")
+		if !requireSyncToken {
+			log.Printf("⚠️  SECURITY WARNING: NEMBUS_REQUIRE_SYNC_TOKEN=false — gRPC sync streams accept UNAUTHENTICATED clients for any tenant. Never use in production.")
+		}
+		syncSrv.SetRequireTokenAuth(requireSyncToken)
+		syncpb.RegisterSyncServiceServer(grpcServer, syncSrv)
+
+		// Enable reflection so grpcurl/Postman can discover services at runtime
+		reflection.Register(grpcServer)
+		log.Printf("✅ gRPC Backup & Sync Service listening on %s (reflection enabled)", grpcAddr)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("gRPC: serve error: %v", err)
+		}
+	}()
+
+	// ── Periodic change_log compaction & sync_inbox retention worker ───────
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				maintCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+				tenants, err := masterRepo.ListActiveTenants(maintCtx)
+				if err == nil {
+					for _, t := range tenants {
+						if tPool, err := tenantManager.GetPool(maintCtx, t.Slug); err == nil && tPool != nil {
+							_, _ = grpcbackup.CompactChangeLog(maintCtx, tPool, 30*24*time.Hour)
+							_, _ = grpcbackup.CleanupSyncInbox(maintCtx, tPool, 30*24*time.Hour)
+						}
+					}
+				}
+				cancel()
+			}
+		}
+	}()
+
+	// Start HTTP Server
+	log.Printf("Starting HTTP server on :%s", cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
+		log.Fatal("failed to run server:", err)
+	}
+}

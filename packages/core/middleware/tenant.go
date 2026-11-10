@@ -1,0 +1,76 @@
+package middleware
+
+import (
+	"context"
+	"log"
+	"net/http"
+
+	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/NasTecSol/nembus-core/repository"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type contextKey string
+
+const RepoKey contextKey = "tenant_repo"
+const TenantSlugKey contextKey = "tenant_slug"
+const PoolKey contextKey = "tenant_pool"
+
+// TenantMiddleware returns a Gin middleware that injects tenant-specific repository
+func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tenantID := c.GetHeader("x-tenant-id")
+		if tenantID == "" {
+			tenantID = c.Query("tenant_id")
+		}
+		if tenantID == "" {
+			if claimsVal, exists := c.Get(string(ClaimsKey)); exists {
+				if m, ok := claimsVal.(jwt.MapClaims); ok {
+					if tid, ok := m["tenant_id"].(string); ok && tid != "" {
+						tenantID = tid
+					}
+				}
+			}
+		}
+		if tenantID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "x-tenant-id header required"})
+			c.Abort()
+			return
+		}
+
+		pool, err := tm.GetPool(c.Request.Context(), tenantID)
+		if err != nil {
+			// Log the actual error for debugging
+			log.Printf("Failed to get tenant pool for slug '%s': %v", tenantID, err)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Tenant not found or inactive",
+				"details": err.Error(),
+				"slug":    tenantID,
+			})
+			c.Abort()
+			return
+		}
+
+		// Injects the tenant-specific repository into the request context
+		repo := repository.New(pool)
+		ctx := context.WithValue(c.Request.Context(), RepoKey, repo)
+		ctx = context.WithValue(ctx, TenantSlugKey, tenantID)
+		ctx = context.WithValue(ctx, PoolKey, pool)
+		c.Request = c.Request.WithContext(ctx)
+
+		c.Next()
+	}
+}
+
+// MasterRepositoryMiddleware returns a Gin middleware that injects the master repository
+// This is used for public endpoints that need to access the master database
+func MasterRepositoryMiddleware(masterRepo *repository.Queries) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Injects the master repository into the request context
+		ctx := context.WithValue(c.Request.Context(), RepoKey, masterRepo)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
+}

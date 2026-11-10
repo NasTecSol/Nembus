@@ -1,0 +1,398 @@
+// Package grpc implements the gRPC BackupService server.
+// It streams a live pg_dump of a tenant's database to any connecting client
+// (POS terminal, offline application, etc.) as 32 KB chunks with SHA-256
+// checksums per chunk so the receiver can verify data integrity.
+package grpc
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/golang-jwt/jwt/v5"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
+
+const (
+	chunkSize     = 32 * 1024 // 32 KB per chunk
+	maxConcurrent = 3         // maximum simultaneous backup streams
+)
+
+// progressEntry tracks a single in-flight backup.
+type progressEntry struct {
+	bytesSent uint64
+	startedAt time.Time
+}
+
+// BackupServer implements backuppb.BackupServiceServer.
+type BackupServer struct {
+	backuppb.UnimplementedBackupServiceServer
+
+	tenantManager *manager.Manager
+	jwtSecret     string
+	pgDumpPath    string // full path to pg_dump binary (or just "pg_dump" if in PATH)
+
+	mu       sync.RWMutex
+	progress map[string]*progressEntry // key: tenant_slug
+}
+
+// NewBackupServer constructs a BackupServer.
+func NewBackupServer(tm *manager.Manager, jwtSecret, pgDumpPath string) *BackupServer {
+	if pgDumpPath == "" {
+		pgDumpPath = "pg_dump" // fallback to PATH lookup
+	}
+	return &BackupServer{
+		tenantManager: tm,
+		jwtSecret:     jwtSecret,
+		pgDumpPath:    pgDumpPath,
+		progress:      make(map[string]*progressEntry),
+	}
+}
+
+// ─── StreamBackup ─────────────────────────────────────────────────────────────
+
+// StreamBackup runs pg_dump against the named tenant's database and streams
+// the output as BackupChunk messages until pg_dump finishes or the client
+// disconnects.
+func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb.BackupService_StreamBackupServer) error {
+	ctx := stream.Context()
+
+	// 1. Validate auth token and check permissions for the requested tenant before acquiring slot
+	if err := s.validateToken(ctx, req.AuthToken, req.TenantSlug); err != nil {
+		return err
+	}
+
+	// 2. Concurrency guard
+	s.mu.Lock()
+	if len(s.progress) >= maxConcurrent {
+		s.mu.Unlock()
+		return status.Errorf(codes.ResourceExhausted, "too many concurrent backups (max %d)", maxConcurrent)
+	}
+	s.progress[req.TenantSlug] = &progressEntry{startedAt: time.Now()}
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.progress, req.TenantSlug)
+		s.mu.Unlock()
+	}()
+
+	// 3. Resolve tenant DSN
+	dsn, err := s.tenantManager.GetTenantDSN(ctx, req.TenantSlug)
+	if err != nil {
+		return status.Errorf(codes.NotFound, "tenant not found: %v", err)
+	}
+
+	// Tables whose data should be excluded from the backup dump to keep POS offline sync lean.
+	// The DDL/schema for these tables is still dumped, ensuring all relations, triggers,
+	// and constraints exist without bloating POS machines with historical transactional data.
+	tablesToExcludeData := []string{
+		// POS & Sales transactions
+		"pos_transactions",
+		"pos_transaction_lines",
+		"pos_payments",
+		"sales_orders",
+		"sales_order_lines",
+		"sales_orders_v2",
+		"sales_order_lines_v2",
+		"order_status_history",
+		"order_fulfillments",
+		"order_fulfillment_items",
+
+		// Carts & drafts
+		"carts",
+		"cart_items",
+		"cart_activity_log",
+		"draft_cart_templates",
+		"draft_cart_template_items",
+
+		// Invoices & Billing
+		"invoices",
+		"invoice_lines",
+		"invoice_payments",
+		"invoice_status_history",
+
+		// Returns & Quotes
+		"sales_returns",
+		"sales_return_lines",
+		"quotes",
+		"quote_lines",
+
+		// Purchasing & Stock transfers
+		"purchase_orders",
+		"purchase_order_lines",
+		"goods_receipt_notes",
+		"goods_receipt_note_items",
+		"transfer_requests",
+		"transfer_request_items",
+
+		// Operations, stock counts & history
+		"stock_movements",
+		"stock_counts",
+		"stock_count_lines",
+		"stock_reservations",
+		"waste_logs",
+		"cashier_sessions",
+		"kiosk_sessions",
+
+		// Restaurant order transactions
+		"restaurant_orders",
+		"restaurant_order_items",
+
+		// General ledger journal
+		"journal_entries",
+		"journal_lines",
+
+		// Audit, telemetry & compliance chain
+		"audit_logs",
+		"zatca_document_chain",
+		"zatca_device_configs", // Credentials are restored per device over authenticated HTTPS.
+		"zatca_order_jobs",     // Submission attempts belong to the source runtime.
+		"sync_watermarks",
+
+		// Analytics aggregates
+		"sales_analytics",
+		"purchase_analytics",
+		"inventory_analytics",
+		"profit_loss_analytics",
+		"discount_analytics",
+
+		// Serial numbers tracking
+		"product_serial_numbers",
+	}
+
+	// 4. Build pg_dump command
+	// Export complete schema DDL + data ONLY for master data required for POS offline operations
+	var pgArgs []string
+	if req.Compressed {
+		pgArgs = []string{"--no-password", "--format=custom"}
+	} else {
+		pgArgs = []string{"--no-password", "--format=plain"}
+	}
+
+	for _, tbl := range tablesToExcludeData {
+		pgArgs = append(pgArgs, fmt.Sprintf("--exclude-table-data=%s", tbl))
+		pgArgs = append(pgArgs, fmt.Sprintf("--exclude-table-data=public.%s", tbl))
+	}
+	pgArgs = append(pgArgs, dsn)
+
+	cmd := exec.CommandContext(ctx, s.pgDumpPath, pgArgs...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to open pg_dump stdout: %v", err)
+	}
+	// Drain stderr while stdout streams so a full stderr pipe cannot block pg_dump.
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return status.Errorf(codes.Internal, "failed to start pg_dump: %v", err)
+	}
+
+	// Kill pg_dump if the client disconnects.
+	go func() {
+		<-ctx.Done()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	// 5. Stream chunks
+	buf := make([]byte, chunkSize)
+	var totalSent uint64
+
+	for {
+		n, readErr := stdout.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			h := sha256.Sum256(chunk)
+			totalSent += uint64(n)
+
+			// Update live progress
+			s.mu.Lock()
+			if e, ok := s.progress[req.TenantSlug]; ok {
+				e.bytesSent = totalSent
+			}
+			s.mu.Unlock()
+
+			msg := &backuppb.BackupChunk{
+				Data:   append([]byte(nil), chunk...),
+				Offset: totalSent,
+				Sha256: fmt.Sprintf("%x", h),
+				IsLast: false,
+			}
+			if sendErr := stream.Send(msg); sendErr != nil {
+				log.Printf("[backup] send error for tenant %s: %v", req.TenantSlug, sendErr)
+				return sendErr
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			_ = cmd.Process.Kill()
+			return status.Errorf(codes.Internal, "read error from pg_dump: %v", readErr)
+		}
+	}
+
+	waitErr := cmd.Wait()
+	if stderr.Len() > 0 {
+		log.Printf("[backup] pg_dump stderr for tenant %s: %s", req.TenantSlug, stderr.String())
+	}
+	if waitErr != nil {
+		return status.Errorf(codes.Internal, "pg_dump exited with error: %v; %s", waitErr, backupFailureHint(stderr.String()))
+	}
+
+	// Send the final sentinel chunk
+	final := &backuppb.BackupChunk{
+		Data:   nil,
+		Offset: totalSent,
+		Sha256: "",
+		IsLast: true,
+	}
+	return stream.Send(final)
+}
+
+// ─── BackupStatus ─────────────────────────────────────────────────────────────
+
+// BackupStatus returns the current progress of an in-flight backup.
+func (s *BackupServer) BackupStatus(ctx context.Context, req *backuppb.BackupStatusRequest) (*backuppb.BackupStatusResponse, error) {
+	if req == nil || strings.TrimSpace(req.TenantSlug) == "" {
+		return nil, status.Error(codes.InvalidArgument, "tenant_slug is required")
+	}
+
+	// Verify caller authorization if token metadata is provided
+	var token string
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get(syncpb.SyncTokenMetadataKey); len(vals) > 0 {
+			token = strings.TrimSpace(vals[0])
+		} else if vals := md.Get("authorization"); len(vals) > 0 {
+			authHeader := strings.TrimSpace(vals[0])
+			if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+				token = strings.TrimSpace(authHeader[7:])
+			} else {
+				token = authHeader
+			}
+		}
+	}
+	if token != "" {
+		if err := s.validateToken(ctx, token, req.TenantSlug); err != nil {
+			return nil, err
+		}
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	e, ok := s.progress[req.TenantSlug]
+	if !ok {
+		return &backuppb.BackupStatusResponse{InProgress: false}, nil
+	}
+	return &backuppb.BackupStatusResponse{
+		InProgress: true,
+		BytesSent:  e.bytesSent,
+		StartedAt:  e.startedAt.Format(time.RFC3339),
+	}, nil
+}
+
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+func (s *BackupServer) validateToken(ctx context.Context, token, tenantSlug string) error {
+	token = strings.TrimSpace(token)
+	tenantSlug = strings.TrimSpace(tenantSlug)
+	if token == "" {
+		return status.Error(codes.Unauthenticated, "auth token is required")
+	}
+	if tenantSlug == "" {
+		return status.Error(codes.InvalidArgument, "tenant_slug is required")
+	}
+
+	secret := s.jwtSecret
+	if secret == "" {
+		secret = os.Getenv("JWT_SECRET")
+	}
+
+	// 1. Attempt JWT validation if secret is configured
+	if secret != "" {
+		parsed, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return []byte(secret), nil
+		})
+		if err == nil && parsed.Valid {
+			if claims, ok := parsed.Claims.(jwt.MapClaims); ok {
+				var authorized bool
+
+				// Check string claims: tenant_id, tenant_slug, org_slug
+				for _, key := range []string{"tenant_id", "tenant_slug", "org_slug"} {
+					if val, ok := claims[key].(string); ok && val == tenantSlug {
+						authorized = true
+						break
+					}
+				}
+
+				// Check if claim tenant_id matches either the slug or the tenant UUID
+				if !authorized && s.tenantManager != nil {
+					if tenant, err := s.tenantManager.GetTenant(ctx, tenantSlug); err == nil {
+						if claimTenantID, ok := claims["tenant_id"].(string); ok && (claimTenantID == tenantSlug || claimTenantID == tenant.ID.String()) {
+							authorized = true
+						}
+					}
+				}
+
+				if authorized {
+					return nil
+				}
+				return status.Errorf(codes.PermissionDenied, "token is not authorized for tenant %q", tenantSlug)
+			}
+		}
+	}
+
+	// 2. Fallback: check if token is an authorized POS terminal sync token in that tenant's database
+	if s.tenantManager != nil {
+		pool, err := s.tenantManager.GetPool(ctx, tenantSlug)
+		if err == nil && pool != nil {
+			if syncErr := VerifyTerminalSyncToken(ctx, pool, token, 0); syncErr == nil {
+				return nil
+			}
+		}
+	}
+
+	return status.Errorf(codes.Unauthenticated, "invalid or unauthorized token for tenant %q", tenantSlug)
+}
+
+// Return fixed diagnostic messages; raw stderr can contain tenant connection details.
+func backupFailureHint(stderr string) string {
+	detail := strings.ToLower(stderr)
+	switch {
+	case strings.Contains(detail, "server version mismatch"):
+		return "Cloud backup PostgreSQL version mismatch: configure PG_DUMP_PATH on the cloud server to use pg_dump matching the database server's major version."
+	case strings.Contains(detail, "password authentication failed"), strings.Contains(detail, "no password supplied"), strings.Contains(detail, "no pg_hba.conf entry"), strings.Contains(detail, "authentication failed"):
+		return "Cloud backup database authentication failed: check the tenant database credentials and PostgreSQL access rules on the cloud server."
+	case strings.Contains(detail, "permission denied"), strings.Contains(detail, "must be owner"), strings.Contains(detail, "row-level security"):
+		return "Cloud backup database permissions are insufficient: check the backup user's access to the tenant database objects."
+	case strings.Contains(detail, "does not exist") && strings.Contains(detail, "database"):
+		return "Cloud backup tenant database was not found: check the tenant database configuration on the cloud server."
+	case strings.Contains(detail, "connection refused"), strings.Contains(detail, "could not translate host name"), strings.Contains(detail, "could not connect"), strings.Contains(detail, "connection to server"), strings.Contains(detail, "timeout expired"), strings.Contains(detail, "network is unreachable"):
+		return "Cloud backup database connection failed: check the tenant database address, availability, and network access from the cloud server."
+	case strings.Contains(detail, "no space left on device"):
+		return "Cloud backup failed because the server reported insufficient disk space."
+	default:
+		return "Cloud backup generation failed; the cloud server administrator must inspect the pg_dump stderr log for this tenant."
+	}
+}

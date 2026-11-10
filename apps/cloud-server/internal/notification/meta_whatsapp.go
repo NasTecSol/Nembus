@@ -1,0 +1,320 @@
+package notification
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"strings"
+	"time"
+)
+
+type WhatsAppConfig struct {
+	PhoneNumberID string `json:"phone_number_id"`
+	AccessToken   string `json:"access_token"`
+	ApiVersion    string `json:"api_version"` // Defaults to "v19.0"
+}
+
+type WhatsAppClient struct {
+	cfg        WhatsAppConfig
+	httpClient *http.Client
+	baseURL    string
+}
+
+func NewWhatsAppClient(cfg WhatsAppConfig) *WhatsAppClient {
+	if cfg.ApiVersion == "" {
+		cfg.ApiVersion = "v19.0"
+	}
+	return &WhatsAppClient{
+		cfg: cfg,
+		httpClient: &http.Client{
+			Timeout: 15 * time.Second,
+		},
+	}
+}
+
+type WhatsAppResponse struct {
+	MessagingProduct string `json:"messaging_product"`
+	Contacts         []struct {
+		Input string `json:"input"`
+		WaID  string `json:"wa_id"`
+	} `json:"contacts"`
+	Messages []struct {
+		ID string `json:"id"`
+	} `json:"messages"`
+	Error *struct {
+		Message   string `json:"message"`
+		Type      string `json:"type"`
+		Code      int    `json:"code"`
+		FbtraceID string `json:"fbtrace_id"`
+	} `json:"error,omitempty"`
+}
+
+// SendTextMessage sends a direct text message via Meta WhatsApp Cloud API
+func (c *WhatsAppClient) graphURL(resource string) string {
+	base := c.baseURL
+	if base == "" {
+		base = "https://graph.facebook.com"
+	}
+	return fmt.Sprintf("%s/%s/%s/%s", strings.TrimRight(base, "/"), c.cfg.ApiVersion, c.cfg.PhoneNumberID, resource)
+}
+
+func (c *WhatsAppClient) SendTextMessage(ctx context.Context, recipientPhone, message string) (*WhatsAppResponse, error) {
+	cleanPhone := cleanPhoneNumber(recipientPhone)
+	url := c.graphURL("messages")
+
+	reqBody := map[string]interface{}{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                cleanPhone,
+		"type":              "text",
+		"text": map[string]string{
+			"preview_url": "true",
+			"body":        message,
+		},
+	}
+
+	return c.postMessage(ctx, url, reqBody)
+}
+
+// SendTemplateMessage sends an approved WhatsApp Template message with dynamic parameters
+func (c *WhatsAppClient) SendTemplateMessage(ctx context.Context, recipientPhone, templateName, languageCode string, parameters []string) (*WhatsAppResponse, error) {
+	return c.SendTemplateMessageWithHeader(ctx, recipientPhone, templateName, languageCode, parameters, "")
+}
+
+// SendTemplateMessageWithHeader sends an approved template. headerImageID, when
+// set, is a media id uploaded for the image header (the ZATCA QR).
+func (c *WhatsAppClient) SendTemplateMessageWithHeader(ctx context.Context, recipientPhone, templateName, languageCode string, parameters []string, headerImageID string) (*WhatsAppResponse, error) {
+	return c.postMessage(ctx, c.graphURL("messages"), templateMessageBody(recipientPhone, templateName, languageCode, parameters, headerImageID))
+}
+
+// WhatsAppLanguageCodesToTry returns locale codes to attempt when sending a Meta template.
+// Meta treats en and en_US as different translations; 132001 often means the code does not match approval.
+func WhatsAppLanguageCodesToTry(primary string) []string {
+	primary = strings.TrimSpace(primary)
+	if primary == "" {
+		primary = "en"
+	}
+	out := []string{primary}
+	add := func(code string) {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == code {
+				return
+			}
+		}
+		out = append(out, code)
+	}
+	norm := strings.ToLower(strings.ReplaceAll(primary, "-", "_"))
+	switch norm {
+	case "en":
+		add("en_US")
+		add("en_GB")
+	case "en_us":
+		add("en_US")
+		add("en")
+	case "en_gb":
+		add("en_GB")
+		add("en")
+	case "ar":
+		add("ar_SA")
+	case "ar_sa":
+		add("ar_SA")
+		add("ar")
+	}
+	return out
+}
+
+func isWhatsAppError132001(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "132001")
+}
+
+// SendTemplateMessageWithHeaderLocales tries each language code until one succeeds.
+// Only error 132001 triggers the next locale; other errors fail immediately.
+func (c *WhatsAppClient) SendTemplateMessageWithHeaderLocales(ctx context.Context, recipientPhone, templateName string, languageCodes []string, parameters []string, headerImageID string) (*WhatsAppResponse, error) {
+	if len(languageCodes) == 0 {
+		languageCodes = []string{"en"}
+	}
+	var lastErr error
+	var lastResp *WhatsAppResponse
+	for _, code := range languageCodes {
+		resp, err := c.SendTemplateMessageWithHeader(ctx, recipientPhone, templateName, code, parameters, headerImageID)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		lastResp = resp
+		if !isWhatsAppError132001(err) {
+			return resp, err
+		}
+	}
+	return lastResp, lastErr
+}
+
+func templateMessageBody(recipientPhone, templateName, languageCode string, parameters []string, headerImageID string) map[string]interface{} {
+	cleanPhone := cleanPhoneNumber(recipientPhone)
+	var bodyParams []map[string]string
+	for _, param := range parameters {
+		bodyParams = append(bodyParams, map[string]string{
+			"type": "text",
+			"text": param,
+		})
+	}
+
+	components := []map[string]interface{}{}
+	if headerImageID != "" {
+		components = append(components, map[string]interface{}{
+			"type": "header",
+			"parameters": []map[string]interface{}{{
+				"type":  "image",
+				"image": map[string]string{"id": headerImageID},
+			}},
+		})
+	}
+	if len(bodyParams) > 0 {
+		components = append(components, map[string]interface{}{
+			"type":       "body",
+			"parameters": bodyParams,
+		})
+	}
+
+	return map[string]interface{}{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                cleanPhone,
+		"type":              "template",
+		"template": map[string]interface{}{
+			"name": templateName,
+			"language": map[string]string{
+				"code": languageCode,
+			},
+			"components": components,
+		},
+	}
+}
+
+// UploadMedia stores a PNG with the WhatsApp media API and returns its id.
+func (c *WhatsAppClient) UploadMedia(ctx context.Context, filename, mimeType string, content []byte) (string, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	if err := writer.WriteField("messaging_product", "whatsapp"); err != nil {
+		return "", err
+	}
+	if err := writer.WriteField("type", mimeType); err != nil {
+		return "", err
+	}
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write(content); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.graphURL("media"), &buf)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.cfg.AccessToken)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("meta media upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	var uploaded struct {
+		ID    string `json:"id"`
+		Error *struct {
+			Message string `json:"message"`
+			Code    int    `json:"code"`
+		} `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(respBytes, &uploaded); err != nil {
+		return "", fmt.Errorf("unmarshal media response (%s): %w", string(respBytes), err)
+	}
+	if uploaded.Error != nil {
+		return "", fmt.Errorf("meta whatsapp error (%d): %s", uploaded.Error.Code, uploaded.Error.Message)
+	}
+	if uploaded.ID == "" {
+		return "", fmt.Errorf("meta media upload returned no id: %s", string(respBytes))
+	}
+	return uploaded.ID, nil
+}
+
+// SendDocumentMessage sends a PDF document (e.g. PO or E-Receipt) with an optional caption
+func (c *WhatsAppClient) SendDocumentMessage(ctx context.Context, recipientPhone, documentURL, filename, caption string) (*WhatsAppResponse, error) {
+	cleanPhone := cleanPhoneNumber(recipientPhone)
+	url := c.graphURL("messages")
+
+	reqBody := map[string]interface{}{
+		"messaging_product": "whatsapp",
+		"recipient_type":    "individual",
+		"to":                cleanPhone,
+		"type":              "document",
+		"document": map[string]string{
+			"link":     documentURL,
+			"caption":  caption,
+			"filename": filename,
+		},
+	}
+
+	return c.postMessage(ctx, url, reqBody)
+}
+
+func (c *WhatsAppClient) postMessage(ctx context.Context, url string, reqBody interface{}) (*WhatsAppResponse, error) {
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.cfg.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("meta whatsapp api request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body: %w", err)
+	}
+
+	var waResp WhatsAppResponse
+	if err := json.Unmarshal(respBytes, &waResp); err != nil {
+		return nil, fmt.Errorf("unmarshal response (%s): %w", string(respBytes), err)
+	}
+
+	if waResp.Error != nil {
+		return &waResp, fmt.Errorf("meta whatsapp error (%d): %s", waResp.Error.Code, waResp.Error.Message)
+	}
+
+	return &waResp, nil
+}
+
+func cleanPhoneNumber(phone string) string {
+	cleaned := strings.TrimSpace(phone)
+	cleaned = strings.ReplaceAll(cleaned, "-", "")
+	cleaned = strings.ReplaceAll(cleaned, " ", "")
+	cleaned = strings.TrimPrefix(cleaned, "+")
+	return cleaned
+}

@@ -1,0 +1,357 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"os"
+
+	"github.com/NasTecSol/nembus-client/internal/config"
+	"github.com/NasTecSol/nembus-client/internal/updater"
+	"github.com/NasTecSol/nembus-core/biometrics/installer"
+	"github.com/NasTecSol/nembus-client/internal/zatca"
+	"github.com/NasTecSol/nembus-core/handler"
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/NasTecSol/nembus-core/repository"
+	router "github.com/NasTecSol/nembus-core/routing"
+	"github.com/NasTecSol/nembus-core/usecase"
+
+	_ "github.com/NasTecSol/nembus-client/docs/swagger" // Swagger generated docs
+
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	"embed"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+)
+
+//go:embed all:frontend/dist
+var assets embed.FS
+
+// @title           NEMBUS API
+// @version         1.0
+// @description     NEMBUS Backend API - Nasar Entity-driven Modular Business Unified System
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  MIT
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host      localhost:8080
+// @BasePath  /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
+// setupDatabase initializes and returns the master database connection pool and repository
+func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *repository.Queries, error) {
+	if cfg.MasterDBURL == "" {
+		log.Fatal("MASTER_DB_URL is not set")
+	}
+
+	pool, err := pgxpool.New(ctx, cfg.MasterDBURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Ensure legacy DB triggers that double-count cashier session balances are dropped
+	_, _ = pool.Exec(ctx, "DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
+	_, _ = pool.Exec(ctx, "DROP FUNCTION IF EXISTS update_cashier_session_balance();")
+
+	// Ensure required columns / schema patches exist
+	if err := manager.PatchDatabase(ctx, pool); err != nil {
+		log.Fatalf("Failed to patch local database: %v", err)
+	}
+
+	// Initialize SQLC repository
+	queries := repository.New(pool)
+
+	return pool, queries, nil
+}
+
+// setupRouter initializes handlers, use cases, middleware, and routes, then returns the configured router
+func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries, userUC *usecase.UserUseCase, orgUC *usecase.OrganizationUseCase, authUC *usecase.AuthUseCase, moduleUC *usecase.ModuleUseCase, imageUC *usecase.ImageUseCase, navigationUC *usecase.NavigationUseCase, permissionUC *usecase.PermissionUseCase, roleUC *usecase.RoleUseCase, menuUC *usecase.MenuUseCase, submenuUC *usecase.SubmenuUseCase, posUC *usecase.PosUseCase, posPaymentUC *usecase.PosPaymentUseCase, salesReturnUC *usecase.SalesReturnUseCase, posTerminalsUC *usecase.PosTerminalsUseCase, storageLocationsUC *usecase.StorageLocationsUseCase, tenantUC *usecase.TenantUseCase, storesUC *usecase.StoreUseCase, cartUC *usecase.CartUseCase, orderUC *usecase.OrderUseCase, invoiceUC *usecase.InvoiceUseCase, restaurantUC *usecase.RestaurantUseCase, customerUC *usecase.CustomerUseCase, uomUC *usecase.UOMUseCase, priceListsUC *usecase.PriceListsUseCase, taxCategoriesUC *usecase.TaxCategoriesUseCase, cashierSessionUC *usecase.CashierSessionUseCase, brandUC *usecase.BrandUseCase, cashierUC *usecase.CashierUseCase, productBarcodeUC *usecase.ProductBarcodeUseCase, productPricingUC *usecase.ProductPricingUseCase, inventoryStockUC *usecase.InventoryStockUseCase, productVariantUC *usecase.ProductVariantUseCase, promotionUC *usecase.PromotionUseCase, loyaltyUC *usecase.LoyaltyUseCase, productCatalogUC *usecase.ProductCatalogUseCase, printUC *usecase.PrintUseCase, businessPartnerUC *usecase.BusinessPartnerUseCase, bpPriceContractUC *usecase.BPPriceContractUseCase, paymentTermsUC *usecase.PaymentTermsUseCase, purchaseOrdersUC *usecase.PurchaseOrdersUseCase, cfg *config.Config) *gin.Engine {
+	if cfg.Env == "production" || cfg.Env == "prod" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := gin.Default()
+
+	r.Use(func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
+	r.Use(middleware.LoggerMiddleware())
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/health", healthCheck)
+
+	if cfg.Env == "development" || cfg.Env == "dev" {
+		devHandler := handler.NewDevHandler()
+		r.GET("/dev/token", devHandler.GetDevToken)
+	}
+
+	auth := r.Group("/api/auth")
+	auth.Use(middleware.TenantMiddleware(tenantManager))
+	{
+		authHandler := handler.NewAuthHandler(authUC)
+		auth.POST("/login", authHandler.Login)
+		auth.POST("/login/biometric", authHandler.LoginWithBiometric)
+		auth.POST("/authorize-action", authHandler.AuthorizeAction)
+		auth.POST("/authorize-action/biometric", authHandler.AuthorizeActionWithBiometric)
+	}
+
+	publicTenants := r.Group("/api/tenants")
+	publicTenants.Use(middleware.MasterRepositoryMiddleware(masterRepo))
+	{
+		tenantHandler := handler.NewTenantHandler(tenantUC)
+		publicTenants.GET("/:slug", tenantHandler.GetTenantBySlug)
+		publicTenants.GET("/active", tenantHandler.ListActiveTenants)
+	}
+
+	// Local onboarding bootstraps a locally signed JWT using the shared M2M key.
+	router.RegisterM2MRoutes(r.Group("/api"), handler.NewM2MHandler())
+
+	api := r.Group("/api")
+	api.Use(middleware.JWTAuthMiddleware())
+	api.Use(middleware.TenantMiddleware(tenantManager))
+	{
+		userHandler := handler.NewUserHandler(userUC)
+		router.RegisterUserRoutes(api, userHandler)
+		biometricHandler := handler.NewBiometricHandler(usecase.NewBiometricUseCase())
+		router.RegisterBiometricRoutes(api, biometricHandler)
+		moduleHandler := handler.NewModuleHandler(moduleUC)
+		router.RegisterModuleRoutes(api, moduleHandler)
+		imageHandler := handler.NewImageHandler(imageUC)
+		router.RegisterImageRoutes(api, imageHandler)
+		organizationHandler := handler.NewOrganizationHandler(orgUC)
+		router.RegisterOrganizationRoutes(api, organizationHandler)
+		navigationHandler := handler.NewNavigationHandler(navigationUC, roleUC, userUC)
+		router.RegisterNavigationRoutes(api, navigationHandler)
+		permissionHandler := handler.NewPermissionHandler(permissionUC)
+		router.RegisterPermissionRoutes(api, permissionHandler)
+		roleHandler := handler.NewRoleHandler(roleUC)
+		router.RegisterRoleRoutes(api, roleHandler)
+		menuHandler := handler.NewMenuHandler(menuUC)
+		router.RegisterMenuRoutes(api, menuHandler)
+		submenuHandler := handler.NewSubmenuHandler(submenuUC)
+		router.RegisterSubmenuRoutes(api, submenuHandler)
+		posHandler := handler.NewPosHandler(posUC, posPaymentUC)
+		router.RegisterPosRoutes(api, posHandler)
+		salesReturnHandler := handler.NewSalesReturnHandler(salesReturnUC)
+		router.RegisterSalesReturnRoutes(api, salesReturnHandler)
+		posTerminalsHandler := handler.NewPosTerminalsHandler(posTerminalsUC)
+		router.RegisterPosTerminalsRoutes(api, posTerminalsHandler)
+		storageLocationsHandler := handler.NewStorageLocationsHandler(storageLocationsUC)
+		router.RegisterStorageLocationsRoutes(api, storageLocationsHandler)
+		tenantHandler := handler.NewTenantHandler(tenantUC)
+		router.RegisterTenantRoutes(api, tenantHandler)
+		storeHandler := handler.NewStoreHandler(storesUC)
+		router.RegisterStoreRoutes(api, storeHandler)
+		priceListsHandler := handler.NewPriceListsHandler(priceListsUC)
+		router.RegisterPriceListRoutes(api, priceListsHandler)
+		taxCategoriesHandler := handler.NewTaxCategoriesHandler(taxCategoriesUC)
+		router.RegisterTaxCategoryRoutes(api, taxCategoriesHandler)
+		uomHandler := handler.NewUOMHandler(uomUC)
+		router.RegisterUOMRoutes(api, uomHandler)
+		restaurantHandler := handler.NewRestaurantHandler(restaurantUC)
+		router.RegisterRestaurantRoutes(api, restaurantHandler)
+		customerHandler := handler.NewCustomerHandler(customerUC)
+		customerHandler.EnableLocalCreationSync()
+		router.RegisterCustomerRoutes(api, customerHandler)
+		businessPartnerHandler := handler.NewBusinessPartnerHandler(businessPartnerUC)
+		router.RegisterBusinessPartnerRoutes(api, businessPartnerHandler)
+		bpPriceContractHandler := handler.NewBPPriceContractHandler(bpPriceContractUC)
+		router.RegisterBPPriceContractRoutes(api, bpPriceContractHandler)
+		paymentTermsHandler := handler.NewPaymentTermsHandler(paymentTermsUC)
+		router.RegisterPaymentTermRoutes(api, paymentTermsHandler)
+
+		// [NEW] Cart and Order Modules
+		cartHandler := handler.NewCartHandler(cartUC)
+		router.RegisterCartRoutes(api, cartHandler)
+		orderHandler := handler.NewOrderHandler(orderUC)
+		router.RegisterOrderRoutes(api, orderHandler)
+		invoiceHandler := handler.NewInvoiceHandler(invoiceUC)
+		router.RegisterInvoiceRoutes(api, invoiceHandler)
+
+		cashierSessionHandler := handler.NewCashierSessionHandler(cashierSessionUC)
+		router.RegisterCashierSessionRoutes(api, cashierSessionHandler)
+
+		productBarcodeHandler := handler.NewProductBarcodeHandler(productBarcodeUC)
+		router.RegisterProductBarcodeRoutes(api, productBarcodeHandler)
+		// Brand and Cashier routes
+		brandHandler := handler.NewBrandHandler(brandUC)
+		router.RegisterBrandRoutes(api, brandHandler)
+		cashierHandler := handler.NewCashierHandler(cashierUC)
+		router.RegisterCashierRoutes(api, cashierHandler)
+		productPricingHandler := handler.NewProductPricingHandler(productPricingUC)
+		router.RegisterProductPricingRoutes(api, productPricingHandler)
+		inventoryStockHandler := handler.NewInventoryStockHandler(inventoryStockUC)
+		router.RegisterInventoryStockRoutes(api, inventoryStockHandler)
+		productVariantHandler := handler.NewProductVariantHandler(productVariantUC)
+		router.RegisterProductVariantRoutes(api, productVariantHandler)
+
+		// [NEW] Promotions module
+		promotionHandler := handler.NewPromotionHandler(promotionUC)
+		router.RegisterPromotionRoutes(api, promotionHandler)
+
+		// [NEW] Loyalty Rules module
+		loyaltyHandler := handler.NewLoyaltyHandler(loyaltyUC)
+		router.RegisterLoyaltyRoutes(api, loyaltyHandler)
+
+		// [NEW] Product Catalog module (admin: products + embedded variants)
+		productCatalogHandler := handler.NewProductCatalogHandler(productCatalogUC)
+		router.RegisterProductCatalogRoutes(api, productCatalogHandler)
+
+		// [NEW] Template-based ESC/POS receipt printing
+		printHandler := handler.NewPrintHandler(printUC)
+		router.RegisterPrintRoutes(api, printHandler)
+
+		// [NEW] Purchase Orders
+		purchaseOrdersHandler := handler.NewPurchaseOrdersHandler(purchaseOrdersUC)
+		router.RegisterPurchaseOrderRoutes(api, purchaseOrdersHandler)
+
+		// ZATCA Phase 2 + Sync Routes
+		zatcaCfg := &usecase.ZatcaConfig{
+			LocalPOS: true,
+			Env:      cfg.ZatcaEnv,
+			BaseURL:  cfg.ZatcaBaseURL,
+			OrgVATID: cfg.ZatcaOrgVATID,
+		}
+		zatcaUC := usecase.NewZatcaUseCase(zatcaCfg)
+		posHandler.SetZatcaConfig(zatcaCfg)
+		cartHandler.SetZatcaConfig(zatcaCfg)
+		orderHandler.SetZatcaConfig(zatcaCfg)
+		zatcaUC.SetRepository(masterRepo)
+		zatcaHandler := handler.NewZatcaHandler(zatcaUC)
+		// Onboarding calls ZATCA directly and persists credentials in the
+		// request's local tenant repository, just like local signing/reporting.
+		zatcaHandler.SetOnboarder(zatca.NewOnboarder(zatcaCfg, cfg.CloudURL))
+		zatcaReporter := zatca.NewReporter(zatcaCfg)
+		posHandler.SetZatcaReporter(zatcaReporter)
+		cartHandler.SetZatcaReporter(zatcaReporter)
+		orderHandler.SetZatcaReporter(zatcaReporter)
+		zatcaHandler.SetOrderReporter(zatcaReporter)
+		router.RegisterZatcaRoutes(api, zatcaHandler)
+
+		// Notification Center Routes (In-App Bell & Notifications)
+		notifUC := usecase.NewNotificationUseCase(masterRepo)
+		notifHandler := handler.NewNotificationHandler(notifUC)
+		router.RegisterNotificationRoutes(api, notifHandler)
+	}
+
+	return r
+}
+
+// Application Version & Update configuration (populated via -ldflags at build time)
+var (
+	Version      = "v1.0.0"
+	AppUpdateKey = ""
+	CloudURL     = ""
+)
+
+func healthCheck(c *gin.Context) {
+	c.JSON(200, gin.H{"status": "OK"})
+}
+
+func main() {
+	flagInstallWorker := flag.Bool("install-drivers-worker", false, "Internal elevated worker for DigitalPersona driver installation")
+	flagWinBioCaptureWorker := flag.Bool("winbio-capture-worker", false, "Internal elevated worker for WBF fingerprint capture")
+	flagWinBioUnitID := flag.Uint("unit-id", 0, "WinBio unit id for capture worker")
+	flagWinBioTimeoutMs := flag.Int("timeout-ms", 15000, "Capture timeout for capture worker")
+	flagWinBioResultFile := flag.String("result-file", "", "JSON result path for capture worker")
+	flag.Parse()
+
+	if *flagWinBioCaptureWorker {
+		if *flagWinBioResultFile == "" || *flagWinBioUnitID == 0 {
+			log.Fatalf("[POS] --winbio-capture-worker requires --unit-id and --result-file")
+		}
+		if err := installer.RunWinBioCaptureWorker(uint32(*flagWinBioUnitID), *flagWinBioTimeoutMs, *flagWinBioResultFile); err != nil {
+			log.Fatalf("[POS] WinBio capture worker failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	if *flagInstallWorker {
+		log.Printf("[POS] Running elevated DigitalPersona driver installation worker...")
+		if err := installer.InstallDrivers(); err != nil {
+			log.Fatalf("[POS] Elevated driver installation failed: %v", err)
+		}
+		log.Printf("[POS] Driver installation completed.")
+		os.Exit(0)
+	}
+
+	env := "development"
+	if os.Getenv("ENV") != "" {
+		env = os.Getenv("ENV")
+	}
+	for _, arg := range flag.Args() {
+		switch arg {
+		case "stg":
+			env = "stg"
+		case "dev":
+			env = "dev"
+		case "prod":
+			env = "prod"
+		}
+	}
+
+	cfg := config.LoadConfig(env)
+	updater.PersistLaunchArgs(flag.Args())
+
+	// Allow overriding the build-time version via environment variable so that
+	// the update checker works like production during local development.
+	if envVersion := os.Getenv("APP_VERSION"); envVersion != "" {
+		Version = envVersion
+	}
+
+	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
+log.Printf("hello")
+	// Wails Setup
+	app := NewApp(Version, AppUpdateKey, CloudURL)
+
+	err := wails.Run(&options.App{
+		Title:  "NEMBUS",
+		Width:  1024,
+		Height: 768,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+		},
+		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		OnStartup:        app.startup,
+		OnBeforeClose:    app.beforeClose,
+		OnShutdown:       app.shutdown,
+		Bind: []interface{}{
+			app,
+		},
+	})
+
+	if err != nil {
+		log.Fatal("Error starting Wails:", err)
+	}
+}

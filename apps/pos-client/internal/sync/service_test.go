@@ -1,0 +1,457 @@
+package sync
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
+	dsn := os.Getenv("NEMBUS_SYNC_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set NEMBUS_SYNC_TEST_DATABASE_URL to run PostgreSQL integration tests")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := fmt.Sprintf("sync_parent_test_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE") }()
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE carts (
+			id uuid PRIMARY KEY,
+			converted_to_order_id uuid,
+			converted_at timestamptz
+		);
+		CREATE TABLE sales_orders_v2 (id uuid PRIMARY KEY, source_cart_id uuid REFERENCES carts(id), fulfillment_status text, order_status text);
+		CREATE TABLE sales_order_lines_v2 (id uuid PRIMARY KEY, sales_order_id uuid REFERENCES sales_orders_v2(id), line_number integer);
+		CREATE TABLE pos_transactions (
+			id bigint PRIMARY KEY,
+			sales_order_id uuid REFERENCES sales_orders_v2(id),
+			source_cart_id uuid REFERENCES carts(id)
+		);
+		CREATE TABLE pos_transaction_lines (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, line_number integer DEFAULT 1);
+		CREATE TABLE pos_payments (id bigint PRIMARY KEY, transaction_id bigint NOT NULL, amount numeric DEFAULT 0);
+		CREATE TABLE sales_returns (id bigint PRIMARY KEY, return_number text, status text);
+		CREATE TABLE sales_return_lines (id bigint PRIMARY KEY, return_id bigint REFERENCES sales_returns(id), line_number integer);
+		INSERT INTO carts (id) VALUES ('00000000-0000-0000-0000-000000000001');
+		INSERT INTO sales_orders_v2 VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'fulfilled', 'fulfilled');
+		UPDATE carts SET converted_to_order_id = '00000000-0000-0000-0000-000000000002' WHERE id = '00000000-0000-0000-0000-000000000001';
+		ALTER TABLE carts ADD CONSTRAINT fk_carts_converted_to_order FOREIGN KEY (converted_to_order_id) REFERENCES sales_orders_v2(id);
+		INSERT INTO sales_order_lines_v2 VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000002', 1);
+		INSERT INTO pos_transaction_lines (id, transaction_id) VALUES (8, 7);
+		INSERT INTO pos_payments (id, transaction_id) VALUES (9, 7);
+		INSERT INTO pos_transactions (id, sales_order_id, source_cart_id)
+		VALUES (7, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
+		CREATE TABLE sync_queue (id bigint PRIMARY KEY, outbox_uuid uuid DEFAULT gen_random_uuid(),
+			entity_type text, entity_id bigint, action text,
+			payload jsonb, created_at timestamptz DEFAULT now(), correlation_id text, status text,
+			retry_count integer DEFAULT 0, max_retries integer DEFAULT 5, last_error text,
+			error_class text, next_attempt_at timestamptz DEFAULT now(), quarantined_at timestamptz);
+		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
+			(1, 'pos_transactions', 7, 'INSERT', '{"id":7}', 'failed'),
+			(2, 'pos_transaction_lines', 8, 'INSERT', '{"id":8,"transaction_id":7}', 'pending'),
+			(3, 'pos_payments', 9, 'INSERT', '{"id":9,"transaction_id":7}', 'pending'),
+			(4, 'cashier_sessions', 10, 'INSERT', '{"id":10}', 'pending'),
+			(5, 'sales_returns', 100, 'INSERT', '{"id":100}', 'failed'),
+			(6, 'sales_return_lines', 101, 'INSERT', '{"id":101,"return_id":100}', 'pending');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewSyncService(ctx, pool, "localhost:50051", "test")
+	item := OutboxItem{ID: 42, EntityType: "pos_transactions", Payload: json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002","source_cart_id":"00000000-0000-0000-0000-000000000001"}`)}
+	parents, err := s.transactionParents(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parents) != 3 ||
+		parents[0].EntityType != "carts" || parents[0].Action != "INSERT" ||
+		parents[1].EntityType != "sales_orders_v2" || parents[1].Action != "POS_CHECKOUT" ||
+		parents[2].EntityType != "carts" || parents[2].Action != "UPDATE" {
+		t.Fatalf("expected cart stub, checkout, cart restore; got %+v", parents)
+	}
+	for _, p := range parents {
+		if p.ID != item.ID || !json.Valid(p.Payload) {
+			t.Fatalf("invalid parent event: %+v", p)
+		}
+	}
+	var strippedCart map[string]json.RawMessage
+	if err := json.Unmarshal(parents[0].Payload, &strippedCart); err != nil {
+		t.Fatal(err)
+	}
+	if string(strippedCart["converted_to_order_id"]) != "null" {
+		t.Fatalf("first cart push must omit converted_to_order_id: %s", parents[0].Payload)
+	}
+	var snapshot struct {
+		Order json.RawMessage   `json:"order"`
+		Lines []json.RawMessage `json:"lines"`
+	}
+	if err := json.Unmarshal(parents[1].Payload, &snapshot); err != nil || len(snapshot.Lines) != 1 {
+		t.Fatalf("missing checkout lines: %s", parents[1].Payload)
+	}
+	var restoredCart map[string]json.RawMessage
+	if err := json.Unmarshal(parents[2].Payload, &restoredCart); err != nil {
+		t.Fatal(err)
+	}
+	var restoredOrderID string
+	if err := json.Unmarshal(restoredCart["converted_to_order_id"], &restoredOrderID); err != nil || restoredOrderID == "" {
+		t.Fatalf("final cart push must restore converted_to_order_id: %s", parents[2].Payload)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sales_orders_v2 SET fulfillment_status='unfulfilled'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.transactionParents(item); !errors.Is(err, errCheckoutNotReady) {
+		t.Fatalf("expected unfinished checkout to wait, got %v", err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sales_orders_v2 SET fulfillment_status='fulfilled'"); err != nil {
+		t.Fatal(err)
+	}
+	// The order's source cart must also be sent if an older POS payload omits it.
+	item.Payload = json.RawMessage(`{"id":7,"sales_order_id":"00000000-0000-0000-0000-000000000002"}`)
+	parents, err = s.transactionParents(item)
+	if err != nil || len(parents) != 3 {
+		t.Fatalf("order-only reference: parents=%+v err=%v", parents, err)
+	}
+	item.Payload = json.RawMessage(`{"id":999,"sales_order_id":null,"source_cart_id":null}`)
+	parents, err = s.transactionParents(item)
+	if err != nil || len(parents) != 0 {
+		t.Fatalf("direct POS sale: parents=%+v err=%v", parents, err)
+	}
+	item.EntityType = "pos_payments"
+	parents, err = s.transactionParents(item)
+	if err != nil || len(parents) != 0 {
+		t.Fatalf("payment unexpectedly has checkout parents")
+	}
+	eligible := func() []int64 {
+		t.Helper()
+		rows, err := pool.Query(ctx, pendingOutboxSQL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var ids []int64
+		for rows.Next() {
+			var item OutboxItem
+			if err := rows.Scan(&item.ID, &item.OutboxUUID, &item.EntityType, &item.EntityID, &item.Action, &item.Payload, &item.CreatedAt, &item.CorrelationID); err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, item.ID)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}
+	if ids := eligible(); len(ids) != 1 || ids[0] != 4 {
+		t.Fatalf("children of failed transaction and failed return must wait; eligible=%v", ids)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='pending' WHERE id=1"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 2 || ids[0] != 1 || ids[1] != 4 {
+		t.Fatalf("children of pending transaction must wait; eligible=%v", ids)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='synced' WHERE id=1"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 3 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 {
+		t.Fatalf("children must become eligible in order after transaction sync; eligible=%v", ids)
+	}
+	// Verify sales_return_lines waiting on sales_returns:
+	// Update sales_returns to pending: sales_returns is eligible, sales_return_lines still waits
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='pending' WHERE id=5"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 4 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 || ids[3] != 5 {
+		t.Fatalf("parent sales_return should be eligible but child must wait; eligible=%v", ids)
+	}
+	// Update sales_returns to synced: sales_return_lines becomes eligible!
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='synced' WHERE id=5"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 4 || ids[0] != 2 || ids[1] != 3 || ids[2] != 4 || ids[3] != 6 {
+		t.Fatalf("child sales_return_lines must become eligible after sales_returns synced; eligible=%v", ids)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_queue(id,entity_type,entity_id,action,payload,status) VALUES
+		(7,'customers',12,'INSERT','{"id":12,"organization_id":1,"customer_code":"POS-12"}','pending'),
+		(8,'pos_transactions',12,'INSERT','{"id":12,"customer_id":12}','pending'),
+		(9,'sales_returns',12,'INSERT','{"id":12,"customer_id":12}','pending')`); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 5 || ids[4] != 7 {
+		t.Fatalf("customer must go before its sale and return; eligible=%v", ids)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE sync_queue SET status='synced' WHERE id=7"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := eligible(); len(ids) != 6 || ids[4] != 8 || ids[5] != 9 {
+		t.Fatalf("sale and return should unlock after customer acknowledgment; eligible=%v", ids)
+	}
+}
+
+func TestStripCartConvertedOrderLink(t *testing.T) {
+	stripped, err := stripCartConvertedOrderLink(json.RawMessage(`{
+		"id":"00000000-0000-0000-0000-000000000001",
+		"converted_to_order_id":"00000000-0000-0000-0000-000000000002",
+		"converted_at":"2026-11-04T00:00:00Z"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cart map[string]json.RawMessage
+	if err := json.Unmarshal(stripped, &cart); err != nil {
+		t.Fatal(err)
+	}
+	if string(cart["converted_to_order_id"]) != "null" || string(cart["converted_at"]) != "null" {
+		t.Fatalf("expected null conversion fields, got %s", stripped)
+	}
+}
+
+func TestPendingOutboxSQLStructure(t *testing.T) {
+	requiredClauses := []string{
+		"COALESCE(q.next_attempt_at, q.created_at, NOW()) <= NOW()",
+		"q.entity_type IN ('pos_transaction_lines', 'pos_payments')",
+		"parent.entity_type = 'pos_transactions'",
+		"parent.entity_id = (q.payload->>'transaction_id')::bigint",
+		"q.entity_type IN ('pos_transactions', 'sales_returns')",
+		"parent.entity_type = 'customers'",
+		"parent.entity_id = (q.payload->>'customer_id')::bigint",
+		"q.entity_type = 'sales_return_lines'",
+		"parent.entity_type = 'sales_returns'",
+		"parent.entity_id = (q.payload->>'return_id')::bigint",
+		"parent.status IN ('pending', 'failed', 'quarantined')",
+	}
+	for _, clause := range requiredClauses {
+		if !strings.Contains(pendingOutboxSQL, clause) {
+			t.Errorf("pendingOutboxSQL missing expected clause: %s", clause)
+		}
+	}
+}
+
+func TestClassifySyncError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want ErrorClass
+	}{
+		{
+			name: "SQLSTATE 23503 foreign key violation is permanent",
+			err:  errors.New("server rejected: failed to upsert pos_transactions (action=INSERT): ERROR: insert or update on table \"pos_transactions\" violates foreign key constraint \"pos_transactions_cashier_id_fkey\" (SQLSTATE 23503)"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "SQLSTATE 23505 unique constraint is permanent",
+			err:  errors.New("server rejected: failed to upsert pos_transactions: duplicate key value violates unique constraint (SQLSTATE 23505)"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "SQLSTATE 22P02 invalid text representation is permanent",
+			err:  errors.New("server rejected: ERROR: invalid input syntax for type uuid (SQLSTATE 22P02)"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "Customer ID collision validation error is permanent",
+			err:  errors.New("server rejected: customer ID 42 already belongs to another cloud customer; resolve the ID collision before syncing dependent sales"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "gRPC InvalidArgument is permanent",
+			err:  status.Error(codes.InvalidArgument, "tenant_slug is required"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "gRPC Unavailable is transient",
+			err:  status.Error(codes.Unavailable, "connection refused"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "gRPC DeadlineExceeded is transient",
+			err:  status.Error(codes.DeadlineExceeded, "context deadline exceeded"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "SQLSTATE 40001 serialization failure is transient",
+			err:  errors.New("server rejected: ERROR: could not serialize access due to concurrent update (SQLSTATE 40001)"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "SQLSTATE 53300 too many connections is transient",
+			err:  errors.New("server rejected: FATAL: sorry, too many clients already (SQLSTATE 53300)"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "SHA-256 checksum mismatch is transient",
+			err:  errors.New("server rejected: SHA-256 checksum mismatch"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "Network dial / receive error is transient",
+			err:  errors.New("receive error: EOF"),
+			want: ErrorClassTransient,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ClassifySyncError(tc.err); got != tc.want {
+				t.Fatalf("ClassifySyncError(%v) = %s, want %s", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestComputeBackoffDelayBounds(t *testing.T) {
+	for retry := 0; retry <= 12; retry++ {
+		exp := retry
+		if exp > 8 {
+			exp = 8
+		}
+		ceiling := 2 * time.Second * time.Duration(1<<exp)
+		if ceiling > 300*time.Second {
+			ceiling = 300 * time.Second
+		}
+		minExpected := time.Duration(float64(ceiling) * 0.5)
+		for i := 0; i < 20; i++ {
+			d := ComputeBackoffDelay(retry)
+			if d < minExpected || d > ceiling {
+				t.Fatalf("retry=%d: delay %v outside [%v, %v]", retry, d, minExpected, ceiling)
+			}
+		}
+	}
+}
+
+func TestClientConnReuse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := NewSyncService(ctx, nil, "localhost:50051", "test-tenant")
+	defer s.Stop()
+
+	conn1, err := s.getOrCreateConn()
+	if err != nil {
+		t.Fatalf("getOrCreateConn 1 failed: %v", err)
+	}
+	conn2, err := s.getOrCreateConn()
+	if err != nil {
+		t.Fatalf("getOrCreateConn 2 failed: %v", err)
+	}
+	if conn1 != conn2 {
+		t.Fatalf("expected SyncService to reuse *grpc.ClientConn across calls")
+	}
+
+	s.Stop()
+	if s.conn != nil {
+		t.Fatalf("expected Stop() to close and clear s.conn")
+	}
+}
+
+func TestMasterDataPullEntityTypesInSync(t *testing.T) {
+	types := syncpb.PullEntityTypes()
+	expectedPrefix := []string{
+		"units_of_measure",
+		"product_categories",
+		"payment_terms",
+		"users",
+		"roles",
+		"permissions",
+		"role_permissions",
+		"user_roles",
+		"cashiers",
+		"business_partners",
+		"partner_addresses",
+	}
+	if len(types) < len(expectedPrefix) {
+		t.Fatalf("PullEntityTypes length %d < expected master data count %d", len(types), len(expectedPrefix))
+	}
+	for i, expected := range expectedPrefix {
+		if types[i] != expected {
+			t.Errorf("PullEntityTypes()[%d] = %s; want %s", i, types[i], expected)
+		}
+	}
+}
+
+func TestOrderBatchEventsDependencyOrdering(t *testing.T) {
+	events := []OutboxItem{
+		{ID: 7, EntityType: "pos_payments", Action: "INSERT"},
+		{ID: 6, EntityType: "pos_transaction_lines", Action: "INSERT"},
+		{ID: 5, EntityType: "pos_transactions", Action: "INSERT"},
+		{ID: 4, EntityType: "carts", Action: "UPDATE"},
+		{ID: 3, EntityType: "sales_orders_v2", Action: "POS_CHECKOUT"},
+		{ID: 2, EntityType: "carts", Action: "INSERT"},
+		{ID: 1, EntityType: "customers", Action: "INSERT"},
+	}
+	OrderBatchEvents(events)
+
+	want := []struct {
+		entity string
+		action string
+	}{
+		{"customers", "INSERT"},
+		{"carts", "INSERT"},
+		{"sales_orders_v2", "POS_CHECKOUT"},
+		{"carts", "UPDATE"},
+		{"pos_transactions", "INSERT"},
+		{"pos_transaction_lines", "INSERT"},
+		{"pos_payments", "INSERT"},
+	}
+	for i, w := range want {
+		if events[i].EntityType != w.entity || events[i].Action != w.action {
+			t.Fatalf("events[%d] = (%s, %s), want (%s, %s)",
+				i, events[i].EntityType, events[i].Action, w.entity, w.action)
+		}
+	}
+}
+
+func TestBuildBatchAckErrorClassification(t *testing.T) {
+	s := NewSyncService(context.Background(), nil, "localhost:50051", "test")
+	defer s.Stop()
+
+	fkAck := &syncpb.SyncAck{
+		BatchId:      "corr-1",
+		Success:      false,
+		FailedSeq:    2,
+		SqlState:     "23503",
+		ErrorMessage: "insert or update on table pos_transactions violates foreign key constraint",
+	}
+	fkErr := s.buildBatchAckError(fkAck)
+	if ClassifySyncError(fkErr) != ErrorClassPermanent {
+		t.Fatalf("expected SQLSTATE 23503 batch ack error to classify as permanent, got %s", ClassifySyncError(fkErr))
+	}
+
+	transientAck := &syncpb.SyncAck{
+		BatchId:      "corr-2",
+		Success:      false,
+		FailedSeq:    1,
+		SqlState:     "40001",
+		ErrorMessage: "could not serialize access due to concurrent update",
+	}
+	transientErr := s.buildBatchAckError(transientAck)
+	if ClassifySyncError(transientErr) != ErrorClassTransient {
+		t.Fatalf("expected SQLSTATE 40001 batch ack error to classify as transient, got %s", ClassifySyncError(transientErr))
+	}
+}

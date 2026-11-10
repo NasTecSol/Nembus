@@ -1,0 +1,1278 @@
+package usecase
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"time"
+
+	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/utils"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type RestaurantUseCase struct {
+	repo *repository.Queries
+}
+
+func NewRestaurantUseCase() *RestaurantUseCase {
+	return &RestaurantUseCase{}
+}
+
+// NewRestaurantUseCaseWithRepo returns a request-scoped use case bound to the tenant repository.
+func NewRestaurantUseCaseWithRepo(repo *repository.Queries) *RestaurantUseCase {
+	return &RestaurantUseCase{repo: repo}
+}
+
+func (uc *RestaurantUseCase) SetRepository(repo *repository.Queries) {
+	uc.repo = repo
+}
+
+// === Tables ===
+
+func (uc *RestaurantUseCase) GetTable(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	table, err := uc.repo.GetRestaurantTable(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "table not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "table fetched successfully", table)
+}
+
+func (uc *RestaurantUseCase) ListTables(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	tables, err := uc.repo.ListRestaurantTables(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "tables fetched successfully", tables)
+}
+
+func (uc *RestaurantUseCase) CreateTable(ctx context.Context, arg repository.CreateRestaurantTableParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	table, err := uc.repo.CreateRestaurantTable(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "table created successfully", table)
+}
+
+func (uc *RestaurantUseCase) UpdateTable(ctx context.Context, arg repository.UpdateRestaurantTableParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	table, err := uc.repo.UpdateRestaurantTable(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "table updated successfully", table)
+}
+
+func (uc *RestaurantUseCase) DeleteTable(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRestaurantTable(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "table deleted successfully", nil)
+}
+
+// === Menu Categories ===
+
+func (uc *RestaurantUseCase) GetMenuCategory(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	category, err := uc.repo.GetMenuCategory(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "category not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "category fetched successfully", category)
+}
+
+func (uc *RestaurantUseCase) ListMenuCategories(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	categories, err := uc.repo.ListMenuCategories(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu categories fetched successfully", categories)
+}
+
+func (uc *RestaurantUseCase) CreateMenuCategory(ctx context.Context, arg repository.CreateMenuCategoryParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	category, err := uc.repo.CreateMenuCategory(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "category created successfully", category)
+}
+
+func (uc *RestaurantUseCase) UpdateMenuCategory(ctx context.Context, arg repository.UpdateMenuCategoryParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	category, err := uc.repo.UpdateMenuCategory(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "category updated successfully", category)
+}
+
+func (uc *RestaurantUseCase) DeleteMenuCategory(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteMenuCategory(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "category deleted successfully", nil)
+}
+
+// === Menu Items ===
+
+type ComboComponentParamsInput struct {
+	ComponentMenuItemID int32           `json:"component_menu_item_id"`
+	GroupName           string          `json:"group_name"`
+	MinSelection        int32           `json:"min_selection"`
+	MaxSelection        int32           `json:"max_selection"`
+	PriceAdjustment     string          `json:"price_adjustment"`
+	DisplayOrder        int32           `json:"display_order"`
+	Metadata            json.RawMessage `json:"metadata"`
+}
+
+func (uc *RestaurantUseCase) GetMenuItem(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	item, err := uc.repo.GetMenuItem(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "menu item not found", nil)
+	}
+
+	if item.ItemType == "combo" {
+		components, _ := uc.repo.ListMenuItemComboComponentsByParentID(ctx, id)
+		res := map[string]interface{}{
+			"id":                   item.ID,
+			"store_id":             item.StoreID,
+			"menu_category_id":     item.MenuCategoryID,
+			"product_id":           item.ProductID,
+			"recipe_id":            item.RecipeID,
+			"name":                 item.Name,
+			"short_name":           item.ShortName,
+			"description":          item.Description,
+			"image_url":            item.ImageUrl,
+			"base_price":           item.BasePrice,
+			"cost_price":           item.CostPrice,
+			"preparation_time_min": item.PreparationTimeMin,
+			"tax_category_id":      item.TaxCategoryID,
+			"is_available":         item.IsAvailable,
+			"is_active":            item.IsActive,
+			"display_order":        item.DisplayOrder,
+			"item_type":            item.ItemType,
+			"metadata":             item.Metadata,
+			"created_at":           item.CreatedAt,
+			"updated_at":           item.UpdatedAt,
+			"combo_components":     components,
+		}
+		return utils.NewResponse(utils.CodeOK, "menu item fetched successfully", res)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "menu item fetched successfully", item)
+}
+
+func (uc *RestaurantUseCase) ListMenuItems(ctx context.Context, categoryID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	items, err := uc.repo.ListMenuItems(ctx, categoryID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu items fetched successfully", items)
+}
+
+func (uc *RestaurantUseCase) CreateMenuItem(ctx context.Context, arg repository.CreateMenuItemParams, comboComponents []ComboComponentParamsInput) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if arg.ItemType == "" {
+		arg.ItemType = "standard"
+	}
+	item, err := uc.repo.CreateMenuItem(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	if arg.ItemType == "combo" && len(comboComponents) > 0 {
+		for _, cc := range comboComponents {
+			priceAdj, _ := uc.repo.ParseNumeric(ctx, cc.PriceAdjustment)
+			minSel := cc.MinSelection
+			if minSel <= 0 {
+				minSel = 1
+			}
+			maxSel := cc.MaxSelection
+			if maxSel <= 0 {
+				maxSel = 1
+			}
+			metaBytes := cc.Metadata
+			if len(metaBytes) == 0 {
+				metaBytes = []byte("{}")
+			}
+			_, _ = uc.repo.CreateMenuItemComboComponent(ctx, repository.CreateMenuItemComboComponentParams{
+				ParentMenuItemID:    item.ID,
+				ComponentMenuItemID: cc.ComponentMenuItemID,
+				GroupName:           cc.GroupName,
+				MinSelection:        pgtype.Int4{Int32: minSel, Valid: true},
+				MaxSelection:        pgtype.Int4{Int32: maxSel, Valid: true},
+				PriceAdjustment:     priceAdj,
+				DisplayOrder:        pgtype.Int4{Int32: cc.DisplayOrder, Valid: true},
+				Metadata:            metaBytes,
+			})
+		}
+	}
+
+	return utils.NewResponse(utils.CodeCreated, "menu item created successfully", item)
+}
+
+func (uc *RestaurantUseCase) UpdateMenuItem(ctx context.Context, arg repository.UpdateMenuItemParams, comboComponents []ComboComponentParamsInput) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if arg.ItemType == "" {
+		arg.ItemType = "standard"
+	}
+	item, err := uc.repo.UpdateMenuItem(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	if arg.ItemType == "combo" {
+		_ = uc.repo.DeleteMenuItemComboComponentsByParentID(ctx, item.ID)
+		for _, cc := range comboComponents {
+			priceAdj, _ := uc.repo.ParseNumeric(ctx, cc.PriceAdjustment)
+			minSel := cc.MinSelection
+			if minSel <= 0 {
+				minSel = 1
+			}
+			maxSel := cc.MaxSelection
+			if maxSel <= 0 {
+				maxSel = 1
+			}
+			metaBytes := cc.Metadata
+			if len(metaBytes) == 0 {
+				metaBytes = []byte("{}")
+			}
+			_, _ = uc.repo.CreateMenuItemComboComponent(ctx, repository.CreateMenuItemComboComponentParams{
+				ParentMenuItemID:    item.ID,
+				ComponentMenuItemID: cc.ComponentMenuItemID,
+				GroupName:           cc.GroupName,
+				MinSelection:        pgtype.Int4{Int32: minSel, Valid: true},
+				MaxSelection:        pgtype.Int4{Int32: maxSel, Valid: true},
+				PriceAdjustment:     priceAdj,
+				DisplayOrder:        pgtype.Int4{Int32: cc.DisplayOrder, Valid: true},
+				Metadata:            metaBytes,
+			})
+		}
+	}
+
+	return utils.NewResponse(utils.CodeOK, "menu item updated successfully", item)
+}
+
+func (uc *RestaurantUseCase) ListComboComponents(ctx context.Context, parentID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	components, err := uc.repo.ListMenuItemComboComponentsByParentID(ctx, parentID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "combo components fetched successfully", components)
+}
+
+func (uc *RestaurantUseCase) DeleteMenuItem(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteMenuItem(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu item deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) GetFullMenu(ctx context.Context, storeID int32, categoryID *int32, includeUnavail bool) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	menu, err := uc.repo.ListRestaurantMenuView(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	var result []repository.ListRestaurantMenuViewRow
+	for _, item := range menu {
+		if categoryID != nil && item.CategoryID != *categoryID {
+			continue
+		}
+		if !includeUnavail && !item.IsAvailable.Bool {
+			continue
+		}
+		result = append(result, item)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "menu fetched successfully", result)
+}
+
+// === Modifiers ===
+
+func (uc *RestaurantUseCase) ListModifiers(ctx context.Context, itemID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	modifiers, err := uc.repo.ListMenuItemModifiers(ctx, itemID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "modifiers fetched successfully", modifiers)
+}
+
+func (uc *RestaurantUseCase) ListModifiersByStore(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	modifiers, err := uc.repo.ListModifiersByStore(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "store modifiers fetched successfully", modifiers)
+}
+
+
+func (uc *RestaurantUseCase) GetModifier(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	mod, err := uc.repo.GetMenuItemModifier(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "modifier not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "modifier fetched successfully", mod)
+}
+
+func (uc *RestaurantUseCase) CreateModifier(ctx context.Context, arg repository.CreateMenuItemModifierParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	mod, err := uc.repo.CreateMenuItemModifier(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "modifier created successfully", mod)
+}
+
+func (uc *RestaurantUseCase) UpdateModifier(ctx context.Context, arg repository.UpdateMenuItemModifierParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	mod, err := uc.repo.UpdateMenuItemModifier(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "modifier updated successfully", mod)
+}
+
+func (uc *RestaurantUseCase) DeleteModifier(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteMenuItemModifier(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "modifier deleted successfully", nil)
+}
+
+// === Orders ===
+
+func (uc *RestaurantUseCase) CreateOrder(ctx context.Context, arg repository.CreateRestaurantOrderParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if arg.OrderNumber == "" {
+		arg.OrderNumber = fmt.Sprintf("ORD-%d", time.Now().UnixNano())
+	}
+	order, err := uc.repo.CreateRestaurantOrder(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "order created successfully", order)
+}
+
+func (uc *RestaurantUseCase) UpdateOrder(ctx context.Context, arg repository.UpdateRestaurantOrderParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	order, err := uc.repo.UpdateRestaurantOrder(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "order updated successfully", order)
+}
+
+func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRestaurantOrder(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "order deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) GetOrder(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	order, err := uc.repo.GetRestaurantOrder(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "order not found", nil)
+	}
+	items, _ := uc.repo.ListRestaurantOrderItems(ctx, order.ID)
+
+	result := map[string]interface{}{
+		"order": order,
+		"items": items,
+	}
+	return utils.NewResponse(utils.CodeOK, "order fetched successfully", result)
+}
+
+func (uc *RestaurantUseCase) ListOrders(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	orders, err := uc.repo.ListRestaurantOrders(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "orders fetched successfully", orders)
+}
+
+func (uc *RestaurantUseCase) UpdateOrderStatus(ctx context.Context, orderID int32, status string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	order, err := uc.repo.UpdateRestaurantOrderStatus(ctx, repository.UpdateRestaurantOrderStatusParams{
+		ID:     orderID,
+		Status: status,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "order status updated successfully", order)
+}
+
+func (uc *RestaurantUseCase) GetOrderItem(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	item, err := uc.repo.GetRestaurantOrderItem(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "order item not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "order item fetched successfully", item)
+}
+
+func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository.UpdateRestaurantOrderItemParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	item, err := uc.repo.UpdateRestaurantOrderItem(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "order item updated successfully", item)
+}
+
+func (uc *RestaurantUseCase) DeleteOrderItem(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRestaurantOrderItem(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "order item deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, posTxnID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	order, err := uc.repo.GetRestaurantOrder(ctx, orderID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "order not found", nil)
+	}
+
+	updatedOrder, err := uc.repo.UpdateRestaurantOrder(ctx, repository.UpdateRestaurantOrderParams{
+		ID:               order.ID,
+		TableID:          order.TableID,
+		CashierID:        order.CashierID,
+		CashierSessionID: order.CashierSessionID,
+		CustomerID:       order.CustomerID,
+		Status:           "paid",
+		Subtotal:         order.Subtotal,
+		DiscountAmount:   order.DiscountAmount,
+		TaxAmount:        order.TaxAmount,
+		TotalAmount:      order.TotalAmount,
+		AmountPaid:       order.TotalAmount,
+		ChangeGiven:      pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true},
+		Notes:            order.Notes,
+		PosTransactionID: pgtype.Int4{Int32: posTxnID, Valid: true},
+		ConfirmedAt:      order.ConfirmedAt,
+		ServedAt:         order.ServedAt,
+		PaidAt:           pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Metadata:         order.Metadata,
+	})
+
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "order settled successfully", updatedOrder)
+}
+
+// === Online Orders ===
+
+func sumRestaurantOrderLineAmounts(items []repository.CreateRestaurantOrderItemParams) (subtotal, discount, tax, total *big.Rat) {
+	sub := new(big.Rat)
+	disc := new(big.Rat)
+	taxR := new(big.Rat)
+	for _, item := range items {
+		sub.Add(sub, numericToRat(item.Subtotal))
+		disc.Add(disc, numericToRat(item.DiscountAmount))
+		taxR.Add(taxR, numericToRat(item.TaxAmount))
+	}
+	lineTotal := new(big.Rat).Add(sub, taxR)
+	lineTotal.Sub(lineTotal, disc)
+	return sub, disc, taxR, lineTotal
+}
+
+func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int32, customerID *int32, items []repository.CreateRestaurantOrderItemParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if len(items) == 0 {
+		return utils.NewResponse(utils.CodeBadReq, "at least one order item is required", nil)
+	}
+
+	subR, discR, taxR, totalR := sumRestaurantOrderLineAmounts(items)
+	subtotal, err := uc.repo.ParseNumeric(ctx, subR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order subtotal: "+err.Error(), nil)
+	}
+	discount, err := uc.repo.ParseNumeric(ctx, discR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order discount: "+err.Error(), nil)
+	}
+	tax, err := uc.repo.ParseNumeric(ctx, taxR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order tax: "+err.Error(), nil)
+	}
+	total, err := uc.repo.ParseNumeric(ctx, totalR.FloatString(6))
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "invalid order total: "+err.Error(), nil)
+	}
+
+	orderParams := repository.CreateRestaurantOrderParams{
+		StoreID:        storeID,
+		OrderNumber:    fmt.Sprintf("WEB-%d", time.Now().UnixNano()),
+		OrderSource:    "online",
+		Status:         "pending",
+		Subtotal:       subtotal,
+		DiscountAmount: discount,
+		TaxAmount:      tax,
+		TotalAmount:    total,
+		OrderedAt:      pgtype.Timestamp{Time: time.Now(), Valid: true},
+	}
+	if customerID != nil {
+		orderParams.CustomerID = pgtype.Int4{Int32: *customerID, Valid: true}
+	}
+
+	createWithRepo := func(active *repository.Queries) (*repository.RestaurantOrder, error) {
+		order, err := active.CreateRestaurantOrder(ctx, orderParams)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			item.OrderID = order.ID
+			if _, err := active.CreateRestaurantOrderItem(ctx, item); err != nil {
+				return nil, err
+			}
+		}
+		return &order, nil
+	}
+
+	if pool := resolvePoolFromContext(ctx, nil); pool != nil {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to begin online order transaction: "+err.Error(), nil)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		order, err := createWithRepo(uc.repo.WithTx(tx))
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to commit online order: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeCreated, "online order created successfully", order)
+	}
+
+	order, err := createWithRepo(uc.repo)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "online order created successfully", order)
+}
+
+// === KDS ===
+
+func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, statuses []string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	orders, err := uc.repo.ListActiveRestaurantOrdersView(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+
+	var result []repository.VwActiveRestaurantOrder
+	statusMap := make(map[string]bool)
+	for _, s := range statuses {
+		statusMap[s] = true
+	}
+
+	for _, o := range orders {
+		if statusMap[o.OrderStatus] {
+			result = append(result, o)
+		}
+	}
+
+	return utils.NewResponse(utils.CodeOK, "KDS orders fetched successfully", result)
+}
+
+// === Waste ===
+
+func (uc *RestaurantUseCase) CreateWasteLog(ctx context.Context, arg repository.CreateWasteLogParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	log, err := uc.repo.CreateWasteLog(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "waste log created successfully", log)
+}
+
+func (uc *RestaurantUseCase) GetWasteLog(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	log, err := uc.repo.GetWasteLog(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "waste log not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "waste log fetched successfully", log)
+}
+
+func (uc *RestaurantUseCase) UpdateWasteLog(ctx context.Context, arg repository.UpdateWasteLogParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	log, err := uc.repo.UpdateWasteLog(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "waste log updated successfully", log)
+}
+
+func (uc *RestaurantUseCase) DeleteWasteLog(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteWasteLog(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "waste log deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) CreateWasteLogStandalone(ctx context.Context, arg repository.CreateWasteLogParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	log, err := uc.repo.CreateWasteLog(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "waste log created successfully", log)
+}
+
+func (uc *RestaurantUseCase) GetWasteReport(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	summary, err := uc.repo.GetWasteDailySummaryView(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "waste daily summary fetched", summary)
+}
+
+// === Recipes ===
+
+func (uc *RestaurantUseCase) CreateRecipe(ctx context.Context, arg repository.CreateRecipeParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	recipe, err := uc.repo.CreateRecipe(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "recipe created successfully", recipe)
+}
+
+func (uc *RestaurantUseCase) UpdateRecipe(ctx context.Context, arg repository.UpdateRecipeParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	recipe, err := uc.repo.UpdateRecipe(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "recipe updated successfully", recipe)
+}
+
+func (uc *RestaurantUseCase) DeleteRecipe(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRecipe(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "recipe deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) ListRecipes(ctx context.Context, orgID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	recipes, err := uc.repo.ListRecipes(ctx, orgID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "recipes fetched successfully", recipes)
+}
+
+func (uc *RestaurantUseCase) GetRecipe(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	recipe, err := uc.repo.GetRecipe(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "recipe not found", nil)
+	}
+	ingredients, _ := uc.repo.ListRecipeIngredients(ctx, recipe.ID)
+	bom, _ := uc.repo.ListRecipeBomView(ctx, recipe.ID)
+
+	totalCost := big.NewFloat(0)
+	for _, item := range bom {
+		if !item.IsByproduct.Bool && !item.IsOptional.Bool {
+			// LineCostEstimate is Numeric in SQLC, which we override to pgtype.Numeric in sqlc.yaml
+			// Let's assume we can convert it to big.Float
+			if item.LineCostEstimate.Valid {
+				f, _ := item.LineCostEstimate.Float64Value()
+				if f.Valid {
+					totalCost.Add(totalCost, big.NewFloat(f.Float64))
+				}
+			}
+		}
+	}
+
+	result := map[string]interface{}{
+		"recipe":      recipe,
+		"ingredients": ingredients,
+		"bom":         bom,
+		"total_cost":  totalCost.String(),
+	}
+	return utils.NewResponse(utils.CodeOK, "recipe fetched successfully", result)
+}
+
+func (uc *RestaurantUseCase) GetRecipeIngredient(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	ing, err := uc.repo.GetRecipeIngredient(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "ingredient not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "ingredient fetched successfully", ing)
+}
+
+func (uc *RestaurantUseCase) UpdateRecipeIngredient(ctx context.Context, arg repository.UpdateRecipeIngredientParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	ing, err := uc.repo.UpdateRecipeIngredient(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "ingredient updated successfully", ing)
+}
+
+func (uc *RestaurantUseCase) DeleteRecipeIngredient(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRecipeIngredient(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "ingredient deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) AddRecipeIngredient(ctx context.Context, arg repository.CreateRecipeIngredientParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	ing, err := uc.repo.CreateRecipeIngredient(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "ingredient added successfully", ing)
+}
+
+// === Kiosk ===
+
+func (uc *RestaurantUseCase) CreateKioskSession(ctx context.Context, arg repository.CreateKioskSessionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	session, err := uc.repo.CreateKioskSession(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "kiosk session created successfully", session)
+}
+
+func (uc *RestaurantUseCase) UpdateKioskSession(ctx context.Context, arg repository.UpdateKioskSessionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	session, err := uc.repo.UpdateKioskSession(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "kiosk session updated successfully", session)
+}
+
+func (uc *RestaurantUseCase) DeleteKioskSession(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteKioskSession(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "kiosk session deleted successfully", nil)
+}
+
+func (uc *RestaurantUseCase) GetKioskSessionByID(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	session, err := uc.repo.GetKioskSession(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "kiosk session not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "kiosk session fetched successfully", session)
+}
+
+func (uc *RestaurantUseCase) GetKioskSession(ctx context.Context, token string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	session, err := uc.repo.GetKioskSessionByToken(ctx, token)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "kiosk session not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "kiosk session fetched successfully", session)
+}
+
+// === Menu Modifier Groups ===
+
+func (uc *RestaurantUseCase) GetMenuModifierGroup(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	group, err := uc.repo.GetMenuModifierGroup(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "menu modifier group not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier group fetched successfully", group)
+}
+
+func (uc *RestaurantUseCase) ListMenuModifierGroupsByStore(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	groups, err := uc.repo.ListMenuModifierGroupsByStore(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier groups fetched successfully", groups)
+}
+
+func (uc *RestaurantUseCase) CreateMenuModifierGroup(ctx context.Context, arg repository.CreateMenuModifierGroupParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	group, err := uc.repo.CreateMenuModifierGroup(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "menu modifier group created successfully", group)
+}
+
+func (uc *RestaurantUseCase) UpdateMenuModifierGroup(ctx context.Context, arg repository.UpdateMenuModifierGroupParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	group, err := uc.repo.UpdateMenuModifierGroup(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier group updated successfully", group)
+}
+
+func (uc *RestaurantUseCase) DeleteMenuModifierGroup(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteMenuModifierGroup(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "menu modifier group deleted successfully", nil)
+}
+
+// Utility to parse JSON RawMessage
+func bytesToMap(b []byte) map[string]interface{} {
+	var m map[string]interface{}
+	json.Unmarshal(b, &m)
+	return m
+}
+
+// ModifierGroupWithOptionsResponse represents a modifier group with its nested list of item modifiers.
+type ModifierGroupWithOptionsResponse struct {
+	ID            int32                       `json:"id" example:"201"`
+	StoreID       int32                       `json:"store_id" example:"6"`
+	Name          string                      `json:"name" example:"Cold Drink Flavours"`
+	Code          string                      `json:"code" example:"COLDDRINK_FLAVOUR"`
+	SelectionType string                      `json:"selection_type" example:"required"`
+	MinSelections int32                       `json:"min_selections" example:"1"`
+	MaxSelections *int32                      `json:"max_selections,omitempty" example:"1"`
+	IsActive      bool                        `json:"is_active" example:"true"`
+	DisplayOrder  int32                       `json:"display_order" example:"1"`
+	Modifiers     []repository.MenuItemModifier `json:"modifiers"`
+}
+
+// ComboComponentWithDetailsResponse represents a combo component with nested details of its component item.
+type ComboComponentWithDetailsResponse struct {
+	ID                  int32                        `json:"id" example:"5"`
+	ParentMenuItemID   int32                        `json:"parent_menu_item_id" example:"99"`
+	ComponentMenuItemID int32                        `json:"component_menu_item_id" example:"10"`
+	GroupName           string                       `json:"group_name" example:"Main Dish"`
+	MinSelection        int32                        `json:"min_selection" example:"1"`
+	MaxSelection        int32                        `json:"max_selection" example:"1"`
+	PriceAdjustment     string                       `json:"price_adjustment" example:"0.00"`
+	DisplayOrder        int32                        `json:"display_order" example:"1"`
+	Metadata            json.RawMessage              `json:"metadata,omitempty" swaggertype:"object"`
+	ComponentItem       *MenuItemFullDetailsResponse `json:"component_item,omitempty"`
+}
+
+// MenuItemFullDetailsResponse represents full tree structure for a menu item (standard or combo).
+type MenuItemFullDetailsResponse struct {
+	ID                 int32                               `json:"id" example:"12"`
+	StoreID            int32                               `json:"store_id" example:"6"`
+	MenuCategoryID     int32                               `json:"menu_category_id" example:"1"`
+	ProductID          *int32                              `json:"product_id,omitempty"`
+	ProductVariantID   *int32                              `json:"product_variant_id,omitempty"`
+	RecipeID           *int32                              `json:"recipe_id,omitempty"`
+	Name               string                              `json:"name" example:"Fountain Soft Drink"`
+	ShortName          *string                             `json:"short_name,omitempty" example:"Drink"`
+	Description        *string                             `json:"description,omitempty" example:"Refreshing beverage"`
+	ImageUrl           *string                             `json:"image_url,omitempty"`
+	BasePrice          string                              `json:"base_price" example:"3.00"`
+	CostPrice          string                              `json:"cost_price" example:"0.00"`
+	PreparationTimeMin int32                               `json:"preparation_time_min" example:"0"`
+	IsAvailable        bool                                `json:"is_available" example:"true"`
+	IsActive           bool                                `json:"is_active" example:"true"`
+	DisplayOrder       int32                               `json:"display_order" example:"0"`
+	ItemType           string                              `json:"item_type" example:"standard"`
+	ModifierGroups     []ModifierGroupWithOptionsResponse  `json:"modifier_groups,omitempty"`
+	ComboComponents    []ComboComponentWithDetailsResponse `json:"combo_components,omitempty"`
+}
+
+func (uc *RestaurantUseCase) GetMenuItemFullDetails(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+
+	details, err := uc.buildMenuItemFullDetails(ctx, id, 0)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, err.Error(), nil)
+	}
+
+	return utils.NewResponse(utils.CodeOK, "menu item full details fetched successfully", details)
+}
+
+func (uc *RestaurantUseCase) buildMenuItemFullDetails(ctx context.Context, id int32, depth int) (*MenuItemFullDetailsResponse, error) {
+	if depth > 5 {
+		return nil, fmt.Errorf("max combo recursion depth reached for item %d", id)
+	}
+
+	item, err := uc.repo.GetMenuItem(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("menu item %d not found", id)
+	}
+
+	details := &MenuItemFullDetailsResponse{
+		ID:                 item.ID,
+		StoreID:            item.StoreID,
+		MenuCategoryID:     item.MenuCategoryID,
+		Name:               item.Name,
+		BasePrice:          utils.NumericToString(item.BasePrice),
+		CostPrice:          utils.NumericToString(item.CostPrice),
+		PreparationTimeMin: utils.DerefInt32(utils.Int4ToPtr(item.PreparationTimeMin)),
+		IsAvailable:        utils.DerefBool(utils.BoolToPtr(item.IsAvailable)),
+		IsActive:           utils.DerefBool(utils.BoolToPtr(item.IsActive)),
+		DisplayOrder:       utils.DerefInt32(utils.Int4ToPtr(item.DisplayOrder)),
+		ItemType:           item.ItemType,
+	}
+
+	if item.ProductID.Valid {
+		details.ProductID = &item.ProductID.Int32
+	}
+	if item.ProductVariantID.Valid {
+		details.ProductVariantID = &item.ProductVariantID.Int32
+	}
+	if item.RecipeID.Valid {
+		details.RecipeID = &item.RecipeID.Int32
+	}
+	if item.ShortName.Valid {
+		details.ShortName = &item.ShortName.String
+	}
+	if item.Description.Valid {
+		details.Description = &item.Description.String
+	}
+	if item.ImageUrl.Valid {
+		details.ImageUrl = &item.ImageUrl.String
+	}
+
+	// 1. Fetch Modifiers & Match with Modifier Groups
+	modifiers, err := uc.repo.ListMenuItemModifiers(ctx, item.ID)
+	if err == nil && len(modifiers) > 0 {
+		storeGroups, _ := uc.repo.ListMenuModifierGroupsByStore(ctx, item.StoreID)
+		groupMap := make(map[string]*ModifierGroupWithOptionsResponse)
+		var groupOrder []string
+
+		for _, g := range storeGroups {
+			groupMap[g.Code] = &ModifierGroupWithOptionsResponse{
+				ID:            g.ID,
+				StoreID:       g.StoreID,
+				Name:          g.Name,
+				Code:          g.Code,
+				SelectionType: utils.DerefString(utils.TextToPtr(g.SelectionType)),
+				MinSelections: utils.DerefInt32(utils.Int4ToPtr(g.MinSelections)),
+				IsActive:      utils.DerefBool(utils.BoolToPtr(g.IsActive)),
+				DisplayOrder:  utils.DerefInt32(utils.Int4ToPtr(g.DisplayOrder)),
+				Modifiers:     []repository.MenuItemModifier{},
+			}
+			if g.MaxSelections.Valid {
+				groupMap[g.Code].MaxSelections = &g.MaxSelections.Int32
+			}
+			groupOrder = append(groupOrder, g.Code)
+		}
+
+		for _, mod := range modifiers {
+			grpCode := mod.ModifierType
+			grp, exists := groupMap[grpCode]
+			if !exists {
+				grp = &ModifierGroupWithOptionsResponse{
+					Name:          grpCode,
+					Code:          grpCode,
+					SelectionType: "optional",
+					MinSelections: 0,
+					IsActive:      true,
+					Modifiers:     []repository.MenuItemModifier{},
+				}
+				groupMap[grpCode] = grp
+				groupOrder = append(groupOrder, grpCode)
+			}
+			grp.Modifiers = append(grp.Modifiers, mod)
+		}
+
+		var activeGroups []ModifierGroupWithOptionsResponse
+		for _, code := range groupOrder {
+			if grp, ok := groupMap[code]; ok && len(grp.Modifiers) > 0 {
+				activeGroups = append(activeGroups, *grp)
+				delete(groupMap, code)
+			}
+		}
+		details.ModifierGroups = activeGroups
+	}
+
+	// 2. Fetch Combo Components if item_type == 'combo'
+	if item.ItemType == "combo" {
+		components, err := uc.repo.ListMenuItemComboComponentsByParentID(ctx, item.ID)
+		if err == nil && len(components) > 0 {
+			var compResponses []ComboComponentWithDetailsResponse
+			for _, c := range components {
+				compItem, _ := uc.buildMenuItemFullDetails(ctx, c.ComponentMenuItemID, depth+1)
+				compResp := ComboComponentWithDetailsResponse{
+					ID:                  c.ID,
+					ParentMenuItemID:   c.ParentMenuItemID,
+					ComponentMenuItemID: c.ComponentMenuItemID,
+					GroupName:           c.GroupName,
+					MinSelection:        utils.DerefInt32(utils.Int4ToPtr(c.MinSelection)),
+					MaxSelection:        utils.DerefInt32(utils.Int4ToPtr(c.MaxSelection)),
+					PriceAdjustment:     utils.NumericToString(c.PriceAdjustment),
+					DisplayOrder:        utils.DerefInt32(utils.Int4ToPtr(c.DisplayOrder)),
+					Metadata:            c.Metadata,
+					ComponentItem:       compItem,
+				}
+				compResponses = append(compResponses, compResp)
+			}
+			details.ComboComponents = compResponses
+		}
+	}
+
+	return details, nil
+}
+
+// === Restaurant Promotions ===
+
+func (uc *RestaurantUseCase) CreateRestaurantPromotion(ctx context.Context, arg repository.CreateRestaurantPromotionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.CreateRestaurantPromotion(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to create restaurant promotion: "+err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeCreated, "restaurant promotion created successfully", promo)
+}
+
+func (uc *RestaurantUseCase) GetRestaurantPromotion(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.GetRestaurantPromotion(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "restaurant promotion not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion fetched successfully", promo)
+}
+
+func (uc *RestaurantUseCase) GetRestaurantPromotionByCode(ctx context.Context, code string, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.GetRestaurantPromotionByCode(ctx, repository.GetRestaurantPromotionByCodeParams{
+		Code:    code,
+		StoreID: storeID,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "restaurant promotion not found", nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion fetched successfully", promo)
+}
+
+func (uc *RestaurantUseCase) ListActiveRestaurantPromotions(ctx context.Context, storeID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promos, err := uc.repo.ListActiveRestaurantPromotions(ctx, storeID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "active restaurant promotions fetched successfully", promos)
+}
+
+func (uc *RestaurantUseCase) ListAllRestaurantPromotions(ctx context.Context, arg repository.ListAllRestaurantPromotionsParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promos, err := uc.repo.ListAllRestaurantPromotions(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotions fetched successfully", promos)
+}
+
+func (uc *RestaurantUseCase) UpdateRestaurantPromotion(ctx context.Context, arg repository.UpdateRestaurantPromotionParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.UpdateRestaurantPromotion(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to update restaurant promotion: "+err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion updated successfully", promo)
+}
+
+func (uc *RestaurantUseCase) UpdateRestaurantPromotionStatus(ctx context.Context, arg repository.UpdateRestaurantPromotionStatusParams) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	promo, err := uc.repo.UpdateRestaurantPromotionStatus(ctx, arg)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to update restaurant promotion status: "+err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion status updated successfully", promo)
+}
+
+func (uc *RestaurantUseCase) DeleteRestaurantPromotion(ctx context.Context, id int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	err := uc.repo.DeleteRestaurantPromotion(ctx, id)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "restaurant promotion deleted successfully", nil)
+}
+
+
+

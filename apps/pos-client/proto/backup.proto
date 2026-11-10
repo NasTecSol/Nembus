@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package backup;
+
+option go_package = "NEMBUS/internal/grpc/backuppb";
+
+// ─── StreamBackup ───────────────────────────────────────────────────────────
+
+// Client sends one request; server replies with a stream of chunks.
+service BackupService {
+  rpc StreamBackup (BackupRequest) returns (stream BackupChunk);
+  rpc BackupStatus (BackupStatusRequest) returns (BackupStatusResponse);
+}
+
+message BackupRequest {
+  string tenant_slug  = 1;  // e.g. "store-riyadh-01"
+  string auth_token   = 2;  // JWT bearer token
+  bool   compressed   = 3;  // if true: pg_dump -Fc (custom format), else plain SQL
+}
+
+message BackupChunk {
+  bytes  data        = 1;   // raw bytes (up to 32 KB)
+  uint64 offset      = 2;   // cumulative bytes sent so far
+  string sha256      = 3;   // SHA-256 hex of this chunk
+  bool   is_last     = 4;   // true on the final chunk
+}
+
+// ─── BackupStatus ────────────────────────────────────────────────────────────
+
+message BackupStatusRequest {
+  string tenant_slug = 1;
+}
+
+message BackupStatusResponse {
+  bool   in_progress   = 1;
+  uint64 bytes_sent    = 2;
+  string started_at    = 3;  // RFC3339
+}

@@ -1,0 +1,446 @@
+// client/backup.go
+// Real gRPC backup client — downloads a tenant backup from the cloud gRPC
+// server and restores it into the local embedded Postgres database.
+package client
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+// ProgressCallback is invoked during backup streaming and restoration.
+type ProgressCallback func(stage string, percent int, bytesTransferred int64, speed string, estimatedSecs int, message string)
+
+// DownloadBackup downloads a tenant backup via gRPC streaming, writes it as a
+// .sql file under outputDir, restores it to localDBURL (if non-empty), and
+// returns the path to the saved backup file.
+func DownloadBackup(serverAddr, tenantSlug, token, outputDir, localDBURL string) (string, error) {
+	return DownloadBackupWithProgress(serverAddr, tenantSlug, token, outputDir, localDBURL, nil)
+}
+
+// DownloadBackupWithProgress performs DownloadBackup and invokes progress callback with real-time transfer stats.
+func DownloadBackupWithProgress(serverAddr, tenantSlug, token, outputDir, localDBURL string, progress ProgressCallback) (string, error) {
+	grpcAddr := toGRPCAddr(serverAddr)
+	log.Printf("Connecting to backup gRPC server: %s", grpcAddr)
+
+	if progress != nil {
+		progress("connecting", 20, 0, "", 30, "Connecting to backup gRPC service...")
+	}
+
+	// 1. Connect to cloud gRPC server (insecure for now; add TLS via env flag if needed)
+	conn, err := grpc.Dial(grpcAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+		grpc.WithTimeout(15*time.Second),
+	)
+	if err != nil {
+		return "", fmt.Errorf("gRPC connect to %s failed: %w", grpcAddr, err)
+	}
+	defer conn.Close()
+
+	client := backuppb.NewBackupServiceClient(conn)
+
+	// Large tenant backups (around 5 GB) can take well over 30 minutes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
+	defer cancel()
+
+	// 2. Start streaming backup
+	stream, err := client.StreamBackup(ctx, &backuppb.BackupRequest{
+		TenantSlug: tenantSlug,
+		AuthToken:  token,
+		Compressed: false,
+	})
+	if err != nil {
+		return "", fmt.Errorf("StreamBackup start failed: %w", err)
+	}
+
+	// 3. Ensure output directory and open file
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create backup dir: %w", err)
+	}
+
+	backupFilename := fmt.Sprintf("backup_%s_%d.sql", tenantSlug, time.Now().Unix())
+	backupPath := filepath.Join(outputDir, backupFilename)
+
+	outFile, err := os.Create(backupPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create backup file: %w", err)
+	}
+	defer outFile.Close()
+
+	// 4. Receive all chunks and write to file
+	var totalBytes int64
+	startTime := time.Now()
+	lastReport := time.Now()
+
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("receive error: %w", err)
+		}
+
+		// Verify per-chunk SHA-256 checksum
+		hash := sha256.Sum256(chunk.Data)
+		got := fmt.Sprintf("%x", hash)
+		if chunk.Sha256 != "" && got != chunk.Sha256 {
+			return "", fmt.Errorf("checksum mismatch at offset %d: got %s want %s", chunk.Offset, got, chunk.Sha256)
+		}
+
+		if _, err := outFile.Write(chunk.Data); err != nil {
+			return "", fmt.Errorf("write error: %w", err)
+		}
+		totalBytes += int64(len(chunk.Data))
+
+		// Periodically report progress (every 400ms or so)
+		if progress != nil && time.Since(lastReport) > 400*time.Millisecond {
+			elapsed := time.Since(startTime).Seconds()
+			speedBytesPerSec := float64(totalBytes) / elapsed
+			speedStr := fmt.Sprintf("%.1f MB/s", speedBytesPerSec/(1024*1024))
+			if speedBytesPerSec < 1024*1024 {
+				speedStr = fmt.Sprintf("%.0f KB/s", speedBytesPerSec/1024)
+			}
+
+			// Estimate total backup around standard size if unknown, scaled 25% -> 70%
+			progressPercent := 25 + int(float64(totalBytes)/(50*1024*1024)*45)
+			if progressPercent > 70 {
+				progressPercent = 70
+			}
+
+			estSecs := 20
+			if speedBytesPerSec > 0 {
+				remainingBytes := (30 * 1024 * 1024) - totalBytes
+				if remainingBytes > 0 {
+					estSecs = int(float64(remainingBytes) / speedBytesPerSec)
+				} else {
+					estSecs = 5
+				}
+			}
+
+			msg := fmt.Sprintf("Streaming backup chunks (%s received at %s)...", formatBytes(totalBytes), speedStr)
+			progress("downloading", progressPercent, totalBytes, speedStr, estSecs, msg)
+			lastReport = time.Now()
+		}
+	}
+
+	log.Printf("Backup download complete: %d bytes → %s", totalBytes, backupPath)
+	if err := outFile.Close(); err != nil {
+		return backupPath, fmt.Errorf("close backup file: %w", err)
+	}
+	if totalBytes == 0 {
+		return backupPath, fmt.Errorf("received an empty tenant backup")
+	}
+
+	// 5. Restore to local DB (if a DB URL was provided)
+	if localDBURL != "" {
+		if progress != nil {
+			progress("restoring", 75, totalBytes, "", 10, "Restoring database tables and seed rows...")
+		}
+		log.Printf("Restoring backup to local database...")
+		if err := restoreSQL(backupPath, localDBURL); err != nil {
+			return backupPath, fmt.Errorf("restore failed: %w", err)
+		}
+		log.Printf("Restore complete.")
+		if progress != nil {
+			progress("restored", 85, totalBytes, "", 5, "Database tables successfully restored.")
+		}
+	}
+
+	return backupPath, nil
+}
+
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+type statementExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func executeStatements(ctx context.Context, conn statementExecutor, sql string) error {
+	statements := splitSQL(sql)
+	for _, rawStmt := range statements {
+		stmt := strings.TrimSpace(rawStmt)
+		if stmt == "" {
+			continue
+		}
+
+		if strings.Contains(stmt, "OWNER TO") {
+			continue
+		}
+
+		if err := executeRestoreStatement(ctx, conn, stmt); err != nil {
+			// The public schema is recreated locally, so its CREATE SCHEMA
+			// statement in a dump can legitimately report duplicate_schema.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "42P06" &&
+				strings.HasPrefix(strings.ToUpper(stmt), "CREATE SCHEMA ") {
+				continue
+			}
+			return fmt.Errorf("restore statement failed (%.100s): %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+// restoreSQL executes a plain-SQL backup file against the given Postgres DSN.
+// It parses the file to handle COPY blocks natively and extract traditional DDL statements.
+func restoreSQL(sqlFilePath, dbURL string) error {
+	ctx := context.Background()
+
+	config, err := pgx.ParseConfig(dbURL)
+	if err != nil {
+		return fmt.Errorf("parse DB DSN: %w", err)
+	}
+	if config.RuntimeParams == nil {
+		config.RuntimeParams = make(map[string]string)
+	}
+	config.RuntimeParams["client_encoding"] = "UTF8"
+
+	conn, err := pgx.ConnectConfig(ctx, config)
+	if err != nil {
+		return fmt.Errorf("connect to DB: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	if err := conn.Ping(ctx); err != nil {
+		return fmt.Errorf("ping DB: %w", err)
+	}
+
+	// Force UTF8 client encoding to support multi-byte Unicode/Arabic characters during COPY and DDL imports
+	if _, err := conn.Exec(ctx, "SET client_encoding = 'UTF8';"); err != nil {
+		return fmt.Errorf("set client_encoding: %w", err)
+	}
+
+	// Clear both application schemas. SAP dumps include staging tables, which
+	// otherwise survive a failed clone and collide with the next restore.
+	log.Printf("Cleaning public and staging schemas for a clean restore...")
+	if _, err := conn.Exec(ctx, "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS staging CASCADE; CREATE SCHEMA public;"); err != nil {
+		return fmt.Errorf("clean restore schemas: %w", err)
+	}
+
+	file, err := os.Open(sqlFilePath)
+	if err != nil {
+		return fmt.Errorf("could not open SQL file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 1024*1024)    // 1MB initial buffer
+	scanner.Buffer(buf, 20*1024*1024) // 20MB max per block
+
+	var currentSQL strings.Builder
+	var inCopy bool
+	var copyCmd string
+	var copyData bytes.Buffer
+	skipAdministrativeSection := false
+
+	for scanner.Scan() {
+		lineBytes := scanner.Bytes()
+		trimmed := strings.TrimSpace(string(lineBytes))
+
+		if inCopy {
+			if trimmed == "\\." {
+				// Execute the COPY block immediately
+				res, err := conn.PgConn().CopyFrom(ctx, bytes.NewReader(copyData.Bytes()), copyCmd)
+				if err != nil {
+					return fmt.Errorf("restore COPY failed (%s): %w", copyCmd, err)
+				} else {
+					log.Printf("Restored %d rows via COPY", res.RowsAffected())
+				}
+				inCopy = false
+				copyCmd = ""
+				copyData.Reset()
+			} else {
+				// Must not trim lines in COPY data (tabs are delimiters)
+				copyData.Write(lineBytes)
+				copyData.WriteByte('\n')
+			}
+			continue
+		}
+
+		// pg_dump includes provider monitoring and cloud migration metadata.
+		// Filter complete sections, including COPY rows, without matching names
+		// embedded in application function bodies or application data values.
+		if header := dumpSectionHeader.FindStringSubmatch(trimmed); header != nil {
+			skipAdministrativeSection = isAdministrativeDumpSection(header[1], header[2], header[3])
+		}
+		if skipAdministrativeSection {
+			continue
+		}
+
+		if strings.HasPrefix(strings.ToUpper(trimmed), "COPY ") && strings.HasSuffix(strings.ToUpper(trimmed), "FROM STDIN;") {
+			// Flush pending DDL/DML first
+			if currentSQL.Len() > 0 {
+				if err := executeStatements(ctx, conn, currentSQL.String()); err != nil {
+					return err
+				}
+				currentSQL.Reset()
+			}
+			inCopy = true
+			copyCmd = trimmed
+			copyData.Reset()
+			continue
+		}
+
+		// Skip comments and entirely empty lines
+		if strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+
+		// Skip psql meta-commands EXCEPT \. which handled above
+		if strings.HasPrefix(trimmed, "\\") {
+			continue
+		}
+
+		currentSQL.WriteString(string(lineBytes))
+		currentSQL.WriteRune('\n')
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading dump file: %w", err)
+	}
+	if inCopy {
+		return fmt.Errorf("incomplete COPY block in backup: %s", copyCmd)
+	}
+
+	// Flush remaining SQL
+	if currentSQL.Len() > 0 {
+		if err := executeStatements(ctx, conn, currentSQL.String()); err != nil {
+			return err
+		}
+	}
+
+	// COPY preserves explicit IDs, including any stale sequence state from the
+	// source tenant. Repair counters before migrations insert new local rows.
+	return repairRestoredSequences(ctx, conn)
+}
+
+// splitSQL splits a SQL file on top-level semicolons.
+// Properly ignores semicolons inside single-quotes and dollar-quoted blocks.
+func splitSQL(sql string) []string {
+	var stmts []string
+	var cur strings.Builder
+	inSingle := false
+	inDollar := false
+	dollarTag := ""
+
+	for i := 0; i < len(sql); i++ {
+		r := sql[i]
+
+		if inSingle {
+			cur.WriteByte(r)
+			if r == '\'' {
+				// Handle escaped quotes ''
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					cur.WriteByte(sql[i+1])
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+			continue
+		}
+
+		if inDollar {
+			cur.WriteByte(r)
+			// Check if we hit the closing dollar tag
+			if strings.HasPrefix(sql[i:], dollarTag) {
+				cur.WriteString(dollarTag[1:])
+				i += len(dollarTag) - 1
+				inDollar = false
+				dollarTag = ""
+			}
+			continue
+		}
+
+		if r == '\'' {
+			inSingle = true
+			cur.WriteByte(r)
+			continue
+		}
+
+		// Detect dollar-quote tag: $tag$ or $$
+		if r == '$' {
+			match := dollarQuoteRegex.FindString(sql[i:])
+			if match != "" {
+				inDollar = true
+				dollarTag = match
+				cur.WriteString(match)
+				i += len(match) - 1
+				continue
+			}
+		}
+
+		if r == ';' {
+			stmt := strings.TrimSpace(cur.String())
+			if stmt != "" {
+				stmts = append(stmts, stmt)
+			}
+			cur.Reset()
+			continue
+		}
+
+		cur.WriteByte(r)
+	}
+
+	if stmt := strings.TrimSpace(cur.String()); stmt != "" {
+		stmts = append(stmts, stmt)
+	}
+	return stmts
+}
+
+var dollarQuoteRegex = regexp.MustCompile(`^\$[a-zA-Z0-9_]*\$`)
+
+// toGRPCAddr converts an HTTP(S) URL into a bare "host:port" gRPC address.
+// If serverAddr is already host:port it is returned unchanged.
+func toGRPCAddr(serverAddr string) string {
+	if strings.HasPrefix(serverAddr, "http://") || strings.HasPrefix(serverAddr, "https://") {
+		u, err := url.Parse(serverAddr)
+		if err == nil {
+			host := u.Hostname()
+			port := u.Port()
+			if port == "" {
+				// Default gRPC port
+				port = "50051"
+			}
+			return host + ":" + port
+		}
+	}
+	// Already bare host:port or look like one
+	if !strings.Contains(serverAddr, ":") {
+		return serverAddr + ":50051"
+	}
+	return serverAddr
+}

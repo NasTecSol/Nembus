@@ -1,0 +1,176 @@
+name: Release SAP Agent
+
+on:
+  push:
+    branches:
+      - release-sap
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.0.1). Leave blank to auto-increment patch tag.'
+        required: false
+        type: string
+      release_notes:
+        description: 'Release notes / changelog description'
+        required: false
+        type: string
+        default: 'Automated SAP Agent Release'
+      is_mandatory:
+        description: 'Require SAP Agent instances to update immediately'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-and-release:
+    name: Build and Deploy SAP Agent to Nembus Cloud
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone submodule (if configured)
+        shell: bash
+        env:
+          SUBMODULE_TOKEN: ${{ secrets.SUBMODULE_TOKEN }}
+        run: |
+          if [ -n "$SUBMODULE_TOKEN" ]; then
+            git config --global url."https://x-access-token:${SUBMODULE_TOKEN}@github.com/".insteadOf "https://github.com/"
+            git submodule sync --recursive
+            git submodule update --init --force --recursive
+            git config --global --unset url."https://x-access-token:${SUBMODULE_TOKEN}@github.com/".insteadOf
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Determine Version Tag
+        id: versioning
+        shell: powershell
+        run: |
+          $manualVersion = "${{ inputs.version }}"
+          if ($manualVersion) {
+              $newTag = $manualVersion
+          } else {
+              $tags = git tag --sort=-v:refname | Where-Object { $_ -like "sap-v*" }
+              $latestTag = $tags | Select-Object -First 1
+              if (-not $latestTag) {
+                  $newTag = "sap-v1.0.0"
+              } else {
+                  $versionString = $latestTag.TrimStart("sap-v")
+                  $parts = $versionString.Split(".")
+                  if ($parts.Count -eq 3) {
+                      $major = [int]$parts[0]
+                      $minor = [int]$parts[1]
+                      $patch = [int]$parts[2] + 1
+                      $newTag = "sap-v$major.$minor.$patch"
+                  } else {
+                      $newTag = "sap-v1.0.0"
+                  }
+              }
+          }
+          # Canonical semver string for internal release registry (vX.Y.Z)
+          $cleanVersion = $newTag.Replace("sap-", "")
+          Write-Host "Resolved Git Tag: $newTag"
+          Write-Host "Canonical Version: $cleanVersion"
+          echo "GIT_TAG=$newTag" >> $env:GITHUB_OUTPUT
+          echo "VERSION=$cleanVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Build SAP Agent Executable
+        env:
+          VERSION: ${{ steps.versioning.outputs.VERSION }}
+          CLOUD_URL: ${{ secrets.CLOUD_URL || 'https://nembus.nashrms.com' }}
+          APP_UPDATE_KEY: ${{ secrets.APP_UPDATE_CLIENT_KEY || 'nembus-pos-update-client-key-default' }}
+          GOPRIVATE: github.com/NasTecSol/*
+          GONOSUMCHECK: github.com/NasTecSol/*
+        run: |
+          cd apps/sap-agent
+          $version = "${{ steps.versioning.outputs.VERSION }}"
+          $cloudUrl = "$env:CLOUD_URL"
+          $appKey = "$env:APP_UPDATE_KEY"
+          $ldflags = "-X main.Version=$version -X main.AppUpdateKey=$appKey -X main.CloudURL=$cloudUrl"
+          
+          if (-not (Test-Path "bin")) {
+              New-Item -ItemType Directory -Path "bin" -Force | Out-Null
+          }
+          go build -ldflags "$ldflags" -o bin/sap-agent.exe cmd/agent/main.go
+
+      - name: Calculate Binary Checksum
+        id: checksum
+        shell: powershell
+        run: |
+          $exePath = "apps/sap-agent/bin/sap-agent.exe"
+          if (-not (Test-Path $exePath)) {
+              throw "Build failed: $exePath not found"
+          }
+          $hashResult = (Get-FileHash -Path $exePath -Algorithm SHA256).Hash.ToLower()
+          Write-Host "Calculated SHA-256 Checksum: $hashResult"
+          echo "SHA256=$hashResult" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Release to Nembus Cloud Server
+        shell: powershell
+        env:
+          CLOUD_URL: ${{ secrets.CLOUD_URL || 'https://nembus.nashrms.com' }}
+          RELEASE_SECRET: ${{ secrets.RELEASE_API_SECRET }}
+          VERSION: ${{ steps.versioning.outputs.VERSION }}
+          SHA256: ${{ steps.checksum.outputs.SHA256 }}
+          MANDATORY: ${{ inputs.is_mandatory == true }}
+          NOTES: ${{ inputs.release_notes || 'Automated release build triggered by release-sap branch' }}
+        run: |
+          $uploadUrl = "$env:CLOUD_URL/api/v1/releases/upload"
+          $filePath = (Resolve-Path "apps/sap-agent/bin/sap-agent.exe").Path
+          Write-Host "Uploading release $env:VERSION to $uploadUrl..."
+          
+          # Form multipart request with curl.exe
+          & curl.exe -s -S -X POST $uploadUrl `
+              -H "X-Release-Secret: $env:RELEASE_SECRET" `
+              -F "app_name=sap-agent" `
+              -F "version=$env:VERSION" `
+              -F "channel=stable" `
+              -F "release_notes=$env:NOTES" `
+              -F "checksum_sha256=$env:SHA256" `
+              -F "is_mandatory=$env:MANDATORY" `
+              -F "file=@$filePath" `
+              -o upload_response.json -w "%{http_code}" | Set-Variable httpCode
+
+          Write-Host "HTTP Response Code: $httpCode"
+          Get-Content upload_response.json
+          
+          if ($httpCode -ne "201" -and $httpCode -ne "200") {
+              Write-Error "Failed to upload SAP Agent release to Cloud Server. HTTP Code: $httpCode"
+              exit 1
+          }
+          Write-Host "Successfully published SAP Agent release $env:VERSION to Nembus Cloud Server!"
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.versioning.outputs.GIT_TAG }}
+          git push origin ${{ steps.versioning.outputs.GIT_TAG }}
+
+      - name: Create GitHub Release (Changelog Archive)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.versioning.outputs.GIT_TAG }}
+          name: SAP Agent ${{ steps.versioning.outputs.VERSION }}
+          body: |
+            ## Nembus SAP Agent Release ${{ steps.versioning.outputs.VERSION }}
+            - **SHA-256**: `${{ steps.checksum.outputs.SHA256 }}`
+            - **Distribution**: Published to Nembus Cloud Server internal update channel
+            - **Mandatory Update**: ${{ inputs.is_mandatory == true }}
+            - **Notes**: ${{ inputs.release_notes || 'Automated release build' }}
+          files: |
+            apps/sap-agent/bin/sap-agent.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

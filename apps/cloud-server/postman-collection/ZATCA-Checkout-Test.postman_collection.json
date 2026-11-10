@@ -1,0 +1,218 @@
+{
+  "info": {
+    "name": "Nembus - ZATCA Checkout Test",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Create a NEW POS checkout, which persists a sales_orders_v2 header and lines. ZATCA now signs/submits that order. Configure test tenant, cashier/session/product and matching simulation credentials first. First enable the organization through PUT /api/organizations/{id}/zatca with {\"enabled\":true}. ZATCA_ENABLED in the environment file no longer controls this feature."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tenant",
+      "value": "stgin"
+    },
+    {
+      "key": "store_id",
+      "value": "3"
+    },
+    {
+      "key": "terminal_id",
+      "value": "1"
+    },
+    {
+      "key": "cashier_id",
+      "value": ""
+    },
+    {
+      "key": "session_id",
+      "value": ""
+    },
+    {
+      "key": "product_id",
+      "value": ""
+    },
+    {
+      "key": "transaction_id",
+      "value": ""
+    },
+    {
+      "key": "device_config_id",
+      "value": "3"
+    },
+    {
+      "key": "sales_order_id",
+      "value": ""
+    },
+    {
+      "key": "organization_id",
+      "value": "1"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1 - Check ZATCA environment",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/status?organization_id={{organization_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('ZATCA is enabled', function () { pm.expect(pm.response.json().data.enabled).to.eql(true); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1b - Complete saved device onboarding (six compliance samples)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/devices/{{device_config_id}}/complete-onboarding",
+        "description": "No body or new OTP. Uses saved compliance credentials to check standard/simplified invoices, credit notes and debit notes, then obtain and save reporting CSID + matching secret. Samples are sent only to compliance/invoices and never create business sales. Inspect data.compliance_checks on failure. Already-ready devices return success without new gateway calls."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Reporting credentials saved', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.reporting_ready).to.eql(true); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Create NEW checkout for INV00519",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/pos/transactions",
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"transaction_number\": \"{{test_transaction_number}}\",\n  \"store_id\": {{store_id}},\n  \"pos_terminal_id\": {{terminal_id}},\n  \"cashier_id\": {{cashier_id}},\n  \"cashier_session_id\": {{session_id}},\n  \"transaction_type\": \"sale\",\n  \"subtotal\": \"100.00\",\n  \"tax_amount\": \"15.00\",\n  \"discount_amount\": \"0.00\",\n  \"total_amount\": \"115.00\",\n  \"metadata\": {\"test\": true, \"source\": \"postman_zatca_test\"},\n  \"lines\": [{\n    \"product_id\": {{product_id}},\n    \"quantity\": \"1.000\",\n    \"unit_price\": \"100.00\",\n    \"subtotal\": \"100.00\",\n    \"tax_amount\": \"15.00\",\n    \"discount_amount\": \"0.00\",\n    \"line_total\": \"115.00\"\n  }]\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.unset('transaction_id');",
+              "['product_id', 'cashier_id', 'session_id', 'store_id', 'terminal_id'].forEach(function (key) { if (!/^[1-9][0-9]*$/.test(String(pm.variables.get(key) || ''))) { throw new Error('Set a valid ' + key + ' collection variable first'); } });",
+              "pm.variables.set('test_transaction_number', 'ZTEST-' + pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "var result = pm.response.json();",
+              "pm.test('Checkout created', function () { pm.response.to.have.status(201); });",
+              "if (pm.response.code === 201 && result.data && result.data.id) { pm.collectionVariables.set('transaction_id', String(result.data.id)); }",
+              "pm.test('ZATCA QR and document UUID generated', function () { pm.expect(result.data.zatca_error || '', 'Signing error').to.eql(''); pm.expect(result.data.qr_code).to.be.a('string').and.not.empty; pm.expect(result.data.zatca_uuid).to.be.a('string').and.not.empty; });",
+              "if (pm.response.code === 201 && result.data && typeof result.data.sales_order_id === 'string') { pm.collectionVariables.set('sales_order_id', result.data.sales_order_id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Check ORDER document using compliance credentials (does not report)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/orders/{{sales_order_id}}/check",
+        "description": "Uses sales_orders_v2.id from the new checkout response. No body. Existing transaction endpoints remain for historical documents only."
+      }
+    },
+    {
+      "name": "4 - Submit ORDER checkout ORDER document using production credentials",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-tenant-id",
+            "value": "{{tenant}}"
+          }
+        ],
+        "url": "{{base_url}}/api/zatca/orders/{{sales_order_id}}/submit",
+        "description": "Uses sales_orders_v2.id from the new checkout response. No body. Existing transaction endpoints remain for historical documents only."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!/^[1-9][0-9]*$/.test(String(pm.variables.get('transaction_id') || ''))) { throw new Error('Run checkout request 2 first'); }"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('ZATCA actually reported invoice', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.zatca_response.reportingStatus).to.eql('REPORTED'); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

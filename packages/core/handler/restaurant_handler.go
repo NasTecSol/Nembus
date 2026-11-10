@@ -1,0 +1,2952 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/NasTecSol/nembus-core/middleware"
+	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/usecase"
+	"github.com/NasTecSol/nembus-core/utils"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type RestaurantHandler struct {
+	useCase *usecase.RestaurantUseCase
+}
+
+func NewRestaurantHandler(uc *usecase.RestaurantUseCase) *RestaurantHandler {
+	return &RestaurantHandler{useCase: uc}
+}
+
+func (h *RestaurantHandler) uc(repo *repository.Queries) *usecase.RestaurantUseCase {
+	return usecase.NewRestaurantUseCaseWithRepo(repo)
+}
+
+func (h *RestaurantHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
+	repo, ok := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "repository not found in context"})
+		c.Abort()
+		return nil
+	}
+	return repo
+}
+
+// === Tables ===
+
+// ListTables handles GET /api/restaurant/stores/:store_id/tables
+// @Summary      List restaurant tables
+// @Description  Returns all tables for a given store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/tables [get]
+func (h *RestaurantHandler) ListTables(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListTables(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetTable handles GET /api/restaurant/tables/:id
+// @Summary      Get restaurant table
+// @Description  Returns a single restaurant table by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        table_id     path      int     true   "Table ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/tables/{table_id} [get]
+func (h *RestaurantHandler) GetTable(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetTable(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+
+
+// CreateTable handles POST /api/restaurant/tables
+// @Summary      Create restaurant table
+// @Description  Creates a new table in a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateRestaurantTableRequest  true  "Table data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/tables [post]
+func (h *RestaurantHandler) CreateTable(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateRestaurantTableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	params := repository.CreateRestaurantTableParams{
+		StoreID:     req.StoreID,
+		TableNumber: req.TableNumber,
+		TableName:   pgtype.Text{String: req.TableName, Valid: req.TableName != ""},
+		Section:     pgtype.Text{String: req.Section, Valid: req.Section != ""},
+		Capacity:    pgtype.Int4{Int32: req.Capacity, Valid: true},
+		IsActive:    pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:    []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateTable(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateTable handles PUT /api/restaurant/tables/:id
+// @Summary      Update restaurant table
+// @Description  Updates an existing restaurant table.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        table_id     path      int     true   "Table ID"
+// @Param        body         body      CreateRestaurantTableRequest  true  "Updated table data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/tables/{table_id} [put]
+func (h *RestaurantHandler) UpdateTable(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateRestaurantTableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	params := repository.UpdateRestaurantTableParams{
+		ID:          int32(id),
+		TableNumber: req.TableNumber,
+		TableName:   pgtype.Text{String: req.TableName, Valid: req.TableName != ""},
+		Section:     pgtype.Text{String: req.Section, Valid: req.Section != ""},
+		Capacity:    pgtype.Int4{Int32: req.Capacity, Valid: true},
+		IsActive:    pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:    []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateTable(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteTable handles DELETE /api/restaurant/tables/:id
+// @Summary      Delete restaurant table
+// @Description  Deletes a restaurant table by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        table_id     path      int     true   "Table ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/tables/{table_id} [delete]
+func (h *RestaurantHandler) DeleteTable(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteTable(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Menu Categories ===
+
+// ListMenuCategories handles GET /api/restaurant/stores/:store_id/menu-categories
+// @Summary      List menu categories
+// @Description  Returns all menu categories for a given store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/menu-categories [get]
+func (h *RestaurantHandler) ListMenuCategories(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListMenuCategories(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMenuCategory handles GET /api/restaurant/menu-categories/:id
+// @Summary      Get menu category
+// @Description  Returns a single menu category by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        category_id  path      int     true   "Category ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-categories/{category_id} [get]
+func (h *RestaurantHandler) GetMenuCategory(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetMenuCategory(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// CreateMenuCategory handles POST /api/restaurant/menu-categories
+// @Summary      Create menu category
+// @Description  Creates a new menu category.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateMenuCategoryRequest  true  "Category data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-categories [post]
+func (h *RestaurantHandler) CreateMenuCategory(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateMenuCategoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	params := repository.CreateMenuCategoryParams{
+		StoreID:          req.StoreID,
+		ParentCategoryID: pgtype.Int4{Int32: utils.DerefInt32(req.ParentCategoryID), Valid: req.ParentCategoryID != nil},
+		Name:             req.Name,
+		Code:             req.Code,
+		Description:      pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		CategoryLevel:    pgtype.Int4{Int32: req.CategoryLevel, Valid: true},
+		DisplayOrder:     pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		Icon:             pgtype.Text{String: req.Icon, Valid: req.Icon != ""},
+		ImageUrl:         pgtype.Text{String: req.ImageUrl, Valid: req.ImageUrl != ""},
+		IsActive:         pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:         []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateMenuCategory(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateMenuCategory handles PUT /api/restaurant/menu-categories/:id
+// @Summary      Update menu category
+// @Description  Updates an existing menu category.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        category_id  path      int     true   "Category ID"
+// @Param        body         body      CreateMenuCategoryRequest  true  "Updated category data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-categories/{category_id} [put]
+func (h *RestaurantHandler) UpdateMenuCategory(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateMenuCategoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	params := repository.UpdateMenuCategoryParams{
+		ID:               int32(id),
+		ParentCategoryID: pgtype.Int4{Int32: utils.DerefInt32(req.ParentCategoryID), Valid: req.ParentCategoryID != nil},
+		Name:             req.Name,
+		Code:             req.Code,
+		Description:      pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		CategoryLevel:    pgtype.Int4{Int32: req.CategoryLevel, Valid: true},
+		DisplayOrder:     pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		Icon:             pgtype.Text{String: req.Icon, Valid: req.Icon != ""},
+		ImageUrl:         pgtype.Text{String: req.ImageUrl, Valid: req.ImageUrl != ""},
+		IsActive:         pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:         []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateMenuCategory(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteMenuCategory handles DELETE /api/restaurant/menu-categories/:id
+// @Summary      Delete menu category
+// @Description  Deletes a menu category by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        category_id  path      int     true   "Category ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-categories/{category_id} [delete]
+func (h *RestaurantHandler) DeleteMenuCategory(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteMenuCategory(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Menu Items ===
+
+// ListMenuItems handles GET /api/restaurant/menu-categories/:category_id/items
+// @Summary      List menu items
+// @Description  Returns all menu items for a given category.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        category_id  path      int     true   "Category ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-categories/{category_id}/items [get]
+func (h *RestaurantHandler) ListMenuItems(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	categoryID, err := strconv.ParseInt(c.Param("category_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid category_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListMenuItems(c.Request.Context(), int32(categoryID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMenuItem handles GET /api/restaurant/menu-items/:id
+// @Summary      Get menu item
+// @Description  Returns a single menu item by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        item_id      path      int     true   "Menu Item ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{item_id} [get]
+func (h *RestaurantHandler) GetMenuItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetMenuItem(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMenuItemFullDetails handles GET /api/restaurant/menu-items/:id/details
+// @Summary      Get full menu item details
+// @Description  Returns complete tree structure for a menu item including modifier groups, modifiers, and combo components.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Item ID"
+// @Success      200          {object}  MenuItemFullDetailsResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{id}/details [get]
+func (h *RestaurantHandler) GetMenuItemFullDetails(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	idStr := c.Param("id")
+	if idStr == "" {
+		idStr = c.Param("item_id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetMenuItemFullDetails(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// CreateMenuItem handles POST /api/restaurant/menu-items
+// @Summary      Create menu item
+// @Description  Creates a new menu item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateMenuItemRequest  true  "Menu item data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items [post]
+func (h *RestaurantHandler) CreateMenuItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateMenuItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	basePrice, _ := repo.ParseNumeric(c.Request.Context(), req.BasePrice)
+
+	itemType := req.ItemType
+	if itemType == "" {
+		itemType = "standard"
+	}
+
+	params := repository.CreateMenuItemParams{
+		StoreID:            req.StoreID,
+		MenuCategoryID:     req.MenuCategoryID,
+		ProductID:          pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil && *req.ProductID > 0},
+		ProductVariantID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductVariantID), Valid: req.ProductVariantID != nil && *req.ProductVariantID > 0},
+		RecipeID:           pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil && *req.RecipeID > 0},
+		Name:               req.Name,
+		ShortName:          pgtype.Text{String: req.ShortName, Valid: req.ShortName != ""},
+		Description:        pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		ImageUrl:           pgtype.Text{String: req.ImageUrl, Valid: req.ImageUrl != ""},
+		BasePrice:          basePrice,
+		PreparationTimeMin: pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
+		TaxCategoryID:      pgtype.Int4{Int32: utils.DerefInt32(req.TaxCategoryID), Valid: req.TaxCategoryID != nil && *req.TaxCategoryID > 0},
+		IsAvailable:        pgtype.Bool{Bool: req.IsAvailable, Valid: true},
+		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
+		DisplayOrder:       pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		ItemType:           itemType,
+		Metadata:           []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	comboInputs := make([]usecase.ComboComponentParamsInput, len(req.ComboComponents))
+	for i, cc := range req.ComboComponents {
+		comboInputs[i] = usecase.ComboComponentParamsInput{
+			ComponentMenuItemID: cc.ComponentMenuItemID,
+			GroupName:           cc.GroupName,
+			MinSelection:        cc.MinSelection,
+			MaxSelection:        cc.MaxSelection,
+			PriceAdjustment:     cc.PriceAdjustment,
+			DisplayOrder:        cc.DisplayOrder,
+			Metadata:            cc.Metadata,
+		}
+	}
+
+	resp := h.uc(repo).CreateMenuItem(c.Request.Context(), params, comboInputs)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateMenuItem handles PUT /api/restaurant/menu-items/:id
+// @Summary      Update menu item
+// @Description  Updates an existing menu item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        item_id      path      int     true   "Menu Item ID"
+// @Param        body         body      CreateMenuItemRequest  true  "Updated item data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{item_id} [put]
+func (h *RestaurantHandler) UpdateMenuItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateMenuItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	basePrice, _ := repo.ParseNumeric(c.Request.Context(), req.BasePrice)
+
+	itemType := req.ItemType
+	if itemType == "" {
+		itemType = "standard"
+	}
+
+	params := repository.UpdateMenuItemParams{
+		ID:                 int32(id),
+		MenuCategoryID:     req.MenuCategoryID,
+		ProductID:          pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil && *req.ProductID > 0},
+		ProductVariantID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductVariantID), Valid: req.ProductVariantID != nil && *req.ProductVariantID > 0},
+		RecipeID:           pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil && *req.RecipeID > 0},
+		Name:               req.Name,
+		ShortName:          pgtype.Text{String: req.ShortName, Valid: req.ShortName != ""},
+		Description:        pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		ImageUrl:           pgtype.Text{String: req.ImageUrl, Valid: req.ImageUrl != ""},
+		BasePrice:          basePrice,
+		PreparationTimeMin: pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
+		TaxCategoryID:      pgtype.Int4{Int32: utils.DerefInt32(req.TaxCategoryID), Valid: req.TaxCategoryID != nil && *req.TaxCategoryID > 0},
+		IsAvailable:        pgtype.Bool{Bool: req.IsAvailable, Valid: true},
+		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
+		DisplayOrder:       pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		ItemType:           itemType,
+		Metadata:           []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	comboInputs := make([]usecase.ComboComponentParamsInput, len(req.ComboComponents))
+	for i, cc := range req.ComboComponents {
+		comboInputs[i] = usecase.ComboComponentParamsInput{
+			ComponentMenuItemID: cc.ComponentMenuItemID,
+			GroupName:           cc.GroupName,
+			MinSelection:        cc.MinSelection,
+			MaxSelection:        cc.MaxSelection,
+			PriceAdjustment:     cc.PriceAdjustment,
+			DisplayOrder:        cc.DisplayOrder,
+			Metadata:            cc.Metadata,
+		}
+	}
+
+	resp := h.uc(repo).UpdateMenuItem(c.Request.Context(), params, comboInputs)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteMenuItem handles DELETE /api/restaurant/menu-items/:id
+// @Summary      Delete menu item
+// @Description  Deletes a menu item by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        item_id      path      int     true   "Menu Item ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{item_id} [delete]
+func (h *RestaurantHandler) DeleteMenuItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteMenuItem(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListComboComponents handles GET /api/restaurant/menu-items/:item_id/combo-components
+// @Summary      List item combo components
+// @Description  Returns all combo component choices for a given combo menu item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        item_id      path      int     true   "Menu Item ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{item_id}/combo-components [get]
+func (h *RestaurantHandler) ListComboComponents(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	idStr := c.Param("item_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid item_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListComboComponents(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Modifiers ===
+
+// ListModifiers handles GET /api/restaurant/menu-items/:item_id/modifiers
+// @Summary      List item modifiers
+// @Description  Returns all modifiers for a given menu item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        item_id      path      int     true   "Menu Item ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-items/{item_id}/modifiers [get]
+func (h *RestaurantHandler) ListModifiers(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	itemID, err := strconv.ParseInt(c.Param("item_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid item_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListModifiers(c.Request.Context(), int32(itemID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListStoreModifiers handles GET /api/restaurant/stores/:store_id/modifiers
+// @Summary      List store modifiers
+// @Description  Returns all modifiers for all menu items of a given store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/modifiers [get]
+func (h *RestaurantHandler) ListStoreModifiers(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListModifiersByStore(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+
+// GetModifier handles GET /api/restaurant/modifiers/:modifier_id
+// @Summary      Get item modifier
+// @Description  Returns a single item modifier by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        modifier_id  path      int     true   "Modifier ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/modifiers/{modifier_id} [get]
+func (h *RestaurantHandler) GetModifier(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetModifier(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// CreateModifier handles POST /api/restaurant/modifiers
+// @Summary      Create item modifier
+// @Description  Creates a new modifier for a menu item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateMenuItemModifierRequest  true  "Modifier data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/modifiers [post]
+func (h *RestaurantHandler) CreateModifier(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateMenuItemModifierRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	priceAdj, _ := repo.ParseNumeric(c.Request.Context(), req.PriceAdjustment)
+
+	params := repository.CreateMenuItemModifierParams{
+		MenuItemID:      req.MenuItemID,
+		ModifierName:    req.ModifierName,
+		ModifierType:    req.ModifierType,
+		PriceAdjustment: priceAdj,
+		IsActive:        pgtype.Bool{Bool: req.IsActive, Valid: true},
+		DisplayOrder:    pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		Metadata:        []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateModifier(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateModifier handles PUT /api/restaurant/modifiers/:modifier_id
+// @Summary      Update item modifier
+// @Description  Updates an existing item modifier.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        modifier_id  path      int     true   "Modifier ID"
+// @Param        body         body      CreateMenuItemModifierRequest  true  "Updated modifier data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/modifiers/{modifier_id} [put]
+func (h *RestaurantHandler) UpdateModifier(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateMenuItemModifierRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	priceAdj, _ := repo.ParseNumeric(c.Request.Context(), req.PriceAdjustment)
+
+	params := repository.UpdateMenuItemModifierParams{
+		ID:              int32(id),
+		ModifierName:    req.ModifierName,
+		ModifierType:    req.ModifierType,
+		PriceAdjustment: priceAdj,
+		IsActive:        pgtype.Bool{Bool: req.IsActive, Valid: true},
+		DisplayOrder:    pgtype.Int4{Int32: req.DisplayOrder, Valid: true},
+		Metadata:        []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateModifier(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteModifier handles DELETE /api/restaurant/modifiers/:modifier_id
+// @Summary      Delete item modifier
+// @Description  Deletes an item modifier by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        modifier_id  path      int     true   "Modifier ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/modifiers/{modifier_id} [delete]
+func (h *RestaurantHandler) DeleteModifier(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("modifier_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteModifier(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Menu ===
+
+// GetFullMenu handles GET /api/restaurant/stores/:store_id/menu
+// @Summary      Get full restaurant menu
+// @Description  Returns the full menu for a store, with optional category filtering.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        store_id              path      int     true   "Store ID"
+// @Param        category_id           query     int     false  "Filter by category ID"
+// @Param        include_unavailable   query     bool    false  "Include unavailable items (default false)"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/menu [get]
+func (h *RestaurantHandler) GetFullMenu(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	var categoryID *int32
+	if s := c.Query("category_id"); s != "" {
+		id, _ := strconv.ParseInt(s, 10, 32)
+		cid := int32(id)
+		categoryID = &cid
+	}
+	includeUnavail := c.Query("include_unavailable") == "true"
+
+	resp := h.uc(repo).GetFullMenu(c.Request.Context(), int32(storeID), categoryID, includeUnavail)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === KDS ===
+
+// GetKdsOrders handles GET /api/restaurant/stores/:store_id/kds
+// @Summary      Get KDS orders
+// @Description  Returns active orders for the Kitchen Display System.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string    true   "Tenant identifier"
+// @Param        store_id     path      int       true   "Store ID"
+// @Param        statuses     query     string    false  "Comma-separated statuses (default: pending,confirmed,preparing)"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/kds [get]
+func (h *RestaurantHandler) GetKdsOrders(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	statusesStr := c.Query("statuses")
+	var statuses []string
+	if statusesStr != "" {
+		statuses = strings.Split(statusesStr, ",")
+	} else {
+		statuses = []string{"pending", "confirmed", "preparing"}
+	}
+
+	resp := h.uc(repo).GetKdsOrders(c.Request.Context(), int32(storeID), statuses)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Orders ===
+
+// CreateOrder handles POST /api/restaurant/orders
+// @Summary      Create restaurant order
+// @Description  Creates a new restaurant order (table-side, waiter, or counter).
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateRestaurantOrderRequest  true  "Order data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders [post]
+func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateRestaurantOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	subtotal, _ := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
+	discount, _ := repo.ParseNumeric(c.Request.Context(), req.DiscountAmount)
+	tax, _ := repo.ParseNumeric(c.Request.Context(), req.TaxAmount)
+	total, _ := repo.ParseNumeric(c.Request.Context(), req.TotalAmount)
+	paid, _ := repo.ParseNumeric(c.Request.Context(), req.AmountPaid)
+	change, _ := repo.ParseNumeric(c.Request.Context(), req.ChangeGiven)
+
+	params := repository.CreateRestaurantOrderParams{
+		StoreID:          req.StoreID,
+		TableID:          pgtype.Int4{Int32: utils.DerefInt32(req.TableID), Valid: req.TableID != nil},
+		CashierID:        pgtype.Int4{Int32: utils.DerefInt32(req.CashierID), Valid: req.CashierID != nil},
+		CashierSessionID: pgtype.Int4{Int32: utils.DerefInt32(req.CashierSessionID), Valid: req.CashierSessionID != nil},
+		CustomerID:       pgtype.Int4{Int32: utils.DerefInt32(req.CustomerID), Valid: req.CustomerID != nil},
+		OrderNumber:      req.OrderNumber,
+		OrderSource:      req.OrderSource,
+		Status:           req.Status,
+		Subtotal:         subtotal,
+		DiscountAmount:   discount,
+		TaxAmount:        tax,
+		TotalAmount:      total,
+		AmountPaid:       paid,
+		ChangeGiven:      change,
+		Notes:            pgtype.Text{String: req.Notes, Valid: req.Notes != ""},
+		PosTransactionID: pgtype.Int4{Int32: utils.DerefInt32(req.PosTransactionID), Valid: req.PosTransactionID != nil},
+		Metadata:         []byte(req.Metadata),
+		OrderedAt:        pgtype.Timestamp{Time: time.Now(), Valid: true},
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateOrder(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateOrder handles PUT /api/restaurant/orders/:order_id
+// @Summary      Update restaurant order
+// @Description  Updates an existing restaurant order.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        order_id     path      int     true   "Order ID"
+// @Param        body         body      CreateRestaurantOrderRequest  true  "Updated order data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders/{order_id} [put]
+func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateRestaurantOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	subtotal, _ := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
+	discount, _ := repo.ParseNumeric(c.Request.Context(), req.DiscountAmount)
+	tax, _ := repo.ParseNumeric(c.Request.Context(), req.TaxAmount)
+	total, _ := repo.ParseNumeric(c.Request.Context(), req.TotalAmount)
+	paid, _ := repo.ParseNumeric(c.Request.Context(), req.AmountPaid)
+	change, _ := repo.ParseNumeric(c.Request.Context(), req.ChangeGiven)
+
+	params := repository.UpdateRestaurantOrderParams{
+		ID:               int32(id),
+		TableID:          pgtype.Int4{Int32: utils.DerefInt32(req.TableID), Valid: req.TableID != nil},
+		CashierID:        pgtype.Int4{Int32: utils.DerefInt32(req.CashierID), Valid: req.CashierID != nil},
+		CashierSessionID: pgtype.Int4{Int32: utils.DerefInt32(req.CashierSessionID), Valid: req.CashierSessionID != nil},
+		CustomerID:       pgtype.Int4{Int32: utils.DerefInt32(req.CustomerID), Valid: req.CustomerID != nil},
+		Status:           req.Status,
+		Subtotal:         subtotal,
+		DiscountAmount:   discount,
+		TaxAmount:        tax,
+		TotalAmount:      total,
+		AmountPaid:       paid,
+		ChangeGiven:      change,
+		Notes:            pgtype.Text{String: req.Notes, Valid: req.Notes != ""},
+		PosTransactionID: pgtype.Int4{Int32: utils.DerefInt32(req.PosTransactionID), Valid: req.PosTransactionID != nil},
+		Metadata:         []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateOrder(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteOrder handles DELETE /api/restaurant/orders/:order_id
+// @Summary      Delete restaurant order
+// @Description  Deletes a restaurant order by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        order_id     path      int     true   "Order ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders/{order_id} [delete]
+func (h *RestaurantHandler) DeleteOrder(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteOrder(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListOrders handles GET /api/restaurant/orders
+// @Summary      List restaurant orders
+// @Description  Returns all restaurant orders for a given store. Accepts store_id as query parameter.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     query     int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders [get]
+func (h *RestaurantHandler) ListOrders(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeIDStr := c.Query("store_id")
+	if storeIDStr == "" {
+		storeIDStr = c.Param("store_id")
+	}
+	if storeIDStr == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "store_id is required", nil))
+		return
+	}
+
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListOrders(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListStoreOrders handles GET /api/restaurant/stores/:store_id/orders
+// @Summary      List restaurant orders by store
+// @Description  Returns all restaurant orders for a specific store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/orders [get]
+func (h *RestaurantHandler) ListStoreOrders(c *gin.Context) {
+	h.ListOrders(c)
+}
+
+// GetOrder handles GET /api/restaurant/orders/:order_id
+// @Summary      Get restaurant order
+// @Description  Returns a single restaurant order with its items by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        order_id     path      int     true   "Order ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders/{order_id} [get]
+func (h *RestaurantHandler) GetOrder(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetOrder(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateOrderStatus handles PATCH /api/restaurant/orders/:order_id/status
+// @Summary      Update order status
+// @Description  Updates the status of a restaurant order.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        order_id     path      int     true   "Order ID"
+// @Param        body         body      UpdateStatusRequest  true  "Status data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders/{order_id}/status [patch]
+func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdateStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	resp := h.uc(repo).UpdateOrderStatus(c.Request.Context(), int32(id), req.Status)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// SettleOrder handles POST /api/restaurant/orders/:order_id/settle
+// @Summary      Settle restaurant order
+// @Description  Marks a restaurant order as paid and links it to a POS transaction.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        order_id     path      int     true   "Order ID"
+// @Param        body         body      SettleOrderRequest  true  "Settlement data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders/{order_id}/settle [post]
+func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req SettleOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	resp := h.uc(repo).SettleOrder(c.Request.Context(), int32(id), req.PosTransactionID)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// CreateOnlineOrder handles POST /api/restaurant/orders/online
+// @Summary      Create online order
+// @Description  Creates a new online restaurant order.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateOnlineOrderRequest  true  "Online order data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/orders/online [post]
+func (h *RestaurantHandler) CreateOnlineOrder(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateOnlineOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	items := make([]repository.CreateRestaurantOrderItemParams, len(req.Items))
+	for i, item := range req.Items {
+		qty, _ := repo.ParseNumeric(c.Request.Context(), item.Quantity)
+		price, _ := repo.ParseNumeric(c.Request.Context(), item.UnitPrice)
+		modTotal, _ := repo.ParseNumeric(c.Request.Context(), item.ModifiersTotal)
+		disc, _ := repo.ParseNumeric(c.Request.Context(), item.DiscountAmount)
+		tax, _ := repo.ParseNumeric(c.Request.Context(), item.TaxAmount)
+		sub, _ := repo.ParseNumeric(c.Request.Context(), item.Subtotal)
+
+		items[i] = repository.CreateRestaurantOrderItemParams{
+			MenuItemID:        item.MenuItemID,
+			Quantity:          qty,
+			UnitPrice:         price,
+			ModifiersSnapshot: []byte(item.ModifiersSnapshot),
+			ModifiersTotal:    modTotal,
+			DiscountAmount:    disc,
+			TaxAmount:         tax,
+			Subtotal:          sub,
+			LineNumber:        pgtype.Int4{Int32: item.LineNumber, Valid: true},
+			Notes:             pgtype.Text{String: item.Notes, Valid: item.Notes != ""},
+			Status:            pgtype.Text{String: item.Status, Valid: item.Status != ""},
+			Metadata:          []byte(item.Metadata),
+		}
+		if item.ModifiersSnapshot == "" {
+			items[i].ModifiersSnapshot = []byte("[]")
+		}
+		if item.Metadata == "" {
+			items[i].Metadata = []byte("{}")
+		}
+	}
+
+	resp := h.uc(repo).CreateOnlineOrder(c.Request.Context(), req.StoreID, req.CustomerID, items)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Order Items ===
+
+// GetOrderItem handles GET /api/restaurant/order-items/:order_item_id
+// @Summary      Get order item
+// @Description  Returns a single restaurant order item by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id    header    string  true   "Tenant identifier"
+// @Param        order_item_id  path      int     true   "Order Item ID"
+// @Success      200            {object}  SuccessResponse
+// @Failure      400            {object}  ErrorResponse
+// @Failure      401            {object}  ErrorResponse
+// @Failure      404            {object}  ErrorResponse
+// @Failure      500            {object}  ErrorResponse
+// @Router       /api/restaurant/order-items/{order_item_id} [get]
+func (h *RestaurantHandler) GetOrderItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetOrderItem(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateOrderItem handles PUT /api/restaurant/order-items/:order_item_id
+// @Summary      Update order item
+// @Description  Updates an existing restaurant order item.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id    header    string  true   "Tenant identifier"
+// @Param        order_item_id  path      int     true   "Order Item ID"
+// @Param        body           body      CreateRestaurantOrderItemRequest  true  "Updated item data"
+// @Success      200            {object}  SuccessResponse
+// @Failure      400            {object}  ErrorResponse
+// @Failure      401            {object}  ErrorResponse
+// @Failure      500            {object}  ErrorResponse
+// @Router       /api/restaurant/order-items/{order_item_id} [put]
+func (h *RestaurantHandler) UpdateOrderItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateRestaurantOrderItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	qty, _ := repo.ParseNumeric(c.Request.Context(), req.Quantity)
+	price, _ := repo.ParseNumeric(c.Request.Context(), req.UnitPrice)
+	modTotal, _ := repo.ParseNumeric(c.Request.Context(), req.ModifiersTotal)
+	disc, _ := repo.ParseNumeric(c.Request.Context(), req.DiscountAmount)
+	tax, _ := repo.ParseNumeric(c.Request.Context(), req.TaxAmount)
+	sub, _ := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
+
+	params := repository.UpdateRestaurantOrderItemParams{
+		ID:                int32(id),
+		MenuItemID:        req.MenuItemID,
+		Quantity:          qty,
+		UnitPrice:         price,
+		ModifiersSnapshot: []byte(req.ModifiersSnapshot),
+		ModifiersTotal:    modTotal,
+		DiscountAmount:    disc,
+		TaxAmount:         tax,
+		Subtotal:          sub,
+		LineNumber:        pgtype.Int4{Int32: req.LineNumber, Valid: true},
+		Notes:             pgtype.Text{String: req.Notes, Valid: req.Notes != ""},
+		Status:            pgtype.Text{String: req.Status, Valid: req.Status != ""},
+		Metadata:          []byte(req.Metadata),
+	}
+	if req.ModifiersSnapshot == "" {
+		params.ModifiersSnapshot = []byte("[]")
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateOrderItem(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteOrderItem handles DELETE /api/restaurant/order-items/:order_item_id
+// @Summary      Delete order item
+// @Description  Deletes a restaurant order item by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id    header    string  true   "Tenant identifier"
+// @Param        order_item_id  path      int     true   "Order Item ID"
+// @Success      200            {object}  SuccessResponse
+// @Failure      400            {object}  ErrorResponse
+// @Failure      401            {object}  ErrorResponse
+// @Failure      500            {object}  ErrorResponse
+// @Router       /api/restaurant/order-items/{order_item_id} [delete]
+func (h *RestaurantHandler) DeleteOrderItem(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("order_item_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteOrderItem(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Waste ===
+
+// CreateWasteLog handles POST /api/restaurant/waste-logs
+// @Summary      Create waste log
+// @Description  Logs wasted ingredients or menu items.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateWasteLogRequest  true  "Waste data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/waste-logs [post]
+func (h *RestaurantHandler) CreateWasteLog(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateWasteLogRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	qty, _ := repo.ParseNumeric(c.Request.Context(), req.Quantity)
+	uCost, _ := repo.ParseNumeric(c.Request.Context(), req.UnitCost)
+	tCost, _ := repo.ParseNumeric(c.Request.Context(), req.TotalCost)
+
+	params := repository.CreateWasteLogParams{
+		StoreID:     req.StoreID,
+		ProductID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil},
+		MenuItemID:  pgtype.Int4{Int32: utils.DerefInt32(req.MenuItemID), Valid: req.MenuItemID != nil},
+		RecipeID:    pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil},
+		WasteSource: req.WasteSource,
+		Quantity:    qty,
+		UomID:       pgtype.Int4{Int32: utils.DerefInt32(req.UomID), Valid: req.UomID != nil},
+		UnitCost:    uCost,
+		TotalCost:   tCost,
+		Reason:      pgtype.Text{String: req.Reason, Valid: req.Reason != ""},
+		LoggedBy:    pgtype.Int4{Int32: utils.DerefInt32(req.LoggedBy), Valid: req.LoggedBy != nil},
+		OrderID:     pgtype.Int4{Int32: utils.DerefInt32(req.OrderID), Valid: req.OrderID != nil},
+		WastedAt:    pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Metadata:    []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateWasteLog(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetWasteLog handles GET /api/restaurant/waste-logs/:waste_log_id
+// @Summary      Get waste log
+// @Description  Returns a single waste log entry by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        waste_log_id path      int     true   "Waste Log ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/waste-logs/{waste_log_id} [get]
+func (h *RestaurantHandler) GetWasteLog(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetWasteLog(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateWasteLog handles PUT /api/restaurant/waste-logs/:waste_log_id
+// @Summary      Update waste log
+// @Description  Updates an existing waste log entry.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        waste_log_id path      int     true   "Waste Log ID"
+// @Param        body         body      CreateWasteLogRequest  true  "Updated waste data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/waste-logs/{waste_log_id} [put]
+func (h *RestaurantHandler) UpdateWasteLog(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateWasteLogRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	qty, _ := repo.ParseNumeric(c.Request.Context(), req.Quantity)
+	uCost, _ := repo.ParseNumeric(c.Request.Context(), req.UnitCost)
+	tCost, _ := repo.ParseNumeric(c.Request.Context(), req.TotalCost)
+
+	params := repository.UpdateWasteLogParams{
+		ID:          int32(id),
+		ProductID:   pgtype.Int4{Int32: utils.DerefInt32(req.ProductID), Valid: req.ProductID != nil},
+		MenuItemID:  pgtype.Int4{Int32: utils.DerefInt32(req.MenuItemID), Valid: req.MenuItemID != nil},
+		RecipeID:    pgtype.Int4{Int32: utils.DerefInt32(req.RecipeID), Valid: req.RecipeID != nil},
+		WasteSource: req.WasteSource,
+		Quantity:    qty,
+		UomID:       pgtype.Int4{Int32: utils.DerefInt32(req.UomID), Valid: req.UomID != nil},
+		UnitCost:    uCost,
+		TotalCost:   tCost,
+		Reason:      pgtype.Text{String: req.Reason, Valid: req.Reason != ""},
+		LoggedBy:    pgtype.Int4{Int32: utils.DerefInt32(req.LoggedBy), Valid: req.LoggedBy != nil},
+		OrderID:     pgtype.Int4{Int32: utils.DerefInt32(req.OrderID), Valid: req.OrderID != nil},
+		WastedAt:    pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Metadata:    []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateWasteLog(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteWasteLog handles DELETE /api/restaurant/waste-logs/:waste_log_id
+// @Summary      Delete waste log
+// @Description  Deletes a waste log entry by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        waste_log_id path      int     true   "Waste Log ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/waste-logs/{waste_log_id} [delete]
+func (h *RestaurantHandler) DeleteWasteLog(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("waste_log_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteWasteLog(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetWasteReport handles GET /api/restaurant/stores/:store_id/waste-report
+// @Summary      Get waste report
+// @Description  Returns a waste report for a store within a date range.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id   header    string  true   "Tenant identifier"
+// @Param        store_id      path      int     true   "Store ID"
+// @Success      200           {object}  SuccessResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      401           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/waste-report [get]
+func (h *RestaurantHandler) GetWasteReport(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, _ := strconv.ParseInt(c.Param("store_id"), 10, 32)
+
+	resp := h.uc(repo).GetWasteReport(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Recipes ===
+
+// ListRecipes handles GET /api/restaurant/stores/:store_id/recipes
+// @Summary      List recipes
+// @Description  Returns all recipes for a given organization.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/stores/{store_id}/recipes [get]
+func (h *RestaurantHandler) ListRecipes(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	store, err := repo.GetStore(c.Request.Context(), int32(storeID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, utils.NewResponse(utils.CodeNotFound, "store not found", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListRecipes(c.Request.Context(), store.OrganizationID)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetRecipe handles GET /api/restaurant/recipes/:recipe_id
+// @Summary      Get recipe
+// @Description  Returns a single recipe with ingredients and cost by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        recipe_id    path      int     true   "Recipe ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/recipes/{recipe_id} [get]
+func (h *RestaurantHandler) GetRecipe(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetRecipe(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// CreateRecipe handles POST /api/restaurant/recipes
+// @Summary      Create recipe
+// @Description  Creates a new recipe header.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateRecipeRequest  true  "Recipe data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/recipes [post]
+func (h *RestaurantHandler) CreateRecipe(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateRecipeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	yieldQty, _ := repo.ParseNumeric(c.Request.Context(), req.YieldQuantity)
+
+	params := repository.CreateRecipeParams{
+		OrganizationID:     req.OrganizationID,
+		RecipeCode:         req.RecipeCode,
+		RecipeName:         req.RecipeName,
+		Description:        pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		FinishedProductID:  pgtype.Int4{Int32: utils.DerefInt32(req.FinishedProductID), Valid: req.FinishedProductID != nil},
+		YieldQuantity:      yieldQty,
+		YieldUomID:         pgtype.Int4{Int32: utils.DerefInt32(req.YieldUomID), Valid: req.YieldUomID != nil},
+		PreparationSteps:   pgtype.Text{String: req.PreparationSteps, Valid: req.PreparationSteps != ""},
+		PreparationTimeMin: pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
+		CookingTimeMin:     pgtype.Int4{Int32: req.CookingTimeMin, Valid: true},
+		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:           []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateRecipe(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateRecipe handles PUT /api/restaurant/recipes/:recipe_id
+// @Summary      Update recipe
+// @Description  Updates an existing recipe header.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        recipe_id    path      int     true   "Recipe ID"
+// @Param        body         body      CreateRecipeRequest  true  "Updated recipe data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/recipes/{recipe_id} [put]
+func (h *RestaurantHandler) UpdateRecipe(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateRecipeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	yieldQty, _ := repo.ParseNumeric(c.Request.Context(), req.YieldQuantity)
+
+	params := repository.UpdateRecipeParams{
+		ID:                 int32(id),
+		RecipeCode:         req.RecipeCode,
+		RecipeName:         req.RecipeName,
+		Description:        pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		FinishedProductID:  pgtype.Int4{Int32: utils.DerefInt32(req.FinishedProductID), Valid: req.FinishedProductID != nil},
+		YieldQuantity:      yieldQty,
+		YieldUomID:         pgtype.Int4{Int32: utils.DerefInt32(req.YieldUomID), Valid: req.YieldUomID != nil},
+		PreparationSteps:   pgtype.Text{String: req.PreparationSteps, Valid: req.PreparationSteps != ""},
+		PreparationTimeMin: pgtype.Int4{Int32: req.PreparationTimeMin, Valid: true},
+		CookingTimeMin:     pgtype.Int4{Int32: req.CookingTimeMin, Valid: true},
+		IsActive:           pgtype.Bool{Bool: req.IsActive, Valid: true},
+		Metadata:           []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateRecipe(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteRecipe handles DELETE /api/restaurant/recipes/:recipe_id
+// @Summary      Delete recipe
+// @Description  Deletes a recipe and its ingredients by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        recipe_id    path      int     true   "Recipe ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/recipes/{recipe_id} [delete]
+func (h *RestaurantHandler) DeleteRecipe(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteRecipe(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// AddRecipeIngredient handles POST /api/restaurant/recipes/:recipe_id/ingredients
+// @Summary      Add recipe ingredient
+// @Description  Adds an ingredient line to a recipe.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        recipe_id    path      int     true   "Recipe ID"
+// @Param        body         body      CreateRecipeIngredientRequest  true  "Ingredient data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/recipes/{recipe_id}/ingredients [post]
+func (h *RestaurantHandler) AddRecipeIngredient(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, _ := strconv.ParseInt(c.Param("recipe_id"), 10, 32)
+	var req CreateRecipeIngredientRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	qty, _ := repo.ParseNumeric(c.Request.Context(), req.Quantity)
+
+	params := repository.CreateRecipeIngredientParams{
+		RecipeID:         int32(id),
+		ProductID:        req.ProductID,
+		ProductVariantID: pgtype.Int4{Int32: utils.DerefInt32(req.ProductVariantID), Valid: req.ProductVariantID != nil},
+		Quantity:         qty,
+		UomID:            pgtype.Int4{Int32: utils.DerefInt32(req.UomID), Valid: req.UomID != nil},
+		IsOptional:       pgtype.Bool{Bool: req.IsOptional, Valid: true},
+		IsByproduct:      pgtype.Bool{Bool: req.IsByproduct, Valid: true},
+		LineNumber:       pgtype.Int4{Int32: req.LineNumber, Valid: true},
+		Metadata:         []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).AddRecipeIngredient(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Recipe Ingredients ===
+
+// GetRecipeIngredient handles GET /api/restaurant/recipe-ingredients/:recipe_ingredient_id
+// @Summary      Get recipe ingredient
+// @Description  Returns a single recipe ingredient line by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        recipe_ingredient_id  path      int     true   "Ingredient ID"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      404                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/recipe-ingredients/{recipe_ingredient_id} [get]
+func (h *RestaurantHandler) GetRecipeIngredient(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetRecipeIngredient(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateRecipeIngredient handles PUT /api/restaurant/recipe-ingredients/:recipe_ingredient_id
+// @Summary      Update recipe ingredient
+// @Description  Updates an existing recipe ingredient line.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        recipe_ingredient_id  path      int     true   "Ingredient ID"
+// @Param        body                  body      CreateRecipeIngredientRequest  true  "Updated ingredient data"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/recipe-ingredients/{recipe_ingredient_id} [put]
+func (h *RestaurantHandler) UpdateRecipeIngredient(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateRecipeIngredientRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	qty, _ := repo.ParseNumeric(c.Request.Context(), req.Quantity)
+
+	params := repository.UpdateRecipeIngredientParams{
+		ID:               int32(id),
+		ProductID:        req.ProductID,
+		ProductVariantID: pgtype.Int4{Int32: utils.DerefInt32(req.ProductVariantID), Valid: req.ProductVariantID != nil},
+		Quantity:         qty,
+		UomID:            pgtype.Int4{Int32: utils.DerefInt32(req.UomID), Valid: req.UomID != nil},
+		IsOptional:       pgtype.Bool{Bool: req.IsOptional, Valid: true},
+		IsByproduct:      pgtype.Bool{Bool: req.IsByproduct, Valid: true},
+		LineNumber:       pgtype.Int4{Int32: req.LineNumber, Valid: true},
+		Metadata:         []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateRecipeIngredient(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteRecipeIngredient handles DELETE /api/restaurant/recipe-ingredients/:recipe_ingredient_id
+// @Summary      Delete recipe ingredient
+// @Description  Deletes a recipe ingredient line by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id           header    string  true   "Tenant identifier"
+// @Param        recipe_ingredient_id  path      int     true   "Ingredient ID"
+// @Success      200                   {object}  SuccessResponse
+// @Failure      400                   {object}  ErrorResponse
+// @Failure      401                   {object}  ErrorResponse
+// @Failure      500                   {object}  ErrorResponse
+// @Router       /api/restaurant/recipe-ingredients/{recipe_ingredient_id} [delete]
+func (h *RestaurantHandler) DeleteRecipeIngredient(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("recipe_ingredient_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteRecipeIngredient(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Kiosk ===
+
+// CreateKioskSession handles POST /api/restaurant/kiosk/sessions
+// @Summary      Create kiosk session
+// @Description  Starts a new self-service kiosk session.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateKioskSessionRequest  true  "Session data"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/kiosk/sessions [post]
+func (h *RestaurantHandler) CreateKioskSession(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateKioskSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	params := repository.CreateKioskSessionParams{
+		PosTerminalID: req.PosTerminalID,
+		StoreID:       req.StoreID,
+		SessionToken:  req.SessionToken,
+		Status:        pgtype.Text{String: req.Status, Valid: req.Status != ""},
+		OpenedAt:      pgtype.Timestamp{Time: time.Now(), Valid: true},
+		Metadata:      []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).CreateKioskSession(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateKioskSession handles PUT /api/restaurant/kiosk/sessions/:session_id
+// @Summary      Update kiosk session
+// @Description  Updates an existing kiosk session.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        session_id   path      int     true   "Session ID"
+// @Param        body         body      CreateKioskSessionRequest  true  "Updated session data"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/kiosk/sessions/{session_id} [put]
+func (h *RestaurantHandler) UpdateKioskSession(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req CreateKioskSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	params := repository.UpdateKioskSessionParams{
+		ID:       int32(id),
+		Status:   pgtype.Text{String: req.Status, Valid: req.Status != ""},
+		Metadata: []byte(req.Metadata),
+	}
+	if req.Metadata == "" {
+		params.Metadata = []byte("{}")
+	}
+
+	resp := h.uc(repo).UpdateKioskSession(c.Request.Context(), params)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteKioskSession handles DELETE /api/restaurant/kiosk/sessions/:session_id
+// @Summary      Delete kiosk session
+// @Description  Deletes a kiosk session by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        session_id   path      int     true   "Session ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/kiosk/sessions/{session_id} [delete]
+func (h *RestaurantHandler) DeleteKioskSession(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("session_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteKioskSession(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetKioskSession handles GET /api/restaurant/kiosk/sessions/:token
+// @Summary      Get kiosk session by token
+// @Description  Returns kiosk session details by session token.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        token        path      string  true   "Session Token"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/kiosk/sessions/{token} [get]
+func (h *RestaurantHandler) GetKioskSession(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	token := c.Param("token")
+	resp := h.uc(repo).GetKioskSession(c.Request.Context(), token)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetKioskSessionByID handles GET /api/restaurant/kiosk/sessions/id/:session_id
+// @Summary      Get kiosk session by ID
+// @Description  Returns kiosk session details by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        session_id   path      int     true   "Session ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/kiosk/sessions/id/{session_id} [get]
+func (h *RestaurantHandler) GetKioskSessionByID(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, _ := strconv.ParseInt(c.Param("session_id"), 10, 32)
+	resp := h.uc(repo).GetKioskSessionByID(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Menu Modifier Groups ===
+
+// CreateMenuModifierGroup handles POST /api/restaurant/menu-modifier-groups
+// @Summary      Create a menu modifier group
+// @Description  Creates a new menu modifier group for a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        body         body      CreateMenuModifierGroupRequest true "Menu Modifier Group Data"
+// @Success      201          {object}  MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups [post]
+func (h *RestaurantHandler) CreateMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateMenuModifierGroupRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	metaBytes, err := bytesFromMap(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata format", nil))
+		return
+	}
+
+	var maxS pgtype.Int4
+	if req.MaxSelections != nil {
+		maxS = pgtype.Int4{Int32: *req.MaxSelections, Valid: true}
+	}
+
+	var displayOrder pgtype.Int4
+	if req.DisplayOrder != nil {
+		displayOrder = pgtype.Int4{Int32: *req.DisplayOrder, Valid: true}
+	}
+
+	resp := h.uc(repo).CreateMenuModifierGroup(c.Request.Context(), repository.CreateMenuModifierGroupParams{
+		StoreID:       req.StoreID,
+		Name:          req.Name,
+		Code:          req.Code,
+		SelectionType: pgtype.Text{String: req.SelectionType, Valid: req.SelectionType != ""},
+		MinSelections: pgtype.Int4{Int32: req.MinSelections, Valid: true},
+		MaxSelections: maxS,
+		IsActive:      pgtype.Bool{Bool: req.IsActive, Valid: true},
+		DisplayOrder:  displayOrder,
+		Metadata:      metaBytes,
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetMenuModifierGroup handles GET /api/restaurant/menu-modifier-groups/:id
+// @Summary      Get menu modifier group by ID
+// @Description  Returns details of a menu modifier group by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Modifier Group ID"
+// @Success      200          {object}  MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/{id} [get]
+func (h *RestaurantHandler) GetMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetMenuModifierGroup(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListMenuModifierGroupsByStore handles GET /api/restaurant/menu-modifier-groups/store/:store_id
+// @Summary      List menu modifier groups by store ID
+// @Description  Returns a list of all menu modifier groups for a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     path      int     true   "Store ID"
+// @Success      200          {array}   MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/store/{store_id} [get]
+func (h *RestaurantHandler) ListMenuModifierGroupsByStore(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListMenuModifierGroupsByStore(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateMenuModifierGroup handles PUT /api/restaurant/menu-modifier-groups/:id
+// @Summary      Update menu modifier group
+// @Description  Updates an existing menu modifier group by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Modifier Group ID"
+// @Param        body         body      UpdateMenuModifierGroupRequest true "Menu Modifier Group Data"
+// @Success      200          {object}  MenuModifierGroupResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/{id} [put]
+func (h *RestaurantHandler) UpdateMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdateMenuModifierGroupRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid request body", nil))
+		return
+	}
+
+	metaBytes, err := bytesFromMap(req.Metadata)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid metadata format", nil))
+		return
+	}
+
+	// Fetch existing group to check current properties if fields are omitted in PUT payload
+	existingGroupResp := h.uc(repo).GetMenuModifierGroup(c.Request.Context(), int32(id))
+	if existingGroupResp.StatusCode != 200 {
+		c.JSON(existingGroupResp.StatusCode, existingGroupResp)
+		return
+	}
+	existingGroup := existingGroupResp.Data.(repository.MenuModifierGroup)
+
+	name := existingGroup.Name
+	if req.Name != nil {
+		name = *req.Name
+	}
+	code := existingGroup.Code
+	if req.Code != nil {
+		code = *req.Code
+	}
+	selectionType := existingGroup.SelectionType
+	if req.SelectionType != nil {
+		selectionType = pgtype.Text{String: *req.SelectionType, Valid: true}
+	}
+	minSelections := existingGroup.MinSelections
+	if req.MinSelections != nil {
+		minSelections = pgtype.Int4{Int32: *req.MinSelections, Valid: true}
+	}
+	maxSelections := existingGroup.MaxSelections
+	if req.MaxSelections != nil {
+		maxSelections = pgtype.Int4{Int32: *req.MaxSelections, Valid: true}
+	}
+	isActive := existingGroup.IsActive
+	if req.IsActive != nil {
+		isActive = pgtype.Bool{Bool: *req.IsActive, Valid: true}
+	}
+	displayOrder := existingGroup.DisplayOrder
+	if req.DisplayOrder != nil {
+		displayOrder = pgtype.Int4{Int32: *req.DisplayOrder, Valid: true}
+	}
+
+	resp := h.uc(repo).UpdateMenuModifierGroup(c.Request.Context(), repository.UpdateMenuModifierGroupParams{
+		ID:            int32(id),
+		Name:          name,
+		Code:          code,
+		SelectionType: selectionType,
+		MinSelections: minSelections,
+		MaxSelections: maxSelections,
+		IsActive:      isActive,
+		DisplayOrder:  displayOrder,
+		Metadata:      metaBytes,
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteMenuModifierGroup handles DELETE /api/restaurant/menu-modifier-groups/:id
+// @Summary      Delete menu modifier group
+// @Description  Deletes a menu modifier group by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        id           path      int     true   "Menu Modifier Group ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/menu-modifier-groups/{id} [delete]
+func (h *RestaurantHandler) DeleteMenuModifierGroup(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteMenuModifierGroup(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// === Restaurant Promotions ===
+
+// CreateRestaurantPromotion handles POST /api/restaurant/promotions
+// @Summary      Create restaurant promotion
+// @Description  Creates a new promotion specifically for restaurant menu items and categories.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string                           true  "Tenant identifier"
+// @Param        body         body      CreateRestaurantPromotionRequest true  "Promotion payload"
+// @Success      201          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      401          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions [post]
+func (h *RestaurantHandler) CreateRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	var req CreateRestaurantPromotionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	actionMeta, _ := json.Marshal(req.ActionMetadata)
+	scheduleMeta, _ := json.Marshal(req.ScheduleJson)
+	metaBytes, _ := json.Marshal(req.Metadata)
+
+	arg := repository.CreateRestaurantPromotionParams{
+		StoreID:               req.StoreID,
+		Code:                  req.Code,
+		Name:                  req.Name,
+		Description:           promoTextOpt(req.Description),
+		PromotionType:         req.PromotionType,
+		ActionMetadata:        actionMeta,
+		ScheduleJson:          scheduleMeta,
+		AppliesTo:             promoTextOpt(req.AppliesTo),
+		TargetMenuItemIds:     req.TargetMenuItemIds,
+		TargetMenuCategoryIds: req.TargetMenuCategoryIds,
+		TargetCustomerTypes:   req.TargetCustomerTypes,
+		TargetCustomerTiers:   req.TargetCustomerTiers,
+		CouponCode:            promoTextOpt(req.CouponCode),
+		IsStackable:           promoBoolOpt(req.IsStackable),
+		IsActive:              promoBoolOpt(req.IsActive),
+		Metadata:              metaBytes,
+	}
+
+	if req.CreatedBy != nil {
+		arg.CreatedBy = pgtype.Int4{Int32: *req.CreatedBy, Valid: true}
+	} else if userIDStr, ok := middleware.GetUserIDFromContext(c); ok {
+		if uid, err := strconv.ParseInt(userIDStr, 10, 32); err == nil {
+			arg.CreatedBy = pgtype.Int4{Int32: int32(uid), Valid: true}
+		}
+	}
+
+	if req.MinOrderAmount != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinOrderAmount)
+		arg.MinOrderAmount = n
+	}
+	if req.MinQuantity != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinQuantity)
+		arg.MinQuantity = n
+	}
+	if req.DiscountValue != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.DiscountValue)
+		arg.DiscountValue = n
+	}
+	if req.UsageLimit != nil {
+		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
+	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
+	if req.ValidFrom != nil {
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
+		}
+		arg.ValidFrom = vf
+	}
+	if req.ValidTo != nil {
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
+		}
+		arg.ValidTo = vt
+	}
+
+	resp := h.uc(repo).CreateRestaurantPromotion(c.Request.Context(), arg)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetRestaurantPromotion handles GET /api/restaurant/promotions/:id
+// @Summary      Get restaurant promotion by ID
+// @Description  Retrieves a restaurant promotion by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        id           path      int     true  "Promotion ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id} [get]
+func (h *RestaurantHandler) GetRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetRestaurantPromotion(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// GetRestaurantPromotionByCode handles GET /api/restaurant/promotions/code/:code
+// @Summary      Get restaurant promotion by code
+// @Description  Retrieves a restaurant promotion by internal code and store_id.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        code         path      string  true  "Promotion code"
+// @Param        store_id     query     int     true  "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/code/{code} [get]
+func (h *RestaurantHandler) GetRestaurantPromotionByCode(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	code := c.Param("code")
+	storeIDStr := c.Query("store_id")
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).GetRestaurantPromotionByCode(c.Request.Context(), code, int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListActiveRestaurantPromotions handles GET /api/restaurant/promotions/active
+// @Summary      List active restaurant promotions
+// @Description  Lists active restaurant promotions for a store.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        store_id     query     int     true  "Store ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/active [get]
+func (h *RestaurantHandler) ListActiveRestaurantPromotions(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeIDStr := c.Query("store_id")
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	resp := h.uc(repo).ListActiveRestaurantPromotions(c.Request.Context(), int32(storeID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListAllRestaurantPromotions handles GET /api/restaurant/promotions
+// @Summary      List all restaurant promotions
+// @Description  Lists all restaurant promotions for a store (paginated).
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true   "Tenant identifier"
+// @Param        store_id     query     int     true   "Store ID"
+// @Param        limit        query     int     false  "Limit (default 50)"
+// @Param        offset       query     int     false  "Offset (default 0)"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions [get]
+func (h *RestaurantHandler) ListAllRestaurantPromotions(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	storeIDStr := c.Query("store_id")
+	storeID, err := strconv.ParseInt(storeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+
+	limit64, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
+	offset64, _ := strconv.ParseInt(c.DefaultQuery("offset", "0"), 10, 32)
+
+	resp := h.uc(repo).ListAllRestaurantPromotions(c.Request.Context(), repository.ListAllRestaurantPromotionsParams{
+		StoreID: int32(storeID),
+		Limit:   int32(limit64),
+		Offset:  int32(offset64),
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateRestaurantPromotion handles PUT /api/restaurant/promotions/:id
+// @Summary      Update restaurant promotion
+// @Description  Updates an existing restaurant promotion.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string                           true  "Tenant identifier"
+// @Param        id           path      int                              true  "Promotion ID"
+// @Param        body         body      UpdateRestaurantPromotionRequest true  "Update payload"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      404          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id} [put]
+func (h *RestaurantHandler) UpdateRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdateRestaurantPromotionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	actionMeta, _ := json.Marshal(req.ActionMetadata)
+	scheduleMeta, _ := json.Marshal(req.ScheduleJson)
+	metaBytes, _ := json.Marshal(req.Metadata)
+
+	arg := repository.UpdateRestaurantPromotionParams{
+		ID:                    int32(id),
+		Name:                  promoStrDeref(req.Name),
+		Description:           promoTextOpt(req.Description),
+		ActionMetadata:        actionMeta,
+		ScheduleJson:          scheduleMeta,
+		AppliesTo:             promoTextOpt(req.AppliesTo),
+		TargetMenuItemIds:     req.TargetMenuItemIds,
+		TargetMenuCategoryIds: req.TargetMenuCategoryIds,
+		TargetCustomerTypes:   req.TargetCustomerTypes,
+		TargetCustomerTiers:   req.TargetCustomerTiers,
+		IsStackable:           promoBoolOpt(req.IsStackable),
+		Metadata:              metaBytes,
+	}
+
+	if req.MinOrderAmount != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinOrderAmount)
+		arg.MinOrderAmount = n
+	}
+	if req.MinQuantity != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.MinQuantity)
+		arg.MinQuantity = n
+	}
+	if req.DiscountValue != nil {
+		n := pgtype.Numeric{}
+		_ = n.Scan(*req.DiscountValue)
+		arg.DiscountValue = n
+	}
+	if req.UsageLimit != nil {
+		arg.UsageLimit = pgtype.Int4{Int32: *req.UsageLimit, Valid: true}
+	}
+	if req.UsagePerCustomer != nil {
+		arg.UsagePerCustomer = pgtype.Int4{Int32: *req.UsagePerCustomer, Valid: true}
+	}
+	if req.ValidFrom != nil {
+		vf, err := parsePromotionTimestamp(req.ValidFrom)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_from: "+err.Error(), nil))
+			return
+		}
+		arg.ValidFrom = vf
+	}
+	if req.ValidTo != nil {
+		vt, err := parsePromotionTimestamp(req.ValidTo)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid valid_to: "+err.Error(), nil))
+			return
+		}
+		arg.ValidTo = vt
+	}
+
+	resp := h.uc(repo).UpdateRestaurantPromotion(c.Request.Context(), arg)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// UpdateRestaurantPromotionStatus handles PATCH /api/restaurant/promotions/:id/status
+// @Summary      Toggle restaurant promotion status
+// @Description  Activates or deactivates a restaurant promotion.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string                       true  "Tenant identifier"
+// @Param        id           path      int                          true  "Promotion ID"
+// @Param        body         body      UpdatePromotionStatusRequest true  "Status payload"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id}/status [patch]
+func (h *RestaurantHandler) UpdateRestaurantPromotionStatus(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	var req UpdatePromotionStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+
+	var isActive bool
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	resp := h.uc(repo).UpdateRestaurantPromotionStatus(c.Request.Context(), repository.UpdateRestaurantPromotionStatusParams{
+		ID:       int32(id),
+		IsActive: pgtype.Bool{Bool: isActive, Valid: true},
+	})
+	c.JSON(resp.StatusCode, resp)
+}
+
+// DeleteRestaurantPromotion handles DELETE /api/restaurant/promotions/:id
+// @Summary      Delete restaurant promotion
+// @Description  Deletes a restaurant promotion by ID.
+// @Tags         restaurant
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id  header    string  true  "Tenant identifier"
+// @Param        id           path      int     true  "Promotion ID"
+// @Success      200          {object}  SuccessResponse
+// @Failure      400          {object}  ErrorResponse
+// @Failure      500          {object}  ErrorResponse
+// @Router       /api/restaurant/promotions/{id} [delete]
+func (h *RestaurantHandler) DeleteRestaurantPromotion(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid id", nil))
+		return
+	}
+
+	resp := h.uc(repo).DeleteRestaurantPromotion(c.Request.Context(), int32(id))
+	c.JSON(resp.StatusCode, resp)
+}
+
+
