@@ -21,10 +21,10 @@ import (
 	"github.com/NasTecSol/nembus-client/internal/printing"
 	"github.com/NasTecSol/nembus-client/internal/sync"
 	"github.com/NasTecSol/nembus-client/internal/updater"
-	"github.com/NasTecSol/nembus-core/biometrics"
-	biometricsetup "github.com/NasTecSol/nembus-core/biometrics/setup"
-	biometricinstaller "github.com/NasTecSol/nembus-core/biometrics/installer"
 	localzatca "github.com/NasTecSol/nembus-client/internal/zatca"
+	"github.com/NasTecSol/nembus-core/biometrics"
+	biometricinstaller "github.com/NasTecSol/nembus-core/biometrics/installer"
+	biometricsetup "github.com/NasTecSol/nembus-core/biometrics/setup"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -606,6 +606,7 @@ func (a *App) StartSyncService(slug string) {
 	}
 	a.syncService = sync.NewSyncService(bgCtx, tenantPool, grpcAddr, slug)
 	a.syncService.ConfigureZatcaSync(a.getCloudURL())
+	a.syncService.ConfigureGRPCInsecure(a.cfg.GRPCInsecure)
 	a.syncService.ConfigureOrderAutomation(localzatca.NewReporter(&usecase.ZatcaConfig{LocalPOS: true}))
 
 	// Reset any sync_queue items that previously hit max_retries (e.g. due to
