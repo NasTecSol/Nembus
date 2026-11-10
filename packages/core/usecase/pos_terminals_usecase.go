@@ -3,12 +3,14 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PosTerminalsUseCase handles POS terminal business logic.
@@ -395,4 +397,29 @@ func (uc *PosTerminalsUseCase) RemoveCashierFromPOSTerminal(ctx context.Context,
 	}
 
 	return utils.NewResponse(utils.CodeOK, "cashier unassigned from terminal successfully", updated)
+}
+
+// IssuePOSTerminalSyncToken rotates the gRPC sync token for a terminal and returns the raw
+// token once. Only a SHA-256 hash is stored in pos_terminals.sync_token_hash.
+func (uc *PosTerminalsUseCase) IssuePOSTerminalSyncToken(ctx context.Context, pool *pgxpool.Pool, terminalID int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if pool == nil {
+		return utils.NewResponse(utils.CodeError, "tenant database pool not available", nil)
+	}
+	if terminalID <= 0 {
+		return utils.NewResponse(utils.CodeBadReq, "invalid terminal id", nil)
+	}
+	if _, err := uc.repo.GetPOSTerminal(ctx, terminalID); err != nil {
+		return utils.NewResponse(utils.CodeNotFound, "terminal not found", nil)
+	}
+	rawToken, err := IssueTerminalSyncToken(ctx, pool, terminalID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "sync token issued", map[string]string{
+		"sync_token": rawToken,
+		"terminal_id": fmt.Sprintf("%d", terminalID),
+	})
 }

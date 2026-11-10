@@ -12,6 +12,8 @@ import (
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
@@ -66,8 +68,11 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		INSERT INTO pos_payments (id, transaction_id) VALUES (9, 7);
 		INSERT INTO pos_transactions (id, sales_order_id, source_cart_id)
 		VALUES (7, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001');
-		CREATE TABLE sync_queue (id bigint PRIMARY KEY, entity_type text, entity_id bigint, action text,
-			payload jsonb, created_at timestamp DEFAULT now(), correlation_id text, status text);
+		CREATE TABLE sync_queue (id bigint PRIMARY KEY, outbox_uuid uuid DEFAULT gen_random_uuid(),
+			entity_type text, entity_id bigint, action text,
+			payload jsonb, created_at timestamptz DEFAULT now(), correlation_id text, status text,
+			retry_count integer DEFAULT 0, max_retries integer DEFAULT 5, last_error text,
+			error_class text, next_attempt_at timestamptz DEFAULT now(), quarantined_at timestamptz);
 		INSERT INTO sync_queue (id, entity_type, entity_id, action, payload, status) VALUES
 			(1, 'pos_transactions', 7, 'INSERT', '{"id":7}', 'failed'),
 			(2, 'pos_transaction_lines', 8, 'INSERT', '{"id":8,"transaction_id":7}', 'pending'),
@@ -153,7 +158,7 @@ func TestTransactionParentsForExistingQueueEntry(t *testing.T) {
 		var ids []int64
 		for rows.Next() {
 			var item OutboxItem
-			if err := rows.Scan(&item.ID, &item.EntityType, &item.EntityID, &item.Action, &item.Payload, &item.CreatedAt, &item.CorrelationID); err != nil {
+			if err := rows.Scan(&item.ID, &item.OutboxUUID, &item.EntityType, &item.EntityID, &item.Action, &item.Payload, &item.CreatedAt, &item.CorrelationID); err != nil {
 				t.Fatal(err)
 			}
 			ids = append(ids, item.ID)
@@ -230,6 +235,7 @@ func TestStripCartConvertedOrderLink(t *testing.T) {
 
 func TestPendingOutboxSQLStructure(t *testing.T) {
 	requiredClauses := []string{
+		"COALESCE(q.next_attempt_at, q.created_at, NOW()) <= NOW()",
 		"q.entity_type IN ('pos_transaction_lines', 'pos_payments')",
 		"parent.entity_type = 'pos_transactions'",
 		"parent.entity_id = (q.payload->>'transaction_id')::bigint",
@@ -239,12 +245,128 @@ func TestPendingOutboxSQLStructure(t *testing.T) {
 		"q.entity_type = 'sales_return_lines'",
 		"parent.entity_type = 'sales_returns'",
 		"parent.entity_id = (q.payload->>'return_id')::bigint",
-		"parent.status IN ('pending', 'failed')",
+		"parent.status IN ('pending', 'failed', 'quarantined')",
 	}
 	for _, clause := range requiredClauses {
 		if !strings.Contains(pendingOutboxSQL, clause) {
 			t.Errorf("pendingOutboxSQL missing expected clause: %s", clause)
 		}
+	}
+}
+
+func TestClassifySyncError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want ErrorClass
+	}{
+		{
+			name: "SQLSTATE 23503 foreign key violation is permanent",
+			err:  errors.New("server rejected: failed to upsert pos_transactions (action=INSERT): ERROR: insert or update on table \"pos_transactions\" violates foreign key constraint \"pos_transactions_cashier_id_fkey\" (SQLSTATE 23503)"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "SQLSTATE 23505 unique constraint is permanent",
+			err:  errors.New("server rejected: failed to upsert pos_transactions: duplicate key value violates unique constraint (SQLSTATE 23505)"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "SQLSTATE 22P02 invalid text representation is permanent",
+			err:  errors.New("server rejected: ERROR: invalid input syntax for type uuid (SQLSTATE 22P02)"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "Customer ID collision validation error is permanent",
+			err:  errors.New("server rejected: customer ID 42 already belongs to another cloud customer; resolve the ID collision before syncing dependent sales"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "gRPC InvalidArgument is permanent",
+			err:  status.Error(codes.InvalidArgument, "tenant_slug is required"),
+			want: ErrorClassPermanent,
+		},
+		{
+			name: "gRPC Unavailable is transient",
+			err:  status.Error(codes.Unavailable, "connection refused"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "gRPC DeadlineExceeded is transient",
+			err:  status.Error(codes.DeadlineExceeded, "context deadline exceeded"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "SQLSTATE 40001 serialization failure is transient",
+			err:  errors.New("server rejected: ERROR: could not serialize access due to concurrent update (SQLSTATE 40001)"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "SQLSTATE 53300 too many connections is transient",
+			err:  errors.New("server rejected: FATAL: sorry, too many clients already (SQLSTATE 53300)"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "SHA-256 checksum mismatch is transient",
+			err:  errors.New("server rejected: SHA-256 checksum mismatch"),
+			want: ErrorClassTransient,
+		},
+		{
+			name: "Network dial / receive error is transient",
+			err:  errors.New("receive error: EOF"),
+			want: ErrorClassTransient,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ClassifySyncError(tc.err); got != tc.want {
+				t.Fatalf("ClassifySyncError(%v) = %s, want %s", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestComputeBackoffDelayBounds(t *testing.T) {
+	for retry := 0; retry <= 12; retry++ {
+		exp := retry
+		if exp > 8 {
+			exp = 8
+		}
+		ceiling := 2 * time.Second * time.Duration(1<<exp)
+		if ceiling > 300*time.Second {
+			ceiling = 300 * time.Second
+		}
+		minExpected := time.Duration(float64(ceiling) * 0.5)
+		for i := 0; i < 20; i++ {
+			d := ComputeBackoffDelay(retry)
+			if d < minExpected || d > ceiling {
+				t.Fatalf("retry=%d: delay %v outside [%v, %v]", retry, d, minExpected, ceiling)
+			}
+		}
+	}
+}
+
+func TestClientConnReuse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := NewSyncService(ctx, nil, "localhost:50051", "test-tenant")
+	defer s.Stop()
+
+	conn1, err := s.getOrCreateConn()
+	if err != nil {
+		t.Fatalf("getOrCreateConn 1 failed: %v", err)
+	}
+	conn2, err := s.getOrCreateConn()
+	if err != nil {
+		t.Fatalf("getOrCreateConn 2 failed: %v", err)
+	}
+	if conn1 != conn2 {
+		t.Fatalf("expected SyncService to reuse *grpc.ClientConn across calls")
+	}
+
+	s.Stop()
+	if s.conn != nil {
+		t.Fatalf("expected Stop() to close and clear s.conn")
 	}
 }
 
@@ -270,5 +392,66 @@ func TestMasterDataPullEntityTypesInSync(t *testing.T) {
 		if types[i] != expected {
 			t.Errorf("PullEntityTypes()[%d] = %s; want %s", i, types[i], expected)
 		}
+	}
+}
+
+func TestOrderBatchEventsDependencyOrdering(t *testing.T) {
+	events := []OutboxItem{
+		{ID: 7, EntityType: "pos_payments", Action: "INSERT"},
+		{ID: 6, EntityType: "pos_transaction_lines", Action: "INSERT"},
+		{ID: 5, EntityType: "pos_transactions", Action: "INSERT"},
+		{ID: 4, EntityType: "carts", Action: "UPDATE"},
+		{ID: 3, EntityType: "sales_orders_v2", Action: "POS_CHECKOUT"},
+		{ID: 2, EntityType: "carts", Action: "INSERT"},
+		{ID: 1, EntityType: "customers", Action: "INSERT"},
+	}
+	OrderBatchEvents(events)
+
+	want := []struct {
+		entity string
+		action string
+	}{
+		{"customers", "INSERT"},
+		{"carts", "INSERT"},
+		{"sales_orders_v2", "POS_CHECKOUT"},
+		{"carts", "UPDATE"},
+		{"pos_transactions", "INSERT"},
+		{"pos_transaction_lines", "INSERT"},
+		{"pos_payments", "INSERT"},
+	}
+	for i, w := range want {
+		if events[i].EntityType != w.entity || events[i].Action != w.action {
+			t.Fatalf("events[%d] = (%s, %s), want (%s, %s)",
+				i, events[i].EntityType, events[i].Action, w.entity, w.action)
+		}
+	}
+}
+
+func TestBuildBatchAckErrorClassification(t *testing.T) {
+	s := NewSyncService(context.Background(), nil, "localhost:50051", "test")
+	defer s.Stop()
+
+	fkAck := &syncpb.SyncAck{
+		BatchId:      "corr-1",
+		Success:      false,
+		FailedSeq:    2,
+		SqlState:     "23503",
+		ErrorMessage: "insert or update on table pos_transactions violates foreign key constraint",
+	}
+	fkErr := s.buildBatchAckError(fkAck)
+	if ClassifySyncError(fkErr) != ErrorClassPermanent {
+		t.Fatalf("expected SQLSTATE 23503 batch ack error to classify as permanent, got %s", ClassifySyncError(fkErr))
+	}
+
+	transientAck := &syncpb.SyncAck{
+		BatchId:      "corr-2",
+		Success:      false,
+		FailedSeq:    1,
+		SqlState:     "40001",
+		ErrorMessage: "could not serialize access due to concurrent update",
+	}
+	transientErr := s.buildBatchAckError(transientAck)
+	if ClassifySyncError(transientErr) != ErrorClassTransient {
+		t.Fatalf("expected SQLSTATE 40001 batch ack error to classify as transient, got %s", ClassifySyncError(transientErr))
 	}
 }
