@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
@@ -204,6 +205,141 @@ func (e *CatalogExtractor) ExtractPriceListItems(ctx context.Context) ([]mapping
 		var currency, uomCode sql.NullString
 		if err := rows.Scan(&item.ItemCode, &item.PriceList, &item.Price, &currency, &item.UomEntry, &uomCode); err != nil {
 			continue // Skip malformed rows
+		}
+		item.Currency = currency.String
+		item.UomCode = uomCode.String
+		items = append(items, item.ToCanonical())
+	}
+	return items, nil
+}
+
+// sapDeltaParams converts a watermark timestamp into SAP B1's calendar date (YYYY-MM-DD)
+// and integer time-of-day (HHMMSS) in local server time.
+func sapDeltaParams(since time.Time) (string, int) {
+	if since.IsZero() {
+		now := time.Now()
+		return now.Format("2006-01-02"), 0
+	}
+	local := since.Local()
+	sinceDate := local.Format("2006-01-02")
+	sinceTime := local.Hour()*10000 + local.Minute()*100 + local.Second()
+	return sinceDate, sinceTime
+}
+
+// ExtractProductsDelta extracts only products created or updated since the given timestamp.
+func (e *CatalogExtractor) ExtractProductsDelta(ctx context.Context, since time.Time) ([]mappings.CanonicalProduct, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+	sinceDate, sinceTime := sapDeltaParams(since)
+
+	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryProductsDelta,
+		sql.Named("SinceDate", sinceDate),
+		sql.Named("SinceTime", sinceTime),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OITM delta since %s %06d: %w", sinceDate, sinceTime, err)
+	}
+	defer rows.Close()
+
+	var products []mappings.CanonicalProduct
+	for rows.Next() {
+		var p mappings.SAPProduct
+		var userText, codeBars, buyUnitMsr, salUnitMsr, invntryUom, vatGroup, assetItem, itemType sql.NullString
+		if err := rows.Scan(
+			&p.ItemCode,
+			&p.ItemName,
+			&userText,
+			&p.ItmsGrpCod,
+			&p.FirmCode,
+			&p.InvntItem,
+			&p.SellItem,
+			&p.PrchseItem,
+			&p.ValidFor,
+			&codeBars,
+			&buyUnitMsr,
+			&salUnitMsr,
+			&invntryUom,
+			&p.NumInSale,
+			&p.NumInBuy,
+			&p.UgpEntry,
+			&p.IUoMEntry,
+			&p.SUoMEntry,
+			&p.PUoMEntry,
+			&p.ManSerNum,
+			&p.ManBtchNum,
+			&vatGroup,
+			&assetItem,
+			&itemType,
+			&p.AvgPrice,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan OITM row: %w", err)
+		}
+		p.UserText = userText.String
+		p.CodeBars = codeBars.String
+		p.BuyUnitMsr = buyUnitMsr.String
+		p.SalUnitMsr = salUnitMsr.String
+		p.InvntryUom = invntryUom.String
+		p.VatGourpSa = vatGroup.String
+		p.AssetItem = assetItem.String
+		p.ItemType = itemType.String
+
+		products = append(products, p.ToCanonical())
+	}
+	return products, nil
+}
+
+// ExtractBarcodesDelta extracts only barcodes belonging to products created or updated since the given timestamp.
+func (e *CatalogExtractor) ExtractBarcodesDelta(ctx context.Context, since time.Time) ([]mappings.CanonicalBarcode, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+	sinceDate, sinceTime := sapDeltaParams(since)
+
+	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryProductBarcodesDelta,
+		sql.Named("SinceDate", sinceDate),
+		sql.Named("SinceTime", sinceTime),
+	)
+	if err != nil {
+		return []mappings.CanonicalBarcode{}, nil
+	}
+	defer rows.Close()
+
+	var barcodes []mappings.CanonicalBarcode
+	for rows.Next() {
+		var b mappings.SAPBarcode
+		var uomCode sql.NullString
+		if err := rows.Scan(&b.BcdEntry, &b.BcdCode, &b.ItemCode, &b.UomEntry, &uomCode); err != nil {
+			continue
+		}
+		b.UomCode = uomCode.String
+		barcodes = append(barcodes, b.ToCanonical(false))
+	}
+	return barcodes, nil
+}
+
+// ExtractPriceListItemsDelta extracts only price items belonging to products created or updated since the given timestamp.
+func (e *CatalogExtractor) ExtractPriceListItemsDelta(ctx context.Context, since time.Time) ([]mappings.CanonicalPriceListItem, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+	sinceDate, sinceTime := sapDeltaParams(since)
+
+	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryPriceListItemsDelta,
+		sql.Named("SinceDate", sinceDate),
+		sql.Named("SinceTime", sinceTime),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ITM1 delta since %s %06d: %w", sinceDate, sinceTime, err)
+	}
+	defer rows.Close()
+
+	var items []mappings.CanonicalPriceListItem
+	for rows.Next() {
+		var item mappings.SAPPriceListItem
+		var currency, uomCode sql.NullString
+		if err := rows.Scan(&item.ItemCode, &item.PriceList, &item.Price, &currency, &item.UomEntry, &uomCode); err != nil {
+			continue
 		}
 		item.Currency = currency.String
 		item.UomCode = uomCode.String

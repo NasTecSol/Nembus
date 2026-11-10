@@ -77,4 +77,31 @@ func TestSQLiteStoreLifecycle(t *testing.T) {
 	if err != nil || latest.Status != contracts.StatusCompleted {
 		t.Errorf("expected status 'completed', got %v", latest.Status)
 	}
+
+	// 5. Test Downstream Watermarks
+	// Verify seeded baseline watermark exists for 'products'
+	wm, err := store.GetDownstreamWatermark(ctx, "products")
+	if err != nil || wm == nil {
+		t.Fatalf("expected seeded baseline watermark for products, got %v (err: %v)", wm, err)
+	}
+
+	// Verify unseeded domain returns nil
+	unseeded, err := store.GetDownstreamWatermark(ctx, "custom_domain")
+	if err != nil || unseeded != nil {
+		t.Fatalf("expected nil watermark for unseeded domain, got %v (err: %v)", unseeded, err)
+	}
+
+	// Pass raw time.Now() with monotonic clock suffix (m=+...) to ensure RFC3339 formatting strips it cleanly
+	now := time.Now()
+	if err := store.SetDownstreamWatermark(ctx, "products", now, 42); err != nil {
+		t.Fatalf("failed to set downstream watermark: %v", err)
+	}
+
+	wm, err = store.GetDownstreamWatermark(ctx, "products")
+	if err != nil || wm == nil {
+		t.Fatalf("expected watermark, got nil (err: %v)", err)
+	}
+	if wm.Unix() != now.Unix() {
+		t.Errorf("watermark mismatch: got %v, want %v", wm.Unix(), now.Unix())
+	}
 }

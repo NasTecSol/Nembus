@@ -71,6 +71,13 @@
         });
 
         document.getElementById('btn-re-run-wizard')?.addEventListener('click', async () => {
+            try {
+                await fetch('/api/v1/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ onboarding_completed: false })
+                });
+            } catch (_) {}
             switchTab('tab-onboarding');
             goToWizardStep(1);
             await loadConfigAndStatus();
@@ -312,6 +319,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
+                            onboarding_completed: false,
                             cloud: {
                                 base_url: cloudUrl,
                                 database_url: getVal('ob-cloud-dburl'),
@@ -612,11 +620,15 @@
                 <div class="domain-desc">${d.description}</div>
                 <div class="domain-tile-footer">
                     <span class="text-success">&#10003; Synced</span>
-                    <button class="btn btn-xs btn-outline btn-sync-single" data-domain="${d.code}">Sync</button>
+                    <button class="btn btn-xs btn-outline btn-sync-single" data-domain="${d.code}">
+                        <span class="btn-spinner"></span>
+                        <span>Sync</span>
+                    </button>
                 </div>
             `;
-            tile.querySelector('.btn-sync-single').addEventListener('click', () => {
-                triggerSingleDomainSync(d.name);
+            const syncBtn = tile.querySelector('.btn-sync-single');
+            syncBtn.addEventListener('click', () => {
+                triggerSingleDomainSync(d.code, d.name, syncBtn);
             });
             container.appendChild(tile);
         });
@@ -770,6 +782,11 @@
     function handleProgressEvent(ev) {
         if (!ev) return;
 
+        if (ev.type === 'downstream_step' || ev.type === 'upstream_step') {
+            appendLog('INFO', ev.message);
+            return;
+        }
+
         if (ev.domain) setTxt('prog-domain-name', ev.domain);
 
         const overall = ev.total_domains > 0 ? (ev.completed_steps / ev.total_domains) * 100 : 0;
@@ -859,20 +876,34 @@
         });
     }
 
-    async function triggerDownstreamSync() {
-        const btn = document.getElementById('btn-manual-downstream') || document.getElementById('btn-quick-sync');
+    async function triggerDownstreamSync(e) {
+        const btn = (e && e.currentTarget) || document.getElementById('btn-manual-downstream') || document.getElementById('btn-quick-sync');
         setButtonLoading(btn, true);
+        showToast('Syncing latest SAP changes to Nembus...', 'info');
+        appendLog('INFO', '[Downstream] Checking SAP for changed master data...');
         try {
-            const res = await fetch('/api/v1/sync/downstream/run', { method: 'POST' });
+            const res = await fetch('/api/v1/sync/downstream/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
             const data = await res.json();
             if (data.success) {
                 showToast(data.message, 'success');
-                appendLog('INFO', data.message);
+                appendLog('INFO', `[Downstream] ${data.message}`);
+                try {
+                    const statusRes = await fetch('/api/v1/sync/status');
+                    const statusData = await statusRes.json();
+                    state.syncStatus = statusData;
+                    updateDashboardSyncCards(statusData);
+                } catch (_) {}
             } else {
                 showToast(data.message, 'warning');
+                appendLog('WARN', `[Downstream] ${data.message}`);
             }
         } catch (err) {
             showToast(`Sync trigger failed: ${err.message}`, 'error');
+            appendLog('ERROR', `[Downstream] ${err.message}`);
         } finally {
             setButtonLoading(btn, false);
         }
@@ -941,9 +972,36 @@
         }
     }
 
-    function triggerSingleDomainSync(domainName) {
-        showToast(`Sync queued for: ${domainName}`, 'success');
-        appendLog('INFO', `Manual sync requested for domain ${domainName}`);
+    async function triggerSingleDomainSync(domainCode, domainName, btn) {
+        if (btn) setButtonLoading(btn, true);
+        showToast(`Syncing ${domainName}...`, 'info');
+        appendLog('INFO', `[Downstream] Manual sync started for ${domainName} (${domainCode})`);
+        try {
+            const res = await fetch('/api/v1/sync/downstream/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domains: [domainCode] })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                appendLog('INFO', `[Downstream] ${data.message}`);
+                try {
+                    const statusRes = await fetch('/api/v1/sync/status');
+                    const statusData = await statusRes.json();
+                    state.syncStatus = statusData;
+                    updateDashboardSyncCards(statusData);
+                } catch (_) {}
+            } else {
+                showToast(data.message, 'warning');
+                appendLog('WARN', `[Downstream] ${data.message}`);
+            }
+        } catch (err) {
+            showToast(`Sync failed: ${err.message}`, 'error');
+            appendLog('ERROR', `[Downstream] ${err.message}`);
+        } finally {
+            if (btn) setButtonLoading(btn, false);
+        }
     }
 
     async function runReconciliation() {

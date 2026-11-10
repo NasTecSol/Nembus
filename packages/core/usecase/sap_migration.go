@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -199,6 +200,92 @@ func queryRowWithSavepoint(ctx context.Context, tx pgx.Tx, scanFn func(row pgx.R
 		return err
 	}
 	_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT "+spName)
+	return nil
+}
+
+// loadCatalogPricePolicy loads (and seeds defaults if absent) the organization's
+// catalog.price_change approval policy inside the current transaction.
+func loadCatalogPricePolicy(ctx context.Context, tx pgx.Tx, orgID int) (bool, string, CatalogPriceRules) {
+	_ = execWithSavepoint(ctx, tx, `
+		INSERT INTO approval_policies (organization_id, domain, action, is_enabled, requires_approval, required_permission, rules)
+		VALUES ($1, 'catalog', 'price_change', true, true, 'catalog:pricing:approve', '{"price_drop_requires_approval": true, "cost_increase_threshold_pct": 10.0, "below_cost_requires_approval": true}'::jsonb)
+		ON CONFLICT (organization_id, domain, action) DO NOTHING;
+	`, orgID)
+
+	var isEnabled, requiresApproval bool
+	var requiredPerm string
+	var rawRules []byte
+	err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+		return r.Scan(&isEnabled, &requiresApproval, &requiredPerm, &rawRules)
+	}, `
+		SELECT is_enabled, requires_approval, COALESCE(required_permission, 'catalog:pricing:approve'), COALESCE(rules, '{}'::jsonb)
+		FROM approval_policies
+		WHERE organization_id = $1 AND domain = 'catalog' AND action = 'price_change'
+		LIMIT 1
+	`, orgID)
+	if err != nil {
+		return false, "catalog:pricing:approve", DefaultCatalogPriceRules()
+	}
+	if !isEnabled || !requiresApproval {
+		return false, requiredPerm, DefaultCatalogPriceRules()
+	}
+	var rulesMap map[string]any
+	if len(rawRules) > 0 {
+		_ = json.Unmarshal(rawRules, &rulesMap)
+	}
+	return true, requiredPerm, ParseCatalogPriceRules(rulesMap)
+}
+
+// upsertCatalogPriceApprovalTx creates or updates a pending catalog.price_change
+// approval request for a product or price list item.
+func upsertCatalogPriceApprovalTx(ctx context.Context, tx pgx.Tx, orgID int, requiredPerm, entityID, summary string, prop CatalogPriceChangePayload) error {
+	if requiredPerm == "" {
+		requiredPerm = "catalog:pricing:approve"
+	}
+	payloadBytes, err := json.Marshal(prop)
+	if err != nil {
+		return err
+	}
+
+	var existingID int64
+	findErr := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+		return r.Scan(&existingID)
+	}, `
+		SELECT id FROM approval_requests
+		WHERE organization_id = $1 AND domain = 'catalog' AND action = 'price_change'
+		  AND entity_type = 'product' AND entity_id = $2 AND status = 'pending'
+		ORDER BY id DESC LIMIT 1
+	`, orgID, entityID)
+
+	if findErr == nil && existingID > 0 {
+		return execWithSavepoint(ctx, tx, `
+			UPDATE approval_requests
+			SET payload = $3, summary = $4, updated_at = CURRENT_TIMESTAMP
+			WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+		`, existingID, orgID, payloadBytes, summary)
+	}
+
+	var newReqID int64
+	if err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+		return r.Scan(&newReqID)
+	}, `
+		INSERT INTO approval_requests (
+			organization_id, domain, action, entity_type, entity_id,
+			status, required_permission, summary, payload, metadata
+		) VALUES (
+			$1, 'catalog', 'price_change', 'product', $2,
+			'pending', $3, $4, $5, '{}'::jsonb
+		) RETURNING id
+	`, orgID, entityID, requiredPerm, summary, payloadBytes); err != nil {
+		return err
+	}
+
+	if newReqID > 0 {
+		_ = execWithSavepoint(ctx, tx, `
+			INSERT INTO approval_request_logs (approval_request_id, action, notes, metadata)
+			VALUES ($1, 'submitted', $2, '{}'::jsonb)
+		`, newReqID, summary)
+	}
 	return nil
 }
 
@@ -495,6 +582,14 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 		}
 
 	case contracts.DomainProducts:
+		enforceGovernance := strings.EqualFold(payload.RunID, "downstream") || !uc.BypassCatalogPriceApproval
+		var requiresApproval bool
+		var requiredPerm string
+		var catalogRules CatalogPriceRules
+		if enforceGovernance {
+			requiresApproval, requiredPerm, catalogRules = loadCatalogPricePolicy(ctx, tx, payload.OrganizationID)
+		}
+
 		for _, p := range payload.Products {
 			metaBytes, _ := json.Marshal(p.Metadata)
 
@@ -505,6 +600,23 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					VALUES ($1, $1, 'unit', 2, true)
 					ON CONFLICT(code) DO NOTHING;
 				`, p.BaseUOMCode)
+			}
+
+			costToApply := p.CostPrice
+			var existingProductID int32
+			var oldCost float64
+			var holdCost bool
+			var costReason string
+			if enforceGovernance && requiresApproval {
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+					return r.Scan(&existingProductID, &oldCost)
+				}, `SELECT id, COALESCE(cost_price, 0) FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, p.SKU)
+				if existingProductID > 0 {
+					holdCost, costReason = EvaluateCostChange(requiresApproval, catalogRules, oldCost, p.CostPrice)
+					if holdCost {
+						costToApply = oldCost
+					}
+				}
 			}
 
 			q := `
@@ -532,11 +644,23 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				cost_price = excluded.cost_price,
 				metadata = excluded.metadata;
 			`
-			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, p.CostPrice, metaBytes); err != nil {
+			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, costToApply, metaBytes); err != nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("product %s error: %v", p.SKU, err))
 			} else {
 				staged++
+				if holdCost && existingProductID > 0 {
+					oldC, newC := oldCost, p.CostPrice
+					entityID := fmt.Sprintf("%d:cost", existingProductID)
+					summary := fmt.Sprintf("Cost price revision for SKU %s: %s", p.SKU, costReason)
+					_ = upsertCatalogPriceApprovalTx(ctx, tx, payload.OrganizationID, requiredPerm, entityID, summary, CatalogPriceChangePayload{
+						ProductID:    existingProductID,
+						ProductSKU:   p.SKU,
+						OldCostPrice: &oldC,
+						NewCostPrice: &newC,
+						Reason:       costReason,
+					})
+				}
 				if p.PrimaryBarcode != "" {
 					bq := `
 					INSERT INTO product_barcodes (product_id, barcode, barcode_type, is_primary)
@@ -604,8 +728,15 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 	case contracts.DomainPriceLists:
 		// Historical migration loads prices directly; catalog.price_change governance applies
-		// on the SAP sync agent downstream path, not during IngestBatch (see BypassCatalogPriceApproval).
-		_ = uc.BypassCatalogPriceApproval
+		// on Downstream Sync (RunID == "downstream") or when BypassCatalogPriceApproval is false.
+		enforcePriceGovernance := strings.EqualFold(payload.RunID, "downstream") || !uc.BypassCatalogPriceApproval
+		var requiresApproval bool
+		var requiredPerm string
+		var catalogRules CatalogPriceRules
+		if enforcePriceGovernance {
+			requiresApproval, requiredPerm, catalogRules = loadCatalogPricePolicy(ctx, tx, payload.OrganizationID)
+		}
+
 		for _, pl := range payload.PriceLists {
 			metaBytes, _ := json.Marshal(pl.Metadata)
 			q := `
@@ -627,11 +758,89 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 		for _, item := range payload.PriceItems {
 			metaBytes, _ := json.Marshal(item.Metadata)
+
+			if enforcePriceGovernance && requiresApproval {
+				if item.Price <= 0 {
+					skipped++
+					continue
+				}
+				var productID int32
+				var currentCost float64
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+					return r.Scan(&productID, &currentCost)
+				}, `SELECT id, COALESCE(cost_price, 0) FROM products WHERE organization_id = $1 AND sku = $2 LIMIT 1`, payload.OrganizationID, item.ProductSKU)
+
+				var priceListID int32
+				_ = queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+					return r.Scan(&priceListID)
+				}, `SELECT id FROM price_lists WHERE code = $1 LIMIT 1`, item.PriceListCode)
+
+				if productID <= 0 || priceListID <= 0 {
+					skipped++
+					continue
+				}
+
+				var uomID *int32
+				if strings.TrimSpace(item.UOMCode) != "" {
+					var uid int32
+					if err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+						return r.Scan(&uid)
+					}, `SELECT id FROM units_of_measure WHERE code = $1 LIMIT 1`, item.UOMCode); err == nil && uid > 0 {
+						uomID = &uid
+					}
+				}
+
+				var oldPrice float64
+				oldPriceErr := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+					return r.Scan(&oldPrice)
+				}, `
+					SELECT COALESCE(price, 0)
+					FROM product_prices
+					WHERE product_id = $1 AND price_list_id = $2
+					  AND (uom_id IS NOT DISTINCT FROM $3)
+					  AND is_active = true
+					ORDER BY id DESC LIMIT 1
+				`, productID, priceListID, uomID)
+				hasActivePrice := oldPriceErr == nil && oldPrice > 0
+
+				if hold, reason := EvaluateSellPriceChange(requiresApproval, catalogRules, oldPrice, item.Price, currentCost, hasActivePrice); hold {
+					oldP, newP := oldPrice, item.Price
+					costSnap := currentCost
+					entityID := fmt.Sprintf("%d:pl:%d", productID, priceListID)
+					if uomID != nil {
+						entityID = fmt.Sprintf("%d:pl:%d:uom:%d", productID, priceListID, *uomID)
+					}
+					summary := fmt.Sprintf("Price revision for SKU %s (%s): %s", item.ProductSKU, item.PriceListCode, reason)
+					if err := upsertCatalogPriceApprovalTx(ctx, tx, payload.OrganizationID, requiredPerm, entityID, summary, CatalogPriceChangePayload{
+						ProductID:    productID,
+						ProductSKU:   item.ProductSKU,
+						PriceListID:  priceListID,
+						UoMID:        uomID,
+						OldPrice:     &oldP,
+						NewPrice:     &newP,
+						OldCostPrice: &costSnap,
+						Reason:       reason,
+					}); err != nil {
+						failed++
+						errs = append(errs, fmt.Sprintf("price_item approval %s@%s error: %v", item.ProductSKU, item.PriceListCode, err))
+					} else {
+						staged++
+					}
+					continue
+				}
+
+				if hasActivePrice && math.Abs(item.Price-oldPrice) <= catalogPriceEpsilon {
+					staged++
+					continue
+				}
+			}
+
 			_ = execWithSavepoint(ctx, tx, `
 				DELETE FROM product_prices 
 				WHERE product_id = (SELECT id FROM products WHERE organization_id = $1 AND sku = $2)
-				  AND price_list_id = (SELECT id FROM price_lists WHERE code = $3);
-			`, payload.OrganizationID, item.ProductSKU, item.PriceListCode)
+				  AND price_list_id = (SELECT id FROM price_lists WHERE code = $3)
+				  AND (uom_id IS NOT DISTINCT FROM (SELECT id FROM units_of_measure WHERE code = $4 LIMIT 1));
+			`, payload.OrganizationID, item.ProductSKU, item.PriceListCode, item.UOMCode)
 
 			q := `
 			INSERT INTO product_prices (product_id, price_list_id, uom_id, price, is_active, metadata)

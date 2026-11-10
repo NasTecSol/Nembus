@@ -317,6 +317,53 @@ FROM OITM
 ORDER BY ItemCode;
 `
 
+const QueryProductsDelta = `
+SELECT 
+    ItemCode,
+    ISNULL(ItemName, '') AS ItemName,
+    ISNULL(UserText, '') AS UserText,
+    ISNULL(ItmsGrpCod, 0) AS ItmsGrpCod,
+    ISNULL(FirmCode, 0) AS FirmCode,
+    ISNULL(InvntItem, 'Y') AS InvntItem,
+    ISNULL(SellItem, 'Y') AS SellItem,
+    ISNULL(PrchseItem, 'Y') AS PrchseItem,
+    ISNULL(validFor, 'Y') AS validFor,
+    ISNULL(CodeBars, '') AS CodeBars,
+    ISNULL(BuyUnitMsr, 'UNIT') AS BuyUnitMsr,
+    ISNULL(SalUnitMsr, 'UNIT') AS SalUnitMsr,
+    ISNULL(InvntryUom, 'UNIT') AS InvntryUom,
+    ISNULL(NumInSale, 1.0) AS NumInSale,
+    ISNULL(NumInBuy, 1.0) AS NumInBuy,
+    ISNULL(UgpEntry, -1) AS UgpEntry,
+    ISNULL(IUoMEntry, -1) AS IUoMEntry,
+    ISNULL(SUoMEntry, -1) AS SUoMEntry,
+    ISNULL(PUoMEntry, -1) AS PUoMEntry,
+    ISNULL(ManSerNum, 'N') AS ManSerNum,
+    ISNULL(ManBtchNum, 'N') AS ManBtchNum,
+    ISNULL(VatGourpSa, '') AS VatGourpSa,
+    ISNULL(AssetItem, 'N') AS AssetItem,
+    ISNULL(ItemType, 'I') AS ItemType,
+    ISNULL(AvgPrice, 0.0) AS AvgPrice
+FROM OITM
+WHERE (
+    UpdateDate > @SinceDate
+    OR (UpdateDate = @SinceDate AND (
+        CASE WHEN ISNULL(UpdateTS, 0) > 0 AND ISNULL(UpdateTS, 0) < 10000
+             THEN ISNULL(UpdateTS, 0) * 100
+             ELSE ISNULL(UpdateTS, 235959)
+        END
+    ) >= @SinceTime)
+    OR CreateDate > @SinceDate
+    OR (CreateDate = @SinceDate AND (
+        CASE WHEN ISNULL(CreateTS, 0) > 0 AND ISNULL(CreateTS, 0) < 10000
+             THEN ISNULL(CreateTS, 0) * 100
+             ELSE ISNULL(CreateTS, 235959)
+        END
+    ) >= @SinceTime)
+)
+ORDER BY ItemCode;
+`
+
 const QueryProductBarcodes = `
 SELECT 
     b.BcdEntry,
@@ -326,6 +373,35 @@ SELECT
     ISNULL(u.UomCode, '') AS UomCode
 FROM OBCD b
 LEFT JOIN OUOM u ON b.UomEntry = u.UomEntry
+ORDER BY b.BcdEntry;
+`
+
+const QueryProductBarcodesDelta = `
+SELECT 
+    b.BcdEntry,
+    b.BcdCode,
+    b.ItemCode,
+    ISNULL(b.UomEntry, -1) AS UomEntry,
+    ISNULL(u.UomCode, '') AS UomCode
+FROM OBCD b
+LEFT JOIN OUOM u ON b.UomEntry = u.UomEntry
+INNER JOIN OITM m ON b.ItemCode = m.ItemCode
+WHERE (
+    m.UpdateDate > @SinceDate
+    OR (m.UpdateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
+             THEN ISNULL(m.UpdateTS, 0) * 100
+             ELSE ISNULL(m.UpdateTS, 235959)
+        END
+    ) >= @SinceTime)
+    OR m.CreateDate > @SinceDate
+    OR (m.CreateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
+             THEN ISNULL(m.CreateTS, 0) * 100
+             ELSE ISNULL(m.CreateTS, 235959)
+        END
+    ) >= @SinceTime)
+)
 ORDER BY b.BcdEntry;
 `
 
@@ -535,6 +611,36 @@ SELECT
 FROM ITM1 i
 LEFT JOIN OUOM u ON i.UomEntry = u.UomEntry
 WHERE i.Price > 0
+ORDER BY i.ItemCode, i.PriceList;
+`
+
+const QueryPriceListItemsDelta = `
+SELECT
+    i.ItemCode,
+    i.PriceList,
+    ISNULL(i.Price, 0.0) AS Price,
+    ISNULL(i.Currency, '') AS Currency,
+    ISNULL(i.UomEntry, -1) AS UomEntry,
+    ISNULL(u.UomCode, '') AS UomCode
+FROM ITM1 i
+LEFT JOIN OUOM u ON i.UomEntry = u.UomEntry
+INNER JOIN OITM m ON i.ItemCode = m.ItemCode
+WHERE i.Price > 0 AND (
+    m.UpdateDate > @SinceDate
+    OR (m.UpdateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
+             THEN ISNULL(m.UpdateTS, 0) * 100
+             ELSE ISNULL(m.UpdateTS, 235959)
+        END
+    ) >= @SinceTime)
+    OR m.CreateDate > @SinceDate
+    OR (m.CreateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
+             THEN ISNULL(m.CreateTS, 0) * 100
+             ELSE ISNULL(m.CreateTS, 235959)
+        END
+    ) >= @SinceTime)
+)
 ORDER BY i.ItemCode, i.PriceList;
 `
 

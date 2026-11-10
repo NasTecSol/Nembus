@@ -48,6 +48,7 @@ type UpstreamSync struct {
 	sapClient    SAPClient
 	nembusClient NembusClient
 	sqlite       *db.SQLiteStore
+	logFunc      func(domain, level, msg string)
 }
 
 func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient NembusClient, sqliteStore ...*db.SQLiteStore) *UpstreamSync {
@@ -65,6 +66,16 @@ func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient Nembu
 
 func (s *UpstreamSync) SetSQLite(store *db.SQLiteStore) {
 	s.sqlite = store
+}
+
+func (s *UpstreamSync) SetLogger(fn func(domain, level, msg string)) {
+	s.logFunc = fn
+}
+
+func (s *UpstreamSync) emitLog(domain, level, msg string) {
+	if s.logFunc != nil {
+		s.logFunc(domain, level, msg)
+	}
 }
 
 var (
@@ -99,6 +110,8 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	start := time.Now()
 	stats := &UpstreamStats{}
 
+	s.emitLog("pipeline", "INFO", "[Upstream] Checking Nembus Cloud for unposted POS transactions, sales orders, and returns...")
+
 	limit := s.cfg.BatchSize
 	if limit <= 0 {
 		limit = 50
@@ -111,6 +124,7 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	for _, tx := range approvedPOS {
 		if err := s.postTransactionToSAP(ctx, &tx); err != nil {
 			log.Printf("❌ Failed to post approved transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+			s.emitLog("pos_transactions", "ERROR", fmt.Sprintf("[Upstream] pos_transactions: failed to post approved %s: %v", tx.TransactionNumber, err))
 			stats.Errors++
 		} else if !s.cfg.DryRun {
 			stats.TransactionsPosted++
@@ -124,6 +138,7 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	for _, order := range approvedOrders {
 		if err := s.postSalesOrderToSAP(ctx, &order); err != nil {
 			log.Printf("❌ Failed to post approved sales order %s to SAP: %v", order.OrderNumber, err)
+			s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to post approved %s: %v", order.OrderNumber, err))
 			stats.Errors++
 		} else if !s.cfg.DryRun {
 			stats.OrdersPosted++
@@ -144,11 +159,17 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 					continue
 				}
 				log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+				s.emitLog("pos_transactions", "ERROR", fmt.Sprintf("[Upstream] pos_transactions: failed to post %s: %v", tx.TransactionNumber, err))
 				stats.Errors++
 			} else if !s.cfg.DryRun {
 				stats.TransactionsPosted++
 			}
 		}
+	}
+	if stats.TransactionsPosted == 0 && stats.TransactionsHeld == 0 {
+		s.emitLog("pos_transactions", "INFO", "[Upstream] pos_transactions: up to date (0 unposted transactions)")
+	} else {
+		s.emitLog("pos_transactions", "INFO", fmt.Sprintf("[Upstream] pos_transactions: %d posted, %d held", stats.TransactionsPosted, stats.TransactionsHeld))
 	}
 
 	salesOrders, oErr := s.nembusClient.FetchUnpostedSalesOrdersV2(ctx, limit)
@@ -164,11 +185,17 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 					continue
 				}
 				log.Printf("❌ Failed to post sales order %s to SAP: %v", order.OrderNumber, err)
+				s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to post %s: %v", order.OrderNumber, err))
 				stats.Errors++
 			} else if !s.cfg.DryRun {
 				stats.OrdersPosted++
 			}
 		}
+	}
+	if stats.OrdersPosted == 0 && stats.OrdersHeld == 0 {
+		s.emitLog("sales_orders", "INFO", "[Upstream] sales_orders: up to date (0 unposted orders)")
+	} else {
+		s.emitLog("sales_orders", "INFO", fmt.Sprintf("[Upstream] sales_orders: %d posted, %d held", stats.OrdersPosted, stats.OrdersHeld))
 	}
 
 	// Fetch unposted completed sales returns from Nembus
@@ -181,14 +208,22 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 		for _, ret := range returns {
 			if err := s.postSalesReturnToSAP(ctx, &ret); err != nil {
 				log.Printf("❌ Failed to post sales return %s (ID: %d) to SAP: %v", ret.ReturnNumber, ret.ID, err)
+				s.emitLog("sales_returns", "ERROR", fmt.Sprintf("[Upstream] sales_returns: failed to post %s: %v", ret.ReturnNumber, err))
 				stats.Errors++
 			} else if !s.cfg.DryRun {
 				stats.ReturnsPosted++
 			}
 		}
 	}
+	if stats.ReturnsPosted == 0 {
+		s.emitLog("sales_returns", "INFO", "[Upstream] sales_returns: up to date (0 unposted returns)")
+	} else {
+		s.emitLog("sales_returns", "INFO", fmt.Sprintf("[Upstream] sales_returns: %d posted", stats.ReturnsPosted))
+	}
 
 	stats.Duration = time.Since(start)
+	s.emitLog("pipeline", "INFO", fmt.Sprintf("Upstream sync complete in %v: %d transactions posted, %d orders posted, %d returns posted, %d held",
+		stats.Duration.Round(time.Millisecond), stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld))
 	return stats, nil
 }
 

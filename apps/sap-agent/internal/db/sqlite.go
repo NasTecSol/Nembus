@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,18 +22,18 @@ type SQLiteStore struct {
 }
 
 type MigrationRun struct {
-	ID             string              `json:"id"`
-	OrganizationID int                 `json:"organization_id"`
+	ID             string                  `json:"id"`
+	OrganizationID int                     `json:"organization_id"`
 	Mode           contracts.MigrationMode `json:"mode"`
-	Status         contracts.RunStatus `json:"status"`
-	TotalDomains   int                 `json:"total_domains"`
-	CompletedSteps int                 `json:"completed_steps"`
-	TotalRecords   int64               `json:"total_records"`
-	ProcessedCount int64               `json:"processed_count"`
-	FailedCount    int64               `json:"failed_count"`
-	StartedAt      time.Time           `json:"started_at"`
-	FinishedAt     *time.Time          `json:"finished_at,omitempty"`
-	ErrorMessage   string              `json:"error_message,omitempty"`
+	Status         contracts.RunStatus     `json:"status"`
+	TotalDomains   int                     `json:"total_domains"`
+	CompletedSteps int                     `json:"completed_steps"`
+	TotalRecords   int64                   `json:"total_records"`
+	ProcessedCount int64                   `json:"processed_count"`
+	FailedCount    int64                   `json:"failed_count"`
+	StartedAt      time.Time               `json:"started_at"`
+	FinishedAt     *time.Time              `json:"finished_at,omitempty"`
+	ErrorMessage   string                  `json:"error_message,omitempty"`
 }
 
 type MigrationStep struct {
@@ -59,15 +60,15 @@ type MigrationLog struct {
 }
 
 type UpstreamDispatch struct {
-	ID                int64      `json:"id"`
-	TransactionNumber string     `json:"transaction_number"`
-	TransactionDate   time.Time  `json:"transaction_date"`
-	Amount            float64    `json:"amount"`
-	SAPDocEntry       *int       `json:"sap_doc_entry,omitempty"`
-	SAPDocNum         *int       `json:"sap_doc_num,omitempty"`
-	Status            string     `json:"status"` // "posted", "held", "failed"
-	ErrorMessage      string     `json:"error_message,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID                int64     `json:"id"`
+	TransactionNumber string    `json:"transaction_number"`
+	TransactionDate   time.Time `json:"transaction_date"`
+	Amount            float64   `json:"amount"`
+	SAPDocEntry       *int      `json:"sap_doc_entry,omitempty"`
+	SAPDocNum         *int      `json:"sap_doc_num,omitempty"`
+	Status            string    `json:"status"` // "posted", "held", "failed"
+	ErrorMessage      string    `json:"error_message,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
@@ -89,6 +90,14 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	store := &SQLiteStore{db: db}
 	if err := store.initSchema(); err != nil {
 		_ = db.Close()
+		// Auto-heal if malformed due to dirty crash or terminated WAL write
+		if strings.Contains(err.Error(), "malformed") {
+			backupPath := dbPath + ".corrupt." + time.Now().Format("20060102150405")
+			_ = os.Rename(dbPath, backupPath)
+			_ = os.Remove(dbPath + "-wal")
+			_ = os.Remove(dbPath + "-shm")
+			return NewSQLiteStore(dbPath)
+		}
 		return nil, fmt.Errorf("failed to initialize sqlite schema: %w", err)
 	}
 
@@ -151,6 +160,23 @@ func (s *SQLiteStore) initSchema() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_upstream_created_at ON upstream_dispatches(id DESC);
+
+	CREATE TABLE IF NOT EXISTS downstream_watermarks (
+		domain TEXT PRIMARY KEY,
+		last_sync_time TEXT NOT NULL,
+		records_synced INTEGER DEFAULT 0
+	);
+
+	UPDATE downstream_watermarks
+	SET last_sync_time = strftime('%Y-%m-%dT00:00:00Z', 'now')
+	WHERE last_sync_time LIKE '%m=+%';
+
+	INSERT OR IGNORE INTO downstream_watermarks (domain, last_sync_time, records_synced) VALUES
+		('categories',  strftime('%Y-%m-%dT00:00:00Z', 'now'), 0),
+		('brands',      strftime('%Y-%m-%dT00:00:00Z', 'now'), 0),
+		('products',    strftime('%Y-%m-%dT00:00:00Z', 'now'), 0),
+		('barcodes',    strftime('%Y-%m-%dT00:00:00Z', 'now'), 0),
+		('price_lists', strftime('%Y-%m-%dT00:00:00Z', 'now'), 0);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -397,14 +423,26 @@ func (s *SQLiteStore) GetRecentLogs(ctx context.Context, runID string, limit int
 		limit = 100
 	}
 
-	query := `
-	SELECT id, run_id, domain, log_level, message, created_at
-	FROM migration_logs 
-	WHERE run_id = ? 
-	ORDER BY id DESC 
-	LIMIT ?;
-	`
-	rows, err := s.db.QueryContext(ctx, query, runID, limit)
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if runID == "" {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, run_id, domain, log_level, message, created_at
+			FROM migration_logs
+			ORDER BY id DESC
+			LIMIT ?;
+		`, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, run_id, domain, log_level, message, created_at
+			FROM migration_logs
+			WHERE run_id = ?
+			ORDER BY id DESC
+			LIMIT ?;
+		`, runID, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -567,6 +605,54 @@ func (s *SQLiteStore) GetUpstreamStats(ctx context.Context) (posted int, held in
 		lastFlush = &lf.Time
 	}
 	return posted, held, errors, lastFlush, nil
+}
+
+// ClearLogs deletes all entries in migration_logs.
+func (s *SQLiteStore) ClearLogs(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.ExecContext(ctx, "DELETE FROM migration_logs;")
+	return err
+}
+
+// GetDownstreamWatermark retrieves the last successful downstream sync timestamp for a domain.
+func (s *SQLiteStore) GetDownstreamWatermark(ctx context.Context, domain string) (*time.Time, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var raw string
+	err := s.db.QueryRowContext(ctx, "SELECT last_sync_time FROM downstream_watermarks WHERE domain = ?;", domain).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	for _, layout := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02 15:04:05", "2006-01-02"} {
+		if t, parseErr := time.Parse(layout, raw); parseErr == nil {
+			return &t, nil
+		}
+	}
+	return nil, fmt.Errorf("unrecognized watermark timestamp format %q", raw)
+}
+
+// SetDownstreamWatermark records the last successful sync timestamp and records count for a domain.
+func (s *SQLiteStore) SetDownstreamWatermark(ctx context.Context, domain string, t time.Time, count int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	formatted := t.UTC().Format(time.RFC3339)
+	query := `
+	INSERT INTO downstream_watermarks (domain, last_sync_time, records_synced)
+	VALUES (?, ?, ?)
+	ON CONFLICT(domain) DO UPDATE SET
+		last_sync_time = excluded.last_sync_time,
+		records_synced = excluded.records_synced;
+	`
+	_, err := s.db.ExecContext(ctx, query, domain, formatted, count)
+	return err
 }
 
 func (s *SQLiteStore) Close() error {

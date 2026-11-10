@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,6 +118,26 @@ func (e *Engine) UpdateCloudConfig(cfg config.CloudConfig) {
 	}
 }
 
+// UpdateMSSQLConfig resets the cached MSSQL client so subsequent operations connect using the new config.
+func (e *Engine) UpdateMSSQLConfig(cfg config.MSSQLConfig) {
+	e.activeRunMu.Lock()
+	defer e.activeRunMu.Unlock()
+	if e.cfg != nil {
+		e.cfg.MSSQL = cfg
+	}
+	if e.mssql != nil {
+		_ = e.mssql.Close()
+		e.mssql = nil
+	}
+}
+
+// IsRunning reports whether a migration run is currently executing in this process.
+func (e *Engine) IsRunning() bool {
+	e.activeRunMu.Lock()
+	defer e.activeRunMu.Unlock()
+	return e.activeRunCancel != nil
+}
+
 // getCloudClient returns the engine's shared CloudClient, synchronized with the latest configuration.
 // This avoids allocating a new http.Client (with its connection pool) on every domain step.
 func (e *Engine) getCloudClient() *transport.CloudClient {
@@ -158,6 +179,11 @@ func (e *Engine) broadcast(event ProgressEvent) {
 		default:
 		}
 	}
+}
+
+// BroadcastEvent sends a progress event to all subscribed WebSocket clients.
+func (e *Engine) BroadcastEvent(event ProgressEvent) {
+	e.broadcast(event)
 }
 
 func (e *Engine) StartMigration(parentCtx context.Context, mode contracts.MigrationMode, selectedDomains []contracts.DomainType) (*db.MigrationRun, error) {
@@ -226,6 +252,313 @@ func (e *Engine) CancelMigration() error {
 		})
 	}
 	return nil
+}
+
+type DownstreamStats struct {
+	Categories int           `json:"categories"`
+	UOMs       int           `json:"uoms"`
+	Products   int           `json:"products"`
+	Barcodes   int           `json:"barcodes"`
+	Prices     int           `json:"prices"`
+	Duration   time.Duration `json:"duration"`
+}
+
+// ExecuteDownstreamSync continuously synchronizes changes from SAP B1 into Nembus Cloud.
+// It tracks local watermarks so that only modified/new master data records are transferred.
+func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.DomainType) (*DownstreamStats, error) {
+	start := time.Now()
+	stats := &DownstreamStats{}
+
+	if len(domains) == 0 {
+		domains = []contracts.DomainType{
+			contracts.DomainCategories,
+			contracts.DomainBrands,
+			contracts.DomainProducts,
+			contracts.DomainBarcodes,
+			contracts.DomainPriceLists,
+		}
+	} else {
+		domains = normalizeDomainOrder(domains)
+	}
+
+	runID := "downstream"
+	if e.sqlite != nil {
+		e.sqlite.Log(ctx, runID, "pipeline", "INFO", fmt.Sprintf("Checking SAP for changes across %d domains...", len(domains)))
+	}
+	e.broadcast(ProgressEvent{
+		Type:      "downstream_step",
+		Message:   fmt.Sprintf("[Downstream] Checking SAP for changes across %d domain(s)...", len(domains)),
+		Timestamp: time.Now(),
+	})
+
+	syncStartTime := time.Now()
+
+	for _, domain := range domains {
+		var since time.Time
+		if e.sqlite != nil {
+			if wm, err := e.sqlite.GetDownstreamWatermark(ctx, string(domain)); err == nil && wm != nil {
+				since = *wm
+			}
+		}
+		if since.IsZero() {
+			// Default baseline to start of today so Downstream Sync never dumps the entire historical catalog
+			since = time.Now().Truncate(24 * time.Hour)
+			if e.sqlite != nil {
+				_ = e.sqlite.SetDownstreamWatermark(ctx, string(domain), since, 0)
+			}
+		}
+
+		processed, err := e.executeDownstreamDomainStep(ctx, domain, since)
+		if err != nil {
+			if e.sqlite != nil {
+				e.sqlite.Log(ctx, runID, string(domain), "WARN", fmt.Sprintf("Downstream sync partial failure on %s: %v", domain, err))
+			}
+			e.broadcast(ProgressEvent{
+				Type:      "downstream_step",
+				Domain:    domain,
+				Message:   fmt.Sprintf("[Downstream] %s notice: %v", domain, err),
+				Timestamp: time.Now(),
+			})
+			continue
+		}
+
+		switch domain {
+		case contracts.DomainCategories:
+			stats.Categories += int(processed)
+		case contracts.DomainUOM, contracts.DomainUOMGroups:
+			stats.UOMs += int(processed)
+		case contracts.DomainProducts:
+			stats.Products += int(processed)
+		case contracts.DomainBarcodes:
+			stats.Barcodes += int(processed)
+		case contracts.DomainPriceLists:
+			stats.Prices += int(processed)
+		}
+
+		// Update watermark for successfully synced domain
+		if e.sqlite != nil {
+			_ = e.sqlite.SetDownstreamWatermark(ctx, string(domain), syncStartTime, int(processed))
+		}
+
+		msg := fmt.Sprintf("[Downstream] %s: synced %d records", domain, processed)
+		if processed == 0 {
+			msg = fmt.Sprintf("[Downstream] %s: up to date (0 changes)", domain)
+		}
+
+		if e.sqlite != nil {
+			e.sqlite.Log(ctx, runID, string(domain), "INFO", msg)
+		}
+		e.broadcast(ProgressEvent{
+			Type:           "downstream_step",
+			Domain:         domain,
+			ProcessedCount: processed,
+			Message:        msg,
+			Timestamp:      time.Now(),
+		})
+	}
+
+	stats.Duration = time.Since(start)
+	completeMsg := fmt.Sprintf("Downstream sync complete in %v: %d products, %d barcodes, %d prices, %d categories",
+		stats.Duration.Round(time.Millisecond), stats.Products, stats.Barcodes, stats.Prices, stats.Categories)
+
+	if e.sqlite != nil {
+		e.sqlite.Log(ctx, runID, "pipeline", "INFO", completeMsg)
+	}
+	e.broadcast(ProgressEvent{
+		Type:      "downstream_step",
+		Message:   fmt.Sprintf("[Downstream] %s", completeMsg),
+		Timestamp: time.Now(),
+	})
+
+	return stats, nil
+}
+
+func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contracts.DomainType, since time.Time) (int64, error) {
+	domain = contracts.NormalizeDomain(domain)
+	mssqlClient, err := e.getMSSQLClient()
+	if err != nil {
+		return 0, err
+	}
+	cloudClient := e.getCloudClient()
+	cloudCfg := config.Get().Cloud
+	batchSize := migrationIngestChunkSize(domain, e.cfg.BatchSize)
+	runID := "downstream"
+
+	switch domain {
+	case contracts.DomainCategories:
+		ext := extractors.NewCatalogExtractor(mssqlClient)
+		cats, err := ext.ExtractCategories(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if len(cats) == 0 {
+			return 0, nil
+		}
+		payload := &contracts.MigrationBatchPayload{
+			BatchID:        uuid.New().String(),
+			RunID:          runID,
+			OrganizationID: cloudCfg.OrganizationID,
+			Domain:         domain,
+			Categories:     cats,
+			IsLastBatch:    true,
+			Timestamp:      time.Now(),
+		}
+		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+		if err != nil {
+			return 0, err
+		}
+		return int64(resp.RecordsStaged), nil
+
+	case contracts.DomainBrands:
+		ext := extractors.NewCatalogExtractor(mssqlClient)
+		brands, err := ext.ExtractBrands(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if len(brands) == 0 {
+			return 0, nil
+		}
+		payload := &contracts.MigrationBatchPayload{
+			BatchID:        uuid.New().String(),
+			RunID:          runID,
+			OrganizationID: cloudCfg.OrganizationID,
+			Domain:         domain,
+			Brands:         brands,
+			IsLastBatch:    true,
+			Timestamp:      time.Now(),
+		}
+		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+		if err != nil {
+			return 0, err
+		}
+		return int64(resp.RecordsStaged), nil
+
+	case contracts.DomainProducts:
+		ext := extractors.NewCatalogExtractor(mssqlClient)
+		products, err := ext.ExtractProductsDelta(ctx, since)
+		if err != nil {
+			return 0, err
+		}
+		if len(products) == 0 {
+			return 0, nil
+		}
+		var totalStaged int64
+		for i := 0; i < len(products); i += batchSize {
+			end := i + batchSize
+			if end > len(products) {
+				end = len(products)
+			}
+			chunk := products[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				Products:       chunk,
+				IsLastBatch:    end == len(products),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+		}
+		return totalStaged, nil
+
+	case contracts.DomainBarcodes:
+		ext := extractors.NewCatalogExtractor(mssqlClient)
+		barcodes, err := ext.ExtractBarcodesDelta(ctx, since)
+		if err != nil {
+			return 0, err
+		}
+		if len(barcodes) == 0 {
+			return 0, nil
+		}
+		var totalStaged int64
+		for i := 0; i < len(barcodes); i += batchSize {
+			end := i + batchSize
+			if end > len(barcodes) {
+				end = len(barcodes)
+			}
+			chunk := barcodes[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				Barcodes:       chunk,
+				IsLastBatch:    end == len(barcodes),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+		}
+		return totalStaged, nil
+
+	case contracts.DomainPriceLists:
+		ext := extractors.NewCatalogExtractor(mssqlClient)
+		priceItems, err := ext.ExtractPriceListItemsDelta(ctx, since)
+		if err != nil {
+			return 0, err
+		}
+		if len(priceItems) == 0 {
+			return 0, nil
+		}
+
+		directItems, heldNotices := cloudClient.FilterDownstreamPriceItems(ctx, priceItems)
+		for _, notice := range heldNotices {
+			msg := fmt.Sprintf("[Downstream] price_lists: %s", notice)
+			if e.sqlite != nil {
+				e.sqlite.Log(ctx, runID, string(domain), "INFO", msg)
+			}
+			e.broadcast(ProgressEvent{
+				Type:      "downstream_step",
+				Domain:    domain,
+				Message:   msg,
+				Timestamp: time.Now(),
+			})
+		}
+
+		var totalStaged int64 = int64(len(heldNotices))
+		if len(directItems) == 0 {
+			return totalStaged, nil
+		}
+
+		for i := 0; i < len(directItems); i += batchSize {
+			end := i + batchSize
+			if end > len(directItems) {
+				end = len(directItems)
+			}
+			chunk := directItems[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: (i / batchSize) + 1,
+				PriceItems:     chunk,
+				IsLastBatch:    end == len(directItems),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+		}
+		return totalStaged, nil
+
+	default:
+		// Fallback for any other domains (e.g. uom, uom_groups)
+		p, _, _, err := e.executeDomainStep(ctx, runID, domain)
+		return p, err
+	}
 }
 
 func (e *Engine) executePipeline(ctx context.Context, run *db.MigrationRun, domains []contracts.DomainType) {
@@ -371,21 +704,25 @@ func migrationIngestChunkSize(domain contracts.DomainType, configured int) int {
 	}
 	cap := configured
 	switch domain {
+	case contracts.DomainUOMGroups:
+		if cap > 5 {
+			cap = 5
+		}
 	case contracts.DomainProducts:
-		if cap > 50 {
-			cap = 50
+		if cap > 25 {
+			cap = 25
 		}
 	case contracts.DomainBarcodes:
-		if cap > 200 {
-			cap = 200
-		}
-	case contracts.DomainInventory, contracts.DomainPartners, contracts.DomainBPAddresses:
 		if cap > 100 {
 			cap = 100
 		}
+	case contracts.DomainInventory, contracts.DomainPartners, contracts.DomainBPAddresses:
+		if cap > 50 {
+			cap = 50
+		}
 	case contracts.DomainPriceLists:
-		if cap > 150 {
-			cap = 150
+		if cap > 100 {
+			cap = 100
 		}
 	}
 	return cap
@@ -495,20 +832,32 @@ func (e *Engine) executeDomainStep(ctx context.Context, runID string, domain con
 		if len(groups) == 0 {
 			return 0, 0, "", nil
 		}
-		payload := &contracts.MigrationBatchPayload{
-			BatchID:        uuid.New().String(),
-			RunID:          runID,
-			OrganizationID: cloudCfg.OrganizationID,
-			Domain:         domain,
-			UOMGroups:      groups,
-			IsLastBatch:    true,
-			Timestamp:      time.Now(),
+		var totalStaged, totalFailed int64
+		for i := 0; i < len(groups); i += batchSize {
+			end := i + batchSize
+			if end > len(groups) {
+				end = len(groups)
+			}
+			chunk := groups[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				UOMGroups:      chunk,
+				IsLastBatch:    end == len(groups),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, totalFailed, "", err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+			totalFailed += int64(resp.RecordsFailed)
+			e.broadcastProgress(runID, domain, totalStaged, int64(len(groups)))
 		}
-		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
-		if err != nil {
-			return 0, 0, "", err
-		}
-		return int64(resp.RecordsStaged), int64(resp.RecordsFailed), "", nil
+		return totalStaged, totalFailed, "", nil
 
 	case contracts.DomainCategories:
 		ext := extractors.NewCatalogExtractor(mssqlClient)
@@ -1386,6 +1735,9 @@ func (e *Engine) retryMSSQLExtract(ctx context.Context, runID string, domain con
 // broadcastProgress sends a step_progress event during chunked batch processing.
 // Pass total = -1 when the total is unknown (streaming window mode).
 func (e *Engine) broadcastProgress(runID string, domain contracts.DomainType, processed, total int64) {
+	if strings.HasPrefix(runID, "downstream") {
+		return
+	}
 	pct := 0.0
 	if total > 0 {
 		pct = float64(processed) / float64(total) * 100
