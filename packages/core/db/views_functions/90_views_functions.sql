@@ -2075,6 +2075,7 @@ RETURNS TABLE (
 DECLARE
     v_req RECORD;
     v_item RECORD;
+    v_need RECORD;
     v_available DECIMAL(15,3);
     v_qty DECIMAL(15,3);
     v_uom_code VARCHAR;
@@ -2103,6 +2104,33 @@ BEGIN
     END IF;
 
     IF v_is_reserved THEN
+        -- Upfront validation pass: lock all items and verify source stock sufficiency before mutating anything
+        PERFORM 1 FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE;
+
+        FOR v_need IN
+            SELECT i.product_id, i.product_variant_id,
+                   SUM(COALESCE(fn_convert_uom_quantity(i.product_id, u.code, q.qty), q.qty)) AS base_qty
+            FROM transfer_request_items i
+            LEFT JOIN units_of_measure u ON u.id = i.uom_id
+            CROSS JOIN LATERAL (SELECT CASE WHEN i.approved_quantity > 0 THEN i.approved_quantity ELSE i.requested_quantity END AS qty) q
+            WHERE i.transfer_request_id = p_transfer_request_id AND q.qty > 0
+            GROUP BY i.product_id, i.product_variant_id
+            ORDER BY i.product_id, i.product_variant_id NULLS FIRST
+        LOOP
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_need.product_id
+              AND (product_variant_id = v_need.product_variant_id OR (product_variant_id IS NULL AND v_need.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_need.base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_need.product_id);
+                RETURN;
+            END IF;
+        END LOOP;
+
+        -- Mutation pass: all stock verified, apply allocations and reservations
         FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
             v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
             IF v_qty <= 0 THEN
@@ -2123,8 +2151,7 @@ BEGIN
             FOR UPDATE;
 
             IF v_available IS NULL OR v_available < v_base_qty THEN
-                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_item.product_id);
-                RETURN;
+                RAISE EXCEPTION 'Insufficient stock to reserve product ID % at source store.', v_item.product_id;
             END IF;
 
             -- Allocate stock at source store
@@ -2225,6 +2252,7 @@ RETURNS TABLE (
 DECLARE
     v_req RECORD;
     v_item RECORD;
+    v_need RECORD;
     v_available DECIMAL(15,3);
     v_qty DECIMAL(15,3);
     v_uom_code VARCHAR;
@@ -2244,6 +2272,33 @@ BEGIN
             v_expires_at := (CURRENT_DATE + INTERVAL '1 day');
         END IF;
 
+        -- Upfront validation pass: lock items and check stock sufficiency before mutating anything
+        PERFORM 1 FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE;
+
+        FOR v_need IN
+            SELECT i.product_id, i.product_variant_id,
+                   SUM(COALESCE(fn_convert_uom_quantity(i.product_id, u.code, q.qty), q.qty)) AS base_qty
+            FROM transfer_request_items i
+            LEFT JOIN units_of_measure u ON u.id = i.uom_id
+            CROSS JOIN LATERAL (SELECT CASE WHEN i.approved_quantity > 0 THEN i.approved_quantity ELSE i.requested_quantity END AS qty) q
+            WHERE i.transfer_request_id = p_transfer_request_id AND q.qty > 0
+            GROUP BY i.product_id, i.product_variant_id
+            ORDER BY i.product_id, i.product_variant_id NULLS FIRST
+        LOOP
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_need.product_id
+              AND (product_variant_id = v_need.product_variant_id OR (product_variant_id IS NULL AND v_need.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_need.base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_need.product_id);
+                RETURN;
+            END IF;
+        END LOOP;
+
+        -- Mutation pass: apply allocations and reservations
         FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
             v_qty := CASE WHEN v_item.approved_quantity > 0 THEN v_item.approved_quantity ELSE v_item.requested_quantity END;
             IF v_qty <= 0 THEN
@@ -2264,8 +2319,7 @@ BEGIN
             FOR UPDATE;
 
             IF v_available IS NULL OR v_available < v_base_qty THEN
-                RETURN QUERY SELECT false, format('Insufficient stock to reserve product ID %s at source store.', v_item.product_id);
-                RETURN;
+                RAISE EXCEPTION 'Insufficient stock to reserve product ID % at source store.', v_item.product_id;
             END IF;
 
             -- Allocate stock at source store
@@ -2304,6 +2358,7 @@ RETURNS TABLE (
 DECLARE
     v_req RECORD;
     v_item RECORD;
+    v_need RECORD;
     v_available DECIMAL(15,3);
     v_qty DECIMAL(15,3);
     v_uom_code VARCHAR;
@@ -2318,6 +2373,34 @@ BEGIN
     IF v_req.status NOT IN ('approved', 'pending_approval', 'draft') THEN
         RETURN QUERY SELECT false, 'Transfer request must be approved to ship.';
         RETURN;
+    END IF;
+
+    -- If stock is not pre-reserved, run an upfront validation pass across all items first
+    IF NOT COALESCE(v_req.is_stock_reserved, false) THEN
+        PERFORM 1 FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE;
+
+        FOR v_need IN
+            SELECT i.product_id, i.product_variant_id,
+                   SUM(COALESCE(fn_convert_uom_quantity(i.product_id, u.code, q.qty), q.qty)) AS base_qty
+            FROM transfer_request_items i
+            LEFT JOIN units_of_measure u ON u.id = i.uom_id
+            CROSS JOIN LATERAL (SELECT CASE WHEN i.approved_quantity > 0 THEN i.approved_quantity ELSE i.requested_quantity END AS qty) q
+            WHERE i.transfer_request_id = p_transfer_request_id AND q.qty > 0
+            GROUP BY i.product_id, i.product_variant_id
+            ORDER BY i.product_id, i.product_variant_id NULLS FIRST
+        LOOP
+            SELECT quantity_available INTO v_available
+            FROM inventory_stock
+            WHERE product_id = v_need.product_id
+              AND (product_variant_id = v_need.product_variant_id OR (product_variant_id IS NULL AND v_need.product_variant_id IS NULL))
+              AND store_id = v_req.from_store_id
+            FOR UPDATE;
+
+            IF v_available IS NULL OR v_available < v_need.base_qty THEN
+                RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_need.product_id);
+                RETURN;
+            END IF;
+        END LOOP;
     END IF;
 
     FOR v_item IN SELECT * FROM transfer_request_items WHERE transfer_request_id = p_transfer_request_id FOR UPDATE LOOP
@@ -2363,8 +2446,7 @@ BEGIN
             FOR UPDATE;
 
             IF v_available IS NULL OR v_available < v_base_qty THEN
-                RETURN QUERY SELECT false, format('Insufficient stock for product ID %s at source store.', v_item.product_id);
-                RETURN;
+                RAISE EXCEPTION 'Insufficient stock for product ID % at source store.', v_item.product_id;
             END IF;
 
             UPDATE inventory_stock

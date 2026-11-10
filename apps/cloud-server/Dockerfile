@@ -37,7 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64 && \
-    chmod -R 777 /var/cache/nembus && \
+    # Root-owned and not group/world writable: these libraries are dlopen()ed and registered
+    # with ldconfig, so only the server's user (root) may modify them.
+    chown -R root:root /var/cache/nembus && \
+    chmod -R u=rwX,go=rX /var/cache/nembus && \
     echo "/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64" > /etc/ld.so.conf.d/nembus_biometrics.conf && \
     ldconfig
 ENV XDG_CACHE_HOME=/var/cache/nembus

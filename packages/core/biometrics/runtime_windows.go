@@ -3,6 +3,7 @@
 package biometrics
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -80,7 +81,9 @@ func InitRuntime() error {
 				continue
 			}
 			destPath := filepath.Join(runtimeDir, entry.Name())
-			if info, statErr := os.Stat(destPath); statErr != nil || info.Size() != int64(len(data)) {
+			// Compare full contents (not just size) so a same-length tampered DLL is replaced
+			// before it is loaded.
+			if existing, readErr := os.ReadFile(destPath); readErr != nil || !bytes.Equal(existing, data) {
 				_ = os.WriteFile(destPath, data, 0755)
 			}
 		}

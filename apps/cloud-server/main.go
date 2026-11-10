@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/biometrics"
@@ -539,9 +540,11 @@ func main() {
 		backuppb.RegisterBackupServiceServer(grpcServer, backupSrv)
 
 		syncSrv := grpcbackup.NewSyncServer(tenantManager, masterPool)
-		if os.Getenv("NEMBUS_REQUIRE_SYNC_TOKEN") == "true" {
-			syncSrv.SetRequireTokenAuth(true)
+		requireSyncToken := !strings.EqualFold(strings.TrimSpace(os.Getenv("NEMBUS_REQUIRE_SYNC_TOKEN")), "false")
+		if !requireSyncToken {
+			log.Printf("⚠️  SECURITY WARNING: NEMBUS_REQUIRE_SYNC_TOKEN=false — gRPC sync streams accept UNAUTHENTICATED clients for any tenant. Never use in production.")
 		}
+		syncSrv.SetRequireTokenAuth(requireSyncToken)
 		syncpb.RegisterSyncServiceServer(grpcServer, syncSrv)
 
 		// Enable reflection so grpcurl/Postman can discover services at runtime

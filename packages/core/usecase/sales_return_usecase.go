@@ -2,9 +2,12 @@ package usecase
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,11 +15,14 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type SalesReturnUseCase struct {
 	repo    *repository.Queries
+	pool    *pgxpool.Pool
 	zatcaUC *ZatcaUseCase
 }
 
@@ -28,8 +34,52 @@ func (uc *SalesReturnUseCase) SetRepository(repo *repository.Queries) {
 	uc.repo = repo
 }
 
+func (uc *SalesReturnUseCase) SetPool(pool *pgxpool.Pool) {
+	uc.pool = pool
+}
+
 func (uc *SalesReturnUseCase) SetZatcaUseCase(zuc *ZatcaUseCase) {
 	uc.zatcaUC = zuc
+}
+
+// GenerateReturnNumber creates a collision-safe identifier for sales_returns.return_number.
+// It combines a timestamp prefix (down to second) with 12 hex characters of cryptographic entropy (29 chars total),
+// guaranteeing uniqueness within the 50-character column limit.
+func GenerateReturnNumber(t time.Time) (string, error) {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to nanosecond entropy if crypto/rand is unavailable
+		return fmt.Sprintf("RET-%s-%012x", t.Format("20060102150405"), time.Now().UnixNano()&0xFFFFFFFFFFFF), nil
+	}
+	return fmt.Sprintf("RET-%s-%s", t.Format("20060102150405"), hex.EncodeToString(b)), nil
+}
+
+func numericToRat(n pgtype.Numeric) *big.Rat {
+	if !n.Valid || n.Int == nil {
+		return new(big.Rat)
+	}
+	r := new(big.Rat).SetInt(n.Int)
+	if n.Exp > 0 {
+		mul := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n.Exp)), nil)
+		r.Mul(r, new(big.Rat).SetInt(mul))
+	} else if n.Exp < 0 {
+		denom := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-n.Exp)), nil)
+		r.Quo(r, new(big.Rat).SetInt(denom))
+	}
+	return r
+}
+
+func parseQuantity(n pgtype.Numeric, raw string) *big.Rat {
+	if n.Valid && n.Int != nil {
+		return numericToRat(n)
+	}
+	raw = strings.TrimSpace(raw)
+	if raw != "" {
+		if r, ok := new(big.Rat).SetString(raw); ok {
+			return r
+		}
+	}
+	return new(big.Rat)
 }
 
 func (uc *SalesReturnUseCase) repoOrErr() *repository.Response {
@@ -76,8 +126,103 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		return resp
 	}
 
-	// 1. Prepare Return Header
-	returnNumber := fmt.Sprintf("RET-%d", time.Now().Unix())
+	activeRepo := uc.repo
+	var tx pgx.Tx
+	if pool := resolvePoolFromContext(ctx, uc.pool); pool != nil {
+		startedTx, txErr := pool.Begin(ctx)
+		if txErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to begin sales return transaction: "+txErr.Error(), nil)
+		}
+		tx = startedTx
+		defer func() {
+			if tx != nil {
+				_ = tx.Rollback(ctx)
+			}
+		}()
+		activeRepo = uc.repo.WithTx(tx)
+	}
+
+	// 1. Validate all lines and group quantities by OriginalLineID before any DB mutations
+	type preparedLine struct {
+		index     int
+		input     ProcessReturnLineInput
+		qty       pgtype.Numeric
+		uPrice    pgtype.Numeric
+		refAmount pgtype.Numeric
+		qtyRat    *big.Rat
+	}
+
+	preparedLines := make([]preparedLine, len(in.Lines))
+	var originalLineIDs []int32
+	seenOrigIDs := make(map[int32]bool)
+	requestedPerOrigLine := make(map[int32]*big.Rat)
+
+	for i, l := range in.Lines {
+		qty, _ := uc.repo.ParseNumeric(ctx, l.Quantity)
+		uPrice, _ := uc.repo.ParseNumeric(ctx, l.UnitPrice)
+		refAmount, _ := uc.repo.ParseNumeric(ctx, l.RefundAmount)
+
+		qtyRat := parseQuantity(qty, l.Quantity)
+		if qtyRat.Sign() <= 0 {
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("invalid return quantity for line %d: must be greater than zero", i+1), nil)
+		}
+
+		preparedLines[i] = preparedLine{
+			index:     i,
+			input:     l,
+			qty:       qty,
+			uPrice:    uPrice,
+			refAmount: refAmount,
+			qtyRat:    qtyRat,
+		}
+
+		if l.OriginalLineID != nil {
+			origID := *l.OriginalLineID
+			if !seenOrigIDs[origID] {
+				seenOrigIDs[origID] = true
+				originalLineIDs = append(originalLineIDs, origID)
+			}
+			if curr, ok := requestedPerOrigLine[origID]; ok {
+				requestedPerOrigLine[origID] = new(big.Rat).Add(curr, qtyRat)
+			} else {
+				requestedPerOrigLine[origID] = new(big.Rat).Set(qtyRat)
+			}
+		}
+	}
+
+	// 2. Lock original POS transaction lines in ascending ID order to prevent concurrent return deadlocks
+	sort.Slice(originalLineIDs, func(i, j int) bool { return originalLineIDs[i] < originalLineIDs[j] })
+	for _, origID := range originalLineIDs {
+		origLine, origErr := activeRepo.LockPosTransactionLineForUpdate(ctx, origID)
+		if origErr != nil {
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("original transaction line %d not found: %v", origID, origErr), nil)
+		}
+
+		prevReturned, prevErr := activeRepo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: origID, Valid: true})
+		if prevErr != nil {
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to get returned quantity for original line %d: %v", origID, prevErr), nil)
+		}
+
+		origRat := numericToRat(origLine.Quantity)
+		prevRat := numericToRat(prevReturned)
+		reqTotalRat := requestedPerOrigLine[origID]
+		totalAfterReturn := new(big.Rat).Add(prevRat, reqTotalRat)
+
+		if totalAfterReturn.Cmp(origRat) > 0 {
+			availRat := new(big.Rat).Sub(origRat, prevRat)
+			reqFloat, _ := reqTotalRat.Float64()
+			availFloat, _ := availRat.Float64()
+			origFloat, _ := origRat.Float64()
+			prevFloat, _ := prevRat.Float64()
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("return quantity %.3f exceeds available returnable quantity %.3f (original: %.3f, previously returned: %.3f)", reqFloat, availFloat, origFloat, prevFloat), nil)
+		}
+	}
+
+	// 3. Generate collision-safe return number (RET-YYYYMMDDHHMMSS-<entropy>)
+	returnNumber, err := GenerateReturnNumber(time.Now())
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to generate return number: "+err.Error(), nil)
+	}
 
 	subtotal, _ := uc.repo.ParseNumeric(ctx, in.Subtotal)
 	taxAmount, _ := uc.repo.ParseNumeric(ctx, in.TaxAmount)
@@ -121,51 +266,19 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		headerParams.CustomerID = pgtype.Int4{Int32: *in.CustomerID, Valid: true}
 	}
 
-	salesReturn, err := uc.repo.CreateSalesReturn(ctx, headerParams)
+	salesReturn, err := activeRepo.CreateSalesReturn(ctx, headerParams)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, "failed to create return header: "+err.Error(), nil)
 	}
 
-	// 2. Prepare and Create Return Lines
-	createdReturnLines := make([]repository.SalesReturnLine, 0, len(in.Lines))
-	for i, l := range in.Lines {
-		qty, _ := uc.repo.ParseNumeric(ctx, l.Quantity)
-		uPrice, _ := uc.repo.ParseNumeric(ctx, l.UnitPrice)
-		refAmount, _ := uc.repo.ParseNumeric(ctx, l.RefundAmount)
-
-		// Validation: Check if returning more than available quantity on original line
-		if l.OriginalLineID != nil {
-			prevReturned, prevErr := uc.repo.GetReturnedQuantityByLineID(ctx, pgtype.Int4{Int32: *l.OriginalLineID, Valid: true})
-			if prevErr == nil && prevReturned.Valid && qty.Valid {
-				var prevQtyFloat float64
-				if vPrev, vErr := prevReturned.Value(); vErr == nil && vPrev != nil {
-					if s, ok := vPrev.(string); ok {
-						prevQtyFloat, _ = strconv.ParseFloat(s, 64)
-					}
-				}
-				var reqQtyFloat float64
-				if vReq, vErr := qty.Value(); vErr == nil && vReq != nil {
-					if s, ok := vReq.(string); ok {
-						reqQtyFloat, _ = strconv.ParseFloat(s, 64)
-					}
-				}
-				if reqQtyFloat <= 0 {
-					return utils.NewResponse(utils.CodeError, fmt.Sprintf("invalid return quantity %.3f for line %d: must be greater than zero", reqQtyFloat, i+1), nil)
-				}
-				origLine, origErr := uc.repo.GetPosTransactionLineByID(ctx, *l.OriginalLineID)
-				if origErr == nil && origLine.Quantity.Valid {
-					var origQtyFloat float64
-					if vOrig, vErr := origLine.Quantity.Value(); vErr == nil && vOrig != nil {
-						if s, ok := vOrig.(string); ok {
-							origQtyFloat, _ = strconv.ParseFloat(s, 64)
-						}
-					}
-					if origQtyFloat > 0 && (reqQtyFloat+prevQtyFloat) > origQtyFloat {
-						return utils.NewResponse(utils.CodeError, fmt.Sprintf("return quantity %.3f exceeds available returnable quantity %.3f (original: %.3f, previously returned: %.3f)", reqQtyFloat, origQtyFloat-prevQtyFloat, origQtyFloat, prevQtyFloat), nil)
-					}
-				}
-			}
-		}
+	// 4. Create Return Lines and apply inventory adjustments inside transaction
+	createdReturnLines := make([]repository.SalesReturnLine, 0, len(preparedLines))
+	for _, pl := range preparedLines {
+		i := pl.index
+		l := pl.input
+		qty := pl.qty
+		uPrice := pl.uPrice
+		refAmount := pl.refAmount
 
 		lineParams := repository.CreateSalesReturnLineParams{
 			ReturnID:      salesReturn.ID,
@@ -191,7 +304,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 			lineParams.BatchNumber = pgtype.Text{String: *l.BatchNumber, Valid: true}
 		}
 
-		createdLine, err := uc.repo.CreateSalesReturnLine(ctx, lineParams)
+		createdLine, err := activeRepo.CreateSalesReturnLine(ctx, lineParams)
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create return line %d: %s", i+1, err.Error()), nil)
 		}
@@ -200,7 +313,7 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 		// F2.3: Restock inventory when ReturnToStock is true and condition is good or empty
 		isGoodCondition := l.Condition == "" || strings.ToLower(l.Condition) == "good"
 		if l.ReturnToStock && isGoodCondition {
-			_, adjErr := uc.repo.AdjustInventoryStockByProductAndStore(ctx, repository.AdjustInventoryStockByProductAndStoreParams{
+			_, adjErr := activeRepo.AdjustInventoryStockByProductAndStore(ctx, repository.AdjustInventoryStockByProductAndStoreParams{
 				ProductID:         l.ProductID,
 				ProductVariantID:  lineParams.ProductVariantID,
 				StoreID:           in.StoreID,
@@ -208,17 +321,17 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 				QuantityAvailable: qty,
 			})
 			if adjErr != nil {
-				fmt.Printf("Warning: failed to adjust inventory stock on return: %v\n", adjErr)
+				return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to adjust inventory stock on return: %v", adjErr), nil)
 			}
 
 			// Determine unit cost and total cost for stock movement audit
 			unitCost := uPrice
 			if l.CostPrice != "" {
-				if parsedCost, err := uc.repo.ParseNumeric(ctx, l.CostPrice); err == nil && parsedCost.Valid {
+				if parsedCost, err := activeRepo.ParseNumeric(ctx, l.CostPrice); err == nil && parsedCost.Valid {
 					unitCost = parsedCost
 				}
 			} else {
-				if prod, pErr := uc.repo.GetProduct(ctx, l.ProductID); pErr == nil && prod.CostPrice.Valid {
+				if prod, pErr := activeRepo.GetProduct(ctx, l.ProductID); pErr == nil && prod.CostPrice.Valid {
 					unitCost = prod.CostPrice
 				}
 			}
@@ -236,12 +349,12 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 				}
 			}
 			if costVal > 0 && qtyVal > 0 {
-				if parsedTot, err := uc.repo.ParseNumeric(ctx, fmt.Sprintf("%.2f", costVal*qtyVal)); err == nil && parsedTot.Valid {
+				if parsedTot, err := activeRepo.ParseNumeric(ctx, fmt.Sprintf("%.2f", costVal*qtyVal)); err == nil && parsedTot.Valid {
 					totalCost = parsedTot
 				}
 			}
 
-			_, movErr := uc.repo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
+			_, movErr := activeRepo.CreateStockMovement(ctx, repository.CreateStockMovementParams{
 				MovementType:     "return",
 				ReferenceType:    pgtype.Text{String: "sales_return", Valid: true},
 				ReferenceID:      pgtype.Int4{Int32: salesReturn.ID, Valid: true},
@@ -258,43 +371,51 @@ func (uc *SalesReturnUseCase) ProcessSalesReturn(ctx context.Context, in Process
 				Metadata:         json.RawMessage([]byte("{}")),
 			})
 			if movErr != nil {
-				fmt.Printf("Warning: failed to create stock movement on return: %v\n", movErr)
+				return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to create stock movement on return: %v", movErr), nil)
 			}
 		}
 	}
 
-	// 3. Update original POS transaction status if referenced
+	// 5. Update original POS transaction status if referenced
 	if in.OriginalTransactionID != nil {
 		newStatus := "partially_refunded"
-		origTxn, err := uc.repo.GetPosTransaction(ctx, *in.OriginalTransactionID)
+		origTxn, err := activeRepo.GetPosTransaction(ctx, *in.OriginalTransactionID)
 		if err == nil && origTxn.TotalAmount.Valid && totalRefund.Valid {
 			if origTxn.TotalAmount.Int != nil && totalRefund.Int != nil && origTxn.TotalAmount.Int.Cmp(totalRefund.Int) <= 0 {
 				newStatus = "refunded"
 			}
 		}
-		err = uc.repo.UpdatePOSTransactionStatus(ctx, repository.UpdatePOSTransactionStatusParams{
+		err = activeRepo.UpdatePOSTransactionStatus(ctx, repository.UpdatePOSTransactionStatusParams{
 			ID:     *in.OriginalTransactionID,
 			Status: pgtype.Text{String: newStatus, Valid: true},
 		})
 		if err != nil {
-			fmt.Printf("Warning: failed to update pos_transaction status: %s\n", err.Error())
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to update pos_transaction status: %v", err), nil)
 		}
 	}
 
-	// 4. Adjust drawer expected_balance for cash/drawer refunds
+	// 6. Adjust drawer expected_balance for cash/drawer refunds
 	if in.SessionID != nil && totalRefund.Valid && (in.RefundMethod == "cash" || in.RefundMethod == "") {
 		negRefund := totalRefund
 		if negRefund.Int != nil {
 			negRefund = pgtype.Numeric{Int: new(big.Int).Neg(negRefund.Int), Exp: negRefund.Exp, Valid: true}
 		}
 
-		err = uc.repo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
+		err = activeRepo.UpdateSessionExpectedBalance(ctx, repository.UpdateSessionExpectedBalanceParams{
 			ID:              *in.SessionID,
 			ExpectedBalance: negRefund,
 		})
 		if err != nil {
-			fmt.Printf("Error: failed to update session balance for refund: %s\n", err.Error())
+			return utils.NewResponse(utils.CodeError, fmt.Sprintf("failed to update session balance for refund: %v", err), nil)
 		}
+	}
+
+	// 7. Commit database transaction
+	if tx != nil {
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to commit sales return transaction: "+commitErr.Error(), nil)
+		}
+		tx = nil
 	}
 
 	// 5. F2.4: ZATCA Phase 2 Credit Note Signing (381)

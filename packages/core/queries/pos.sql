@@ -11,3 +11,6 @@ WHERE id = $1;
 
 -- name: GetPosTransactionLineByID :one
 SELECT * FROM pos_transaction_lines WHERE id = $1;
+
+-- name: LockPosTransactionLineForUpdate :one
+SELECT * FROM pos_transaction_lines WHERE id = $1 FOR UPDATE;

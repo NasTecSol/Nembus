@@ -40,6 +40,36 @@ func (q *Queries) GetPosTransactionLineByID(ctx context.Context, id int32) (PosT
 	return i, err
 }
 
+const lockPosTransactionLineForUpdate = `-- name: LockPosTransactionLineForUpdate :one
+SELECT id, transaction_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, line_number, serial_number, batch_number, metadata, created_at, updated_at FROM pos_transaction_lines WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockPosTransactionLineForUpdate(ctx context.Context, id int32) (PosTransactionLine, error) {
+	row := q.db.QueryRow(ctx, lockPosTransactionLineForUpdate, id)
+	var i PosTransactionLine
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
+		&i.CostPrice,
+		&i.LineNumber,
+		&i.SerialNumber,
+		&i.BatchNumber,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const patchPosTransactionMetadata = `-- name: PatchPosTransactionMetadata :exec
 UPDATE pos_transactions
 SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,

@@ -22,6 +22,46 @@ import (
 
 const TenantSlugMetadataKey = "x-tenant-id"
 
+// VerifyTerminalSyncToken verifies a raw sync token against active pos_terminals in the tenant pool.
+func VerifyTerminalSyncToken(ctx context.Context, pool *pgxpool.Pool, rawToken string, storeID int32) error {
+	if rawToken == "" {
+		return status.Error(codes.Unauthenticated, "missing terminal sync token")
+	}
+	if pool == nil {
+		return status.Error(codes.Unavailable, "tenant DB pool unavailable")
+	}
+
+	candidateHash := usecase.HashSyncToken(rawToken)
+	rows, err := pool.Query(ctx, `
+		SELECT COALESCE(sync_token_hash, '')
+		FROM pos_terminals
+		WHERE sync_token_hash IS NOT NULL
+		  AND ($1 <= 0 OR store_id = $1)
+		  AND COALESCE(is_active, true) = true
+	`, storeID)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "verify terminal sync token: %v", err)
+	}
+	defer rows.Close()
+
+	matched := false
+	for rows.Next() {
+		var storedHash string
+		if err := rows.Scan(&storedHash); err != nil {
+			continue
+		}
+		if len(storedHash) == len(candidateHash) &&
+			subtle.ConstantTimeCompare([]byte(storedHash), []byte(candidateHash)) == 1 {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return status.Error(codes.Unauthenticated, "invalid or revoked terminal sync token")
+	}
+	return nil
+}
+
 func (s *SyncServer) verifyStreamAuth(ctx context.Context, tenantSlug, deviceID string, storeID int32) error {
 	var rawToken string
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
@@ -57,36 +97,29 @@ func (s *SyncServer) verifyStreamAuth(ctx context.Context, tenantSlug, deviceID 
 		return status.Errorf(codes.NotFound, "tenant DB pool unavailable: %v", err)
 	}
 
-	candidateHash := usecase.HashSyncToken(rawToken)
-	rows, err := pool.Query(ctx, `
-		SELECT COALESCE(sync_token_hash, '')
-		FROM pos_terminals
-		WHERE sync_token_hash IS NOT NULL
-		  AND ($1 <= 0 OR store_id = $1)
-		  AND COALESCE(is_active, true) = true
-	`, storeID)
-	if err != nil {
-		if s.requireTokenAuth {
-			return status.Errorf(codes.Internal, "verify terminal sync token: %v", err)
+	return VerifyTerminalSyncToken(ctx, pool, rawToken, storeID)
+}
+
+// bindStreamTenant binds and authenticates a stream to a tenant slug.
+// On the first message, it verifies the token against tenantSlug and pins *bound.
+// On subsequent messages, if the message specifies a different tenant, it returns PermissionDenied.
+func (s *SyncServer) bindStreamTenant(ctx context.Context, bound *string, slug, deviceID string, storeID int32) error {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		if *bound == "" {
+			return status.Error(codes.InvalidArgument, "tenant_slug is required")
 		}
+		return status.Error(codes.InvalidArgument, "tenant_slug is required on every event")
+	}
+	if *bound == "" {
+		if err := s.verifyStreamAuth(ctx, slug, deviceID, storeID); err != nil {
+			return err
+		}
+		*bound = slug
 		return nil
 	}
-	defer rows.Close()
-
-	matched := false
-	for rows.Next() {
-		var storedHash string
-		if err := rows.Scan(&storedHash); err != nil {
-			continue
-		}
-		if len(storedHash) == len(candidateHash) &&
-			subtle.ConstantTimeCompare([]byte(storedHash), []byte(candidateHash)) == 1 {
-			matched = true
-			break
-		}
-	}
-	if !matched {
-		return status.Error(codes.Unauthenticated, "invalid or revoked terminal sync token")
+	if slug != *bound {
+		return status.Errorf(codes.PermissionDenied, "stream is bound to tenant %q; rejected event for tenant %q", *bound, slug)
 	}
 	return nil
 }
@@ -234,9 +267,10 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 	ctx := stream.Context()
 
 	var (
-		tenantSlug string
-		deviceID   string
-		storeID    int32
+		tenantSlug  string
+		deviceID    string
+		storeID     int32
+		boundTenant string
 	)
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if vals := md.Get(TenantSlugMetadataKey); len(vals) > 0 {
@@ -252,12 +286,10 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 		}
 	}
 
-	var authChecked bool
 	if tenantSlug != "" {
-		if err := s.verifyStreamAuth(ctx, tenantSlug, deviceID, storeID); err != nil {
+		if err := s.bindStreamTenant(ctx, &boundTenant, tenantSlug, deviceID, storeID); err != nil {
 			return err
 		}
-		authChecked = true
 	}
 
 	var sendMu sync.Mutex
@@ -306,8 +338,8 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 		})
 	}
 
-	if tenantSlug != "" {
-		startSubscription(tenantSlug)
+	if boundTenant != "" {
+		startSubscription(boundTenant)
 	}
 
 	var currentBatchID string
@@ -323,15 +355,10 @@ func (s *SyncServer) StreamSession(stream syncpb.SyncService_StreamSessionServer
 		}
 
 		if pushEv := clientMsg.GetPushEvent(); pushEv != nil {
-			if !authChecked && pushEv.TenantSlug != "" {
-				if err := s.verifyStreamAuth(ctx, pushEv.TenantSlug, pushEv.DeviceId, pushEv.StoreId); err != nil {
-					return err
-				}
-				authChecked = true
+			if err := s.bindStreamTenant(ctx, &boundTenant, pushEv.TenantSlug, pushEv.DeviceId, pushEv.StoreId); err != nil {
+				return err
 			}
-			if pushEv.TenantSlug != "" {
-				startSubscription(pushEv.TenantSlug)
-			}
+			startSubscription(boundTenant)
 
 			// Single-event mode when batch_id is empty
 			if strings.TrimSpace(pushEv.BatchId) == "" || pushEv.BatchSize <= 0 {

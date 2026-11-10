@@ -67,9 +67,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PG_DUMP_PATH=/usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/pg_dump
 
-# Writable cache dir where the embedded biometric libraries are extracted at runtime.
+# Cache dir where the embedded biometric libraries are extracted at runtime (writable only by root, the server's user).
 RUN mkdir -p /var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64 && \
-    chmod -R 777 /var/cache/nembus && \
+    # Root-owned and not group/world writable: these libraries are dlopen()ed and registered
+    # with ldconfig, so only the server's user (root) may modify them.
+    chown -R root:root /var/cache/nembus && \
+    chmod -R u=rwX,go=rX /var/cache/nembus && \
     echo "/var/cache/nembus/Nembus/biometrics/v3.4.0/linux_amd64" > /etc/ld.so.conf.d/nembus_biometrics.conf && \
     ldconfig
 ENV XDG_CACHE_HOME=/var/cache/nembus

@@ -63,7 +63,8 @@ jobs:
           if ($manualVersion) {
               $newTag = $manualVersion
           } else {
-              $tags = git tag --sort=-v:refname
+              # Only consider POS client tags (vMAJOR.MINOR.PATCH); ignore sap-v*/bio-v* and other prefixes.
+              $tags = git tag --sort=-v:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
               $latestTag = $tags | Select-Object -First 1
               if (-not $latestTag) {
                   $newTag = "v1.0.0"

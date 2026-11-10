@@ -56,8 +56,9 @@ type SyncServer struct {
 // NewSyncServer returns a new initialized SyncServer instance.
 func NewSyncServer(tm *manager.Manager, masterPool *pgxpool.Pool) *SyncServer {
 	s := &SyncServer{
-		tenantManager: tm,
-		masterPool:    masterPool,
+		tenantManager:    tm,
+		masterPool:       masterPool,
+		requireTokenAuth: true,
 	}
 	s.changeHub = NewChangeNotifyHub(s.getTenantPool)
 	return s
@@ -115,7 +116,7 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 	ctx := stream.Context()
 	var currentBatchID string
 	var currentBatch []*syncpb.SyncEvent
-	var authChecked bool
+	var boundTenant string
 
 	for {
 		event, err := stream.Recv()
@@ -127,11 +128,8 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 			return err
 		}
 
-		if !authChecked && event.TenantSlug != "" {
-			if err := s.verifyStreamAuth(ctx, event.TenantSlug, event.DeviceId, event.StoreId); err != nil {
-				return err
-			}
-			authChecked = true
+		if err := s.bindStreamTenant(ctx, &boundTenant, event.TenantSlug, event.DeviceId, event.StoreId); err != nil {
+			return err
 		}
 
 		// Legacy single-event mode when batch_id is empty or batch_size <= 0
@@ -283,6 +281,22 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			FailedSeq:    1,
 			ErrorMessage: "tenant_slug is required",
 			ProcessedAt:  timestamppb.Now(),
+		}
+	}
+
+	for i, ev := range events {
+		if ev.TenantSlug != first.TenantSlug {
+			return &syncpb.SyncAck{
+				Id:           ev.Id,
+				BatchId:      batchID,
+				OutboxUuid:   ev.OutboxUuid,
+				EntityType:   ev.EntityType,
+				EntityId:     ev.EntityId,
+				Success:      false,
+				FailedSeq:    int32(i + 1),
+				ErrorMessage: fmt.Sprintf("tenant mismatch within batch: event %d has tenant %q, expected %q", i+1, ev.TenantSlug, first.TenantSlug),
+				ProcessedAt:  timestamppb.Now(),
+			}
 		}
 	}
 

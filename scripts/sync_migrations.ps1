@@ -111,7 +111,7 @@ if (Test-Path "$CoreMigrations\atlas.sum") {
         $sumContent = $sumContent -replace "`r`n", "`n" -replace "`r", "`n"
         [System.IO.File]::WriteAllText("$CoreMigrations\atlas.sum", $sumContent, $Utf8NoBom)
     }
-    Copy-Item -Path "$CoreMigrations\atlas.sum" -Destination "$ServerMigrations\atlas.sum" -Force
+    [System.IO.File]::WriteAllText("$ServerMigrations\atlas.sum", $sumContent, $Utf8NoBom)
 }
 
 # 5. Run sqlc generate in packages/core and apps/cloud-server if sqlc is installed

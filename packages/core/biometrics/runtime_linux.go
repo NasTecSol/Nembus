@@ -103,6 +103,7 @@ static int32_t call_dpfpdd_calibrate(void* fn, uintptr_t hdev) {
 import "C"
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -157,6 +158,13 @@ func InitRuntime() error {
 			runtimeErr = fmt.Errorf("create linux biometric runtime dir: %w", err)
 			return
 		}
+		// Libraries in this directory are dlopen()ed and registered with ldconfig, so it must not
+		// be writable by other users. Tighten permissions left behind by older images (chmod 777).
+		if info, err := os.Stat(runtimeDir); err == nil && info.Mode().Perm()&0o022 != 0 {
+			if err := os.Chmod(runtimeDir, 0o755); err != nil {
+				log.Printf("[Biometrics] warning: runtime dir %s is group/world writable and could not be restricted: %v", runtimeDir, err)
+			}
+		}
 
 		entries, err := fs.ReadDir(embeddedLinuxAssets, "vendor/linux_amd64")
 		if err != nil {
@@ -172,8 +180,9 @@ func InitRuntime() error {
 				continue
 			}
 			destPath := filepath.Join(runtimeDir, entry.Name())
-			if info, statErr := os.Stat(destPath); statErr != nil || info.Size() != int64(len(data)) {
-				_ = os.WriteFile(destPath, data, 0755)
+			if err := ensureRuntimeFile(destPath, data); err != nil {
+				runtimeErr = fmt.Errorf("extract linux biometric asset %s: %w", entry.Name(), err)
+				return
 			}
 		}
 
@@ -247,6 +256,42 @@ func InitRuntime() error {
 		}
 	})
 	return runtimeErr
+}
+
+// ensureRuntimeFile guarantees destPath is a regular file whose contents are byte-for-byte
+// identical to the embedded asset and which is not group/world writable. A matching size is not
+// sufficient: a tampered library of the same length would otherwise be dlopen()ed. Mismatching
+// files are replaced atomically (temp file + rename) so a symlink planted at destPath is never
+// followed for writing.
+func ensureRuntimeFile(destPath string, data []byte) error {
+	if info, err := os.Lstat(destPath); err == nil && info.Mode().IsRegular() {
+		if existing, readErr := os.ReadFile(destPath); readErr == nil && bytes.Equal(existing, data) {
+			if info.Mode().Perm()&0o022 != 0 {
+				return os.Chmod(destPath, 0o755)
+			}
+			return nil
+		}
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(destPath), "."+filepath.Base(destPath)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, destPath)
 }
 
 // RuntimeDir returns the local directory where embedded DigitalPersona runtime files were extracted.

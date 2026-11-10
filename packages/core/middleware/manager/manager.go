@@ -140,6 +140,14 @@ func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) error {
 	return RepairNullTaxOrderTotals(ctx, pool)
 }
 
+// GetTenant fetches active tenant metadata by slug from the master repository.
+func (m *Manager) GetTenant(ctx context.Context, slug string) (repository.Tenant, error) {
+	if m == nil || m.masterRepo == nil {
+		return repository.Tenant{}, fmt.Errorf("master repo not configured")
+	}
+	return m.masterRepo.GetTenantBySlug(ctx, slug)
+}
+
 // GetTenantDSN returns the raw connection string (DSN) for a tenant without
 // creating a connection pool. This is used by the gRPC backup service to pass
 // the DSN directly to pg_dump.

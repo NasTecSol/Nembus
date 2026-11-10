@@ -11,15 +11,19 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
+	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
+	"github.com/golang-jwt/jwt/v5"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -67,9 +71,9 @@ func NewBackupServer(tm *manager.Manager, jwtSecret, pgDumpPath string) *BackupS
 func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb.BackupService_StreamBackupServer) error {
 	ctx := stream.Context()
 
-	// 1. Validate auth token (simple non-empty check; swap in full JWT validation for prod)
-	if err := s.validateToken(req.AuthToken); err != nil {
-		return status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+	// 1. Validate auth token and check permissions for the requested tenant before acquiring slot
+	if err := s.validateToken(ctx, req.AuthToken, req.TenantSlug); err != nil {
+		return err
 	}
 
 	// 2. Concurrency guard
@@ -266,7 +270,31 @@ func (s *BackupServer) StreamBackup(req *backuppb.BackupRequest, stream backuppb
 // ─── BackupStatus ─────────────────────────────────────────────────────────────
 
 // BackupStatus returns the current progress of an in-flight backup.
-func (s *BackupServer) BackupStatus(_ context.Context, req *backuppb.BackupStatusRequest) (*backuppb.BackupStatusResponse, error) {
+func (s *BackupServer) BackupStatus(ctx context.Context, req *backuppb.BackupStatusRequest) (*backuppb.BackupStatusResponse, error) {
+	if req == nil || strings.TrimSpace(req.TenantSlug) == "" {
+		return nil, status.Error(codes.InvalidArgument, "tenant_slug is required")
+	}
+
+	// Verify caller authorization if token metadata is provided
+	var token string
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get(syncpb.SyncTokenMetadataKey); len(vals) > 0 {
+			token = strings.TrimSpace(vals[0])
+		} else if vals := md.Get("authorization"); len(vals) > 0 {
+			authHeader := strings.TrimSpace(vals[0])
+			if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+				token = strings.TrimSpace(authHeader[7:])
+			} else {
+				token = authHeader
+			}
+		}
+	}
+	if token != "" {
+		if err := s.validateToken(ctx, token, req.TenantSlug); err != nil {
+			return nil, err
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -283,16 +311,69 @@ func (s *BackupServer) BackupStatus(_ context.Context, req *backuppb.BackupStatu
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-func (s *BackupServer) validateToken(token string) error {
+func (s *BackupServer) validateToken(ctx context.Context, token, tenantSlug string) error {
+	token = strings.TrimSpace(token)
+	tenantSlug = strings.TrimSpace(tenantSlug)
 	if token == "" {
-		return fmt.Errorf("empty token")
+		return status.Error(codes.Unauthenticated, "auth token is required")
 	}
-	// TODO: Replace with full JWT validation using s.jwtSecret, e.g.:
-	// parsed, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
-	//     return []byte(s.jwtSecret), nil
-	// })
-	// if err != nil || !parsed.Valid { return fmt.Errorf("invalid JWT") }
-	return nil
+	if tenantSlug == "" {
+		return status.Error(codes.InvalidArgument, "tenant_slug is required")
+	}
+
+	secret := s.jwtSecret
+	if secret == "" {
+		secret = os.Getenv("JWT_SECRET")
+	}
+
+	// 1. Attempt JWT validation if secret is configured
+	if secret != "" {
+		parsed, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return []byte(secret), nil
+		})
+		if err == nil && parsed.Valid {
+			if claims, ok := parsed.Claims.(jwt.MapClaims); ok {
+				var authorized bool
+
+				// Check string claims: tenant_id, tenant_slug, org_slug
+				for _, key := range []string{"tenant_id", "tenant_slug", "org_slug"} {
+					if val, ok := claims[key].(string); ok && val == tenantSlug {
+						authorized = true
+						break
+					}
+				}
+
+				// Check if claim tenant_id matches either the slug or the tenant UUID
+				if !authorized && s.tenantManager != nil {
+					if tenant, err := s.tenantManager.GetTenant(ctx, tenantSlug); err == nil {
+						if claimTenantID, ok := claims["tenant_id"].(string); ok && (claimTenantID == tenantSlug || claimTenantID == tenant.ID.String()) {
+							authorized = true
+						}
+					}
+				}
+
+				if authorized {
+					return nil
+				}
+				return status.Errorf(codes.PermissionDenied, "token is not authorized for tenant %q", tenantSlug)
+			}
+		}
+	}
+
+	// 2. Fallback: check if token is an authorized POS terminal sync token in that tenant's database
+	if s.tenantManager != nil {
+		pool, err := s.tenantManager.GetPool(ctx, tenantSlug)
+		if err == nil && pool != nil {
+			if syncErr := VerifyTerminalSyncToken(ctx, pool, token, 0); syncErr == nil {
+				return nil
+			}
+		}
+	}
+
+	return status.Errorf(codes.Unauthenticated, "invalid or unauthorized token for tenant %q", tenantSlug)
 }
 
 // Return fixed diagnostic messages; raw stderr can contain tenant connection details.
