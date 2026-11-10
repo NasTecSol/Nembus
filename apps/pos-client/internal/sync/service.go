@@ -649,18 +649,75 @@ func (s *SyncService) groupOutboxItemsIntoBatches(ctx context.Context, items []O
 	for _, key := range batchOrder {
 		b := batchMap[key]
 
-		// Check if batch already has a sales_orders_v2 (POS_CHECKOUT) item
+		// Check if batch already has an explicitly enqueued sales_orders_v2 (POS_CHECKOUT)
+		// item. If it does, verify that the order is already fulfilled before allowing it
+		// to be pushed to Cloud. If it is not yet fulfilled (e.g. the cashier suspended or
+		// is still editing the order), hold the batch locally for this cycle (Solution B).
+		batchNotReady := false
 		hasCheckoutOrder := false
-		for _, ev := range b.Events {
+		for i := range b.Events {
+			ev := &b.Events[i]
 			if ev.EntityType == "sales_orders_v2" && ev.Action == "POS_CHECKOUT" {
+				// Parse order ID and fulfillment_status from the enqueued payload.
+				var checkoutPayload struct {
+					Order struct {
+						ID                string `json:"id"`
+						FulfillmentStatus string `json:"fulfillment_status"`
+					} `json:"order"`
+				}
+				if ev.Payload != nil {
+					_ = json.Unmarshal(ev.Payload, &checkoutPayload)
+				}
+
+				// If we have access to the master pool, check the LIVE state of the order
+				// in sales_orders_v2. When the outbox item was originally enqueued (at cart conversion),
+				// the order might have been unfulfilled; when the cashier finishes checkout/payment,
+				// sales_orders_v2 is updated to 'fulfilled'. We must inspect the live state and refresh
+				// the payload so cloud receives the fulfilled order.
+				if s.masterPool != nil && checkoutPayload.Order.ID != "" {
+					var livePayload []byte
+					var liveStatus string
+					err := s.masterPool.QueryRow(ctx, `
+						SELECT json_build_object(
+							'order', row_to_json(o),
+							'lines', COALESCE((SELECT json_agg(l ORDER BY l.line_number)
+								FROM sales_order_lines_v2 l WHERE l.sales_order_id = o.id), '[]'::json)
+						)::text,
+						COALESCE(o.fulfillment_status::text, '')
+						FROM sales_orders_v2 o
+						WHERE o.id = $1::uuid
+					`, checkoutPayload.Order.ID).Scan(&livePayload, &liveStatus)
+					if err == nil {
+						if liveStatus != "fulfilled" {
+							batchNotReady = true
+							break
+						}
+						// Live order is fulfilled locally! Refresh the payload so cloud receives it.
+						ev.Payload = livePayload
+						if ev.ID > 0 {
+							_, _ = s.masterPool.Exec(ctx, `UPDATE sync_queue SET payload = $1::jsonb WHERE id = $2`, string(livePayload), ev.ID)
+						}
+						hasCheckoutOrder = true
+						break
+					}
+				}
+
+				if checkoutPayload.Order.FulfillmentStatus != "fulfilled" {
+					// Order not yet finalised locally — hold this batch.
+					batchNotReady = true
+					break
+				}
 				hasCheckoutOrder = true
 				break
 			}
 		}
 
+		if batchNotReady {
+			continue
+		}
+
 		if !hasCheckoutOrder {
 			var synthesized []OutboxItem
-			batchNotReady := false
 			var parentErr error
 			var offendingItem OutboxItem
 

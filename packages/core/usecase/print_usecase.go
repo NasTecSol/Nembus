@@ -50,8 +50,9 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 		return utils.NewResponse(utils.CodeNotFound,
 			fmt.Sprintf("organisation %d not found: %s", input.OrgID, err.Error()), nil)
 	}
-	// The QR on a tax receipt must be the order's saved signed QR, and its
-	// report must be accepted. Never accept an arbitrary QR from the browser.
+	// The QR on a tax receipt must come from the saved signed document. A
+	// registered POS may print it while reporting is pending. Never accept an
+	// arbitrary QR from the browser.
 	input.Receipt.QRCodeBase64 = ""
 	qrStatus := "not_applicable"
 	if !strings.EqualFold(input.Receipt.Type, "Z-REPORT") && !strings.Contains(strings.ToUpper(input.Receipt.Type), "SUMMARY") {
@@ -76,7 +77,12 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 					qrStatus = "included"
 				}
 			case state.RegisteredPOS:
-				qrStatus = "not_reported"
+				if state.QRCode != "" && len(state.QRCode) <= 2000 {
+					input.Receipt.QRCodeBase64 = state.QRCode
+					qrStatus = "pending"
+				} else {
+					qrStatus = "not_reported"
+				}
 			default:
 				qrStatus = "not_applicable"
 			}
@@ -117,7 +123,9 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 	}
 
 	message := "receipt printed successfully"
-	if qrStatus == "not_reported" || qrStatus == "unavailable" {
+	if qrStatus == "pending" {
+		message = "receipt printed with ZATCA QR; reporting is still pending"
+	} else if qrStatus == "not_reported" || qrStatus == "unavailable" {
 		message = "receipt printed without ZATCA QR; reporting is not complete or QR is unavailable"
 	}
 	return utils.NewResponse(utils.CodeOK, message, map[string]interface{}{
