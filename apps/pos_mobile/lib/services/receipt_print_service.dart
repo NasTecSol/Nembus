@@ -19,8 +19,8 @@ class ReceiptPrintService {
   ReceiptPrintService._internal();
 
   /// Main entry point to trigger printing:
-  /// - Dispatches pos_client handler (localhost:8080/api/print/receipt) if running.
-  /// - Directly opens the System Print Dialog on tap with dynamic layout negotiation.
+  /// - Dispatches receipt through Nembus offline gateway via FFI handlers (route: api/print/receipt).
+  /// - Opens the System Print Dialog on mobile UI with authoritative branding from Nembus side.
   Future<Map<String, dynamic>> printReceipt({
     PosReceiptData? receiptData,
     ReceiptTemplate? template,
@@ -37,8 +37,23 @@ class ReceiptPrintService {
     double totalAmount = 0.0,
     double changeDue = 0.0,
     int? orgId,
+    String printerMode = 'system',
+    String? networkIp,
+    String? networkPort,
   }) async {
-    // 1. Parse into PosReceiptData & ReceiptTemplate using pos-client business logic
+    // 1. Fetch template from Nembus side (do not create Flutter Dart template)
+    final tmpl = template ??
+        await PosReceiptEngine.fetchReceiptTemplate(
+          orgId: orgId,
+          storeName: storeName,
+          salesOrderId: orderNumber,
+          totalAmount: totalAmount,
+          taxAmount: taxAmount,
+        );
+
+    final initialQr = receiptData?.qrCodeBase64 ?? tmpl.qrCodeBase64;
+
+    // 2. Parse into PosReceiptData using authoritative Nembus currency and template
     final data = receiptData ??
         PosReceiptData.parse(
           receiptNumber: orderNumber ?? 'TXN-${DateTime.now().millisecondsSinceEpoch}',
@@ -52,14 +67,36 @@ class ReceiptPrintService {
           rawTotalAmount: totalAmount,
           changeDue: changeDue,
           paymentMethod: paymentMethod ?? 'CASH',
+          qrCodeBase64: initialQr,
+          currency: tmpl.currency,
         );
 
-    final tmpl = template ??
-        ReceiptTemplate.fromSession(
-          storeName: storeName,
-        );
+    // 3. Dispatch receipt through offline gateway using Nembus FFI Dart (route: api/print/receipt)
+    Map<String, dynamic> gatewayRes = {};
+    try {
+      gatewayRes = await PosReceiptEngine.printReceiptViaGateway(
+        receiptData: data,
+        orgId: orgId,
+        printerMode: printerMode,
+        networkIp: networkIp,
+        networkPort: networkPort,
+      );
+      debugPrint('📄 [ReceiptPrintService] Gateway print handler result: $gatewayRes');
+    } catch (e) {
+      debugPrint('ℹ️ [ReceiptPrintService] Gateway print note: $e');
+    }
 
-    // Open the System Print Dialog directly on UI
+    // If network printer mode was requested and handler succeeded, return immediately
+    if (printerMode == 'network' && gatewayRes['success'] == true) {
+      return {
+        'success': true,
+        'printed': true,
+        'message': 'Receipt printed to thermal printer via Nembus offline gateway',
+        'gateway_response': gatewayRes,
+      };
+    }
+
+    // 4. Open the System Print Dialog on mobile with layout from Nembus template
     try {
       final printed = await Printing.layoutPdf(
         name: 'Receipt_${data.receiptNumber}',
@@ -78,6 +115,7 @@ class ReceiptPrintService {
         'success': true,
         'printed': printed,
         'message': 'System print dialog opened successfully',
+        'gateway_response': gatewayRes,
       };
     } catch (e) {
       debugPrint('Printing.layoutPdf error (Falling back to OS Print): $e');
@@ -85,7 +123,7 @@ class ReceiptPrintService {
         data: data,
         template: tmpl,
       );
-
+      fallbackRes['gateway_response'] = gatewayRes;
       return fallbackRes;
     }
   }
@@ -112,6 +150,7 @@ class ReceiptPrintService {
     double totalAmount = 0.0,
     double changeDue = 0.0,
   }) async {
+    final initialQr = data?.qrCodeBase64 ?? template?.qrCodeBase64 ?? '';
     final effectiveData = data ??
         PosReceiptData.parse(
           receiptNumber: orderNumber ?? 'TXN-${DateTime.now().millisecondsSinceEpoch}',
@@ -125,15 +164,29 @@ class ReceiptPrintService {
           rawTotalAmount: totalAmount,
           changeDue: changeDue,
           paymentMethod: paymentMethod ?? 'CASH',
+          qrCodeBase64: initialQr,
         );
 
     final effectiveTmpl = template ??
         ReceiptTemplate.fromSession(
           storeName: storeName,
+          qrCodeBase64: initialQr,
         );
 
     pw.Font fontRegular;
     pw.Font fontBold;
+
+    String pdfQr = effectiveData.qrCodeBase64.isNotEmpty
+        ? effectiveData.qrCodeBase64
+        : effectiveTmpl.qrCodeBase64;
+    if (pdfQr.isEmpty && (SingletonClass().hasCompletedZatcaOnboarding || effectiveTmpl.header.taxId.isNotEmpty)) {
+      pdfQr = PosReceiptEngine.generateZatcaTlvBase64(
+        sellerName: effectiveTmpl.header.name,
+        vatNumber: effectiveTmpl.header.taxId,
+        totalAmount: effectiveData.grandTotal,
+        taxAmount: effectiveData.taxAmount,
+      );
+    }
 
     try {
       final fontDataRegular = await rootBundle.load('assets/fonts/Amiri-Regular.ttf');
@@ -177,17 +230,19 @@ class ReceiptPrintService {
         mainAxisSize: pw.MainAxisSize.min,
         children: [
           // ── HEADER ────────────────────────────────────────────────────────
-          pw.Text(
-            effectiveTmpl.header.name.toUpperCase(),
-            textAlign: pw.TextAlign.center,
-            textDirection: _hasArabic(effectiveTmpl.header.name) ? pw.TextDirection.rtl : pw.TextDirection.ltr,
-            style: pw.TextStyle(
-              font: fontBold,
-              fontSize: 14,
-              color: blackColor,
+          if (effectiveTmpl.header.name.isNotEmpty) ...[
+            pw.Text(
+              effectiveTmpl.header.name.toUpperCase(),
+              textAlign: pw.TextAlign.center,
+              textDirection: _hasArabic(effectiveTmpl.header.name) ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 14,
+                color: blackColor,
+              ),
             ),
-          ),
-          pw.SizedBox(height: 2),
+            pw.SizedBox(height: 2),
+          ],
           if (effectiveTmpl.header.address.isNotEmpty) ...[
             pw.Text(
               effectiveTmpl.header.address,
@@ -213,15 +268,14 @@ class ReceiptPrintService {
             ),
             pw.SizedBox(height: 2),
           ],
-          pw.Text(
-            'Point of Sale System',
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(
-              font: fontRegular,
-              fontSize: 8.5,
-              color: blackColor,
+          if (effectiveTmpl.header.website.isNotEmpty) ...[
+            pw.Text(
+              effectiveTmpl.header.website,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(font: fontRegular, fontSize: 8.5, color: blackColor),
             ),
-          ),
+            pw.SizedBox(height: 2),
+          ],
           pw.SizedBox(height: 4),
 
           // Dashed Line
@@ -413,7 +467,7 @@ class ReceiptPrintService {
           // ── FOOTER ────────────────────────────────────────────────────────
           if (effectiveTmpl.footer.thankYou.isNotEmpty) ...[
             pw.Text(
-              '** ${effectiveTmpl.footer.thankYou} **',
+              effectiveTmpl.footer.thankYou,
               textAlign: pw.TextAlign.center,
               textDirection: _hasArabic(effectiveTmpl.footer.thankYou) ? pw.TextDirection.rtl : pw.TextDirection.ltr,
               style: pw.TextStyle(font: fontBold, fontSize: 8.5, color: blackColor),
@@ -440,23 +494,42 @@ class ReceiptPrintService {
           _buildPdfDashedDivider(blackColor),
           pw.SizedBox(height: 5),
 
-          // Barcode representation
-          pw.Text(
-            '||| | |||| || ||| |||| ||||',
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(
-              font: fontBold,
-              fontSize: 13,
-              color: blackColor,
-              letterSpacing: 2,
+          // ZATCA QR Code Representation (Dynamic QR for registered device / ZATCA)
+          if (pdfQr.isNotEmpty) ...[
+            pw.BarcodeWidget(
+              barcode: pw.Barcode.qrCode(),
+              data: pdfQr,
+              width: 75,
+              height: 75,
             ),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            effectiveData.barcode,
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(font: fontRegular, fontSize: 7.5, color: blackColor),
-          ),
+            pw.SizedBox(height: 3),
+            pw.Text(
+              'فاتورة ضريبية مبسطة / Simplified Tax Invoice',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(font: fontBold, fontSize: 6.5, color: blackColor),
+            ),
+            pw.SizedBox(height: 4),
+          ],
+
+          // Barcode representation (Only if barcode is present)
+          if (effectiveData.barcode.isNotEmpty) ...[
+            pw.Text(
+              '||| | |||| || ||| |||| ||||',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                font: fontBold,
+                fontSize: 13,
+                color: blackColor,
+                letterSpacing: 2,
+              ),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              effectiveData.barcode,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(font: fontRegular, fontSize: 7.5, color: blackColor),
+            ),
+          ],
         ],
       ),
     );
@@ -580,6 +653,16 @@ class ReceiptPrintService {
       idx++;
     }
 
+    String effectiveQr = data.qrCodeBase64.isNotEmpty ? data.qrCodeBase64 : template.qrCodeBase64;
+    if (effectiveQr.isEmpty && (SingletonClass().hasCompletedZatcaOnboarding || template.header.taxId.isNotEmpty)) {
+      effectiveQr = PosReceiptEngine.generateZatcaTlvBase64(
+        sellerName: template.header.name,
+        vatNumber: template.header.taxId,
+        totalAmount: data.grandTotal,
+        taxAmount: data.taxAmount,
+      );
+    }
+
     return '''
 <!DOCTYPE html>
 <html>
@@ -617,11 +700,11 @@ class ReceiptPrintService {
 <body onload="window.print()">
   <div class="receipt-container">
     <div class="header">
-      <div class="store-name">${template.header.name.toUpperCase()}</div>
+      ${template.header.name.isNotEmpty ? '<div class="store-name">' + template.header.name.toUpperCase() + '</div>' : ''}
       ${template.header.address.isNotEmpty ? '<div class="subtitle">' + template.header.address + '</div>' : ''}
       ${template.header.phone.isNotEmpty ? '<div class="subtitle">Tel: ' + template.header.phone + '</div>' : ''}
       ${template.header.taxId.isNotEmpty ? '<div class="subtitle">TIN: ' + template.header.taxId + '</div>' : ''}
-      <div class="subtitle">Point of Sale System</div>
+      ${template.header.website.isNotEmpty ? '<div class="subtitle">' + template.header.website + '</div>' : ''}
       <div class="subtitle" style="font-weight: bold; color: #1e293b; margin-top: 4px;">Receipt #: ${data.receiptNumber}</div>
       <div class="subtitle">${data.formattedDateTime}</div>
       <div class="subtitle">Cashier: ${data.cashier} • Terminal: ${data.terminal}</div>
@@ -665,10 +748,11 @@ class ReceiptPrintService {
     </div>
     <div class="dashed-divider"></div>
     <div class="footer">
-      <div>${template.footer.thankYou}</div>
-      <div style="font-size: 9.5px; margin-top: 2px;">${template.footer.returnNote}</div>
-      <div class="barcode">||| | |||| || ||| |||| ||||</div>
-      <div style="font-size: 9px; margin-top: 2px;">${data.barcode}</div>
+      ${template.footer.thankYou.isNotEmpty ? '<div>' + template.footer.thankYou + '</div>' : ''}
+      ${template.footer.returnNote.isNotEmpty ? '<div style="font-size: 9.5px; margin-top: 2px;">' + template.footer.returnNote + '</div>' : ''}
+      ${template.footer.website.isNotEmpty ? '<div style="font-size: 9px; margin-top: 2px;">' + template.footer.website + '</div>' : ''}
+      ${effectiveQr.isNotEmpty ? '<div style="text-align:center; margin: 12px 0 6px;"><img src="https://api.qrserver.com/v1/create-qr-code/?data=' + Uri.encodeComponent(effectiveQr) + '&size=115x115" width="115" height="115" /><div style="font-size: 9.5px; font-weight: bold; margin-top: 4px;">فاتورة ضريبية مبسطة / Simplified Tax Invoice (ZATCA)</div></div>' : ''}
+      ${data.barcode.isNotEmpty ? '<div class="barcode">||| | |||| || ||| |||| ||||</div><div style="font-size: 9px; margin-top: 2px;">' + data.barcode + '</div>' : ''}
     </div>
   </div>
 </body>

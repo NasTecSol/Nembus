@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pos_mobile/services/pos_receipt_engine.dart';
 import 'package:pos_mobile/services/receipt_print_service.dart';
+import 'package:pos_mobile/singleton/singleton_class.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 /// Custom Painter to draw a rounded dashed/dotted gold border for thermal receipts
 class DashedRoundedBorderPainter extends CustomPainter {
@@ -54,6 +56,7 @@ class DashedRoundedBorderPainter extends CustomPainter {
 class ThermalReceiptWidget extends StatefulWidget {
   final PosReceiptData? receiptData;
   final ReceiptTemplate? template;
+  final String? qrCodeBase64;
 
   final String? storeName;
   final String? orderNumber;
@@ -74,6 +77,7 @@ class ThermalReceiptWidget extends StatefulWidget {
     super.key,
     this.receiptData,
     this.template,
+    this.qrCodeBase64,
     this.storeName,
     this.orderNumber,
     this.cashierName = 'Cashier',
@@ -109,6 +113,11 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
   void initState() {
     super.initState();
 
+    final initialQr = widget.qrCodeBase64 ??
+        widget.template?.qrCodeBase64 ??
+        widget.receiptData?.qrCodeBase64 ??
+        '';
+
     // 1. Parse into PosReceiptData & ReceiptTemplate using pos-client business logic
     _receiptData = widget.receiptData ??
         PosReceiptData.parse(
@@ -123,12 +132,18 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
           rawTotalAmount: widget.totalAmount,
           changeDue: widget.changeDue,
           paymentMethod: widget.paymentMethod,
+          qrCodeBase64: initialQr,
         );
 
     _template = widget.template ??
-        ReceiptTemplate.fromSession(
+        ReceiptTemplate.empty(
           storeName: widget.storeName,
+          qrCodeBase64: initialQr,
         );
+
+    if (_template.header.name.isEmpty || _template.qrCodeBase64.isEmpty || _receiptData.qrCodeBase64.isEmpty) {
+      _loadTemplateAndQr();
+    }
 
     _animController = AnimationController(
       vsync: this,
@@ -160,6 +175,44 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
   void dispose() {
     _animController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ThermalReceiptWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.template != null && widget.template != _template) {
+      _template = widget.template!;
+    }
+    if (widget.receiptData != null && widget.receiptData != _receiptData) {
+      _receiptData = widget.receiptData!;
+    }
+    if (widget.qrCodeBase64 != null &&
+        widget.qrCodeBase64!.isNotEmpty &&
+        widget.qrCodeBase64 != _template.qrCodeBase64) {
+      _template = _template.copyWith(qrCodeBase64: widget.qrCodeBase64);
+    }
+  }
+
+  Future<void> _loadTemplateAndQr() async {
+    try {
+      final fetched = await PosReceiptEngine.fetchReceiptTemplate(
+        storeName: widget.storeName,
+        salesOrderId: widget.orderNumber,
+        totalAmount: _receiptData.grandTotal,
+        taxAmount: _receiptData.taxAmount,
+      );
+      if (mounted) {
+        setState(() {
+          _template = fetched;
+          if (fetched.qrCodeBase64.isNotEmpty && _receiptData.qrCodeBase64.isEmpty) {
+            _receiptData = _receiptData.copyWith(
+              qrCodeBase64: fetched.qrCodeBase64,
+              currency: fetched.currency.isNotEmpty ? fetched.currency : _receiptData.currency,
+            );
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   /// Direct print trigger: opens system print dialog immediately with zero network delay
@@ -359,16 +412,17 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             // ── HEADER (from ReceiptTemplate OrgHeader) ──
-                            Text(
-                              _template.header.name.toUpperCase(),
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.spaceMono(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF0F172A),
-                                letterSpacing: 1.2,
+                            if (_template.header.name.isNotEmpty)
+                              Text(
+                                _template.header.name.toUpperCase(),
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFF0F172A),
+                                  letterSpacing: 1.2,
+                                ),
                               ),
-                            ),
                             if (_template.header.address.isNotEmpty) ...[
                               const SizedBox(height: 3),
                               Text(
@@ -402,15 +456,17 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 3),
-                            Text(
-                              'Point of Sale System',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.spaceMono(
-                                fontSize: 11,
-                                color: const Color(0xFF475569),
+                            if (_template.header.website.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                _template.header.website,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 10.5,
+                                  color: const Color(0xFF475569),
+                                ),
                               ),
-                            ),
+                            ],
                             const SizedBox(height: 8),
                             // DASHED LINE
                             _buildDashedLine(goldAccent),
@@ -689,7 +745,7 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
                             // ── FOOTER (from ReceiptTemplate OrgFooter) ──
                             if (_template.footer.thankYou.isNotEmpty) ...[
                               Text(
-                                '** ${_template.footer.thankYou} **',
+                                _template.footer.thankYou,
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.spaceMono(
                                   fontSize: 11,
@@ -722,26 +778,102 @@ class _ThermalReceiptWidgetState extends State<ThermalReceiptWidget> with Single
                               const SizedBox(height: 6),
                             ],
 
-                            // MONOSPACE BARCODE
-                            Text(
-                              '||| | |||| || ||| |||| ||||',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.spaceMono(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF1E293B),
-                                letterSpacing: 3,
-                              ),
+                            // ── ZATCA QR CODE (Dynamic QR for registered device / ZATCA) ──
+                            Builder(
+                              builder: (context) {
+                                String effectiveQrCode = _receiptData.qrCodeBase64.isNotEmpty
+                                    ? _receiptData.qrCodeBase64
+                                    : _template.qrCodeBase64;
+
+                                if (effectiveQrCode.isEmpty &&
+                                    (SingletonClass().hasCompletedZatcaOnboarding ||
+                                     _template.header.taxId.isNotEmpty)) {
+                                  effectiveQrCode = PosReceiptEngine.generateZatcaTlvBase64(
+                                    sellerName: _template.header.name.isNotEmpty
+                                        ? _template.header.name
+                                        : (widget.storeName ?? SingletonClass().activeStoreName ?? 'Store'),
+                                    vatNumber: _template.header.taxId,
+                                    totalAmount: _receiptData.grandTotal,
+                                    taxAmount: _receiptData.taxAmount,
+                                  );
+                                }
+
+                                if (effectiveQrCode.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                return Column(
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.05),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: QrImageView(
+                                        data: effectiveQrCode,
+                                        version: QrVersions.auto,
+                                        size: 120.0,
+                                        backgroundColor: Colors.white,
+                                        errorCorrectionLevel: QrErrorCorrectLevel.M,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'فاتورة ضريبية مبسطة',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.cairo(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    Text(
+                                      'Simplified Tax Invoice (ZATCA)',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.spaceMono(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                );
+                              },
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _receiptData.barcode,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.spaceMono(
-                                fontSize: 9.5,
-                                color: const Color(0xFF64748B),
+
+                            // MONOSPACE BARCODE (Only when barcode is present)
+                            if (_receiptData.barcode.isNotEmpty) ...[
+                              Text(
+                                '||| | |||| || ||| |||| ||||',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFF1E293B),
+                                  letterSpacing: 3,
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _receiptData.barcode,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

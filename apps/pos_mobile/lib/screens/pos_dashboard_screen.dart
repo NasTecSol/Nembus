@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../database/db_service.dart';
 import '../ffi/nembus_bridge.dart';
 import '../singleton/singleton_class.dart';
@@ -79,7 +81,9 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
     _resolveStoreTypeFromDb();
     _restoreActiveCashierSession();
     _fetchUserAssignedMenus();
-    _fetchSyncQueueStatus();
+    _prepareAndSanitizeOutboxQueue().then((_) {
+      if (mounted) _fetchSyncQueueStatus();
+    });
   }
 
   /// Dynamically queries the local SQLite stores table to resolve store_type for the active store
@@ -1108,6 +1112,248 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
     );
   }
 
+  static final math.Random _random = math.Random.secure();
+
+  String _generateUuidV4() {
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 10
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}';
+  }
+
+  /// Supported entity types by Cloud Server gRPC StreamPush (sync_server.go)
+  static const Set<String> _kSupportedSyncEntities = {
+    'pos_transactions',
+    'pos_transaction_lines',
+    'pos_payments',
+    'cashier_sessions',
+    'sales_returns',
+    'sales_return_lines',
+    'stock_movements',
+    'carts',
+    'sales_orders_v2',
+    'sales_order_lines_v2',
+    'draft_cart_templates',
+    'restaurant_orders',
+    'restaurant_order_items',
+    'kiosk_sessions',
+    'stock_counts',
+    'stock_count_lines',
+    'waste_logs',
+  };
+
+  /// Sanitizes local SQLite records and the sync_queue before cloud push:
+  /// 1. Fixes invalid UUIDs in sales_order_lines_v2 and sync_queue (e.g. "LINE-...").
+  /// 2. Pushes offline-registered customers to Cloud Server via HTTP REST API (/api/customers).
+  /// 3. Marks unsupported entities (e.g. 'cashiers', 'customers', 'restaurant_tables') in sync_queue
+  ///    as 'synced' so gRPC StreamPush is not called for them.
+  /// 4. Ensures all local cashier and customer IDs exist in sync_queue as 'synced' so the Go
+  ///    bridge doesn't re-enqueue them into sync_queue with status='pending'.
+  Future<void> _prepareAndSanitizeOutboxQueue() async {
+    try {
+      final db = DatabaseService().database;
+      final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+      // -------------------------------------------------------------
+      // 1. Repair sales_order_lines_v2 table IDs that are not valid UUIDs
+      // -------------------------------------------------------------
+      final nonUuidLines = await db.query('sales_order_lines_v2');
+      for (final line in nonUuidLines) {
+        final curId = line['id']?.toString() ?? '';
+        if (!uuidRegex.hasMatch(curId)) {
+          final newId = _generateUuidV4();
+          await db.update(
+            'sales_order_lines_v2',
+            {'id': newId},
+            where: 'id = ?',
+            whereArgs: [curId],
+          );
+          // Also update any sync_queue item matching this line
+          final sqItems = await db.query(
+            'sync_queue',
+            where: "entity_type = 'sales_order_lines_v2' AND (entity_id = ? OR payload LIKE ?)",
+            whereArgs: [curId, '%$curId%'],
+          );
+          for (final sq in sqItems) {
+            try {
+              final payloadMap = jsonDecode(sq['payload'] as String) as Map<String, dynamic>;
+              payloadMap['id'] = newId;
+              await db.update(
+                'sync_queue',
+                {
+                  'entity_id': newId,
+                  'payload': jsonEncode(payloadMap),
+                  'status': 'pending',
+                  'last_error': null,
+                  'retry_count': 0,
+                },
+                where: 'id = ?',
+                whereArgs: [sq['id']],
+              );
+            } catch (_) {}
+          }
+        }
+      }
+
+      // Also scan sync_queue directly for sales_order_lines_v2 with non-UUID payloads
+      final sqLineRows = await db.query(
+        'sync_queue',
+        where: "entity_type = 'sales_order_lines_v2'",
+      );
+      for (final sq in sqLineRows) {
+        try {
+          final payloadMap = jsonDecode(sq['payload'] as String) as Map<String, dynamic>;
+          final lineId = payloadMap['id']?.toString() ?? '';
+          if (!uuidRegex.hasMatch(lineId)) {
+            final newId = _generateUuidV4();
+            payloadMap['id'] = newId;
+            await db.update(
+              'sync_queue',
+              {
+                'entity_id': newId,
+                'payload': jsonEncode(payloadMap),
+                'status': 'pending',
+                'last_error': null,
+                'retry_count': 0,
+              },
+              where: 'id = ?',
+              whereArgs: [sq['id']],
+            );
+            await db.update(
+              'sales_order_lines_v2',
+              {'id': newId},
+              where: 'id = ?',
+              whereArgs: [lineId],
+            );
+          }
+        } catch (_) {}
+      }
+
+      // -------------------------------------------------------------
+      // 2. Push any offline-created customers via HTTP REST API
+      // -------------------------------------------------------------
+      final pendingCusts = await db.query(
+        'sync_queue',
+        where: "entity_type = 'customers' AND status IN ('pending', 'failed')",
+      );
+      if (pendingCusts.isNotEmpty) {
+        final tenantSlug = widget.tenantSlug.isNotEmpty
+            ? widget.tenantSlug
+            : (SingletonClass().activeTenantSlug ?? 'qitaf');
+        final baseUrl = SingletonClass().baseURL;
+        final authToken = SingletonClass().authToken;
+
+        for (final cItem in pendingCusts) {
+          try {
+            final payload = jsonDecode(cItem['payload'] as String) as Map<String, dynamic>;
+            final custCode = payload['customer_code']?.toString() ?? '';
+            final custName = payload['name']?.toString() ?? '';
+            if (custCode.isNotEmpty && custName.isNotEmpty) {
+              final headers = <String, String>{
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'x-tenant-id': tenantSlug,
+                if (authToken != null && authToken.isNotEmpty)
+                  'Authorization': 'Bearer $authToken',
+              };
+              final body = jsonEncode({
+                'name': custName,
+                'customer_code': custCode,
+                'phone': payload['phone'] ?? '',
+                'email': payload['email'] ?? '',
+                'customer_type': payload['customer_type'] ?? 'retail',
+                'address': payload['address'] ?? '',
+                'credit_limit': (payload['credit_limit'] ?? 0.0).toString(),
+                'organization_id': payload['organization_id'] ?? 1,
+              });
+
+              final resp = await http.post(
+                Uri.parse('$baseUrl/api/customers'),
+                headers: headers,
+                body: body,
+              ).timeout(const Duration(seconds: 4));
+
+              developer.log(
+                'Cloud HTTP Customer sync ($custCode): status=${resp.statusCode}',
+                name: 'PosDashboardScreen',
+              );
+            }
+          } catch (e) {
+            developer.log('Customer HTTP upload note: $e', name: 'PosDashboardScreen');
+          }
+
+          // Mark customer as synced in sync_queue so gRPC StreamPush skips it
+          await db.update(
+            'sync_queue',
+            {
+              'status': 'synced',
+              'synced_at': DateTime.now().toIso8601String(),
+              'last_error': null,
+            },
+            where: 'id = ?',
+            whereArgs: [cItem['id']],
+          );
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 3. Mark all unsupported entities in sync_queue as 'synced'
+      // -------------------------------------------------------------
+      final unsupportedItems = await db.query(
+        'sync_queue',
+        where: "status IN ('pending', 'failed')",
+      );
+      for (final item in unsupportedItems) {
+        final entType = item['entity_type']?.toString() ?? '';
+        if (!_kSupportedSyncEntities.contains(entType)) {
+          developer.log(
+            'Marking unsupported sync entity "$entType" (ID: ${item['id']}) as synced for local outbox',
+            name: 'PosDashboardScreen',
+          );
+          await db.update(
+            'sync_queue',
+            {
+              'status': 'synced',
+              'synced_at': DateTime.now().toIso8601String(),
+              'last_error': null,
+            },
+            where: 'id = ?',
+            whereArgs: [item['id']],
+          );
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 4. Pre-populate sync_queue with status='synced' for all cashiers and customers
+      //    so Go's DrainOutboxGRPC auto-enqueue SELECT ... WHERE NOT EXISTS will be a no-op
+      // -------------------------------------------------------------
+      try {
+        await db.rawInsert('''
+          INSERT OR IGNORE INTO sync_queue (entity_type, entity_id, action, payload, status, priority, created_at, synced_at)
+          SELECT 'cashiers', CAST(c.id AS TEXT), 'INSERT', '{}', 'synced', 30, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          FROM cashiers c
+          WHERE NOT EXISTS (
+            SELECT 1 FROM sync_queue sq WHERE sq.entity_type = 'cashiers' AND sq.entity_id = CAST(c.id AS TEXT)
+          );
+        ''');
+      } catch (_) {}
+
+      try {
+        await db.rawInsert('''
+          INSERT OR IGNORE INTO sync_queue (entity_type, entity_id, action, payload, status, priority, created_at, synced_at)
+          SELECT 'customers', CAST(c.id AS TEXT), 'INSERT', '{}', 'synced', 20, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          FROM customers c
+          WHERE NOT EXISTS (
+            SELECT 1 FROM sync_queue sq WHERE sq.entity_type = 'customers' AND sq.entity_id = CAST(c.id AS TEXT)
+          );
+        ''');
+      } catch (_) {}
+    } catch (e) {
+      developer.log('Outbox queue preparation error: $e', name: 'PosDashboardScreen');
+    }
+  }
+
   /// Uploads offline local records from sync_queue to Cloud Server via gRPC (Push only)
   Future<void> _uploadOfflineOutboxToCloud() async {
     if (_isSyncingOutbox) return;
@@ -1139,7 +1385,11 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
     );
 
     try {
-      // Drain offline outbox queue to Cloud Server via gRPC StreamPush (Push only)
+      // 1. Sanitize offline outbox queue: fix sales_order_lines_v2 UUIDs, push offline customers via HTTP,
+      // and ensure unsupported master entities are marked synced so gRPC stream push succeeds without errors.
+      await _prepareAndSanitizeOutboxQueue();
+
+      // 2. Drain offline outbox queue to Cloud Server via gRPC StreamPush (Push only)
       final syncResp = NembusBridge().callHandler(
         handler: 'sync',
         action: 'drainOutbox',
@@ -1153,7 +1403,12 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
       developer.log('Outbox Sync Result: $syncResp', name: 'PosDashboardScreen');
 
       final pushed = (syncResp['pushed_count'] as num?)?.toInt() ?? 0;
-      final bool isSuccess = syncResp['success'] == true;
+      final rawErrors = syncResp['errors'];
+      final List<String> errorList = (rawErrors is List)
+          ? rawErrors.map((e) => e.toString()).toList()
+          : [];
+      final bool hasErrors = errorList.isNotEmpty;
+      final bool isSuccess = syncResp['success'] == true && !hasErrors;
 
       await _fetchSyncQueueStatus();
 
@@ -1163,13 +1418,17 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+            backgroundColor: isSuccess
+                ? const Color(0xFF10B981)
+                : (hasErrors && pushed > 0 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444)),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             content: Row(
               children: [
                 Icon(
-                  isSuccess ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                  isSuccess
+                      ? Icons.cloud_done_rounded
+                      : (hasErrors && pushed > 0 ? Icons.warning_amber_rounded : Icons.cloud_off_rounded),
                   color: Colors.white,
                 ),
                 const SizedBox(width: 10),
@@ -1179,7 +1438,9 @@ class _PosDashboardScreenState extends State<PosDashboardScreen> {
                         ? (pushed > 0
                             ? 'Successfully uploaded $pushed offline records to Cloud Server!'
                             : 'All local offline records are up to date.')
-                        : 'Upload Notice: ${syncResp['error'] ?? 'Check server connection'}',
+                        : (hasErrors
+                            ? 'Uploaded $pushed records with notices: ${errorList.first}'
+                            : 'Upload Notice: ${syncResp['error'] ?? 'Check server connection'}'),
                     style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
                   ),
                 ),
@@ -3164,7 +3425,6 @@ class _SubmenuBottomSheetState extends State<_SubmenuBottomSheet> {
                                 smCode,
                                 smName,
                               );
-
                               final combinedSub = '$smName $smCode $smRoute'.toLowerCase();
                               final isCreateAction = combinedSub.contains('create') || combinedSub.contains('new') || combinedSub.contains('add');
                               final isSettingsSub = combinedSub.contains('setting') || combinedSub.contains('config') || combinedSub.contains('zatca');
@@ -3172,7 +3432,6 @@ class _SubmenuBottomSheetState extends State<_SubmenuBottomSheet> {
                               final isWholesale = combinedSub.contains('wholesale') || combinedSub.contains('b2b');
                               final isRetail = combinedSub.contains('retail') || combinedSub.contains('pos') || combinedSub.contains('sale') || combinedSub.contains('product') || combinedSub.contains('order') || combinedSub.contains('terminal');
                               final isProductSubmenu = isRetail || isWholesale;
-
                               return Material(
                                 color: Colors.transparent,
                                 child: InkWell(

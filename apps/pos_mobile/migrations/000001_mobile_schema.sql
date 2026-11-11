@@ -228,15 +228,17 @@ CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     username VARCHAR(100) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255) DEFAULT '',
+    password_hash VARCHAR(255) DEFAULT '',
     first_name VARCHAR(100),
     last_name VARCHAR(100),
     employee_code VARCHAR(50),
     is_active BOOLEAN DEFAULT true,
     metadata TEXT DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    must_reset_password BOOLEAN DEFAULT 0,
+    sap_imported BOOLEAN DEFAULT 0
 );
 
 CREATE TABLE user_roles (

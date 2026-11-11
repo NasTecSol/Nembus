@@ -49,6 +49,15 @@ class DatabaseService {
       onCreate: (db, version) async {
         developer.log('Local SQLite file instantiated.', name: 'DatabaseService');
       },
+      onOpen: (db) async {
+        // Ensure critical columns exist on SQLite users table so Nembus core queries never throw missing-column errors
+        try {
+          await db.execute('ALTER TABLE users ADD COLUMN must_reset_password BOOLEAN DEFAULT 0;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE users ADD COLUMN sap_imported BOOLEAN DEFAULT 0;');
+        } catch (_) {}
+      },
     );
 
     developer.log('Local SQLite ready (WAL mode active).', name: 'DatabaseService');

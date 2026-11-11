@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -250,7 +250,7 @@
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
-				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
+				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -298,7 +298,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+			shellScript = "if [ -z \"$FLUTTER_ROOT\" ] && [ -f \"$SRCROOT/Flutter/flutter_export_environment.sh\" ]; then\n  source \"$SRCROOT/Flutter/flutter_export_environment.sh\"\nfi\nFLUTTER_ROOT=\"${FLUTTER_ROOT%/bin/flutter}\"\nFLUTTER_ROOT=\"${FLUTTER_ROOT%/bin}\"\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin\n";
 		};
 		9740EEB61CF901F6004384FC /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -313,23 +313,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
-		};
-		F0E2D0CD1A953B49DCB16868 /* [Nembus] Compile Go Framework */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "[Nembus] Compile Go Framework";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"${SRCROOT}/scripts/build_frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
+			shellScript = "if [ -z \"$FLUTTER_ROOT\" ] && [ -f \"$SRCROOT/Flutter/flutter_export_environment.sh\" ]; then\n  source \"$SRCROOT/Flutter/flutter_export_environment.sh\"\nfi\nFLUTTER_ROOT=\"${FLUTTER_ROOT%/bin/flutter}\"\nFLUTTER_ROOT=\"${FLUTTER_ROOT%/bin}\"\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\n";
 		};
 		A4BCBC4F51D97C007C57C14A /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -339,29 +323,17 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		F0E2D0CD1A953B49DCB16867 /* [Nembus] Copy dSYMs to Archive */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "[Nembus] Copy dSYMs to Archive";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -n \"${DWARF_DSYM_FOLDER_PATH}\" ]; then\n  DSYM_SRC=\"${SRCROOT}/Frameworks/device/nembus_core.framework.dSYM\"\n  if [ ! -d \"$DSYM_SRC\" ]; then\n    DSYM_SRC=\"${SRCROOT}/Runner/nembus_core.framework.dSYM\"\n  fi\n  if [ -d \"$DSYM_SRC\" ]; then\n    echo \"📦 Copying ${DSYM_SRC} to ${DWARF_DSYM_FOLDER_PATH}/\"\n    mkdir -p \"${DWARF_DSYM_FOLDER_PATH}\"\n    rsync -av --delete \"${DSYM_SRC}\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n  fi\nfi\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		C855047053A9148ED2BB82C7 /* [CP] Check Pods Manifest.lock */ = {
@@ -406,6 +378,38 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		F0E2D0CD1A953B49DCB16867 /* [Nembus] Copy dSYMs to Archive */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "[Nembus] Copy dSYMs to Archive";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -n \"${DWARF_DSYM_FOLDER_PATH}\" ]; then\n  DSYM_SRC=\"${SRCROOT}/Frameworks/device/nembus_core.framework.dSYM\"\n  if [ ! -d \"$DSYM_SRC\" ]; then\n    DSYM_SRC=\"${SRCROOT}/Runner/nembus_core.framework.dSYM\"\n  fi\n  if [ -d \"$DSYM_SRC\" ]; then\n    echo \"📦 Copying ${DSYM_SRC} to ${DWARF_DSYM_FOLDER_PATH}/\"\n    mkdir -p \"${DWARF_DSYM_FOLDER_PATH}\"\n    rsync -av --delete \"${DSYM_SRC}\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n  fi\nfi\n";
+			showEnvVarsInLog = 0;
+		};
+		F0E2D0CD1A953B49DCB16868 /* [Nembus] Compile Go Framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "[Nembus] Compile Go Framework";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/build_frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -790,7 +794,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */ = {
+		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};

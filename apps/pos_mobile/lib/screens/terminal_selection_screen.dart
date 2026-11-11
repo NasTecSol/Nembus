@@ -16,6 +16,7 @@ class TerminalSelectionScreen extends StatefulWidget {
   final String storeName;
   final String storeCode;
   final String? storeType;
+  final bool isFirstInstall;
 
   const TerminalSelectionScreen({
     super.key,
@@ -26,6 +27,7 @@ class TerminalSelectionScreen extends StatefulWidget {
     required this.storeName,
     required this.storeCode,
     this.storeType,
+    this.isFirstInstall = false,
   });
 
   @override
@@ -183,18 +185,38 @@ class _TerminalSelectionScreenState extends State<TerminalSelectionScreen> {
     final terminalName = _selectedTerminal!['terminal_name']?.toString() ?? 'Terminal #$terminalId';
     final terminalCode = _selectedTerminal!['terminal_code']?.toString() ?? 'TERM-$terminalId';
 
-    // 1. Update local_device_config in SQLite
+    // 1. Update local_device_config in SQLite while preserving existing zatca_enabled status
     try {
       final db = DatabaseService().database;
+      int existingZatca = 0;
+      final existingRows = await db.query('local_device_config', limit: 1);
+      if (existingRows.isNotEmpty) {
+        final val = existingRows.first['zatca_enabled'];
+        if (val == 1 || val == true) existingZatca = 1;
+      }
+      if (SingletonClass().hasCompletedZatcaOnboarding) {
+        existingZatca = 1;
+      }
+
       await db.rawInsert('''
         INSERT OR REPLACE INTO local_device_config (id, device_name, store_id, pos_terminal_id, last_zatca_sync_at, zatca_enabled, created_at)
-        VALUES (1, ?, ?, ?, '1970-01-01 00:00:00', 0, CURRENT_TIMESTAMP)
-      ''', [terminalName, widget.storeId, terminalId]);
+        VALUES (1, ?, ?, ?, '1970-01-01 00:00:00', ?, CURRENT_TIMESTAMP)
+      ''', [terminalName, widget.storeId, terminalId, existingZatca]);
     } catch (e) {
       developer.log('Error saving local_device_config: $e', name: 'TerminalSelectionScreen');
     }
 
     // 2. Persist in SingletonClass state
+    if (widget.tenantSlug.isNotEmpty) {
+      SingletonClass().activeTenantSlug = widget.tenantSlug;
+    }
+    if (widget.tenantId != null && widget.tenantId!.isNotEmpty) {
+      SingletonClass().activeTenantId = widget.tenantId;
+    }
+    if (widget.tenantName.isNotEmpty) {
+      SingletonClass().activeTenantName = widget.tenantName;
+    }
+
     await SingletonClass().saveStoreAndTerminalState(
       storeId: widget.storeId,
       storeName: widget.storeName,
@@ -206,21 +228,40 @@ class _TerminalSelectionScreenState extends State<TerminalSelectionScreen> {
     );
 
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ZatcaOnboardingScreen(
-            tenantId: widget.tenantId ?? SingletonClass().activeTenantId ?? '1',
-            tenantSlug: widget.tenantSlug,
-            tenantName: widget.tenantName,
-            isFromSettings: false,
-            storeId: widget.storeId,
-            storeName: widget.storeName,
-            posTerminalId: terminalId,
-            posTerminalName: terminalName,
-            storeType: widget.storeType ?? SingletonClass().activeStoreType,
+      final shouldShowZatca = widget.isFirstInstall && !SingletonClass().hasCompletedZatcaOnboarding;
+
+      if (shouldShowZatca) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ZatcaOnboardingScreen(
+              tenantId: widget.tenantId ?? SingletonClass().activeTenantId ?? '1',
+              tenantSlug: widget.tenantSlug,
+              tenantName: widget.tenantName,
+              isFromSettings: false,
+              storeId: widget.storeId,
+              storeName: widget.storeName,
+              posTerminalId: terminalId,
+              posTerminalName: terminalName,
+              storeType: widget.storeType ?? SingletonClass().activeStoreType,
+              isFirstInstall: widget.isFirstInstall,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => LoginScreen(
+              tenantSlug: widget.tenantSlug,
+              tenantName: widget.tenantName,
+              storeId: widget.storeId,
+              storeName: widget.storeName,
+              posTerminalId: terminalId,
+              posTerminalName: terminalName,
+              storeType: widget.storeType ?? SingletonClass().activeStoreType,
+            ),
+          ),
+        );
+      }
     }
   }
 

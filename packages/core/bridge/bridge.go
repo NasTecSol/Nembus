@@ -578,7 +578,8 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 		{endpoint: "/api/uoms", tableName: "units_of_measure"},
 		{endpoint: "/api/tax-categories", tableName: "tax_categories"},
 		{endpoint: "/api/price-lists", tableName: "price_lists"},
-		{endpoint: fmt.Sprintf("/api/products/catalog?organization_id=%d", orgID), tableName: "products"},
+		{endpoint: fmt.Sprintf("/api/products/master-catalog?limit=2000&organization_id=%d", orgID), tableName: "products"},
+		{endpoint: fmt.Sprintf("/api/products/catalog?limit=2000&organization_id=%d", orgID), tableName: "products"},
 		{endpoint: "/api/product-prices", tableName: "product_prices"},
 		{endpoint: "/api/product-barcodes", tableName: "product_barcodes"},
 		{endpoint: "/api/product-variants", tableName: "product_variants"},
@@ -593,7 +594,7 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 		{endpoint: "/api/pos/categories", tableName: "product_categories"},
 		{endpoint: "/api/promotions", tableName: "promotions"},
 		{endpoint: "/api/loyalty", tableName: "loyalty_rules"},
-		{endpoint: "/api/users", tableName: "users"},
+		{endpoint: fmt.Sprintf("/api/users?limit=500&organization_id=%d", orgID), tableName: "users"},
 	}
 
 	type fetchResult struct {
@@ -640,16 +641,136 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 		log.Printf("📦 [HTTP Clone] '%s': cloned %d records", fr.tableName, inserted)
 	}
 
-	// 5. User Details sync for user_roles and user_store_access
-	userDetailsURL := fmt.Sprintf("%s/api/users/details", baseURL)
+	// Ensure at least one default price list exists for foreign keys
+	_, _ = db.Exec(`INSERT OR IGNORE INTO price_lists (id, name, code, is_default, is_active) VALUES (1, 'Standard Price List', 'STANDARD', 1, 1);`)
+
+	// 4.5. Master Product Catalog Deep Sync (products, variants, barcodes, prices, conversions, stock)
+	masterCatalogURL := fmt.Sprintf("%s/api/products/master-catalog?limit=2000&organization_id=%d", baseURL, orgID)
+	if mResp, err := httpGetJSON(httpClient, masterCatalogURL, cleanSlug, authToken); err == nil {
+		mRecs := extractRecords(mResp)
+		if len(mRecs) > 0 {
+			insertedProds := insertRecords(db, "products", mRecs)
+			totalRecords += insertedProds
+			log.Printf("📦 [HTTP Clone] 'products' (from master-catalog): cloned %d records", insertedProds)
+
+			for _, pRec := range mRecs {
+				prodID := pRec["id"]
+				if prodID == nil {
+					prodID = pRec["product_id"]
+				}
+				if prodID == nil {
+					continue
+				}
+
+				// Product Prices
+				if prices, ok := pRec["prices"].([]interface{}); ok && len(prices) > 0 {
+					var pList []map[string]interface{}
+					for _, pr := range prices {
+						if prMap, ok := pr.(map[string]interface{}); ok {
+							prMap["product_id"] = prodID
+							if prMap["price_list_id"] == nil || prMap["price_list_id"] == float64(0) {
+								prMap["price_list_id"] = 1
+							}
+							pList = append(pList, prMap)
+						}
+					}
+					if len(pList) > 0 {
+						totalRecords += insertRecords(db, "product_prices", pList)
+					}
+				}
+
+				// Product Variants
+				if vars, ok := pRec["variants"].([]interface{}); ok && len(vars) > 0 {
+					var vList []map[string]interface{}
+					for _, v := range vars {
+						if vMap, ok := v.(map[string]interface{}); ok {
+							vMap["product_id"] = prodID
+							if vMap["variant_attributes"] == nil {
+								vMap["variant_attributes"] = "{}"
+							}
+							vList = append(vList, vMap)
+						}
+					}
+					if len(vList) > 0 {
+						totalRecords += insertRecords(db, "product_variants", vList)
+					}
+				}
+
+				// Product Barcodes
+				if bcs, ok := pRec["barcodes"].([]interface{}); ok && len(bcs) > 0 {
+					var bList []map[string]interface{}
+					for _, b := range bcs {
+						if bMap, ok := b.(map[string]interface{}); ok {
+							bMap["product_id"] = prodID
+							bList = append(bList, bMap)
+						}
+					}
+					if len(bList) > 0 {
+						totalRecords += insertRecords(db, "product_barcodes", bList)
+					}
+				}
+
+				// UOM Conversions
+				if uoms, ok := pRec["uom_conversions"].([]interface{}); ok && len(uoms) > 0 {
+					var uList []map[string]interface{}
+					for _, u := range uoms {
+						if uMap, ok := u.(map[string]interface{}); ok {
+							uMap["product_id"] = prodID
+							uList = append(uList, uMap)
+						}
+					}
+					if len(uList) > 0 {
+						totalRecords += insertRecords(db, "product_uom_conversions", uList)
+					}
+				}
+
+				// Inventory Stock
+				if invs, ok := pRec["inventory"].([]interface{}); ok && len(invs) > 0 {
+					var iList []map[string]interface{}
+					for _, i := range invs {
+						if iMap, ok := i.(map[string]interface{}); ok {
+							iMap["product_id"] = prodID
+							if iMap["store_id"] == nil || iMap["store_id"] == float64(0) {
+								iMap["store_id"] = 1
+							}
+							iList = append(iList, iMap)
+						}
+					}
+					if len(iList) > 0 {
+						totalRecords += insertRecords(db, "inventory_stock", iList)
+					}
+				}
+			}
+		}
+	}
+
+	// Check if products were populated; if not, try fallback catalog
+	var prodCheckCount int
+	_ = db.QueryRow("SELECT COUNT(*) FROM products").Scan(&prodCheckCount)
+	if prodCheckCount == 0 {
+		catURL := fmt.Sprintf("%s/api/products/catalog?limit=2000&organization_id=%d", baseURL, orgID)
+		if cResp, err := httpGetJSON(httpClient, catURL, cleanSlug, authToken); err == nil {
+			cRecs := extractRecords(cResp)
+			if len(cRecs) > 0 {
+				insertedProds := insertRecords(db, "products", cRecs)
+				totalRecords += insertedProds
+				log.Printf("📦 [HTTP Clone] 'products' (from catalog fallback): cloned %d records", insertedProds)
+			}
+		}
+	}
+
+	// 5. User Details sync for users, user_roles and user_store_access
+	userDetailsURL := fmt.Sprintf("%s/api/users/details?limit=500&organization_id=%d", baseURL, orgID)
 	if uResp, err := httpGetJSON(httpClient, userDetailsURL, cleanSlug, authToken); err == nil {
 		if uList, ok := uResp["data"].([]interface{}); ok {
+			var userRecs []map[string]interface{}
 			for _, uItem := range uList {
 				if uMap, ok := uItem.(map[string]interface{}); ok {
 					userID := uMap["id"]
 					if userID == nil {
 						continue
 					}
+					userRecs = append(userRecs, uMap)
 
 					// Insert user_roles
 					if roles, ok := uMap["roles"].([]interface{}); ok {
@@ -682,6 +803,12 @@ func syncTenantMasterDataHTTP(tenantSlug, cloudURL, sqlitePath string) map[strin
 						}
 					}
 				}
+			}
+
+			if len(userRecs) > 0 {
+				insertedUsers := insertRecords(db, "users", userRecs)
+				totalRecords += insertedUsers
+				log.Printf("📦 [HTTP Clone] 'users' (from details): cloned %d records", insertedUsers)
 			}
 		}
 	}
@@ -896,6 +1023,168 @@ func insertRecords(db *sql.DB, tableName string, records []map[string]interface{
 			}
 		}
 
+		// Special handling for products table: ensure id, organization_id, is_active, is_sellable exist
+		if strings.EqualFold(tableName, "products") {
+			// Normalize product_id to id
+			if _, hasID := rec["id"]; !hasID {
+				if pid, ok := rec["product_id"]; ok && pid != nil {
+					rec["id"] = pid
+				}
+			}
+
+			hasID := false
+			hasOrg := false
+			hasActive := false
+			hasSellable := false
+			for _, c := range cols {
+				if strings.EqualFold(c, `"id"`) || strings.EqualFold(c, "id") {
+					hasID = true
+				}
+				if strings.EqualFold(c, `"organization_id"`) || strings.EqualFold(c, "organization_id") {
+					hasOrg = true
+				}
+				if strings.EqualFold(c, `"is_active"`) || strings.EqualFold(c, "is_active") {
+					hasActive = true
+				}
+				if strings.EqualFold(c, `"is_sellable"`) || strings.EqualFold(c, "is_sellable") {
+					hasSellable = true
+				}
+			}
+
+			if !hasID && rec["id"] != nil && sqliteColsMap["id"] {
+				cols = append(cols, `"id"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, rec["id"])
+			}
+			if !hasOrg && sqliteColsMap["organization_id"] {
+				orgVal := 1
+				if o, ok := rec["organization_id"]; ok && o != nil {
+					if ov, ok := o.(float64); ok && ov > 0 {
+						orgVal = int(ov)
+					} else if ov, ok := o.(int); ok && ov > 0 {
+						orgVal = ov
+					}
+				}
+				if orgVal == 1 {
+					var dbOrgID int
+					_ = db.QueryRow("SELECT id FROM organizations ORDER BY id ASC LIMIT 1").Scan(&dbOrgID)
+					if dbOrgID > 0 {
+						orgVal = dbOrgID
+					}
+				}
+				cols = append(cols, `"organization_id"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, orgVal)
+			}
+			if !hasActive && sqliteColsMap["is_active"] {
+				cols = append(cols, `"is_active"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, 1)
+			}
+			if !hasSellable && sqliteColsMap["is_sellable"] {
+				cols = append(cols, `"is_sellable"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, 1)
+			}
+		}
+
+		// Special handling for product_variants table
+		if strings.EqualFold(tableName, "product_variants") {
+			hasAttributes := false
+			for _, c := range cols {
+				if strings.EqualFold(c, `"variant_attributes"`) || strings.EqualFold(c, "variant_attributes") {
+					hasAttributes = true
+				}
+			}
+			if !hasAttributes && sqliteColsMap["variant_attributes"] {
+				cols = append(cols, `"variant_attributes"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, "{}")
+			}
+		}
+
+		// Special handling for product_prices table
+		if strings.EqualFold(tableName, "product_prices") {
+			hasPriceList := false
+			for _, c := range cols {
+				if strings.EqualFold(c, `"price_list_id"`) || strings.EqualFold(c, "price_list_id") {
+					hasPriceList = true
+				}
+			}
+			if !hasPriceList && sqliteColsMap["price_list_id"] {
+				cols = append(cols, `"price_list_id"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, 1)
+			}
+		}
+		if strings.EqualFold(tableName, "users") {
+			// Normalize any alternative password hash keys from various API schemas
+			for _, alt := range []string{"password_hash", "passwordHash", "PasswordHash", "password", "Password", "hash"} {
+				if val, exists := rec[alt]; exists && val != nil && fmt.Sprintf("%v", val) != "" {
+					rec["password_hash"] = val
+					break
+				}
+			}
+
+			hasPassword := false
+			hasOrg := false
+			hasEmail := false
+			for i, c := range cols {
+				if strings.EqualFold(c, `"password_hash"`) || strings.EqualFold(c, "password_hash") {
+					hasPassword = true
+					// If password_hash is empty in vals, but present in rec, update it
+					if (vals[i] == nil || vals[i] == "") && rec["password_hash"] != nil && fmt.Sprintf("%v", rec["password_hash"]) != "" {
+						vals[i] = fmt.Sprintf("%v", rec["password_hash"])
+					}
+					// If still empty, preserve any existing non-empty hash in local SQLite
+					if (vals[i] == nil || vals[i] == "") && rec["id"] != nil {
+						var existingHash string
+						_ = db.QueryRow("SELECT password_hash FROM users WHERE id = ?", rec["id"]).Scan(&existingHash)
+						if existingHash != "" {
+							vals[i] = existingHash
+						}
+					}
+				}
+				if strings.EqualFold(c, `"organization_id"`) || strings.EqualFold(c, "organization_id") {
+					hasOrg = true
+				}
+				if strings.EqualFold(c, `"email"`) || strings.EqualFold(c, "email") {
+					hasEmail = true
+				}
+			}
+			if !hasPassword && sqliteColsMap["password_hash"] {
+				pwdVal := ""
+				if p, ok := rec["password_hash"]; ok && p != nil {
+					pwdVal = fmt.Sprintf("%v", p)
+				}
+				// If empty, preserve existing local SQLite hash
+				if pwdVal == "" && rec["id"] != nil {
+					var existingHash string
+					_ = db.QueryRow("SELECT password_hash FROM users WHERE id = ?", rec["id"]).Scan(&existingHash)
+					if existingHash != "" {
+						pwdVal = existingHash
+					}
+				}
+				cols = append(cols, `"password_hash"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, pwdVal)
+			}
+			if !hasOrg && sqliteColsMap["organization_id"] {
+				cols = append(cols, `"organization_id"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, 1)
+			}
+			if !hasEmail && sqliteColsMap["email"] {
+				emailVal := ""
+				if e, ok := rec["email"]; ok && e != nil {
+					emailVal = fmt.Sprintf("%v", e)
+				}
+				cols = append(cols, `"email"`)
+				placeholders = append(placeholders, "?")
+				vals = append(vals, emailVal)
+			}
+		}
+
 		if len(cols) == 0 {
 			continue
 		}
@@ -908,6 +1197,8 @@ func insertRecords(db *sql.DB, tableName string, records []map[string]interface{
 
 		if _, err := tx.Exec(query, vals...); err == nil {
 			inserted++
+		} else {
+			log.Printf("⚠️ [insertRecords] Row insert into '%s' failed: %v (query: %s, vals: %v)", tableName, err, query, vals)
 		}
 	}
 	_ = tx.Commit()
@@ -1047,6 +1338,24 @@ func scanWithCoercion(scanFn func(dest ...any) error, dest ...any) error {
 				if scanner, ok := d.(sql.Scanner); ok {
 					_ = scanner.Scan(val)
 				}
+			}
+		case *pgtype.UUID:
+			switch v := val.(type) {
+			case string:
+				if u, err := uuid.Parse(v); err == nil {
+					target.Bytes = u
+					target.Valid = true
+				}
+			case []byte:
+				if len(v) == 16 {
+					copy(target.Bytes[:], v)
+					target.Valid = true
+				} else if u, err := uuid.ParseBytes(v); err == nil {
+					target.Bytes = u
+					target.Valid = true
+				}
+			default:
+				_ = target.Scan(val)
 			}
 		case *uuid.NullUUID:
 			switch v := val.(type) {
@@ -1239,6 +1548,63 @@ func (s *sqliteDBTX) Exec(ctx context.Context, query string, args ...interface{}
 }
 
 func (s *sqliteDBTX) QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row {
+	if strings.Contains(query, "ConvertCartToOrder") {
+		coercedArgs := coerceArgsForSQLite(args)
+		cartIDStr := fmt.Sprintf("%v", coercedArgs[0])
+		orderNumber := fmt.Sprintf("%v", coercedArgs[1])
+		orderID := uuid.New().String()
+
+		var existingOrderID string
+		_ = s.db.QueryRowContext(ctx, "SELECT id FROM sales_orders_v2 WHERE source_cart_id = ? ORDER BY created_at DESC LIMIT 1", cartIDStr).Scan(&existingOrderID)
+		if existingOrderID != "" {
+			orderID = existingOrderID
+		}
+
+		// 1. Insert into sales_orders_v2 from carts (SQLite compatible without modifying CTE)
+		insertOrderSQL := `INSERT OR REPLACE INTO sales_orders_v2 (
+			id, order_number, organization_id, store_id, customer_id,
+			customer_name, customer_email, customer_phone,
+			order_type, order_status, payment_status, fulfillment_status,
+			sales_channel, source_cart_id, created_by_user_id,
+			order_date, shipping_address, billing_address,
+			shipping_method, payment_method, payment_gateway,
+			pos_terminal_id, cashier_id,
+			subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
+			coupon_code, discount_codes, promotional_credits,
+			special_instructions, metadata, created_at, updated_at
+		)
+		SELECT 
+			?, ?, c.organization_id, c.store_id, c.customer_id,
+			COALESCE(cu.name, c.guest_email), COALESCE(cu.email, c.guest_email), COALESCE(cu.phone, c.guest_phone),
+			'standard', 'pending', 'unpaid', 'unfulfilled',
+			c.channel, c.id, c.created_by_user_id,
+			CURRENT_TIMESTAMP, c.shipping_address, c.billing_address,
+			c.shipping_method, c.payment_method, c.payment_gateway,
+			c.pos_terminal_id, c.cashier_id,
+			c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, c.total_amount,
+			c.coupon_code, '[]', c.promotional_credits,
+			c.notes, c.metadata, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		FROM carts c
+		LEFT JOIN customers cu ON c.customer_id = cu.id
+		WHERE c.id = ?`
+
+		if _, err := s.db.ExecContext(ctx, insertOrderSQL, orderID, orderNumber, cartIDStr); err != nil {
+			log.Printf("⚠️ [sqliteDBTX] ConvertCartToOrder insert error: %v", err)
+		}
+
+		// 2. Update carts
+		updateCartSQL := `UPDATE carts 
+		SET cart_status = 'converted',
+			converted_to_order_id = ?,
+			converted_at = CURRENT_TIMESTAMP,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`
+		_, _ = s.db.ExecContext(ctx, updateCartSQL, orderID, cartIDStr)
+
+		row := s.db.QueryRowContext(ctx, "SELECT ? as id, ? as converted_to_order_id", cartIDStr, orderID)
+		return &sqliteRow{row: row}
+	}
+
 	cleanQuery := adaptQueryForSQLite(query)
 	coercedArgs := coerceArgsForSQLite(args)
 	return &sqliteRow{row: s.db.QueryRowContext(ctx, cleanQuery, coercedArgs...)}
@@ -1590,7 +1956,82 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 		case "clearCartItems", "clearCart":
 			cartHandler.ClearCartItems(c)
 		case "convertToOrder", "convertCartToOrder":
-			cartHandler.ConvertToOrder(c)
+			cartIDStr := getParam("cart_id", "cartId", "id")
+			orderIDStr := getParam("order_id", "orderId")
+			orderNumStr := getParam("order_number", "orderNumber")
+			if orderIDStr == "" {
+				orderIDStr = uuid.New().String()
+			}
+			if orderNumStr == "" {
+				orderNumStr = fmt.Sprintf("SO-%d", time.Now().Unix())
+			}
+
+			if cartIDStr != "" {
+				var count int
+				_ = db.QueryRow("SELECT COUNT(*) FROM carts WHERE id = ?", cartIDStr).Scan(&count)
+				if count == 0 {
+					_, _ = db.Exec(`INSERT OR REPLACE INTO carts (
+						id, cart_number, organization_id, store_id, customer_id, cart_status, 
+						channel, payment_method, subtotal, total_amount, created_at, updated_at
+					) VALUES (?, ?, ?, ?, ?, 'active', 'pos', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+						cartIDStr,
+						"CT-"+cartIDStr[:8],
+						getParam("organization_id", "org_id", "orgId"),
+						getParam("store_id", "storeId"),
+						getParam("customer_id", "customerId"),
+						getParam("payment_method"),
+						getParam("subtotal"),
+						getParam("total_amount"),
+					)
+				}
+
+				// Insert/update order in sales_orders_v2 (offline-safe for SQLite)
+				_, _ = db.Exec(`INSERT OR REPLACE INTO sales_orders_v2 (
+					id, order_number, organization_id, store_id, customer_id,
+					customer_name, customer_email, customer_phone,
+					order_type, order_status, payment_status, fulfillment_status,
+					sales_channel, source_cart_id, created_by_user_id,
+					order_date, shipping_address, billing_address,
+					shipping_method, payment_method, payment_gateway,
+					pos_terminal_id, cashier_id,
+					subtotal, discount_amount, tax_amount, shipping_amount, total_amount,
+					coupon_code, discount_codes, promotional_credits,
+					special_instructions, metadata, created_at, updated_at
+				)
+				SELECT 
+					?, ?, c.organization_id, c.store_id, c.customer_id,
+					COALESCE(cu.name, c.guest_email, 'Walk-in Customer'), COALESCE(cu.email, c.guest_email, ''), COALESCE(cu.phone, c.guest_phone, ''),
+					'standard', 'draft', 'unpaid', 'unfulfilled',
+					'pos', c.id, c.created_by_user_id,
+					CURRENT_TIMESTAMP, c.shipping_address, c.billing_address,
+					c.shipping_method, COALESCE(?, c.payment_method, 'cash'), c.payment_gateway,
+					c.pos_terminal_id, c.cashier_id,
+					c.subtotal, c.discount_amount, c.tax_amount, c.shipping_amount, COALESCE(?, c.total_amount),
+					c.coupon_code, '[]', c.promotional_credits,
+					c.notes, c.metadata, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				FROM carts c
+				LEFT JOIN customers cu ON c.customer_id = cu.id
+				WHERE c.id = ?`,
+					orderIDStr, orderNumStr, getParam("payment_method"), getParam("total_amount"), cartIDStr,
+				)
+
+				// Update cart to converted
+				_, _ = db.Exec(`UPDATE carts SET cart_status = 'converted', converted_to_order_id = ?, converted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, orderIDStr, cartIDStr)
+
+				c.JSON(200, gin.H{
+					"success":    true,
+					"statusCode": 200,
+					"message":    "cart converted to order successfully",
+					"data": gin.H{
+						"order_id":              orderIDStr,
+						"order_number":          orderNumStr,
+						"cart_id":               cartIDStr,
+						"converted_to_order_id": orderIDStr,
+					},
+				})
+			} else {
+				cartHandler.ConvertToOrder(c)
+			}
 		case "getCartTotals":
 			cartHandler.GetCartTotals(c)
 		default:
@@ -2051,6 +2492,19 @@ func DispatchHandler(handlerName, action string, payload []byte) map[string]inte
 			return map[string]interface{}{
 				"success": false,
 				"error":   fmt.Sprintf("Action '%s' not supported on restaurant handler", action),
+			}
+		}
+
+	case "print":
+		printUC := usecase.NewPrintUseCase()
+		printHandler := handler.NewPrintHandler(printUC)
+		switch action {
+		case "receipt":
+			printHandler.PrintReceipt(c)
+		default:
+			return map[string]interface{}{
+				"success": false,
+				"error":   fmt.Sprintf("Action '%s' not supported on print handler", action),
 			}
 		}
 

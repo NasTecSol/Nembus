@@ -23,6 +23,14 @@ class MigrationRunner {
       final rawSql = await rootBundle.loadString(path);
       await _executeSqlScript(db, rawSql);
     }
+
+    // Ensure compatibility views and default entities exist
+    try {
+      await db.execute('CREATE VIEW IF NOT EXISTS categories AS SELECT * FROM product_categories;');
+      await db.execute("INSERT OR IGNORE INTO price_lists (id, name, code, is_default, is_active) VALUES (1, 'Standard Price List', 'STANDARD', 1, 1);");
+    } catch (e) {
+      developer.log('Post-migration setup notice: $e', name: 'MigrationRunner');
+    }
   }
 
   static Future<void> _executeSqlScript(Database db, String script) async {

@@ -11,12 +11,14 @@ class StoreSelectionScreen extends StatefulWidget {
   final String tenantSlug;
   final String tenantName;
   final String? tenantId;
+  final bool isFirstInstall;
 
   const StoreSelectionScreen({
     super.key,
     required this.tenantSlug,
     required this.tenantName,
     this.tenantId,
+    this.isFirstInstall = false,
   });
 
   @override
@@ -142,6 +144,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
           storeName: storeName,
           storeCode: storeCode,
           storeType: storeType,
+          isFirstInstall: widget.isFirstInstall,
         ),
       ),
     );

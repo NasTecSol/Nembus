@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../database/db_service.dart';
 import '../ffi/nembus_bridge.dart';
+import '../services/pos_receipt_engine.dart';
 import '../singleton/singleton_class.dart';
 import '../widgets/thermal_receipt_widget.dart';
 
@@ -54,6 +56,7 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
   String _stepStatusText = '';
   String? _generatedOrderNumber;
   String? _errorMessage;
+  ReceiptTemplate? _resolvedReceiptTemplate;
 
   final List<Map<String, dynamic>> _paymentMethods = [
     {
@@ -126,10 +129,14 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
     });
   }
 
+  static final math.Random _random = math.Random.secure();
+
   String _generateUuidV4() {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final hexTime = now.toRadixString(16).padLeft(12, '0');
-    return '00000000-0000-4000-8000-${hexTime.substring(hexTime.length - 12)}';
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 10
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}';
   }
 
   /// Converts Cart to Order and executes the 3 mandatory offline order steps:
@@ -171,30 +178,14 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
       int cashierId = 1;
       int cashierSessionId = 1;
 
-      developer.log(
-        'Converting cart=${widget.cartId} to order=$orderId ($orderNumber) for customer=$customerName',
-        name: 'PosSaleScreen',
-      );
-      final convertResp = NembusBridge().callHandler(
-        handler: 'cart',
-        action: 'convertToOrder',
-        payload: {
-          'cart_id': widget.cartId,
-          'order_id': orderId,
-          'order_number': orderNumber,
-          'customer_id': customerId,
-          'payment_method': _selectedPaymentMethod,
-          'total_amount': widget.totalAmount,
-        },
-      );
-      developer.log('Cart convertToOrder response: $convertResp', name: 'PosSaleScreen');
+      // Ensure cart is persisted in local SQLite before invoking bridge conversion
+      final db = DatabaseService().database;
+      int orgId = 1;
       try {
-        final db = DatabaseService().database;
-        int orgId = 1;
-        try {
-          final orgRows = await db.query('organizations', limit: 1);
-          if (orgRows.isNotEmpty) orgId = (orgRows.first['id'] as num).toInt();
-        } catch (_) {}
+        final orgRows = await db.query('organizations', limit: 1);
+        if (orgRows.isNotEmpty) orgId = (orgRows.first['id'] as num).toInt();
+      } catch (_) {}
+      try {
         final existingCart = await db.query('carts', where: 'id = ?', whereArgs: [widget.cartId]);
         if (existingCart.isEmpty) {
           await db.insert('carts', {
@@ -210,6 +201,30 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
             'updated_at': DateTime.now().toIso8601String(),
           });
         }
+      } catch (cErr) {
+        developer.log('Cart pre-insert note: $cErr', name: 'PosSaleScreen');
+      }
+
+      developer.log(
+        'Converting cart=${widget.cartId} to order=$orderId ($orderNumber) for customer=$customerName',
+        name: 'PosSaleScreen',
+      );
+      final convertResp = NembusBridge().callHandler(
+        handler: 'cart',
+        action: 'convertToOrder',
+        payload: {
+          'cart_id': widget.cartId,
+          'order_id': orderId,
+          'order_number': orderNumber,
+          'customer_id': customerId,
+          'payment_method': _selectedPaymentMethod,
+          'total_amount': widget.totalAmount,
+          'store_id': widget.storeId,
+          'organization_id': orgId,
+        },
+      );
+      developer.log('Cart convertToOrder response: $convertResp', name: 'PosSaleScreen');
+      try {
 
         // Dynamically resolve terminal, cashier, and active open cashier session
         try {
@@ -307,8 +322,9 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
           final unitPrice = (item['unit_price'] as num?)?.toDouble() ?? 0.0;
           final lineTotal = (item['line_total'] as num?)?.toDouble() ?? (qty * unitPrice);
 
+          final lineId = _generateUuidV4();
           await db.insert('sales_order_lines_v2', {
-            'id': 'LINE-${DateTime.now().millisecondsSinceEpoch}-$lineIdx',
+            'id': lineId,
             'sales_order_id': orderId,
             'organization_id': orgId,
             'line_number': lineIdx,
@@ -530,23 +546,10 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
         );
 
         // Enqueue into Transactional Outbox (sync_queue) with strict dependency priority
+        // Cashiers and Customers are master entities managed on Cloud / HTTP and are not
+        // synced via gRPC StreamPush. They are excluded here to prevent server rejection.
         try {
-          // 1. Enqueue Cashier (Priority 30)
-          final cRows = await db.query('cashiers', where: 'id = ?', whereArgs: [cashierId]);
-          if (cRows.isNotEmpty) {
-            await db.insert('sync_queue', {
-              'entity_type': 'cashiers',
-              'entity_id': cashierId.toString(),
-              'action': 'INSERT',
-              'payload': jsonEncode(cRows.first),
-              'status': 'pending',
-              'priority': 30,
-              'correlation_id': orderId,
-              'created_at': DateTime.now().toIso8601String(),
-            });
-          }
-
-          // 2. Enqueue Cashier Session (Priority 25)
+          // 1. Enqueue Cashier Session (Priority 25)
           if (cashierSessionId > 0) {
             final sRows = await db.query('cashier_sessions', where: 'id = ?', whereArgs: [cashierSessionId]);
             if (sRows.isNotEmpty) {
@@ -563,24 +566,7 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
             }
           }
 
-          // 3. Enqueue Customer if present (Priority 20)
-          if (customerId != null) {
-            final custRows = await db.query('customers', where: 'id = ?', whereArgs: [customerId]);
-            if (custRows.isNotEmpty) {
-              await db.insert('sync_queue', {
-                'entity_type': 'customers',
-                'entity_id': customerId.toString(),
-                'action': 'INSERT',
-                'payload': jsonEncode(custRows.first),
-                'status': 'pending',
-                'priority': 20,
-                'correlation_id': orderId,
-                'created_at': DateTime.now().toIso8601String(),
-              });
-            }
-          }
-
-          // 4. Enqueue Sales Order (Priority 15)
+          // 2. Enqueue Sales Order (Priority 15)
           final orderRows = await db.query('sales_orders_v2', where: 'id = ?', whereArgs: [orderId]);
           if (orderRows.isNotEmpty) {
             final orderPayload = Map<String, dynamic>.from(orderRows.first);
@@ -666,9 +652,24 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
         developer.log('Step 3 SQLite update: $dbErr', name: 'PosSaleScreen');
       }
 
-      await Future.delayed(const Duration(milliseconds: 800));
+      // Fetch backend receipt template and ZATCA QR
+      ReceiptTemplate? resolvedTemplate;
+      try {
+        resolvedTemplate = await PosReceiptEngine.fetchReceiptTemplate(
+          storeId: widget.storeId,
+          salesOrderId: orderId,
+          totalAmount: widget.totalAmount,
+          taxAmount: widget.taxAmount,
+          storeName: widget.storeName,
+        );
+      } catch (tmplErr) {
+        developer.log('Template resolution note: $tmplErr', name: 'PosSaleScreen');
+      }
+
+      await Future.delayed(const Duration(milliseconds: 600));
 
       setState(() {
+        _resolvedReceiptTemplate = resolvedTemplate;
         _currentWorkflowStep = 4;
         _isProcessing = false;
         _stepStatusText = 'Order Complete!';
@@ -717,9 +718,11 @@ class _PosSaleScreenState extends State<PosSaleScreen> {
       body: SafeArea(
         child: _currentWorkflowStep == 4
             ? ThermalReceiptWidget(
+                template: _resolvedReceiptTemplate,
+                qrCodeBase64: _resolvedReceiptTemplate?.qrCodeBase64,
                 storeName: widget.storeName.isNotEmpty
                     ? widget.storeName
-                    : (SingletonClass().activeStoreName ?? 'QITAF AL AYELA'),
+                    : (SingletonClass().activeStoreName ?? ''),
                 orderNumber: _generatedOrderNumber != null
                     ? 'TXN-$_generatedOrderNumber'
                     : 'TXN-ORD-${DateTime.now().millisecondsSinceEpoch}',

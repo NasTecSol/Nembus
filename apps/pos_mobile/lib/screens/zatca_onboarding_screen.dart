@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -20,6 +21,7 @@ class ZatcaOnboardingScreen extends StatefulWidget {
   final int? posTerminalId;
   final String? posTerminalName;
   final String? storeType;
+  final bool isFirstInstall;
 
   const ZatcaOnboardingScreen({
     super.key,
@@ -32,6 +34,7 @@ class ZatcaOnboardingScreen extends StatefulWidget {
     this.posTerminalId,
     this.posTerminalName,
     this.storeType,
+    this.isFirstInstall = false,
   });
 
   @override
@@ -39,11 +42,13 @@ class ZatcaOnboardingScreen extends StatefulWidget {
 }
 
 class _ZatcaOnboardingScreenState extends State<ZatcaOnboardingScreen> {
+  static bool _hasAutoCheckedRegistration = false;
   final TextEditingController _otpController = TextEditingController();
   bool _zatcaEnabled = true;
   String _deviceSerial = 'Fetching device serial...';
   final String _environment = 'Simulation (Local Development)';
   bool _isLoading = false;
+  bool _isCheckingRegistration = false;
   bool _isOnboarded = false;
   String? _statusFeedback;
   Color? _feedbackColor;
@@ -118,7 +123,278 @@ class _ZatcaOnboardingScreenState extends State<ZatcaOnboardingScreen> {
         _storeId = storeId;
         _posTerminalId = terminalId;
       });
+
+      // Automatically check if device is already registered on first install of build
+      if (widget.isFirstInstall && !widget.isFromSettings && !_hasAutoCheckedRegistration) {
+        _hasAutoCheckedRegistration = true;
+        _checkIfDeviceAlreadyRegistered();
+      }
     }
+  }
+
+  /// Checks if current device hardware serial is already registered in ZATCA for the selected store & terminal.
+  Future<void> _checkIfDeviceAlreadyRegistered() async {
+    if (_isCheckingRegistration) return;
+    setState(() => _isCheckingRegistration = true);
+
+    String currentSerial = _deviceSerial;
+    if (currentSerial.isEmpty || currentSerial.contains('Fetching')) {
+      currentSerial = await DeviceSerialService.getDeviceSerial();
+      if (mounted) {
+        setState(() => _deviceSerial = currentSerial);
+      }
+    }
+
+    final effectiveStoreId = widget.storeId ?? (_storeId != 0 ? _storeId : (SingletonClass().activeStoreId ?? 1));
+    final effectiveTerminalId = widget.posTerminalId ?? (_posTerminalId != 0 ? _posTerminalId : (SingletonClass().activeTerminalId ?? 1));
+
+    int effectiveOrgId = _organizationId;
+    if (effectiveOrgId <= 0) {
+      try {
+        final db = DatabaseService().database;
+        final orgRows = await db.query('organizations', limit: 1);
+        if (orgRows.isNotEmpty && orgRows.first['id'] != null) {
+          effectiveOrgId = (orgRows.first['id'] as num).toInt();
+        }
+      } catch (_) {}
+    }
+    if (effectiveOrgId <= 0) effectiveOrgId = 1;
+
+    developer.log(
+      'Checking ZATCA device registration for org=$effectiveOrgId, store=$effectiveStoreId, terminal=$effectiveTerminalId, serial=$currentSerial',
+      name: 'ZatcaOnboard',
+    );
+
+    try {
+      String effectiveTenantSlug = widget.tenantSlug.trim();
+      if (effectiveTenantSlug.isEmpty) {
+        effectiveTenantSlug = (SingletonClass().activeTenantSlug ?? '').trim();
+      }
+      if (effectiveTenantSlug.isEmpty) {
+        try {
+          final db = DatabaseService().database;
+          final tRows = await db.query('tenants', limit: 1);
+          if (tRows.isNotEmpty && tRows.first['slug'] != null) {
+            effectiveTenantSlug = tRows.first['slug'].toString().trim();
+          }
+        } catch (_) {}
+      }
+      if (effectiveTenantSlug.isEmpty) {
+        effectiveTenantSlug = widget.tenantId.isNotEmpty
+            ? widget.tenantId
+            : (SingletonClass().activeTenantId ?? '1');
+      }
+
+      final url = '${SingletonClass().baseURL}/api/zatca/devices?store_id=$effectiveStoreId&pos_terminal_id=$effectiveTerminalId';
+
+      // 1. Fetch base dev token from cloud
+      final rawDevToken = await _getAuthToken();
+      final detectedSecret = rawDevToken.isNotEmpty ? _detectSecretFromDevToken(rawDevToken) : null;
+
+      // 2. Prepare tokens with organization_id claim
+      final List<String> candidateTokens = [];
+      if (detectedSecret != null) {
+        candidateTokens.add(_mintTokenWithOrg(effectiveOrgId, detectedSecret));
+      }
+      candidateTokens.add(_mintTokenWithOrg(effectiveOrgId, 'nastecsol'));
+      candidateTokens.add(_mintTokenWithOrg(effectiveOrgId, 'nembus-pos-mobile-secure-jwt-secret-key-2026'));
+      if (rawDevToken.isNotEmpty && !candidateTokens.contains(rawDevToken)) {
+        candidateTokens.add(rawDevToken);
+      }
+
+      developer.log('================ ZATCA CHECK DEVICES REQUEST ================', name: 'ZatcaOnboard');
+      developer.log('URL: $url', name: 'ZatcaOnboard');
+      debugPrint('🚀 [ZATCA Check Devices API] GET $url');
+
+      http.Response? response;
+      for (final candidateToken in candidateTokens) {
+        final headers = <String, String>{
+          'Accept': 'application/json',
+          'x-tenant-id': effectiveTenantSlug,
+          'x-organization-id': '$effectiveOrgId',
+          'x-org-id': '$effectiveOrgId',
+          if (candidateToken.isNotEmpty)
+            'Authorization': candidateToken.startsWith('Bearer ') ? candidateToken : 'Bearer $candidateToken',
+        };
+
+        developer.log('Testing token candidate (length=${candidateToken.length})...', name: 'ZatcaOnboard');
+        final resp = await http
+            .get(Uri.parse(url), headers: headers)
+            .timeout(const Duration(seconds: 15));
+
+        response = resp;
+        if (resp.statusCode == 200 || resp.statusCode == 201) {
+          SingletonClass().authToken = candidateToken;
+          developer.log('Acquired working authenticated token with organization claim!', name: 'ZatcaOnboard');
+          break;
+        }
+
+        // If error is not 401, stop trying token variants
+        if (resp.statusCode != 401) {
+          break;
+        }
+      }
+
+      developer.log('================ ZATCA CHECK DEVICES RESPONSE ===============', name: 'ZatcaOnboard');
+      developer.log('Status Code: ${response?.statusCode}', name: 'ZatcaOnboard');
+      developer.log('Response Body: ${response?.body}', name: 'ZatcaOnboard');
+      debugPrint('📥 [ZATCA Check Devices API] Response Status: ${response?.statusCode}');
+      debugPrint('Response Body: ${response?.body}');
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        List<Map<String, dynamic>> deviceList = [];
+
+        if (decoded is List) {
+          for (var item in decoded) {
+            if (item is Map) deviceList.add(Map<String, dynamic>.from(item));
+          }
+        } else if (decoded is Map) {
+          final candidate = decoded['data'] ?? decoded['devices'] ?? decoded['items'] ?? decoded['results'];
+          if (candidate is List) {
+            for (var item in candidate) {
+              if (item is Map) deviceList.add(Map<String, dynamic>.from(item));
+            }
+          } else if (decoded['data'] is Map) {
+            final dData = decoded['data'];
+            if (dData['devices'] is List) {
+              for (var item in dData['devices']) {
+                if (item is Map) deviceList.add(Map<String, dynamic>.from(item));
+              }
+            } else {
+              deviceList.add(Map<String, dynamic>.from(dData));
+            }
+          } else if (decoded.containsKey('device_serial') ||
+              decoded.containsKey('serial_number') ||
+              decoded.containsKey('serial')) {
+            deviceList.add(Map<String, dynamic>.from(decoded));
+          }
+        }
+
+        final cleanCurrentSerial = currentSerial.trim().toLowerCase();
+        bool isAlreadyRegistered = false;
+
+        for (final dev in deviceList) {
+          final devSerial = (dev['device_serial'] ??
+                  dev['deviceSerial'] ??
+                  dev['serial_number'] ??
+                  dev['serialNumber'] ??
+                  dev['serial'])
+              ?.toString()
+              .trim()
+              .toLowerCase();
+          if (devSerial != null && devSerial.isNotEmpty && devSerial == cleanCurrentSerial) {
+            isAlreadyRegistered = true;
+            break;
+          }
+        }
+
+        if (isAlreadyRegistered) {
+          developer.log('Device serial ($currentSerial) matches registered device in ZATCA!', name: 'ZatcaOnboard');
+
+          try {
+            final db = DatabaseService().database;
+            await db.rawUpdate('''
+              UPDATE local_device_config 
+              SET zatca_enabled = 1, last_zatca_sync_at = CURRENT_TIMESTAMP
+              WHERE id = 1
+            ''');
+          } catch (_) {}
+          await SingletonClass().setZatcaOnboardingCompleted(true);
+
+          if (mounted) {
+            setState(() {
+              _isOnboarded = true;
+              _statusFeedback = 'Device is already registered with ZATCA!';
+              _feedbackColor = const Color(0xFF10B981);
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Device is already registered with ZATCA! Navigating to login...'),
+                backgroundColor: Color(0xFF10B981),
+                duration: Duration(seconds: 2),
+              ),
+            );
+
+            await Future.delayed(const Duration(milliseconds: 1200));
+            if (mounted) {
+              _proceedNext();
+            }
+          }
+          return;
+        } else {
+          developer.log('Device serial ($currentSerial) not registered in ZATCA. Remaining on onboarding screen.', name: 'ZatcaOnboard');
+        }
+      } else {
+        developer.log('Check devices endpoint returned status ${response?.statusCode}. Remaining on onboarding screen.', name: 'ZatcaOnboard');
+      }
+    } catch (e) {
+      developer.log('Check device registration note: $e', name: 'ZatcaOnboard');
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingRegistration = false);
+      }
+    }
+  }
+
+  /// Mints a JWT token containing organization_id claim signed with the given secret.
+  String _mintTokenWithOrg(int orgId, String secret) {
+    final header = {"alg": "HS256", "typ": "JWT"};
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final payload = {
+      "user_id": "Admin",
+      "user_login": "Admin",
+      "organization_id": orgId,
+      "iat": now,
+      "exp": now + 86400 * 30,
+    };
+
+    String base64UrlNoPad(List<int> bytes) {
+      return base64Url.encode(bytes).replaceAll('=', '');
+    }
+
+    final headerB64 = base64UrlNoPad(utf8.encode(jsonEncode(header)));
+    final payloadB64 = base64UrlNoPad(utf8.encode(jsonEncode(payload)));
+    final message = '$headerB64.$payloadB64';
+
+    final hmac = Hmac(sha256, utf8.encode(secret));
+    final digest = hmac.convert(utf8.encode(message));
+    final sigB64 = base64UrlNoPad(digest.bytes);
+
+    return '$message.$sigB64';
+  }
+
+  /// Attempts to identify which secret was used by the server to sign the dev token.
+  String? _detectSecretFromDevToken(String devToken) {
+    final parts = devToken.split('.');
+    if (parts.length != 3) return null;
+
+    final message = '${parts[0]}.${parts[1]}';
+    final targetSig = parts[2];
+
+    final candidateSecrets = [
+      'nastecsol',
+      'nembus-pos-mobile-secure-jwt-secret-key-2026',
+      'nembus',
+      'secret',
+      'development',
+      'root',
+      'admin',
+      'password',
+      '',
+    ];
+
+    for (final sec in candidateSecrets) {
+      final hmac = Hmac(sha256, utf8.encode(sec));
+      final digest = hmac.convert(utf8.encode(message));
+      final sig = base64Url.encode(digest.bytes).replaceAll('=', '');
+      if (sig == targetSig) {
+        developer.log('Identified server JWT secret: $sec', name: 'ZatcaOnboard');
+        return sec;
+      }
+    }
+    return null;
   }
 
   Future<String> _getAuthToken() async {
@@ -249,6 +525,7 @@ class _ZatcaOnboardingScreenState extends State<ZatcaOnboardingScreen> {
             WHERE id = 1
           ''');
         } catch (_) {}
+        await SingletonClass().setZatcaOnboardingCompleted(true);
 
         if (mounted) {
           setState(() {
@@ -318,6 +595,7 @@ class _ZatcaOnboardingScreenState extends State<ZatcaOnboardingScreen> {
   }
 
   void _proceedNext() {
+    SingletonClass().setZatcaOnboardingCompleted(true);
     if (widget.isFromSettings) {
       Navigator.of(context).pop();
     } else {

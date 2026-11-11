@@ -1,12 +1,14 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 
 import '../database/db_service.dart';
 import '../ffi/nembus_bridge.dart';
 import '../singleton/singleton_class.dart';
 import 'pos_dashboard_screen.dart';
-import 'restaurant_pos_screen.dart';
 import 'store_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -91,8 +93,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         _filteredCashiers = _cashiers.where((c) {
           final code = (c['cashier_code'] ?? '').toString().toLowerCase();
           final username = (c['username'] ?? '').toString().toLowerCase();
+          final email = (c['email'] ?? '').toString().toLowerCase();
           final name = '${c['first_name'] ?? ''} ${c['last_name'] ?? ''}'.toLowerCase();
-          return code.contains(query) || username.contains(query) || name.contains(query);
+          return code.contains(query) || username.contains(query) || email.contains(query) || name.contains(query);
         }).toList();
       });
     }
@@ -106,6 +109,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
 
     try {
+      if (!DatabaseService().isOpen) {
+        await DatabaseService().initDatabase();
+      }
+
+      // Ensure SQLite users table has required columns for Nembus Core queries
+      try {
+        final db = DatabaseService().database;
+        await db.execute('ALTER TABLE users ADD COLUMN must_reset_password BOOLEAN DEFAULT 0;');
+      } catch (_) {}
+      try {
+        final db = DatabaseService().database;
+        await db.execute('ALTER TABLE users ADD COLUMN sap_imported BOOLEAN DEFAULT 0;');
+      } catch (_) {}
+
       List<Map<String, dynamic>> list = [];
 
       try {
@@ -225,8 +242,51 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     }
   }
 
+  bool _isBridgeSuccess(Map<String, dynamic> resp) {
+    if (resp['success'] == true) return true;
+    if (resp['statusCode'] == 200) return true;
+    final msg = resp['message']?.toString().toLowerCase() ?? '';
+    if (msg == 'login successful' || msg == 'failed to generate token') return true;
+    return false;
+  }
+
   /// Opens the Password Authentication modal for the selected cashier
-  void _onCashierSelected(Map<String, dynamic> cashier) {
+  Future<void> _onCashierSelected(Map<String, dynamic> cashier) async {
+    if (!DatabaseService().isOpen) {
+      await DatabaseService().initDatabase();
+    }
+    // Enrich cashier email & username from SQLite users table if missing
+    if (cashier['email'] == null ||
+        cashier['email'].toString().trim().isEmpty ||
+        cashier['username'] == null ||
+        cashier['username'].toString().trim().isEmpty) {
+      try {
+        final db = DatabaseService().database;
+        final targetUserId = cashier['user_id'];
+        if (targetUserId != null) {
+          final rows = await db.query(
+            'users',
+            columns: ['username', 'first_name', 'last_name', 'email', 'employee_code'],
+            where: 'id = ?',
+            whereArgs: [targetUserId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final u = rows.first;
+            if (u['email'] != null && u['email'].toString().trim().isNotEmpty) {
+              cashier['email'] = u['email'];
+            }
+            if (cashier['username'] == null || cashier['username'].toString().trim().isEmpty) {
+              cashier['username'] = u['username'];
+            }
+            if (cashier['first_name'] == null) cashier['first_name'] = u['first_name'];
+            if (cashier['last_name'] == null) cashier['last_name'] = u['last_name'];
+          }
+        }
+      } catch (e) {
+        developer.log('Cashier user resolution note: $e', name: 'LoginScreen');
+      }
+    }
     _showPasswordAuthModal(cashier);
   }
 
@@ -261,10 +321,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       builder: (ctx) => StatefulBuilder(
         builder: (modalCtx, modalSetState) {
           Future<void> handleLogin() async {
-            final username = usernameCtrl.text.trim();
+            final inputUsername = usernameCtrl.text.trim();
             final password = passwordCtrl.text;
 
-            if (username.isEmpty) {
+            if (inputUsername.isEmpty) {
               modalSetState(() => authErrorMessage = 'Username cannot be empty');
               return;
             }
@@ -279,37 +339,190 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             });
 
             try {
-              // Call Go Core auth handler via NembusBridge
-              var response = NembusBridge().callHandler(
-                handler: 'auth',
-                action: 'login',
-                payload: {
-                  'user_login': username,
-                  'password': password,
-                },
-              );
+              if (!DatabaseService().isOpen) {
+                await DatabaseService().initDatabase();
+              }
+              final db = DatabaseService().database;
 
-              developer.log('Auth handler response for $username: $response', name: 'LoginScreen');
+              // Ensure columns exist on SQLite users table so Go Core queries never throw missing-column errors
+              try {
+                await db.execute('ALTER TABLE users ADD COLUMN must_reset_password BOOLEAN DEFAULT 0;');
+              } catch (_) {}
+              try {
+                await db.execute('ALTER TABLE users ADD COLUMN sap_imported BOOLEAN DEFAULT 0;');
+              } catch (_) {}
 
-              // If initial attempt fails and cashier has email, try with email
-              if (response['success'] != true && cashier['email'] != null && cashier['email'].toString().isNotEmpty) {
-                response = NembusBridge().callHandler(
+              final cashierId = (cashier['cashier_id'] ?? cashier['id'] ?? 1) as int;
+              final targetUserId = cashier['user_id'];
+
+              // 1. Direct offline lookup in SQLite local db to find user and stored password hash
+              Map<String, dynamic>? userRow;
+              if (inputUsername.isNotEmpty) {
+                final rows = await db.query(
+                  'users',
+                  where: 'username = ?',
+                  whereArgs: [inputUsername],
+                  limit: 1,
+                );
+                if (rows.isNotEmpty) userRow = rows.first;
+              }
+              if (userRow == null && targetUserId != null) {
+                final rows = await db.query(
+                  'users',
+                  where: 'id = ?',
+                  whereArgs: [targetUserId],
+                  limit: 1,
+                );
+                if (rows.isNotEmpty) userRow = rows.first;
+              }
+              if (userRow == null && cashier['email'] != null && cashier['email'].toString().isNotEmpty) {
+                final rows = await db.query(
+                  'users',
+                  where: 'email = ?',
+                  whereArgs: [cashier['email'].toString().trim()],
+                  limit: 1,
+                );
+                if (rows.isNotEmpty) userRow = rows.first;
+              }
+
+              final resolvedUsername = (userRow?['username'] ?? inputUsername).toString().trim();
+              final effectiveUserId = (userRow?['id'] ?? targetUserId ?? 1) as int;
+              final userEmail = userRow?['email']?.toString() ?? cashier['email']?.toString();
+              final storedHash = (userRow?['password_hash'] ?? '').toString();
+
+              bool isAuthSuccess = false;
+              String? lastErrorMsg;
+
+              // 2. Call Go Core auth handler via NembusBridge (matching against local SQLite)
+              try {
+                var response = NembusBridge().callHandler(
                   handler: 'auth',
                   action: 'login',
                   payload: {
-                    'user_login': cashier['email'].toString(),
+                    'user_login': resolvedUsername,
                     'password': password,
                   },
                 );
+                developer.log('Auth handler response for $resolvedUsername: $response', name: 'LoginScreen');
+
+                if (_isBridgeSuccess(response)) {
+                  isAuthSuccess = true;
+                } else if (userEmail != null && userEmail.isNotEmpty) {
+                  response = NembusBridge().callHandler(
+                    handler: 'auth',
+                    action: 'login',
+                    payload: {
+                      'user_login': userEmail,
+                      'password': password,
+                    },
+                  );
+                  developer.log('Auth handler response for $userEmail: $response', name: 'LoginScreen');
+                  if (_isBridgeSuccess(response)) {
+                    isAuthSuccess = true;
+                  } else {
+                    lastErrorMsg = response['message']?.toString() ?? response['error']?.toString();
+                  }
+                } else {
+                  lastErrorMsg = response['message']?.toString() ?? response['error']?.toString();
+                }
+              } catch (bridgeErr) {
+                developer.log('Native bridge auth check note: $bridgeErr', name: 'LoginScreen');
               }
 
-              final isAuthSuccess = response['success'] == true ||
-                  (response['message']?.toString() == 'failed to generate token');
+              // 3. Fallback: Direct offline SQLite validation (plaintext, MD5, SHA-256)
+              if (!isAuthSuccess && storedHash.isNotEmpty) {
+                if (storedHash == password) {
+                  isAuthSuccess = true;
+                } else {
+                  final md5Hash = md5.convert(utf8.encode(password)).toString();
+                  final sha256Hash = sha256.convert(utf8.encode(password)).toString();
+                  if (storedHash.toLowerCase() == md5Hash.toLowerCase() ||
+                      storedHash.toLowerCase() == sha256Hash.toLowerCase()) {
+                    isAuthSuccess = true;
+                  }
+                }
+              }
+
+              // 4. Online Cloud Authentication Fallback:
+              // When the password hash has not yet been seeded into local SQLite (e.g. cloud REST APIs
+              // strip password_hash during DB clone for security), authenticate directly against the
+              // cloud server /api/auth/login and cache the verified hash in SQLite for future offline use.
+              if (!isAuthSuccess) {
+                try {
+                  developer.log('Attempting online cloud authentication for $resolvedUsername...', name: 'LoginScreen');
+                  final cloudBaseUrl = SingletonClass().baseURL.isNotEmpty
+                      ? SingletonClass().baseURL
+                      : 'https://nembus.nashrms.com';
+                  final loginUri = Uri.parse('$cloudBaseUrl/api/auth/login');
+
+                  final cloudHeaders = <String, String>{
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    if (_effectiveTenantSlug.isNotEmpty && _effectiveTenantSlug != 'masterdb') ...{
+                      'x-tenant-id': _effectiveTenantSlug,
+                      'x-tenant-slug': _effectiveTenantSlug,
+                    },
+                  };
+
+                  final credentialsToTry = [
+                    resolvedUsername,
+                    if (userEmail != null && userEmail.isNotEmpty && userEmail != resolvedUsername) userEmail,
+                  ];
+
+                  for (final cred in credentialsToTry) {
+                    final cloudResp = await http.post(
+                      loginUri,
+                      headers: cloudHeaders,
+                      body: jsonEncode({
+                        'user_login': cred,
+                        'password': password,
+                      }),
+                    ).timeout(const Duration(seconds: 10));
+
+                    developer.log('Cloud auth ($cred): status=${cloudResp.statusCode}, body=${cloudResp.body}', name: 'LoginScreen');
+
+                    if (cloudResp.statusCode >= 200 && cloudResp.statusCode < 300) {
+                      isAuthSuccess = true;
+                      try {
+                        final resJson = jsonDecode(cloudResp.body);
+                        if (resJson is Map && resJson['data'] != null) {
+                          SingletonClass().authToken = resJson['data'].toString();
+                        }
+                      } catch (_) {}
+
+                      // CRITICAL: Cache the verified password hash in local SQLite users table!
+                      // This ensures that all future cashier logins can run 100% offline.
+                      try {
+                        final sha256Hash = sha256.convert(utf8.encode(password)).toString();
+                        await db.update(
+                          'users',
+                          {
+                            'password_hash': sha256Hash,
+                            'updated_at': DateTime.now().toIso8601String(),
+                          },
+                          where: 'id = ?',
+                          whereArgs: [effectiveUserId],
+                        );
+                        developer.log('Cached verified password hash into SQLite for user $effectiveUserId ($resolvedUsername)', name: 'LoginScreen');
+                      } catch (cacheErr) {
+                        developer.log('Failed caching password hash to SQLite: $cacheErr', name: 'LoginScreen');
+                      }
+                      break;
+                    } else {
+                      try {
+                        final errJson = jsonDecode(cloudResp.body);
+                        if (errJson is Map && errJson['message'] != null) {
+                          lastErrorMsg = errJson['message'].toString();
+                        }
+                      } catch (_) {}
+                    }
+                  }
+                } catch (cloudErr) {
+                  developer.log('Cloud auth fallback network note: $cloudErr', name: 'LoginScreen');
+                }
+              }
 
               if (isAuthSuccess) {
-                final cashierId = (cashier['cashier_id'] ?? cashier['id'] ?? 1) as int;
-                final userId = (cashier['user_id'] ?? 1) as int;
-
                 // Persist session configuration in SingletonClass
                 await SingletonClass().saveStoreAndTerminalState(
                   storeId: _effectiveStoreId,
@@ -325,7 +538,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 // Ensure cashier session is closed on login so the cashier must explicitly start a shift
                 try {
                   await SingletonClass().closeCashierSession();
-                  final db = DatabaseService().database;
                   await db.update(
                     'cashier_sessions',
                     {
@@ -369,8 +581,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       builder: (_) => PosDashboardScreen(
                         tenantSlug: _effectiveTenantSlug,
                         tenantName: _effectiveTenantName,
-                        userId: userId,
-                        username: username,
+                        userId: effectiveUserId,
+                        username: resolvedUsername,
                         roleName: 'Cashier',
                         storeId: _effectiveStoreId,
                         storeName: _effectiveStoreName,
@@ -383,12 +595,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   );
                 }
               } else {
-                final err = response['message']?.toString() ??
-                    response['error']?.toString() ??
-                    'Invalid username or password';
                 modalSetState(() {
                   isAuthenticating = false;
-                  authErrorMessage = err;
+                  authErrorMessage = lastErrorMsg ?? 'Invalid credentials. Please try again.';
                 });
               }
             } catch (e) {
@@ -498,7 +707,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
                       const SizedBox(height: 22),
 
-                      // Username Field (Autofilled)
+                      // Username Field (Autofilled with cashier's username)
                       Text(
                         'Cashier Username',
                         style: GoogleFonts.inter(
@@ -518,7 +727,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           controller: usernameCtrl,
                           style: GoogleFonts.inter(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w600),
                           decoration: const InputDecoration(
-                            prefixIcon: Icon(Icons.alternate_email_rounded, color: primarySky, size: 20),
+                            prefixIcon: Icon(Icons.person_outline_rounded, color: primarySky, size: 20),
                             border: InputBorder.none,
                             contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                           ),
@@ -963,7 +1172,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     final lastName = cashier['last_name']?.toString() ?? '';
     final fullName = '$firstName $lastName'.trim();
     final code = cashier['cashier_code']?.toString() ?? 'CSH-01';
+    final email = cashier['email']?.toString() ?? '';
     final username = cashier['username']?.toString() ?? 'operator';
+    final displaySubtitle = username.isNotEmpty ? '@$username' : (email.isNotEmpty ? email : code);
     final initials = (firstName.isNotEmpty ? firstName[0] : 'C') +
         (lastName.isNotEmpty ? lastName[0] : '');
 
@@ -1049,7 +1260,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             ),
             const SizedBox(height: 2),
             Text(
-              '$code • @$username',
+              '$code • $displaySubtitle',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,

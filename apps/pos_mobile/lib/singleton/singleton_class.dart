@@ -84,6 +84,15 @@ class SingletonClass {
   /// The active POS Terminal Code.
   String? activeTerminalCode;
 
+  /// Whether ZATCA device onboarding was completed or dismissed during initial install.
+  bool hasCompletedZatcaOnboarding = false;
+
+  /// Updates singleton state and persistent storage for ZATCA onboarding completion.
+  Future<void> setZatcaOnboardingCompleted(bool completed) async {
+    hasCompletedZatcaOnboarding = completed;
+    await _persistCurrentState();
+  }
+
   /// Active Cashier Session Information
   int? activeCashierSessionId;
   String? activeCashierSessionNumber;
@@ -248,23 +257,46 @@ class SingletonClass {
   Future<void> _persistCurrentState() async {
     try {
       final file = await _getStateFile();
+      Map<String, dynamic> existingData = {};
+      if (await file.exists()) {
+        try {
+          final content = await file.readAsString();
+          if (content.trim().isNotEmpty) {
+            existingData = jsonDecode(content) as Map<String, dynamic>;
+          }
+        } catch (_) {}
+      }
+
+      final effectiveTenantSlug = activeTenantSlug ?? existingData['tenant_slug'];
+      final effectiveTenantId = activeTenantId ?? existingData['tenant_id'];
+      final effectiveTenantName = activeTenantName ?? existingData['tenant_name'];
+      final effectiveStoreId = activeStoreId ?? existingData['store_id'];
+      final effectiveStoreName = activeStoreName ?? existingData['store_name'];
+      final effectiveStoreCode = activeStoreCode ?? existingData['store_code'];
+      final effectiveStoreType = activeStoreType ?? existingData['store_type'];
+      final effectiveTerminalId = activeTerminalId ?? existingData['terminal_id'];
+      final effectiveTerminalName = activeTerminalName ?? existingData['terminal_name'];
+      final effectiveTerminalCode = activeTerminalCode ?? existingData['terminal_code'];
+
       final data = {
-        'tenant_id': activeTenantId,
-        'tenant_slug': activeTenantSlug,
-        'tenant_name': activeTenantName,
-        'store_id': activeStoreId,
-        'store_name': activeStoreName,
-        'store_code': activeStoreCode,
-        'terminal_id': activeTerminalId,
-        'terminal_name': activeTerminalName,
-        'terminal_code': activeTerminalCode,
+        'tenant_id': effectiveTenantId,
+        'tenant_slug': effectiveTenantSlug,
+        'tenant_name': effectiveTenantName,
+        'store_id': effectiveStoreId,
+        'store_name': effectiveStoreName,
+        'store_code': effectiveStoreCode,
+        'store_type': effectiveStoreType,
+        'terminal_id': effectiveTerminalId,
+        'terminal_name': effectiveTerminalName,
+        'terminal_code': effectiveTerminalCode,
         'cashier_session_id': activeCashierSessionId,
         'cashier_session_number': activeCashierSessionNumber,
         'cashier_session_status': activeCashierSessionStatus,
         'cashier_session_opened_at': activeCashierSessionOpenedAt?.toIso8601String(),
-        'cashier_id': activeCashierId,
-        'cashier_code': activeCashierCode,
-        'is_setup_completed': activeTenantSlug != null,
+        'cashier_id': activeCashierId ?? existingData['cashier_id'],
+        'cashier_code': activeCashierCode ?? existingData['cashier_code'],
+        'has_completed_zatca_onboarding': hasCompletedZatcaOnboarding || (existingData['has_completed_zatca_onboarding'] == true),
+        'is_setup_completed': effectiveTenantSlug != null && effectiveTenantSlug.toString().isNotEmpty,
         'saved_at': DateTime.now().toIso8601String(),
       };
       await file.writeAsString(jsonEncode(data));
@@ -314,6 +346,7 @@ class SingletonClass {
         'terminal_id': activeTerminalId,
         'terminal_name': activeTerminalName,
         'terminal_code': activeTerminalCode,
+        'has_completed_zatca_onboarding': hasCompletedZatcaOnboarding,
         'is_setup_completed': true,
         'saved_at': DateTime.now().toIso8601String(),
       };
@@ -383,6 +416,32 @@ class SingletonClass {
         if (data['terminal_id'] != null) activeTerminalId = (data['terminal_id'] as num).toInt();
         activeTerminalName = data['terminal_name'] as String?;
         activeTerminalCode = data['terminal_code'] as String?;
+        if (data['has_completed_zatca_onboarding'] == true) {
+          hasCompletedZatcaOnboarding = true;
+        }
+
+        // Fallback: recover store/terminal or ZATCA onboard status from SQLite local_device_config if available
+        try {
+          if (DatabaseService().isOpen) {
+            final db = DatabaseService().database;
+            final devConfig = await db.query('local_device_config', limit: 1);
+            if (devConfig.isNotEmpty) {
+              final row = devConfig.first;
+              if (activeStoreId == null && row['store_id'] != null) {
+                activeStoreId = (row['store_id'] as num).toInt();
+              }
+              if (activeTerminalId == null && row['pos_terminal_id'] != null) {
+                activeTerminalId = (row['pos_terminal_id'] as num).toInt();
+                activeTerminalName ??= row['device_name']?.toString();
+              }
+              final enabled = row['zatca_enabled'];
+              if (enabled == 1 || enabled == true) {
+                hasCompletedZatcaOnboarding = true;
+              }
+            }
+          }
+        } catch (_) {}
+
         // Always initialize cashier session to closed on app start/tenant config load
         activeCashierSessionId = null;
         activeCashierSessionNumber = null;
@@ -393,7 +452,7 @@ class SingletonClass {
         }
         activeCashierCode = data['cashier_code'] as String?;
         appMode = AppMode.offline;
-        developer.log('Tenant configuration restored: $slug ($activeTenantName), Store: $activeStoreName ($activeStoreId), Type: $activeStoreType, Terminal: $activeTerminalName ($activeTerminalId), ActiveSession=$activeCashierSessionStatus', name: 'SingletonClass');
+        developer.log('Tenant configuration restored: $slug ($activeTenantName), Store: $activeStoreName ($activeStoreId), Type: $activeStoreType, Terminal: $activeTerminalName ($activeTerminalId), ActiveSession=$activeCashierSessionStatus, ZatcaOnboarded=$hasCompletedZatcaOnboarding', name: 'SingletonClass');
         return true;
       }
     } catch (e) {
@@ -420,6 +479,7 @@ class SingletonClass {
     activeCashierSessionOpenedAt = null;
     activeCashierId = null;
     activeCashierCode = null;
+    hasCompletedZatcaOnboarding = false;
     appMode = AppMode.online;
     try {
       final file = await _getStateFile();

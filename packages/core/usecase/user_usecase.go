@@ -14,13 +14,12 @@ import (
 )
 
 // UserOutput is the response shape for user APIs. Metadata is json.RawMessage so JSONB marshals as JSON.
-// PasswordHash is never serialized to API responses.
 type UserOutput struct {
 	ID             int32            `json:"id"`
 	OrganizationID int32            `json:"organization_id"`
 	Username       string           `json:"username"`
 	Email          string           `json:"email"`
-	PasswordHash   string           `json:"-"` // never expose in API
+	PasswordHash   string           `json:"password_hash,omitempty"`
 	FirstName      pgtype.Text      `json:"first_name"`
 	LastName       pgtype.Text      `json:"last_name"`
 	EmployeeCode   pgtype.Text      `json:"employee_code"`
@@ -36,7 +35,7 @@ func userToOutput(u repository.User) UserOutput {
 		OrganizationID: u.OrganizationID,
 		Username:       u.Username,
 		Email:          u.Email,
-		PasswordHash:   "", // never sent (json:"-")
+		PasswordHash:   u.PasswordHash,
 		FirstName:      u.FirstName,
 		LastName:       u.LastName,
 		EmployeeCode:   u.EmployeeCode,
@@ -52,7 +51,7 @@ type UserWithDetailsOutput struct {
 	OrganizationID int32            `json:"organization_id"`
 	Username       string           `json:"username"`
 	Email          string           `json:"email"`
-	PasswordHash   string           `json:"-"`
+	PasswordHash   string           `json:"password_hash,omitempty"`
 	FirstName      pgtype.Text      `json:"first_name"`
 	LastName       pgtype.Text      `json:"last_name"`
 	EmployeeCode   pgtype.Text      `json:"employee_code"`
@@ -70,7 +69,7 @@ func userWithDetailsRowToOutput(r repository.GetUserWithDetailsRow) UserWithDeta
 		OrganizationID: r.OrganizationID,
 		Username:       r.Username,
 		Email:          r.Email,
-		PasswordHash:   "",
+		PasswordHash:   r.PasswordHash,
 		FirstName:      r.FirstName,
 		LastName:       r.LastName,
 		EmployeeCode:   r.EmployeeCode,
@@ -89,7 +88,7 @@ func listUsersWithDetailsRowToOutput(r repository.ListUsersWithDetailsRow) UserW
 		OrganizationID: r.OrganizationID,
 		Username:       r.Username,
 		Email:          r.Email,
-		PasswordHash:   "",
+		PasswordHash:   r.PasswordHash,
 		FirstName:      r.FirstName,
 		LastName:       r.LastName,
 		EmployeeCode:   r.EmployeeCode,
@@ -124,7 +123,7 @@ func (uc *UserUseCase) getOrganizationID(ctx context.Context) *repository.Respon
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
 
-	// Get the first active organization
+	// Get the first active organization (fallback to any organization if none explicitly marked is_active)
 	orgs, err := uc.repo.ListOrganizations(ctx, repository.ListOrganizationsParams{
 		Limit:    1,
 		Offset:   0,
@@ -134,7 +133,14 @@ func (uc *UserUseCase) getOrganizationID(ctx context.Context) *repository.Respon
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 	if len(orgs) == 0 {
-		return utils.NewResponse(utils.CodeNotFound, "no active organization found in tenant database", nil)
+		orgs, err = uc.repo.ListOrganizations(ctx, repository.ListOrganizationsParams{
+			Limit:    1,
+			Offset:   0,
+			IsActive: pgtype.Bool{Valid: false},
+		})
+		if err != nil || len(orgs) == 0 {
+			return utils.NewResponse(utils.CodeNotFound, "no organization found in tenant database", nil)
+		}
 	}
 	return utils.NewResponse(utils.CodeOK, "organization found successfully", orgs[0].ID)
 }

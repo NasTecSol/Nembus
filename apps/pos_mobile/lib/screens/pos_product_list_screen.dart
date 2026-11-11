@@ -71,10 +71,14 @@ class _PosProductListScreenState extends State<PosProductListScreen>
     _fetchStoreCustomers();
   }
 
+  static final math.Random _random = math.Random.secure();
+
   String _generateUuidV4() {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final hexTime = now.toRadixString(16).padLeft(12, '0');
-    return '00000000-0000-4000-8000-${hexTime.substring(hexTime.length - 12)}';
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 10
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}';
   }
 
   void _initializeCartSession() {
@@ -496,16 +500,16 @@ class _PosProductListScreenState extends State<PosProductListScreen>
           final db = DatabaseService().database;
           final prodRows = await db.rawQuery('''
             SELECT p.id as product_id, p.name as product_name, p.sku, p.description,
-                   c.name as category_name, p.category_id,
+                   COALESCE(c.name, '') as category_name, p.category_id,
                    u.code as uom_code, u.name as uom_name, p.base_uom_id,
                    COALESCE(pp.price, 0.00) as price,
                    COALESCE(inv.quantity_available, inv.quantity_on_hand, 0) as quantity_available,
                    COALESCE(inv.quantity_on_hand, 0) as quantity_on_hand
             FROM products p
-            LEFT JOIN categories c ON p.category_id = c.id
+            LEFT JOIN product_categories c ON p.category_id = c.id
             LEFT JOIN units_of_measure u ON p.base_uom_id = u.id
             LEFT JOIN product_prices pp ON p.id = pp.product_id AND (pp.is_active = 1 OR pp.is_active IS NULL)
-            LEFT JOIN inventory_stock inv ON p.id = inv.product_id AND inv.store_id = ?
+            LEFT JOIN inventory_stock inv ON p.id = inv.product_id AND (inv.store_id = ? OR inv.store_id IS NULL)
             WHERE p.is_active = 1 OR p.is_active IS NULL
             ORDER BY p.id ASC
           ''', [storeId]);

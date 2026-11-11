@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/db_service.dart';
 import '../ffi/nembus_bridge.dart';
+import '../services/pos_receipt_engine.dart';
 import '../singleton/singleton_class.dart';
 import '../widgets/thermal_receipt_widget.dart';
 
@@ -497,7 +498,14 @@ class _RestaurantPosScreenState extends State<RestaurantPosScreen> {
           } else {
             // Also check categories & products from retail catalog if restaurant tables empty
             try {
-              final prodCategories = await db.query('categories', orderBy: 'name ASC');
+              List<Map<String, dynamic>> prodCategories = [];
+              try {
+                prodCategories = await db.query('product_categories', orderBy: 'name ASC');
+              } catch (_) {
+                try {
+                  prodCategories = await db.query('categories', orderBy: 'name ASC');
+                } catch (_) {}
+              }
               final prodItems = await db.rawQuery('''
                 SELECT p.id, p.name, p.description, p.category_id,
                        COALESCE(pp.price, 0.0) as price
@@ -4085,20 +4093,6 @@ class _CheckoutScreenWidgetState extends State<_CheckoutScreenWidget> {
             where: 'id = ?',
             whereArgs: [widget.tableId],
           );
-
-          await db.insert('sync_queue', {
-            'entity_type': 'restaurant_tables',
-            'entity_id': widget.tableId.toString(),
-            'action': 'UPDATE',
-            'payload': jsonEncode({
-              'id': widget.tableId,
-              'is_occupied': false,
-              'status': 'available',
-            }),
-            'status': 'pending',
-            'priority': 15,
-            'created_at': DateTime.now().toIso8601String(),
-          });
         }
 
         // 6. Enqueue orders & transactions to sync_queue
@@ -4143,7 +4137,21 @@ class _CheckoutScreenWidgetState extends State<_CheckoutScreenWidget> {
         developer.log('SQLite write error: $dbErr', name: 'RestaurantPOS');
       }
 
-      // 7. Show ThermalReceiptWidget modal
+      // 7. Show ThermalReceiptWidget modal with backend template & ZATCA QR
+      ReceiptTemplate? receiptTmpl;
+      final effectiveStoreName = SingletonClass().activeStoreName ?? 'Restaurant POS';
+      try {
+        receiptTmpl = await PosReceiptEngine.fetchReceiptTemplate(
+          storeId: widget.storeId,
+          salesOrderId: resolvedNum,
+          totalAmount: total,
+          taxAmount: tax,
+          storeName: effectiveStoreName,
+        );
+      } catch (tmplErr) {
+        developer.log('Template resolution note: $tmplErr', name: 'RestaurantPOS');
+      }
+
       if (mounted) {
         await showDialog(
           context: context,
@@ -4154,7 +4162,9 @@ class _CheckoutScreenWidgetState extends State<_CheckoutScreenWidget> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: ThermalReceiptWidget(
-                storeName: SingletonClass().activeStoreName ?? 'Restaurant POS',
+                template: receiptTmpl,
+                qrCodeBase64: receiptTmpl?.qrCodeBase64,
+                storeName: effectiveStoreName,
                 orderNumber: resolvedNum,
                 cashierName: SingletonClass().activeCashierCode ?? 'Cashier',
                 terminalName: SingletonClass().activeTerminalName ?? 'Main POS',

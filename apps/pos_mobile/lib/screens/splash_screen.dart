@@ -55,10 +55,15 @@ class _SplashScreenState extends State<SplashScreen>
       await DatabaseService().initDatabase();
       final dbPath = await DatabaseService().getDatabasePath();
 
-      // Auto-close any lingering unclosed sessions left from a killed / terminated app instance
+      // 2. Check if tenant selection and master data have already been cloned (load state first)
+      final hasSavedTenant = await SingletonClass().loadTenantState();
+      _isTenantConfigured = hasSavedTenant;
+
+      // 3. Auto-close any lingering unclosed sessions left from a killed / terminated app instance
+      // (Invoked AFTER loadTenantState so singleton in-memory state is preserved)
       await SingletonClass().autoCloseActiveSession(reason: 'Auto-closed on app launch from previous unclosed state');
 
-      // 2. Initialize Go Core Engine via FFI
+      // 4. Initialize Go Core Engine via FFI
       try {
         final ffiRes = NembusBridge().initMobile(dbPath);
         developer.log('Go Engine Initialized: $ffiRes', name: 'SplashScreen');
@@ -66,10 +71,6 @@ class _SplashScreenState extends State<SplashScreen>
         developer.log('Go FFI Init Note: $e (proceeding with local runtime)',
             name: 'SplashScreen');
       }
-
-      // 3. Check if tenant selection and master data have already been cloned
-      final hasSavedTenant = await SingletonClass().loadTenantState();
-      _isTenantConfigured = hasSavedTenant;
 
       if (hasSavedTenant) {
         SingletonClass().appMode = AppMode.offline;
@@ -111,6 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
               tenantSlug: SingletonClass().activeTenantSlug ?? 'default',
               tenantName: SingletonClass().activeTenantName ?? 'Store',
               tenantId: SingletonClass().activeTenantId,
+              isFirstInstall: false,
             );
           }
         } else {

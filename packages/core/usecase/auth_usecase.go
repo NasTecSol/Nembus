@@ -2,7 +2,10 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/middleware"
@@ -60,10 +63,14 @@ func (uc *AuthUseCase) Login(ctx context.Context, userLogin, password string) *r
 		return utils.NewResponse(utils.CodeError, "password not set for this user", nil)
 	}
 
-	// Compare password with hash
+	// Compare password with hash (bcrypt, SHA-256 hex, or plaintext fallback)
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		return utils.NewResponse(utils.CodeError, "invalid credentials", nil)
+		sha := sha256.Sum256([]byte(password))
+		shaHex := hex.EncodeToString(sha[:])
+		if !strings.EqualFold(user.PasswordHash, shaHex) && user.PasswordHash != password {
+			return utils.NewResponse(utils.CodeError, "invalid credentials", nil)
+		}
 	}
 
 	// Generate JWT token - convert user ID from int32 to string and include organization ID
