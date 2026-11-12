@@ -89,6 +89,25 @@ SET usage_count = usage_count + 1,
 WHERE id = $1
 RETURNING *;
 
+-- name: ClaimRestaurantPromotionUsage :one
+UPDATE restaurant_promotions
+SET usage_count = COALESCE(usage_count, 0) + 1,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND is_active = true
+  AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
+  AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
+RETURNING *;
+
+-- name: CountCustomerRestaurantCouponUses :one
+SELECT COUNT(*)::int AS usage_count
+FROM restaurant_orders
+WHERE store_id = sqlc.arg(store_id)
+  AND customer_id = sqlc.arg(customer_id)
+  AND LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM(sqlc.arg(coupon_code)::text))
+  AND status NOT IN ('voided', 'cancelled');
+
 -- name: GetActiveRestaurantPromotionByCouponCodeInsensitive :one
 SELECT * FROM restaurant_promotions
 WHERE LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM(sqlc.arg(coupon_code)::text))

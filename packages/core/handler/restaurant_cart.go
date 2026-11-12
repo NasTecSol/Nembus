@@ -228,6 +228,26 @@ func (h *RestaurantHandler) GetActiveRestaurantCart(c *gin.Context) {
 // @Failure      400          {object}  ErrorResponse
 // @Failure      401          {object}  ErrorResponse
 // @Router       /api/restaurant/carts/active [get]
+func parsePaginationParams(c *gin.Context, defaultLimit, maxLimit int32) (int32, int32, bool) {
+	limitStr := strings.TrimSpace(c.DefaultQuery("limit", strconv.Itoa(int(defaultLimit))))
+	limit64, err := strconv.ParseInt(limitStr, 10, 32)
+	if err != nil || limit64 <= 0 {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "limit must be a positive integer", nil))
+		return 0, 0, false
+	}
+	if int32(limit64) > maxLimit {
+		limit64 = int64(maxLimit)
+	}
+
+	offsetStr := strings.TrimSpace(c.DefaultQuery("offset", "0"))
+	offset64, err := strconv.ParseInt(offsetStr, 10, 32)
+	if err != nil || offset64 < 0 {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "offset must be a non-negative integer", nil))
+		return 0, 0, false
+	}
+	return int32(limit64), int32(offset64), true
+}
+
 func (h *RestaurantHandler) ListActiveRestaurantCarts(c *gin.Context) {
 	uc := h.getCartUseCase(c)
 	if uc == nil {
@@ -239,10 +259,12 @@ func (h *RestaurantHandler) ListActiveRestaurantCarts(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "valid store_id query parameter is required", nil))
 		return
 	}
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, ok := parsePaginationParams(c, 50, 200)
+	if !ok {
+		return
+	}
 
-	resp := uc.ListActiveCarts(c.Request.Context(), int32(storeID64), int32(limit), int32(offset))
+	resp := uc.ListActiveCarts(c.Request.Context(), int32(storeID64), limit, offset)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -280,10 +302,12 @@ func (h *RestaurantHandler) ListDraftRestaurantCarts(c *gin.Context) {
 			storeID = &v
 		}
 	}
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, ok := parsePaginationParams(c, 50, 200)
+	if !ok {
+		return
+	}
 
-	resp := uc.ListDraftCartsByCashier(c.Request.Context(), int32(cashierID64), storeID, int32(limit), int32(offset))
+	resp := uc.ListDraftCartsByCashier(c.Request.Context(), int32(cashierID64), storeID, limit, offset)
 	c.JSON(resp.StatusCode, resp)
 }
 

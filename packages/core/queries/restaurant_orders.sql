@@ -176,6 +176,18 @@ WHERE cs.status = 'open'
 ORDER BY cs.opening_time DESC
 LIMIT 1;
 
+-- name: ValidateRestaurantCashierSession :one
+SELECT
+    cs.id,
+    cs.cashier_id,
+    cs.pos_terminal_id,
+    cs.status,
+    cs.closing_time,
+    pt.store_id
+FROM cashier_sessions cs
+JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id
+WHERE cs.id = $1;
+
 -- name: CreatePosTransactionForRestaurantOrder :one
 INSERT INTO pos_transactions (
     store_id,

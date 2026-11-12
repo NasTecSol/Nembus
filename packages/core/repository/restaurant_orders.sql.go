@@ -1695,3 +1695,39 @@ func (q *Queries) UpdateRestaurantOrderStatusWithTimestamps(ctx context.Context,
 	)
 	return i, err
 }
+
+const validateRestaurantCashierSession = `-- name: ValidateRestaurantCashierSession :one
+SELECT
+    cs.id,
+    cs.cashier_id,
+    cs.pos_terminal_id,
+    cs.status,
+    cs.closing_time,
+    pt.store_id
+FROM cashier_sessions cs
+JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id
+WHERE cs.id = $1
+`
+
+type ValidateRestaurantCashierSessionRow struct {
+	ID            int32            `json:"id"`
+	CashierID     int32            `json:"cashier_id"`
+	PosTerminalID int32            `json:"pos_terminal_id"`
+	Status        pgtype.Text      `json:"status"`
+	ClosingTime   pgtype.Timestamp `json:"closing_time"`
+	StoreID       int32            `json:"store_id"`
+}
+
+func (q *Queries) ValidateRestaurantCashierSession(ctx context.Context, id int32) (ValidateRestaurantCashierSessionRow, error) {
+	row := q.db.QueryRow(ctx, validateRestaurantCashierSession, id)
+	var i ValidateRestaurantCashierSessionRow
+	err := row.Scan(
+		&i.ID,
+		&i.CashierID,
+		&i.PosTerminalID,
+		&i.Status,
+		&i.ClosingTime,
+		&i.StoreID,
+	)
+	return i, err
+}

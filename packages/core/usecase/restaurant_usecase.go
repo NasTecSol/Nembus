@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -435,11 +437,21 @@ func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id int32) *reposit
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	err := uc.repo.DeleteRestaurantOrder(ctx, id)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order deleted successfully", nil)
+	return withRestaurantTx(ctx, nil, uc.repo, func(q *repository.Queries) *repository.Response {
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, id)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if !isInactiveOrderStatus(order.Status) {
+			if revErr := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); revErr != nil {
+				return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+revErr.Error(), nil)
+			}
+		}
+		if err := q.DeleteRestaurantOrder(ctx, id); err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order deleted successfully", nil)
+	})
 }
 
 func (uc *RestaurantUseCase) GetOrder(ctx context.Context, id int32) *repository.Response {
@@ -499,22 +511,82 @@ func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	item, err := uc.repo.UpdateRestaurantOrderItem(ctx, arg)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order item updated successfully", item)
+	return withRestaurantTx(ctx, nil, uc.repo, func(q *repository.Queries) *repository.Response {
+		existingItem, err := q.GetRestaurantOrderItem(ctx, arg.ID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return utils.NewResponse(utils.CodeNotFound, "order item not found", nil)
+			}
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, existingItem.OrderID)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isRestaurantOrderPaidOrClosed(order) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot edit items on a paid, voided, or cancelled order", nil)
+		}
+		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
+		}
+
+		item, err := q.UpdateRestaurantOrderItem(ctx, arg)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		updatedOrder, err := q.RecalculateRestaurantOrderTotals(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to recalculate order totals: "+err.Error(), nil)
+		}
+		allItems, err := q.ListRestaurantOrderItems(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to list order items: "+err.Error(), nil)
+		}
+		if err := deductRecipeIngredientsForOrderItems(ctx, q, updatedOrder, allItems, updatedOrder.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to deduct recipe ingredients: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order item updated successfully", item)
+	})
 }
 
 func (uc *RestaurantUseCase) DeleteOrderItem(ctx context.Context, id int32) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	err := uc.repo.DeleteRestaurantOrderItem(ctx, id)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order item deleted successfully", nil)
+	return withRestaurantTx(ctx, nil, uc.repo, func(q *repository.Queries) *repository.Response {
+		existingItem, err := q.GetRestaurantOrderItem(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return utils.NewResponse(utils.CodeNotFound, "order item not found", nil)
+			}
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, existingItem.OrderID)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isRestaurantOrderPaidOrClosed(order) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot delete items from a paid, voided, or cancelled order", nil)
+		}
+		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
+		}
+		if err := q.DeleteRestaurantOrderItem(ctx, id); err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		updatedOrder, err := q.RecalculateRestaurantOrderTotals(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to recalculate order totals: "+err.Error(), nil)
+		}
+		remainingItems, err := q.ListRestaurantOrderItems(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to list remaining order items: "+err.Error(), nil)
+		}
+		if err := deductRecipeIngredientsForOrderItems(ctx, q, updatedOrder, remainingItems, updatedOrder.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to deduct recipe ingredients: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order item deleted successfully", nil)
+	})
 }
 
 func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, posTxnID int32) *repository.Response {
@@ -635,15 +707,30 @@ func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, st
 		}
 	}
 
-	result := make([]KdsOrderOutput, 0, len(orders))
+	filteredOrders := make([]repository.ListKdsRestaurantOrdersByStoreRow, 0, len(orders))
+	orderIDs := make([]int32, 0, len(orders))
 	for _, o := range orders {
 		if len(statusMap) > 0 && !statusMap[strings.ToLower(strings.TrimSpace(o.OrderStatus))] {
 			continue
 		}
-		items, itemsErr := uc.repo.ListRestaurantOrderItemsDetailed(ctx, o.OrderID)
+		filteredOrders = append(filteredOrders, o)
+		orderIDs = append(orderIDs, o.OrderID)
+	}
+
+	itemsByOrderID := make(map[int32][]repository.ListRestaurantOrderItemsDetailedRow, len(orderIDs))
+	if len(orderIDs) > 0 {
+		allItems, itemsErr := uc.repo.ListRestaurantOrderItemsDetailedByOrderIDs(ctx, orderIDs)
 		if itemsErr != nil {
 			return utils.NewResponse(utils.CodeError, "failed to load KDS order items: "+itemsErr.Error(), nil)
 		}
+		for _, item := range allItems {
+			itemsByOrderID[item.OrderID] = append(itemsByOrderID[item.OrderID], repository.ListRestaurantOrderItemsDetailedRow(item))
+		}
+	}
+
+	result := make([]KdsOrderOutput, 0, len(filteredOrders))
+	for _, o := range filteredOrders {
+		items := itemsByOrderID[o.OrderID]
 		if items == nil {
 			items = []repository.ListRestaurantOrderItemsDetailedRow{}
 		}

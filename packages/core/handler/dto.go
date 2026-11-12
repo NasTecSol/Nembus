@@ -993,7 +993,7 @@ type CreateRestaurantOrderItemRequest struct {
 	ModifiersTotal    string `json:"modifiers_total,omitempty" example:"0.00"`
 	DiscountAmount    string `json:"discount_amount,omitempty" example:"0.00"`
 	TaxAmount         string `json:"tax_amount,omitempty" example:"7.50"`
-	Subtotal          string `json:"subtotal" binding:"required" example:"50.00"`
+	Subtotal          string `json:"subtotal,omitempty" example:"50.00"`
 	LineNumber        int32  `json:"line_number,omitempty" example:"1"`
 	Notes             string `json:"notes,omitempty" example:"Well done"`
 	Status            string `json:"status,omitempty" example:"pending"`
