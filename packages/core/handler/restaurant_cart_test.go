@@ -388,6 +388,34 @@ func TestRestaurantCartHTTPFlowIntegration(t *testing.T) {
 	if !foundPrepared {
 		t.Fatalf("expected order %d (preparing, 1 item) in GET /kds payload: %s", chk7.Data.Order.ID, wKds.Body.String())
 	}
+
+	// Underpayment via HTTP POS checkout (5.00 vs 46.00) must return 400 Bad Request
+	wUnderAdd := httptest.NewRecorder()
+	r.ServeHTTP(wUnderAdd, httptest.NewRequest("POST", "/api/restaurant/carts/add", bytes.NewReader(kdsReqCartBody)))
+	if wUnderAdd.Code != http.StatusOK {
+		t.Fatalf("POST /carts/add for underpayment HTTP test failed %d: %s", wUnderAdd.Code, wUnderAdd.Body.String())
+	}
+	var cUnder struct {
+		Data struct {
+			Cart struct {
+				ID string `json:"id"`
+			} `json:"cart"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(wUnderAdd.Body.Bytes(), &cUnder)
+
+	wUnderCheckout := httptest.NewRecorder()
+	r.ServeHTTP(wUnderCheckout, httptest.NewRequest("POST", "/api/restaurant/carts/"+cUnder.Data.Cart.ID+"/checkout", bytes.NewBufferString(`{"order_source":"pos","amount_paid":5}`)))
+	if wUnderCheckout.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on underpaid HTTP POS checkout, got %d: %s", wUnderCheckout.Code, wUnderCheckout.Body.String())
+	}
+
+	// Underpayment via HTTP settle endpoint must return 400 Bad Request
+	wUnderSettle := httptest.NewRecorder()
+	r.ServeHTTP(wUnderSettle, httptest.NewRequest("POST", "/api/restaurant/orders/"+strconvI32(chk7.Data.Order.ID)+"/settle", bytes.NewBufferString(`{"payment_method":"cash","amount_paid":5}`)))
+	if wUnderSettle.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on underpaid HTTP settle, got %d: %s", wUnderSettle.Code, wUnderSettle.Body.String())
+	}
 }
 
 func strconvI32(v int32) string {

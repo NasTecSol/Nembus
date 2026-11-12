@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -737,5 +738,889 @@ func TestRestaurantPromotionsRecipesHistoryAndKdsIntegration(t *testing.T) {
 	kdsAfterVoid := restUC.GetKdsOrders(ctx, fix.StoreID, []string{"pending", "preparing", "ready"})
 	if len(kdsAfterVoid.Data.([]KdsOrderOutput)) != 0 {
 		t.Fatalf("expected 0 KDS orders after void")
+	}
+}
+
+func TestRestaurantUnderpaymentRejectedIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	var userID, cashierID, terminalID, sessionID int32
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO users (organization_id, username, email, password_hash)
+		VALUES ($1, 'underpaycashier', 'underpaycashier@example.com', 'hash') RETURNING id
+	`, fix.OrgID).Scan(&userID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO cashiers (user_id, store_id, cashier_code) VALUES ($1, $2, 'CASH-UP') RETURNING id
+	`, userID, fix.StoreID).Scan(&cashierID); err != nil {
+		t.Fatalf("seed cashier: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO pos_terminals (store_id, terminal_code, terminal_name) VALUES ($1, 'TERM-UP', 'Counter UP') RETURNING id
+	`, fix.StoreID).Scan(&terminalID); err != nil {
+		t.Fatalf("seed pos_terminal: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO cashier_sessions (cashier_id, pos_terminal_id, session_number, opening_balance, expected_balance, status)
+		VALUES ($1, $2, 'SESS-UP', 100.00, 100.00, 'open') RETURNING id
+	`, cashierID, terminalID).Scan(&sessionID); err != nil {
+		t.Fatalf("seed cashier_session: %v", err)
+	}
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	// 1. Paying 5 against total 23 via POS checkout must fail with 400 and create no order/transaction.
+	addPos := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "takeout",
+		Channel:    "pos",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1, // 20.00 + 15% VAT = 23.00
+	})
+	if addPos.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart failed: %d %s", addPos.StatusCode, addPos.Message)
+	}
+	posCart := addPos.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	underpayCheckout := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:        posCart.ID,
+		OrderSource:   "pos",
+		OrderType:     "takeout",
+		PaymentMethod: "cash",
+		AmountPaid:    5.00,
+	})
+	if underpayCheckout.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected 400 on POS checkout underpayment (5 vs 23), got %d (%s)", underpayCheckout.StatusCode, underpayCheckout.Message)
+	}
+
+	var txnCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM pos_transactions`).Scan(&txnCount); err != nil {
+		t.Fatalf("count pos_transactions: %v", err)
+	}
+	if txnCount != 0 {
+		t.Fatalf("expected 0 pos_transactions after rejected checkout, got %d", txnCount)
+	}
+
+	var expectedBal float64
+	if err := pool.QueryRow(ctx, `SELECT expected_balance::float8 FROM cashier_sessions WHERE id = $1`, sessionID).Scan(&expectedBal); err != nil {
+		t.Fatalf("query cashier_sessions expected_balance: %v", err)
+	}
+	if !almostEqual(expectedBal, 100.00) {
+		t.Fatalf("expected cashier session expected_balance 100.00 unchanged, got %.2f", expectedBal)
+	}
+
+	cartStillActive := uc.GetCart(ctx, posCart.ID)
+	if cartStillActive.StatusCode != utils.CodeOK || cartStillActive.Data.(map[string]interface{})["cart"].(RestaurantCartOutput).CartStatus != "active" {
+		t.Fatalf("expected cart to remain active after failed underpayment checkout")
+	}
+
+	// Paying full 23.00 on the same cart succeeds.
+	fullCheckout := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:        posCart.ID,
+		OrderSource:   "pos",
+		OrderType:     "takeout",
+		PaymentMethod: "cash",
+		AmountPaid:    23.00,
+	})
+	if fullCheckout.StatusCode != utils.CodeCreated {
+		t.Fatalf("expected 201 on full POS checkout, got %d (%s)", fullCheckout.StatusCode, fullCheckout.Message)
+	}
+
+	// 2. Non-POS checkout with partial payment (5 against 23) remains partially_paid without POS txn,
+	//    and settling without full payment must be rejected while full settlement succeeds.
+	addOnline := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "delivery",
+		Channel:    "online",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1, // 23.00
+	})
+	if addOnline.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart online failed: %d %s", addOnline.StatusCode, addOnline.Message)
+	}
+	onlineCart := addOnline.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	// Explicitly claiming payment_status=paid with underpayment must fail even on non-POS checkout.
+	fakePaidResp := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:        onlineCart.ID,
+		OrderSource:   "online",
+		OrderType:     "delivery",
+		PaymentStatus: "paid",
+		AmountPaid:    5.00,
+	})
+	if fakePaidResp.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected 400 when payment_status=paid with underpayment 5 vs 23, got %d (%s)", fakePaidResp.StatusCode, fakePaidResp.Message)
+	}
+
+	// Normal partial payment (5 of 23) succeeds as partially_paid with no POS transaction.
+	partialResp := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:      onlineCart.ID,
+		OrderSource: "online",
+		OrderType:   "delivery",
+		AmountPaid:  5.00,
+	})
+	if partialResp.StatusCode != utils.CodeCreated {
+		t.Fatalf("expected 201 for partially_paid online checkout, got %d (%s)", partialResp.StatusCode, partialResp.Message)
+	}
+	partialOrd := partialResp.Data.(map[string]interface{})["order"].(repository.RestaurantOrder)
+	if partialOrd.PaymentStatus != "partially_paid" || partialOrd.PosTransactionID.Valid {
+		t.Fatalf("expected partially_paid order with nil pos_transaction_id, got status=%s txn=%v", partialOrd.PaymentStatus, partialOrd.PosTransactionID)
+	}
+
+	// Settling that partially paid order without supplying full amount_paid must fail (5 < 23).
+	badSettleDefault := uc.SettleOrderWithPosTransaction(ctx, partialOrd.ID, RestaurantSettleOrderInput{
+		PaymentMethod: "cash",
+	})
+	if badSettleDefault.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected 400 settling partially_paid order without full amount_paid, got %d (%s)", badSettleDefault.StatusCode, badSettleDefault.Message)
+	}
+
+	// Settling with explicit underpayment (5) or negative payment (-5) must fail.
+	underAmt := 5.00
+	badSettleExplicit := uc.SettleOrderWithPosTransaction(ctx, partialOrd.ID, RestaurantSettleOrderInput{
+		PaymentMethod: "cash",
+		AmountPaid:    &underAmt,
+	})
+	if badSettleExplicit.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected 400 on explicit underpayment settle, got %d (%s)", badSettleExplicit.StatusCode, badSettleExplicit.Message)
+	}
+
+	negAmt := -5.00
+	badSettleNeg := uc.SettleOrderWithPosTransaction(ctx, partialOrd.ID, RestaurantSettleOrderInput{
+		PaymentMethod: "cash",
+		AmountPaid:    &negAmt,
+	})
+	if badSettleNeg.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected 400 on negative amount_paid settle, got %d (%s)", badSettleNeg.StatusCode, badSettleNeg.Message)
+	}
+
+	// Order remains partially_paid until settled with full >= 23.00.
+	reloadedOrd, err := repo.GetRestaurantOrder(ctx, partialOrd.ID)
+	if err != nil || reloadedOrd.PaymentStatus != "partially_paid" || reloadedOrd.PosTransactionID.Valid {
+		t.Fatalf("expected order to remain partially_paid without pos_transaction_id, got payment_status=%s txn=%v err=%v", reloadedOrd.PaymentStatus, reloadedOrd.PosTransactionID, err)
+	}
+
+	// Settling with 25.00 against 23.00 total succeeds cleanly with 2.00 change.
+	fullAmt := 25.00
+	goodSettle := uc.SettleOrderWithPosTransaction(ctx, partialOrd.ID, RestaurantSettleOrderInput{
+		PaymentMethod: "cash",
+		AmountPaid:    &fullAmt,
+	})
+	if goodSettle.StatusCode != utils.CodeOK {
+		t.Fatalf("expected 200 on full settle (25 vs 23), got %d (%s)", goodSettle.StatusCode, goodSettle.Message)
+	}
+	settledOrd := goodSettle.Data.(map[string]interface{})["order"].(*repository.RestaurantOrder)
+	if settledOrd.PaymentStatus != "paid" || !almostEqual(numericToFloat(settledOrd.ChangeGiven), 2.00) {
+		t.Fatalf("expected settled paid order with 2.00 change, got status=%s change=%.2f", settledOrd.PaymentStatus, numericToFloat(settledOrd.ChangeGiven))
+	}
+}
+
+func TestRestaurantCartConcurrencyLocksIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	// 1. Seed a cart with qty=1 of MenuItemID (20.00 + 15% VAT = 23.00)
+	initResp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "takeaway",
+		Channel:    "online",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+	})
+	if initResp.StatusCode != utils.CodeOK {
+		t.Fatalf("initial AddToCart failed: %d %s", initResp.StatusCode, initResp.Message)
+	}
+	cart := initResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	// Fire 8 simultaneous AddToCart requests adding +1 to the exact same cart line.
+	const workers = 8
+	startCh := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-startCh
+			resp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+				CartID:     &cart.ID,
+				MenuItemID: fix.MenuItemID,
+				Quantity:   1,
+			})
+			if resp.StatusCode != utils.CodeOK {
+				errs <- fmt.Errorf("AddToCart returned %d: %s", resp.StatusCode, resp.Message)
+			}
+		}()
+	}
+	close(startCh)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	items, err := repo.ListRestaurantCartItems(ctx, cart.ID)
+	if err != nil {
+		t.Fatalf("ListRestaurantCartItems failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 merged cart line, got %d", len(items))
+	}
+	if !almostEqual(numericToFloat(items[0].Quantity), 9.0) {
+		t.Fatalf("expected serialized merged quantity 9.0, got %.3f (lost update!)", numericToFloat(items[0].Quantity))
+	}
+	lockedCart, err := repo.GetRestaurantCartByID(ctx, cart.ID)
+	if err != nil {
+		t.Fatalf("GetRestaurantCartByID failed: %v", err)
+	}
+	if !almostEqual(numericToFloat(lockedCart.TotalAmount), 9.0*23.00) {
+		t.Fatalf("expected cart total %.2f, got %.2f", 9.0*23.00, numericToFloat(lockedCart.TotalAmount))
+	}
+
+	// 2. Concurrent checkout + AddToCart / double checkout must serialize cleanly:
+	//    only 1 order is created, and order total_amount always matches sum of its order lines.
+	for round := 0; round < 4; round++ {
+		roundCartResp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+			StoreID:    fix.StoreID,
+			OrderType:  "takeaway",
+			Channel:    "online",
+			MenuItemID: fix.MenuItemID,
+			Quantity:   1,
+		})
+		if roundCartResp.StatusCode != utils.CodeOK {
+			t.Fatalf("round %d AddToCart failed: %d %s", round, roundCartResp.StatusCode, roundCartResp.Message)
+		}
+		roundCart := roundCartResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+		barrier := make(chan struct{})
+		var rwg sync.WaitGroup
+		checkoutCodes := make(chan int, 2)
+		addResps := make(chan *repository.Response, 1)
+
+		for i := 0; i < 2; i++ {
+			rwg.Add(1)
+			go func() {
+				defer rwg.Done()
+				<-barrier
+				r := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+					CartID:      roundCart.ID,
+					OrderSource: "online",
+					OrderType:   "takeaway",
+				})
+				checkoutCodes <- r.StatusCode
+			}()
+		}
+		rwg.Add(1)
+		go func() {
+			defer rwg.Done()
+			<-barrier
+			addResps <- uc.AddToCart(ctx, RestaurantAddToCartInput{
+				CartID:     &roundCart.ID,
+				MenuItemID: fix.MenuItemID,
+				Quantity:   1,
+			})
+		}()
+
+		close(barrier)
+		rwg.Wait()
+		close(checkoutCodes)
+		close(addResps)
+
+		createdCount := 0
+		badReqCount := 0
+		for code := range checkoutCodes {
+			switch code {
+			case utils.CodeCreated:
+				createdCount++
+			case utils.CodeBadReq:
+				badReqCount++
+			default:
+				t.Fatalf("round %d unexpected checkout status code %d", round, code)
+			}
+		}
+		if createdCount != 1 || badReqCount != 1 {
+			t.Fatalf("round %d expected 1 created and 1 bad_req checkout, got created=%d bad_req=%d", round, createdCount, badReqCount)
+		}
+
+		addResp := <-addResps
+		if addResp.StatusCode != utils.CodeOK && addResp.StatusCode != utils.CodeBadReq {
+			t.Fatalf("round %d unexpected concurrent AddToCart status %d: %s", round, addResp.StatusCode, addResp.Message)
+		}
+
+		var orderID int32
+		var orderTotal, itemsSum float64
+		if err := pool.QueryRow(ctx, `
+			SELECT o.id, o.total_amount::float8, COALESCE(SUM(oi.line_total), 0)::float8
+			FROM restaurant_orders o
+			JOIN restaurant_order_items oi ON oi.order_id = o.id
+			WHERE o.source_cart_id = $1
+			GROUP BY o.id, o.total_amount
+		`, roundCart.ID).Scan(&orderID, &orderTotal, &itemsSum); err != nil {
+			t.Fatalf("round %d query created order & lines: %v", round, err)
+		}
+		if !almostEqual(orderTotal, itemsSum) {
+			t.Fatalf("round %d order %d total %.2f != sum(order_items.line_total) %.2f", round, orderID, orderTotal, itemsSum)
+		}
+		if addResp.StatusCode == utils.CodeOK && !almostEqual(orderTotal, 46.00) {
+			t.Fatalf("round %d concurrent AddToCart committed first, expected order total 46.00, got %.2f", round, orderTotal)
+		}
+		if addResp.StatusCode == utils.CodeBadReq && !almostEqual(orderTotal, 23.00) {
+			t.Fatalf("round %d concurrent AddToCart rejected after checkout, expected order total 23.00, got %.2f", round, orderTotal)
+		}
+	}
+}
+
+func TestRestaurantConcurrentVoidOrderRestoresStockOnceIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	var uomID, prodCatID, bunProdID, pattyProdID, burgerRecipeID int32
+	if err := pool.QueryRow(ctx, `INSERT INTO units_of_measure (code, name, uom_type) VALUES ('PCS', 'Piece', 'count') RETURNING id`).Scan(&uomID); err != nil {
+		t.Fatalf("seed uom: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO product_categories (name, code) VALUES ('Ingredients', 'ING-VOID') RETURNING id`).Scan(&prodCatID); err != nil {
+		t.Fatalf("seed product category: %v", err)
+	}
+	seedIng := func(sku, name string, stock float64) int32 {
+		var prodID int32
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO products (organization_id, sku, name, category_id, base_uom_id)
+			VALUES ($1, $2, $3, $4, $5) RETURNING id
+		`, fix.OrgID, sku, name, prodCatID, uomID).Scan(&prodID); err != nil {
+			t.Fatalf("seed product %s: %v", sku, err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO inventory_stock (product_id, store_id, quantity_on_hand, quantity_available)
+			VALUES ($1, $2, $3, $3)
+		`, prodID, fix.StoreID, stock); err != nil {
+			t.Fatalf("seed inventory_stock %s: %v", sku, err)
+		}
+		return prodID
+	}
+	bunProdID = seedIng("VOID-BUN", "Burger Bun", 50.0)
+	pattyProdID = seedIng("VOID-PATTY", "Beef Patty", 50.0)
+
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO recipes (organization_id, recipe_code, recipe_name, yield_quantity, yield_uom_id, is_active)
+		VALUES ($1, 'REC-VOID', 'Void Race Burger', 1, $2, true) RETURNING id
+	`, fix.OrgID, uomID).Scan(&burgerRecipeID); err != nil {
+		t.Fatalf("seed recipe: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO recipe_ingredients (recipe_id, product_id, quantity, uom_id, line_number)
+		VALUES ($1, $2, 1, $4, 1), ($1, $3, 2, $4, 2)
+	`, burgerRecipeID, bunProdID, pattyProdID, uomID); err != nil {
+		t.Fatalf("seed recipe ingredients: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE menu_items SET recipe_id = $1 WHERE id = $2`, burgerRecipeID, fix.MenuItemID); err != nil {
+		t.Fatalf("link recipe: %v", err)
+	}
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	ordResp := uc.CreateOrderWithItems(ctx, RestaurantDirectOrderInput{
+		StoreID:     fix.StoreID,
+		OrderSource: "online",
+		OrderType:   "takeaway",
+		Items: []RestaurantLineItemInput{
+			{MenuItemID: fix.MenuItemID, Quantity: 2}, // consumes 2 buns and 4 patties -> 48 & 46
+		},
+	})
+	if ordResp.StatusCode != utils.CodeCreated {
+		t.Fatalf("CreateOrderWithItems failed: %d %s", ordResp.StatusCode, ordResp.Message)
+	}
+	ord := ordResp.Data.(RestaurantOrderWithItems)
+
+	stockOf := func(prodID int32) float64 {
+		var s float64
+		if err := pool.QueryRow(ctx, `SELECT quantity_on_hand::float8 FROM inventory_stock WHERE store_id = $1 AND product_id = $2`, fix.StoreID, prodID).Scan(&s); err != nil {
+			t.Fatalf("query stock %d: %v", prodID, err)
+		}
+		return s
+	}
+	if !almostEqual(stockOf(bunProdID), 48.0) || !almostEqual(stockOf(pattyProdID), 46.0) {
+		t.Fatalf("expected stock 48 buns / 46 patties after order, got %.2f / %.2f", stockOf(bunProdID), stockOf(pattyProdID))
+	}
+
+	// Fire 6 simultaneous void status updates against the exact same order.
+	const voidWorkers = 6
+	barrier := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, voidWorkers)
+	for i := 0; i < voidWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-barrier
+			resp := uc.UpdateOrderStatusWithHistory(ctx, ord.ID, RestaurantOrderStatusUpdateInput{
+				Status: "voided",
+				Reason: "concurrent_void",
+			})
+			if resp.StatusCode != utils.CodeOK {
+				errs <- fmt.Errorf("UpdateOrderStatusWithHistory returned %d: %s", resp.StatusCode, resp.Message)
+			}
+		}()
+	}
+	close(barrier)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	if !almostEqual(stockOf(bunProdID), 50.0) || !almostEqual(stockOf(pattyProdID), 50.0) {
+		t.Fatalf("expected stock restored ONCE to 50.0 / 50.0, got buns=%.2f patties=%.2f", stockOf(bunProdID), stockOf(pattyProdID))
+	}
+
+	var reversalCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM stock_movements
+		WHERE reference_id = $1 AND movement_type = 'recipe_reversal'
+	`, ord.ID).Scan(&reversalCount); err != nil {
+		t.Fatalf("count recipe_reversal movements: %v", err)
+	}
+	if reversalCount != 2 { // 1 for buns, 1 for patties
+		t.Fatalf("expected 2 recipe_reversal movements (1 per ingredient), got %d", reversalCount)
+	}
+}
+
+func TestRestaurantReopenOrderWithSourceCartPreservesPostCheckoutChangesIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	// 1. Create cart with 1 burger (23.00) and check out (creates order with SourceCartID set)
+	addResp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		TableID:    &fix.TableID,
+		OrderType:  "dine_in",
+		Channel:    "table",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+	})
+	if addResp.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart failed: %d %s", addResp.StatusCode, addResp.Message)
+	}
+	cart := addResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	chkResp := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:      cart.ID,
+		OrderSource: "table",
+		OrderType:   "dine_in",
+	})
+	if chkResp.StatusCode != utils.CodeCreated {
+		t.Fatalf("ConvertToOrder failed: %d %s", chkResp.StatusCode, chkResp.Message)
+	}
+	ord := chkResp.Data.(map[string]interface{})["order"].(repository.RestaurantOrder)
+	if !ord.SourceCartID.Valid || uuid.UUID(ord.SourceCartID.Bytes) != cart.ID {
+		t.Fatalf("expected SourceCartID=%s on order", cart.ID)
+	}
+
+	// 2. Waiter adds a second item directly to the order after checkout (total becomes 46.00)
+	addItemResp := uc.AddOrderItem(ctx, ord.ID, RestaurantLineItemInput{
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+	})
+	if addItemResp.StatusCode != utils.CodeCreated {
+		t.Fatalf("AddOrderItem failed: %d %s", addItemResp.StatusCode, addItemResp.Message)
+	}
+
+	// 3. Reopen the order back into its source cart: must rebuild items from current order lines (2 items, 46.00)
+	reopenResp := uc.ReopenOrderToCart(ctx, ord.ID)
+	if reopenResp.StatusCode != utils.CodeOK {
+		t.Fatalf("ReopenOrderToCart failed: %d %s", reopenResp.StatusCode, reopenResp.Message)
+	}
+	reopenData := reopenResp.Data.(map[string]interface{})
+	reopenedCart := reopenData["cart"].(RestaurantCartOutput)
+	reopenedItems := reopenData["items"].([]RestaurantCartItemOutput)
+
+	if reopenedCart.ID != cart.ID {
+		t.Fatalf("expected reopened source cart ID %s, got %s", cart.ID, reopenedCart.ID)
+	}
+	if reopenedCart.CartStatus != "active" || len(reopenedItems) != 2 || !almostEqual(reopenedCart.TotalAmount, 46.00) {
+		t.Fatalf("expected active reopened cart with 2 items and total 46.00, got status=%s items=%d total=%.2f",
+			reopenedCart.CartStatus, len(reopenedItems), reopenedCart.TotalAmount)
+	}
+
+	voidedOrd, err := repo.GetRestaurantOrder(ctx, ord.ID)
+	if err != nil || voidedOrd.Status != "voided" {
+		t.Fatalf("expected original order to be voided, got status=%s err=%v", voidedOrd.Status, err)
+	}
+}
+
+func TestRestaurantCouponBookkeepingPreservedOnMergeAndEditIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO restaurant_promotions (
+			store_id, name, code, promotion_type, discount_value,
+			applies_to, target_menu_item_ids, coupon_code, is_active
+		) VALUES ($1, 'Keep Coupon 20%', 'KEEP20', 'percentage_discount', 20.00, 'menu_item', $2, 'KEEP20', true)
+	`, fix.StoreID, []int32{fix.MenuItemID}); err != nil {
+		t.Fatalf("seed restaurant promotion: %v", err)
+	}
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	// 1. Add 1 burger (20.00 + 15% VAT = 23.00) and apply coupon KEEP20 (discount = 4.00)
+	add1 := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "takeaway",
+		Channel:    "pos",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+	})
+	if add1.StatusCode != utils.CodeOK {
+		t.Fatalf("initial AddToCart failed: %d %s", add1.StatusCode, add1.Message)
+	}
+	cart := add1.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	if applyResp := uc.ApplyCouponToCart(ctx, cart.ID, "KEEP20"); applyResp.StatusCode != utils.CodeOK {
+		t.Fatalf("ApplyCouponToCart failed: %d %s", applyResp.StatusCode, applyResp.Message)
+	}
+
+	// 2. Add the same burger again with new metadata -> triggers insertOrMergeCartItem
+	add2 := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		CartID:     &cart.ID,
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+		Metadata:   []byte(`{"source":"second_tap"}`),
+	})
+	if add2.StatusCode != utils.CodeOK {
+		t.Fatalf("merge AddToCart failed: %d %s", add2.StatusCode, add2.Message)
+	}
+	mergedItem := add2.Data.(map[string]interface{})["item"].(RestaurantCartItemOutput)
+
+	// 3. Edit quantity and modifiers on the same line with new metadata -> triggers UpdateCartItemQuantity
+	upd1 := uc.UpdateCartItemQuantity(ctx, RestaurantUpdateCartItemInput{
+		ItemID:   mergedItem.ID,
+		Quantity: 3,
+		Metadata: []byte(`{"edited":"qty_only"}`),
+	})
+	if upd1.StatusCode != utils.CodeOK {
+		t.Fatalf("UpdateCartItemQuantity (qty-only) failed: %d %s", upd1.StatusCode, upd1.Message)
+	}
+	upd2 := uc.UpdateCartItemQuantity(ctx, RestaurantUpdateCartItemInput{
+		ItemID:             mergedItem.ID,
+		Quantity:           3,
+		HasModifiersUpdate: true,
+		ModifierIDs:        []int32{},
+		Metadata:           []byte(`{"edited":"with_modifiers"}`),
+	})
+	if upd2.StatusCode != utils.CodeOK {
+		t.Fatalf("UpdateCartItemQuantity (with modifiers) failed: %d %s", upd2.StatusCode, upd2.Message)
+	}
+
+	// 4. Remove coupon -> the old 4.00 discount must be completely undone (discount_amount=0, total=69.00)
+	remResp := uc.RemoveCouponFromCart(ctx, cart.ID)
+	if remResp.StatusCode != utils.CodeOK {
+		t.Fatalf("RemoveCouponFromCart failed: %d %s", remResp.StatusCode, remResp.Message)
+	}
+	remData := remResp.Data.(map[string]interface{})
+	clearedCart := remData["cart"].(RestaurantCartOutput)
+	clearedItems := remData["items"].([]RestaurantCartItemOutput)
+
+	if !almostEqual(clearedCart.DiscountAmount, 0.00) || !almostEqual(clearedCart.TotalAmount, 69.00) {
+		t.Fatalf("expected discount 0.00 and total 69.00 after RemoveCouponFromCart, got disc=%.2f total=%.2f",
+			clearedCart.DiscountAmount, clearedCart.TotalAmount)
+	}
+	if len(clearedItems) != 1 || !almostEqual(clearedItems[0].DiscountAmount, 0.00) || !almostEqual(clearedItems[0].LineTotal, 69.00) {
+		t.Fatalf("unexpected cleared item state: items=%+v", clearedItems)
+	}
+}
+
+func TestRestaurantCheckoutRevalidatesSavedCouponIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO restaurant_promotions (
+			store_id, name, code, promotion_type, discount_value,
+			applies_to, coupon_code, is_active, valid_to
+		) VALUES ($1, 'Expiring Coupon', 'EXP10', 'fixed_discount', 5.00, 'all', 'EXP10', true, NOW() + INTERVAL '1 hour')
+	`, fix.StoreID); err != nil {
+		t.Fatalf("seed promotion: %v", err)
+	}
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	addResp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "takeaway",
+		Channel:    "pos",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+	})
+	if addResp.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart failed: %d %s", addResp.StatusCode, addResp.Message)
+	}
+	cart := addResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	if applyResp := uc.ApplyCouponToCart(ctx, cart.ID, "EXP10"); applyResp.StatusCode != utils.CodeOK {
+		t.Fatalf("ApplyCouponToCart failed: %d %s", applyResp.StatusCode, applyResp.Message)
+	}
+
+	// Expire the coupon after it was saved on the cart
+	if _, err := pool.Exec(ctx, `UPDATE restaurant_promotions SET valid_to = NOW() - INTERVAL '1 minute' WHERE coupon_code = 'EXP10'`); err != nil {
+		t.Fatalf("expire promotion: %v", err)
+	}
+
+	// Checkout without passing CouponCode must still re-validate the saved cart coupon and reject
+	chkResp := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:      cart.ID,
+		OrderSource: "pos",
+		OrderType:   "takeaway",
+	})
+	if chkResp.StatusCode != utils.CodeNotFound && chkResp.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected checkout to reject expired saved coupon with 404/400, got %d (%s)", chkResp.StatusCode, chkResp.Message)
+	}
+}
+
+func TestRestaurantRecipeDeductionRestorationAndVariantsIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	var ingProductID, variantID, recipeID int32
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO products (organization_id, sku, name, is_active)
+		VALUES ($1, 'ING-PAT', 'Patty', true)
+		RETURNING id
+	`, fix.OrgID).Scan(&ingProductID); err != nil {
+		t.Fatalf("insert ingredient product: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO product_variants (product_id, variant_sku, variant_name, variant_attributes, is_active)
+		VALUES ($1, 'ING-PAT-V1', 'Patty V1', '{}'::jsonb, true)
+		RETURNING id
+	`, ingProductID).Scan(&variantID); err != nil {
+		t.Fatalf("insert variant: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO recipes (organization_id, recipe_code, recipe_name, yield_quantity, is_active)
+		VALUES ($1, 'RCP-BRG-1', 'Burger Recipe', 1, true)
+		RETURNING id
+	`, fix.OrgID).Scan(&recipeID); err != nil {
+		t.Fatalf("insert recipe: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE menu_items SET recipe_id = $1 WHERE id = $2`, recipeID, fix.MenuItemID); err != nil {
+		t.Fatalf("link recipe: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO recipe_ingredients (recipe_id, product_id, product_variant_id, quantity, is_optional)
+		VALUES ($1, $2, NULL, 5, false)
+	`, recipeID, ingProductID); err != nil {
+		t.Fatalf("insert recipe ingredient: %v", err)
+	}
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	// 1. Missing inventory_stock row: checkout must fail and record no movement
+	addResp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "dine_in",
+		Channel:    "pos",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+	})
+	if addResp.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart failed: %d %s", addResp.StatusCode, addResp.Message)
+	}
+	cart := addResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+
+	failChk := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:      cart.ID,
+		OrderSource: "pos",
+		OrderType:   "dine_in",
+	})
+	if failChk.StatusCode == utils.CodeCreated {
+		t.Fatalf("expected checkout to fail when ingredient inventory_stock row is missing")
+	}
+	var movCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM stock_movements WHERE product_id = $1`, ingProductID).Scan(&movCount); err != nil {
+		t.Fatalf("count movements: %v", err)
+	}
+	if movCount != 0 {
+		t.Fatalf("expected 0 stock movements after failed checkout, got %d", movCount)
+	}
+
+	// 2. Seed variant stock (10/10) BEFORE null-variant stock (2/2):
+	// null-variant recipe must ONLY touch the NULL variant row, and clamping available to 0 then restoring 5 must leave available=2 (not 5).
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO inventory_stock (store_id, product_id, product_variant_id, quantity_on_hand, quantity_allocated, quantity_available)
+		VALUES ($1, $2, $3, 10, 0, 10), ($1, $2, NULL, 2, 0, 2)
+	`, fix.StoreID, ingProductID, variantID); err != nil {
+		t.Fatalf("seed inventory_stock: %v", err)
+	}
+
+	okChk := uc.ConvertToOrder(ctx, RestaurantCheckoutInput{
+		CartID:      cart.ID,
+		OrderSource: "pos",
+		OrderType:   "dine_in",
+	})
+	if okChk.StatusCode != utils.CodeCreated {
+		t.Fatalf("ConvertToOrder failed: %d %s", okChk.StatusCode, okChk.Message)
+	}
+	ord := okChk.Data.(map[string]interface{})["order"].(repository.RestaurantOrder)
+
+	var nullOnHand, nullAvail, varOnHand, varAvail float64
+	if err := pool.QueryRow(ctx, `SELECT quantity_on_hand, quantity_available FROM inventory_stock WHERE store_id=$1 AND product_id=$2 AND product_variant_id IS NULL`, fix.StoreID, ingProductID).Scan(&nullOnHand, &nullAvail); err != nil {
+		t.Fatalf("query null stock: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT quantity_on_hand, quantity_available FROM inventory_stock WHERE store_id=$1 AND product_id=$2 AND product_variant_id = $3`, fix.StoreID, ingProductID, variantID).Scan(&varOnHand, &varAvail); err != nil {
+		t.Fatalf("query variant stock: %v", err)
+	}
+	if !almostEqual(nullOnHand, -3) || !almostEqual(nullAvail, 0) {
+		t.Fatalf("expected null-variant stock (-3, 0) after deducting 5 from 2, got (%.2f, %.2f)", nullOnHand, nullAvail)
+	}
+	if !almostEqual(varOnHand, 10) || !almostEqual(varAvail, 10) {
+		t.Fatalf("expected variant stock untouched (10, 10), got (%.2f, %.2f)", varOnHand, varAvail)
+	}
+
+	// 3. Status-only UpdateOrderWithItems to voided must restore stock to (2, 2), NOT (2, 5)
+	voidResp := uc.UpdateOrderWithItems(ctx, ord.ID, RestaurantDirectOrderInput{
+		Status: "voided",
+	}, false)
+	if voidResp.StatusCode != utils.CodeOK {
+		t.Fatalf("UpdateOrderWithItems void failed: %d %s", voidResp.StatusCode, voidResp.Message)
+	}
+
+	if err := pool.QueryRow(ctx, `SELECT quantity_on_hand, quantity_available FROM inventory_stock WHERE store_id=$1 AND product_id=$2 AND product_variant_id IS NULL`, fix.StoreID, ingProductID).Scan(&nullOnHand, &nullAvail); err != nil {
+		t.Fatalf("query restored null stock: %v", err)
+	}
+	if !almostEqual(nullOnHand, 2) || !almostEqual(nullAvail, 2) {
+		t.Fatalf("expected restored null-variant stock (2, 2), got (%.2f, %.2f)", nullOnHand, nullAvail)
+	}
+}
+
+func TestRestaurantCartItemPriceMergeOrderTypeModifiersAndDiscountCapsIntegration(t *testing.T) {
+	pool := setupRestaurantMigrationDB(t)
+	ctx := context.Background()
+	fix := seedRestaurantTestData(t, ctx, pool)
+
+	var inactiveModID int32
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO menu_item_modifiers (menu_item_id, modifier_name, modifier_type, price_adjustment, is_active)
+		VALUES ($1, 'Disabled Cheese', 'addon', 2.00, false)
+		RETURNING id
+	`, fix.MenuItemID).Scan(&inactiveModID); err != nil {
+		t.Fatalf("insert inactive modifier: %v", err)
+	}
+
+	repo := repository.New(pool)
+	uc := NewRestaurantCartUseCase()
+	uc.SetRepository(repo)
+	uc.SetPool(pool)
+
+	// 1. Disabled modifier via Modifiers slice must be rejected
+	badModResp := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:    fix.StoreID,
+		OrderType:  "takeaway",
+		Channel:    "pos",
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+		Modifiers: []RestaurantModifierSnapshotItem{
+			{ModifierID: inactiveModID},
+		},
+	})
+	if badModResp.StatusCode != utils.CodeBadReq {
+		t.Fatalf("expected 400 for inactive modifier in Modifiers path, got %d (%s)", badModResp.StatusCode, badModResp.Message)
+	}
+
+	// 2. Discount larger than line gross (unit=10, discount=50) must be capped at 10 on saved item
+	unit10 := 10.00
+	add1 := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		StoreID:        fix.StoreID,
+		OrderType:      "takeaway",
+		Channel:        "pos",
+		MenuItemID:     fix.MenuItemID,
+		Quantity:       1,
+		UnitPrice:      &unit10,
+		DiscountAmount: 50.00,
+	})
+	if add1.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart(10) failed: %d %s", add1.StatusCode, add1.Message)
+	}
+	cart := add1.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+	item1 := add1.Data.(map[string]interface{})["item"].(RestaurantCartItemOutput)
+	if !almostEqual(item1.DiscountAmount, 10.00) || !almostEqual(item1.LineTotal, 0.00) {
+		t.Fatalf("expected capped discount 10.00 and lineTotal 0.00, got disc=%.2f total=%.2f", item1.DiscountAmount, item1.LineTotal)
+	}
+
+	// UpdateCartItemQuantity (qty=2, gross=20, discount=50) must cap saved discount at 20.00
+	disc50 := 50.00
+	updQty := uc.UpdateCartItemQuantity(ctx, RestaurantUpdateCartItemInput{
+		ItemID:         item1.ID,
+		Quantity:       2,
+		DiscountAmount: &disc50,
+	})
+	if updQty.StatusCode != utils.CodeOK {
+		t.Fatalf("UpdateCartItemQuantity failed: %d %s", updQty.StatusCode, updQty.Message)
+	}
+	updItem := updQty.Data.(map[string]interface{})["item"].(RestaurantCartItemOutput)
+	if !almostEqual(updItem.DiscountAmount, 20.00) {
+		t.Fatalf("expected capped discount 20.00 after qty update, got %.2f", updItem.DiscountAmount)
+	}
+
+	// 3. Adding same item at different unit price (20 vs 10) must NOT merge into the 10 line
+	unit20 := 20.00
+	add2 := uc.AddToCart(ctx, RestaurantAddToCartInput{
+		CartID:     &cart.ID,
+		MenuItemID: fix.MenuItemID,
+		Quantity:   1,
+		UnitPrice:  &unit20,
+	})
+	if add2.StatusCode != utils.CodeOK {
+		t.Fatalf("AddToCart(20) failed: %d %s", add2.StatusCode, add2.Message)
+	}
+	itemsAfterMerge := add2.Data.(map[string]interface{})["items"].([]RestaurantCartItemOutput)
+	if len(itemsAfterMerge) != 2 {
+		t.Fatalf("expected 2 separate lines for differently priced items, got %d", len(itemsAfterMerge))
+	}
+
+	// 4. Updating only cart notes (OrderType omitted / empty string) must preserve "takeaway"
+	updCartResp := uc.UpdateCart(ctx, repository.UpdateRestaurantCartParams{
+		ID:    cart.ID,
+		Notes: pgtype.Text{String: "extra napkins", Valid: true},
+	})
+	if updCartResp.StatusCode != utils.CodeOK {
+		t.Fatalf("UpdateCart failed: %d %s", updCartResp.StatusCode, updCartResp.Message)
+	}
+	updatedCart := updCartResp.Data.(map[string]interface{})["cart"].(RestaurantCartOutput)
+	if updatedCart.OrderType != "takeaway" {
+		t.Fatalf("expected order_type to remain 'takeaway', got %q", updatedCart.OrderType)
 	}
 }

@@ -302,7 +302,7 @@ WHERE id = (
     FROM inventory_stock ist
     WHERE ist.store_id = sqlc.arg(store_id)
       AND ist.product_id = sqlc.arg(product_id)
-      AND (sqlc.narg(product_variant_id)::int IS NULL OR ist.product_variant_id IS NOT DISTINCT FROM sqlc.narg(product_variant_id)::int)
+      AND ist.product_variant_id IS NOT DISTINCT FROM sqlc.narg(product_variant_id)::int
     ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
     LIMIT 1
 )
@@ -312,14 +312,14 @@ RETURNING *;
 UPDATE inventory_stock
 SET
     quantity_on_hand = quantity_on_hand + sqlc.arg(restore_qty)::numeric,
-    quantity_available = quantity_available + sqlc.arg(restore_qty)::numeric,
+    quantity_available = GREATEST(0, (quantity_on_hand + sqlc.arg(restore_qty)::numeric) - COALESCE(quantity_allocated, 0)),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = (
     SELECT ist.id
     FROM inventory_stock ist
     WHERE ist.store_id = sqlc.arg(store_id)
       AND ist.product_id = sqlc.arg(product_id)
-      AND (sqlc.narg(product_variant_id)::int IS NULL OR ist.product_variant_id IS NOT DISTINCT FROM sqlc.narg(product_variant_id)::int)
+      AND ist.product_variant_id IS NOT DISTINCT FROM sqlc.narg(product_variant_id)::int
     ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
     LIMIT 1
 )

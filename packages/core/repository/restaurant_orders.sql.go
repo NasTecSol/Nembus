@@ -482,7 +482,7 @@ WHERE id = (
     FROM inventory_stock ist
     WHERE ist.store_id = $2
       AND ist.product_id = $3
-      AND ($4::int IS NULL OR ist.product_variant_id IS NOT DISTINCT FROM $4::int)
+      AND ist.product_variant_id IS NOT DISTINCT FROM $4::int
     ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
     LIMIT 1
 )
@@ -1204,14 +1204,14 @@ const restoreStoreInventoryStockForIngredient = `-- name: RestoreStoreInventoryS
 UPDATE inventory_stock
 SET
     quantity_on_hand = quantity_on_hand + $1::numeric,
-    quantity_available = quantity_available + $1::numeric,
+    quantity_available = GREATEST(0, (quantity_on_hand + $1::numeric) - COALESCE(quantity_allocated, 0)),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = (
     SELECT ist.id
     FROM inventory_stock ist
     WHERE ist.store_id = $2
       AND ist.product_id = $3
-      AND ($4::int IS NULL OR ist.product_variant_id IS NOT DISTINCT FROM $4::int)
+      AND ist.product_variant_id IS NOT DISTINCT FROM $4::int
     ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
     LIMIT 1
 )

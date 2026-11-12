@@ -471,6 +471,7 @@ WHERE cart_id = $1
   AND COALESCE(modifiers_snapshot, '[]'::jsonb) = COALESCE($3::jsonb, '[]'::jsonb)
   AND COALESCE(combo_components_snapshot, '[]'::jsonb) = COALESCE($4::jsonb, '[]'::jsonb)
   AND COALESCE(notes, '') = COALESCE($5::text, '')
+  AND unit_price = $6
 LIMIT 1
 `
 
@@ -480,6 +481,7 @@ type FindMatchingRestaurantCartItemParams struct {
 	Column3    json.RawMessage `json:"column_3"`
 	Column4    json.RawMessage `json:"column_4"`
 	Column5    string          `json:"column_5"`
+	UnitPrice  pgtype.Numeric  `json:"unit_price"`
 }
 
 func (q *Queries) FindMatchingRestaurantCartItem(ctx context.Context, arg FindMatchingRestaurantCartItemParams) (RestaurantCartItem, error) {
@@ -489,6 +491,7 @@ func (q *Queries) FindMatchingRestaurantCartItem(ctx context.Context, arg FindMa
 		arg.Column3,
 		arg.Column4,
 		arg.Column5,
+		arg.UnitPrice,
 	)
 	var i RestaurantCartItem
 	err := row.Scan(
@@ -1318,20 +1321,20 @@ const updateRestaurantCart = `-- name: UpdateRestaurantCart :one
 UPDATE restaurant_carts
 SET
     table_id = COALESCE($2, table_id),
-    order_type = COALESCE($3, order_type),
-    customer_id = COALESCE($4, customer_id),
-    guest_identifier = COALESCE($5, guest_identifier),
-    guest_name = COALESCE($6, guest_name),
-    guest_email = COALESCE($7, guest_email),
-    guest_phone = COALESCE($8, guest_phone),
-    channel = COALESCE($9, channel),
-    payment_method = COALESCE($10, payment_method),
-    payment_gateway = COALESCE($11, payment_gateway),
-    coupon_code = COALESCE($12, coupon_code),
-    discount_code = COALESCE($13, discount_code),
-    delivery_address = COALESCE($14, delivery_address),
-    notes = COALESCE($15, notes),
-    metadata = COALESCE($16, metadata),
+    order_type = COALESCE(NULLIF(TRIM($16::text), ''), order_type),
+    customer_id = COALESCE($3, customer_id),
+    guest_identifier = COALESCE($4, guest_identifier),
+    guest_name = COALESCE($5, guest_name),
+    guest_email = COALESCE($6, guest_email),
+    guest_phone = COALESCE($7, guest_phone),
+    channel = COALESCE($8, channel),
+    payment_method = COALESCE($9, payment_method),
+    payment_gateway = COALESCE($10, payment_gateway),
+    coupon_code = COALESCE($11, coupon_code),
+    discount_code = COALESCE($12, discount_code),
+    delivery_address = COALESCE($13, delivery_address),
+    notes = COALESCE($14, notes),
+    metadata = COALESCE($15, metadata),
     last_activity_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
@@ -1341,7 +1344,6 @@ RETURNING id, cart_number, organization_id, store_id, table_id, order_type, cust
 type UpdateRestaurantCartParams struct {
 	ID              uuid.UUID       `json:"id"`
 	TableID         pgtype.Int4     `json:"table_id"`
-	OrderType       string          `json:"order_type"`
 	CustomerID      pgtype.Int4     `json:"customer_id"`
 	GuestIdentifier pgtype.Text     `json:"guest_identifier"`
 	GuestName       pgtype.Text     `json:"guest_name"`
@@ -1355,13 +1357,13 @@ type UpdateRestaurantCartParams struct {
 	DeliveryAddress json.RawMessage `json:"delivery_address"`
 	Notes           pgtype.Text     `json:"notes"`
 	Metadata        json.RawMessage `json:"metadata"`
+	OrderType       pgtype.Text     `json:"order_type"`
 }
 
 func (q *Queries) UpdateRestaurantCart(ctx context.Context, arg UpdateRestaurantCartParams) (RestaurantCart, error) {
 	row := q.db.QueryRow(ctx, updateRestaurantCart,
 		arg.ID,
 		arg.TableID,
-		arg.OrderType,
 		arg.CustomerID,
 		arg.GuestIdentifier,
 		arg.GuestName,
@@ -1375,6 +1377,7 @@ func (q *Queries) UpdateRestaurantCart(ctx context.Context, arg UpdateRestaurant
 		arg.DeliveryAddress,
 		arg.Notes,
 		arg.Metadata,
+		arg.OrderType,
 	)
 	var i RestaurantCart
 	err := row.Scan(

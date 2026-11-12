@@ -90,20 +90,20 @@ LIMIT $2 OFFSET $3;
 UPDATE restaurant_carts
 SET
     table_id = COALESCE($2, table_id),
-    order_type = COALESCE($3, order_type),
-    customer_id = COALESCE($4, customer_id),
-    guest_identifier = COALESCE($5, guest_identifier),
-    guest_name = COALESCE($6, guest_name),
-    guest_email = COALESCE($7, guest_email),
-    guest_phone = COALESCE($8, guest_phone),
-    channel = COALESCE($9, channel),
-    payment_method = COALESCE($10, payment_method),
-    payment_gateway = COALESCE($11, payment_gateway),
-    coupon_code = COALESCE($12, coupon_code),
-    discount_code = COALESCE($13, discount_code),
-    delivery_address = COALESCE($14, delivery_address),
-    notes = COALESCE($15, notes),
-    metadata = COALESCE($16, metadata),
+    order_type = COALESCE(NULLIF(TRIM(sqlc.narg(order_type)::text), ''), order_type),
+    customer_id = COALESCE($3, customer_id),
+    guest_identifier = COALESCE($4, guest_identifier),
+    guest_name = COALESCE($5, guest_name),
+    guest_email = COALESCE($6, guest_email),
+    guest_phone = COALESCE($7, guest_phone),
+    channel = COALESCE($8, channel),
+    payment_method = COALESCE($9, payment_method),
+    payment_gateway = COALESCE($10, payment_gateway),
+    coupon_code = COALESCE($11, coupon_code),
+    discount_code = COALESCE($12, discount_code),
+    delivery_address = COALESCE($13, delivery_address),
+    notes = COALESCE($14, notes),
+    metadata = COALESCE($15, metadata),
     last_activity_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
@@ -207,6 +207,7 @@ WHERE cart_id = $1
   AND COALESCE(modifiers_snapshot, '[]'::jsonb) = COALESCE($3::jsonb, '[]'::jsonb)
   AND COALESCE(combo_components_snapshot, '[]'::jsonb) = COALESCE($4::jsonb, '[]'::jsonb)
   AND COALESCE(notes, '') = COALESCE($5::text, '')
+  AND unit_price = $6
 LIMIT 1;
 
 -- name: UpdateRestaurantCartItem :one

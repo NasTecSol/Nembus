@@ -330,7 +330,7 @@ func (h *RestaurantHandler) UpdateRestaurantCart(c *gin.Context) {
 	resp := uc.UpdateCart(c.Request.Context(), repository.UpdateRestaurantCartParams{
 		ID:              cartID,
 		TableID:         utils.Int32ToPgInt4(req.TableID),
-		OrderType:       req.OrderType,
+		OrderType:       optText(req.OrderType),
 		CustomerID:      utils.Int32ToPgInt4(req.CustomerID),
 		GuestIdentifier: optText(req.GuestIdentifier),
 		GuestName:       optText(req.GuestName),

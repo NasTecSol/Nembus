@@ -1,10 +1,12 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -44,36 +46,88 @@ func (uc *RestaurantCartUseCase) repoOrErr() *repository.Response {
 	return nil
 }
 
+var errRollbackRestaurantTx = errors.New("rollback restaurant transaction")
+
 // withTx executes fn inside a database transaction when a pgxpool is available via
-// uc.pool or context middleware.PoolKey, falling back cleanly to uc.repo otherwise.
+// uc.pool or context middleware.PoolKey, or when uc.repo supports Begin, falling back
+// cleanly to uc.repo otherwise.
 func (uc *RestaurantCartUseCase) withTx(ctx context.Context, fn func(q *repository.Queries) *repository.Response) *repository.Response {
 	if errResp := uc.repoOrErr(); errResp != nil {
 		return errResp
 	}
 
 	pool := resolvePoolFromContext(ctx, uc.pool)
-	if pool == nil {
-		return fn(uc.repo)
-	}
+	if pool != nil {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to begin transaction: "+err.Error(), nil)
+		}
+		defer func() {
+			_ = tx.Rollback(ctx)
+		}()
 
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to begin transaction: "+err.Error(), nil)
-	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+		qtx := repository.New(tx)
+		resp := fn(qtx)
+		if resp == nil || resp.StatusCode >= 400 {
+			return resp
+		}
 
-	qtx := repository.New(tx)
-	resp := fn(qtx)
-	if resp == nil || resp.StatusCode >= 400 {
+		if err := tx.Commit(ctx); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to commit transaction: "+err.Error(), nil)
+		}
 		return resp
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to commit transaction: "+err.Error(), nil)
+	var txResp *repository.Response
+	handled, err := uc.repo.TryInRestaurantTx(ctx, func(qtx *repository.Queries) error {
+		txResp = fn(qtx)
+		if txResp == nil || txResp.StatusCode >= 400 {
+			return errRollbackRestaurantTx
+		}
+		return nil
+	})
+	if handled {
+		if txResp != nil {
+			return txResp
+		}
+		if err != nil && !errors.Is(err, errRollbackRestaurantTx) {
+			return utils.NewResponse(utils.CodeError, "failed to commit transaction: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeError, "transaction failed", nil)
 	}
-	return resp
+	return fn(uc.repo)
+}
+
+// lockAndGetRestaurantCartByID acquires the cart's FOR UPDATE row lock before
+// reading its status or items so concurrent cart mutations and checkout serialize.
+func lockAndGetRestaurantCartByID(ctx context.Context, q *repository.Queries, cartID uuid.UUID) (repository.RestaurantCart, error) {
+	if _, err := q.LockRestaurantCart(ctx, cartID); err != nil {
+		return repository.RestaurantCart{}, err
+	}
+	return q.GetRestaurantCartByID(ctx, cartID)
+}
+
+func restaurantCartNotFoundOrErr(err error, action string) *repository.Response {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+	}
+	return utils.NewResponse(utils.CodeError, "failed to "+action+": "+err.Error(), nil)
+}
+
+// lockAndGetRestaurantOrderByID acquires the order's FOR UPDATE row lock before
+// reading its status, payments, or recipe movements.
+func lockAndGetRestaurantOrderByID(ctx context.Context, q *repository.Queries, orderID int32) (repository.RestaurantOrder, error) {
+	if _, err := q.LockRestaurantOrder(ctx, orderID); err != nil {
+		return repository.RestaurantOrder{}, err
+	}
+	return q.GetRestaurantOrder(ctx, orderID)
+}
+
+func restaurantOrderNotFoundOrErr(err error, action string) *repository.Response {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
+	}
+	return utils.NewResponse(utils.CodeError, "failed to "+action+": "+err.Error(), nil)
 }
 
 // === Input Structs ===
@@ -367,6 +421,75 @@ func ensureJSONObject(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
+// mergeCartItemMetadataPreservingCoupon merges incoming item metadata on top of
+// existing metadata while preserving coupon bookkeeping ("coupon_discount_amount",
+// "applied_coupon_code") so subsequent coupon removal can undo the discount cleanly.
+func mergeCartItemMetadataPreservingCoupon(existingRaw, incomingRaw json.RawMessage) json.RawMessage {
+	merged := map[string]interface{}{}
+	existingMap := map[string]interface{}{}
+	if len(existingRaw) > 0 && json.Unmarshal(existingRaw, &existingMap) == nil {
+		for k, v := range existingMap {
+			merged[k] = v
+		}
+	}
+	if len(incomingRaw) > 0 {
+		incomingMap := map[string]interface{}{}
+		if json.Unmarshal(incomingRaw, &incomingMap) == nil {
+			for k, v := range incomingMap {
+				merged[k] = v
+			}
+		}
+	}
+	if v, ok := existingMap["coupon_discount_amount"]; ok {
+		merged["coupon_discount_amount"] = v
+	}
+	if v, ok := existingMap["applied_coupon_code"]; ok {
+		merged["applied_coupon_code"] = v
+	}
+	if len(merged) == 0 {
+		return json.RawMessage("{}")
+	}
+	encoded, err := json.Marshal(merged)
+	if err != nil {
+		return ensureJSONObject(existingRaw)
+	}
+	return encoded
+}
+
+// reconcileCartItemCouponMetadata keeps coupon bookkeeping consistent if an explicit
+// discount override lowers or clears the line discount below the recorded coupon amount.
+func reconcileCartItemCouponMetadata(raw json.RawMessage, discountOverride *float64) json.RawMessage {
+	if discountOverride == nil {
+		return ensureJSONObject(raw)
+	}
+	meta := map[string]interface{}{}
+	if len(raw) == 0 || json.Unmarshal(raw, &meta) != nil {
+		return ensureJSONObject(raw)
+	}
+	rawCouponDisc, hasCoupon := meta["coupon_discount_amount"]
+	if !hasCoupon {
+		return ensureJSONObject(raw)
+	}
+	couponDisc, _ := rawCouponDisc.(float64)
+	overrideVal := roundMoney(*discountOverride)
+	if overrideVal <= 0 {
+		delete(meta, "coupon_discount_amount")
+		delete(meta, "applied_coupon_code")
+	} else if overrideVal < couponDisc {
+		meta["coupon_discount_amount"] = overrideVal
+	} else {
+		return ensureJSONObject(raw)
+	}
+	if len(meta) == 0 {
+		return json.RawMessage("{}")
+	}
+	encoded, err := json.Marshal(meta)
+	if err != nil {
+		return ensureJSONObject(raw)
+	}
+	return encoded
+}
+
 func ensureJSONArray(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return json.RawMessage("[]")
@@ -511,15 +634,21 @@ type resolvedRestaurantLine struct {
 	MetadataJSON        json.RawMessage
 }
 
+func clampLineDiscount(qty, unitPrice, modifiersTotal, comboTotal, discount float64) float64 {
+	if discount < 0 {
+		return 0
+	}
+	gross := qty * (unitPrice + modifiersTotal + comboTotal)
+	if discount > gross {
+		return gross
+	}
+	return discount
+}
+
 func computeLineTaxAndTotals(qty, unitPrice, modifiersTotal, comboTotal, discount float64, tc *repository.TaxCategory) (taxRate, taxAmount, subtotal, lineTotal float64) {
 	effectiveUnit := unitPrice + modifiersTotal + comboTotal
 	gross := qty * effectiveUnit
-	if discount < 0 {
-		discount = 0
-	}
-	if discount > gross {
-		discount = gross
-	}
+	discount = clampLineDiscount(qty, unitPrice, modifiersTotal, comboTotal, discount)
 	netAfterDiscount := gross - discount
 
 	if tc != nil {
@@ -607,6 +736,9 @@ func resolveRestaurantLineItem(ctx context.Context, q *repository.Queries, store
 		for _, mInput := range item.Modifiers {
 			if mInput.ModifierID > 0 {
 				if m, ok := modByID[mInput.ModifierID]; ok {
+					if m.IsActive.Valid && !m.IsActive.Bool {
+						return nil, utils.NewResponse(utils.CodeBadReq, fmt.Sprintf("modifier %q is inactive", m.ModifierName), nil)
+					}
 					adj := numericToFloat(m.PriceAdjustment)
 					modifiersTotal += adj
 					resolvedModifiers = append(resolvedModifiers, RestaurantModifierSnapshotItem{
@@ -700,12 +832,20 @@ func resolveRestaurantLineItem(ctx context.Context, q *repository.Queries, store
 		}
 	}
 
-	taxRate, taxAmount, subtotal, lineTotal := computeLineTaxAndTotals(
+	cappedDiscount := roundMoney(clampLineDiscount(
 		item.Quantity,
 		unitPrice,
 		roundMoney(modifiersTotal),
 		roundMoney(comboTotal),
 		item.DiscountAmount,
+	))
+
+	taxRate, taxAmount, subtotal, lineTotal := computeLineTaxAndTotals(
+		item.Quantity,
+		unitPrice,
+		roundMoney(modifiersTotal),
+		roundMoney(comboTotal),
+		cappedDiscount,
 		tcPtr,
 	)
 
@@ -722,7 +862,7 @@ func resolveRestaurantLineItem(ctx context.Context, q *repository.Queries, store
 		ModifiersTotal:    roundMoney(modifiersTotal),
 		ComboSnapshot:     comboJSON,
 		ComboTotal:        roundMoney(comboTotal),
-		DiscountAmount:    roundMoney(math.Max(0, item.DiscountAmount)),
+		DiscountAmount:    cappedDiscount,
 		TaxCategoryID:     mi.TaxCategoryID,
 		TaxRate:           taxRate,
 		TaxAmount:         taxAmount,
@@ -970,63 +1110,79 @@ func (uc *RestaurantCartUseCase) ListDraftCartsByCashier(ctx context.Context, ca
 }
 
 func (uc *RestaurantCartUseCase) UpdateCart(ctx context.Context, arg repository.UpdateRestaurantCartParams) *repository.Response {
-	if errResp := uc.repoOrErr(); errResp != nil {
-		return errResp
-	}
-	cart, err := uc.repo.UpdateRestaurantCart(ctx, arg)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to update restaurant cart: "+err.Error(), nil)
-	}
-	payload, err := buildCartDetailPayload(ctx, uc.repo, cart)
-	if err != nil {
-		return utils.NewResponse(utils.CodeOK, "restaurant cart updated successfully", restaurantCartToOutput(cart))
-	}
-	return utils.NewResponse(utils.CodeOK, "restaurant cart updated successfully", payload)
+	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
+		existing, err := lockAndGetRestaurantCartByID(ctx, q, arg.ID)
+		if err != nil {
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
+		}
+		if existing.CartStatus == repository.CartStatusConverted {
+			return utils.NewResponse(utils.CodeBadReq, "cannot modify an already converted cart", nil)
+		}
+		cart, err := q.UpdateRestaurantCart(ctx, arg)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to update restaurant cart: "+err.Error(), nil)
+		}
+		payload, err := buildCartDetailPayload(ctx, q, cart)
+		if err != nil {
+			return utils.NewResponse(utils.CodeOK, "restaurant cart updated successfully", restaurantCartToOutput(cart))
+		}
+		return utils.NewResponse(utils.CodeOK, "restaurant cart updated successfully", payload)
+	})
 }
 
 func (uc *RestaurantCartUseCase) AssignCartTable(ctx context.Context, cartID uuid.UUID, tableID *int32) *repository.Response {
-	if errResp := uc.repoOrErr(); errResp != nil {
-		return errResp
-	}
-	cart, err := uc.repo.UpdateRestaurantCartTable(ctx, repository.UpdateRestaurantCartTableParams{
-		ID:      cartID,
-		TableID: utils.Int32ToPgInt4(tableID),
+	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
+		existing, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
+		if err != nil {
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
+		}
+		if existing.CartStatus == repository.CartStatusConverted {
+			return utils.NewResponse(utils.CodeBadReq, "cannot assign table on an already converted cart", nil)
+		}
+		cart, err := q.UpdateRestaurantCartTable(ctx, repository.UpdateRestaurantCartTableParams{
+			ID:      cartID,
+			TableID: utils.Int32ToPgInt4(tableID),
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to update restaurant cart table: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "restaurant cart table updated", restaurantCartToOutput(cart))
 	})
-	if err != nil {
-		return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "restaurant cart table updated", restaurantCartToOutput(cart))
 }
 
 func (uc *RestaurantCartUseCase) HoldCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
-	if errResp := uc.repoOrErr(); errResp != nil {
-		return errResp
-	}
-	existing, err := uc.repo.GetRestaurantCartByID(ctx, cartID)
-	if err != nil {
-		return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
-	}
-	if existing.CartStatus == repository.CartStatusConverted {
-		return utils.NewResponse(utils.CodeBadReq, "cannot hold an already converted cart", nil)
-	}
-	cart, err := uc.repo.UpdateRestaurantCartStatus(ctx, repository.UpdateRestaurantCartStatusParams{
-		ID:         cartID,
-		CartStatus: repository.CartStatusDraft,
+	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
+		existing, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
+		if err != nil {
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
+		}
+		if existing.CartStatus == repository.CartStatusConverted {
+			return utils.NewResponse(utils.CodeBadReq, "cannot hold an already converted cart", nil)
+		}
+		cart, err := q.UpdateRestaurantCartStatus(ctx, repository.UpdateRestaurantCartStatusParams{
+			ID:         cartID,
+			CartStatus: repository.CartStatusDraft,
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to hold restaurant cart: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "restaurant cart put on hold", restaurantCartToOutput(cart))
 	})
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to hold restaurant cart: "+err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "restaurant cart put on hold", restaurantCartToOutput(cart))
 }
 
 func (uc *RestaurantCartUseCase) DeleteCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
-	if errResp := uc.repoOrErr(); errResp != nil {
-		return errResp
-	}
-	if err := uc.repo.DeleteRestaurantCart(ctx, cartID); err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to delete restaurant cart: "+err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "restaurant cart deleted successfully", nil)
+	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
+		if _, err := q.LockRestaurantCart(ctx, cartID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return utils.NewResponse(utils.CodeOK, "restaurant cart deleted successfully", nil)
+			}
+			return utils.NewResponse(utils.CodeError, "failed to lock restaurant cart: "+err.Error(), nil)
+		}
+		if err := q.DeleteRestaurantCart(ctx, cartID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to delete restaurant cart: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "restaurant cart deleted successfully", nil)
+	})
 }
 
 func insertOrMergeCartItem(ctx context.Context, q *repository.Queries, cart repository.RestaurantCart, resolved *resolvedRestaurantLine) (repository.RestaurantCartItem, error) {
@@ -1036,10 +1192,17 @@ func insertOrMergeCartItem(ctx context.Context, q *repository.Queries, cart repo
 		Column3:    resolved.ModifiersSnapshot,
 		Column4:    resolved.ComboSnapshot,
 		Column5:    resolved.Notes,
+		UnitPrice:  utils.Float64ToPgNumeric(resolved.UnitPrice),
 	})
 	if err == nil {
 		newQty := numericToFloat(existing.Quantity) + resolved.Quantity
-		newDiscount := numericToFloat(existing.DiscountAmount) + resolved.DiscountAmount
+		newDiscount := roundMoney(clampLineDiscount(
+			newQty,
+			numericToFloat(existing.UnitPrice),
+			numericToFloat(existing.ModifiersTotal),
+			numericToFloat(existing.ComboTotal),
+			numericToFloat(existing.DiscountAmount)+resolved.DiscountAmount,
+		))
 
 		var tcPtr *repository.TaxCategory
 		if resolved.TaxCategoryID.Valid {
@@ -1072,7 +1235,7 @@ func insertOrMergeCartItem(ctx context.Context, q *repository.Queries, cart repo
 			LineTotal:               utils.Float64ToPgNumeric(lineTotal),
 			CustomizationDetails:    resolved.CustomizationJSON,
 			Notes:                   nullableText(resolved.Notes),
-			Metadata:                resolved.MetadataJSON,
+			Metadata:                mergeCartItemMetadataPreservingCoupon(existing.Metadata, resolved.MetadataJSON),
 		})
 	}
 
@@ -1112,9 +1275,9 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 		var err error
 
 		if input.CartID != nil && *input.CartID != uuid.Nil {
-			cart, err = q.GetRestaurantCartByID(ctx, *input.CartID)
+			cart, err = lockAndGetRestaurantCartByID(ctx, q, *input.CartID)
 			if err != nil {
-				return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+				return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 			}
 			if cart.CartStatus == repository.CartStatusConverted {
 				return utils.NewResponse(utils.CodeBadReq, "cannot add items to an already converted cart", nil)
@@ -1123,15 +1286,35 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 			if input.StoreID <= 0 {
 				return utils.NewResponse(utils.CodeBadReq, "store_id or cart_id is required", nil)
 			}
-			// Locate existing active cart by table -> customer -> guest_identifier
+			var scopeKey string
+			switch {
+			case input.TableID != nil && *input.TableID > 0:
+				scopeKey = fmt.Sprintf("rest_cart:store:%d:table:%d", input.StoreID, *input.TableID)
+			case input.CustomerID != nil && *input.CustomerID > 0:
+				scopeKey = fmt.Sprintf("rest_cart:store:%d:customer:%d", input.StoreID, *input.CustomerID)
+			case strings.TrimSpace(input.GuestIdentifier) != "":
+				scopeKey = fmt.Sprintf("rest_cart:store:%d:guest:%s", input.StoreID, strings.TrimSpace(input.GuestIdentifier))
+			}
+			if scopeKey != "" {
+				if lockErr := q.AcquireRestaurantCartScopeLock(ctx, scopeKey); lockErr != nil {
+					return utils.NewResponse(utils.CodeError, "failed to lock restaurant cart scope: "+lockErr.Error(), nil)
+				}
+			}
+			// Locate existing active cart by table -> customer -> guest_identifier and lock it before reading items
 			found := false
+			tryLockActive := func(candidate repository.RestaurantCart) {
+				locked, lockErr := lockAndGetRestaurantCartByID(ctx, q, candidate.ID)
+				if lockErr == nil && locked.CartStatus == repository.CartStatusActive {
+					cart = locked
+					found = true
+				}
+			}
 			if input.TableID != nil && *input.TableID > 0 {
 				if existing, findErr := q.GetRestaurantCartByTable(ctx, repository.GetRestaurantCartByTableParams{
 					TableID: pgtype.Int4{Int32: *input.TableID, Valid: true},
 					StoreID: input.StoreID,
 				}); findErr == nil {
-					cart = existing
-					found = true
+					tryLockActive(existing)
 				}
 			}
 			if !found && input.CustomerID != nil && *input.CustomerID > 0 {
@@ -1139,8 +1322,7 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 					CustomerID: pgtype.Int4{Int32: *input.CustomerID, Valid: true},
 					StoreID:    input.StoreID,
 				}); findErr == nil {
-					cart = existing
-					found = true
+					tryLockActive(existing)
 				}
 			}
 			if !found && strings.TrimSpace(input.GuestIdentifier) != "" {
@@ -1148,8 +1330,7 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 					GuestIdentifier: pgtype.Text{String: strings.TrimSpace(input.GuestIdentifier), Valid: true},
 					StoreID:         input.StoreID,
 				}); findErr == nil {
-					cart = existing
-					found = true
+					tryLockActive(existing)
 				}
 			}
 
@@ -1231,17 +1412,22 @@ func (uc *RestaurantCartUseCase) AddToCart(ctx context.Context, input Restaurant
 
 func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, input RestaurantUpdateCartItemInput) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		existing, err := q.GetRestaurantCartItem(ctx, input.ItemID)
+		initialItem, err := q.GetRestaurantCartItem(ctx, input.ItemID)
 		if err != nil {
 			return utils.NewResponse(utils.CodeNotFound, "restaurant cart item not found", nil)
 		}
 
-		cart, err := q.GetRestaurantCartByID(ctx, existing.CartID)
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, initialItem.CartID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.CartStatus == repository.CartStatusConverted {
 			return utils.NewResponse(utils.CodeBadReq, "cannot modify items in a converted cart", nil)
+		}
+
+		existing, err := q.GetRestaurantCartItem(ctx, input.ItemID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeNotFound, "restaurant cart item not found", nil)
 		}
 
 		if input.Quantity <= 0 {
@@ -1267,6 +1453,10 @@ func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, inp
 		if input.Notes != nil {
 			notes = *input.Notes
 		}
+		mergedMeta := reconcileCartItemCouponMetadata(
+			mergeCartItemMetadataPreservingCoupon(existing.Metadata, input.Metadata),
+			input.DiscountAmount,
+		)
 
 		var updatedItem repository.RestaurantCartItem
 		if input.HasModifiersUpdate || input.HasCombosUpdate {
@@ -1293,7 +1483,7 @@ func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, inp
 				DiscountAmount:       discount,
 				CustomizationDetails: input.CustomizationDetails,
 				Notes:                notes,
-				Metadata:             input.Metadata,
+				Metadata:             mergedMeta,
 			})
 			if errResp != nil {
 				return errResp
@@ -1313,7 +1503,7 @@ func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, inp
 				LineTotal:               utils.Float64ToPgNumeric(resolved.LineTotal),
 				CustomizationDetails:    resolved.CustomizationJSON,
 				Notes:                   nullableText(resolved.Notes),
-				Metadata:                resolved.MetadataJSON,
+				Metadata:                mergedMeta,
 			})
 		} else {
 			var tcPtr *repository.TaxCategory
@@ -1322,21 +1512,24 @@ func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, inp
 					tcPtr = &tc
 				}
 			}
-			taxRate, taxAmount, _, lineTotal := computeLineTaxAndTotals(
+			cappedDiscount := roundMoney(clampLineDiscount(
 				input.Quantity,
 				numericToFloat(existing.UnitPrice),
 				numericToFloat(existing.ModifiersTotal),
 				numericToFloat(existing.ComboTotal),
 				discount,
+			))
+			taxRate, taxAmount, _, lineTotal := computeLineTaxAndTotals(
+				input.Quantity,
+				numericToFloat(existing.UnitPrice),
+				numericToFloat(existing.ModifiersTotal),
+				numericToFloat(existing.ComboTotal),
+				cappedDiscount,
 				tcPtr,
 			)
 			customDetails := existing.CustomizationDetails
 			if len(input.CustomizationDetails) > 0 {
 				customDetails = input.CustomizationDetails
-			}
-			meta := existing.Metadata
-			if len(input.Metadata) > 0 {
-				meta = input.Metadata
 			}
 			updatedItem, err = q.UpdateRestaurantCartItem(ctx, repository.UpdateRestaurantCartItemParams{
 				ID:                      existing.ID,
@@ -1346,14 +1539,14 @@ func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, inp
 				ModifiersTotal:          existing.ModifiersTotal,
 				ComboComponentsSnapshot: existing.ComboComponentsSnapshot,
 				ComboTotal:              existing.ComboTotal,
-				DiscountAmount:          utils.Float64ToPgNumeric(discount),
+				DiscountAmount:          utils.Float64ToPgNumeric(cappedDiscount),
 				TaxCategoryID:           existing.TaxCategoryID,
 				TaxRate:                 utils.Float64ToPgNumeric(taxRate),
 				TaxAmount:               utils.Float64ToPgNumeric(taxAmount),
 				LineTotal:               utils.Float64ToPgNumeric(lineTotal),
 				CustomizationDetails:    ensureJSONObject(customDetails),
 				Notes:                   nullableText(notes),
-				Metadata:                ensureJSONObject(meta),
+				Metadata:                mergedMeta,
 			})
 		}
 		if err != nil {
@@ -1375,16 +1568,19 @@ func (uc *RestaurantCartUseCase) UpdateCartItemQuantity(ctx context.Context, inp
 
 func (uc *RestaurantCartUseCase) RemoveCartItem(ctx context.Context, itemID uuid.UUID) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		existing, err := q.GetRestaurantCartItem(ctx, itemID)
+		initialItem, err := q.GetRestaurantCartItem(ctx, itemID)
 		if err != nil {
 			return utils.NewResponse(utils.CodeNotFound, "restaurant cart item not found", nil)
 		}
-		cart, err := q.GetRestaurantCartByID(ctx, existing.CartID)
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, initialItem.CartID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.CartStatus == repository.CartStatusConverted {
 			return utils.NewResponse(utils.CodeBadReq, "cannot remove items from a converted cart", nil)
+		}
+		if _, err := q.GetRestaurantCartItem(ctx, itemID); err != nil {
+			return utils.NewResponse(utils.CodeNotFound, "restaurant cart item not found", nil)
 		}
 		if err := q.DeleteRestaurantCartItem(ctx, itemID); err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to remove cart item: "+err.Error(), nil)
@@ -1403,9 +1599,9 @@ func (uc *RestaurantCartUseCase) RemoveCartItem(ctx context.Context, itemID uuid
 
 func (uc *RestaurantCartUseCase) ClearCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		cart, err := q.GetRestaurantCartByID(ctx, cartID)
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.CartStatus == repository.CartStatusConverted {
 			return utils.NewResponse(utils.CodeBadReq, "cannot clear a converted cart", nil)
@@ -1444,9 +1640,16 @@ func (uc *RestaurantCartUseCase) MergeGuestCart(ctx context.Context, storeID int
 			StoreID:    storeID,
 		})
 		if custErr != nil {
+			lockedGuest, lockErr := lockAndGetRestaurantCartByID(ctx, q, guestCart.ID)
+			if lockErr != nil {
+				return restaurantCartNotFoundOrErr(lockErr, "lock guest cart")
+			}
+			if lockedGuest.CartStatus == repository.CartStatusConverted {
+				return utils.NewResponse(utils.CodeBadReq, "cannot merge an already converted cart", nil)
+			}
 			// Assign guest cart directly to customer
 			updated, err := q.UpdateRestaurantCartCustomer(ctx, repository.UpdateRestaurantCartCustomerParams{
-				ID:         guestCart.ID,
+				ID:         lockedGuest.ID,
 				CustomerID: pgtype.Int4{Int32: customerID, Valid: true},
 			})
 			if err != nil {
@@ -1460,19 +1663,46 @@ func (uc *RestaurantCartUseCase) MergeGuestCart(ctx context.Context, storeID int
 		}
 
 		if guestCart.ID == custCart.ID {
-			payload, _ := buildCartDetailPayload(ctx, q, custCart)
+			lockedCust, lockErr := lockAndGetRestaurantCartByID(ctx, q, custCart.ID)
+			if lockErr != nil {
+				return restaurantCartNotFoundOrErr(lockErr, "lock customer cart")
+			}
+			payload, _ := buildCartDetailPayload(ctx, q, lockedCust)
 			return utils.NewResponse(utils.CodeOK, "cart already belongs to customer", payload)
 		}
 
+		// Acquire cart locks in deterministic UUID order to prevent deadlocks.
+		firstID, secondID := guestCart.ID, custCart.ID
+		if bytes.Compare(secondID[:], firstID[:]) < 0 {
+			firstID, secondID = secondID, firstID
+		}
+		if _, lockErr := q.LockRestaurantCart(ctx, firstID); lockErr != nil {
+			return restaurantCartNotFoundOrErr(lockErr, "lock restaurant cart")
+		}
+		if _, lockErr := q.LockRestaurantCart(ctx, secondID); lockErr != nil {
+			return restaurantCartNotFoundOrErr(lockErr, "lock restaurant cart")
+		}
+		lockedGuest, err := q.GetRestaurantCartByID(ctx, guestCart.ID)
+		if err != nil {
+			return restaurantCartNotFoundOrErr(err, "reload guest cart")
+		}
+		lockedCust, err := q.GetRestaurantCartByID(ctx, custCart.ID)
+		if err != nil {
+			return restaurantCartNotFoundOrErr(err, "reload customer cart")
+		}
+		if lockedGuest.CartStatus == repository.CartStatusConverted || lockedCust.CartStatus == repository.CartStatusConverted {
+			return utils.NewResponse(utils.CodeBadReq, "cannot merge an already converted cart", nil)
+		}
+
 		if err := q.MergeGuestRestaurantCartItems(ctx, repository.MergeGuestRestaurantCartItemsParams{
-			CartID:   guestCart.ID,
-			CartID_2: custCart.ID,
+			CartID:   lockedGuest.ID,
+			CartID_2: lockedCust.ID,
 		}); err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to merge guest cart items: "+err.Error(), nil)
 		}
-		_ = q.DeleteRestaurantCart(ctx, guestCart.ID)
+		_ = q.DeleteRestaurantCart(ctx, lockedGuest.ID)
 
-		updatedCart, err := q.RecalculateRestaurantCartTotals(ctx, custCart.ID)
+		updatedCart, err := q.RecalculateRestaurantCartTotals(ctx, lockedCust.ID)
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to recalculate merged cart totals: "+err.Error(), nil)
 		}
@@ -1492,9 +1722,9 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 	}
 
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		cart, err := q.GetRestaurantCartByID(ctx, input.CartID)
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, input.CartID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.CartStatus == repository.CartStatusConverted {
 			return utils.NewResponse(utils.CodeBadReq, "cart has already been converted to an order", nil)
@@ -1517,9 +1747,19 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 			cart = recalCart
 		}
 
-		// Apply checkout coupon_code if supplied at checkout time
-		if strings.TrimSpace(input.CouponCode) != "" {
-			promoCart, _, errResp := applyRestaurantCouponInTx(ctx, q, cart, input.CouponCode)
+		customerID := cart.CustomerID
+		if input.CustomerID != nil {
+			customerID = utils.Int32ToPgInt4(input.CustomerID)
+			cart.CustomerID = customerID
+		}
+
+		// Re-validate and apply either the checkout coupon_code or any coupon already saved on the cart
+		couponToValidate := strings.TrimSpace(input.CouponCode)
+		if couponToValidate == "" && cart.CouponCode.Valid {
+			couponToValidate = strings.TrimSpace(cart.CouponCode.String)
+		}
+		if couponToValidate != "" {
+			promoCart, _, errResp := applyRestaurantCouponInTx(ctx, q, cart, couponToValidate)
 			if errResp != nil {
 				return errResp
 			}
@@ -1542,10 +1782,6 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 		cashierID := cart.CashierID
 		if input.CashierID != nil {
 			cashierID = utils.Int32ToPgInt4(input.CashierID)
-		}
-		customerID := cart.CustomerID
-		if input.CustomerID != nil {
-			customerID = utils.Int32ToPgInt4(input.CustomerID)
 		}
 		posTerminalID := cart.PosTerminalID
 		if input.PosTerminalID != nil {
@@ -1586,6 +1822,9 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 
 		totalFloat := numericToFloat(cart.TotalAmount)
 		amountPaid := input.AmountPaid
+		if amountPaid < 0 {
+			return utils.NewResponse(utils.CodeBadReq, "amount_paid cannot be negative", nil)
+		}
 		changeGiven := 0.0
 		paymentStatus := strings.TrimSpace(input.PaymentStatus)
 		if paymentStatus == "" {
@@ -1598,8 +1837,15 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 			default:
 				paymentStatus = "unpaid"
 			}
-		} else if paymentStatus == "paid" && amountPaid > totalFloat {
-			changeGiven = roundMoney(amountPaid - totalFloat)
+		} else if strings.EqualFold(paymentStatus, "paid") {
+			if amountPaid > 0 {
+				if err := validateFullRestaurantPayment(amountPaid, totalFloat); err != nil {
+					return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+				}
+			}
+			if amountPaid > totalFloat {
+				changeGiven = roundMoney(amountPaid - totalFloat)
+			}
 		}
 
 		customerName := strings.TrimSpace(input.CustomerName)
@@ -1736,7 +1982,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 		if order.PosTransactionID.Valid && order.PosTransactionID.Int32 > 0 {
 			v := order.PosTransactionID.Int32
 			posTxnID = &v
-		} else if input.PosTransactionID == nil && strings.EqualFold(orderSource, "pos") {
+		} else if input.PosTransactionID == nil && strings.EqualFold(orderSource, "pos") && !strings.EqualFold(strings.TrimSpace(input.PaymentStatus), "unpaid") {
 			pm := strings.TrimSpace(input.PaymentMethod)
 			if pm == "" && cart.PaymentMethod.Valid {
 				pm = cart.PaymentMethod.String
@@ -1767,6 +2013,9 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 				"paid",
 			)
 			if txnErr != nil {
+				if errors.Is(txnErr, errInvalidRestaurantPayment) {
+					return utils.NewResponse(utils.CodeBadReq, txnErr.Error(), nil)
+				}
 				return utils.NewResponse(utils.CodeError, "failed to create POS transaction for restaurant order: "+txnErr.Error(), nil)
 			}
 			if updatedOrder != nil && txn != nil {
@@ -1794,128 +2043,156 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 // restaurant cart so the cashier/customer can continue editing items.
 func (uc *RestaurantCartUseCase) ReopenOrderToCart(ctx context.Context, orderID int32) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		order, err := q.GetRestaurantOrder(ctx, orderID)
-		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
-		}
-		if order.PaymentStatus == "paid" || order.Status == "paid" || order.Status == "completed" {
-			return utils.NewResponse(utils.CodeBadReq, "cannot reopen a paid or completed restaurant order", nil)
-		}
-		if order.Status == "voided" || order.Status == "cancelled" {
-			return utils.NewResponse(utils.CodeBadReq, "cannot reopen a voided or cancelled restaurant order", nil)
-		}
-
-		var reopenedCart repository.RestaurantCart
-		if order.SourceCartID.Valid {
-			cartUUID := uuid.UUID(order.SourceCartID.Bytes)
-			if c, err := q.ReopenRestaurantCartByID(ctx, cartUUID); err == nil {
-				reopenedCart = c
-			}
-		}
-
-		if reopenedCart.ID == uuid.Nil {
-			orgID := order.OrganizationID
-			if !orgID.Valid {
-				orgID = resolveStoreOrganizationID(ctx, q, order.StoreID, nil)
-			}
-			c, err := q.CreateRestaurantCart(ctx, repository.CreateRestaurantCartParams{
-				CartNumber:      pgtype.Text{String: generateRestaurantRef("RCART"), Valid: true},
-				OrganizationID:  orgID,
-				StoreID:         order.StoreID,
-				TableID:         order.TableID,
-				OrderType:       order.OrderType,
-				CustomerID:      order.CustomerID,
-				GuestName:       order.CustomerName,
-				GuestEmail:      order.CustomerEmail,
-				GuestPhone:      order.CustomerPhone,
-				CartStatus:      repository.CartStatusActive,
-				Channel:         pgtype.Text{String: order.OrderSource, Valid: true},
-				DeviceInfo:      json.RawMessage("{}"),
-				CreatedByUserID: order.CreatedByUserID,
-				CashierID:       order.CashierID,
-				PosTerminalID:   order.PosTerminalID,
-				KioskSessionID:  order.KioskSessionID,
-				DeliveryAddress: order.DeliveryAddress,
-				Notes:           order.Notes,
-				Metadata:        ensureJSONObject(order.Metadata),
-			})
-			if err != nil {
-				return utils.NewResponse(utils.CodeError, "failed to create reopened cart: "+err.Error(), nil)
-			}
-			orderItems, err := q.ListRestaurantOrderItems(ctx, order.ID)
-			if err == nil {
-				for _, oi := range orderItems {
-					lineTotal := oi.LineTotal
-					if !lineTotal.Valid || numericToFloat(lineTotal) == 0 {
-						lineTotal = oi.Subtotal
-					}
-					_, _ = q.CreateRestaurantCartItem(ctx, repository.CreateRestaurantCartItemParams{
-						CartID:                  c.ID,
-						OrganizationID:          orgID,
-						MenuItemID:              oi.MenuItemID,
-						Quantity:                oi.Quantity,
-						UnitPrice:               oi.UnitPrice,
-						ModifiersSnapshot:       ensureJSONArray(oi.ModifiersSnapshot),
-						ModifiersTotal:          oi.ModifiersTotal,
-						ComboComponentsSnapshot: ensureJSONArray(oi.ComboComponentsSnapshot),
-						ComboTotal:              oi.ComboTotal,
-						DiscountAmount:          oi.DiscountAmount,
-						TaxCategoryID:           oi.TaxCategoryID,
-						TaxRate:                 oi.TaxRate,
-						TaxAmount:               oi.TaxAmount,
-						LineTotal:               lineTotal,
-						CustomizationDetails:    json.RawMessage("{}"),
-						Notes:                   oi.Notes,
-						Metadata:                ensureJSONObject(oi.Metadata),
-					})
-				}
-			}
-			reopenedCart, _ = q.RecalculateRestaurantCartTotals(ctx, c.ID)
-		} else {
-			reopenedCart, _ = q.RecalculateRestaurantCartTotals(ctx, reopenedCart.ID)
-		}
-
-		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
-			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
-		}
-
-		prevStatus := order.Status
-		if _, err := q.UpdateRestaurantOrderStatusWithTimestamps(ctx, repository.UpdateRestaurantOrderStatusWithTimestampsParams{
-			ID:     order.ID,
-			Status: "voided",
-		}); err != nil {
-			return utils.NewResponse(utils.CodeError, "failed to void reopened order: "+err.Error(), nil)
-		}
-		recordRestaurantOrderStatusHistory(ctx, q, order.ID, order.StoreID, &prevStatus, "voided", "reopened_to_cart", "Order reopened back into cart", order.CreatedByUserID, nil)
-
-		payload, err := buildCartDetailPayload(ctx, q, reopenedCart)
-		if err != nil {
-			return utils.NewResponse(utils.CodeOK, "order reopened to cart", restaurantCartToOutput(reopenedCart))
-		}
-		return utils.NewResponse(utils.CodeOK, "order reopened to cart", payload)
+		return reopenOrderToCartInTx(ctx, q, orderID)
 	})
 }
 
+func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID int32) *repository.Response {
+	order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
+	if err != nil {
+		return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+	}
+	if order.PaymentStatus == "paid" || order.Status == "paid" || order.Status == "completed" {
+		return utils.NewResponse(utils.CodeBadReq, "cannot reopen a paid or completed restaurant order", nil)
+	}
+	if order.Status == "voided" || order.Status == "cancelled" {
+		return utils.NewResponse(utils.CodeBadReq, "cannot reopen a voided or cancelled restaurant order", nil)
+	}
+
+	orgID := order.OrganizationID
+	if !orgID.Valid {
+		orgID = resolveStoreOrganizationID(ctx, q, order.StoreID, nil)
+	}
+
+	var reopenedCart repository.RestaurantCart
+	if order.SourceCartID.Valid {
+		cartUUID := uuid.UUID(order.SourceCartID.Bytes)
+		if _, lockErr := q.LockRestaurantCart(ctx, cartUUID); lockErr == nil {
+			if c, err := q.ReopenRestaurantCartByID(ctx, cartUUID); err == nil {
+				reopenedCart = c
+				if err := q.ClearRestaurantCartItems(ctx, reopenedCart.ID); err != nil {
+					return utils.NewResponse(utils.CodeError, "failed to clear stale reopened cart items: "+err.Error(), nil)
+				}
+			}
+		}
+	}
+
+	if reopenedCart.ID == uuid.Nil {
+		c, err := q.CreateRestaurantCart(ctx, repository.CreateRestaurantCartParams{
+			CartNumber:      pgtype.Text{String: generateRestaurantRef("RCART"), Valid: true},
+			OrganizationID:  orgID,
+			StoreID:         order.StoreID,
+			TableID:         order.TableID,
+			OrderType:       order.OrderType,
+			CustomerID:      order.CustomerID,
+			GuestName:       order.CustomerName,
+			GuestEmail:      order.CustomerEmail,
+			GuestPhone:      order.CustomerPhone,
+			CartStatus:      repository.CartStatusActive,
+			Channel:         pgtype.Text{String: order.OrderSource, Valid: true},
+			DeviceInfo:      json.RawMessage("{}"),
+			CreatedByUserID: order.CreatedByUserID,
+			CashierID:       order.CashierID,
+			PosTerminalID:   order.PosTerminalID,
+			KioskSessionID:  order.KioskSessionID,
+			DeliveryAddress: order.DeliveryAddress,
+			Notes:           order.Notes,
+			Metadata:        ensureJSONObject(order.Metadata),
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to create reopened cart: "+err.Error(), nil)
+		}
+		reopenedCart = c
+	}
+
+	orderItems, err := q.ListRestaurantOrderItems(ctx, order.ID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to load order items for reopened cart: "+err.Error(), nil)
+	}
+	for _, oi := range orderItems {
+		lineTotal := oi.LineTotal
+		if !lineTotal.Valid || numericToFloat(lineTotal) == 0 {
+			lineTotal = oi.Subtotal
+		}
+		if _, err := q.CreateRestaurantCartItem(ctx, repository.CreateRestaurantCartItemParams{
+			CartID:                  reopenedCart.ID,
+			OrganizationID:          orgID,
+			MenuItemID:              oi.MenuItemID,
+			Quantity:                oi.Quantity,
+			UnitPrice:               oi.UnitPrice,
+			ModifiersSnapshot:       ensureJSONArray(oi.ModifiersSnapshot),
+			ModifiersTotal:          oi.ModifiersTotal,
+			ComboComponentsSnapshot: ensureJSONArray(oi.ComboComponentsSnapshot),
+			ComboTotal:              oi.ComboTotal,
+			DiscountAmount:          oi.DiscountAmount,
+			TaxCategoryID:           oi.TaxCategoryID,
+			TaxRate:                 oi.TaxRate,
+			TaxAmount:               oi.TaxAmount,
+			LineTotal:               lineTotal,
+			CustomizationDetails:    json.RawMessage("{}"),
+			Notes:                   oi.Notes,
+			Metadata:                ensureJSONObject(oi.Metadata),
+		}); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to copy order item to reopened cart: "+err.Error(), nil)
+		}
+	}
+	reopenedCart, err = q.RecalculateRestaurantCartTotals(ctx, reopenedCart.ID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to recalculate reopened cart totals: "+err.Error(), nil)
+	}
+
+	if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
+	}
+
+	prevStatus := order.Status
+	if _, err := q.UpdateRestaurantOrderStatusWithTimestamps(ctx, repository.UpdateRestaurantOrderStatusWithTimestampsParams{
+		ID:     order.ID,
+		Status: "voided",
+	}); err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to void reopened order: "+err.Error(), nil)
+	}
+	recordRestaurantOrderStatusHistory(ctx, q, order.ID, order.StoreID, &prevStatus, "voided", "reopened_to_cart", "Order reopened back into cart", order.CreatedByUserID, nil)
+
+	payload, err := buildCartDetailPayload(ctx, q, reopenedCart)
+	if err != nil {
+		return utils.NewResponse(utils.CodeOK, "order reopened to cart", restaurantCartToOutput(reopenedCart))
+	}
+	return utils.NewResponse(utils.CodeOK, "order reopened to cart", payload)
+}
+
 func (uc *RestaurantCartUseCase) ReopenCartByCartID(ctx context.Context, cartID uuid.UUID) *repository.Response {
-	if errResp := uc.repoOrErr(); errResp != nil {
-		return errResp
+	var delegateOrderID int32
+	resp := uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
+		peekCart, err := q.GetRestaurantCartByID(ctx, cartID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+		}
+		if peekCart.ConvertedToOrderID.Valid {
+			return reopenOrderToCartInTx(ctx, q, peekCart.ConvertedToOrderID.Int32)
+		}
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
+		if err != nil {
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
+		}
+		if cart.ConvertedToOrderID.Valid {
+			delegateOrderID = cart.ConvertedToOrderID.Int32
+			return nil
+		}
+		reopened, err := q.ReopenRestaurantCartByID(ctx, cartID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reopen restaurant cart: "+err.Error(), nil)
+		}
+		payload, err := buildCartDetailPayload(ctx, q, reopened)
+		if err != nil {
+			return utils.NewResponse(utils.CodeOK, "restaurant cart reopened", restaurantCartToOutput(reopened))
+		}
+		return utils.NewResponse(utils.CodeOK, "restaurant cart reopened", payload)
+	})
+	if delegateOrderID > 0 {
+		return uc.ReopenOrderToCart(ctx, delegateOrderID)
 	}
-	cart, err := uc.repo.GetRestaurantCartByID(ctx, cartID)
-	if err != nil {
-		return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
-	}
-	if cart.ConvertedToOrderID.Valid {
-		return uc.ReopenOrderToCart(ctx, cart.ConvertedToOrderID.Int32)
-	}
-	reopened, err := uc.repo.ReopenRestaurantCartByID(ctx, cartID)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to reopen restaurant cart: "+err.Error(), nil)
-	}
-	payload, err := buildCartDetailPayload(ctx, uc.repo, reopened)
-	if err != nil {
-		return utils.NewResponse(utils.CodeOK, "restaurant cart reopened", restaurantCartToOutput(reopened))
-	}
-	return utils.NewResponse(utils.CodeOK, "restaurant cart reopened", payload)
+	return resp
 }
 
 // === Direct Order Creation / Update with Items & Server Calculation ===
@@ -2067,9 +2344,9 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 
 func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, orderID int32, input RestaurantDirectOrderInput, replaceItems bool) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		existing, err := q.GetRestaurantOrder(ctx, orderID)
+		existing, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
 
 		resolvedLines := make([]*resolvedRestaurantLine, 0, len(input.Items))
@@ -2219,10 +2496,12 @@ func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, order
 		}
 
 		var items []repository.RestaurantOrderItem
-		if replaceItems {
+		if existing.Status != "voided" && (replaceItems || updatedOrder.Status == "voided") {
 			if err := reverseRecipeIngredientsForOrder(ctx, q, existing, updatedOrder.CreatedByUserID); err != nil {
 				return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
 			}
+		}
+		if replaceItems {
 			items = make([]repository.RestaurantOrderItem, 0, len(resolvedLines))
 			for idx, r := range resolvedLines {
 				oi, err := q.CreateRestaurantOrderItemFull(ctx, repository.CreateRestaurantOrderItemFullParams{
@@ -2251,8 +2530,10 @@ func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, order
 				}
 				items = append(items, oi)
 			}
-			if err := deductRecipeIngredientsForOrderItems(ctx, q, updatedOrder, items, updatedOrder.CreatedByUserID); err != nil {
-				return utils.NewResponse(utils.CodeError, "failed to deduct recipe ingredients: "+err.Error(), nil)
+			if updatedOrder.Status != "voided" {
+				if err := deductRecipeIngredientsForOrderItems(ctx, q, updatedOrder, items, updatedOrder.CreatedByUserID); err != nil {
+					return utils.NewResponse(utils.CodeError, "failed to deduct recipe ingredients: "+err.Error(), nil)
+				}
 			}
 		} else {
 			items, _ = q.ListRestaurantOrderItems(ctx, orderID)
@@ -2267,9 +2548,9 @@ func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, order
 
 func (uc *RestaurantCartUseCase) AddOrderItem(ctx context.Context, orderID int32, input RestaurantLineItemInput) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		order, err := q.GetRestaurantOrder(ctx, orderID)
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
 		if order.Status == "paid" || order.Status == "voided" || order.Status == "cancelled" {
 			return utils.NewResponse(utils.CodeBadReq, "cannot add items to a paid or voided order", nil)
@@ -2326,42 +2607,68 @@ func (uc *RestaurantCartUseCase) AddOrderItem(ctx context.Context, orderID int32
 	})
 }
 
-func (uc *RestaurantCartUseCase) UpdateOrderPaymentStatus(ctx context.Context, orderID int32, paymentStatus string, amountPaid, changeGiven *float64) *repository.Response {
-	if errResp := uc.repoOrErr(); errResp != nil {
-		return errResp
+var errInvalidRestaurantPayment = errors.New("invalid restaurant payment")
+
+func moneyCents(v float64) int64 {
+	return int64(math.Round(roundMoney(v) * 100))
+}
+
+func validateFullRestaurantPayment(paidFloat, totalFloat float64) error {
+	if paidFloat < 0 {
+		return fmt.Errorf("%w: amount_paid cannot be negative", errInvalidRestaurantPayment)
 	}
+	if moneyCents(paidFloat) < moneyCents(totalFloat) {
+		return fmt.Errorf("%w: amount_paid (%.2f) is less than order total (%.2f)", errInvalidRestaurantPayment, roundMoney(paidFloat), roundMoney(totalFloat))
+	}
+	return nil
+}
+
+func (uc *RestaurantCartUseCase) UpdateOrderPaymentStatus(ctx context.Context, orderID int32, paymentStatus string, amountPaid, changeGiven *float64) *repository.Response {
 	if strings.TrimSpace(paymentStatus) == "" {
 		return utils.NewResponse(utils.CodeBadReq, "payment_status is required", nil)
 	}
-	order, err := uc.repo.GetRestaurantOrder(ctx, orderID)
-	if err != nil {
-		return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
-	}
-
-	paidVal := order.AmountPaid
-	if amountPaid != nil {
-		paidVal = utils.Float64ToPgNumeric(*amountPaid)
-	}
-	changeVal := order.ChangeGiven
-	if changeGiven != nil {
-		changeVal = utils.Float64ToPgNumeric(*changeGiven)
-	} else if amountPaid != nil {
-		total := numericToFloat(order.TotalAmount)
-		if *amountPaid > total {
-			changeVal = utils.Float64ToPgNumeric(roundMoney(*amountPaid - total))
+	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
-	}
 
-	updated, err := uc.repo.UpdateRestaurantOrderPaymentStatus(ctx, repository.UpdateRestaurantOrderPaymentStatusParams{
-		ID:            orderID,
-		PaymentStatus: paymentStatus,
-		AmountPaid:    paidVal,
-		ChangeGiven:   changeVal,
+		if amountPaid != nil {
+			if *amountPaid < 0 {
+				return utils.NewResponse(utils.CodeBadReq, "amount_paid cannot be negative", nil)
+			}
+			if strings.EqualFold(strings.TrimSpace(paymentStatus), "paid") {
+				if err := validateFullRestaurantPayment(*amountPaid, numericToFloat(order.TotalAmount)); err != nil {
+					return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+				}
+			}
+		}
+
+		paidVal := order.AmountPaid
+		if amountPaid != nil {
+			paidVal = utils.Float64ToPgNumeric(*amountPaid)
+		}
+		changeVal := order.ChangeGiven
+		if changeGiven != nil {
+			changeVal = utils.Float64ToPgNumeric(*changeGiven)
+		} else if amountPaid != nil {
+			total := numericToFloat(order.TotalAmount)
+			if *amountPaid > total {
+				changeVal = utils.Float64ToPgNumeric(roundMoney(*amountPaid - total))
+			}
+		}
+
+		updated, err := q.UpdateRestaurantOrderPaymentStatus(ctx, repository.UpdateRestaurantOrderPaymentStatusParams{
+			ID:            orderID,
+			PaymentStatus: paymentStatus,
+			AmountPaid:    paidVal,
+			ChangeGiven:   changeVal,
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to update payment status: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order payment status updated", updated)
 	})
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, "failed to update payment status: "+err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order payment status updated", updated)
 }
 
 func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
@@ -2393,6 +2700,22 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 		terminalID = utils.Int32ToPgInt4(explicitTerminalID)
 	}
 
+	if amountPaidOverride != nil && *amountPaidOverride < 0 {
+		return nil, nil, fmt.Errorf("%w: amount_paid cannot be negative", errInvalidRestaurantPayment)
+	}
+
+	totalFloat := roundMoney(numericToFloat(order.TotalAmount))
+	paidFloat := roundMoney(numericToFloat(order.AmountPaid))
+	if amountPaidOverride != nil {
+		paidFloat = roundMoney(*amountPaidOverride)
+	} else if paidFloat <= 0 && totalFloat > 0 {
+		paidFloat = totalFloat
+	}
+
+	if err := validateFullRestaurantPayment(paidFloat, totalFloat); err != nil {
+		return nil, nil, err
+	}
+
 	if !cashierID.Valid || !sessionID.Valid {
 		openSess, err := q.FindOpenCashierSessionForRestaurantStore(ctx, repository.FindOpenCashierSessionForRestaurantStoreParams{
 			StoreID:   order.StoreID,
@@ -2420,20 +2743,12 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 		pm = "cash"
 	}
 
-	totalFloat := numericToFloat(order.TotalAmount)
-	paidFloat := numericToFloat(order.AmountPaid)
-	if amountPaidOverride != nil && *amountPaidOverride >= 0 {
-		paidFloat = roundMoney(*amountPaidOverride)
-	} else if paidFloat <= 0 && totalFloat > 0 {
-		paidFloat = totalFloat
-	}
-
-	changeFloat := numericToFloat(order.ChangeGiven)
+	changeFloat := 0.0
 	if paidFloat > totalFloat {
 		changeFloat = roundMoney(paidFloat - totalFloat)
 	}
 	netPaid := paidFloat
-	if changeFloat > 0 && paidFloat > totalFloat {
+	if changeFloat > 0 {
 		netPaid = roundMoney(paidFloat - changeFloat)
 	}
 
@@ -2529,31 +2844,37 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 // pos_transaction_id is omitted (or linking the provided pos_transaction_id).
 func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Context, orderID int32, input RestaurantSettleOrderInput) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		order, err := q.GetRestaurantOrder(ctx, orderID)
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
-			if err == pgx.ErrNoRows {
-				return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
-			}
-			return utils.NewResponse(utils.CodeError, "failed to get restaurant order: "+err.Error(), nil)
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
 
-		calcPaidAndChange := func(o repository.RestaurantOrder) (float64, float64) {
-			totalAmt := numericToFloat(o.TotalAmount)
+		calcPaidAndChange := func(o repository.RestaurantOrder) (float64, float64, error) {
+			if input.AmountPaid != nil && *input.AmountPaid < 0 {
+				return 0, 0, fmt.Errorf("%w: amount_paid cannot be negative", errInvalidRestaurantPayment)
+			}
+			totalAmt := roundMoney(numericToFloat(o.TotalAmount))
 			paidAmt := totalAmt
-			if input.AmountPaid != nil && *input.AmountPaid >= 0 {
+			if input.AmountPaid != nil {
 				paidAmt = roundMoney(*input.AmountPaid)
 			} else if numericToFloat(o.AmountPaid) > 0 {
-				paidAmt = numericToFloat(o.AmountPaid)
+				paidAmt = roundMoney(numericToFloat(o.AmountPaid))
+			}
+			if err := validateFullRestaurantPayment(paidAmt, totalAmt); err != nil {
+				return 0, 0, err
 			}
 			changeAmt := 0.0
 			if paidAmt > totalAmt {
 				changeAmt = roundMoney(paidAmt - totalAmt)
 			}
-			return paidAmt, changeAmt
+			return paidAmt, changeAmt, nil
 		}
 
 		if input.PosTransactionID != nil && *input.PosTransactionID > 0 {
-			paidAmt, changeAmt := calcPaidAndChange(order)
+			paidAmt, changeAmt, err := calcPaidAndChange(order)
+			if err != nil {
+				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+			}
 			updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
 				ID:               orderID,
 				PosTransactionID: pgtype.Int4{Int32: *input.PosTransactionID, Valid: true},
@@ -2577,7 +2898,10 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 		}
 
 		if order.PosTransactionID.Valid && order.PosTransactionID.Int32 > 0 {
-			paidAmt, changeAmt := calcPaidAndChange(order)
+			paidAmt, changeAmt, err := calcPaidAndChange(order)
+			if err != nil {
+				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+			}
 			updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
 				ID:               orderID,
 				PosTransactionID: order.PosTransactionID,
@@ -2651,9 +2975,9 @@ func (uc *RestaurantCartUseCase) ApplyCouponToCart(ctx context.Context, cartID u
 		return utils.NewResponse(utils.CodeBadReq, "coupon_code is required", nil)
 	}
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		cart, err := q.GetRestaurantCartByID(ctx, cartID)
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.CartStatus == repository.CartStatusConverted {
 			return utils.NewResponse(utils.CodeBadReq, "cannot modify coupon on a "+string(cart.CartStatus)+" cart", nil)
@@ -2675,9 +2999,9 @@ func (uc *RestaurantCartUseCase) ApplyCouponToCart(ctx context.Context, cartID u
 
 func (uc *RestaurantCartUseCase) RemoveCouponFromCart(ctx context.Context, cartID uuid.UUID) *repository.Response {
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		cart, err := q.GetRestaurantCartByID(ctx, cartID)
+		cart, err := lockAndGetRestaurantCartByID(ctx, q, cartID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant cart not found", nil)
+			return restaurantCartNotFoundOrErr(err, "lock restaurant cart")
 		}
 		if cart.CartStatus == repository.CartStatusConverted {
 			return utils.NewResponse(utils.CodeBadReq, "cannot modify coupon on a "+string(cart.CartStatus)+" cart", nil)
@@ -3068,9 +3392,9 @@ func (uc *RestaurantCartUseCase) UpdateOrderStatusWithHistory(ctx context.Contex
 	}
 
 	return uc.withTx(ctx, func(q *repository.Queries) *repository.Response {
-		order, err := q.GetRestaurantOrder(ctx, orderID)
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
-			return utils.NewResponse(utils.CodeNotFound, "restaurant order not found", nil)
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
 
 		// Reverse recipe ingredients once if transitioning into voided from a non-voided status
@@ -3208,13 +3532,17 @@ func deductRecipeIngredientsForOrderItems(
 				baseNum = utils.Float64ToPgNumeric(reqQty)
 			}
 
-			if _, err := q.DeductStoreInventoryStockForIngredient(ctx, repository.DeductStoreInventoryStockForIngredientParams{
+			deductedRows, err := q.DeductStoreInventoryStockForIngredient(ctx, repository.DeductStoreInventoryStockForIngredientParams{
 				DeductQty:        baseNum,
 				StoreID:          order.StoreID,
 				ProductID:        ing.ProductID,
 				ProductVariantID: ing.ProductVariantID,
-			}); err != nil {
+			})
+			if err != nil {
 				return err
+			}
+			if len(deductedRows) == 0 {
+				return fmt.Errorf("no inventory stock row found for store %d product %d", order.StoreID, ing.ProductID)
 			}
 
 			metaBytes, _ := json.Marshal(map[string]interface{}{
@@ -3248,6 +3576,9 @@ func reverseRecipeIngredientsForOrder(
 	order repository.RestaurantOrder,
 	postedBy pgtype.Int4,
 ) error {
+	if _, err := q.LockRestaurantOrder(ctx, order.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	movements, err := q.ListRestaurantOrderRecipeMovements(ctx, pgtype.Int4{Int32: order.ID, Valid: true})
 	if err != nil {
 		return err

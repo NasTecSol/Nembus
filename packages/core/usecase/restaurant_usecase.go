@@ -641,7 +641,10 @@ func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, st
 			continue
 		}
 		items, itemsErr := uc.repo.ListRestaurantOrderItemsDetailed(ctx, o.OrderID)
-		if itemsErr != nil || items == nil {
+		if itemsErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to load KDS order items: "+itemsErr.Error(), nil)
+		}
+		if items == nil {
 			items = []repository.ListRestaurantOrderItemsDetailedRow{}
 		}
 		result = append(result, KdsOrderOutput{
