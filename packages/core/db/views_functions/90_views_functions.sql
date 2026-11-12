@@ -310,6 +310,10 @@ DROP TRIGGER IF EXISTS trg_menu_items_updated_at ON menu_items;
 CREATE TRIGGER trg_menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS trg_recipes_updated_at ON recipes;
 CREATE TRIGGER trg_recipes_updated_at BEFORE UPDATE ON recipes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_restaurant_carts_updated_at ON restaurant_carts;
+CREATE TRIGGER trg_restaurant_carts_updated_at BEFORE UPDATE ON restaurant_carts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_restaurant_cart_items_updated_at ON restaurant_cart_items;
+CREATE TRIGGER trg_restaurant_cart_items_updated_at BEFORE UPDATE ON restaurant_cart_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS trg_restaurant_orders_updated_at ON restaurant_orders;
 CREATE TRIGGER trg_restaurant_orders_updated_at BEFORE UPDATE ON restaurant_orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS trg_restaurant_order_items_updated_at ON restaurant_order_items;
@@ -617,11 +621,24 @@ CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe_id       ON recipe_ingr
 CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_product_id      ON recipe_ingredients(product_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_variant_id      ON recipe_ingredients(product_variant_id);
 
+CREATE INDEX IF NOT EXISTS idx_restaurant_carts_store_id          ON restaurant_carts(store_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_carts_table_id          ON restaurant_carts(table_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_carts_customer_id       ON restaurant_carts(customer_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_carts_guest_identifier  ON restaurant_carts(guest_identifier);
+CREATE INDEX IF NOT EXISTS idx_restaurant_carts_status            ON restaurant_carts(cart_status);
+CREATE INDEX IF NOT EXISTS idx_restaurant_carts_last_activity     ON restaurant_carts(last_activity_at);
+
+CREATE INDEX IF NOT EXISTS idx_restaurant_cart_items_cart_id      ON restaurant_cart_items(cart_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_cart_items_menu_item_id ON restaurant_cart_items(menu_item_id);
+
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_store_id         ON restaurant_orders(store_id);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_table_id         ON restaurant_orders(table_id);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_cashier_id       ON restaurant_orders(cashier_id);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_session_id       ON restaurant_orders(cashier_session_id);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_customer_id      ON restaurant_orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_source_cart_id   ON restaurant_orders(source_cart_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_payment_status   ON restaurant_orders(payment_status);
+CREATE INDEX IF NOT EXISTS idx_restaurant_orders_order_type       ON restaurant_orders(order_type);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_status           ON restaurant_orders(status);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_source           ON restaurant_orders(order_source);
 CREATE INDEX IF NOT EXISTS idx_restaurant_orders_ordered_at       ON restaurant_orders(ordered_at);
@@ -631,6 +648,10 @@ CREATE INDEX IF NOT EXISTS idx_restaurant_orders_store_status_time ON restaurant
 CREATE INDEX IF NOT EXISTS idx_restaurant_order_items_order_id    ON restaurant_order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_restaurant_order_items_menu_item   ON restaurant_order_items(menu_item_id);
 CREATE INDEX IF NOT EXISTS idx_restaurant_order_items_status      ON restaurant_order_items(status);
+
+CREATE INDEX IF NOT EXISTS idx_restaurant_order_status_history_order_id   ON restaurant_order_status_history(restaurant_order_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_order_status_history_store_id   ON restaurant_order_status_history(store_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_order_status_history_changed_at ON restaurant_order_status_history(changed_at);
 
 CREATE INDEX IF NOT EXISTS idx_waste_logs_store_id                ON waste_logs(store_id);
 CREATE INDEX IF NOT EXISTS idx_waste_logs_product_id              ON waste_logs(product_id);
@@ -1793,10 +1814,10 @@ SELECT
     rt.table_name,
     rt.section                  AS table_section,
     c.id                        AS cashier_id,
-    u.first_name || ' ' || u.last_name AS waiter_name,
+    COALESCE(NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), ''), '')::text AS waiter_name,
     ro.customer_id,
     cust.name                   AS customer_name,
-    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0 AS minutes_since_ordered
+    COALESCE(ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0), 0)::INTEGER AS minutes_since_ordered
 FROM restaurant_orders ro
 LEFT JOIN restaurant_tables rt  ON ro.table_id = rt.id
 LEFT JOIN cashiers c            ON ro.cashier_id = c.id

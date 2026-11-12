@@ -325,22 +325,96 @@ CREATE TABLE menu_item_availability_schedules (
     CONSTRAINT chk_schedule_times CHECK (end_time > start_time)
 );    
 
+CREATE TABLE restaurant_carts (
+    id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    cart_number           VARCHAR(50)  UNIQUE,
+    organization_id       INTEGER      REFERENCES organizations(id) ON DELETE CASCADE,
+    store_id              INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    table_id              INTEGER      REFERENCES restaurant_tables(id) ON DELETE SET NULL,
+    order_type            VARCHAR(30)  NOT NULL DEFAULT 'dine_in',
+    customer_id           INTEGER      REFERENCES customers(id) ON DELETE SET NULL,
+    guest_identifier      VARCHAR(255),
+    guest_name            VARCHAR(255),
+    guest_email           VARCHAR(255),
+    guest_phone           VARCHAR(50),
+    cart_status           cart_status  NOT NULL DEFAULT 'active',
+    channel               VARCHAR(50)  DEFAULT 'pos',
+    payment_method        VARCHAR(100),
+    payment_gateway       VARCHAR(100),
+    device_info           JSONB        DEFAULT '{}',
+    created_by_user_id    INTEGER      REFERENCES users(id) ON DELETE SET NULL,
+    cashier_id            INTEGER      REFERENCES cashiers(id) ON DELETE SET NULL,
+    pos_terminal_id       INTEGER      REFERENCES pos_terminals(id) ON DELETE SET NULL,
+    kiosk_session_id      INTEGER,
+    subtotal              DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    discount_amount       DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    tax_amount            DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    total_amount          DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    coupon_code           VARCHAR(100),
+    discount_code         VARCHAR(100),
+    delivery_address      JSONB,
+    converted_to_order_id INTEGER,
+    converted_at          TIMESTAMP,
+    last_activity_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    expires_at            TIMESTAMP,
+    notes                 TEXT,
+    metadata              JSONB        DEFAULT '{}',
+    created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE restaurant_cart_items (
+    id                        UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    cart_id                   UUID          NOT NULL REFERENCES restaurant_carts(id) ON DELETE CASCADE,
+    organization_id           INTEGER       REFERENCES organizations(id) ON DELETE CASCADE,
+    menu_item_id              INTEGER       NOT NULL REFERENCES menu_items(id) ON DELETE RESTRICT,
+    quantity                  DECIMAL(15,3) NOT NULL CHECK (quantity > 0),
+    unit_price                DECIMAL(15,4) NOT NULL,
+    modifiers_snapshot        JSONB         DEFAULT '[]',
+    modifiers_total           DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    combo_components_snapshot JSONB         DEFAULT '[]',
+    combo_total               DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    discount_amount           DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    tax_category_id           INTEGER       REFERENCES tax_categories(id) ON DELETE SET NULL,
+    tax_rate                  DECIMAL(5,2)  DEFAULT 0.00,
+    tax_amount                DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    line_total                DECIMAL(15,2) NOT NULL,
+    customization_details     JSONB         DEFAULT '{}',
+    notes                     TEXT,
+    metadata                  JSONB         DEFAULT '{}',
+    added_at                  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE restaurant_orders (
     id                    SERIAL PRIMARY KEY,
+    organization_id       INTEGER      REFERENCES organizations(id) ON DELETE CASCADE,
     store_id              INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     table_id              INTEGER      REFERENCES restaurant_tables(id) ON DELETE SET NULL,
     cashier_id            INTEGER      REFERENCES cashiers(id) ON DELETE SET NULL,
     cashier_session_id    INTEGER      REFERENCES cashier_sessions(id) ON DELETE SET NULL,
     customer_id           INTEGER      REFERENCES customers(id) ON DELETE SET NULL,
+    pos_terminal_id       INTEGER      REFERENCES pos_terminals(id) ON DELETE SET NULL,
+    kiosk_session_id      INTEGER,
+    created_by_user_id    INTEGER      REFERENCES users(id) ON DELETE SET NULL,
+    source_cart_id        UUID         REFERENCES restaurant_carts(id) ON DELETE SET NULL,
     order_number          VARCHAR(50)  NOT NULL,
     order_source          VARCHAR(30)  NOT NULL DEFAULT 'counter',
+    order_type            VARCHAR(30)  NOT NULL DEFAULT 'dine_in',
     status                VARCHAR(30)  NOT NULL DEFAULT 'pending',
+    payment_status        VARCHAR(30)  NOT NULL DEFAULT 'unpaid',
+    customer_name         VARCHAR(255),
+    customer_email        VARCHAR(255),
+    customer_phone        VARCHAR(50),
+    delivery_address      JSONB,
     subtotal              DECIMAL(15,2) DEFAULT 0,
     discount_amount       DECIMAL(15,2) DEFAULT 0,
     tax_amount            DECIMAL(15,2) DEFAULT 0,
     total_amount          DECIMAL(15,2) DEFAULT 0,
     amount_paid           DECIMAL(15,2) DEFAULT 0,
     change_given          DECIMAL(15,2) DEFAULT 0,
+    coupon_code           VARCHAR(100),
+    discount_code         VARCHAR(100),
     notes                 TEXT,
     pos_transaction_id    INTEGER      REFERENCES pos_transactions(id) ON DELETE SET NULL,
     ordered_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
@@ -354,22 +428,41 @@ CREATE TABLE restaurant_orders (
 );
 
 CREATE TABLE restaurant_order_items (
-    id                  SERIAL PRIMARY KEY,
-    order_id            INTEGER      NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
-    menu_item_id        INTEGER      NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
-    quantity            DECIMAL(15,3) NOT NULL DEFAULT 1,
-    unit_price          DECIMAL(15,4) NOT NULL,
-    modifiers_snapshot  JSONB        DEFAULT '[]',
-    modifiers_total     DECIMAL(15,2) DEFAULT 0,
-    discount_amount     DECIMAL(15,2) DEFAULT 0,
-    tax_amount          DECIMAL(15,2) DEFAULT 0,
-    subtotal            DECIMAL(15,2) NOT NULL,
-    line_number         INTEGER,
+    id                        SERIAL PRIMARY KEY,
+    order_id                  INTEGER       NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
+    menu_item_id              INTEGER       NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    menu_item_name            VARCHAR(255),
+    quantity                  DECIMAL(15,3) NOT NULL DEFAULT 1,
+    unit_price                DECIMAL(15,4) NOT NULL,
+    modifiers_snapshot        JSONB         DEFAULT '[]',
+    modifiers_total           DECIMAL(15,2) DEFAULT 0,
+    combo_components_snapshot JSONB         DEFAULT '[]',
+    combo_total               DECIMAL(15,2) DEFAULT 0,
+    discount_amount           DECIMAL(15,2) DEFAULT 0,
+    tax_category_id           INTEGER       REFERENCES tax_categories(id) ON DELETE SET NULL,
+    tax_rate                  DECIMAL(5,2)  DEFAULT 0,
+    tax_amount                DECIMAL(15,2) DEFAULT 0,
+    subtotal                  DECIMAL(15,2) NOT NULL,
+    line_total                DECIMAL(15,2) DEFAULT 0,
+    line_number               INTEGER,
+    notes                     TEXT,
+    status                    VARCHAR(30)   DEFAULT 'pending',
+    metadata                  JSONB         DEFAULT '{}',
+    created_at                TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE restaurant_order_status_history (
+    id                  BIGSERIAL PRIMARY KEY,
+    restaurant_order_id INTEGER      NOT NULL REFERENCES restaurant_orders(id) ON DELETE CASCADE,
+    store_id            INTEGER      NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    from_status         VARCHAR(30),
+    to_status           VARCHAR(30)  NOT NULL,
+    reason              VARCHAR(255),
     notes               TEXT,
-    status              VARCHAR(30)  DEFAULT 'pending',
+    changed_by_user_id  INTEGER      REFERENCES users(id) ON DELETE SET NULL,
     metadata            JSONB        DEFAULT '{}',
-    created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+    changed_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE waste_logs (
@@ -402,4 +495,16 @@ CREATE TABLE kiosk_sessions (
     metadata            JSONB        DEFAULT '{}',
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE restaurant_carts
+    ADD CONSTRAINT fk_restaurant_carts_converted_to_order
+    FOREIGN KEY (converted_to_order_id) REFERENCES restaurant_orders(id) ON DELETE SET NULL;
+
+ALTER TABLE restaurant_carts
+    ADD CONSTRAINT fk_restaurant_carts_kiosk_session
+    FOREIGN KEY (kiosk_session_id) REFERENCES kiosk_sessions(id) ON DELETE SET NULL;
+
+ALTER TABLE restaurant_orders
+    ADD CONSTRAINT fk_restaurant_orders_kiosk_session
+    FOREIGN KEY (kiosk_session_id) REFERENCES kiosk_sessions(id) ON DELETE SET NULL;
 

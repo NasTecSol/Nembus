@@ -1170,7 +1170,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token scoped to biometrics.enroll.",
+                "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires users:enroll permission or X-Authorization-Token scoped to users:enroll.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1198,7 +1198,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Optional supervisor override token (biometrics.enroll)",
+                        "description": "Optional supervisor override token (users:enroll)",
                         "name": "X-Authorization-Token",
                         "in": "header"
                     },
@@ -25447,6 +25447,81 @@
                 }
             }
         },
+        "/api/pos/terminals/{id}/issue-sync-token": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generates a new per-terminal sync token for gRPC StreamPush/StreamChanges/StreamSession. Returns the raw token once; only its SHA-256 hash is stored. Re-issuing revokes the previous token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pos-terminals"
+                ],
+                "summary": "Issue gRPC sync token for POS terminal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Bearer token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Terminal ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pos/transactions": {
             "post": {
                 "security": [
@@ -26932,7 +27007,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization, the server loads a saved signed QR only when the order is reported. Pending or failed reporting prints without a QR so checkout is not blocked. Caller-supplied qr_code_base64 is ignored. The response includes qr_status.",
+                "description": "Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization, the saved sale determines its store/terminal registration. Registered POS sales print their saved signed QR while reporting is pending or failed; reported invoices retain their saved QR after device deactivation. Other sales print normally without a ZATCA QR. Caller-supplied qr_code_base64 is ignored. The response includes qr_status.",
                 "consumes": [
                     "application/json"
                 ],
@@ -32583,6 +32658,1270 @@
                 }
             }
         },
+        "/api/restaurant/cart-items/{item_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates quantity, modifiers, combo components, discount, or notes on a restaurant cart item.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Update restaurant cart item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart Item UUID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cart item update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantUpdateCartItemRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes an item from a restaurant cart and recalculates cart totals.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Remove restaurant cart item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart Item UUID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Looks up an active restaurant cart by store_id and customer_id, guest_identifier, or table_id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Get active restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Customer ID",
+                        "name": "customer_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Table ID",
+                        "name": "table_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Guest identifier",
+                        "name": "guest_identifier",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new restaurant cart with optional initial items and coupon code.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Create restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Restaurant cart payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantCreateCartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/active": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists active restaurant carts for a store.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "List active restaurant carts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page limit (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/add": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a menu item (with modifiers/combo components) to an existing cart or creates one automatically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Add menu item to restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Add to cart payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantAddToCartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/drafts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists held/draft restaurant carts assigned to a cashier.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "List draft/held restaurant carts by cashier",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Cashier ID",
+                        "name": "cashier_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Store ID",
+                        "name": "store_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page limit (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/merge": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Merges a guest restaurant cart into the customer's active cart for the store.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Merge guest restaurant cart into customer cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Merge cart payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantMergeCartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/new": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new restaurant cart with optional initial items and coupon code.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Create restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Restaurant cart payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantCreateCartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a restaurant cart and its items by cart UUID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Get restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates restaurant cart metadata, customer, table, channel, or notes.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Update restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cart update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantUpdateCartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a restaurant cart by UUID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Delete restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}/checkout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Converts a restaurant cart into a restaurant_orders row, applies coupon if provided, logs initial status history, deducts recipe ingredients, and creates a POS transaction when paid/pos channel.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Checkout restaurant cart into order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Checkout payload",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantCheckoutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}/coupon": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Validates a restaurant promotion coupon code, applies prorated discounts to eligible cart items, and recalculates VAT and cart totals.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Apply coupon code to restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Coupon code payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ApplyRestaurantCouponRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clears the applied restaurant coupon discount from cart items and recalculates VAT and cart totals.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Remove coupon code from restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}/hold": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks an active restaurant cart as held/draft.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Hold restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}/items": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a menu item (with modifiers/combo components) to an existing cart or creates one automatically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Add menu item to restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID (optional when using /carts/add)",
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "description": "Add to cart payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantAddToCartRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes all items from a restaurant cart.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Clear restaurant cart items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}/reopen": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reopens a held or abandoned restaurant cart back to active status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Reopen restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/carts/{id}/table": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assigns or clears a restaurant table on a cart.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Assign table to restaurant cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cart UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Table assignment payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantAssignTableRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/restaurant/kiosk/sessions": {
             "post": {
                 "security": [
@@ -34865,6 +36204,198 @@
                 }
             }
         },
+        "/api/restaurant/orders/{order_id}/items": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Appends a new menu item to an unpaid restaurant order, recalculates order totals, and deducts recipe ingredients.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Add item to existing restaurant order",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Order ID",
+                        "name": "order_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Order line item payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestaurantLineItemRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/orders/{order_id}/payment-status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates payment status, amount paid, and change given on a restaurant order.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Update restaurant order payment status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Order ID",
+                        "name": "order_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Payment status payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateRestaurantOrderPaymentStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/orders/{order_id}/reopen": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reverses recipe stock deduction, voids the unpaid order with status history, and returns an active cart.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Reopen unpaid restaurant order to cart",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Order ID",
+                        "name": "order_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/restaurant/orders/{order_id}/settle": {
             "post": {
                 "security": [
@@ -35000,6 +36531,68 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/restaurant/orders/{order_id}/status-history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the chronological status transition audit trail for a restaurant order.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "restaurant"
+                ],
+                "summary": "Get restaurant order status history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "name": "x-tenant-id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Order ID",
+                        "name": "order_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponse"
                         }
@@ -46158,7 +47751,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token scoped to biometrics.enroll.",
+                "description": "Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide 1:N duplicate check. Requires users:enroll permission or X-Authorization-Token scoped to users:enroll.",
                 "consumes": [
                     "application/json"
                 ],
@@ -46186,7 +47779,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Optional supervisor override token (biometrics.enroll)",
+                        "description": "Optional supervisor override token (users:enroll)",
                         "name": "X-Authorization-Token",
                         "in": "header"
                     },
@@ -46241,7 +47834,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Soft-deactivates the template (is_active=false) for sync propagation. Requires biometrics.enroll permission.",
+                "description": "Soft-deactivates the template (is_active=false) for sync propagation. Requires users:enroll permission.",
                 "produces": [
                     "application/json"
                 ],
@@ -48097,6 +49690,18 @@
                 "discount_amount": {
                     "type": "string",
                     "example": "10.00"
+                }
+            }
+        },
+        "handler.ApplyRestaurantCouponRequest": {
+            "type": "object",
+            "required": [
+                "coupon_code"
+            ],
+            "properties": {
+                "coupon_code": {
+                    "type": "string",
+                    "example": "PIZZA20"
                 }
             }
         },
@@ -50118,8 +51723,24 @@
                 "store_id"
             ],
             "properties": {
+                "customer_email": {
+                    "type": "string",
+                    "example": "customer@example.com"
+                },
                 "customer_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_name": {
+                    "type": "string",
+                    "example": "Online Customer"
+                },
+                "customer_phone": {
+                    "type": "string",
+                    "example": "0500000001"
+                },
+                "delivery_address": {
+                    "type": "object"
                 },
                 "items": {
                     "type": "array",
@@ -50127,7 +51748,27 @@
                         "$ref": "#/definitions/handler.CreateRestaurantOrderItemRequest"
                     }
                 },
+                "notes": {
+                    "type": "string",
+                    "example": "Ring doorbell"
+                },
+                "order_source": {
+                    "type": "string",
+                    "example": "online"
+                },
+                "order_type": {
+                    "type": "string",
+                    "example": "delivery"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
                 "store_id": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "table_id": {
                     "type": "integer"
                 }
             }
@@ -51024,31 +52665,39 @@
             ],
             "properties": {
                 "is_byproduct": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": false
                 },
                 "is_optional": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": false
                 },
                 "line_number": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "metadata": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "{}"
                 },
                 "product_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "product_variant_id": {
                     "type": "integer"
                 },
                 "quantity": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "2"
                 },
                 "recipe_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "uom_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -51061,40 +52710,51 @@
             ],
             "properties": {
                 "cooking_time_min": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 8
                 },
                 "description": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Standard pizza dough and cheese recipe"
                 },
                 "finished_product_id": {
                     "type": "integer"
                 },
                 "is_active": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": true
                 },
                 "metadata": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "{}"
                 },
                 "organization_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "preparation_steps": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Stretch dough, add sauce and cheese, bake 8 mins"
                 },
                 "preparation_time_min": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 5
                 },
                 "recipe_code": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "REC-PIZZA-10"
                 },
                 "recipe_name": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Margherita Pizza Recipe"
                 },
                 "yield_quantity": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "1"
                 },
                 "yield_uom_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -51108,40 +52768,52 @@
             ],
             "properties": {
                 "discount_amount": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0.00"
                 },
                 "line_number": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "menu_item_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 10
                 },
                 "metadata": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "{}"
                 },
                 "modifiers_snapshot": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "[]"
                 },
                 "modifiers_total": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0.00"
                 },
                 "notes": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Well done"
                 },
                 "quantity": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "2"
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "pending"
                 },
                 "subtotal": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "50.00"
                 },
                 "tax_amount": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "7.50"
                 },
                 "unit_price": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "25.00"
                 }
             }
         },
@@ -51152,55 +52824,119 @@
             ],
             "properties": {
                 "amount_paid": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0.00"
                 },
                 "cashier_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "cashier_session_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "change_given": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "created_by_user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_email": {
+                    "type": "string",
+                    "example": "guest@example.com"
                 },
                 "customer_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_name": {
+                    "type": "string",
+                    "example": "Walk-in Guest"
+                },
+                "customer_phone": {
+                    "type": "string",
+                    "example": "0500000000"
+                },
+                "delivery_address": {
+                    "type": "object"
                 },
                 "discount_amount": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0.00"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.RestaurantLineItemRequest"
+                    }
+                },
+                "kiosk_session_id": {
+                    "type": "integer"
                 },
                 "metadata": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "{}"
                 },
                 "notes": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Table 1 order"
                 },
                 "order_number": {
-                    "type": "string"
+                    "type": "string",
+                    "example": ""
                 },
                 "order_source": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "table"
+                },
+                "order_type": {
+                    "type": "string",
+                    "example": "dine_in"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "payment_status": {
+                    "type": "string",
+                    "example": "unpaid"
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "example": 8
                 },
                 "pos_transaction_id": {
                     "type": "integer"
                 },
+                "source_cart_id": {
+                    "type": "string",
+                    "example": ""
+                },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "pending"
                 },
                 "store_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 6
                 },
                 "subtotal": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "40.00"
                 },
                 "table_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1
                 },
                 "tax_amount": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "6.00"
                 },
                 "total_amount": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "46.00"
                 }
             }
         },
@@ -54507,6 +56243,552 @@
                 }
             }
         },
+        "handler.RestaurantAddToCartRequest": {
+            "type": "object",
+            "required": [
+                "menu_item_id"
+            ],
+            "properties": {
+                "cart_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "cashier_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "channel": {
+                    "type": "string",
+                    "example": "pos"
+                },
+                "combo_component_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "combo_components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RestaurantComboComponentSnapshotItem"
+                    }
+                },
+                "created_by_user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "customization_details": {
+                    "type": "object"
+                },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 0
+                },
+                "guest_email": {
+                    "type": "string",
+                    "example": "guest@example.com"
+                },
+                "guest_identifier": {
+                    "type": "string",
+                    "example": "guest-abc-123"
+                },
+                "guest_name": {
+                    "type": "string",
+                    "example": "Walk-in Guest"
+                },
+                "guest_phone": {
+                    "type": "string",
+                    "example": "0500000000"
+                },
+                "kiosk_session_id": {
+                    "type": "integer"
+                },
+                "menu_item_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "modifier_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1
+                    ]
+                },
+                "modifiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RestaurantModifierSnapshotItem"
+                    }
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Extra crispy"
+                },
+                "order_type": {
+                    "type": "string",
+                    "example": "dine_in"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 2
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "table_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "unit_price": {
+                    "type": "number",
+                    "example": 25
+                }
+            }
+        },
+        "handler.RestaurantAssignTableRequest": {
+            "type": "object",
+            "properties": {
+                "table_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.RestaurantCheckoutRequest": {
+            "type": "object",
+            "properties": {
+                "amount_paid": {
+                    "type": "number",
+                    "example": 0
+                },
+                "cashier_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "cashier_session_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "coupon_code": {
+                    "type": "string",
+                    "example": "PIZZA20"
+                },
+                "created_by_user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_email": {
+                    "type": "string",
+                    "example": "guest@example.com"
+                },
+                "customer_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_name": {
+                    "type": "string",
+                    "example": "Walk-in Guest"
+                },
+                "customer_phone": {
+                    "type": "string",
+                    "example": "0500000000"
+                },
+                "delivery_address": {
+                    "type": "object"
+                },
+                "discount_code": {
+                    "type": "string",
+                    "example": "PIZZA20-PROMO"
+                },
+                "kiosk_session_id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Send to kitchen first"
+                },
+                "order_number": {
+                    "type": "string",
+                    "example": ""
+                },
+                "order_source": {
+                    "type": "string",
+                    "example": "table"
+                },
+                "order_type": {
+                    "type": "string",
+                    "example": "dine_in"
+                },
+                "payment_gateway": {
+                    "type": "string",
+                    "example": ""
+                },
+                "payment_method": {
+                    "type": "string",
+                    "example": "cash"
+                },
+                "payment_status": {
+                    "type": "string",
+                    "example": "unpaid"
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "pos_transaction_id": {
+                    "type": "integer"
+                },
+                "reference_number": {
+                    "type": "string",
+                    "example": ""
+                },
+                "status": {
+                    "type": "string",
+                    "example": "pending"
+                },
+                "table_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.RestaurantCreateCartRequest": {
+            "type": "object",
+            "required": [
+                "store_id"
+            ],
+            "properties": {
+                "cart_number": {
+                    "type": "string",
+                    "example": ""
+                },
+                "cart_status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "cashier_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "channel": {
+                    "type": "string",
+                    "example": "pos"
+                },
+                "coupon_code": {
+                    "type": "string",
+                    "example": ""
+                },
+                "created_by_user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "customer_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "delivery_address": {
+                    "type": "object"
+                },
+                "device_info": {
+                    "type": "object"
+                },
+                "discount_code": {
+                    "type": "string",
+                    "example": ""
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "guest_email": {
+                    "type": "string",
+                    "example": "guest@example.com"
+                },
+                "guest_identifier": {
+                    "type": "string",
+                    "example": "guest-abc-123"
+                },
+                "guest_name": {
+                    "type": "string",
+                    "example": "Walk-in Guest"
+                },
+                "guest_phone": {
+                    "type": "string",
+                    "example": "0500000000"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.RestaurantLineItemRequest"
+                    }
+                },
+                "kiosk_session_id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Table 1 order"
+                },
+                "order_type": {
+                    "type": "string",
+                    "example": "dine_in"
+                },
+                "organization_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "payment_gateway": {
+                    "type": "string",
+                    "example": ""
+                },
+                "payment_method": {
+                    "type": "string",
+                    "example": "cash"
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "table_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.RestaurantLineItemRequest": {
+            "type": "object",
+            "required": [
+                "menu_item_id",
+                "quantity"
+            ],
+            "properties": {
+                "combo_component_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1
+                    ]
+                },
+                "combo_components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RestaurantComboComponentSnapshotItem"
+                    }
+                },
+                "customization_details": {
+                    "type": "object"
+                },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 0
+                },
+                "menu_item_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "modifier_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1
+                    ]
+                },
+                "modifiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RestaurantModifierSnapshotItem"
+                    }
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Extra crispy"
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 2
+                },
+                "status": {
+                    "type": "string",
+                    "example": "pending"
+                },
+                "unit_price": {
+                    "type": "number",
+                    "example": 25
+                }
+            }
+        },
+        "handler.RestaurantMergeCartRequest": {
+            "type": "object",
+            "required": [
+                "customer_id",
+                "guest_identifier",
+                "store_id"
+            ],
+            "properties": {
+                "customer_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "guest_identifier": {
+                    "type": "string",
+                    "example": "guest-abc-123"
+                },
+                "store_id": {
+                    "type": "integer",
+                    "example": 6
+                }
+            }
+        },
+        "handler.RestaurantUpdateCartItemRequest": {
+            "type": "object",
+            "required": [
+                "quantity"
+            ],
+            "properties": {
+                "combo_component_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "combo_components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RestaurantComboComponentSnapshotItem"
+                    }
+                },
+                "customization_details": {
+                    "type": "object"
+                },
+                "discount_amount": {
+                    "type": "number",
+                    "example": 0
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "modifier_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        1
+                    ]
+                },
+                "modifiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usecase.RestaurantModifierSnapshotItem"
+                    }
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "No onions"
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 3
+                }
+            }
+        },
+        "handler.RestaurantUpdateCartRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string",
+                    "example": "pos"
+                },
+                "coupon_code": {
+                    "type": "string",
+                    "example": "PIZZA20"
+                },
+                "customer_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "delivery_address": {
+                    "type": "object"
+                },
+                "discount_code": {
+                    "type": "string",
+                    "example": "PIZZA20-PROMO"
+                },
+                "guest_email": {
+                    "type": "string",
+                    "example": "guest@example.com"
+                },
+                "guest_identifier": {
+                    "type": "string",
+                    "example": "guest-abc-123"
+                },
+                "guest_name": {
+                    "type": "string",
+                    "example": "Walk-in Guest"
+                },
+                "guest_phone": {
+                    "type": "string",
+                    "example": "0500000000"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Updated table note"
+                },
+                "order_type": {
+                    "type": "string",
+                    "example": "dine_in"
+                },
+                "payment_gateway": {
+                    "type": "string",
+                    "example": ""
+                },
+                "payment_method": {
+                    "type": "string",
+                    "example": "cash"
+                },
+                "table_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "handler.RoleNavigationResponse": {
             "type": "object",
             "properties": {
@@ -54555,12 +56837,40 @@
         },
         "handler.SettleOrderRequest": {
             "type": "object",
-            "required": [
-                "pos_transaction_id"
-            ],
             "properties": {
+                "amount_paid": {
+                    "type": "number",
+                    "example": 46
+                },
+                "cashier_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "cashier_session_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "payment_gateway": {
+                    "type": "string",
+                    "example": ""
+                },
+                "payment_method": {
+                    "type": "string",
+                    "example": "cash"
+                },
+                "pos_terminal_id": {
+                    "type": "integer",
+                    "example": 8
+                },
                 "pos_transaction_id": {
                     "type": "integer"
+                },
+                "reference_number": {
+                    "type": "string",
+                    "example": "SETTLE-001"
                 }
             }
         },
@@ -56823,6 +59133,26 @@
                 }
             }
         },
+        "handler.UpdateRestaurantOrderPaymentStatusRequest": {
+            "type": "object",
+            "required": [
+                "payment_status"
+            ],
+            "properties": {
+                "amount_paid": {
+                    "type": "number",
+                    "example": 46
+                },
+                "change_given": {
+                    "type": "number",
+                    "example": 0
+                },
+                "payment_status": {
+                    "type": "string",
+                    "example": "paid"
+                }
+            }
+        },
         "handler.UpdateRestaurantPromotionRequest": {
             "type": "object",
             "properties": {
@@ -57084,8 +59414,24 @@
                 "status"
             ],
             "properties": {
+                "changed_by_user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Pizza put in oven"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "kitchen_started"
+                },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "preparing"
                 }
             }
         },
@@ -57414,6 +59760,9 @@
                 "is_active": {
                     "type": "boolean",
                     "example": true
+                },
+                "is_enabled": {
+                    "type": "boolean"
                 }
             }
         },
@@ -59009,6 +61358,52 @@
                 },
                 "received_by_user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "usecase.RestaurantComboComponentSnapshotItem": {
+            "type": "object",
+            "properties": {
+                "combo_component_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "component_menu_item_id": {
+                    "type": "integer",
+                    "example": 11
+                },
+                "component_name": {
+                    "type": "string",
+                    "example": "French Fries"
+                },
+                "group_name": {
+                    "type": "string",
+                    "example": "Sides"
+                },
+                "price_adjustment": {
+                    "type": "number",
+                    "example": 5
+                }
+            }
+        },
+        "usecase.RestaurantModifierSnapshotItem": {
+            "type": "object",
+            "properties": {
+                "modifier_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "modifier_name": {
+                    "type": "string",
+                    "example": "Extra Cheese"
+                },
+                "modifier_type": {
+                    "type": "string",
+                    "example": "addon"
+                },
+                "price_adjustment": {
+                    "type": "number",
+                    "example": 4
                 }
             }
         },

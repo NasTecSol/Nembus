@@ -60,8 +60,8 @@ JOIN users             cashier ON cshr.user_id        = cashier.id
 JOIN pos_terminals     term  ON t.pos_terminal_id     = term.id
 JOIN cashier_sessions  sess  ON t.cashier_session_id  = sess.id
 LEFT JOIN customers    cust  ON t.customer_id         = cust.id
-JOIN pos_transaction_lines tl   ON tl.transaction_id = t.id
-JOIN products          p     ON tl.product_id         = p.id
+LEFT JOIN pos_transaction_lines tl   ON tl.transaction_id = t.id
+LEFT JOIN products          p     ON tl.product_id         = p.id
 LEFT JOIN product_barcodes pb 
     ON pb.product_id = p.id 
    AND pb.is_primary = true

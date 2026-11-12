@@ -320,8 +320,8 @@ JOIN users             cashier ON cshr.user_id        = cashier.id
 JOIN pos_terminals     term  ON t.pos_terminal_id     = term.id
 JOIN cashier_sessions  sess  ON t.cashier_session_id  = sess.id
 LEFT JOIN customers    cust  ON t.customer_id         = cust.id
-JOIN pos_transaction_lines tl   ON tl.transaction_id = t.id
-JOIN products          p     ON tl.product_id         = p.id
+LEFT JOIN pos_transaction_lines tl   ON tl.transaction_id = t.id
+LEFT JOIN products          p     ON tl.product_id         = p.id
 LEFT JOIN product_barcodes pb 
     ON pb.product_id = p.id 
    AND pb.is_primary = true
@@ -350,15 +350,15 @@ type GetPosTransactionFullRow struct {
 	TerminalName      pgtype.Text      `json:"terminal_name"`
 	SessionNumber     string           `json:"session_number"`
 	CustomerName      pgtype.Text      `json:"customer_name"`
-	LineID            int32            `json:"line_id"`
+	LineID            pgtype.Int4      `json:"line_id"`
 	LineNumber        pgtype.Int4      `json:"line_number"`
-	ProductID         int32            `json:"product_id"`
+	ProductID         pgtype.Int4      `json:"product_id"`
 	Quantity          pgtype.Numeric   `json:"quantity"`
 	UnitPrice         pgtype.Numeric   `json:"unit_price"`
 	DiscountAmount_2  pgtype.Numeric   `json:"discount_amount_2"`
 	LineTotal         pgtype.Numeric   `json:"line_total"`
-	Sku               string           `json:"sku"`
-	ProductName       string           `json:"product_name"`
+	Sku               pgtype.Text      `json:"sku"`
+	ProductName       pgtype.Text      `json:"product_name"`
 	ScannedBarcode    string           `json:"scanned_barcode"`
 	ReturnedQuantity  pgtype.Numeric   `json:"returned_quantity"`
 }

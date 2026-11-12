@@ -105,6 +105,24 @@ CREATE TRIGGER trg_sync_pos_transactions
     AFTER INSERT OR UPDATE ON pos_transactions
     FOR EACH ROW
     EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_transactions');
+
+-- Install the complete POS transactional outbox on every runtime schema check.
+-- A cloned database can carry migration history that causes Goose to skip the
+-- local POS extension migration, while the separate ZATCA outbox still works.
+DROP TRIGGER IF EXISTS trg_sync_user_biometric_templates ON user_biometric_templates;
+CREATE TRIGGER trg_sync_user_biometric_templates AFTER INSERT OR UPDATE ON user_biometric_templates FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('user_biometric_templates');
+DROP TRIGGER IF EXISTS trg_sync_pos_transaction_lines ON pos_transaction_lines;
+CREATE TRIGGER trg_sync_pos_transaction_lines AFTER INSERT ON pos_transaction_lines FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_transaction_lines');
+DROP TRIGGER IF EXISTS trg_sync_pos_payments ON pos_payments;
+CREATE TRIGGER trg_sync_pos_payments AFTER INSERT ON pos_payments FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('pos_payments');
+DROP TRIGGER IF EXISTS trg_sync_cashier_sessions ON cashier_sessions;
+CREATE TRIGGER trg_sync_cashier_sessions AFTER INSERT OR UPDATE ON cashier_sessions FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('cashier_sessions');
+DROP TRIGGER IF EXISTS trg_sync_sales_returns ON sales_returns;
+CREATE TRIGGER trg_sync_sales_returns AFTER INSERT OR UPDATE ON sales_returns FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_returns');
+DROP TRIGGER IF EXISTS trg_sync_sales_return_lines ON sales_return_lines;
+CREATE TRIGGER trg_sync_sales_return_lines AFTER INSERT ON sales_return_lines FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_return_lines');
+DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
+CREATE TRIGGER trg_sync_stock_movements AFTER INSERT ON stock_movements FOR EACH ROW WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count')) EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
 `
 
 type SyncService struct {
@@ -114,6 +132,7 @@ type SyncService struct {
 	cloudURL             string
 	tenantSlug           string
 	grpcAddr             string
+	grpcInsecure         bool
 	zatcaCloudURL        string
 	outboxSchemaReady    atomic.Bool
 	zatcaSchemaReady     atomic.Bool
@@ -178,6 +197,7 @@ func NewSyncService(ctx context.Context, pool *pgxpool.Pool, cloudURL, slug stri
 		cloudURL:         cloudURL,
 		tenantSlug:       slug,
 		grpcAddr:         grpcTarget,
+		grpcInsecure:     isLoopbackOrTestTarget(grpcTarget) || strings.EqualFold(os.Getenv("NEMBUS_GRPC_INSECURE"), "true"),
 		sessionPullAckCh: make(chan int64, 8),
 	}
 }
@@ -262,10 +282,12 @@ func (s *SyncService) Start() {
 			}
 		}
 	}()
-	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s, interval: 15s)", s.tenantSlug, s.grpcAddr)
+	log.Printf("🔄 gRPC Sync Service started for tenant [%s] (target: %s, insecure_transport: %t, interval: 15s)", s.tenantSlug, s.grpcAddr, s.grpcInsecure)
 }
 
 func (s *SyncService) ConfigureZatcaSync(cloudURL string) { s.zatcaCloudURL = cloudURL }
+
+func (s *SyncService) ConfigureGRPCInsecure(insecure bool) { s.grpcInsecure = insecure }
 
 func (s *SyncService) ConfigureOrderAutomation(submitter corezatca.OrderSubmitter) {
 	s.orderSubmitter = submitter
@@ -294,7 +316,7 @@ func (s *SyncService) getOrCreateConn() (*grpc.ClientConn, error) {
 	}
 
 	var creds credentials.TransportCredentials
-	if isLoopbackOrTestTarget(s.grpcAddr) || strings.EqualFold(os.Getenv("NEMBUS_GRPC_INSECURE"), "true") {
+	if s.grpcInsecure {
 		creds = insecure.NewCredentials()
 	} else {
 		creds = credentials.NewTLS(&tls.Config{

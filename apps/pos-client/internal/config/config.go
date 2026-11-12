@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -18,7 +19,8 @@ type Config struct {
 	LogLevel           string
 	IsDesktop          bool
 	CloudURL           string
-	GRPCAddr           string // bare host:port for the cloud gRPC backup server
+	GRPCAddr           string // cloud gRPC host:port or URL (http:// means plaintext)
+	GRPCInsecure       bool   // true when the configured gRPC endpoint uses plaintext transport
 	BackupAuthToken    string // Auth token for downloading tenant backups
 	AppUpdateClientKey string // Secret token for checking and downloading updates from Nembus Cloud Server
 	GithubToken        string // GitHub token for private repo release updates (legacy fallback)
@@ -65,6 +67,11 @@ func LoadConfig(env string) *Config {
 	}
 
 	zatcaEnv := getEnv("ZATCA_ENV", "sandbox")
+	grpcAddr := getEnv("GRPC_SERVER_ADDR", "http://nembus.nashrms.com:50051")
+	grpcInsecure := strings.HasPrefix(strings.ToLower(strings.TrimSpace(grpcAddr)), "http://")
+	if configured, exists := os.LookupEnv("NEMBUS_GRPC_INSECURE"); exists {
+		grpcInsecure = strings.EqualFold(strings.TrimSpace(configured), "true")
+	}
 	var zatcaBaseURL string
 	switch zatcaEnv {
 	case "production":
@@ -85,7 +92,8 @@ func LoadConfig(env string) *Config {
 		LogLevel:           getEnv("LOG_LEVEL", "info"),
 		IsDesktop:          true, // Default to true for this Wails build
 		CloudURL:           getEnv("CLOUD_URL", "https://nembus.nashrms.com"),
-		GRPCAddr:           getEnv("GRPC_SERVER_ADDR", "nembus.nashrms.com:50051"),
+		GRPCAddr:           grpcAddr,
+		GRPCInsecure:       grpcInsecure,
 		BackupAuthToken:    getEnv("BACKUP_AUTH_TOKEN", "nembus"),
 		AppUpdateClientKey: getEnv("APP_UPDATE_CLIENT_KEY", "nembus-pos-update-client-key-default"),
 		GithubToken:        ghToken,
