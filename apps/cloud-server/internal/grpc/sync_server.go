@@ -395,7 +395,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			}
 		}
 
-		if err := s.upsertEntityJSONWithDB(ctx, tx, pool, ev.EntityType, ev.Action, ev.PayloadJson, false); err != nil {
+		if err := s.upsertEntityJSONWithStoreDB(ctx, tx, pool, ev.EntityType, ev.Action, ev.PayloadJson, false, ev.StoreId); err != nil {
 			log.Printf("[gRPC SyncServer] Batch %s failed at seq %d (%s ID %d): %v",
 				batchID, seqInBatch, ev.EntityType, ev.EntityId, err)
 			return &syncpb.SyncAck{
@@ -509,7 +509,7 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 			if inboxErr != nil {
 				return inboxErr
 			}
-			if err := s.upsertEntityJSONWithDB(ctx, tx, pool, event.EntityType, event.Action, event.PayloadJson, false); err != nil {
+			if err := s.upsertEntityJSONWithStoreDB(ctx, tx, pool, event.EntityType, event.Action, event.PayloadJson, false, event.StoreId); err != nil {
 				return err
 			}
 			if err := tx.Commit(ctx); err != nil {
@@ -526,7 +526,11 @@ func (s *SyncServer) ingestSyncEvent(ctx context.Context, event *syncpb.SyncEven
 		}
 	}
 
-	if err := s.upsertEntityJSON(ctx, pool, event.EntityType, event.Action, event.PayloadJson); err != nil {
+	var legacyDB repository.DBTX
+	if pool != nil {
+		legacyDB = pool
+	}
+	if err := s.upsertEntityJSONWithStoreDB(ctx, legacyDB, pool, event.EntityType, event.Action, event.PayloadJson, true, event.StoreId); err != nil {
 		log.Printf("[gRPC SyncServer] Ingestion error for %s (action=%s, ID %d): %v", event.EntityType, event.Action, event.EntityId, err)
 		return err
 	}
@@ -611,6 +615,10 @@ func (s *SyncServer) upsertEntityJSON(ctx context.Context, pool *pgxpool.Pool, e
 }
 
 func (s *SyncServer) upsertEntityJSONWithDB(ctx context.Context, db repository.DBTX, pool *pgxpool.Pool, entityType, action string, payload []byte, runPostCommitHooks bool) error {
+	return s.upsertEntityJSONWithStoreDB(ctx, db, pool, entityType, action, payload, runPostCommitHooks, 0)
+}
+
+func (s *SyncServer) upsertEntityJSONWithStoreDB(ctx context.Context, db repository.DBTX, pool *pgxpool.Pool, entityType, action string, payload []byte, runPostCommitHooks bool, authorizedStoreID int32) error {
 	if entityType == "sales_orders_v2" && action == "POS_CHECKOUT" {
 		if tx, ok := db.(pgx.Tx); ok {
 			return s.applyPOSCheckoutInTx(ctx, tx, payload)
@@ -656,14 +664,18 @@ func (s *SyncServer) upsertEntityJSONWithDB(ctx context.Context, db repository.D
 	var recipeMovement stockMovementSyncPayload
 	if entityType == "stock_movements" {
 		if err := json.Unmarshal(payload, &recipeMovement); err == nil &&
-			(recipeMovement.MovementType == "recipe_deduction" || recipeMovement.MovementType == "recipe_reversal") &&
-			recipeMovement.ID > 0 {
-			var existingID int32
-			chkErr := db.QueryRow(ctx, `SELECT id FROM stock_movements WHERE id = $1`, recipeMovement.ID).Scan(&existingID)
-			if errors.Is(chkErr, pgx.ErrNoRows) {
-				applyRecipeStock = true
-			} else if chkErr != nil {
-				return fmt.Errorf("check existing stock_movement %d: %w", recipeMovement.ID, chkErr)
+			(recipeMovement.MovementType == "recipe_deduction" || recipeMovement.MovementType == "recipe_reversal") {
+			if authorizedStoreID > 0 && (recipeMovement.FromStoreID == nil || *recipeMovement.FromStoreID != authorizedStoreID) {
+				return fmt.Errorf("unauthorized from_store_id for terminal store %d", authorizedStoreID)
+			}
+			if recipeMovement.ID > 0 {
+				var existingID int32
+				chkErr := db.QueryRow(ctx, `SELECT id FROM stock_movements WHERE id = $1`, recipeMovement.ID).Scan(&existingID)
+				if errors.Is(chkErr, pgx.ErrNoRows) {
+					applyRecipeStock = true
+				} else if chkErr != nil {
+					return fmt.Errorf("check existing stock_movement %d: %w", recipeMovement.ID, chkErr)
+				}
 			}
 		}
 	}
@@ -989,7 +1001,7 @@ func applyRecipeStockMovementSync(ctx context.Context, db repository.DBTX, sm st
 	var locID *int32
 	if sm.MovementType == "recipe_deduction" {
 		locID = sm.FromLocationID
-		_, err := db.Exec(ctx, `
+		tag, err := db.Exec(ctx, `
 			UPDATE inventory_stock
 			SET
 				quantity_on_hand = quantity_on_hand - $1::numeric,
@@ -1005,14 +1017,20 @@ func applyRecipeStockMovementSync(ctx context.Context, db repository.DBTX, sm st
 				LIMIT 1
 			)
 		`, sm.Quantity, *sm.FromStoreID, sm.ProductID, sm.ProductVariantID, locID)
-		return err
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("no inventory_stock row found for store %d product %d", *sm.FromStoreID, sm.ProductID)
+		}
+		return nil
 	}
 	if sm.MovementType == "recipe_reversal" {
 		locID = sm.ToLocationID
 		if locID == nil {
 			locID = sm.FromLocationID
 		}
-		_, err := db.Exec(ctx, `
+		tag, err := db.Exec(ctx, `
 			UPDATE inventory_stock
 			SET
 				quantity_on_hand = quantity_on_hand + $1::numeric,
@@ -1028,7 +1046,13 @@ func applyRecipeStockMovementSync(ctx context.Context, db repository.DBTX, sm st
 				LIMIT 1
 			)
 		`, sm.Quantity, *sm.FromStoreID, sm.ProductID, sm.ProductVariantID, locID)
-		return err
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("no inventory_stock row found for store %d product %d", *sm.FromStoreID, sm.ProductID)
+		}
+		return nil
 	}
 	return nil
 }

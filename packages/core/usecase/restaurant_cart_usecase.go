@@ -3853,16 +3853,20 @@ func reverseRecipeIngredientsForOrder(
 func mergeCustomizationIntoMetadata(meta, customization json.RawMessage) json.RawMessage {
 	base := ensureJSONObject(meta)
 	cust := ensureJSONObject(customization)
-	if len(cust) <= 2 { // "{}"
-		return base
-	}
 	var m map[string]interface{}
 	if err := json.Unmarshal(base, &m); err != nil || m == nil {
 		m = map[string]interface{}{}
 	}
-	var c interface{}
-	if err := json.Unmarshal(cust, &c); err == nil {
-		m["customization_details"] = c
+	if len(cust) <= 2 { // "{}"
+		if _, exists := m["customization_details"]; !exists {
+			return base
+		}
+		delete(m, "customization_details")
+	} else {
+		var c interface{}
+		if err := json.Unmarshal(cust, &c); err == nil {
+			m["customization_details"] = c
+		}
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
