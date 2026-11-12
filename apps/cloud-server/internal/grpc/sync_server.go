@@ -652,6 +652,21 @@ func (s *SyncServer) upsertEntityJSONWithDB(ctx context.Context, db repository.D
 		updateClause = strings.ReplaceAll(updateClause, "fulfillment_status = EXCLUDED.fulfillment_status",
 			"fulfillment_status = CASE WHEN sales_orders_v2.fulfillment_status = 'fulfilled' THEN sales_orders_v2.fulfillment_status ELSE EXCLUDED.fulfillment_status END")
 	}
+	var applyRecipeStock bool
+	var recipeMovement stockMovementSyncPayload
+	if entityType == "stock_movements" {
+		if err := json.Unmarshal(payload, &recipeMovement); err == nil &&
+			(recipeMovement.MovementType == "recipe_deduction" || recipeMovement.MovementType == "recipe_reversal") &&
+			recipeMovement.ID > 0 {
+			var existingID int32
+			chkErr := db.QueryRow(ctx, `SELECT id FROM stock_movements WHERE id = $1`, recipeMovement.ID).Scan(&existingID)
+			if errors.Is(chkErr, pgx.ErrNoRows) {
+				applyRecipeStock = true
+			} else if chkErr != nil {
+				return fmt.Errorf("check existing stock_movement %d: %w", recipeMovement.ID, chkErr)
+			}
+		}
+	}
 	query := fmt.Sprintf(`
 		INSERT INTO %s
 		SELECT * FROM json_populate_record(NULL::%s, $1::json)
@@ -661,6 +676,11 @@ func (s *SyncServer) upsertEntityJSONWithDB(ctx context.Context, db repository.D
 		// Return the original constraint and SQLSTATE. A DO NOTHING fallback
 		// can hide rejected updates, or replace the cause with SQLSTATE 25P02.
 		return fmt.Errorf("failed to upsert %s (action=%s): %w", entityType, action, err)
+	}
+	if applyRecipeStock {
+		if err := applyRecipeStockMovementSync(ctx, db, recipeMovement); err != nil {
+			return fmt.Errorf("apply cloud stock update for %s %d: %w", recipeMovement.MovementType, recipeMovement.ID, err)
+		}
 	}
 	if runPostCommitHooks && pool != nil {
 		if entityType == "pos_transactions" {
@@ -949,4 +969,66 @@ func (s *SyncServer) streamEntityDeltas(
 	}
 
 	return rows.Err()
+}
+
+type stockMovementSyncPayload struct {
+	ID               int32   `json:"id"`
+	MovementType     string  `json:"movement_type"`
+	ProductID        int32   `json:"product_id"`
+	ProductVariantID *int32  `json:"product_variant_id"`
+	FromStoreID      *int32  `json:"from_store_id"`
+	FromLocationID   *int32  `json:"from_location_id"`
+	ToLocationID     *int32  `json:"to_location_id"`
+	Quantity         float64 `json:"quantity"`
+}
+
+func applyRecipeStockMovementSync(ctx context.Context, db repository.DBTX, sm stockMovementSyncPayload) error {
+	if sm.FromStoreID == nil || *sm.FromStoreID <= 0 || sm.ProductID <= 0 || sm.Quantity <= 0 {
+		return nil
+	}
+	var locID *int32
+	if sm.MovementType == "recipe_deduction" {
+		locID = sm.FromLocationID
+		_, err := db.Exec(ctx, `
+			UPDATE inventory_stock
+			SET
+				quantity_on_hand = quantity_on_hand - $1::numeric,
+				quantity_available = GREATEST(0, quantity_available - $1::numeric),
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = (
+				SELECT ist.id
+				FROM inventory_stock ist
+				WHERE ist.store_id = $2
+				  AND ist.product_id = $3
+				  AND ist.product_variant_id IS NOT DISTINCT FROM $4::int
+				ORDER BY (ist.storage_location_id IS NOT DISTINCT FROM $5::int) DESC, ist.storage_location_id NULLS FIRST, ist.id ASC
+				LIMIT 1
+			)
+		`, sm.Quantity, *sm.FromStoreID, sm.ProductID, sm.ProductVariantID, locID)
+		return err
+	}
+	if sm.MovementType == "recipe_reversal" {
+		locID = sm.ToLocationID
+		if locID == nil {
+			locID = sm.FromLocationID
+		}
+		_, err := db.Exec(ctx, `
+			UPDATE inventory_stock
+			SET
+				quantity_on_hand = quantity_on_hand + $1::numeric,
+				quantity_available = GREATEST(0, (quantity_on_hand + $1::numeric) - COALESCE(quantity_allocated, 0)),
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = (
+				SELECT ist.id
+				FROM inventory_stock ist
+				WHERE ist.store_id = $2
+				  AND ist.product_id = $3
+				  AND ist.product_variant_id IS NOT DISTINCT FROM $4::int
+				ORDER BY (ist.storage_location_id IS NOT DISTINCT FROM $5::int) DESC, ist.storage_location_id NULLS FIRST, ist.id ASC
+				LIMIT 1
+			)
+		`, sm.Quantity, *sm.FromStoreID, sm.ProductID, sm.ProductVariantID, locID)
+		return err
+	}
+	return nil
 }

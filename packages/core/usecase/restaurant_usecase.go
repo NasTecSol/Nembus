@@ -544,12 +544,31 @@ func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository
 		comboTotal := numericToFloat(existingItem.ComboTotal)
 		discount := roundMoney(clampLineDiscount(qty, unitPrice, modTotal, comboTotal, numericToFloat(arg.DiscountAmount)))
 		var tcPtr *repository.TaxCategory
-		if existingItem.TaxCategoryID.Valid {
-			if tc, tcErr := q.GetTaxCategory(ctx, existingItem.TaxCategoryID.Int32); tcErr == nil {
+		taxCategoryID := existingItem.TaxCategoryID
+		if !taxCategoryID.Valid {
+			if mi, miErr := q.GetMenuItem(ctx, existingItem.MenuItemID); miErr == nil && mi.TaxCategoryID.Valid {
+				taxCategoryID = mi.TaxCategoryID
+			}
+		}
+		if taxCategoryID.Valid {
+			if tc, tcErr := q.GetTaxCategory(ctx, taxCategoryID.Int32); tcErr == nil {
 				tcPtr = &tc
 			}
 		}
 		_, taxAmt, subtotal, lineTotal := computeLineTaxAndTotals(qty, unitPrice, modTotal, comboTotal, discount, tcPtr)
+		if tcPtr == nil {
+			if numericToFloat(arg.TaxAmount) > 0 {
+				taxAmt = roundMoney(numericToFloat(arg.TaxAmount))
+				lineTotal = roundMoney(subtotal + taxAmt)
+			} else if oldTax := numericToFloat(existingItem.TaxAmount); oldTax > 0 {
+				if oldSub := numericToFloat(existingItem.Subtotal); oldSub > 0 {
+					taxAmt = roundMoney(oldTax * (subtotal / oldSub))
+				} else {
+					taxAmt = roundMoney(oldTax)
+				}
+				lineTotal = roundMoney(subtotal + taxAmt)
+			}
+		}
 		arg.DiscountAmount = utils.Float64ToPgNumeric(discount)
 		arg.TaxAmount = utils.Float64ToPgNumeric(taxAmt)
 		arg.Subtotal = utils.Float64ToPgNumeric(subtotal)

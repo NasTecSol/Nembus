@@ -208,6 +208,7 @@ WHERE cart_id = $1
   AND COALESCE(combo_components_snapshot, '[]'::jsonb) = COALESCE($4::jsonb, '[]'::jsonb)
   AND COALESCE(notes, '') = COALESCE($5::text, '')
   AND unit_price = $6
+  AND COALESCE(customization_details, '{}'::jsonb) = COALESCE($7::jsonb, '{}'::jsonb)
 LIMIT 1;
 
 -- name: UpdateRestaurantCartItem :one

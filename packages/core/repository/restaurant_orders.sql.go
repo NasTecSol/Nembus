@@ -110,13 +110,15 @@ INSERT INTO stock_movements (
     product_id,
     product_variant_id,
     from_store_id,
+    from_location_id,
+    to_location_id,
     quantity,
     uom_id,
     posted_by,
     status,
     metadata
 ) VALUES (
-    $1, 'restaurant_order', $2, $3, $4, $5, $6, $7, $8, 'completed', COALESCE($9::jsonb, '{}'::jsonb)
+    $1, 'restaurant_order', $2, $3, $4, $5, $9::int, $10::int, $6, $7, $8, 'completed', COALESCE($11::jsonb, '{}'::jsonb)
 ) RETURNING id, movement_type, reference_type, reference_id, product_id, product_variant_id, from_store_id, to_store_id, from_location_id, to_location_id, quantity, uom_id, batch_number, serial_number, movement_date, posted_by, status, cost_per_unit, total_value, metadata, created_at, updated_at
 `
 
@@ -129,6 +131,8 @@ type CreateRestaurantIngredientStockMovementParams struct {
 	Quantity         pgtype.Numeric  `json:"quantity"`
 	UomID            pgtype.Int4     `json:"uom_id"`
 	PostedBy         pgtype.Int4     `json:"posted_by"`
+	FromLocationID   pgtype.Int4     `json:"from_location_id"`
+	ToLocationID     pgtype.Int4     `json:"to_location_id"`
 	Metadata         json.RawMessage `json:"metadata"`
 }
 
@@ -142,6 +146,8 @@ func (q *Queries) CreateRestaurantIngredientStockMovement(ctx context.Context, a
 		arg.Quantity,
 		arg.UomID,
 		arg.PostedBy,
+		arg.FromLocationID,
+		arg.ToLocationID,
 		arg.Metadata,
 	)
 	var i StockMovement
@@ -1118,10 +1124,10 @@ SET
     updated_at = CURRENT_TIMESTAMP
 FROM (
     SELECT
-        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal) - COALESCE(tax_amount, 0)), 0)::numeric(15,2) AS subtotal,
+        COALESCE(SUM(COALESCE(NULLIF(line_total, 0) - COALESCE(tax_amount, 0), subtotal)), 0)::numeric(15,2) AS subtotal,
         COALESCE(SUM(discount_amount), 0)::numeric(15,2) AS total_discount,
         COALESCE(SUM(tax_amount), 0)::numeric(15,2) AS total_tax,
-        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal)), 0)::numeric(15,2) AS total_amount
+        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal + COALESCE(tax_amount, 0))), 0)::numeric(15,2) AS total_amount
     FROM restaurant_order_items
     WHERE order_id = $1
 ) AS totals
@@ -1175,18 +1181,23 @@ func (q *Queries) RecalculateRestaurantOrderTotals(ctx context.Context, id int32
 }
 
 const resolveIngredientBaseQuantity = `-- name: ResolveIngredientBaseQuantity :one
-SELECT COALESCE(
-    CASE
-        WHEN $1::int IS NOT NULL THEN
-            fn_convert_uom_quantity(
-                $2::int,
-                (SELECT code FROM units_of_measure WHERE id = $1::int LIMIT 1),
-                $3::numeric
-            )
-        ELSE $3::numeric
-    END,
-    $3::numeric
-)::numeric(15,3) AS base_quantity
+SELECT
+    COALESCE(
+        CASE
+            WHEN $1::int IS NOT NULL THEN
+                fn_convert_uom_quantity(
+                    $2::int,
+                    (SELECT code FROM units_of_measure WHERE id = $1::int LIMIT 1),
+                    $3::numeric
+                )
+            ELSE $3::numeric
+        END,
+        $3::numeric
+    )::numeric(15,3) AS base_quantity,
+    COALESCE(
+        (SELECT p.base_uom_id FROM products p WHERE p.id = $2::int LIMIT 1),
+        $1::int
+    )::int4 AS base_uom_id
 `
 
 type ResolveIngredientBaseQuantityParams struct {
@@ -1195,11 +1206,16 @@ type ResolveIngredientBaseQuantityParams struct {
 	Quantity  pgtype.Numeric `json:"quantity"`
 }
 
-func (q *Queries) ResolveIngredientBaseQuantity(ctx context.Context, arg ResolveIngredientBaseQuantityParams) (pgtype.Numeric, error) {
+type ResolveIngredientBaseQuantityRow struct {
+	BaseQuantity pgtype.Numeric `json:"base_quantity"`
+	BaseUomID    int32          `json:"base_uom_id"`
+}
+
+func (q *Queries) ResolveIngredientBaseQuantity(ctx context.Context, arg ResolveIngredientBaseQuantityParams) (ResolveIngredientBaseQuantityRow, error) {
 	row := q.db.QueryRow(ctx, resolveIngredientBaseQuantity, arg.UomID, arg.ProductID, arg.Quantity)
-	var base_quantity pgtype.Numeric
-	err := row.Scan(&base_quantity)
-	return base_quantity, err
+	var i ResolveIngredientBaseQuantityRow
+	err := row.Scan(&i.BaseQuantity, &i.BaseUomID)
+	return i, err
 }
 
 const restoreStoreInventoryStockForIngredient = `-- name: RestoreStoreInventoryStockForIngredient :many
@@ -1214,17 +1230,18 @@ WHERE id = (
     WHERE ist.store_id = $2
       AND ist.product_id = $3
       AND ist.product_variant_id IS NOT DISTINCT FROM $4::int
-    ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
+    ORDER BY (ist.storage_location_id IS NOT DISTINCT FROM $5::int) DESC, ist.storage_location_id NULLS FIRST, ist.id ASC
     LIMIT 1
 )
 RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
 `
 
 type RestoreStoreInventoryStockForIngredientParams struct {
-	RestoreQty       pgtype.Numeric `json:"restore_qty"`
-	StoreID          int32          `json:"store_id"`
-	ProductID        int32          `json:"product_id"`
-	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
+	RestoreQty        pgtype.Numeric `json:"restore_qty"`
+	StoreID           int32          `json:"store_id"`
+	ProductID         int32          `json:"product_id"`
+	ProductVariantID  pgtype.Int4    `json:"product_variant_id"`
+	StorageLocationID pgtype.Int4    `json:"storage_location_id"`
 }
 
 func (q *Queries) RestoreStoreInventoryStockForIngredient(ctx context.Context, arg RestoreStoreInventoryStockForIngredientParams) ([]InventoryStock, error) {
@@ -1233,6 +1250,7 @@ func (q *Queries) RestoreStoreInventoryStockForIngredient(ctx context.Context, a
 		arg.StoreID,
 		arg.ProductID,
 		arg.ProductVariantID,
+		arg.StorageLocationID,
 	)
 	if err != nil {
 		return nil, err
