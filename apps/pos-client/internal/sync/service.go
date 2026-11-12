@@ -122,7 +122,7 @@ CREATE TRIGGER trg_sync_sales_returns AFTER INSERT OR UPDATE ON sales_returns FO
 DROP TRIGGER IF EXISTS trg_sync_sales_return_lines ON sales_return_lines;
 CREATE TRIGGER trg_sync_sales_return_lines AFTER INSERT ON sales_return_lines FOR EACH ROW EXECUTE FUNCTION trg_enqueue_sync_outbox('sales_return_lines');
 DROP TRIGGER IF EXISTS trg_sync_stock_movements ON stock_movements;
-CREATE TRIGGER trg_sync_stock_movements AFTER INSERT ON stock_movements FOR EACH ROW WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count')) EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
+CREATE TRIGGER trg_sync_stock_movements AFTER INSERT ON stock_movements FOR EACH ROW WHEN (NEW.movement_type IN ('stock_adjustment', 'adjustment', 'waste', 'damage', 'physical_count', 'recipe_deduction', 'recipe_reversal')) EXECUTE FUNCTION trg_enqueue_sync_outbox('stock_movements');
 `
 
 type SyncService struct {

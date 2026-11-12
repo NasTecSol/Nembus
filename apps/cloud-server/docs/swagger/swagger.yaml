@@ -148,6 +148,14 @@ definitions:
     - coupon_code
     - discount_amount
     type: object
+  handler.ApplyRestaurantCouponRequest:
+    properties:
+      coupon_code:
+        example: PIZZA20
+        type: string
+    required:
+    - coupon_code
+    type: object
   handler.ApprovalDecisionRequest:
     properties:
       notes:
@@ -1589,13 +1597,40 @@ definitions:
     type: object
   handler.CreateOnlineOrderRequest:
     properties:
+      customer_email:
+        example: customer@example.com
+        type: string
       customer_id:
+        example: 1
         type: integer
+      customer_name:
+        example: Online Customer
+        type: string
+      customer_phone:
+        example: "0500000001"
+        type: string
+      delivery_address:
+        type: object
       items:
         items:
           $ref: '#/definitions/handler.CreateRestaurantOrderItemRequest'
         type: array
+      notes:
+        example: Ring doorbell
+        type: string
+      order_source:
+        example: online
+        type: string
+      order_type:
+        example: delivery
+        type: string
+      organization_id:
+        example: 1
+        type: integer
       store_id:
+        example: 6
+        type: integer
+      table_id:
         type: integer
     required:
     - items
@@ -2240,22 +2275,30 @@ definitions:
   handler.CreateRecipeIngredientRequest:
     properties:
       is_byproduct:
+        example: false
         type: boolean
       is_optional:
+        example: false
         type: boolean
       line_number:
+        example: 1
         type: integer
       metadata:
+        example: '{}'
         type: string
       product_id:
+        example: 1
         type: integer
       product_variant_id:
         type: integer
       quantity:
+        example: "2"
         type: string
       recipe_id:
+        example: 1
         type: integer
       uom_id:
+        example: 1
         type: integer
     required:
     - product_id
@@ -2264,28 +2307,39 @@ definitions:
   handler.CreateRecipeRequest:
     properties:
       cooking_time_min:
+        example: 8
         type: integer
       description:
+        example: Standard pizza dough and cheese recipe
         type: string
       finished_product_id:
         type: integer
       is_active:
+        example: true
         type: boolean
       metadata:
+        example: '{}'
         type: string
       organization_id:
+        example: 1
         type: integer
       preparation_steps:
+        example: Stretch dough, add sauce and cheese, bake 8 mins
         type: string
       preparation_time_min:
+        example: 5
         type: integer
       recipe_code:
+        example: REC-PIZZA-10
         type: string
       recipe_name:
+        example: Margherita Pizza Recipe
         type: string
       yield_quantity:
+        example: "1"
         type: string
       yield_uom_id:
+        example: 1
         type: integer
     required:
     - organization_id
@@ -2295,28 +2349,40 @@ definitions:
   handler.CreateRestaurantOrderItemRequest:
     properties:
       discount_amount:
+        example: "0.00"
         type: string
       line_number:
+        example: 1
         type: integer
       menu_item_id:
+        example: 10
         type: integer
       metadata:
+        example: '{}'
         type: string
       modifiers_snapshot:
+        example: '[]'
         type: string
       modifiers_total:
+        example: "0.00"
         type: string
       notes:
+        example: Well done
         type: string
       quantity:
+        example: "2"
         type: string
       status:
+        example: pending
         type: string
       subtotal:
+        example: "50.00"
         type: string
       tax_amount:
+        example: "7.50"
         type: string
       unit_price:
+        example: "25.00"
         type: string
     required:
     - menu_item_id
@@ -2327,38 +2393,89 @@ definitions:
   handler.CreateRestaurantOrderRequest:
     properties:
       amount_paid:
+        example: "0.00"
         type: string
       cashier_id:
+        example: 1
         type: integer
       cashier_session_id:
+        example: 1
         type: integer
       change_given:
+        example: "0.00"
+        type: string
+      created_by_user_id:
+        example: 1
+        type: integer
+      customer_email:
+        example: guest@example.com
         type: string
       customer_id:
+        example: 1
         type: integer
-      discount_amount:
+      customer_name:
+        example: Walk-in Guest
         type: string
+      customer_phone:
+        example: "0500000000"
+        type: string
+      delivery_address:
+        type: object
+      discount_amount:
+        example: "0.00"
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.RestaurantLineItemRequest'
+        type: array
+      kiosk_session_id:
+        type: integer
       metadata:
+        example: '{}'
         type: string
       notes:
+        example: Table 1 order
         type: string
       order_number:
+        example: ""
         type: string
       order_source:
+        example: table
         type: string
+      order_type:
+        example: dine_in
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      payment_status:
+        example: unpaid
+        type: string
+      pos_terminal_id:
+        example: 8
+        type: integer
       pos_transaction_id:
         type: integer
+      source_cart_id:
+        example: ""
+        type: string
       status:
+        example: pending
         type: string
       store_id:
+        example: 6
         type: integer
       subtotal:
+        example: "40.00"
         type: string
       table_id:
+        example: 1
         type: integer
       tax_amount:
+        example: "6.00"
         type: string
       total_amount:
+        example: "46.00"
         type: string
     required:
     - store_id
@@ -4751,6 +4868,397 @@ definitions:
           type: integer
         type: array
     type: object
+  handler.RestaurantAddToCartRequest:
+    properties:
+      cart_id:
+        example: ""
+        type: string
+      cashier_id:
+        example: 1
+        type: integer
+      channel:
+        example: pos
+        type: string
+      combo_component_ids:
+        items:
+          type: integer
+        type: array
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.RestaurantComboComponentSnapshotItem'
+        type: array
+      created_by_user_id:
+        example: 1
+        type: integer
+      customer_id:
+        example: 1
+        type: integer
+      customization_details:
+        type: object
+      discount_amount:
+        example: 0
+        type: number
+      guest_email:
+        example: guest@example.com
+        type: string
+      guest_identifier:
+        example: guest-abc-123
+        type: string
+      guest_name:
+        example: Walk-in Guest
+        type: string
+      guest_phone:
+        example: "0500000000"
+        type: string
+      kiosk_session_id:
+        type: integer
+      menu_item_id:
+        example: 10
+        type: integer
+      metadata:
+        type: object
+      modifier_ids:
+        example:
+        - 1
+        items:
+          type: integer
+        type: array
+      modifiers:
+        items:
+          $ref: '#/definitions/usecase.RestaurantModifierSnapshotItem'
+        type: array
+      notes:
+        example: Extra crispy
+        type: string
+      order_type:
+        example: dine_in
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      pos_terminal_id:
+        example: 8
+        type: integer
+      quantity:
+        example: 2
+        type: number
+      store_id:
+        example: 6
+        type: integer
+      table_id:
+        example: 1
+        type: integer
+      unit_price:
+        example: 25
+        type: number
+    required:
+    - menu_item_id
+    type: object
+  handler.RestaurantAssignTableRequest:
+    properties:
+      table_id:
+        example: 1
+        type: integer
+    type: object
+  handler.RestaurantCheckoutRequest:
+    properties:
+      amount_paid:
+        example: 0
+        type: number
+      cashier_id:
+        example: 1
+        type: integer
+      cashier_session_id:
+        example: 1
+        type: integer
+      coupon_code:
+        example: PIZZA20
+        type: string
+      created_by_user_id:
+        example: 1
+        type: integer
+      customer_email:
+        example: guest@example.com
+        type: string
+      customer_id:
+        example: 1
+        type: integer
+      customer_name:
+        example: Walk-in Guest
+        type: string
+      customer_phone:
+        example: "0500000000"
+        type: string
+      delivery_address:
+        type: object
+      discount_code:
+        example: PIZZA20-PROMO
+        type: string
+      kiosk_session_id:
+        type: integer
+      metadata:
+        type: object
+      notes:
+        example: Send to kitchen first
+        type: string
+      order_number:
+        example: ""
+        type: string
+      order_source:
+        example: table
+        type: string
+      order_type:
+        example: dine_in
+        type: string
+      payment_gateway:
+        example: ""
+        type: string
+      payment_method:
+        example: cash
+        type: string
+      payment_status:
+        example: unpaid
+        type: string
+      pos_terminal_id:
+        example: 8
+        type: integer
+      pos_transaction_id:
+        type: integer
+      reference_number:
+        example: ""
+        type: string
+      status:
+        example: pending
+        type: string
+      table_id:
+        example: 1
+        type: integer
+    type: object
+  handler.RestaurantCreateCartRequest:
+    properties:
+      cart_number:
+        example: ""
+        type: string
+      cart_status:
+        example: active
+        type: string
+      cashier_id:
+        example: 1
+        type: integer
+      channel:
+        example: pos
+        type: string
+      coupon_code:
+        example: ""
+        type: string
+      created_by_user_id:
+        example: 1
+        type: integer
+      customer_id:
+        example: 1
+        type: integer
+      delivery_address:
+        type: object
+      device_info:
+        type: object
+      discount_code:
+        example: ""
+        type: string
+      expires_at:
+        type: string
+      guest_email:
+        example: guest@example.com
+        type: string
+      guest_identifier:
+        example: guest-abc-123
+        type: string
+      guest_name:
+        example: Walk-in Guest
+        type: string
+      guest_phone:
+        example: "0500000000"
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/handler.RestaurantLineItemRequest'
+        type: array
+      kiosk_session_id:
+        type: integer
+      metadata:
+        type: object
+      notes:
+        example: Table 1 order
+        type: string
+      order_type:
+        example: dine_in
+        type: string
+      organization_id:
+        example: 1
+        type: integer
+      payment_gateway:
+        example: ""
+        type: string
+      payment_method:
+        example: cash
+        type: string
+      pos_terminal_id:
+        example: 8
+        type: integer
+      store_id:
+        example: 6
+        type: integer
+      table_id:
+        example: 1
+        type: integer
+    required:
+    - store_id
+    type: object
+  handler.RestaurantLineItemRequest:
+    properties:
+      combo_component_ids:
+        example:
+        - 1
+        items:
+          type: integer
+        type: array
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.RestaurantComboComponentSnapshotItem'
+        type: array
+      customization_details:
+        type: object
+      discount_amount:
+        example: 0
+        type: number
+      menu_item_id:
+        example: 10
+        type: integer
+      metadata:
+        type: object
+      modifier_ids:
+        example:
+        - 1
+        items:
+          type: integer
+        type: array
+      modifiers:
+        items:
+          $ref: '#/definitions/usecase.RestaurantModifierSnapshotItem'
+        type: array
+      notes:
+        example: Extra crispy
+        type: string
+      quantity:
+        example: 2
+        type: number
+      status:
+        example: pending
+        type: string
+      unit_price:
+        example: 25
+        type: number
+    required:
+    - menu_item_id
+    - quantity
+    type: object
+  handler.RestaurantMergeCartRequest:
+    properties:
+      customer_id:
+        example: 1
+        type: integer
+      guest_identifier:
+        example: guest-abc-123
+        type: string
+      store_id:
+        example: 6
+        type: integer
+    required:
+    - customer_id
+    - guest_identifier
+    - store_id
+    type: object
+  handler.RestaurantUpdateCartItemRequest:
+    properties:
+      combo_component_ids:
+        items:
+          type: integer
+        type: array
+      combo_components:
+        items:
+          $ref: '#/definitions/usecase.RestaurantComboComponentSnapshotItem'
+        type: array
+      customization_details:
+        type: object
+      discount_amount:
+        example: 0
+        type: number
+      metadata:
+        type: object
+      modifier_ids:
+        example:
+        - 1
+        items:
+          type: integer
+        type: array
+      modifiers:
+        items:
+          $ref: '#/definitions/usecase.RestaurantModifierSnapshotItem'
+        type: array
+      notes:
+        example: No onions
+        type: string
+      quantity:
+        example: 3
+        type: number
+    required:
+    - quantity
+    type: object
+  handler.RestaurantUpdateCartRequest:
+    properties:
+      channel:
+        example: pos
+        type: string
+      coupon_code:
+        example: PIZZA20
+        type: string
+      customer_id:
+        example: 1
+        type: integer
+      delivery_address:
+        type: object
+      discount_code:
+        example: PIZZA20-PROMO
+        type: string
+      guest_email:
+        example: guest@example.com
+        type: string
+      guest_identifier:
+        example: guest-abc-123
+        type: string
+      guest_name:
+        example: Walk-in Guest
+        type: string
+      guest_phone:
+        example: "0500000000"
+        type: string
+      metadata:
+        type: object
+      notes:
+        example: Updated table note
+        type: string
+      order_type:
+        example: dine_in
+        type: string
+      payment_gateway:
+        example: ""
+        type: string
+      payment_method:
+        example: cash
+        type: string
+      table_id:
+        example: 1
+        type: integer
+    type: object
   handler.RoleNavigationResponse:
     properties:
       data:
@@ -4783,10 +5291,31 @@ definitions:
     type: object
   handler.SettleOrderRequest:
     properties:
+      amount_paid:
+        example: 46
+        type: number
+      cashier_id:
+        example: 1
+        type: integer
+      cashier_session_id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      payment_gateway:
+        example: ""
+        type: string
+      payment_method:
+        example: cash
+        type: string
+      pos_terminal_id:
+        example: 8
+        type: integer
       pos_transaction_id:
         type: integer
-    required:
-    - pos_transaction_id
+      reference_number:
+        example: SETTLE-001
+        type: string
     type: object
   handler.ShipTransferRequestDTO:
     properties:
@@ -6396,6 +6925,20 @@ definitions:
     required:
     - status
     type: object
+  handler.UpdateRestaurantOrderPaymentStatusRequest:
+    properties:
+      amount_paid:
+        example: 46
+        type: number
+      change_given:
+        example: 0
+        type: number
+      payment_status:
+        example: paid
+        type: string
+    required:
+    - payment_status
+    type: object
   handler.UpdateRestaurantPromotionRequest:
     properties:
       action_metadata:
@@ -6579,7 +7122,19 @@ definitions:
     type: object
   handler.UpdateStatusRequest:
     properties:
+      changed_by_user_id:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      notes:
+        example: Pizza put in oven
+        type: string
+      reason:
+        example: kitchen_started
+        type: string
       status:
+        example: preparing
         type: string
     required:
     - status
@@ -6809,6 +7364,8 @@ definitions:
         type: array
       is_active:
         example: true
+        type: boolean
+      is_enabled:
         type: boolean
     required:
     - config
@@ -7945,6 +8502,39 @@ definitions:
       received_by_user_id:
         type: integer
     type: object
+  usecase.RestaurantComboComponentSnapshotItem:
+    properties:
+      combo_component_id:
+        example: 1
+        type: integer
+      component_menu_item_id:
+        example: 11
+        type: integer
+      component_name:
+        example: French Fries
+        type: string
+      group_name:
+        example: Sides
+        type: string
+      price_adjustment:
+        example: 5
+        type: number
+    type: object
+  usecase.RestaurantModifierSnapshotItem:
+    properties:
+      modifier_id:
+        example: 1
+        type: integer
+      modifier_name:
+        example: Extra Cheese
+        type: string
+      modifier_type:
+        example: addon
+        type: string
+      price_adjustment:
+        example: 4
+        type: number
+    type: object
   usecase.SubmitRFQResponseInput:
     properties:
       items:
@@ -8951,8 +9541,8 @@ paths:
       consumes:
       - application/json
       description: Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide
-        1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token
-        scoped to biometrics.enroll.
+        1:N duplicate check. Requires users:enroll permission or X-Authorization-Token
+        scoped to users:enroll.
       parameters:
       - description: Tenant identifier
         in: header
@@ -8964,7 +9554,7 @@ paths:
         name: Authorization
         required: true
         type: string
-      - description: Optional supervisor override token (biometrics.enroll)
+      - description: Optional supervisor override token (users:enroll)
         in: header
         name: X-Authorization-Token
         type: string
@@ -24890,6 +25480,57 @@ paths:
       summary: Unassign a cashier from POS terminal
       tags:
       - pos-terminals
+  /api/pos/terminals/{id}/issue-sync-token:
+    post:
+      consumes:
+      - application/json
+      description: Generates a new per-terminal sync token for gRPC StreamPush/StreamChanges/StreamSession.
+        Returns the raw token once; only its SHA-256 hash is stored. Re-issuing revokes
+        the previous token.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Bearer token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Terminal ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Issue gRPC sync token for POS terminal
+      tags:
+      - pos-terminals
   /api/pos/transactions:
     post:
       consumes:
@@ -25869,9 +26510,11 @@ paths:
       consumes:
       - application/json
       description: Builds and prints an ESC/POS receipt. For a ZATCA-enabled organization,
-        the server loads a saved signed QR only when the order is reported. Pending
-        or failed reporting prints without a QR so checkout is not blocked. Caller-supplied
-        qr_code_base64 is ignored. The response includes qr_status.
+        the saved sale determines its store/terminal registration. Registered POS
+        sales print their saved signed QR while reporting is pending or failed; reported
+        invoices retain their saved QR after device deactivation. Other sales print
+        normally without a ZATCA QR. Caller-supplied qr_code_base64 is ignored. The
+        response includes qr_status.
       parameters:
       - description: Tenant identifier
         in: header
@@ -29605,6 +30248,834 @@ paths:
       summary: Calculate a cashier session Z-report
       tags:
       - reports
+  /api/restaurant/cart-items/{item_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes an item from a restaurant cart and recalculates cart totals.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart Item UUID
+        in: path
+        name: item_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove restaurant cart item
+      tags:
+      - restaurant
+    put:
+      consumes:
+      - application/json
+      description: Updates quantity, modifiers, combo components, discount, or notes
+        on a restaurant cart item.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart Item UUID
+        in: path
+        name: item_id
+        required: true
+        type: string
+      - description: Cart item update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantUpdateCartItemRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update restaurant cart item
+      tags:
+      - restaurant
+  /api/restaurant/carts:
+    get:
+      consumes:
+      - application/json
+      description: Looks up an active restaurant cart by store_id and customer_id,
+        guest_identifier, or table_id.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      - description: Customer ID
+        in: query
+        name: customer_id
+        type: integer
+      - description: Table ID
+        in: query
+        name: table_id
+        type: integer
+      - description: Guest identifier
+        in: query
+        name: guest_identifier
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get active restaurant cart
+      tags:
+      - restaurant
+    post:
+      consumes:
+      - application/json
+      description: Creates a new restaurant cart with optional initial items and coupon
+        code.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Restaurant cart payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantCreateCartRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a restaurant cart by UUID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete restaurant cart
+      tags:
+      - restaurant
+    get:
+      consumes:
+      - application/json
+      description: Returns a restaurant cart and its items by cart UUID.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get restaurant cart
+      tags:
+      - restaurant
+    put:
+      consumes:
+      - application/json
+      description: Updates restaurant cart metadata, customer, table, channel, or
+        notes.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Cart update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantUpdateCartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}/checkout:
+    post:
+      consumes:
+      - application/json
+      description: Converts a restaurant cart into a restaurant_orders row, applies
+        coupon if provided, logs initial status history, deducts recipe ingredients,
+        and creates a POS transaction when paid/pos channel.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Checkout payload
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.RestaurantCheckoutRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Checkout restaurant cart into order
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}/coupon:
+    delete:
+      consumes:
+      - application/json
+      description: Clears the applied restaurant coupon discount from cart items and
+        recalculates VAT and cart totals.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove coupon code from restaurant cart
+      tags:
+      - restaurant
+    post:
+      consumes:
+      - application/json
+      description: Validates a restaurant promotion coupon code, applies prorated
+        discounts to eligible cart items, and recalculates VAT and cart totals.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Coupon code payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ApplyRestaurantCouponRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Apply coupon code to restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}/hold:
+    post:
+      consumes:
+      - application/json
+      description: Marks an active restaurant cart as held/draft.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Hold restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}/items:
+    delete:
+      consumes:
+      - application/json
+      description: Removes all items from a restaurant cart.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Clear restaurant cart items
+      tags:
+      - restaurant
+    post:
+      consumes:
+      - application/json
+      description: Adds a menu item (with modifiers/combo components) to an existing
+        cart or creates one automatically.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID (optional when using /carts/add)
+        in: path
+        name: id
+        type: string
+      - description: Add to cart payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantAddToCartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add menu item to restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}/reopen:
+    post:
+      consumes:
+      - application/json
+      description: Reopens a held or abandoned restaurant cart back to active status.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reopen restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/{id}/table:
+    patch:
+      consumes:
+      - application/json
+      description: Assigns or clears a restaurant table on a cart.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cart UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Table assignment payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantAssignTableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Assign table to restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/active:
+    get:
+      consumes:
+      - application/json
+      description: Lists active restaurant carts for a store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        required: true
+        type: integer
+      - description: Page limit (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List active restaurant carts
+      tags:
+      - restaurant
+  /api/restaurant/carts/add:
+    post:
+      consumes:
+      - application/json
+      description: Adds a menu item (with modifiers/combo components) to an existing
+        cart or creates one automatically.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Add to cart payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantAddToCartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add menu item to restaurant cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/drafts:
+    get:
+      consumes:
+      - application/json
+      description: Lists held/draft restaurant carts assigned to a cashier.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Cashier ID
+        in: query
+        name: cashier_id
+        required: true
+        type: integer
+      - description: Store ID
+        in: query
+        name: store_id
+        type: integer
+      - description: Page limit (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List draft/held restaurant carts by cashier
+      tags:
+      - restaurant
+  /api/restaurant/carts/merge:
+    post:
+      consumes:
+      - application/json
+      description: Merges a guest restaurant cart into the customer's active cart
+        for the store.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Merge cart payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantMergeCartRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Merge guest restaurant cart into customer cart
+      tags:
+      - restaurant
+  /api/restaurant/carts/new:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new restaurant cart with optional initial items and coupon
+        code.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Restaurant cart payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantCreateCartRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create restaurant cart
+      tags:
+      - restaurant
   /api/restaurant/kiosk/sessions:
     post:
       consumes:
@@ -31043,6 +32514,133 @@ paths:
       summary: Update restaurant order
       tags:
       - restaurant
+  /api/restaurant/orders/{order_id}/items:
+    post:
+      consumes:
+      - application/json
+      description: Appends a new menu item to an unpaid restaurant order, recalculates
+        order totals, and deducts recipe ingredients.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: order_id
+        required: true
+        type: integer
+      - description: Order line item payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RestaurantLineItemRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add item to existing restaurant order
+      tags:
+      - restaurant
+  /api/restaurant/orders/{order_id}/payment-status:
+    patch:
+      consumes:
+      - application/json
+      description: Updates payment status, amount paid, and change given on a restaurant
+        order.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: order_id
+        required: true
+        type: integer
+      - description: Payment status payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateRestaurantOrderPaymentStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update restaurant order payment status
+      tags:
+      - restaurant
+  /api/restaurant/orders/{order_id}/reopen:
+    post:
+      consumes:
+      - application/json
+      description: Reverses recipe stock deduction, voids the unpaid order with status
+        history, and returns an active cart.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: order_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reopen unpaid restaurant order to cart
+      tags:
+      - restaurant
   /api/restaurant/orders/{order_id}/settle:
     post:
       consumes:
@@ -31133,6 +32731,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Update order status
+      tags:
+      - restaurant
+  /api/restaurant/orders/{order_id}/status-history:
+    get:
+      consumes:
+      - application/json
+      description: Returns the chronological status transition audit trail for a restaurant
+        order.
+      parameters:
+      - description: Tenant identifier
+        in: header
+        name: x-tenant-id
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: order_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get restaurant order status history
       tags:
       - restaurant
   /api/restaurant/orders/online:
@@ -37992,7 +39631,7 @@ paths:
   /api/users/{id}/biometrics/{fingerIndex}:
     delete:
       description: Soft-deactivates the template (is_active=false) for sync propagation.
-        Requires biometrics.enroll permission.
+        Requires users:enroll permission.
       parameters:
       - description: Tenant identifier
         in: header
@@ -38038,8 +39677,8 @@ paths:
       consumes:
       - application/json
       description: Stores a consolidated ISO/IEC 19794-2:2005 FMD after organization-wide
-        1:N duplicate check. Requires biometrics.enroll permission or X-Authorization-Token
-        scoped to biometrics.enroll.
+        1:N duplicate check. Requires users:enroll permission or X-Authorization-Token
+        scoped to users:enroll.
       parameters:
       - description: Tenant identifier
         in: header
@@ -38051,7 +39690,7 @@ paths:
         name: Authorization
         required: true
         type: string
-      - description: Optional supervisor override token (biometrics.enroll)
+      - description: Optional supervisor override token (users:enroll)
         in: header
         name: X-Authorization-Token
         type: string

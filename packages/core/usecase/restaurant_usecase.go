@@ -3,13 +3,17 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -434,11 +438,22 @@ func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id int32) *reposit
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	err := uc.repo.DeleteRestaurantOrder(ctx, id)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order deleted successfully", nil)
+	return withRestaurantTx(ctx, nil, uc.repo, func(q *repository.Queries) *repository.Response {
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, id)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isRestaurantOrderPaidOrClosed(order) || strings.EqualFold(strings.TrimSpace(order.Status), "completed") || strings.EqualFold(strings.TrimSpace(order.Status), "served") {
+			return utils.NewResponse(utils.CodeBadReq, "cannot delete a paid or fulfilled order", nil)
+		}
+		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
+		}
+		if err := q.DeleteRestaurantOrder(ctx, id); err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order deleted successfully", nil)
+	})
 }
 
 func (uc *RestaurantUseCase) GetOrder(ctx context.Context, id int32) *repository.Response {
@@ -498,22 +513,140 @@ func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	item, err := uc.repo.UpdateRestaurantOrderItem(ctx, arg)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order item updated successfully", item)
+	return withRestaurantTx(ctx, nil, uc.repo, func(q *repository.Queries) *repository.Response {
+		existingItem, err := q.GetRestaurantOrderItem(ctx, arg.ID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return utils.NewResponse(utils.CodeNotFound, "order item not found", nil)
+			}
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, existingItem.OrderID)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isRestaurantOrderPaidOrClosed(order) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot edit items on a paid, voided, or cancelled order", nil)
+		}
+		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
+		}
+
+		qty := numericToFloat(arg.Quantity)
+		if qty <= 0 {
+			return utils.NewResponse(utils.CodeBadReq, "quantity must be greater than 0", nil)
+		}
+		unitPrice := numericToFloat(arg.UnitPrice)
+		if unitPrice <= 0 {
+			unitPrice = numericToFloat(existingItem.UnitPrice)
+			arg.UnitPrice = existingItem.UnitPrice
+		}
+		modTotal := numericToFloat(arg.ModifiersTotal)
+		comboTotal := numericToFloat(existingItem.ComboTotal)
+		discount := roundMoney(clampLineDiscount(qty, unitPrice, modTotal, comboTotal, numericToFloat(arg.DiscountAmount)))
+		var tcPtr *repository.TaxCategory
+		taxCategoryID := existingItem.TaxCategoryID
+		if !taxCategoryID.Valid {
+			if mi, miErr := q.GetMenuItem(ctx, existingItem.MenuItemID); miErr == nil && mi.TaxCategoryID.Valid {
+				taxCategoryID = mi.TaxCategoryID
+			}
+		}
+		if taxCategoryID.Valid {
+			if tc, tcErr := q.GetTaxCategory(ctx, taxCategoryID.Int32); tcErr == nil {
+				tcPtr = &tc
+			}
+		}
+		_, taxAmt, subtotal, lineTotal := computeLineTaxAndTotals(qty, unitPrice, modTotal, comboTotal, discount, tcPtr)
+		if tcPtr == nil {
+			oldSub := numericToFloat(existingItem.Subtotal)
+			oldTax := numericToFloat(existingItem.TaxAmount)
+			oldNet := numericToFloat(existingItem.Quantity)*(numericToFloat(existingItem.UnitPrice)+numericToFloat(existingItem.ModifiersTotal)+numericToFloat(existingItem.ComboTotal)) - numericToFloat(existingItem.DiscountAmount)
+			isInclusive := oldSub > 0 && oldTax > 0 && math.Abs(oldNet-(oldSub+oldTax)) < 0.02
+
+			if numericToFloat(arg.TaxAmount) > 0 {
+				taxAmt = roundMoney(numericToFloat(arg.TaxAmount))
+				if isInclusive {
+					lineTotal = subtotal
+					subtotal = roundMoney(math.Max(0, lineTotal-taxAmt))
+				} else {
+					lineTotal = roundMoney(subtotal + taxAmt)
+				}
+			} else if oldTax > 0 {
+				if isInclusive {
+					lineTotal = subtotal
+					taxAmt = roundMoney(lineTotal * (oldTax / (oldSub + oldTax)))
+					subtotal = roundMoney(lineTotal - taxAmt)
+				} else if oldSub > 0 {
+					taxAmt = roundMoney(oldTax * (subtotal / oldSub))
+					lineTotal = roundMoney(subtotal + taxAmt)
+				} else {
+					taxAmt = roundMoney(oldTax)
+					lineTotal = roundMoney(subtotal + taxAmt)
+				}
+			}
+		}
+		arg.DiscountAmount = utils.Float64ToPgNumeric(discount)
+		arg.TaxAmount = utils.Float64ToPgNumeric(taxAmt)
+		arg.Subtotal = utils.Float64ToPgNumeric(subtotal)
+		arg.LineTotal = utils.Float64ToPgNumeric(lineTotal)
+
+		item, err := q.UpdateRestaurantOrderItem(ctx, arg)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		updatedOrder, err := q.RecalculateRestaurantOrderTotals(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to recalculate order totals: "+err.Error(), nil)
+		}
+		allItems, err := q.ListRestaurantOrderItems(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to list order items: "+err.Error(), nil)
+		}
+		if err := deductRecipeIngredientsForOrderItems(ctx, q, updatedOrder, allItems, updatedOrder.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to deduct recipe ingredients: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order item updated successfully", item)
+	})
 }
 
 func (uc *RestaurantUseCase) DeleteOrderItem(ctx context.Context, id int32) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	err := uc.repo.DeleteRestaurantOrderItem(ctx, id)
-	if err != nil {
-		return utils.NewResponse(utils.CodeError, err.Error(), nil)
-	}
-	return utils.NewResponse(utils.CodeOK, "order item deleted successfully", nil)
+	return withRestaurantTx(ctx, nil, uc.repo, func(q *repository.Queries) *repository.Response {
+		existingItem, err := q.GetRestaurantOrderItem(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return utils.NewResponse(utils.CodeNotFound, "order item not found", nil)
+			}
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		order, err := lockAndGetRestaurantOrderByID(ctx, q, existingItem.OrderID)
+		if err != nil {
+			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isRestaurantOrderPaidOrClosed(order) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot delete items from a paid, voided, or cancelled order", nil)
+		}
+		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
+		}
+		if err := q.DeleteRestaurantOrderItem(ctx, id); err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		updatedOrder, err := q.RecalculateRestaurantOrderTotals(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to recalculate order totals: "+err.Error(), nil)
+		}
+		remainingItems, err := q.ListRestaurantOrderItems(ctx, order.ID)
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to list remaining order items: "+err.Error(), nil)
+		}
+		if err := deductRecipeIngredientsForOrderItems(ctx, q, updatedOrder, remainingItems, updatedOrder.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to deduct recipe ingredients: "+err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "order item deleted successfully", nil)
+	})
 }
 
 func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, posTxnID int32) *repository.Response {
@@ -587,25 +720,109 @@ func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int3
 
 // === KDS ===
 
+type KdsOrderOutput struct {
+	ID                  int32                                            `json:"id"`
+	OrderID             int32                                            `json:"order_id"`
+	OrderNumber         string                                           `json:"order_number"`
+	StoreID             int32                                            `json:"store_id"`
+	OrderSource         string                                           `json:"order_source"`
+	OrderType           string                                           `json:"order_type"`
+	Status              string                                           `json:"status"`
+	OrderStatus         string                                           `json:"order_status"`
+	PaymentStatus       string                                           `json:"payment_status"`
+	Subtotal            pgtype.Numeric                                   `json:"subtotal"`
+	DiscountAmount      pgtype.Numeric                                   `json:"discount_amount"`
+	TaxAmount           pgtype.Numeric                                   `json:"tax_amount"`
+	TotalAmount         pgtype.Numeric                                   `json:"total_amount"`
+	Notes               pgtype.Text                                      `json:"notes"`
+	OrderedAt           pgtype.Timestamp                                 `json:"ordered_at"`
+	ConfirmedAt         pgtype.Timestamp                                 `json:"confirmed_at"`
+	ServedAt            pgtype.Timestamp                                 `json:"served_at"`
+	TableID             pgtype.Int4                                      `json:"table_id"`
+	TableNumber         pgtype.Text                                      `json:"table_number"`
+	TableName           pgtype.Text                                      `json:"table_name"`
+	TableSection        pgtype.Text                                      `json:"table_section"`
+	CashierID           pgtype.Int4                                      `json:"cashier_id"`
+	WaiterName          string                                           `json:"waiter_name"`
+	CustomerID          pgtype.Int4                                      `json:"customer_id"`
+	CustomerName        string                                           `json:"customer_name"`
+	MinutesSinceOrdered int32                                            `json:"minutes_since_ordered"`
+	Items               []repository.ListRestaurantOrderItemsDetailedRow `json:"items"`
+}
+
 func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, statuses []string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	orders, err := uc.repo.ListActiveRestaurantOrdersView(ctx, storeID)
+	orders, err := uc.repo.ListKdsRestaurantOrdersByStore(ctx, storeID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	var result []repository.VwActiveRestaurantOrder
 	statusMap := make(map[string]bool)
 	for _, s := range statuses {
-		statusMap[s] = true
+		trimmed := strings.ToLower(strings.TrimSpace(s))
+		if trimmed != "" {
+			statusMap[trimmed] = true
+		}
 	}
 
+	filteredOrders := make([]repository.ListKdsRestaurantOrdersByStoreRow, 0, len(orders))
+	orderIDs := make([]int32, 0, len(orders))
 	for _, o := range orders {
-		if statusMap[o.OrderStatus] {
-			result = append(result, o)
+		if len(statusMap) > 0 && !statusMap[strings.ToLower(strings.TrimSpace(o.OrderStatus))] {
+			continue
 		}
+		filteredOrders = append(filteredOrders, o)
+		orderIDs = append(orderIDs, o.OrderID)
+	}
+
+	itemsByOrderID := make(map[int32][]repository.ListRestaurantOrderItemsDetailedRow, len(orderIDs))
+	if len(orderIDs) > 0 {
+		allItems, itemsErr := uc.repo.ListRestaurantOrderItemsDetailedByOrderIDs(ctx, orderIDs)
+		if itemsErr != nil {
+			return utils.NewResponse(utils.CodeError, "failed to load KDS order items: "+itemsErr.Error(), nil)
+		}
+		for _, item := range allItems {
+			itemsByOrderID[item.OrderID] = append(itemsByOrderID[item.OrderID], repository.ListRestaurantOrderItemsDetailedRow(item))
+		}
+	}
+
+	result := make([]KdsOrderOutput, 0, len(filteredOrders))
+	for _, o := range filteredOrders {
+		items := itemsByOrderID[o.OrderID]
+		if items == nil {
+			items = []repository.ListRestaurantOrderItemsDetailedRow{}
+		}
+		result = append(result, KdsOrderOutput{
+			ID:                  o.OrderID,
+			OrderID:             o.OrderID,
+			OrderNumber:         o.OrderNumber,
+			StoreID:             o.StoreID,
+			OrderSource:         o.OrderSource,
+			OrderType:           o.OrderType,
+			Status:              o.OrderStatus,
+			OrderStatus:         o.OrderStatus,
+			PaymentStatus:       o.PaymentStatus,
+			Subtotal:            o.Subtotal,
+			DiscountAmount:      o.DiscountAmount,
+			TaxAmount:           o.TaxAmount,
+			TotalAmount:         o.TotalAmount,
+			Notes:               o.Notes,
+			OrderedAt:           o.OrderedAt,
+			ConfirmedAt:         o.ConfirmedAt,
+			ServedAt:            o.ServedAt,
+			TableID:             o.TableID,
+			TableNumber:         o.TableNumber,
+			TableName:           o.TableName,
+			TableSection:        o.TableSection,
+			CashierID:           o.CashierID,
+			WaiterName:          o.WaiterName,
+			CustomerID:          o.CustomerID,
+			CustomerName:        o.CustomerName,
+			MinutesSinceOrdered: o.MinutesSinceOrdered,
+			Items:               items,
+		})
 	}
 
 	return utils.NewResponse(utils.CodeOK, "KDS orders fetched successfully", result)

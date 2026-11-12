@@ -18,7 +18,7 @@ INSERT INTO restaurant_order_items (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 )
-RETURNING id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, modifiers_total, discount_amount, tax_amount, subtotal, line_number, notes, status, metadata, created_at, updated_at
+RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modifiers_snapshot, modifiers_total, combo_components_snapshot, combo_total, discount_amount, tax_category_id, tax_rate, tax_amount, subtotal, line_total, line_number, notes, status, metadata, created_at, updated_at
 `
 
 type CreateRestaurantOrderItemParams struct {
@@ -58,13 +58,119 @@ func (q *Queries) CreateRestaurantOrderItem(ctx context.Context, arg CreateResta
 		&i.ID,
 		&i.OrderID,
 		&i.MenuItemID,
+		&i.MenuItemName,
 		&i.Quantity,
 		&i.UnitPrice,
 		&i.ModifiersSnapshot,
 		&i.ModifiersTotal,
+		&i.ComboComponentsSnapshot,
+		&i.ComboTotal,
 		&i.DiscountAmount,
+		&i.TaxCategoryID,
+		&i.TaxRate,
 		&i.TaxAmount,
 		&i.Subtotal,
+		&i.LineTotal,
+		&i.LineNumber,
+		&i.Notes,
+		&i.Status,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createRestaurantOrderItemFull = `-- name: CreateRestaurantOrderItemFull :one
+INSERT INTO restaurant_order_items (
+    order_id,
+    menu_item_id,
+    menu_item_name,
+    quantity,
+    unit_price,
+    modifiers_snapshot,
+    modifiers_total,
+    combo_components_snapshot,
+    combo_total,
+    discount_amount,
+    tax_category_id,
+    tax_rate,
+    tax_amount,
+    subtotal,
+    line_total,
+    line_number,
+    notes,
+    status,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19
+)
+RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modifiers_snapshot, modifiers_total, combo_components_snapshot, combo_total, discount_amount, tax_category_id, tax_rate, tax_amount, subtotal, line_total, line_number, notes, status, metadata, created_at, updated_at
+`
+
+type CreateRestaurantOrderItemFullParams struct {
+	OrderID                 int32           `json:"order_id"`
+	MenuItemID              int32           `json:"menu_item_id"`
+	MenuItemName            pgtype.Text     `json:"menu_item_name"`
+	Quantity                pgtype.Numeric  `json:"quantity"`
+	UnitPrice               pgtype.Numeric  `json:"unit_price"`
+	ModifiersSnapshot       json.RawMessage `json:"modifiers_snapshot"`
+	ModifiersTotal          pgtype.Numeric  `json:"modifiers_total"`
+	ComboComponentsSnapshot json.RawMessage `json:"combo_components_snapshot"`
+	ComboTotal              pgtype.Numeric  `json:"combo_total"`
+	DiscountAmount          pgtype.Numeric  `json:"discount_amount"`
+	TaxCategoryID           pgtype.Int4     `json:"tax_category_id"`
+	TaxRate                 pgtype.Numeric  `json:"tax_rate"`
+	TaxAmount               pgtype.Numeric  `json:"tax_amount"`
+	Subtotal                pgtype.Numeric  `json:"subtotal"`
+	LineTotal               pgtype.Numeric  `json:"line_total"`
+	LineNumber              pgtype.Int4     `json:"line_number"`
+	Notes                   pgtype.Text     `json:"notes"`
+	Status                  pgtype.Text     `json:"status"`
+	Metadata                json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) CreateRestaurantOrderItemFull(ctx context.Context, arg CreateRestaurantOrderItemFullParams) (RestaurantOrderItem, error) {
+	row := q.db.QueryRow(ctx, createRestaurantOrderItemFull,
+		arg.OrderID,
+		arg.MenuItemID,
+		arg.MenuItemName,
+		arg.Quantity,
+		arg.UnitPrice,
+		arg.ModifiersSnapshot,
+		arg.ModifiersTotal,
+		arg.ComboComponentsSnapshot,
+		arg.ComboTotal,
+		arg.DiscountAmount,
+		arg.TaxCategoryID,
+		arg.TaxRate,
+		arg.TaxAmount,
+		arg.Subtotal,
+		arg.LineTotal,
+		arg.LineNumber,
+		arg.Notes,
+		arg.Status,
+		arg.Metadata,
+	)
+	var i RestaurantOrderItem
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.MenuItemID,
+		&i.MenuItemName,
+		&i.Quantity,
+		&i.UnitPrice,
+		&i.ModifiersSnapshot,
+		&i.ModifiersTotal,
+		&i.ComboComponentsSnapshot,
+		&i.ComboTotal,
+		&i.DiscountAmount,
+		&i.TaxCategoryID,
+		&i.TaxRate,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
 		&i.LineNumber,
 		&i.Notes,
 		&i.Status,
@@ -85,9 +191,19 @@ func (q *Queries) DeleteRestaurantOrderItem(ctx context.Context, id int32) error
 	return err
 }
 
+const deleteRestaurantOrderItemsByOrderID = `-- name: DeleteRestaurantOrderItemsByOrderID :exec
+DELETE FROM restaurant_order_items
+WHERE order_id = $1
+`
+
+func (q *Queries) DeleteRestaurantOrderItemsByOrderID(ctx context.Context, orderID int32) error {
+	_, err := q.db.Exec(ctx, deleteRestaurantOrderItemsByOrderID, orderID)
+	return err
+}
+
 const getRestaurantOrderItem = `-- name: GetRestaurantOrderItem :one
 
-SELECT id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, modifiers_total, discount_amount, tax_amount, subtotal, line_number, notes, status, metadata, created_at, updated_at FROM restaurant_order_items
+SELECT id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modifiers_snapshot, modifiers_total, combo_components_snapshot, combo_total, discount_amount, tax_category_id, tax_rate, tax_amount, subtotal, line_total, line_number, notes, status, metadata, created_at, updated_at FROM restaurant_order_items
 WHERE id = $1 LIMIT 1
 `
 
@@ -99,13 +215,19 @@ func (q *Queries) GetRestaurantOrderItem(ctx context.Context, id int32) (Restaur
 		&i.ID,
 		&i.OrderID,
 		&i.MenuItemID,
+		&i.MenuItemName,
 		&i.Quantity,
 		&i.UnitPrice,
 		&i.ModifiersSnapshot,
 		&i.ModifiersTotal,
+		&i.ComboComponentsSnapshot,
+		&i.ComboTotal,
 		&i.DiscountAmount,
+		&i.TaxCategoryID,
+		&i.TaxRate,
 		&i.TaxAmount,
 		&i.Subtotal,
+		&i.LineTotal,
 		&i.LineNumber,
 		&i.Notes,
 		&i.Status,
@@ -117,7 +239,7 @@ func (q *Queries) GetRestaurantOrderItem(ctx context.Context, id int32) (Restaur
 }
 
 const listRestaurantOrderItems = `-- name: ListRestaurantOrderItems :many
-SELECT id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, modifiers_total, discount_amount, tax_amount, subtotal, line_number, notes, status, metadata, created_at, updated_at FROM restaurant_order_items
+SELECT id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modifiers_snapshot, modifiers_total, combo_components_snapshot, combo_total, discount_amount, tax_category_id, tax_rate, tax_amount, subtotal, line_total, line_number, notes, status, metadata, created_at, updated_at FROM restaurant_order_items
 WHERE order_id = $1
 ORDER BY line_number
 `
@@ -135,19 +257,211 @@ func (q *Queries) ListRestaurantOrderItems(ctx context.Context, orderID int32) (
 			&i.ID,
 			&i.OrderID,
 			&i.MenuItemID,
+			&i.MenuItemName,
 			&i.Quantity,
 			&i.UnitPrice,
 			&i.ModifiersSnapshot,
 			&i.ModifiersTotal,
+			&i.ComboComponentsSnapshot,
+			&i.ComboTotal,
 			&i.DiscountAmount,
+			&i.TaxCategoryID,
+			&i.TaxRate,
 			&i.TaxAmount,
 			&i.Subtotal,
+			&i.LineTotal,
 			&i.LineNumber,
 			&i.Notes,
 			&i.Status,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRestaurantOrderItemsDetailed = `-- name: ListRestaurantOrderItemsDetailed :many
+SELECT
+    roi.id, roi.order_id, roi.menu_item_id, roi.menu_item_name, roi.quantity, roi.unit_price, roi.modifiers_snapshot, roi.modifiers_total, roi.combo_components_snapshot, roi.combo_total, roi.discount_amount, roi.tax_category_id, roi.tax_rate, roi.tax_amount, roi.subtotal, roi.line_total, roi.line_number, roi.notes, roi.status, roi.metadata, roi.created_at, roi.updated_at,
+    mi.name AS resolved_menu_item_name,
+    mi.short_name AS menu_item_short_name,
+    mi.image_url AS menu_item_image_url,
+    mi.item_type AS menu_item_type,
+    mc.name AS menu_category_name
+FROM restaurant_order_items roi
+JOIN menu_items mi ON roi.menu_item_id = mi.id
+LEFT JOIN menu_categories mc ON mi.menu_category_id = mc.id
+WHERE roi.order_id = $1
+ORDER BY roi.line_number, roi.id
+`
+
+type ListRestaurantOrderItemsDetailedRow struct {
+	ID                      int32            `json:"id"`
+	OrderID                 int32            `json:"order_id"`
+	MenuItemID              int32            `json:"menu_item_id"`
+	MenuItemName            pgtype.Text      `json:"menu_item_name"`
+	Quantity                pgtype.Numeric   `json:"quantity"`
+	UnitPrice               pgtype.Numeric   `json:"unit_price"`
+	ModifiersSnapshot       json.RawMessage  `json:"modifiers_snapshot"`
+	ModifiersTotal          pgtype.Numeric   `json:"modifiers_total"`
+	ComboComponentsSnapshot json.RawMessage  `json:"combo_components_snapshot"`
+	ComboTotal              pgtype.Numeric   `json:"combo_total"`
+	DiscountAmount          pgtype.Numeric   `json:"discount_amount"`
+	TaxCategoryID           pgtype.Int4      `json:"tax_category_id"`
+	TaxRate                 pgtype.Numeric   `json:"tax_rate"`
+	TaxAmount               pgtype.Numeric   `json:"tax_amount"`
+	Subtotal                pgtype.Numeric   `json:"subtotal"`
+	LineTotal               pgtype.Numeric   `json:"line_total"`
+	LineNumber              pgtype.Int4      `json:"line_number"`
+	Notes                   pgtype.Text      `json:"notes"`
+	Status                  pgtype.Text      `json:"status"`
+	Metadata                json.RawMessage  `json:"metadata"`
+	CreatedAt               pgtype.Timestamp `json:"created_at"`
+	UpdatedAt               pgtype.Timestamp `json:"updated_at"`
+	ResolvedMenuItemName    string           `json:"resolved_menu_item_name"`
+	MenuItemShortName       pgtype.Text      `json:"menu_item_short_name"`
+	MenuItemImageUrl        pgtype.Text      `json:"menu_item_image_url"`
+	MenuItemType            string           `json:"menu_item_type"`
+	MenuCategoryName        pgtype.Text      `json:"menu_category_name"`
+}
+
+func (q *Queries) ListRestaurantOrderItemsDetailed(ctx context.Context, orderID int32) ([]ListRestaurantOrderItemsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, listRestaurantOrderItemsDetailed, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRestaurantOrderItemsDetailedRow
+	for rows.Next() {
+		var i ListRestaurantOrderItemsDetailedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.MenuItemID,
+			&i.MenuItemName,
+			&i.Quantity,
+			&i.UnitPrice,
+			&i.ModifiersSnapshot,
+			&i.ModifiersTotal,
+			&i.ComboComponentsSnapshot,
+			&i.ComboTotal,
+			&i.DiscountAmount,
+			&i.TaxCategoryID,
+			&i.TaxRate,
+			&i.TaxAmount,
+			&i.Subtotal,
+			&i.LineTotal,
+			&i.LineNumber,
+			&i.Notes,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedMenuItemName,
+			&i.MenuItemShortName,
+			&i.MenuItemImageUrl,
+			&i.MenuItemType,
+			&i.MenuCategoryName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRestaurantOrderItemsDetailedByOrderIDs = `-- name: ListRestaurantOrderItemsDetailedByOrderIDs :many
+SELECT
+    roi.id, roi.order_id, roi.menu_item_id, roi.menu_item_name, roi.quantity, roi.unit_price, roi.modifiers_snapshot, roi.modifiers_total, roi.combo_components_snapshot, roi.combo_total, roi.discount_amount, roi.tax_category_id, roi.tax_rate, roi.tax_amount, roi.subtotal, roi.line_total, roi.line_number, roi.notes, roi.status, roi.metadata, roi.created_at, roi.updated_at,
+    mi.name AS resolved_menu_item_name,
+    mi.short_name AS menu_item_short_name,
+    mi.image_url AS menu_item_image_url,
+    mi.item_type AS menu_item_type,
+    mc.name AS menu_category_name
+FROM restaurant_order_items roi
+JOIN menu_items mi ON roi.menu_item_id = mi.id
+LEFT JOIN menu_categories mc ON mi.menu_category_id = mc.id
+WHERE roi.order_id = ANY($1::int[])
+ORDER BY roi.order_id, roi.line_number, roi.id
+`
+
+type ListRestaurantOrderItemsDetailedByOrderIDsRow struct {
+	ID                      int32            `json:"id"`
+	OrderID                 int32            `json:"order_id"`
+	MenuItemID              int32            `json:"menu_item_id"`
+	MenuItemName            pgtype.Text      `json:"menu_item_name"`
+	Quantity                pgtype.Numeric   `json:"quantity"`
+	UnitPrice               pgtype.Numeric   `json:"unit_price"`
+	ModifiersSnapshot       json.RawMessage  `json:"modifiers_snapshot"`
+	ModifiersTotal          pgtype.Numeric   `json:"modifiers_total"`
+	ComboComponentsSnapshot json.RawMessage  `json:"combo_components_snapshot"`
+	ComboTotal              pgtype.Numeric   `json:"combo_total"`
+	DiscountAmount          pgtype.Numeric   `json:"discount_amount"`
+	TaxCategoryID           pgtype.Int4      `json:"tax_category_id"`
+	TaxRate                 pgtype.Numeric   `json:"tax_rate"`
+	TaxAmount               pgtype.Numeric   `json:"tax_amount"`
+	Subtotal                pgtype.Numeric   `json:"subtotal"`
+	LineTotal               pgtype.Numeric   `json:"line_total"`
+	LineNumber              pgtype.Int4      `json:"line_number"`
+	Notes                   pgtype.Text      `json:"notes"`
+	Status                  pgtype.Text      `json:"status"`
+	Metadata                json.RawMessage  `json:"metadata"`
+	CreatedAt               pgtype.Timestamp `json:"created_at"`
+	UpdatedAt               pgtype.Timestamp `json:"updated_at"`
+	ResolvedMenuItemName    string           `json:"resolved_menu_item_name"`
+	MenuItemShortName       pgtype.Text      `json:"menu_item_short_name"`
+	MenuItemImageUrl        pgtype.Text      `json:"menu_item_image_url"`
+	MenuItemType            string           `json:"menu_item_type"`
+	MenuCategoryName        pgtype.Text      `json:"menu_category_name"`
+}
+
+func (q *Queries) ListRestaurantOrderItemsDetailedByOrderIDs(ctx context.Context, orderIds []int32) ([]ListRestaurantOrderItemsDetailedByOrderIDsRow, error) {
+	rows, err := q.db.Query(ctx, listRestaurantOrderItemsDetailedByOrderIDs, orderIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRestaurantOrderItemsDetailedByOrderIDsRow
+	for rows.Next() {
+		var i ListRestaurantOrderItemsDetailedByOrderIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.MenuItemID,
+			&i.MenuItemName,
+			&i.Quantity,
+			&i.UnitPrice,
+			&i.ModifiersSnapshot,
+			&i.ModifiersTotal,
+			&i.ComboComponentsSnapshot,
+			&i.ComboTotal,
+			&i.DiscountAmount,
+			&i.TaxCategoryID,
+			&i.TaxRate,
+			&i.TaxAmount,
+			&i.Subtotal,
+			&i.LineTotal,
+			&i.LineNumber,
+			&i.Notes,
+			&i.Status,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedMenuItemName,
+			&i.MenuItemShortName,
+			&i.MenuItemImageUrl,
+			&i.MenuItemType,
+			&i.MenuCategoryName,
 		); err != nil {
 			return nil, err
 		}
@@ -170,13 +484,14 @@ SET
     discount_amount = $7,
     tax_amount = $8,
     subtotal = $9,
+    line_total = COALESCE($14, $9::numeric + COALESCE($8::numeric, 0)),
     line_number = $10,
     notes = $11,
     status = $12,
     metadata = $13,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, modifiers_total, discount_amount, tax_amount, subtotal, line_number, notes, status, metadata, created_at, updated_at
+RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modifiers_snapshot, modifiers_total, combo_components_snapshot, combo_total, discount_amount, tax_category_id, tax_rate, tax_amount, subtotal, line_total, line_number, notes, status, metadata, created_at, updated_at
 `
 
 type UpdateRestaurantOrderItemParams struct {
@@ -193,6 +508,7 @@ type UpdateRestaurantOrderItemParams struct {
 	Notes             pgtype.Text     `json:"notes"`
 	Status            pgtype.Text     `json:"status"`
 	Metadata          json.RawMessage `json:"metadata"`
+	LineTotal         pgtype.Numeric  `json:"line_total"`
 }
 
 func (q *Queries) UpdateRestaurantOrderItem(ctx context.Context, arg UpdateRestaurantOrderItemParams) (RestaurantOrderItem, error) {
@@ -210,19 +526,26 @@ func (q *Queries) UpdateRestaurantOrderItem(ctx context.Context, arg UpdateResta
 		arg.Notes,
 		arg.Status,
 		arg.Metadata,
+		arg.LineTotal,
 	)
 	var i RestaurantOrderItem
 	err := row.Scan(
 		&i.ID,
 		&i.OrderID,
 		&i.MenuItemID,
+		&i.MenuItemName,
 		&i.Quantity,
 		&i.UnitPrice,
 		&i.ModifiersSnapshot,
 		&i.ModifiersTotal,
+		&i.ComboComponentsSnapshot,
+		&i.ComboTotal,
 		&i.DiscountAmount,
+		&i.TaxCategoryID,
+		&i.TaxRate,
 		&i.TaxAmount,
 		&i.Subtotal,
+		&i.LineTotal,
 		&i.LineNumber,
 		&i.Notes,
 		&i.Status,
@@ -239,7 +562,7 @@ SET
     status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, order_id, menu_item_id, quantity, unit_price, modifiers_snapshot, modifiers_total, discount_amount, tax_amount, subtotal, line_number, notes, status, metadata, created_at, updated_at
+RETURNING id, order_id, menu_item_id, menu_item_name, quantity, unit_price, modifiers_snapshot, modifiers_total, combo_components_snapshot, combo_total, discount_amount, tax_category_id, tax_rate, tax_amount, subtotal, line_total, line_number, notes, status, metadata, created_at, updated_at
 `
 
 type UpdateRestaurantOrderItemStatusParams struct {
@@ -254,13 +577,19 @@ func (q *Queries) UpdateRestaurantOrderItemStatus(ctx context.Context, arg Updat
 		&i.ID,
 		&i.OrderID,
 		&i.MenuItemID,
+		&i.MenuItemName,
 		&i.Quantity,
 		&i.UnitPrice,
 		&i.ModifiersSnapshot,
 		&i.ModifiersTotal,
+		&i.ComboComponentsSnapshot,
+		&i.ComboTotal,
 		&i.DiscountAmount,
+		&i.TaxCategoryID,
+		&i.TaxRate,
 		&i.TaxAmount,
 		&i.Subtotal,
+		&i.LineTotal,
 		&i.LineNumber,
 		&i.Notes,
 		&i.Status,
