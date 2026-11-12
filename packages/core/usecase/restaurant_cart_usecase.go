@@ -1222,6 +1222,7 @@ func insertOrMergeCartItem(ctx context.Context, q *repository.Queries, cart repo
 		Column4:    resolved.ComboSnapshot,
 		Column5:    resolved.Notes,
 		UnitPrice:  utils.Float64ToPgNumeric(resolved.UnitPrice),
+		Column7:    ensureJSONObject(resolved.CustomizationJSON),
 	})
 	if err == nil {
 		newQty := numericToFloat(existing.Quantity) + resolved.Quantity
@@ -1995,7 +1996,7 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 				LineNumber:              pgtype.Int4{Int32: int32(idx + 1), Valid: true},
 				Notes:                   ci.Notes,
 				Status:                  pgtype.Text{String: "pending", Valid: true},
-				Metadata:                ensureJSONObject(ci.Metadata),
+				Metadata:                mergeCustomizationIntoMetadata(ci.Metadata, ci.CustomizationDetails),
 			})
 			if err != nil {
 				return utils.NewResponse(utils.CodeError, "failed to copy cart item into order: "+err.Error(), nil)
@@ -2107,10 +2108,14 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 	if err != nil {
 		return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 	}
-	if order.PaymentStatus == "paid" || order.Status == "paid" || order.Status == "completed" {
-		return utils.NewResponse(utils.CodeBadReq, "cannot reopen a paid or completed restaurant order", nil)
+	orderStatus := strings.ToLower(strings.TrimSpace(order.Status))
+	orderPaymentStatus := strings.ToLower(strings.TrimSpace(order.PaymentStatus))
+	if orderPaymentStatus == "paid" || orderPaymentStatus == "partially_paid" ||
+		orderStatus == "paid" || orderStatus == "completed" || orderStatus == "served" ||
+		numericToFloat(order.AmountPaid) > 0 {
+		return utils.NewResponse(utils.CodeBadReq, "cannot reopen a paid, served, or completed restaurant order", nil)
 	}
-	if order.Status == "voided" || order.Status == "cancelled" {
+	if orderStatus == "voided" || orderStatus == "cancelled" {
 		return utils.NewResponse(utils.CodeBadReq, "cannot reopen a voided or cancelled restaurant order", nil)
 	}
 
@@ -2134,6 +2139,8 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 					DeliveryAddress: order.DeliveryAddress,
 					Notes:           order.Notes,
 					OrderType:       pgtype.Text{String: order.OrderType, Valid: strings.TrimSpace(order.OrderType) != ""},
+					CouponCode:      order.CouponCode,
+					DiscountCode:    order.DiscountCode,
 				}); updErr == nil {
 					reopenedCart = updatedCart
 				} else {
@@ -2167,6 +2174,8 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 			DeliveryAddress: order.DeliveryAddress,
 			Notes:           order.Notes,
 			Metadata:        ensureJSONObject(order.Metadata),
+			CouponCode:      order.CouponCode,
+			DiscountCode:    order.DiscountCode,
 		})
 		if err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to create reopened cart: "+err.Error(), nil)
@@ -2181,7 +2190,7 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 	for _, oi := range orderItems {
 		lineTotal := oi.LineTotal
 		if !lineTotal.Valid || numericToFloat(lineTotal) == 0 {
-			lineTotal = oi.Subtotal
+			lineTotal = utils.Float64ToPgNumeric(roundMoney(numericToFloat(oi.Subtotal) + numericToFloat(oi.TaxAmount)))
 		}
 		if _, err := q.CreateRestaurantCartItem(ctx, repository.CreateRestaurantCartItemParams{
 			CartID:                  reopenedCart.ID,
@@ -2198,7 +2207,7 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 			TaxRate:                 oi.TaxRate,
 			TaxAmount:               oi.TaxAmount,
 			LineTotal:               lineTotal,
-			CustomizationDetails:    json.RawMessage("{}"),
+			CustomizationDetails:    extractCustomizationFromMetadata(oi.Metadata),
 			Notes:                   oi.Notes,
 			Metadata:                ensureJSONObject(oi.Metadata),
 		}); err != nil {
@@ -2326,6 +2335,11 @@ func (uc *RestaurantCartUseCase) CreateOrderWithItems(ctx context.Context, input
 			calcDiscount = roundMoney(input.DiscountAmount)
 			calcTax = roundMoney(input.TaxAmount)
 			calcTotal = roundMoney(input.TotalAmount)
+		}
+		if strings.EqualFold(paymentStatus, "paid") || strings.EqualFold(status, "paid") {
+			if err := validateFullRestaurantPayment(input.AmountPaid, calcTotal); err != nil {
+				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+			}
 		}
 
 		var sourceCartUUID pgtype.UUID
@@ -2484,6 +2498,11 @@ func (uc *RestaurantCartUseCase) UpdateOrderWithItems(ctx context.Context, order
 		amountPaidNum := existing.AmountPaid
 		if input.AmountPaid > 0 {
 			amountPaidNum = utils.Float64ToPgNumeric(input.AmountPaid)
+		}
+		if strings.EqualFold(paymentStatus, "paid") || strings.EqualFold(status, "paid") {
+			if err := validateFullRestaurantPayment(numericToFloat(amountPaidNum), numericToFloat(totalNum)); err != nil {
+				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
+			}
 		}
 		changeNum := existing.ChangeGiven
 		if input.ChangeGiven > 0 {
@@ -3348,7 +3367,20 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 	totalPromoDiscount := 0.0
 	dv := numericToFloat(promo.DiscountValue)
 	switch strings.ToLower(strings.TrimSpace(promo.PromotionType)) {
-	case "percentage_discount", "happy_hour":
+	case "happy_hour":
+		if len(promo.ScheduleJson) > 0 {
+			var schedule happyHourSchedule
+			if err := json.Unmarshal(promo.ScheduleJson, &schedule); err != nil {
+				return cart, emptyPromo, utils.NewResponse(utils.CodeError, "invalid happy_hour schedule_json", nil)
+			}
+			if len(schedule.Days) > 0 || strings.TrimSpace(schedule.StartTime) != "" || strings.TrimSpace(schedule.EndTime) != "" {
+				if !isHappyHourActive(schedule) {
+					return cart, emptyPromo, utils.NewResponse(utils.CodeBadReq, "promotion is only valid during happy hour", nil)
+				}
+			}
+		}
+		fallthrough
+	case "percentage_discount":
 		pct := dv
 		if pct <= 0 {
 			if meta.DiscountPercent > 0 {
@@ -3657,12 +3689,18 @@ func deductRecipeIngredientsForOrderItems(
 				continue
 			}
 			reqQty := math.Round(rawQty*1000) / 1000
-			baseNum, convErr := q.ResolveIngredientBaseQuantity(ctx, repository.ResolveIngredientBaseQuantityParams{
+			baseRes, convErr := q.ResolveIngredientBaseQuantity(ctx, repository.ResolveIngredientBaseQuantityParams{
 				UomID:     ing.UomID,
 				ProductID: ing.ProductID,
 				Quantity:  utils.Float64ToPgNumeric(reqQty),
 			})
-			if convErr != nil || !baseNum.Valid || numericToFloat(baseNum) <= 0 {
+			baseNum := baseRes.BaseQuantity
+			movementUomID := ing.UomID
+			if convErr == nil && baseNum.Valid && numericToFloat(baseNum) > 0 {
+				if baseRes.BaseUomID > 0 {
+					movementUomID = pgtype.Int4{Int32: baseRes.BaseUomID, Valid: true}
+				}
+			} else {
 				baseNum = utils.Float64ToPgNumeric(reqQty)
 			}
 
@@ -3691,8 +3729,9 @@ func deductRecipeIngredientsForOrderItems(
 				ProductID:        ing.ProductID,
 				ProductVariantID: ing.ProductVariantID,
 				FromStoreID:      pgtype.Int4{Int32: order.StoreID, Valid: true},
+				FromLocationID:   deductedRows[0].StorageLocationID,
 				Quantity:         baseNum,
-				UomID:            ing.UomID,
+				UomID:            movementUomID,
 				PostedBy:         postedBy,
 				Metadata:         ensureJSONObject(metaBytes),
 			}); err != nil {
@@ -3722,22 +3761,30 @@ func reverseRecipeIngredientsForOrder(
 	}
 
 	type ingKey struct {
-		productID int32
-		variantID int32
-		hasVar    bool
-		uomID     int32
-		hasUom    bool
+		productID  int32
+		variantID  int32
+		hasVar     bool
+		uomID      int32
+		hasUom     bool
+		locationID int32
+		hasLoc     bool
 	}
 	orderKeys := make([]ingKey, 0)
 	netQty := make(map[ingKey]float64)
 
 	for _, mv := range movements {
+		loc := mv.FromLocationID
+		if mv.MovementType == "recipe_reversal" && mv.ToLocationID.Valid {
+			loc = mv.ToLocationID
+		}
 		k := ingKey{
-			productID: mv.ProductID,
-			variantID: mv.ProductVariantID.Int32,
-			hasVar:    mv.ProductVariantID.Valid,
-			uomID:     mv.UomID.Int32,
-			hasUom:    mv.UomID.Valid,
+			productID:  mv.ProductID,
+			variantID:  mv.ProductVariantID.Int32,
+			hasVar:     mv.ProductVariantID.Valid,
+			uomID:      mv.UomID.Int32,
+			hasUom:     mv.UomID.Valid,
+			locationID: loc.Int32,
+			hasLoc:     loc.Valid,
 		}
 		if _, exists := netQty[k]; !exists {
 			orderKeys = append(orderKeys, k)
@@ -3764,13 +3811,18 @@ func reverseRecipeIngredientsForOrder(
 		if k.hasUom {
 			uomPg = pgtype.Int4{Int32: k.uomID, Valid: true}
 		}
+		var locPg pgtype.Int4
+		if k.hasLoc {
+			locPg = pgtype.Int4{Int32: k.locationID, Valid: true}
+		}
 		remNum := utils.Float64ToPgNumeric(rem)
 
 		if _, err := q.RestoreStoreInventoryStockForIngredient(ctx, repository.RestoreStoreInventoryStockForIngredientParams{
-			RestoreQty:       remNum,
-			StoreID:          order.StoreID,
-			ProductID:        k.productID,
-			ProductVariantID: varPg,
+			RestoreQty:        remNum,
+			StoreID:           order.StoreID,
+			ProductID:         k.productID,
+			ProductVariantID:  varPg,
+			StorageLocationID: locPg,
 		}); err != nil {
 			return err
 		}
@@ -3785,6 +3837,7 @@ func reverseRecipeIngredientsForOrder(
 			ProductID:        k.productID,
 			ProductVariantID: varPg,
 			FromStoreID:      pgtype.Int4{Int32: order.StoreID, Valid: true},
+			ToLocationID:     locPg,
 			Quantity:         remNum,
 			UomID:            uomPg,
 			PostedBy:         postedBy,
@@ -3795,6 +3848,45 @@ func reverseRecipeIngredientsForOrder(
 	}
 
 	return nil
+}
+
+func mergeCustomizationIntoMetadata(meta, customization json.RawMessage) json.RawMessage {
+	base := ensureJSONObject(meta)
+	cust := ensureJSONObject(customization)
+	var m map[string]interface{}
+	if err := json.Unmarshal(base, &m); err != nil || m == nil {
+		m = map[string]interface{}{}
+	}
+	if len(cust) <= 2 { // "{}"
+		if _, exists := m["customization_details"]; !exists {
+			return base
+		}
+		delete(m, "customization_details")
+	} else {
+		var c interface{}
+		if err := json.Unmarshal(cust, &c); err == nil {
+			m["customization_details"] = c
+		}
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return base
+	}
+	return b
+}
+
+func extractCustomizationFromMetadata(meta json.RawMessage) json.RawMessage {
+	if len(meta) == 0 {
+		return json.RawMessage("{}")
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(meta, &m); err != nil {
+		return json.RawMessage("{}")
+	}
+	if c, ok := m["customization_details"]; ok && len(c) > 0 {
+		return ensureJSONObject(c)
+	}
+	return json.RawMessage("{}")
 }
 
 func containsInt32(slice []int32, val int32) bool {

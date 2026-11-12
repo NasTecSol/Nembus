@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -544,12 +545,46 @@ func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository
 		comboTotal := numericToFloat(existingItem.ComboTotal)
 		discount := roundMoney(clampLineDiscount(qty, unitPrice, modTotal, comboTotal, numericToFloat(arg.DiscountAmount)))
 		var tcPtr *repository.TaxCategory
-		if existingItem.TaxCategoryID.Valid {
-			if tc, tcErr := q.GetTaxCategory(ctx, existingItem.TaxCategoryID.Int32); tcErr == nil {
+		taxCategoryID := existingItem.TaxCategoryID
+		if !taxCategoryID.Valid {
+			if mi, miErr := q.GetMenuItem(ctx, existingItem.MenuItemID); miErr == nil && mi.TaxCategoryID.Valid {
+				taxCategoryID = mi.TaxCategoryID
+			}
+		}
+		if taxCategoryID.Valid {
+			if tc, tcErr := q.GetTaxCategory(ctx, taxCategoryID.Int32); tcErr == nil {
 				tcPtr = &tc
 			}
 		}
 		_, taxAmt, subtotal, lineTotal := computeLineTaxAndTotals(qty, unitPrice, modTotal, comboTotal, discount, tcPtr)
+		if tcPtr == nil {
+			oldSub := numericToFloat(existingItem.Subtotal)
+			oldTax := numericToFloat(existingItem.TaxAmount)
+			oldNet := numericToFloat(existingItem.Quantity)*(numericToFloat(existingItem.UnitPrice)+numericToFloat(existingItem.ModifiersTotal)+numericToFloat(existingItem.ComboTotal)) - numericToFloat(existingItem.DiscountAmount)
+			isInclusive := oldSub > 0 && oldTax > 0 && math.Abs(oldNet-(oldSub+oldTax)) < 0.02
+
+			if numericToFloat(arg.TaxAmount) > 0 {
+				taxAmt = roundMoney(numericToFloat(arg.TaxAmount))
+				if isInclusive {
+					lineTotal = subtotal
+					subtotal = roundMoney(math.Max(0, lineTotal-taxAmt))
+				} else {
+					lineTotal = roundMoney(subtotal + taxAmt)
+				}
+			} else if oldTax > 0 {
+				if isInclusive {
+					lineTotal = subtotal
+					taxAmt = roundMoney(lineTotal * (oldTax / (oldSub + oldTax)))
+					subtotal = roundMoney(lineTotal - taxAmt)
+				} else if oldSub > 0 {
+					taxAmt = roundMoney(oldTax * (subtotal / oldSub))
+					lineTotal = roundMoney(subtotal + taxAmt)
+				} else {
+					taxAmt = roundMoney(oldTax)
+					lineTotal = roundMoney(subtotal + taxAmt)
+				}
+			}
+		}
 		arg.DiscountAmount = utils.Float64ToPgNumeric(discount)
 		arg.TaxAmount = utils.Float64ToPgNumeric(taxAmt)
 		arg.Subtotal = utils.Float64ToPgNumeric(subtotal)
