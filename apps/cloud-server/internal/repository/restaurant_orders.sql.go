@@ -12,13 +12,173 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createPosTransactionForRestaurantOrder = `-- name: CreatePosTransactionForRestaurantOrder :one
+INSERT INTO pos_transactions (
+    store_id,
+    cashier_id,
+    cashier_session_id,
+    customer_id,
+    pos_terminal_id,
+    transaction_number,
+    transaction_type,
+    subtotal,
+    discount_amount,
+    tax_amount,
+    total_amount,
+    amount_paid,
+    change_given,
+    status,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+)
+RETURNING id, store_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, transaction_number, transaction_date, transaction_type, subtotal, discount_amount, tax_amount, total_amount, total_cost, amount_paid, change_given, status, price_list_id, sales_order_id, source_cart_id, voided_by, voided_at, metadata, created_at, updated_at
+`
+
+type CreatePosTransactionForRestaurantOrderParams struct {
+	StoreID           int32           `json:"store_id"`
+	CashierID         int32           `json:"cashier_id"`
+	CashierSessionID  int32           `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4     `json:"customer_id"`
+	PosTerminalID     pgtype.Int4     `json:"pos_terminal_id"`
+	TransactionNumber string          `json:"transaction_number"`
+	TransactionType   pgtype.Text     `json:"transaction_type"`
+	Subtotal          pgtype.Numeric  `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric  `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric  `json:"total_amount"`
+	AmountPaid        pgtype.Numeric  `json:"amount_paid"`
+	ChangeGiven       pgtype.Numeric  `json:"change_given"`
+	Status            pgtype.Text     `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) CreatePosTransactionForRestaurantOrder(ctx context.Context, arg CreatePosTransactionForRestaurantOrderParams) (PosTransaction, error) {
+	row := q.db.QueryRow(ctx, createPosTransactionForRestaurantOrder,
+		arg.StoreID,
+		arg.CashierID,
+		arg.CashierSessionID,
+		arg.CustomerID,
+		arg.PosTerminalID,
+		arg.TransactionNumber,
+		arg.TransactionType,
+		arg.Subtotal,
+		arg.DiscountAmount,
+		arg.TaxAmount,
+		arg.TotalAmount,
+		arg.AmountPaid,
+		arg.ChangeGiven,
+		arg.Status,
+		arg.Metadata,
+	)
+	var i PosTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.StoreID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.TransactionNumber,
+		&i.TransactionDate,
+		&i.TransactionType,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.TotalCost,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.Status,
+		&i.PriceListID,
+		&i.SalesOrderID,
+		&i.SourceCartID,
+		&i.VoidedBy,
+		&i.VoidedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createRestaurantIngredientStockMovement = `-- name: CreateRestaurantIngredientStockMovement :one
+INSERT INTO stock_movements (
+    movement_type,
+    reference_type,
+    reference_id,
+    product_id,
+    product_variant_id,
+    from_store_id,
+    quantity,
+    uom_id,
+    posted_by,
+    status,
+    metadata
+) VALUES (
+    $1, 'restaurant_order', $2, $3, $4, $5, $6, $7, $8, 'completed', COALESCE($9::jsonb, '{}'::jsonb)
+) RETURNING id, movement_type, reference_type, reference_id, product_id, product_variant_id, from_store_id, to_store_id, from_location_id, to_location_id, quantity, uom_id, batch_number, serial_number, movement_date, posted_by, status, cost_per_unit, total_value, metadata, created_at, updated_at
+`
+
+type CreateRestaurantIngredientStockMovementParams struct {
+	MovementType     string          `json:"movement_type"`
+	ReferenceID      pgtype.Int4     `json:"reference_id"`
+	ProductID        int32           `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+	FromStoreID      pgtype.Int4     `json:"from_store_id"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	PostedBy         pgtype.Int4     `json:"posted_by"`
+	Metadata         json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) CreateRestaurantIngredientStockMovement(ctx context.Context, arg CreateRestaurantIngredientStockMovementParams) (StockMovement, error) {
+	row := q.db.QueryRow(ctx, createRestaurantIngredientStockMovement,
+		arg.MovementType,
+		arg.ReferenceID,
+		arg.ProductID,
+		arg.ProductVariantID,
+		arg.FromStoreID,
+		arg.Quantity,
+		arg.UomID,
+		arg.PostedBy,
+		arg.Metadata,
+	)
+	var i StockMovement
+	err := row.Scan(
+		&i.ID,
+		&i.MovementType,
+		&i.ReferenceType,
+		&i.ReferenceID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.FromStoreID,
+		&i.ToStoreID,
+		&i.FromLocationID,
+		&i.ToLocationID,
+		&i.Quantity,
+		&i.UomID,
+		&i.BatchNumber,
+		&i.SerialNumber,
+		&i.MovementDate,
+		&i.PostedBy,
+		&i.Status,
+		&i.CostPerUnit,
+		&i.TotalValue,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createRestaurantOrder = `-- name: CreateRestaurantOrder :one
 INSERT INTO restaurant_orders (
     store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, metadata, ordered_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
 )
-RETURNING id, store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
 `
 
 type CreateRestaurantOrderParams struct {
@@ -66,20 +226,33 @@ func (q *Queries) CreateRestaurantOrder(ctx context.Context, arg CreateRestauran
 	var i RestaurantOrder
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.StoreID,
 		&i.TableID,
 		&i.CashierID,
 		&i.CashierSessionID,
 		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
 		&i.OrderNumber,
 		&i.OrderSource,
+		&i.OrderType,
 		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
 		&i.Subtotal,
 		&i.DiscountAmount,
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.AmountPaid,
 		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
 		&i.Notes,
 		&i.PosTransactionID,
 		&i.OrderedAt,
@@ -93,6 +266,279 @@ func (q *Queries) CreateRestaurantOrder(ctx context.Context, arg CreateRestauran
 	return i, err
 }
 
+const createRestaurantOrderFull = `-- name: CreateRestaurantOrderFull :one
+INSERT INTO restaurant_orders (
+    organization_id,
+    store_id,
+    table_id,
+    cashier_id,
+    cashier_session_id,
+    customer_id,
+    pos_terminal_id,
+    kiosk_session_id,
+    created_by_user_id,
+    source_cart_id,
+    order_number,
+    order_source,
+    order_type,
+    status,
+    payment_status,
+    customer_name,
+    customer_email,
+    customer_phone,
+    delivery_address,
+    subtotal,
+    discount_amount,
+    tax_amount,
+    total_amount,
+    amount_paid,
+    change_given,
+    notes,
+    pos_transaction_id,
+    metadata,
+    ordered_at,
+    coupon_code,
+    discount_code
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
+)
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+`
+
+type CreateRestaurantOrderFullParams struct {
+	OrganizationID   pgtype.Int4      `json:"organization_id"`
+	StoreID          int32            `json:"store_id"`
+	TableID          pgtype.Int4      `json:"table_id"`
+	CashierID        pgtype.Int4      `json:"cashier_id"`
+	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
+	CustomerID       pgtype.Int4      `json:"customer_id"`
+	PosTerminalID    pgtype.Int4      `json:"pos_terminal_id"`
+	KioskSessionID   pgtype.Int4      `json:"kiosk_session_id"`
+	CreatedByUserID  pgtype.Int4      `json:"created_by_user_id"`
+	SourceCartID     pgtype.UUID      `json:"source_cart_id"`
+	OrderNumber      string           `json:"order_number"`
+	OrderSource      string           `json:"order_source"`
+	OrderType        string           `json:"order_type"`
+	Status           string           `json:"status"`
+	PaymentStatus    string           `json:"payment_status"`
+	CustomerName     pgtype.Text      `json:"customer_name"`
+	CustomerEmail    pgtype.Text      `json:"customer_email"`
+	CustomerPhone    pgtype.Text      `json:"customer_phone"`
+	DeliveryAddress  json.RawMessage  `json:"delivery_address"`
+	Subtotal         pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount      pgtype.Numeric   `json:"total_amount"`
+	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven      pgtype.Numeric   `json:"change_given"`
+	Notes            pgtype.Text      `json:"notes"`
+	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	Metadata         json.RawMessage  `json:"metadata"`
+	OrderedAt        pgtype.Timestamp `json:"ordered_at"`
+	CouponCode       pgtype.Text      `json:"coupon_code"`
+	DiscountCode     pgtype.Text      `json:"discount_code"`
+}
+
+func (q *Queries) CreateRestaurantOrderFull(ctx context.Context, arg CreateRestaurantOrderFullParams) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, createRestaurantOrderFull,
+		arg.OrganizationID,
+		arg.StoreID,
+		arg.TableID,
+		arg.CashierID,
+		arg.CashierSessionID,
+		arg.CustomerID,
+		arg.PosTerminalID,
+		arg.KioskSessionID,
+		arg.CreatedByUserID,
+		arg.SourceCartID,
+		arg.OrderNumber,
+		arg.OrderSource,
+		arg.OrderType,
+		arg.Status,
+		arg.PaymentStatus,
+		arg.CustomerName,
+		arg.CustomerEmail,
+		arg.CustomerPhone,
+		arg.DeliveryAddress,
+		arg.Subtotal,
+		arg.DiscountAmount,
+		arg.TaxAmount,
+		arg.TotalAmount,
+		arg.AmountPaid,
+		arg.ChangeGiven,
+		arg.Notes,
+		arg.PosTransactionID,
+		arg.Metadata,
+		arg.OrderedAt,
+		arg.CouponCode,
+		arg.DiscountCode,
+	)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createRestaurantOrderStatusHistory = `-- name: CreateRestaurantOrderStatusHistory :one
+INSERT INTO restaurant_order_status_history (
+    restaurant_order_id,
+    store_id,
+    from_status,
+    to_status,
+    reason,
+    notes,
+    changed_by_user_id,
+    metadata
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, COALESCE($8::jsonb, '{}'::jsonb)
+) RETURNING id, restaurant_order_id, store_id, from_status, to_status, reason, notes, changed_by_user_id, metadata, changed_at
+`
+
+type CreateRestaurantOrderStatusHistoryParams struct {
+	RestaurantOrderID int32           `json:"restaurant_order_id"`
+	StoreID           int32           `json:"store_id"`
+	FromStatus        pgtype.Text     `json:"from_status"`
+	ToStatus          string          `json:"to_status"`
+	Reason            pgtype.Text     `json:"reason"`
+	Notes             pgtype.Text     `json:"notes"`
+	ChangedByUserID   pgtype.Int4     `json:"changed_by_user_id"`
+	Metadata          json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) CreateRestaurantOrderStatusHistory(ctx context.Context, arg CreateRestaurantOrderStatusHistoryParams) (RestaurantOrderStatusHistory, error) {
+	row := q.db.QueryRow(ctx, createRestaurantOrderStatusHistory,
+		arg.RestaurantOrderID,
+		arg.StoreID,
+		arg.FromStatus,
+		arg.ToStatus,
+		arg.Reason,
+		arg.Notes,
+		arg.ChangedByUserID,
+		arg.Metadata,
+	)
+	var i RestaurantOrderStatusHistory
+	err := row.Scan(
+		&i.ID,
+		&i.RestaurantOrderID,
+		&i.StoreID,
+		&i.FromStatus,
+		&i.ToStatus,
+		&i.Reason,
+		&i.Notes,
+		&i.ChangedByUserID,
+		&i.Metadata,
+		&i.ChangedAt,
+	)
+	return i, err
+}
+
+const deductStoreInventoryStockForIngredient = `-- name: DeductStoreInventoryStockForIngredient :many
+UPDATE inventory_stock
+SET
+    quantity_on_hand = quantity_on_hand - $1::numeric,
+    quantity_available = GREATEST(0, quantity_available - $1::numeric),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = (
+    SELECT ist.id
+    FROM inventory_stock ist
+    WHERE ist.store_id = $2
+      AND ist.product_id = $3
+      AND ($4::int IS NULL OR ist.product_variant_id IS NOT DISTINCT FROM $4::int)
+    ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
+    LIMIT 1
+)
+RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
+`
+
+type DeductStoreInventoryStockForIngredientParams struct {
+	DeductQty        pgtype.Numeric `json:"deduct_qty"`
+	StoreID          int32          `json:"store_id"`
+	ProductID        int32          `json:"product_id"`
+	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
+}
+
+func (q *Queries) DeductStoreInventoryStockForIngredient(ctx context.Context, arg DeductStoreInventoryStockForIngredientParams) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, deductStoreInventoryStockForIngredient,
+		arg.DeductQty,
+		arg.StoreID,
+		arg.ProductID,
+		arg.ProductVariantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteRestaurantOrder = `-- name: DeleteRestaurantOrder :exec
 DELETE FROM restaurant_orders
 WHERE id = $1
@@ -103,9 +549,42 @@ func (q *Queries) DeleteRestaurantOrder(ctx context.Context, id int32) error {
 	return err
 }
 
+const findOpenCashierSessionForRestaurantStore = `-- name: FindOpenCashierSessionForRestaurantStore :one
+SELECT
+    cs.id,
+    cs.cashier_id,
+    cs.pos_terminal_id
+FROM cashier_sessions cs
+JOIN pos_terminals pt ON pt.id = cs.pos_terminal_id
+WHERE cs.status = 'open'
+  AND cs.closing_time IS NULL
+  AND pt.store_id = $1
+  AND ($2::int IS NULL OR cs.cashier_id = $2::int)
+ORDER BY cs.opening_time DESC
+LIMIT 1
+`
+
+type FindOpenCashierSessionForRestaurantStoreParams struct {
+	StoreID   int32       `json:"store_id"`
+	CashierID pgtype.Int4 `json:"cashier_id"`
+}
+
+type FindOpenCashierSessionForRestaurantStoreRow struct {
+	ID            int32 `json:"id"`
+	CashierID     int32 `json:"cashier_id"`
+	PosTerminalID int32 `json:"pos_terminal_id"`
+}
+
+func (q *Queries) FindOpenCashierSessionForRestaurantStore(ctx context.Context, arg FindOpenCashierSessionForRestaurantStoreParams) (FindOpenCashierSessionForRestaurantStoreRow, error) {
+	row := q.db.QueryRow(ctx, findOpenCashierSessionForRestaurantStore, arg.StoreID, arg.CashierID)
+	var i FindOpenCashierSessionForRestaurantStoreRow
+	err := row.Scan(&i.ID, &i.CashierID, &i.PosTerminalID)
+	return i, err
+}
+
 const getRestaurantOrder = `-- name: GetRestaurantOrder :one
 
-SELECT id, store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
+SELECT id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
 WHERE id = $1 LIMIT 1
 `
 
@@ -115,20 +594,33 @@ func (q *Queries) GetRestaurantOrder(ctx context.Context, id int32) (RestaurantO
 	var i RestaurantOrder
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.StoreID,
 		&i.TableID,
 		&i.CashierID,
 		&i.CashierSessionID,
 		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
 		&i.OrderNumber,
 		&i.OrderSource,
+		&i.OrderType,
 		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
 		&i.Subtotal,
 		&i.DiscountAmount,
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.AmountPaid,
 		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
 		&i.Notes,
 		&i.PosTransactionID,
 		&i.OrderedAt,
@@ -143,7 +635,7 @@ func (q *Queries) GetRestaurantOrder(ctx context.Context, id int32) (RestaurantO
 }
 
 const getRestaurantOrderByNumber = `-- name: GetRestaurantOrderByNumber :one
-SELECT id, store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
+SELECT id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
 WHERE store_id = $1 AND order_number = $2 LIMIT 1
 `
 
@@ -157,20 +649,33 @@ func (q *Queries) GetRestaurantOrderByNumber(ctx context.Context, arg GetRestaur
 	var i RestaurantOrder
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.StoreID,
 		&i.TableID,
 		&i.CashierID,
 		&i.CashierSessionID,
 		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
 		&i.OrderNumber,
 		&i.OrderSource,
+		&i.OrderType,
 		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
 		&i.Subtotal,
 		&i.DiscountAmount,
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.AmountPaid,
 		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
 		&i.Notes,
 		&i.PosTransactionID,
 		&i.OrderedAt,
@@ -184,8 +689,361 @@ func (q *Queries) GetRestaurantOrderByNumber(ctx context.Context, arg GetRestaur
 	return i, err
 }
 
+const getRestaurantOrderBySourceCartID = `-- name: GetRestaurantOrderBySourceCartID :one
+SELECT id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
+WHERE source_cart_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetRestaurantOrderBySourceCartID(ctx context.Context, sourceCartID pgtype.UUID) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, getRestaurantOrderBySourceCartID, sourceCartID)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const linkRestaurantOrderToPosTransaction = `-- name: LinkRestaurantOrderToPosTransaction :one
+UPDATE restaurant_orders
+SET
+    pos_transaction_id = $2,
+    status = COALESCE(NULLIF($3::text, ''), status),
+    payment_status = COALESCE(NULLIF($4::text, ''), payment_status),
+    amount_paid = COALESCE($5, amount_paid),
+    change_given = COALESCE($6, change_given),
+    paid_at = CASE WHEN $4::text = 'paid' THEN COALESCE(paid_at, CURRENT_TIMESTAMP) ELSE paid_at END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+`
+
+type LinkRestaurantOrderToPosTransactionParams struct {
+	ID               int32          `json:"id"`
+	PosTransactionID pgtype.Int4    `json:"pos_transaction_id"`
+	Status           string         `json:"status"`
+	PaymentStatus    string         `json:"payment_status"`
+	AmountPaid       pgtype.Numeric `json:"amount_paid"`
+	ChangeGiven      pgtype.Numeric `json:"change_given"`
+}
+
+func (q *Queries) LinkRestaurantOrderToPosTransaction(ctx context.Context, arg LinkRestaurantOrderToPosTransactionParams) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, linkRestaurantOrderToPosTransaction,
+		arg.ID,
+		arg.PosTransactionID,
+		arg.Status,
+		arg.PaymentStatus,
+		arg.AmountPaid,
+		arg.ChangeGiven,
+	)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listKdsRestaurantOrdersByStore = `-- name: ListKdsRestaurantOrdersByStore :many
+SELECT
+    ro.id AS order_id,
+    ro.order_number,
+    ro.store_id,
+    ro.order_source,
+    ro.order_type,
+    ro.status AS order_status,
+    ro.payment_status,
+    ro.subtotal,
+    ro.discount_amount,
+    ro.tax_amount,
+    ro.total_amount,
+    ro.notes,
+    ro.ordered_at,
+    ro.confirmed_at,
+    ro.served_at,
+    rt.id AS table_id,
+    rt.table_number,
+    rt.table_name,
+    rt.section AS table_section,
+    c.id AS cashier_id,
+    COALESCE(NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), ''), '')::text AS waiter_name,
+    ro.customer_id,
+    COALESCE(NULLIF(ro.customer_name, ''), cust.name, '')::text AS customer_name,
+    (COALESCE(ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - ro.ordered_at)) / 60.0), 0))::int4 AS minutes_since_ordered
+FROM restaurant_orders ro
+LEFT JOIN restaurant_tables rt ON ro.table_id = rt.id
+LEFT JOIN cashiers c           ON ro.cashier_id = c.id
+LEFT JOIN users u              ON c.user_id = u.id
+LEFT JOIN customers cust       ON ro.customer_id = cust.id
+WHERE ro.store_id = $1
+  AND ro.status <> 'paid'
+  AND ro.status <> 'voided'
+ORDER BY ro.ordered_at ASC, ro.id ASC
+`
+
+type ListKdsRestaurantOrdersByStoreRow struct {
+	OrderID             int32            `json:"order_id"`
+	OrderNumber         string           `json:"order_number"`
+	StoreID             int32            `json:"store_id"`
+	OrderSource         string           `json:"order_source"`
+	OrderType           string           `json:"order_type"`
+	OrderStatus         string           `json:"order_status"`
+	PaymentStatus       string           `json:"payment_status"`
+	Subtotal            pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount      pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount           pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount         pgtype.Numeric   `json:"total_amount"`
+	Notes               pgtype.Text      `json:"notes"`
+	OrderedAt           pgtype.Timestamp `json:"ordered_at"`
+	ConfirmedAt         pgtype.Timestamp `json:"confirmed_at"`
+	ServedAt            pgtype.Timestamp `json:"served_at"`
+	TableID             pgtype.Int4      `json:"table_id"`
+	TableNumber         pgtype.Text      `json:"table_number"`
+	TableName           pgtype.Text      `json:"table_name"`
+	TableSection        pgtype.Text      `json:"table_section"`
+	CashierID           pgtype.Int4      `json:"cashier_id"`
+	WaiterName          string           `json:"waiter_name"`
+	CustomerID          pgtype.Int4      `json:"customer_id"`
+	CustomerName        string           `json:"customer_name"`
+	MinutesSinceOrdered int32            `json:"minutes_since_ordered"`
+}
+
+func (q *Queries) ListKdsRestaurantOrdersByStore(ctx context.Context, storeID int32) ([]ListKdsRestaurantOrdersByStoreRow, error) {
+	rows, err := q.db.Query(ctx, listKdsRestaurantOrdersByStore, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListKdsRestaurantOrdersByStoreRow
+	for rows.Next() {
+		var i ListKdsRestaurantOrdersByStoreRow
+		if err := rows.Scan(
+			&i.OrderID,
+			&i.OrderNumber,
+			&i.StoreID,
+			&i.OrderSource,
+			&i.OrderType,
+			&i.OrderStatus,
+			&i.PaymentStatus,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.Notes,
+			&i.OrderedAt,
+			&i.ConfirmedAt,
+			&i.ServedAt,
+			&i.TableID,
+			&i.TableNumber,
+			&i.TableName,
+			&i.TableSection,
+			&i.CashierID,
+			&i.WaiterName,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.MinutesSinceOrdered,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRestaurantOrderRecipeMovements = `-- name: ListRestaurantOrderRecipeMovements :many
+SELECT id, movement_type, reference_type, reference_id, product_id, product_variant_id, from_store_id, to_store_id, from_location_id, to_location_id, quantity, uom_id, batch_number, serial_number, movement_date, posted_by, status, cost_per_unit, total_value, metadata, created_at, updated_at FROM stock_movements
+WHERE reference_type = 'restaurant_order'
+  AND reference_id = $1
+  AND movement_type IN ('recipe_deduction', 'recipe_reversal')
+ORDER BY id ASC
+`
+
+func (q *Queries) ListRestaurantOrderRecipeMovements(ctx context.Context, referenceID pgtype.Int4) ([]StockMovement, error) {
+	rows, err := q.db.Query(ctx, listRestaurantOrderRecipeMovements, referenceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StockMovement
+	for rows.Next() {
+		var i StockMovement
+		if err := rows.Scan(
+			&i.ID,
+			&i.MovementType,
+			&i.ReferenceType,
+			&i.ReferenceID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.FromStoreID,
+			&i.ToStoreID,
+			&i.FromLocationID,
+			&i.ToLocationID,
+			&i.Quantity,
+			&i.UomID,
+			&i.BatchNumber,
+			&i.SerialNumber,
+			&i.MovementDate,
+			&i.PostedBy,
+			&i.Status,
+			&i.CostPerUnit,
+			&i.TotalValue,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRestaurantOrderStatusHistory = `-- name: ListRestaurantOrderStatusHistory :many
+SELECT
+    h.id,
+    h.restaurant_order_id,
+    h.store_id,
+    h.from_status,
+    h.to_status,
+    h.reason,
+    h.notes,
+    h.changed_by_user_id,
+    u.username AS changed_by_username,
+    COALESCE(NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), ''), '')::text AS changed_by_name,
+    h.metadata,
+    h.changed_at
+FROM restaurant_order_status_history h
+LEFT JOIN users u ON u.id = h.changed_by_user_id
+WHERE h.restaurant_order_id = $1
+ORDER BY h.changed_at ASC, h.id ASC
+`
+
+type ListRestaurantOrderStatusHistoryRow struct {
+	ID                int64            `json:"id"`
+	RestaurantOrderID int32            `json:"restaurant_order_id"`
+	StoreID           int32            `json:"store_id"`
+	FromStatus        pgtype.Text      `json:"from_status"`
+	ToStatus          string           `json:"to_status"`
+	Reason            pgtype.Text      `json:"reason"`
+	Notes             pgtype.Text      `json:"notes"`
+	ChangedByUserID   pgtype.Int4      `json:"changed_by_user_id"`
+	ChangedByUsername pgtype.Text      `json:"changed_by_username"`
+	ChangedByName     string           `json:"changed_by_name"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	ChangedAt         pgtype.Timestamp `json:"changed_at"`
+}
+
+func (q *Queries) ListRestaurantOrderStatusHistory(ctx context.Context, restaurantOrderID int32) ([]ListRestaurantOrderStatusHistoryRow, error) {
+	rows, err := q.db.Query(ctx, listRestaurantOrderStatusHistory, restaurantOrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRestaurantOrderStatusHistoryRow
+	for rows.Next() {
+		var i ListRestaurantOrderStatusHistoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RestaurantOrderID,
+			&i.StoreID,
+			&i.FromStatus,
+			&i.ToStatus,
+			&i.Reason,
+			&i.Notes,
+			&i.ChangedByUserID,
+			&i.ChangedByUsername,
+			&i.ChangedByName,
+			&i.Metadata,
+			&i.ChangedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRestaurantOrders = `-- name: ListRestaurantOrders :many
-SELECT id, store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
+SELECT id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at FROM restaurant_orders
 WHERE store_id = $1
 ORDER BY ordered_at DESC
 `
@@ -201,26 +1059,201 @@ func (q *Queries) ListRestaurantOrders(ctx context.Context, storeID int32) ([]Re
 		var i RestaurantOrder
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrganizationID,
 			&i.StoreID,
 			&i.TableID,
 			&i.CashierID,
 			&i.CashierSessionID,
 			&i.CustomerID,
+			&i.PosTerminalID,
+			&i.KioskSessionID,
+			&i.CreatedByUserID,
+			&i.SourceCartID,
 			&i.OrderNumber,
 			&i.OrderSource,
+			&i.OrderType,
 			&i.Status,
+			&i.PaymentStatus,
+			&i.CustomerName,
+			&i.CustomerEmail,
+			&i.CustomerPhone,
+			&i.DeliveryAddress,
 			&i.Subtotal,
 			&i.DiscountAmount,
 			&i.TaxAmount,
 			&i.TotalAmount,
 			&i.AmountPaid,
 			&i.ChangeGiven,
+			&i.CouponCode,
+			&i.DiscountCode,
 			&i.Notes,
 			&i.PosTransactionID,
 			&i.OrderedAt,
 			&i.ConfirmedAt,
 			&i.ServedAt,
 			&i.PaidAt,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recalculateRestaurantOrderTotals = `-- name: RecalculateRestaurantOrderTotals :one
+UPDATE restaurant_orders ro
+SET
+    subtotal = totals.subtotal,
+    discount_amount = totals.total_discount,
+    tax_amount = totals.total_tax,
+    total_amount = totals.total_amount,
+    updated_at = CURRENT_TIMESTAMP
+FROM (
+    SELECT
+        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal) - COALESCE(tax_amount, 0)), 0)::numeric(15,2) AS subtotal,
+        COALESCE(SUM(discount_amount), 0)::numeric(15,2) AS total_discount,
+        COALESCE(SUM(tax_amount), 0)::numeric(15,2) AS total_tax,
+        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal)), 0)::numeric(15,2) AS total_amount
+    FROM restaurant_order_items
+    WHERE order_id = $1
+) AS totals
+WHERE ro.id = $1
+RETURNING ro.id, ro.organization_id, ro.store_id, ro.table_id, ro.cashier_id, ro.cashier_session_id, ro.customer_id, ro.pos_terminal_id, ro.kiosk_session_id, ro.created_by_user_id, ro.source_cart_id, ro.order_number, ro.order_source, ro.order_type, ro.status, ro.payment_status, ro.customer_name, ro.customer_email, ro.customer_phone, ro.delivery_address, ro.subtotal, ro.discount_amount, ro.tax_amount, ro.total_amount, ro.amount_paid, ro.change_given, ro.coupon_code, ro.discount_code, ro.notes, ro.pos_transaction_id, ro.ordered_at, ro.confirmed_at, ro.served_at, ro.paid_at, ro.metadata, ro.created_at, ro.updated_at
+`
+
+func (q *Queries) RecalculateRestaurantOrderTotals(ctx context.Context, id int32) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, recalculateRestaurantOrderTotals, id)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const resolveIngredientBaseQuantity = `-- name: ResolveIngredientBaseQuantity :one
+SELECT COALESCE(
+    CASE
+        WHEN $1::int IS NOT NULL THEN
+            fn_convert_uom_quantity(
+                $2::int,
+                (SELECT code FROM units_of_measure WHERE id = $1::int LIMIT 1),
+                $3::numeric
+            )
+        ELSE $3::numeric
+    END,
+    $3::numeric
+)::numeric(15,3) AS base_quantity
+`
+
+type ResolveIngredientBaseQuantityParams struct {
+	UomID     pgtype.Int4    `json:"uom_id"`
+	ProductID int32          `json:"product_id"`
+	Quantity  pgtype.Numeric `json:"quantity"`
+}
+
+func (q *Queries) ResolveIngredientBaseQuantity(ctx context.Context, arg ResolveIngredientBaseQuantityParams) (pgtype.Numeric, error) {
+	row := q.db.QueryRow(ctx, resolveIngredientBaseQuantity, arg.UomID, arg.ProductID, arg.Quantity)
+	var base_quantity pgtype.Numeric
+	err := row.Scan(&base_quantity)
+	return base_quantity, err
+}
+
+const restoreStoreInventoryStockForIngredient = `-- name: RestoreStoreInventoryStockForIngredient :many
+UPDATE inventory_stock
+SET
+    quantity_on_hand = quantity_on_hand + $1::numeric,
+    quantity_available = quantity_available + $1::numeric,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = (
+    SELECT ist.id
+    FROM inventory_stock ist
+    WHERE ist.store_id = $2
+      AND ist.product_id = $3
+      AND ($4::int IS NULL OR ist.product_variant_id IS NOT DISTINCT FROM $4::int)
+    ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
+    LIMIT 1
+)
+RETURNING id, product_id, product_variant_id, store_id, storage_location_id, quantity_on_hand, quantity_allocated, quantity_available, quantity_on_order, quantity_in_transit, reorder_level, reorder_quantity, max_stock_level, last_counted_at, metadata, created_at, updated_at
+`
+
+type RestoreStoreInventoryStockForIngredientParams struct {
+	RestoreQty       pgtype.Numeric `json:"restore_qty"`
+	StoreID          int32          `json:"store_id"`
+	ProductID        int32          `json:"product_id"`
+	ProductVariantID pgtype.Int4    `json:"product_variant_id"`
+}
+
+func (q *Queries) RestoreStoreInventoryStockForIngredient(ctx context.Context, arg RestoreStoreInventoryStockForIngredientParams) ([]InventoryStock, error) {
+	rows, err := q.db.Query(ctx, restoreStoreInventoryStockForIngredient,
+		arg.RestoreQty,
+		arg.StoreID,
+		arg.ProductID,
+		arg.ProductVariantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InventoryStock
+	for rows.Next() {
+		var i InventoryStock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.StoreID,
+			&i.StorageLocationID,
+			&i.QuantityOnHand,
+			&i.QuantityAllocated,
+			&i.QuantityAvailable,
+			&i.QuantityOnOrder,
+			&i.QuantityInTransit,
+			&i.ReorderLevel,
+			&i.ReorderQuantity,
+			&i.MaxStockLevel,
+			&i.LastCountedAt,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -257,7 +1290,7 @@ SET
     metadata = $18,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
 `
 
 type UpdateRestaurantOrderParams struct {
@@ -305,20 +1338,230 @@ func (q *Queries) UpdateRestaurantOrder(ctx context.Context, arg UpdateRestauran
 	var i RestaurantOrder
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.StoreID,
 		&i.TableID,
 		&i.CashierID,
 		&i.CashierSessionID,
 		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
 		&i.OrderNumber,
 		&i.OrderSource,
+		&i.OrderType,
 		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
 		&i.Subtotal,
 		&i.DiscountAmount,
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.AmountPaid,
 		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateRestaurantOrderFull = `-- name: UpdateRestaurantOrderFull :one
+UPDATE restaurant_orders
+SET
+    table_id = $2,
+    cashier_id = $3,
+    cashier_session_id = $4,
+    customer_id = $5,
+    order_type = COALESCE($6, order_type),
+    status = $7,
+    payment_status = COALESCE($8, payment_status),
+    customer_name = $9,
+    customer_email = $10,
+    customer_phone = $11,
+    delivery_address = $12,
+    subtotal = $13,
+    discount_amount = $14,
+    tax_amount = $15,
+    total_amount = $16,
+    amount_paid = $17,
+    change_given = $18,
+    notes = $19,
+    pos_transaction_id = $20,
+    confirmed_at = $21,
+    served_at = $22,
+    paid_at = $23,
+    metadata = $24,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+`
+
+type UpdateRestaurantOrderFullParams struct {
+	ID               int32            `json:"id"`
+	TableID          pgtype.Int4      `json:"table_id"`
+	CashierID        pgtype.Int4      `json:"cashier_id"`
+	CashierSessionID pgtype.Int4      `json:"cashier_session_id"`
+	CustomerID       pgtype.Int4      `json:"customer_id"`
+	OrderType        string           `json:"order_type"`
+	Status           string           `json:"status"`
+	PaymentStatus    string           `json:"payment_status"`
+	CustomerName     pgtype.Text      `json:"customer_name"`
+	CustomerEmail    pgtype.Text      `json:"customer_email"`
+	CustomerPhone    pgtype.Text      `json:"customer_phone"`
+	DeliveryAddress  json.RawMessage  `json:"delivery_address"`
+	Subtotal         pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount   pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount      pgtype.Numeric   `json:"total_amount"`
+	AmountPaid       pgtype.Numeric   `json:"amount_paid"`
+	ChangeGiven      pgtype.Numeric   `json:"change_given"`
+	Notes            pgtype.Text      `json:"notes"`
+	PosTransactionID pgtype.Int4      `json:"pos_transaction_id"`
+	ConfirmedAt      pgtype.Timestamp `json:"confirmed_at"`
+	ServedAt         pgtype.Timestamp `json:"served_at"`
+	PaidAt           pgtype.Timestamp `json:"paid_at"`
+	Metadata         json.RawMessage  `json:"metadata"`
+}
+
+func (q *Queries) UpdateRestaurantOrderFull(ctx context.Context, arg UpdateRestaurantOrderFullParams) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, updateRestaurantOrderFull,
+		arg.ID,
+		arg.TableID,
+		arg.CashierID,
+		arg.CashierSessionID,
+		arg.CustomerID,
+		arg.OrderType,
+		arg.Status,
+		arg.PaymentStatus,
+		arg.CustomerName,
+		arg.CustomerEmail,
+		arg.CustomerPhone,
+		arg.DeliveryAddress,
+		arg.Subtotal,
+		arg.DiscountAmount,
+		arg.TaxAmount,
+		arg.TotalAmount,
+		arg.AmountPaid,
+		arg.ChangeGiven,
+		arg.Notes,
+		arg.PosTransactionID,
+		arg.ConfirmedAt,
+		arg.ServedAt,
+		arg.PaidAt,
+		arg.Metadata,
+	)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateRestaurantOrderPaymentStatus = `-- name: UpdateRestaurantOrderPaymentStatus :one
+UPDATE restaurant_orders
+SET
+    payment_status = $2,
+    amount_paid = COALESCE($3, amount_paid),
+    change_given = COALESCE($4, change_given),
+    paid_at = CASE WHEN $2 = 'paid' THEN COALESCE(paid_at, CURRENT_TIMESTAMP) ELSE paid_at END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+`
+
+type UpdateRestaurantOrderPaymentStatusParams struct {
+	ID            int32          `json:"id"`
+	PaymentStatus string         `json:"payment_status"`
+	AmountPaid    pgtype.Numeric `json:"amount_paid"`
+	ChangeGiven   pgtype.Numeric `json:"change_given"`
+}
+
+func (q *Queries) UpdateRestaurantOrderPaymentStatus(ctx context.Context, arg UpdateRestaurantOrderPaymentStatusParams) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, updateRestaurantOrderPaymentStatus,
+		arg.ID,
+		arg.PaymentStatus,
+		arg.AmountPaid,
+		arg.ChangeGiven,
+	)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
 		&i.Notes,
 		&i.PosTransactionID,
 		&i.OrderedAt,
@@ -338,7 +1581,7 @@ SET
     status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, store_id, table_id, cashier_id, cashier_session_id, customer_id, order_number, order_source, status, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
 `
 
 type UpdateRestaurantOrderStatusParams struct {
@@ -351,20 +1594,95 @@ func (q *Queries) UpdateRestaurantOrderStatus(ctx context.Context, arg UpdateRes
 	var i RestaurantOrder
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.StoreID,
 		&i.TableID,
 		&i.CashierID,
 		&i.CashierSessionID,
 		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
 		&i.OrderNumber,
 		&i.OrderSource,
+		&i.OrderType,
 		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
 		&i.Subtotal,
 		&i.DiscountAmount,
 		&i.TaxAmount,
 		&i.TotalAmount,
 		&i.AmountPaid,
 		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
+		&i.Notes,
+		&i.PosTransactionID,
+		&i.OrderedAt,
+		&i.ConfirmedAt,
+		&i.ServedAt,
+		&i.PaidAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateRestaurantOrderStatusWithTimestamps = `-- name: UpdateRestaurantOrderStatusWithTimestamps :one
+UPDATE restaurant_orders
+SET
+    status = $2::text,
+    confirmed_at = CASE WHEN $2::text IN ('confirmed', 'preparing') THEN COALESCE(confirmed_at, CURRENT_TIMESTAMP) ELSE confirmed_at END,
+    served_at = CASE WHEN $2::text = 'served' THEN COALESCE(served_at, CURRENT_TIMESTAMP) ELSE served_at END,
+    paid_at = CASE WHEN $2::text = 'paid' THEN COALESCE(paid_at, CURRENT_TIMESTAMP) ELSE paid_at END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, organization_id, store_id, table_id, cashier_id, cashier_session_id, customer_id, pos_terminal_id, kiosk_session_id, created_by_user_id, source_cart_id, order_number, order_source, order_type, status, payment_status, customer_name, customer_email, customer_phone, delivery_address, subtotal, discount_amount, tax_amount, total_amount, amount_paid, change_given, coupon_code, discount_code, notes, pos_transaction_id, ordered_at, confirmed_at, served_at, paid_at, metadata, created_at, updated_at
+`
+
+type UpdateRestaurantOrderStatusWithTimestampsParams struct {
+	ID     int32  `json:"id"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) UpdateRestaurantOrderStatusWithTimestamps(ctx context.Context, arg UpdateRestaurantOrderStatusWithTimestampsParams) (RestaurantOrder, error) {
+	row := q.db.QueryRow(ctx, updateRestaurantOrderStatusWithTimestamps, arg.ID, arg.Status)
+	var i RestaurantOrder
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.StoreID,
+		&i.TableID,
+		&i.CashierID,
+		&i.CashierSessionID,
+		&i.CustomerID,
+		&i.PosTerminalID,
+		&i.KioskSessionID,
+		&i.CreatedByUserID,
+		&i.SourceCartID,
+		&i.OrderNumber,
+		&i.OrderSource,
+		&i.OrderType,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.DeliveryAddress,
+		&i.Subtotal,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.TotalAmount,
+		&i.AmountPaid,
+		&i.ChangeGiven,
+		&i.CouponCode,
+		&i.DiscountCode,
 		&i.Notes,
 		&i.PosTransactionID,
 		&i.OrderedAt,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -587,25 +588,91 @@ func (uc *RestaurantUseCase) CreateOnlineOrder(ctx context.Context, storeID int3
 
 // === KDS ===
 
+type KdsOrderOutput struct {
+	ID                  int32                                            `json:"id"`
+	OrderID             int32                                            `json:"order_id"`
+	OrderNumber         string                                           `json:"order_number"`
+	StoreID             int32                                            `json:"store_id"`
+	OrderSource         string                                           `json:"order_source"`
+	OrderType           string                                           `json:"order_type"`
+	Status              string                                           `json:"status"`
+	OrderStatus         string                                           `json:"order_status"`
+	PaymentStatus       string                                           `json:"payment_status"`
+	Subtotal            pgtype.Numeric                                   `json:"subtotal"`
+	DiscountAmount      pgtype.Numeric                                   `json:"discount_amount"`
+	TaxAmount           pgtype.Numeric                                   `json:"tax_amount"`
+	TotalAmount         pgtype.Numeric                                   `json:"total_amount"`
+	Notes               pgtype.Text                                      `json:"notes"`
+	OrderedAt           pgtype.Timestamp                                 `json:"ordered_at"`
+	ConfirmedAt         pgtype.Timestamp                                 `json:"confirmed_at"`
+	ServedAt            pgtype.Timestamp                                 `json:"served_at"`
+	TableID             pgtype.Int4                                      `json:"table_id"`
+	TableNumber         pgtype.Text                                      `json:"table_number"`
+	TableName           pgtype.Text                                      `json:"table_name"`
+	TableSection        pgtype.Text                                      `json:"table_section"`
+	CashierID           pgtype.Int4                                      `json:"cashier_id"`
+	WaiterName          string                                           `json:"waiter_name"`
+	CustomerID          pgtype.Int4                                      `json:"customer_id"`
+	CustomerName        string                                           `json:"customer_name"`
+	MinutesSinceOrdered int32                                            `json:"minutes_since_ordered"`
+	Items               []repository.ListRestaurantOrderItemsDetailedRow `json:"items"`
+}
+
 func (uc *RestaurantUseCase) GetKdsOrders(ctx context.Context, storeID int32, statuses []string) *repository.Response {
 	if uc.repo == nil {
 		return utils.NewResponse(utils.CodeError, "repository not set", nil)
 	}
-	orders, err := uc.repo.ListActiveRestaurantOrdersView(ctx, storeID)
+	orders, err := uc.repo.ListKdsRestaurantOrdersByStore(ctx, storeID)
 	if err != nil {
 		return utils.NewResponse(utils.CodeError, err.Error(), nil)
 	}
 
-	var result []repository.VwActiveRestaurantOrder
 	statusMap := make(map[string]bool)
 	for _, s := range statuses {
-		statusMap[s] = true
+		trimmed := strings.ToLower(strings.TrimSpace(s))
+		if trimmed != "" {
+			statusMap[trimmed] = true
+		}
 	}
 
+	result := make([]KdsOrderOutput, 0, len(orders))
 	for _, o := range orders {
-		if statusMap[o.OrderStatus] {
-			result = append(result, o)
+		if len(statusMap) > 0 && !statusMap[strings.ToLower(strings.TrimSpace(o.OrderStatus))] {
+			continue
 		}
+		items, itemsErr := uc.repo.ListRestaurantOrderItemsDetailed(ctx, o.OrderID)
+		if itemsErr != nil || items == nil {
+			items = []repository.ListRestaurantOrderItemsDetailedRow{}
+		}
+		result = append(result, KdsOrderOutput{
+			ID:                  o.OrderID,
+			OrderID:             o.OrderID,
+			OrderNumber:         o.OrderNumber,
+			StoreID:             o.StoreID,
+			OrderSource:         o.OrderSource,
+			OrderType:           o.OrderType,
+			Status:              o.OrderStatus,
+			OrderStatus:         o.OrderStatus,
+			PaymentStatus:       o.PaymentStatus,
+			Subtotal:            o.Subtotal,
+			DiscountAmount:      o.DiscountAmount,
+			TaxAmount:           o.TaxAmount,
+			TotalAmount:         o.TotalAmount,
+			Notes:               o.Notes,
+			OrderedAt:           o.OrderedAt,
+			ConfirmedAt:         o.ConfirmedAt,
+			ServedAt:            o.ServedAt,
+			TableID:             o.TableID,
+			TableNumber:         o.TableNumber,
+			TableName:           o.TableName,
+			TableSection:        o.TableSection,
+			CashierID:           o.CashierID,
+			WaiterName:          o.WaiterName,
+			CustomerID:          o.CustomerID,
+			CustomerName:        o.CustomerName,
+			MinutesSinceOrdered: o.MinutesSinceOrdered,
+			Items:               items,
+		})
 	}
 
 	return utils.NewResponse(utils.CodeOK, "KDS orders fetched successfully", result)

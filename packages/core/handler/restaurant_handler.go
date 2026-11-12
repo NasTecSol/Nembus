@@ -13,15 +13,22 @@ import (
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type RestaurantHandler struct {
-	useCase *usecase.RestaurantUseCase
+	useCase  *usecase.RestaurantUseCase
+	cartPool *pgxpool.Pool
 }
 
 func NewRestaurantHandler(uc *usecase.RestaurantUseCase) *RestaurantHandler {
 	return &RestaurantHandler{useCase: uc}
+}
+
+func (h *RestaurantHandler) SetPool(pool *pgxpool.Pool) {
+	h.cartPool = pool
 }
 
 func (h *RestaurantHandler) getRepositoryFromContext(c *gin.Context) *repository.Queries {
@@ -1089,11 +1096,10 @@ func (h *RestaurantHandler) GetKdsOrders(c *gin.Context) {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /api/restaurant/orders [post]
 func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
-	repo := h.getRepositoryFromContext(c)
-	if repo == nil {
+	uc := h.getCartUseCase(c)
+	if uc == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateRestaurantOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1101,38 +1107,52 @@ func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	subtotal, _ := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
-	discount, _ := repo.ParseNumeric(c.Request.Context(), req.DiscountAmount)
-	tax, _ := repo.ParseNumeric(c.Request.Context(), req.TaxAmount)
-	total, _ := repo.ParseNumeric(c.Request.Context(), req.TotalAmount)
-	paid, _ := repo.ParseNumeric(c.Request.Context(), req.AmountPaid)
-	change, _ := repo.ParseNumeric(c.Request.Context(), req.ChangeGiven)
+	var sourceCartID *uuid.UUID
+	if strings.TrimSpace(req.SourceCartID) != "" {
+		parsed, err := uuid.Parse(strings.TrimSpace(req.SourceCartID))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid source_cart_id", nil))
+			return
+		}
+		sourceCartID = &parsed
+	}
 
-	params := repository.CreateRestaurantOrderParams{
+	var metaRaw json.RawMessage
+	if strings.TrimSpace(req.Metadata) != "" {
+		metaRaw = json.RawMessage(req.Metadata)
+	}
+
+	resp := uc.CreateOrderWithItems(c.Request.Context(), usecase.RestaurantDirectOrderInput{
+		OrganizationID:   req.OrganizationID,
 		StoreID:          req.StoreID,
-		TableID:          pgtype.Int4{Int32: utils.DerefInt32(req.TableID), Valid: req.TableID != nil},
-		CashierID:        pgtype.Int4{Int32: utils.DerefInt32(req.CashierID), Valid: req.CashierID != nil},
-		CashierSessionID: pgtype.Int4{Int32: utils.DerefInt32(req.CashierSessionID), Valid: req.CashierSessionID != nil},
-		CustomerID:       pgtype.Int4{Int32: utils.DerefInt32(req.CustomerID), Valid: req.CustomerID != nil},
+		TableID:          req.TableID,
+		CashierID:        req.CashierID,
+		CashierSessionID: req.CashierSessionID,
+		CustomerID:       req.CustomerID,
+		PosTerminalID:    req.PosTerminalID,
+		KioskSessionID:   req.KioskSessionID,
+		CreatedByUserID:  resolveCreatedByUserIDFromContext(c, req.CreatedByUserID),
+		SourceCartID:     sourceCartID,
 		OrderNumber:      req.OrderNumber,
 		OrderSource:      req.OrderSource,
+		OrderType:        req.OrderType,
 		Status:           req.Status,
-		Subtotal:         subtotal,
-		DiscountAmount:   discount,
-		TaxAmount:        tax,
-		TotalAmount:      total,
-		AmountPaid:       paid,
-		ChangeGiven:      change,
-		Notes:            pgtype.Text{String: req.Notes, Valid: req.Notes != ""},
-		PosTransactionID: pgtype.Int4{Int32: utils.DerefInt32(req.PosTransactionID), Valid: req.PosTransactionID != nil},
-		Metadata:         []byte(req.Metadata),
-		OrderedAt:        pgtype.Timestamp{Time: time.Now(), Valid: true},
-	}
-	if req.Metadata == "" {
-		params.Metadata = []byte("{}")
-	}
-
-	resp := h.useCase.CreateOrder(c.Request.Context(), params)
+		PaymentStatus:    req.PaymentStatus,
+		CustomerName:     req.CustomerName,
+		CustomerEmail:    req.CustomerEmail,
+		CustomerPhone:    req.CustomerPhone,
+		DeliveryAddress:  req.DeliveryAddress,
+		Subtotal:         parseOptionalFloatString(req.Subtotal),
+		DiscountAmount:   parseOptionalFloatString(req.DiscountAmount),
+		TaxAmount:        parseOptionalFloatString(req.TaxAmount),
+		TotalAmount:      parseOptionalFloatString(req.TotalAmount),
+		AmountPaid:       parseOptionalFloatString(req.AmountPaid),
+		ChangeGiven:      parseOptionalFloatString(req.ChangeGiven),
+		Notes:            req.Notes,
+		PosTransactionID: req.PosTransactionID,
+		Metadata:         metaRaw,
+		Items:            toUseCaseLineItems(req.Items),
+	})
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1152,11 +1172,10 @@ func (h *RestaurantHandler) CreateOrder(c *gin.Context) {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /api/restaurant/orders/{order_id} [put]
 func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
-	repo := h.getRepositoryFromContext(c)
-	if repo == nil {
+	uc := h.getCartUseCase(c)
+	if uc == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1170,35 +1189,37 @@ func (h *RestaurantHandler) UpdateOrder(c *gin.Context) {
 		return
 	}
 
-	subtotal, _ := repo.ParseNumeric(c.Request.Context(), req.Subtotal)
-	discount, _ := repo.ParseNumeric(c.Request.Context(), req.DiscountAmount)
-	tax, _ := repo.ParseNumeric(c.Request.Context(), req.TaxAmount)
-	total, _ := repo.ParseNumeric(c.Request.Context(), req.TotalAmount)
-	paid, _ := repo.ParseNumeric(c.Request.Context(), req.AmountPaid)
-	change, _ := repo.ParseNumeric(c.Request.Context(), req.ChangeGiven)
+	var metaRaw json.RawMessage
+	if strings.TrimSpace(req.Metadata) != "" {
+		metaRaw = json.RawMessage(req.Metadata)
+	}
 
-	params := repository.UpdateRestaurantOrderParams{
-		ID:               int32(id),
-		TableID:          pgtype.Int4{Int32: utils.DerefInt32(req.TableID), Valid: req.TableID != nil},
-		CashierID:        pgtype.Int4{Int32: utils.DerefInt32(req.CashierID), Valid: req.CashierID != nil},
-		CashierSessionID: pgtype.Int4{Int32: utils.DerefInt32(req.CashierSessionID), Valid: req.CashierSessionID != nil},
-		CustomerID:       pgtype.Int4{Int32: utils.DerefInt32(req.CustomerID), Valid: req.CustomerID != nil},
+	resp := uc.UpdateOrderWithItems(c.Request.Context(), int32(id), usecase.RestaurantDirectOrderInput{
+		StoreID:          req.StoreID,
+		TableID:          req.TableID,
+		CashierID:        req.CashierID,
+		CashierSessionID: req.CashierSessionID,
+		CustomerID:       req.CustomerID,
+		PosTerminalID:    req.PosTerminalID,
+		KioskSessionID:   req.KioskSessionID,
+		OrderType:        req.OrderType,
 		Status:           req.Status,
-		Subtotal:         subtotal,
-		DiscountAmount:   discount,
-		TaxAmount:        tax,
-		TotalAmount:      total,
-		AmountPaid:       paid,
-		ChangeGiven:      change,
-		Notes:            pgtype.Text{String: req.Notes, Valid: req.Notes != ""},
-		PosTransactionID: pgtype.Int4{Int32: utils.DerefInt32(req.PosTransactionID), Valid: req.PosTransactionID != nil},
-		Metadata:         []byte(req.Metadata),
-	}
-	if req.Metadata == "" {
-		params.Metadata = []byte("{}")
-	}
-
-	resp := h.useCase.UpdateOrder(c.Request.Context(), params)
+		PaymentStatus:    req.PaymentStatus,
+		CustomerName:     req.CustomerName,
+		CustomerEmail:    req.CustomerEmail,
+		CustomerPhone:    req.CustomerPhone,
+		DeliveryAddress:  req.DeliveryAddress,
+		Subtotal:         parseOptionalFloatString(req.Subtotal),
+		DiscountAmount:   parseOptionalFloatString(req.DiscountAmount),
+		TaxAmount:        parseOptionalFloatString(req.TaxAmount),
+		TotalAmount:      parseOptionalFloatString(req.TotalAmount),
+		AmountPaid:       parseOptionalFloatString(req.AmountPaid),
+		ChangeGiven:      parseOptionalFloatString(req.ChangeGiven),
+		Notes:            req.Notes,
+		PosTransactionID: req.PosTransactionID,
+		Metadata:         metaRaw,
+		Items:            toUseCaseLineItems(req.Items),
+	}, len(req.Items) > 0)
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1339,11 +1360,10 @@ func (h *RestaurantHandler) GetOrder(c *gin.Context) {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /api/restaurant/orders/{order_id}/status [patch]
 func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
-	repo := h.getRepositoryFromContext(c)
-	if repo == nil {
+	uc := h.getCartUseCase(c)
+	if uc == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1357,7 +1377,13 @@ func (h *RestaurantHandler) UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 
-	resp := h.useCase.UpdateOrderStatus(c.Request.Context(), int32(id), req.Status)
+	resp := uc.UpdateOrderStatusWithHistory(c.Request.Context(), int32(id), usecase.RestaurantOrderStatusUpdateInput{
+		Status:          req.Status,
+		Reason:          req.Reason,
+		Notes:           req.Notes,
+		ChangedByUserID: resolveCreatedByUserIDFromContext(c, req.ChangedByUserID),
+		Metadata:        req.Metadata,
+	})
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1381,7 +1407,11 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 	if repo == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
+	uc := h.getCartUseCase(c)
+	if uc == nil {
+		c.JSON(http.StatusInternalServerError, utils.NewResponse(utils.CodeError, "restaurant cart usecase not available", nil))
+		return
+	}
 
 	id, err := strconv.ParseInt(c.Param("order_id"), 10, 32)
 	if err != nil {
@@ -1390,12 +1420,24 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 	}
 
 	var req SettleOrderRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
-		return
+	if c.Request != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+			return
+		}
 	}
 
-	resp := h.useCase.SettleOrder(c.Request.Context(), int32(id), req.PosTransactionID)
+	resp := uc.SettleOrderWithPosTransaction(c.Request.Context(), int32(id), usecase.RestaurantSettleOrderInput{
+		PosTransactionID: req.PosTransactionID,
+		CashierID:        req.CashierID,
+		CashierSessionID: req.CashierSessionID,
+		PosTerminalID:    req.PosTerminalID,
+		PaymentMethod:    req.PaymentMethod,
+		PaymentGateway:   req.PaymentGateway,
+		AmountPaid:       req.AmountPaid,
+		ReferenceNumber:  req.ReferenceNumber,
+		Metadata:         req.Metadata,
+	})
 	c.JSON(resp.StatusCode, resp)
 }
 
@@ -1414,11 +1456,10 @@ func (h *RestaurantHandler) SettleOrder(c *gin.Context) {
 // @Failure      500          {object}  ErrorResponse
 // @Router       /api/restaurant/orders/online [post]
 func (h *RestaurantHandler) CreateOnlineOrder(c *gin.Context) {
-	repo := h.getRepositoryFromContext(c)
-	if repo == nil {
+	uc := h.getCartUseCase(c)
+	if uc == nil {
 		return
 	}
-	h.useCase.SetRepository(repo)
 
 	var req CreateOnlineOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1426,38 +1467,65 @@ func (h *RestaurantHandler) CreateOnlineOrder(c *gin.Context) {
 		return
 	}
 
-	items := make([]repository.CreateRestaurantOrderItemParams, len(req.Items))
-	for i, item := range req.Items {
-		qty, _ := repo.ParseNumeric(c.Request.Context(), item.Quantity)
-		price, _ := repo.ParseNumeric(c.Request.Context(), item.UnitPrice)
-		modTotal, _ := repo.ParseNumeric(c.Request.Context(), item.ModifiersTotal)
-		disc, _ := repo.ParseNumeric(c.Request.Context(), item.DiscountAmount)
-		tax, _ := repo.ParseNumeric(c.Request.Context(), item.TaxAmount)
-		sub, _ := repo.ParseNumeric(c.Request.Context(), item.Subtotal)
+	lineItems := make([]usecase.RestaurantLineItemInput, 0, len(req.Items))
+	for _, item := range req.Items {
+		qty := parseOptionalFloatString(item.Quantity)
+		if qty <= 0 {
+			qty = 1
+		}
+		var unitPricePtr *float64
+		if strings.TrimSpace(item.UnitPrice) != "" {
+			if parsedPrice, err := strconv.ParseFloat(strings.TrimSpace(item.UnitPrice), 64); err == nil && parsedPrice > 0 {
+				unitPricePtr = &parsedPrice
+			}
+		}
+		var mods []usecase.RestaurantModifierSnapshotItem
+		if strings.TrimSpace(item.ModifiersSnapshot) != "" {
+			_ = json.Unmarshal([]byte(item.ModifiersSnapshot), &mods)
+		}
+		var metaRaw json.RawMessage
+		if strings.TrimSpace(item.Metadata) != "" {
+			metaRaw = json.RawMessage(item.Metadata)
+		}
 
-		items[i] = repository.CreateRestaurantOrderItemParams{
-			MenuItemID:        item.MenuItemID,
-			Quantity:          qty,
-			UnitPrice:         price,
-			ModifiersSnapshot: []byte(item.ModifiersSnapshot),
-			ModifiersTotal:    modTotal,
-			DiscountAmount:    disc,
-			TaxAmount:         tax,
-			Subtotal:          sub,
-			LineNumber:        pgtype.Int4{Int32: item.LineNumber, Valid: true},
-			Notes:             pgtype.Text{String: item.Notes, Valid: item.Notes != ""},
-			Status:            pgtype.Text{String: item.Status, Valid: item.Status != ""},
-			Metadata:          []byte(item.Metadata),
-		}
-		if item.ModifiersSnapshot == "" {
-			items[i].ModifiersSnapshot = []byte("[]")
-		}
-		if item.Metadata == "" {
-			items[i].Metadata = []byte("{}")
-		}
+		lineItems = append(lineItems, usecase.RestaurantLineItemInput{
+			MenuItemID:     item.MenuItemID,
+			Quantity:       qty,
+			UnitPrice:      unitPricePtr,
+			Modifiers:      mods,
+			DiscountAmount: parseOptionalFloatString(item.DiscountAmount),
+			Notes:          item.Notes,
+			Status:         item.Status,
+			Metadata:       metaRaw,
+		})
 	}
 
-	resp := h.useCase.CreateOnlineOrder(c.Request.Context(), req.StoreID, req.CustomerID, items)
+	orderSource := strings.TrimSpace(req.OrderSource)
+	if orderSource == "" {
+		orderSource = "online"
+	}
+	orderType := strings.TrimSpace(req.OrderType)
+	if orderType == "" {
+		orderType = "delivery"
+	}
+
+	resp := uc.CreateOrderWithItems(c.Request.Context(), usecase.RestaurantDirectOrderInput{
+		OrganizationID:  req.OrganizationID,
+		StoreID:         req.StoreID,
+		TableID:         req.TableID,
+		CustomerID:      req.CustomerID,
+		CreatedByUserID: resolveCreatedByUserIDFromContext(c, nil),
+		OrderSource:     orderSource,
+		OrderType:       orderType,
+		Status:          "pending",
+		PaymentStatus:   "unpaid",
+		CustomerName:    req.CustomerName,
+		CustomerEmail:   req.CustomerEmail,
+		CustomerPhone:   req.CustomerPhone,
+		DeliveryAddress: req.DeliveryAddress,
+		Notes:           req.Notes,
+		Items:           lineItems,
+	})
 	c.JSON(resp.StatusCode, resp)
 }
 

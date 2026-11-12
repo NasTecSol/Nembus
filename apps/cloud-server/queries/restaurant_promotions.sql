@@ -88,3 +88,14 @@ SET usage_count = usage_count + 1,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;
+
+-- name: GetActiveRestaurantPromotionByCouponCodeInsensitive :one
+SELECT * FROM restaurant_promotions
+WHERE LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM(sqlc.arg(coupon_code)::text))
+  AND store_id = sqlc.arg(store_id)
+  AND is_active = true
+  AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
+  AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
+  AND (usage_limit IS NULL OR usage_count < usage_limit)
+ORDER BY id DESC
+LIMIT 1;

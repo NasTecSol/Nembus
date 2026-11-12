@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/NasTecSol/nembus-core/usecase"
 )
@@ -704,50 +705,213 @@ type ComboComponentWithDetailsResponse = usecase.ComboComponentWithDetailsRespon
 type MenuItemFullDetailsResponse = usecase.MenuItemFullDetailsResponse
 
 type CreateRecipeRequest struct {
-	OrganizationID     int32  `json:"organization_id" binding:"required"`
-	RecipeCode         string `json:"recipe_code" binding:"required"`
-	RecipeName         string `json:"recipe_name" binding:"required"`
-	Description        string `json:"description"`
-	FinishedProductID  *int32 `json:"finished_product_id"`
-	YieldQuantity      string `json:"yield_quantity"`
-	YieldUomID         *int32 `json:"yield_uom_id"`
-	PreparationSteps   string `json:"preparation_steps"`
-	PreparationTimeMin int32  `json:"preparation_time_min"`
-	CookingTimeMin     int32  `json:"cooking_time_min"`
-	IsActive           bool   `json:"is_active"`
-	Metadata           string `json:"metadata"`
+	OrganizationID     int32  `json:"organization_id" binding:"required" example:"1"`
+	RecipeCode         string `json:"recipe_code" binding:"required" example:"REC-PIZZA-10"`
+	RecipeName         string `json:"recipe_name" binding:"required" example:"Margherita Pizza Recipe"`
+	Description        string `json:"description" example:"Standard pizza dough and cheese recipe"`
+	FinishedProductID  *int32 `json:"finished_product_id,omitempty"`
+	YieldQuantity      string `json:"yield_quantity" example:"1"`
+	YieldUomID         *int32 `json:"yield_uom_id,omitempty" example:"1"`
+	PreparationSteps   string `json:"preparation_steps" example:"Stretch dough, add sauce and cheese, bake 8 mins"`
+	PreparationTimeMin int32  `json:"preparation_time_min" example:"5"`
+	CookingTimeMin     int32  `json:"cooking_time_min" example:"8"`
+	IsActive           bool   `json:"is_active" example:"true"`
+	Metadata           string `json:"metadata" example:"{}"`
 }
 
 type CreateRecipeIngredientRequest struct {
-	RecipeID         int32  `json:"recipe_id"`
-	ProductID        int32  `json:"product_id" binding:"required"`
-	ProductVariantID *int32 `json:"product_variant_id"`
-	Quantity         string `json:"quantity" binding:"required"`
-	UomID            *int32 `json:"uom_id"`
-	IsOptional       bool   `json:"is_optional"`
-	IsByproduct      bool   `json:"is_byproduct"`
-	LineNumber       int32  `json:"line_number"`
-	Metadata         string `json:"metadata"`
+	RecipeID         int32  `json:"recipe_id" example:"1"`
+	ProductID        int32  `json:"product_id" binding:"required" example:"1"`
+	ProductVariantID *int32 `json:"product_variant_id,omitempty"`
+	Quantity         string `json:"quantity" binding:"required" example:"2"`
+	UomID            *int32 `json:"uom_id,omitempty" example:"1"`
+	IsOptional       bool   `json:"is_optional" example:"false"`
+	IsByproduct      bool   `json:"is_byproduct" example:"false"`
+	LineNumber       int32  `json:"line_number" example:"1"`
+	Metadata         string `json:"metadata" example:"{}"`
+}
+
+type RestaurantLineItemRequest struct {
+	MenuItemID           int32                                          `json:"menu_item_id" binding:"required" example:"10"`
+	Quantity             float64                                        `json:"quantity" binding:"required,gt=0" example:"2"`
+	UnitPrice            *float64                                       `json:"unit_price,omitempty" example:"25.00"`
+	ModifierIDs          []int32                                        `json:"modifier_ids,omitempty" example:"1"`
+	Modifiers            []usecase.RestaurantModifierSnapshotItem       `json:"modifiers,omitempty"`
+	ComboComponentIDs    []int32                                        `json:"combo_component_ids,omitempty" example:"1"`
+	ComboComponents      []usecase.RestaurantComboComponentSnapshotItem `json:"combo_components,omitempty"`
+	DiscountAmount       float64                                        `json:"discount_amount,omitempty" example:"0"`
+	CustomizationDetails json.RawMessage                                `json:"customization_details,omitempty" swaggertype:"object"`
+	Notes                string                                         `json:"notes,omitempty" example:"Extra crispy"`
+	Status               string                                         `json:"status,omitempty" example:"pending"`
+	Metadata             json.RawMessage                                `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type RestaurantCreateCartRequest struct {
+	CartNumber      string                      `json:"cart_number" example:""`
+	OrganizationID  *int32                      `json:"organization_id,omitempty" example:"1"`
+	StoreID         int32                       `json:"store_id" binding:"required" example:"6"`
+	TableID         *int32                      `json:"table_id,omitempty" example:"1"`
+	OrderType       string                      `json:"order_type" example:"dine_in"`
+	CustomerID      *int32                      `json:"customer_id,omitempty" example:"1"`
+	GuestIdentifier string                      `json:"guest_identifier" example:"guest-abc-123"`
+	GuestName       string                      `json:"guest_name" example:"Walk-in Guest"`
+	GuestEmail      string                      `json:"guest_email" example:"guest@example.com"`
+	GuestPhone      string                      `json:"guest_phone" example:"0500000000"`
+	CartStatus      string                      `json:"cart_status" example:"active"`
+	Channel         string                      `json:"channel" example:"pos"`
+	PaymentMethod   string                      `json:"payment_method" example:"cash"`
+	PaymentGateway  string                      `json:"payment_gateway" example:""`
+	DeviceInfo      json.RawMessage             `json:"device_info" swaggertype:"object"`
+	CreatedByUserID *int32                      `json:"created_by_user_id,omitempty" example:"1"`
+	CashierID       *int32                      `json:"cashier_id,omitempty" example:"1"`
+	PosTerminalID   *int32                      `json:"pos_terminal_id,omitempty" example:"8"`
+	KioskSessionID  *int32                      `json:"kiosk_session_id,omitempty"`
+	CouponCode      string                      `json:"coupon_code" example:""`
+	DiscountCode    string                      `json:"discount_code" example:""`
+	DeliveryAddress json.RawMessage             `json:"delivery_address" swaggertype:"object"`
+	ExpiresAt       *time.Time                  `json:"expires_at,omitempty"`
+	Notes           string                      `json:"notes" example:"Table 1 order"`
+	Metadata        json.RawMessage             `json:"metadata" swaggertype:"object"`
+	Items           []RestaurantLineItemRequest `json:"items"`
+}
+
+type RestaurantAddToCartRequest struct {
+	CartID               string                                         `json:"cart_id" example:""`
+	OrganizationID       *int32                                         `json:"organization_id,omitempty" example:"1"`
+	StoreID              int32                                          `json:"store_id" example:"6"`
+	TableID              *int32                                         `json:"table_id,omitempty" example:"1"`
+	OrderType            string                                         `json:"order_type" example:"dine_in"`
+	CustomerID           *int32                                         `json:"customer_id,omitempty" example:"1"`
+	GuestIdentifier      string                                         `json:"guest_identifier" example:"guest-abc-123"`
+	GuestName            string                                         `json:"guest_name" example:"Walk-in Guest"`
+	GuestEmail           string                                         `json:"guest_email" example:"guest@example.com"`
+	GuestPhone           string                                         `json:"guest_phone" example:"0500000000"`
+	Channel              string                                         `json:"channel" example:"pos"`
+	CashierID            *int32                                         `json:"cashier_id,omitempty" example:"1"`
+	PosTerminalID        *int32                                         `json:"pos_terminal_id,omitempty" example:"8"`
+	KioskSessionID       *int32                                         `json:"kiosk_session_id,omitempty"`
+	CreatedByUserID      *int32                                         `json:"created_by_user_id,omitempty" example:"1"`
+	MenuItemID           int32                                          `json:"menu_item_id" binding:"required" example:"10"`
+	Quantity             float64                                        `json:"quantity" example:"2"`
+	UnitPrice            *float64                                       `json:"unit_price,omitempty" example:"25.00"`
+	ModifierIDs          []int32                                        `json:"modifier_ids,omitempty" example:"1"`
+	Modifiers            []usecase.RestaurantModifierSnapshotItem       `json:"modifiers,omitempty"`
+	ComboComponentIDs    []int32                                        `json:"combo_component_ids,omitempty"`
+	ComboComponents      []usecase.RestaurantComboComponentSnapshotItem `json:"combo_components,omitempty"`
+	DiscountAmount       float64                                        `json:"discount_amount,omitempty" example:"0"`
+	CustomizationDetails json.RawMessage                                `json:"customization_details,omitempty" swaggertype:"object"`
+	Notes                string                                         `json:"notes,omitempty" example:"Extra crispy"`
+	Metadata             json.RawMessage                                `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type RestaurantUpdateCartRequest struct {
+	TableID         *int32          `json:"table_id,omitempty" example:"1"`
+	OrderType       string          `json:"order_type" example:"dine_in"`
+	CustomerID      *int32          `json:"customer_id,omitempty" example:"1"`
+	GuestIdentifier string          `json:"guest_identifier" example:"guest-abc-123"`
+	GuestName       string          `json:"guest_name" example:"Walk-in Guest"`
+	GuestEmail      string          `json:"guest_email" example:"guest@example.com"`
+	GuestPhone      string          `json:"guest_phone" example:"0500000000"`
+	Channel         string          `json:"channel" example:"pos"`
+	PaymentMethod   string          `json:"payment_method" example:"cash"`
+	PaymentGateway  string          `json:"payment_gateway" example:""`
+	CouponCode      string          `json:"coupon_code" example:"PIZZA20"`
+	DiscountCode    string          `json:"discount_code" example:"PIZZA20-PROMO"`
+	DeliveryAddress json.RawMessage `json:"delivery_address" swaggertype:"object"`
+	Notes           string          `json:"notes" example:"Updated table note"`
+	Metadata        json.RawMessage `json:"metadata" swaggertype:"object"`
+}
+
+type RestaurantUpdateCartItemRequest struct {
+	Quantity             float64                                        `json:"quantity" binding:"required" example:"3"`
+	ModifierIDs          []int32                                        `json:"modifier_ids,omitempty" example:"1"`
+	Modifiers            []usecase.RestaurantModifierSnapshotItem       `json:"modifiers,omitempty"`
+	ComboComponentIDs    []int32                                        `json:"combo_component_ids,omitempty"`
+	ComboComponents      []usecase.RestaurantComboComponentSnapshotItem `json:"combo_components,omitempty"`
+	DiscountAmount       *float64                                       `json:"discount_amount,omitempty" example:"0"`
+	CustomizationDetails json.RawMessage                                `json:"customization_details,omitempty" swaggertype:"object"`
+	Notes                *string                                        `json:"notes,omitempty" example:"No onions"`
+	Metadata             json.RawMessage                                `json:"metadata,omitempty" swaggertype:"object"`
+}
+
+type RestaurantMergeCartRequest struct {
+	StoreID         int32  `json:"store_id" binding:"required" example:"6"`
+	GuestIdentifier string `json:"guest_identifier" binding:"required" example:"guest-abc-123"`
+	CustomerID      int32  `json:"customer_id" binding:"required" example:"1"`
+}
+
+type RestaurantAssignTableRequest struct {
+	TableID *int32 `json:"table_id" example:"1"`
+}
+
+type ApplyRestaurantCouponRequest struct {
+	CouponCode string `json:"coupon_code" binding:"required" example:"PIZZA20"`
+}
+
+type RestaurantCheckoutRequest struct {
+	OrderNumber      string          `json:"order_number" example:""`
+	OrderSource      string          `json:"order_source" example:"table"`
+	OrderType        string          `json:"order_type" example:"dine_in"`
+	TableID          *int32          `json:"table_id,omitempty" example:"1"`
+	CashierID        *int32          `json:"cashier_id,omitempty" example:"1"`
+	CashierSessionID *int32          `json:"cashier_session_id,omitempty" example:"1"`
+	CustomerID       *int32          `json:"customer_id,omitempty" example:"1"`
+	PosTerminalID    *int32          `json:"pos_terminal_id,omitempty" example:"8"`
+	KioskSessionID   *int32          `json:"kiosk_session_id,omitempty"`
+	CreatedByUserID  *int32          `json:"created_by_user_id,omitempty" example:"1"`
+	CustomerName     string          `json:"customer_name" example:"Walk-in Guest"`
+	CustomerEmail    string          `json:"customer_email" example:"guest@example.com"`
+	CustomerPhone    string          `json:"customer_phone" example:"0500000000"`
+	DeliveryAddress  json.RawMessage `json:"delivery_address" swaggertype:"object"`
+	PaymentStatus    string          `json:"payment_status" example:"unpaid"`
+	PaymentMethod    string          `json:"payment_method" example:"cash"`
+	PaymentGateway   string          `json:"payment_gateway" example:""`
+	ReferenceNumber  string          `json:"reference_number" example:""`
+	AmountPaid       float64         `json:"amount_paid" example:"0"`
+	PosTransactionID *int32          `json:"pos_transaction_id,omitempty"`
+	CouponCode       string          `json:"coupon_code" example:"PIZZA20"`
+	DiscountCode     string          `json:"discount_code" example:"PIZZA20-PROMO"`
+	Notes            string          `json:"notes" example:"Send to kitchen first"`
+	Status           string          `json:"status" example:"pending"`
+	Metadata         json.RawMessage `json:"metadata" swaggertype:"object"`
+}
+
+type UpdateRestaurantOrderPaymentStatusRequest struct {
+	PaymentStatus string   `json:"payment_status" binding:"required" example:"paid"`
+	AmountPaid    *float64 `json:"amount_paid,omitempty" example:"46.00"`
+	ChangeGiven   *float64 `json:"change_given,omitempty" example:"0.00"`
 }
 
 type CreateRestaurantOrderRequest struct {
-	StoreID          int32  `json:"store_id" binding:"required"`
-	TableID          *int32 `json:"table_id"`
-	CashierID        *int32 `json:"cashier_id"`
-	CashierSessionID *int32 `json:"cashier_session_id"`
-	CustomerID       *int32 `json:"customer_id"`
-	OrderNumber      string `json:"order_number"`
-	OrderSource      string `json:"order_source"`
-	Status           string `json:"status"`
-	Subtotal         string `json:"subtotal"`
-	DiscountAmount   string `json:"discount_amount"`
-	TaxAmount        string `json:"tax_amount"`
-	TotalAmount      string `json:"total_amount"`
-	AmountPaid       string `json:"amount_paid"`
-	ChangeGiven      string `json:"change_given"`
-	Notes            string `json:"notes"`
-	PosTransactionID *int32 `json:"pos_transaction_id"`
-	Metadata         string `json:"metadata"`
+	OrganizationID   *int32                      `json:"organization_id,omitempty" example:"1"`
+	StoreID          int32                       `json:"store_id" binding:"required" example:"6"`
+	TableID          *int32                      `json:"table_id,omitempty" example:"1"`
+	CashierID        *int32                      `json:"cashier_id,omitempty" example:"1"`
+	CashierSessionID *int32                      `json:"cashier_session_id,omitempty" example:"1"`
+	CustomerID       *int32                      `json:"customer_id,omitempty" example:"1"`
+	PosTerminalID    *int32                      `json:"pos_terminal_id,omitempty" example:"8"`
+	KioskSessionID   *int32                      `json:"kiosk_session_id,omitempty"`
+	CreatedByUserID  *int32                      `json:"created_by_user_id,omitempty" example:"1"`
+	SourceCartID     string                      `json:"source_cart_id,omitempty" example:""`
+	OrderNumber      string                      `json:"order_number,omitempty" example:""`
+	OrderSource      string                      `json:"order_source,omitempty" example:"table"`
+	OrderType        string                      `json:"order_type,omitempty" example:"dine_in"`
+	Status           string                      `json:"status,omitempty" example:"pending"`
+	PaymentStatus    string                      `json:"payment_status,omitempty" example:"unpaid"`
+	CustomerName     string                      `json:"customer_name,omitempty" example:"Walk-in Guest"`
+	CustomerEmail    string                      `json:"customer_email,omitempty" example:"guest@example.com"`
+	CustomerPhone    string                      `json:"customer_phone,omitempty" example:"0500000000"`
+	DeliveryAddress  json.RawMessage             `json:"delivery_address,omitempty" swaggertype:"object"`
+	Subtotal         string                      `json:"subtotal,omitempty" example:"40.00"`
+	DiscountAmount   string                      `json:"discount_amount,omitempty" example:"0.00"`
+	TaxAmount        string                      `json:"tax_amount,omitempty" example:"6.00"`
+	TotalAmount      string                      `json:"total_amount,omitempty" example:"46.00"`
+	AmountPaid       string                      `json:"amount_paid,omitempty" example:"0.00"`
+	ChangeGiven      string                      `json:"change_given,omitempty" example:"0.00"`
+	Notes            string                      `json:"notes,omitempty" example:"Table 1 order"`
+	PosTransactionID *int32                      `json:"pos_transaction_id,omitempty"`
+	Metadata         string                      `json:"metadata,omitempty" example:"{}"`
+	Items            []RestaurantLineItemRequest `json:"items"`
 }
 
 type CreateMenuItemModifierRequest struct {
@@ -787,32 +951,53 @@ type CreateKioskSessionRequest struct {
 }
 
 type CreateOnlineOrderRequest struct {
-	StoreID    int32                              `json:"store_id" binding:"required"`
-	CustomerID *int32                             `json:"customer_id"`
-	Items      []CreateRestaurantOrderItemRequest `json:"items" binding:"required"`
+	OrganizationID  *int32                             `json:"organization_id,omitempty" example:"1"`
+	StoreID         int32                              `json:"store_id" binding:"required" example:"6"`
+	TableID         *int32                             `json:"table_id,omitempty"`
+	CustomerID      *int32                             `json:"customer_id,omitempty" example:"1"`
+	OrderSource     string                             `json:"order_source,omitempty" example:"online"`
+	OrderType       string                             `json:"order_type,omitempty" example:"delivery"`
+	CustomerName    string                             `json:"customer_name,omitempty" example:"Online Customer"`
+	CustomerEmail   string                             `json:"customer_email,omitempty" example:"customer@example.com"`
+	CustomerPhone   string                             `json:"customer_phone,omitempty" example:"0500000001"`
+	DeliveryAddress json.RawMessage                    `json:"delivery_address,omitempty" swaggertype:"object"`
+	Notes           string                             `json:"notes,omitempty" example:"Ring doorbell"`
+	Items           []CreateRestaurantOrderItemRequest `json:"items" binding:"required"`
 }
 
 type UpdateStatusRequest struct {
-	Status string `json:"status" binding:"required"`
+	Status          string          `json:"status" binding:"required" example:"preparing"`
+	Reason          string          `json:"reason,omitempty" example:"kitchen_started"`
+	Notes           string          `json:"notes,omitempty" example:"Pizza put in oven"`
+	ChangedByUserID *int32          `json:"changed_by_user_id,omitempty" example:"1"`
+	Metadata        json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 type SettleOrderRequest struct {
-	PosTransactionID int32 `json:"pos_transaction_id" binding:"required"`
+	PosTransactionID *int32          `json:"pos_transaction_id,omitempty"`
+	CashierID        *int32          `json:"cashier_id,omitempty" example:"1"`
+	CashierSessionID *int32          `json:"cashier_session_id,omitempty" example:"1"`
+	PosTerminalID    *int32          `json:"pos_terminal_id,omitempty" example:"8"`
+	PaymentMethod    string          `json:"payment_method,omitempty" example:"cash"`
+	PaymentGateway   string          `json:"payment_gateway,omitempty" example:""`
+	AmountPaid       *float64        `json:"amount_paid,omitempty" example:"46.00"`
+	ReferenceNumber  string          `json:"reference_number,omitempty" example:"SETTLE-001"`
+	Metadata         json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 type CreateRestaurantOrderItemRequest struct {
-	MenuItemID        int32  `json:"menu_item_id" binding:"required"`
-	Quantity          string `json:"quantity" binding:"required"`
-	UnitPrice         string `json:"unit_price" binding:"required"`
-	ModifiersSnapshot string `json:"modifiers_snapshot"`
-	ModifiersTotal    string `json:"modifiers_total"`
-	DiscountAmount    string `json:"discount_amount"`
-	TaxAmount         string `json:"tax_amount"`
-	Subtotal          string `json:"subtotal" binding:"required"`
-	LineNumber        int32  `json:"line_number"`
-	Notes             string `json:"notes"`
-	Status            string `json:"status"`
-	Metadata          string `json:"metadata"`
+	MenuItemID        int32  `json:"menu_item_id" binding:"required" example:"10"`
+	Quantity          string `json:"quantity" binding:"required" example:"2"`
+	UnitPrice         string `json:"unit_price" binding:"required" example:"25.00"`
+	ModifiersSnapshot string `json:"modifiers_snapshot,omitempty" example:"[]"`
+	ModifiersTotal    string `json:"modifiers_total,omitempty" example:"0.00"`
+	DiscountAmount    string `json:"discount_amount,omitempty" example:"0.00"`
+	TaxAmount         string `json:"tax_amount,omitempty" example:"7.50"`
+	Subtotal          string `json:"subtotal" binding:"required" example:"50.00"`
+	LineNumber        int32  `json:"line_number,omitempty" example:"1"`
+	Notes             string `json:"notes,omitempty" example:"Well done"`
+	Status            string `json:"status,omitempty" example:"pending"`
+	Metadata          string `json:"metadata,omitempty" example:"{}"`
 }
 
 // =====================================================

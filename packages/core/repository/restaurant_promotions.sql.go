@@ -180,6 +180,59 @@ func (q *Queries) GetActiveRestaurantPromotionByCouponCode(ctx context.Context, 
 	return i, err
 }
 
+const getActiveRestaurantPromotionByCouponCodeInsensitive = `-- name: GetActiveRestaurantPromotionByCouponCodeInsensitive :one
+SELECT id, store_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_menu_item_ids, target_menu_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, created_by, metadata, created_at, updated_at FROM restaurant_promotions
+WHERE LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM($1::text))
+  AND store_id = $2
+  AND is_active = true
+  AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
+  AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
+  AND (usage_limit IS NULL OR usage_count < usage_limit)
+ORDER BY id DESC
+LIMIT 1
+`
+
+type GetActiveRestaurantPromotionByCouponCodeInsensitiveParams struct {
+	CouponCode string `json:"coupon_code"`
+	StoreID    int32  `json:"store_id"`
+}
+
+func (q *Queries) GetActiveRestaurantPromotionByCouponCodeInsensitive(ctx context.Context, arg GetActiveRestaurantPromotionByCouponCodeInsensitiveParams) (RestaurantPromotion, error) {
+	row := q.db.QueryRow(ctx, getActiveRestaurantPromotionByCouponCodeInsensitive, arg.CouponCode, arg.StoreID)
+	var i RestaurantPromotion
+	err := row.Scan(
+		&i.ID,
+		&i.StoreID,
+		&i.Code,
+		&i.Name,
+		&i.Description,
+		&i.PromotionType,
+		&i.ActionMetadata,
+		&i.ValidFrom,
+		&i.ValidTo,
+		&i.ScheduleJson,
+		&i.AppliesTo,
+		&i.TargetMenuItemIds,
+		&i.TargetMenuCategoryIds,
+		&i.TargetCustomerTypes,
+		&i.TargetCustomerTiers,
+		&i.MinOrderAmount,
+		&i.MinQuantity,
+		&i.CouponCode,
+		&i.UsageLimit,
+		&i.UsageCount,
+		&i.UsagePerCustomer,
+		&i.DiscountValue,
+		&i.IsStackable,
+		&i.IsActive,
+		&i.CreatedBy,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRestaurantPromotion = `-- name: GetRestaurantPromotion :one
 SELECT id, store_id, code, name, description, promotion_type, action_metadata, valid_from, valid_to, schedule_json, applies_to, target_menu_item_ids, target_menu_category_ids, target_customer_types, target_customer_tiers, min_order_amount, min_quantity, coupon_code, usage_limit, usage_count, usage_per_customer, discount_value, is_stackable, is_active, created_by, metadata, created_at, updated_at FROM restaurant_promotions
 WHERE id = $1
