@@ -173,6 +173,7 @@ WHERE cs.status = 'open'
   AND cs.closing_time IS NULL
   AND pt.store_id = sqlc.arg(store_id)
   AND (sqlc.narg(cashier_id)::int IS NULL OR cs.cashier_id = sqlc.narg(cashier_id)::int)
+  AND (sqlc.narg(pos_terminal_id)::int IS NULL OR cs.pos_terminal_id = sqlc.narg(pos_terminal_id)::int)
 ORDER BY cs.opening_time DESC
 LIMIT 1;
 

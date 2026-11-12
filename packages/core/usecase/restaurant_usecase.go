@@ -442,10 +442,11 @@ func (uc *RestaurantUseCase) DeleteOrder(ctx context.Context, id int32) *reposit
 		if err != nil {
 			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
-		if !isInactiveOrderStatus(order.Status) {
-			if revErr := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); revErr != nil {
-				return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+revErr.Error(), nil)
-			}
+		if isRestaurantOrderPaidOrClosed(order) || strings.EqualFold(strings.TrimSpace(order.Status), "completed") || strings.EqualFold(strings.TrimSpace(order.Status), "served") {
+			return utils.NewResponse(utils.CodeBadReq, "cannot delete a paid or fulfilled order", nil)
+		}
+		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
+			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
 		}
 		if err := q.DeleteRestaurantOrder(ctx, id); err != nil {
 			return utils.NewResponse(utils.CodeError, err.Error(), nil)
@@ -529,6 +530,30 @@ func (uc *RestaurantUseCase) UpdateOrderItem(ctx context.Context, arg repository
 		if err := reverseRecipeIngredientsForOrder(ctx, q, order, order.CreatedByUserID); err != nil {
 			return utils.NewResponse(utils.CodeError, "failed to reverse recipe stock deduction: "+err.Error(), nil)
 		}
+
+		qty := numericToFloat(arg.Quantity)
+		if qty <= 0 {
+			return utils.NewResponse(utils.CodeBadReq, "quantity must be greater than 0", nil)
+		}
+		unitPrice := numericToFloat(arg.UnitPrice)
+		if unitPrice <= 0 {
+			unitPrice = numericToFloat(existingItem.UnitPrice)
+			arg.UnitPrice = existingItem.UnitPrice
+		}
+		modTotal := numericToFloat(arg.ModifiersTotal)
+		comboTotal := numericToFloat(existingItem.ComboTotal)
+		discount := roundMoney(clampLineDiscount(qty, unitPrice, modTotal, comboTotal, numericToFloat(arg.DiscountAmount)))
+		var tcPtr *repository.TaxCategory
+		if existingItem.TaxCategoryID.Valid {
+			if tc, tcErr := q.GetTaxCategory(ctx, existingItem.TaxCategoryID.Int32); tcErr == nil {
+				tcPtr = &tc
+			}
+		}
+		_, taxAmt, subtotal, lineTotal := computeLineTaxAndTotals(qty, unitPrice, modTotal, comboTotal, discount, tcPtr)
+		arg.DiscountAmount = utils.Float64ToPgNumeric(discount)
+		arg.TaxAmount = utils.Float64ToPgNumeric(taxAmt)
+		arg.Subtotal = utils.Float64ToPgNumeric(subtotal)
+		arg.LineTotal = utils.Float64ToPgNumeric(lineTotal)
 
 		item, err := q.UpdateRestaurantOrderItem(ctx, arg)
 		if err != nil {

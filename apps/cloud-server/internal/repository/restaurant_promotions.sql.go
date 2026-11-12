@@ -136,7 +136,7 @@ WHERE coupon_code = $1
   AND is_active = true
   AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
   AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
-  AND (usage_limit IS NULL OR usage_count < usage_limit)
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
 `
 
 type GetActiveRestaurantPromotionByCouponCodeParams struct {
@@ -187,7 +187,7 @@ WHERE LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM($1::text))
   AND is_active = true
   AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
   AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
-  AND (usage_limit IS NULL OR usage_count < usage_limit)
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
 ORDER BY id DESC
 LIMIT 1
 `

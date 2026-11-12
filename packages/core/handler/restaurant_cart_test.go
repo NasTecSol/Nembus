@@ -73,7 +73,20 @@ func TestRestaurantCartHTTPFlowIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
+
+	lockConn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire test db lock conn: %v", err)
+	}
+	if _, err := lockConn.Exec(ctx, `SELECT pg_advisory_lock(918273645)`); err != nil {
+		lockConn.Release()
+		t.Fatalf("acquire test db advisory lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = lockConn.Exec(context.Background(), `SELECT pg_advisory_unlock(918273645)`)
+		lockConn.Release()
+	})
 
 	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
 		t.Fatalf("reset public schema: %v", err)

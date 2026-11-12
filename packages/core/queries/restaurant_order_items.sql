@@ -28,6 +28,7 @@ SET
     discount_amount = $7,
     tax_amount = $8,
     subtotal = $9,
+    line_total = COALESCE(sqlc.narg(line_total), $9::numeric + COALESCE($8::numeric, 0)),
     line_number = $10,
     notes = $11,
     status = $12,

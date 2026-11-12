@@ -560,13 +560,15 @@ WHERE cs.status = 'open'
   AND cs.closing_time IS NULL
   AND pt.store_id = $1
   AND ($2::int IS NULL OR cs.cashier_id = $2::int)
+  AND ($3::int IS NULL OR cs.pos_terminal_id = $3::int)
 ORDER BY cs.opening_time DESC
 LIMIT 1
 `
 
 type FindOpenCashierSessionForRestaurantStoreParams struct {
-	StoreID   int32       `json:"store_id"`
-	CashierID pgtype.Int4 `json:"cashier_id"`
+	StoreID       int32       `json:"store_id"`
+	CashierID     pgtype.Int4 `json:"cashier_id"`
+	PosTerminalID pgtype.Int4 `json:"pos_terminal_id"`
 }
 
 type FindOpenCashierSessionForRestaurantStoreRow struct {
@@ -576,7 +578,7 @@ type FindOpenCashierSessionForRestaurantStoreRow struct {
 }
 
 func (q *Queries) FindOpenCashierSessionForRestaurantStore(ctx context.Context, arg FindOpenCashierSessionForRestaurantStoreParams) (FindOpenCashierSessionForRestaurantStoreRow, error) {
-	row := q.db.QueryRow(ctx, findOpenCashierSessionForRestaurantStore, arg.StoreID, arg.CashierID)
+	row := q.db.QueryRow(ctx, findOpenCashierSessionForRestaurantStore, arg.StoreID, arg.CashierID, arg.PosTerminalID)
 	var i FindOpenCashierSessionForRestaurantStoreRow
 	err := row.Scan(&i.ID, &i.CashierID, &i.PosTerminalID)
 	return i, err

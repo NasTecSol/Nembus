@@ -484,6 +484,7 @@ SET
     discount_amount = $7,
     tax_amount = $8,
     subtotal = $9,
+    line_total = COALESCE($14, $9::numeric + COALESCE($8::numeric, 0)),
     line_number = $10,
     notes = $11,
     status = $12,
@@ -507,6 +508,7 @@ type UpdateRestaurantOrderItemParams struct {
 	Notes             pgtype.Text     `json:"notes"`
 	Status            pgtype.Text     `json:"status"`
 	Metadata          json.RawMessage `json:"metadata"`
+	LineTotal         pgtype.Numeric  `json:"line_total"`
 }
 
 func (q *Queries) UpdateRestaurantOrderItem(ctx context.Context, arg UpdateRestaurantOrderItemParams) (RestaurantOrderItem, error) {
@@ -524,6 +526,7 @@ func (q *Queries) UpdateRestaurantOrderItem(ctx context.Context, arg UpdateResta
 		arg.Notes,
 		arg.Status,
 		arg.Metadata,
+		arg.LineTotal,
 	)
 	var i RestaurantOrderItem
 	err := row.Scan(

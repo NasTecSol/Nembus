@@ -206,7 +206,7 @@ WHERE coupon_code = $1
   AND is_active = true
   AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
   AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
-  AND (usage_limit IS NULL OR usage_count < usage_limit)
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
 `
 
 type GetActiveRestaurantPromotionByCouponCodeParams struct {
@@ -257,7 +257,7 @@ WHERE LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM($1::text))
   AND is_active = true
   AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
   AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
-  AND (usage_limit IS NULL OR usage_count < usage_limit)
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
 ORDER BY id DESC
 LIMIT 1
 `
@@ -551,6 +551,21 @@ func (q *Queries) ListAllRestaurantPromotions(ctx context.Context, arg ListAllRe
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockCustomerRestaurantCouponUsage = `-- name: LockCustomerRestaurantCouponUsage :exec
+SELECT pg_advisory_xact_lock(hashtext('restaurant_coupon:' || $1::int::text || ':' || $2::int::text || ':' || LOWER(TRIM($3::text))))
+`
+
+type LockCustomerRestaurantCouponUsageParams struct {
+	StoreID    int32  `json:"store_id"`
+	CustomerID int32  `json:"customer_id"`
+	CouponCode string `json:"coupon_code"`
+}
+
+func (q *Queries) LockCustomerRestaurantCouponUsage(ctx context.Context, arg LockCustomerRestaurantCouponUsageParams) error {
+	_, err := q.db.Exec(ctx, lockCustomerRestaurantCouponUsage, arg.StoreID, arg.CustomerID, arg.CouponCode)
+	return err
 }
 
 const updateRestaurantPromotion = `-- name: UpdateRestaurantPromotion :one

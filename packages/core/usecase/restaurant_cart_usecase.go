@@ -48,6 +48,17 @@ func (uc *RestaurantCartUseCase) repoOrErr() *repository.Response {
 
 var errRollbackRestaurantTx = errors.New("rollback restaurant transaction")
 
+func unmarshalJSONObject(raw []byte) map[string]interface{} {
+	m := map[string]interface{}{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &m)
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	return m
+}
+
 func isInactiveOrderStatus(status string) bool {
 	s := strings.ToLower(strings.TrimSpace(status))
 	return s == "voided" || s == "cancelled"
@@ -1880,10 +1891,8 @@ func (uc *RestaurantCartUseCase) ConvertToOrder(ctx context.Context, input Resta
 				paymentStatus = "unpaid"
 			}
 		} else if strings.EqualFold(paymentStatus, "paid") {
-			if amountPaid > 0 {
-				if err := validateFullRestaurantPayment(amountPaid, totalFloat); err != nil {
-					return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
-				}
+			if err := validateFullRestaurantPayment(amountPaid, totalFloat); err != nil {
+				return utils.NewResponse(utils.CodeBadReq, err.Error(), nil)
 			}
 			if amountPaid > totalFloat {
 				changeGiven = roundMoney(amountPaid - totalFloat)
@@ -2115,7 +2124,21 @@ func reopenOrderToCartInTx(ctx context.Context, q *repository.Queries, orderID i
 		cartUUID := uuid.UUID(order.SourceCartID.Bytes)
 		if _, lockErr := q.LockRestaurantCart(ctx, cartUUID); lockErr == nil {
 			if c, err := q.ReopenRestaurantCartByID(ctx, cartUUID); err == nil {
-				reopenedCart = c
+				if updatedCart, updErr := q.UpdateRestaurantCart(ctx, repository.UpdateRestaurantCartParams{
+					ID:              c.ID,
+					TableID:         order.TableID,
+					CustomerID:      order.CustomerID,
+					GuestName:       order.CustomerName,
+					GuestEmail:      order.CustomerEmail,
+					GuestPhone:      order.CustomerPhone,
+					DeliveryAddress: order.DeliveryAddress,
+					Notes:           order.Notes,
+					OrderType:       pgtype.Text{String: order.OrderType, Valid: strings.TrimSpace(order.OrderType) != ""},
+				}); updErr == nil {
+					reopenedCart = updatedCart
+				} else {
+					reopenedCart = c
+				}
 				if err := q.ClearRestaurantCartItems(ctx, reopenedCart.ID); err != nil {
 					return utils.NewResponse(utils.CodeError, "failed to clear stale reopened cart items: "+err.Error(), nil)
 				}
@@ -2605,6 +2628,9 @@ func (uc *RestaurantCartUseCase) AddOrderItem(ctx context.Context, orderID int32
 		if err != nil {
 			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
 		}
+		if isInactiveOrderStatus(order.Status) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot settle a voided or cancelled order", nil)
+		}
 		if isRestaurantOrderPaidOrClosed(order) {
 			return utils.NewResponse(utils.CodeBadReq, "cannot add items to a paid, voided, or cancelled order", nil)
 		}
@@ -2684,6 +2710,9 @@ func (uc *RestaurantCartUseCase) UpdateOrderPaymentStatus(ctx context.Context, o
 		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
 			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isInactiveOrderStatus(order.Status) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot settle a voided or cancelled order", nil)
 		}
 
 		effectivePaid := numericToFloat(order.AmountPaid)
@@ -2796,8 +2825,9 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 		}
 	} else {
 		openSess, err := q.FindOpenCashierSessionForRestaurantStore(ctx, repository.FindOpenCashierSessionForRestaurantStoreParams{
-			StoreID:   order.StoreID,
-			CashierID: cashierID,
+			StoreID:       order.StoreID,
+			CashierID:     cashierID,
+			PosTerminalID: terminalID,
 		})
 		if err != nil {
 			if requireSession {
@@ -2828,16 +2858,10 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 		netPaid = roundMoney(paidFloat - changeFloat)
 	}
 
-	metaMap := map[string]interface{}{}
-	if len(order.Metadata) > 0 {
-		_ = json.Unmarshal(order.Metadata, &metaMap)
-	}
+	metaMap := unmarshalJSONObject(order.Metadata)
 	if len(extraMetadata) > 0 {
-		extraMap := map[string]interface{}{}
-		if err := json.Unmarshal(extraMetadata, &extraMap); err == nil {
-			for k, v := range extraMap {
-				metaMap[k] = v
-			}
+		for k, v := range unmarshalJSONObject(extraMetadata) {
+			metaMap[k] = v
 		}
 	}
 	metaMap["restaurant_order_id"] = order.ID
@@ -2923,6 +2947,9 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 		order, err := lockAndGetRestaurantOrderByID(ctx, q, orderID)
 		if err != nil {
 			return restaurantOrderNotFoundOrErr(err, "lock restaurant order")
+		}
+		if isInactiveOrderStatus(order.Status) {
+			return utils.NewResponse(utils.CodeBadReq, "cannot settle a voided or cancelled order", nil)
 		}
 
 		calcPaidAndChange := func(o repository.RestaurantOrder) (float64, float64, error) {
@@ -3103,10 +3130,7 @@ func clearCouponDiscountsFromCartItems(ctx context.Context, q *repository.Querie
 	}
 
 	for _, ci := range items {
-		metaMap := map[string]interface{}{}
-		if len(ci.Metadata) > 0 {
-			_ = json.Unmarshal(ci.Metadata, &metaMap)
-		}
+		metaMap := unmarshalJSONObject(ci.Metadata)
 		rawCouponDisc, hasCouponDisc := metaMap["coupon_discount_amount"]
 		if !hasCouponDisc {
 			continue
@@ -3205,6 +3229,13 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 		if !cart.CustomerID.Valid {
 			return cart, emptyPromo, utils.NewResponse(utils.CodeBadReq, "customer_id is required for this restaurant promotion", nil)
 		}
+		if lockErr := q.LockCustomerRestaurantCouponUsage(ctx, repository.LockCustomerRestaurantCouponUsageParams{
+			StoreID:    cart.StoreID,
+			CustomerID: cart.CustomerID.Int32,
+			CouponCode: code,
+		}); lockErr != nil {
+			return cart, emptyPromo, utils.NewResponse(utils.CodeError, "failed to lock customer coupon usage: "+lockErr.Error(), nil)
+		}
 		usedByCust, cntErr := q.CountCustomerRestaurantCouponUses(ctx, repository.CountCustomerRestaurantCouponUsesParams{
 			StoreID:    cart.StoreID,
 			CustomerID: cart.CustomerID,
@@ -3293,6 +3324,13 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 
 	if len(eligible) == 0 {
 		return cart, emptyPromo, utils.NewResponse(utils.CodeBadReq, "no items in cart match this restaurant promotion", nil)
+	}
+	if promo.IsStackable.Valid && !promo.IsStackable.Bool {
+		for _, item := range eligible {
+			if numericToFloat(item.row.DiscountAmount) > 0 {
+				return cart, emptyPromo, utils.NewResponse(utils.CodeBadReq, "promotion cannot be stacked with existing item discounts", nil)
+			}
+		}
 	}
 
 	if minOrder := numericToFloat(promo.MinOrderAmount); minOrder > 0 && roundMoney(cartGrossBeforeCoupon) < minOrder {
@@ -3401,10 +3439,7 @@ func applyRestaurantCouponInTx(ctx context.Context, q *repository.Queries, cart 
 			}
 		}
 
-		metaMap := map[string]interface{}{}
-		if len(item.row.Metadata) > 0 {
-			_ = json.Unmarshal(item.row.Metadata, &metaMap)
-		}
+		metaMap := unmarshalJSONObject(item.row.Metadata)
 		metaMap["coupon_discount_amount"] = itemPromoDisc
 		metaMap["applied_coupon_code"] = code
 

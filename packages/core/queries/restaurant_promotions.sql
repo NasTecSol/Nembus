@@ -80,7 +80,7 @@ WHERE coupon_code = $1
   AND is_active = true
   AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
   AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
-  AND (usage_limit IS NULL OR usage_count < usage_limit);
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit);
 
 -- name: IncrementRestaurantPromotionUsage :one
 UPDATE restaurant_promotions
@@ -100,6 +100,9 @@ WHERE id = $1
   AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
 RETURNING *;
 
+-- name: LockCustomerRestaurantCouponUsage :exec
+SELECT pg_advisory_xact_lock(hashtext('restaurant_coupon:' || sqlc.arg(store_id)::int::text || ':' || sqlc.arg(customer_id)::int::text || ':' || LOWER(TRIM(sqlc.arg(coupon_code)::text))));
+
 -- name: CountCustomerRestaurantCouponUses :one
 SELECT COUNT(*)::int AS usage_count
 FROM restaurant_orders
@@ -115,6 +118,6 @@ WHERE LOWER(TRIM(COALESCE(coupon_code, ''))) = LOWER(TRIM(sqlc.arg(coupon_code):
   AND is_active = true
   AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
   AND (valid_to IS NULL OR valid_to >= CURRENT_TIMESTAMP)
-  AND (usage_limit IS NULL OR usage_count < usage_limit)
+  AND (usage_limit IS NULL OR usage_limit <= 0 OR COALESCE(usage_count, 0) < usage_limit)
 ORDER BY id DESC
 LIMIT 1;
