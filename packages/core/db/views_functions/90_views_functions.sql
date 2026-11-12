@@ -1796,6 +1796,7 @@ LEFT JOIN product_prices pp     ON p.id = pp.product_id
     AND pp.is_active            = true
 WHERE r.is_active = true;
 
+DROP VIEW IF EXISTS vw_active_restaurant_orders;
 CREATE OR REPLACE VIEW vw_active_restaurant_orders AS
 SELECT
     ro.id                       AS order_id,
