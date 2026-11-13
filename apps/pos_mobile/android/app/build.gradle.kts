@@ -37,10 +37,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = "nembus"
+            keyPassword = "nembus123"
+            storeFile = file("nembus.keystore")
+            storePassword = "nembus123"
+        }
+    }
+
     buildTypes {
         release {
-            // Signing with debug keys so release APK is signed and can be sideloaded/installed on Android devices
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -48,6 +56,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {

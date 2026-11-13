@@ -1,0 +1,28 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.pos_mobile",
+      "sha256_cert_fingerprints": [
+        "04:B0:22:CD:0F:94:51:38:41:EB:EB:E4:DB:BC:52:0A:51:7B:7E:D8:35:95:25:8D:71:D0:B3:77:48:43:5E:79"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.nastecsol.nembus.pos_mobile",
+      "sha256_cert_fingerprints": [
+        "04:B0:22:CD:0F:94:51:38:41:EB:EB:E4:DB:BC:52:0A:51:7B:7E:D8:35:95:25:8D:71:D0:B3:77:48:43:5E:79"
+      ]
+    }
+  }
+]
