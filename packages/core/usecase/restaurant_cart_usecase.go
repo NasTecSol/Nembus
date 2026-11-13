@@ -3000,7 +3000,7 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 			updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
 				ID:               orderID,
 				PosTransactionID: pgtype.Int4{Int32: *input.PosTransactionID, Valid: true},
-				Status:           "paid",
+				Status:           order.Status,
 				PaymentStatus:    "paid",
 				AmountPaid:       utils.Float64ToPgNumeric(paidAmt),
 				ChangeGiven:      utils.Float64ToPgNumeric(changeAmt),
@@ -3027,7 +3027,7 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 			updated, err := q.LinkRestaurantOrderToPosTransaction(ctx, repository.LinkRestaurantOrderToPosTransactionParams{
 				ID:               orderID,
 				PosTransactionID: order.PosTransactionID,
-				Status:           "paid",
+				Status:           order.Status,
 				PaymentStatus:    "paid",
 				AmountPaid:       utils.Float64ToPgNumeric(paidAmt),
 				ChangeGiven:      utils.Float64ToPgNumeric(changeAmt),
@@ -3059,7 +3059,7 @@ func (uc *RestaurantCartUseCase) SettleOrderWithPosTransaction(ctx context.Conte
 			input.AmountPaid,
 			input.Metadata,
 			true,
-			"paid",
+			order.Status,
 			"paid",
 		)
 		if err != nil {

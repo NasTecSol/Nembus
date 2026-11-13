@@ -665,7 +665,7 @@ func (uc *RestaurantUseCase) SettleOrder(ctx context.Context, orderID int32, pos
 		CashierID:        order.CashierID,
 		CashierSessionID: order.CashierSessionID,
 		CustomerID:       order.CustomerID,
-		Status:           "paid",
+		Status:           order.Status,
 		Subtotal:         order.Subtotal,
 		DiscountAmount:   order.DiscountAmount,
 		TaxAmount:        order.TaxAmount,
