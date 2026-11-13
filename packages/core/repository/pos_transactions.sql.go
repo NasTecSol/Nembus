@@ -199,7 +199,7 @@ RETURNING id, transaction_id, product_id, product_variant_id, quantity, uom_id, 
 type CreatePosTransactionLineParams struct {
 	TransactionID    int32           `json:"transaction_id"`
 	LineNumber       pgtype.Int4     `json:"line_number"`
-	ProductID        int32           `json:"product_id"`
+	ProductID        pgtype.Int4     `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
 	SerialNumber     pgtype.Text     `json:"serial_number"`
 	BatchNumber      pgtype.Text     `json:"batch_number"`
@@ -231,6 +231,79 @@ func (q *Queries) CreatePosTransactionLine(ctx context.Context, arg CreatePosTra
 		arg.LineTotal,
 		arg.CostPrice,
 		arg.Metadata,
+	)
+	var i PosTransactionLine
+	err := row.Scan(
+		&i.ID,
+		&i.TransactionID,
+		&i.ProductID,
+		&i.ProductVariantID,
+		&i.Quantity,
+		&i.UomID,
+		&i.UnitPrice,
+		&i.DiscountAmount,
+		&i.TaxAmount,
+		&i.Subtotal,
+		&i.LineTotal,
+		&i.CostPrice,
+		&i.LineNumber,
+		&i.SerialNumber,
+		&i.BatchNumber,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createRestaurantPosTransactionLine = `-- name: CreateRestaurantPosTransactionLine :one
+INSERT INTO pos_transaction_lines (
+    transaction_id, line_number, product_id, product_variant_id,
+    serial_number, batch_number, quantity, uom_id,
+    unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
+) VALUES (
+    $1, $2, $14::int, $15::int,
+    $3, $4, $5, $6,
+    $7, $8, $9, $10, $11, $12, $13
+)
+RETURNING id, transaction_id, product_id, product_variant_id, quantity, uom_id, unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, line_number, serial_number, batch_number, metadata, created_at, updated_at
+`
+
+type CreateRestaurantPosTransactionLineParams struct {
+	TransactionID    int32           `json:"transaction_id"`
+	LineNumber       pgtype.Int4     `json:"line_number"`
+	SerialNumber     pgtype.Text     `json:"serial_number"`
+	BatchNumber      pgtype.Text     `json:"batch_number"`
+	Quantity         pgtype.Numeric  `json:"quantity"`
+	UomID            pgtype.Int4     `json:"uom_id"`
+	UnitPrice        pgtype.Numeric  `json:"unit_price"`
+	DiscountAmount   pgtype.Numeric  `json:"discount_amount"`
+	TaxAmount        pgtype.Numeric  `json:"tax_amount"`
+	Subtotal         pgtype.Numeric  `json:"subtotal"`
+	LineTotal        pgtype.Numeric  `json:"line_total"`
+	CostPrice        pgtype.Numeric  `json:"cost_price"`
+	Metadata         json.RawMessage `json:"metadata"`
+	ProductID        pgtype.Int4     `json:"product_id"`
+	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
+}
+
+func (q *Queries) CreateRestaurantPosTransactionLine(ctx context.Context, arg CreateRestaurantPosTransactionLineParams) (PosTransactionLine, error) {
+	row := q.db.QueryRow(ctx, createRestaurantPosTransactionLine,
+		arg.TransactionID,
+		arg.LineNumber,
+		arg.SerialNumber,
+		arg.BatchNumber,
+		arg.Quantity,
+		arg.UomID,
+		arg.UnitPrice,
+		arg.DiscountAmount,
+		arg.TaxAmount,
+		arg.Subtotal,
+		arg.LineTotal,
+		arg.CostPrice,
+		arg.Metadata,
+		arg.ProductID,
+		arg.ProductVariantID,
 	)
 	var i PosTransactionLine
 	err := row.Scan(
@@ -310,8 +383,8 @@ SELECT
     tl.unit_price,
     tl.discount_amount,
     tl.line_total,
-    p.sku,
-    p.name AS product_name,
+    COALESCE(p.sku, tl.metadata->>'sku', '') AS sku,
+    COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', '') AS product_name,
     COALESCE(pb.barcode, '') AS scanned_barcode,
     COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
 FROM pos_transactions t
@@ -357,8 +430,8 @@ type GetPosTransactionFullRow struct {
 	UnitPrice         pgtype.Numeric   `json:"unit_price"`
 	DiscountAmount_2  pgtype.Numeric   `json:"discount_amount_2"`
 	LineTotal         pgtype.Numeric   `json:"line_total"`
-	Sku               pgtype.Text      `json:"sku"`
-	ProductName       pgtype.Text      `json:"product_name"`
+	Sku               string           `json:"sku"`
+	ProductName       string           `json:"product_name"`
 	ScannedBarcode    string           `json:"scanned_barcode"`
 	ReturnedQuantity  pgtype.Numeric   `json:"returned_quantity"`
 }
@@ -457,8 +530,8 @@ SELECT
                 'line_total', tl.line_total,
                 'cost_price', tl.cost_price,
                 'metadata', tl.metadata,
-                'product_sku', p.sku,
-                'product_name', p.name,
+                'product_sku', COALESCE(p.sku, tl.metadata->>'sku', ''),
+                'product_name', COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', ''),
                 'scanned_barcode', COALESCE(pb.barcode, '')
             ) ORDER BY tl.line_number
         ) FILTER (WHERE tl.id IS NOT NULL),
@@ -661,8 +734,8 @@ SELECT
                 'line_total', tl.line_total,
                 'cost_price', tl.cost_price,
                 'metadata', tl.metadata,
-                'product_sku', p.sku,
-                'product_name', p.name,
+                'product_sku', COALESCE(p.sku, tl.metadata->>'sku', ''),
+                'product_name', COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', ''),
                 'scanned_barcode', COALESCE(pb.barcode, '')
             ) ORDER BY tl.line_number
         ) FILTER (WHERE tl.id IS NOT NULL),
@@ -852,8 +925,8 @@ SELECT
                 'line_total', tl.line_total,
                 'cost_price', tl.cost_price,
                 'metadata', tl.metadata,
-                'product_sku', p.sku,
-                'product_name', p.name,
+                'product_sku', COALESCE(p.sku, tl.metadata->>'sku', ''),
+                'product_name', COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', ''),
                 'scanned_barcode', COALESCE(pb.barcode, '')
             ) ORDER BY tl.line_number
         ) FILTER (WHERE tl.id IS NOT NULL),

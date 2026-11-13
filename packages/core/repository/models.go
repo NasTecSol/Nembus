@@ -1561,7 +1561,7 @@ type PosTransaction struct {
 type PosTransactionLine struct {
 	ID               int32            `json:"id"`
 	TransactionID    int32            `json:"transaction_id"`
-	ProductID        int32            `json:"product_id"`
+	ProductID        pgtype.Int4      `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	Quantity         pgtype.Numeric   `json:"quantity"`
 	UomID            pgtype.Int4      `json:"uom_id"`
@@ -3294,7 +3294,7 @@ type VwPosProductCatalog struct {
 }
 
 type VwProfitMarginAnalysis struct {
-	ProductID        int32       `json:"product_id"`
+	ProductID        pgtype.Int4 `json:"product_id"`
 	ProductVariantID pgtype.Int4 `json:"product_variant_id"`
 	Sku              string      `json:"sku"`
 	ProductName      string      `json:"product_name"`

@@ -87,6 +87,9 @@ SELECT
     mi.short_name AS menu_item_short_name,
     mi.image_url AS menu_item_image_url,
     mi.item_type AS menu_item_type,
+    mi.product_id,
+    mi.product_variant_id,
+    mi.cost_price AS menu_item_cost_price,
     mc.name AS menu_category_name
 FROM restaurant_order_items roi
 JOIN menu_items mi ON roi.menu_item_id = mi.id
@@ -101,6 +104,9 @@ SELECT
     mi.short_name AS menu_item_short_name,
     mi.image_url AS menu_item_image_url,
     mi.item_type AS menu_item_type,
+    mi.product_id,
+    mi.product_variant_id,
+    mi.cost_price AS menu_item_cost_price,
     mc.name AS menu_category_name
 FROM restaurant_order_items roi
 JOIN menu_items mi ON roi.menu_item_id = mi.id
