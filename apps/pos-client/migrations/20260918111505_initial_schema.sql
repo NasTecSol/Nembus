@@ -1893,7 +1893,7 @@ $$;
 CREATE TABLE "public"."pos_transaction_lines" (
   "id" serial NOT NULL,
   "transaction_id" integer NOT NULL,
-  "product_id" integer NOT NULL,
+  "product_id" integer NULL,
   "product_variant_id" integer NULL,
   "quantity" numeric(15,3) NOT NULL,
   "uom_id" integer NULL,

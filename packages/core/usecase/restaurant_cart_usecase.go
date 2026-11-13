@@ -2916,6 +2916,71 @@ func (uc *RestaurantCartUseCase) createPosTransactionForRestaurantOrder(
 		return nil, nil, err
 	}
 
+	orderItems, err := q.ListRestaurantOrderItemsDetailed(ctx, order.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list restaurant order items: %w", err)
+	}
+
+	for idx, item := range orderItems {
+		lineNo := int32(idx + 1)
+		if item.LineNumber.Valid && item.LineNumber.Int32 > 0 {
+			lineNo = item.LineNumber.Int32
+		}
+
+		lineMeta := unmarshalJSONObject(item.Metadata)
+		lineMeta["menu_item_id"] = item.MenuItemID
+		itemName := strings.TrimSpace(item.ResolvedMenuItemName)
+		if itemName == "" && item.MenuItemName.Valid {
+			itemName = strings.TrimSpace(item.MenuItemName.String)
+		}
+		if itemName != "" {
+			lineMeta["menu_item_name"] = itemName
+			lineMeta["product_name"] = itemName
+		}
+		if item.Notes.Valid && strings.TrimSpace(item.Notes.String) != "" {
+			lineMeta["notes"] = item.Notes.String
+		}
+		if len(item.ModifiersSnapshot) > 0 {
+			lineMeta["modifiers"] = item.ModifiersSnapshot
+		}
+		if len(item.ComboComponentsSnapshot) > 0 {
+			lineMeta["combo_components"] = item.ComboComponentsSnapshot
+		}
+		marshaledLineMeta, _ := json.Marshal(lineMeta)
+		if len(marshaledLineMeta) == 0 {
+			marshaledLineMeta = json.RawMessage("{}")
+		}
+
+		costPrice := item.MenuItemCostPrice
+		if !costPrice.Valid {
+			costPrice = utils.Float64ToPgNumeric(0)
+		}
+
+		subtotal := item.Subtotal
+		lineTotal := item.LineTotal
+		if !lineTotal.Valid {
+			lineTotal = subtotal
+		}
+
+		_, err := q.CreateRestaurantPosTransactionLine(ctx, repository.CreateRestaurantPosTransactionLineParams{
+			TransactionID:    txn.ID,
+			LineNumber:       pgtype.Int4{Int32: lineNo, Valid: true},
+			ProductID:        item.ProductID,
+			ProductVariantID: item.ProductVariantID,
+			Quantity:         item.Quantity,
+			UnitPrice:        item.UnitPrice,
+			DiscountAmount:   item.DiscountAmount,
+			TaxAmount:        item.TaxAmount,
+			Subtotal:         subtotal,
+			LineTotal:        lineTotal,
+			CostPrice:        costPrice,
+			Metadata:         marshaledLineMeta,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create pos transaction line %d: %w", lineNo, err)
+		}
+	}
+
 	if err := q.AddPaymentToTransaction(ctx, repository.AddPaymentToTransactionParams{
 		TransactionID:   txn.ID,
 		PaymentMethod:   pm,

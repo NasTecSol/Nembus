@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -467,6 +468,16 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 		t.Fatalf("expected cashier session balance 123.00, got %.2f", expectedBal)
 	}
 
+	var lineCount int
+	var lineTot float64
+	var lineName string
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*), COALESCE(SUM(line_total), 0)::float8, COALESCE(metadata->>'menu_item_name', '') FROM pos_transaction_lines WHERE transaction_id = $1 GROUP BY metadata->>'menu_item_name'`, txnIDVal).Scan(&lineCount, &lineTot, &lineName); err != nil {
+		t.Fatalf("query pos_transaction_lines: %v", err)
+	}
+	if lineCount != 1 || !almostEqual(lineTot, 23.00) || lineName != "Signature Burger" {
+		t.Fatalf("expected 1 pos_transaction_line for Signature Burger 23.00, got count=%d total=%.2f name=%s", lineCount, lineTot, lineName)
+	}
+
 	// Now create an unpaid dine-in order and settle it via SettleOrderWithPosTransaction
 	unpaidResp := uc.CreateOrderWithItems(ctx, RestaurantDirectOrderInput{
 		StoreID:     fix.StoreID,
@@ -499,6 +510,57 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 	}
 	if !almostEqual(expectedBal, 169.00) {
 		t.Fatalf("expected cashier session balance 169.00 after settle, got %.2f", expectedBal)
+	}
+
+	var settleLineCount int
+	var settleLineTot float64
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*), COALESCE(SUM(line_total), 0)::float8 FROM pos_transaction_lines WHERE transaction_id = $1`, settleTxnID).Scan(&settleLineCount, &settleLineTot); err != nil {
+		t.Fatalf("query pos_transaction_lines for settleTxnID: %v", err)
+	}
+	if settleLineCount != 1 || !almostEqual(settleLineTot, 46.00) {
+		t.Fatalf("expected 1 line totaling 46.00 for settled order txn, got count=%d total=%.2f", settleLineCount, settleLineTot)
+	}
+
+	fullRows, err := repo.GetPosTransactionFull(ctx, settleTxnID)
+	if err != nil || len(fullRows) == 0 {
+		t.Fatalf("GetPosTransactionFull failed: %v", err)
+	}
+	if fullRows[0].ProductName != "Signature Burger" || !almostEqual(numericToFloat(fullRows[0].LineTotal), 46.00) {
+		t.Fatalf("unexpected full line details: name=%s line_total=%v", fullRows[0].ProductName, fullRows[0].LineTotal)
+	}
+
+	sessionTxns, err := repo.ListPosTransactionsByCashierSession(ctx, repository.ListPosTransactionsByCashierSessionParams{
+		Column1: sessionID,
+		Column2: sessionID,
+		Limit:   10,
+		Offset:  0,
+	})
+	if err != nil {
+		t.Fatalf("ListPosTransactionsByCashierSession failed: %v", err)
+	}
+	var foundLines bool
+	for _, st := range sessionTxns {
+		if st.ID == settleTxnID {
+			var linesBytes []byte
+			switch v := st.Lines.(type) {
+			case []byte:
+				linesBytes = v
+			case string:
+				linesBytes = []byte(v)
+			default:
+				linesBytes, _ = json.Marshal(v)
+			}
+			var lines []map[string]interface{}
+			if err := json.Unmarshal(linesBytes, &lines); err == nil && len(lines) == 1 {
+				foundLines = true
+				if lines[0]["product_name"] != "Signature Burger" {
+					t.Fatalf("unexpected product_name in lines JSON: %v", lines[0]["product_name"])
+				}
+			}
+		}
+	}
+	if !foundLines {
+		t.Fatalf("expected non-empty lines in ListPosTransactionsByCashierSession for settleTxnID")
 	}
 }
 

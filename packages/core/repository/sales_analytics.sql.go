@@ -99,12 +99,12 @@ LIMIT 20
 `
 
 type GetTopSellingProductsTodayRow struct {
-	ProductID        int32  `json:"product_id"`
-	Sku              string `json:"sku"`
-	Name             string `json:"name"`
-	TotalQty         int64  `json:"total_qty"`
-	TotalAmount      int64  `json:"total_amount"`
-	TransactionCount int64  `json:"transaction_count"`
+	ProductID        pgtype.Int4 `json:"product_id"`
+	Sku              string      `json:"sku"`
+	Name             string      `json:"name"`
+	TotalQty         int64       `json:"total_qty"`
+	TotalAmount      int64       `json:"total_amount"`
+	TransactionCount int64       `json:"transaction_count"`
 }
 
 func (q *Queries) GetTopSellingProductsToday(ctx context.Context, storeID int32) ([]GetTopSellingProductsTodayRow, error) {

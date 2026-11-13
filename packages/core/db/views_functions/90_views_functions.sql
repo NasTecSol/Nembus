@@ -538,6 +538,7 @@ CREATE INDEX IF NOT EXISTS idx_pos_transactions_status ON pos_transactions(statu
 -- POS Transaction Lines
 CREATE INDEX IF NOT EXISTS idx_pos_transaction_lines_transaction_id ON pos_transaction_lines(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_pos_transaction_lines_product_id ON pos_transaction_lines(product_id);
+ALTER TABLE pos_transaction_lines ALTER COLUMN product_id DROP NOT NULL;
 
 -- FIX #7: returns indexes
 CREATE INDEX IF NOT EXISTS idx_sales_returns_store_id              ON sales_returns(store_id);
