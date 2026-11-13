@@ -122,6 +122,24 @@ func TestInventoryStockCalculation(t *testing.T) {
 	}
 }
 
+func TestInventoryStockZeroBalance(t *testing.T) {
+	stock := mappings.SAPInventoryStock{
+		ItemCode:   "ITEM-ZERO",
+		WhsCode:    "01",
+		OnHand:     0.0,
+		IsCommited: 5.0,
+		OnOrder:    0.0,
+	}
+
+	canonical := stock.ToCanonical()
+	if canonical.QuantityOnHand != 0.0 {
+		t.Errorf("expected on_hand 0, got %f", canonical.QuantityOnHand)
+	}
+	if canonical.QuantityAvailable != 0.0 {
+		t.Errorf("expected available clamped to 0, got %f", canonical.QuantityAvailable)
+	}
+}
+
 func TestInvoiceMapping(t *testing.T) {
 	now := time.Now()
 	inv := mappings.SAPInvoice{
