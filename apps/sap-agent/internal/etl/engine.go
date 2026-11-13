@@ -260,6 +260,7 @@ type DownstreamStats struct {
 	Products   int           `json:"products"`
 	Barcodes   int           `json:"barcodes"`
 	Prices     int           `json:"prices"`
+	Inventory  int           `json:"inventory"`
 	Duration   time.Duration `json:"duration"`
 }
 
@@ -271,11 +272,14 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 
 	if len(domains) == 0 {
 		domains = []contracts.DomainType{
+			contracts.DomainUOM,
+			contracts.DomainUOMGroups,
 			contracts.DomainCategories,
 			contracts.DomainBrands,
 			contracts.DomainProducts,
 			contracts.DomainBarcodes,
 			contracts.DomainPriceLists,
+			contracts.DomainInventory,
 		}
 	} else {
 		domains = normalizeDomainOrder(domains)
@@ -294,19 +298,7 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 	syncStartTime := time.Now()
 
 	for _, domain := range domains {
-		var since time.Time
-		if e.sqlite != nil {
-			if wm, err := e.sqlite.GetDownstreamWatermark(ctx, string(domain)); err == nil && wm != nil {
-				since = *wm
-			}
-		}
-		if since.IsZero() {
-			// Default baseline to start of today so Downstream Sync never dumps the entire historical catalog
-			since = time.Now().Truncate(24 * time.Hour)
-			if e.sqlite != nil {
-				_ = e.sqlite.SetDownstreamWatermark(ctx, string(domain), since, 0)
-			}
-		}
+		since := e.resolveDownstreamSince(ctx, domain, syncStartTime)
 
 		processed, err := e.executeDownstreamDomainStep(ctx, domain, since)
 		if err != nil {
@@ -333,6 +325,8 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 			stats.Barcodes += int(processed)
 		case contracts.DomainPriceLists:
 			stats.Prices += int(processed)
+		case contracts.DomainInventory:
+			stats.Inventory += int(processed)
 		}
 
 		// Update watermark for successfully synced domain
@@ -358,8 +352,8 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 	}
 
 	stats.Duration = time.Since(start)
-	completeMsg := fmt.Sprintf("Downstream sync complete in %v: %d products, %d barcodes, %d prices, %d categories",
-		stats.Duration.Round(time.Millisecond), stats.Products, stats.Barcodes, stats.Prices, stats.Categories)
+	completeMsg := fmt.Sprintf("Downstream sync complete in %v: %d uoms, %d products, %d barcodes, %d prices, %d stock items, %d categories",
+		stats.Duration.Round(time.Millisecond), stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Inventory, stats.Categories)
 
 	if e.sqlite != nil {
 		e.sqlite.Log(ctx, runID, "pipeline", "INFO", completeMsg)
@@ -371,6 +365,32 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 	})
 
 	return stats, nil
+}
+
+// resolveDownstreamSince returns the SAP delta cutoff for a downstream domain.
+// A completed full migration newer than the stored downstream watermark advances
+// the first-run baseline to that migration's end time; subsequent runs resume
+// from the previous sync's start time.
+func (e *Engine) resolveDownstreamSince(ctx context.Context, domain contracts.DomainType, now time.Time) time.Time {
+	var since time.Time
+	if e.sqlite != nil {
+		if wm, err := e.sqlite.GetDownstreamWatermark(ctx, string(domain)); err == nil && wm != nil {
+			since = *wm
+		}
+		if migEnd, err := e.sqlite.GetLastCompletedFullMigrationEndTime(ctx, domain); err == nil && migEnd != nil {
+			if since.IsZero() || migEnd.Truncate(time.Second).After(since.Truncate(time.Second)) {
+				return *migEnd
+			}
+		}
+	}
+	if since.IsZero() {
+		// Default baseline to start of today so Downstream Sync never dumps the entire historical catalog.
+		since = now.Truncate(24 * time.Hour)
+		if e.sqlite != nil {
+			_ = e.sqlite.SetDownstreamWatermark(ctx, string(domain), since, 0)
+		}
+	}
+	return since
 }
 
 func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contracts.DomainType, since time.Time) (int64, error) {
@@ -544,6 +564,40 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 				SequenceNumber: (i / batchSize) + 1,
 				PriceItems:     chunk,
 				IsLastBatch:    end == len(directItems),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+		}
+		return totalStaged, nil
+
+	case contracts.DomainInventory:
+		ext := extractors.NewInventoryExtractor(mssqlClient)
+		inv, err := ext.ExtractInventoryDelta(ctx, since)
+		if err != nil {
+			return 0, err
+		}
+		if len(inv) == 0 {
+			return 0, nil
+		}
+		var totalStaged int64
+		for i := 0; i < len(inv); i += batchSize {
+			end := i + batchSize
+			if end > len(inv) {
+				end = len(inv)
+			}
+			chunk := inv[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				Inventory:      chunk,
+				IsLastBatch:    end == len(inv),
 				Timestamp:      time.Now(),
 			}
 			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)

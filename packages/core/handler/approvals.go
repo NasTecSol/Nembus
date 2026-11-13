@@ -80,7 +80,6 @@ func (h *ApprovalsHandler) Submit(c *gin.Context) {
 		return
 	}
 	in.RequestedBy = user
-	_ = h.uc.EnsureDefaultPolicies(c.Request.Context(), org)
 	req, err := h.uc.SubmitOrUpdatePending(c.Request.Context(), in)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -240,7 +239,6 @@ func (h *ApprovalsHandler) GetPolicy(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = h.uc.EnsureDefaultPolicies(c.Request.Context(), org)
 	repo := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
 	action := c.DefaultQuery("action", "submit")
 	policy, err := repo.GetApprovalPolicy(c.Request.Context(), repository.GetApprovalPolicyParams{
@@ -376,7 +374,6 @@ func (h *ApprovalsHandler) Policies(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = h.uc.EnsureDefaultPolicies(c.Request.Context(), org)
 	repo := c.Request.Context().Value(middleware.RepoKey).(*repository.Queries)
 	items, err := repo.ListApprovalPolicies(c.Request.Context(), org)
 	if err != nil {

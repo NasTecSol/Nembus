@@ -203,31 +203,25 @@ func queryRowWithSavepoint(ctx context.Context, tx pgx.Tx, scanFn func(row pgx.R
 	return nil
 }
 
-// loadCatalogPricePolicy loads (and seeds defaults if absent) the organization's
-// catalog.price_change approval policy inside the current transaction.
+// loadCatalogPricePolicy loads the organization's catalog.price_change approval policy
+// inside the current transaction without seeding hardcoded defaults.
 func loadCatalogPricePolicy(ctx context.Context, tx pgx.Tx, orgID int) (bool, string, CatalogPriceRules) {
-	_ = execWithSavepoint(ctx, tx, `
-		INSERT INTO approval_policies (organization_id, domain, action, is_enabled, requires_approval, required_permission, rules)
-		VALUES ($1, 'catalog', 'price_change', true, true, 'catalog:pricing:approve', '{"price_drop_requires_approval": true, "cost_increase_threshold_pct": 10.0, "below_cost_requires_approval": true}'::jsonb)
-		ON CONFLICT (organization_id, domain, action) DO NOTHING;
-	`, orgID)
-
 	var isEnabled, requiresApproval bool
 	var requiredPerm string
 	var rawRules []byte
 	err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
 		return r.Scan(&isEnabled, &requiresApproval, &requiredPerm, &rawRules)
 	}, `
-		SELECT is_enabled, requires_approval, COALESCE(required_permission, 'catalog:pricing:approve'), COALESCE(rules, '{}'::jsonb)
+		SELECT is_enabled, requires_approval, required_permission, COALESCE(rules, '{}'::jsonb)
 		FROM approval_policies
 		WHERE organization_id = $1 AND domain = 'catalog' AND action = 'price_change'
 		LIMIT 1
 	`, orgID)
 	if err != nil {
-		return false, "catalog:pricing:approve", DefaultCatalogPriceRules()
+		return false, "", CatalogPriceRules{}
 	}
 	if !isEnabled || !requiresApproval {
-		return false, requiredPerm, DefaultCatalogPriceRules()
+		return false, requiredPerm, CatalogPriceRules{}
 	}
 	var rulesMap map[string]any
 	if len(rawRules) > 0 {
@@ -240,7 +234,7 @@ func loadCatalogPricePolicy(ctx context.Context, tx pgx.Tx, orgID int) (bool, st
 // approval request for a product or price list item.
 func upsertCatalogPriceApprovalTx(ctx context.Context, tx pgx.Tx, orgID int, requiredPerm, entityID, summary string, prop CatalogPriceChangePayload) error {
 	if requiredPerm == "" {
-		requiredPerm = "catalog:pricing:approve"
+		return fmt.Errorf("required_permission is missing on catalog.price_change policy")
 	}
 	payloadBytes, err := json.Marshal(prop)
 	if err != nil {
@@ -287,6 +281,77 @@ func upsertCatalogPriceApprovalTx(ctx context.Context, tx pgx.Tx, orgID int, req
 		`, newReqID, summary)
 	}
 	return nil
+}
+
+// updateStockHoldPayloadOnHand updates matching shortage_items[].sap_on_hand in a
+// sap_invoice.stock_hold payload and returns the re-marshaled JSON if changed.
+func updateStockHoldPayloadOnHand(raw json.RawMessage, productID int32, sku string, onHand float64) (json.RawMessage, bool) {
+	var payload SAPInvoiceStockPayload
+	if len(raw) == 0 || json.Unmarshal(raw, &payload) != nil || len(payload.ShortageItems) == 0 {
+		return nil, false
+	}
+	changed := false
+	for i := range payload.ShortageItems {
+		item := &payload.ShortageItems[i]
+		if (productID > 0 && item.ProductID == productID) || (sku != "" && strings.EqualFold(item.ProductSKU, sku)) {
+			if item.SAPOnHand != onHand {
+				item.SAPOnHand = onHand
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return nil, false
+	}
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false
+	}
+	return updated, true
+}
+
+// refreshPendingStockHoldOnHand updates sap_on_hand on pending sap_invoice.stock_hold
+// requests when downstream inventory syncs fresh stock for the same product and store.
+func refreshPendingStockHoldOnHand(ctx context.Context, tx pgx.Tx, orgID int, storeID, productID int64, sku string, onHand float64) {
+	if _, err := tx.Exec(ctx, "SAVEPOINT sp_refresh_stock_hold"); err != nil {
+		return
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id, payload
+		FROM approval_requests
+		WHERE organization_id = $1
+		  AND domain = 'sap_invoice'
+		  AND action = 'stock_hold'
+		  AND status = 'pending'
+		  AND ((payload->>'store_id') IS NULL OR (payload->>'store_id')::int = $2)
+	`, orgID, storeID)
+	if err != nil {
+		_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT sp_refresh_stock_hold")
+		return
+	}
+	type pendingRow struct {
+		id      int64
+		payload json.RawMessage
+	}
+	var pending []pendingRow
+	for rows.Next() {
+		var r pendingRow
+		if scanErr := rows.Scan(&r.id, &r.payload); scanErr == nil {
+			pending = append(pending, r)
+		}
+	}
+	rows.Close()
+	_, _ = tx.Exec(ctx, "RELEASE SAVEPOINT sp_refresh_stock_hold")
+
+	for _, r := range pending {
+		if updated, ok := updateStockHoldPayloadOnHand(r.payload, int32(productID), sku, onHand); ok {
+			_ = execWithSavepoint(ctx, tx, `
+				UPDATE approval_requests
+				SET payload = $3, updated_at = CURRENT_TIMESTAMP
+				WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+			`, r.id, orgID, updated)
+		}
+	}
 }
 
 func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, payload *contracts.MigrationBatchPayload) (*contracts.MigrationBatchResponse, error) {
@@ -876,6 +941,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				errs = append(errs, fmt.Sprintf("stock %s@%s: product or store not found", inv.ProductSKU, inv.StoreCode))
 				continue
 			}
+			prevStaged := staged
 			if inventoryConflictOK {
 				// A24: the conflict target must match the real arbiter index
 				// idx_inventory_stock_unique_product_variant_store
@@ -895,7 +961,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 					quantity_on_order   = excluded.quantity_on_order,
 					reorder_level       = excluded.reorder_level,
 					max_stock_level     = excluded.max_stock_level,
-					metadata            = excluded.metadata;
+					metadata            = COALESCE(inventory_stock.metadata, '{}'::jsonb) || excluded.metadata;
 				`
 				if err := execWithSavepoint(ctx, tx, q, *productID, *storeID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes); err != nil {
 					failed++
@@ -910,7 +976,8 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				tag, err := execWithSavepointRows(ctx, tx, `
 				UPDATE inventory_stock SET
 					quantity_on_hand = $3, quantity_allocated = $4, quantity_available = $5,
-					quantity_on_order = $6, reorder_level = $7, max_stock_level = $8, metadata = $9
+					quantity_on_order = $6, reorder_level = $7, max_stock_level = $8,
+					metadata = COALESCE(metadata, '{}'::jsonb) || $9
 				WHERE product_id = $1 AND store_id = $2 AND product_variant_id IS NULL;
 				`, *productID, *storeID, inv.QuantityOnHand, inv.QuantityAllocated, inv.QuantityAvailable, inv.QuantityOnOrder, inv.ReorderLevel, inv.MaxStockLevel, metaBytes)
 				if err != nil {
@@ -930,6 +997,9 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				} else {
 					staged++
 				}
+			}
+			if staged > prevStaged {
+				refreshPendingStockHoldOnHand(ctx, tx, payload.OrganizationID, *storeID, *productID, inv.ProductSKU, inv.QuantityOnHand)
 			}
 		}
 

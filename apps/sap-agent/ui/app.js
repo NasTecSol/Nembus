@@ -180,7 +180,6 @@
         }
         if (cfg.cloud) {
             setVal('ob-cloud-url', cfg.cloud.base_url);
-            setVal('ob-cloud-dburl', cfg.cloud.database_url || '');
             setVal('ob-target-orgid', cfg.cloud.organization_id || 1);
         }
         setVal('ob-migrator-user', cfg.migrator_user || 'Migrator');
@@ -190,6 +189,7 @@
         setVal('ob-downstream-interval', cfg.downstream_interval_sec || 300);
         setVal('ob-upstream-interval', cfg.upstream_interval_sec || 60);
         setVal('ob-recon-interval', cfg.reconciliation_interval_sec || 3600);
+        setVal('ob-target-storeid', cfg.nembus_store_id || 1);
         setVal('ob-default-store', cfg.default_store_code || '01');
     }
 
@@ -270,7 +270,6 @@
 
             const payload = {
                 base_url: getVal('ob-cloud-url'),
-                database_url: getVal('ob-cloud-dburl'),
                 timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
             };
 
@@ -322,7 +321,6 @@
                             onboarding_completed: false,
                             cloud: {
                                 base_url: cloudUrl,
-                                database_url: getVal('ob-cloud-dburl'),
                                 timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
                             },
                             mssql: {
@@ -507,7 +505,6 @@
             },
             cloud: {
                 base_url: getVal('ob-cloud-url'),
-                database_url: getVal('ob-cloud-dburl'),
                 organization_id: parseInt(getVal('ob-target-orgid')) || 1,
                 api_key: state.onboarding.migratorToken || getVal('ob-derived-token') || '',
                 timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
@@ -523,6 +520,7 @@
             upstream_interval_sec: parseInt(getVal('ob-upstream-interval')) || 60,
             reconciliation_interval_sec: parseInt(getVal('ob-recon-interval')) || 3600,
             reconciliation_auto_run: document.getElementById('ob-recon-autorun')?.checked,
+            nembus_store_id: parseInt(getVal('ob-target-storeid')) || 1,
             default_store_code: getVal('ob-default-store') || '01',
             batch_size: parseInt(getVal('ob-batch-size')) || 500
         };

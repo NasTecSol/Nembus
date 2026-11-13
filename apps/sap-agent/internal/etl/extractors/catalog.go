@@ -215,15 +215,16 @@ func (e *CatalogExtractor) ExtractPriceListItems(ctx context.Context) ([]mapping
 
 // sapDeltaParams converts a watermark timestamp into SAP B1's calendar date (YYYY-MM-DD)
 // and integer time-of-day (HHMMSS) in local server time.
-func sapDeltaParams(since time.Time) (string, int) {
+func sapDeltaParams(since time.Time) (string, int, string) {
 	if since.IsZero() {
 		now := time.Now()
-		return now.Format("2006-01-02"), 0
+		return now.Format("2006-01-02"), 0, now.Format("2006-01-02T00:00:00")
 	}
 	local := since.Local()
 	sinceDate := local.Format("2006-01-02")
 	sinceTime := local.Hour()*10000 + local.Minute()*100 + local.Second()
-	return sinceDate, sinceTime
+	sinceDateTime := local.Format("2006-01-02T15:04:05")
+	return sinceDate, sinceTime, sinceDateTime
 }
 
 // ExtractProductsDelta extracts only products created or updated since the given timestamp.
@@ -231,11 +232,12 @@ func (e *CatalogExtractor) ExtractProductsDelta(ctx context.Context, since time.
 	if e.mssql == nil || e.mssql.DB == nil {
 		return nil, fmt.Errorf("mssql database is not connected")
 	}
-	sinceDate, sinceTime := sapDeltaParams(since)
+	sinceDate, sinceTime, sinceDateTime := sapDeltaParams(since)
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryProductsDelta,
 		sql.Named("SinceDate", sinceDate),
 		sql.Named("SinceTime", sinceTime),
+		sql.Named("SinceDateTime", sinceDateTime),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query OITM delta since %s %06d: %w", sinceDate, sinceTime, err)
@@ -294,11 +296,12 @@ func (e *CatalogExtractor) ExtractBarcodesDelta(ctx context.Context, since time.
 	if e.mssql == nil || e.mssql.DB == nil {
 		return nil, fmt.Errorf("mssql database is not connected")
 	}
-	sinceDate, sinceTime := sapDeltaParams(since)
+	sinceDate, sinceTime, sinceDateTime := sapDeltaParams(since)
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryProductBarcodesDelta,
 		sql.Named("SinceDate", sinceDate),
 		sql.Named("SinceTime", sinceTime),
+		sql.Named("SinceDateTime", sinceDateTime),
 	)
 	if err != nil {
 		return []mappings.CanonicalBarcode{}, nil
@@ -323,11 +326,12 @@ func (e *CatalogExtractor) ExtractPriceListItemsDelta(ctx context.Context, since
 	if e.mssql == nil || e.mssql.DB == nil {
 		return nil, fmt.Errorf("mssql database is not connected")
 	}
-	sinceDate, sinceTime := sapDeltaParams(since)
+	sinceDate, sinceTime, sinceDateTime := sapDeltaParams(since)
 
 	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryPriceListItemsDelta,
 		sql.Named("SinceDate", sinceDate),
 		sql.Named("SinceTime", sinceTime),
+		sql.Named("SinceDateTime", sinceDateTime),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query ITM1 delta since %s %06d: %w", sinceDate, sinceTime, err)

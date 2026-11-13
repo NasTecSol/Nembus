@@ -19,6 +19,9 @@ func TestMigrationIngestChunkSize(t *testing.T) {
 	if got := migrationIngestChunkSize(contracts.DomainUOMGroups, 500); got != 5 {
 		t.Fatalf("uom_groups cap: got %d want 5", got)
 	}
+	if got := migrationIngestChunkSize(contracts.DomainInventory, 500); got != 50 {
+		t.Fatalf("inventory cap: got %d want 50", got)
+	}
 	if got := migrationIngestChunkSize(contracts.DomainStores, 500); got != 500 {
 		t.Fatalf("stores unchanged: got %d want 500", got)
 	}

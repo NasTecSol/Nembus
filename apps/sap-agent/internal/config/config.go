@@ -37,6 +37,9 @@ type AgentConfig struct {
 	// DefaultStoreCode is assigned to imported cashiers when SAP has no store mapping.
 	// Defaults to "01" if empty.
 	DefaultStoreCode     string      `json:"default_store_code"`
+	// NembusStoreID identifies the Nembus retail store polled for POS upstream transactions.
+	// Defaults to 1 if unset.
+	NembusStoreID        int         `json:"nembus_store_id"`
 	// CashierDrawerLimit is the default cash drawer limit for imported cashiers. Defaults to 5000.
 	CashierDrawerLimit   float64     `json:"cashier_drawer_limit"`
 	// CashierDiscountLimit is the default max discount % for imported cashiers. Defaults to 20.
@@ -84,6 +87,7 @@ func DefaultConfig() *AgentConfig {
 		BatchSize:            500,
 		MaxConcurrency:       4,
 		DefaultStoreCode:     "01",
+		NembusStoreID:        1,
 		CashierDrawerLimit:   5000,
 		CashierDiscountLimit: 20,
 		InvoiceStartDate:     "2000-01-01",

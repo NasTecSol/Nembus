@@ -161,14 +161,17 @@ func (s *Server) setupRoutes() {
 }
 
 // DownstreamMasterDomains defines the core master catalog domains synchronized from SAP to Nembus.
-// Note: Packaging templates (UOMGroups) and Opening Inventory are foundational setup domains
-// migrated once in Migration Studio and do not run on the 5-minute continuous catalog loop.
+// Note: Opening Inventory is a foundational setup domain migrated once in Migration Studio
+// and does not run on the continuous master data loop.
 var DownstreamMasterDomains = []contracts.DomainType{
+	contracts.DomainUOM,
+	contracts.DomainUOMGroups,
 	contracts.DomainCategories,
 	contracts.DomainBrands,
 	contracts.DomainProducts,
 	contracts.DomainBarcodes,
 	contracts.DomainPriceLists,
+	contracts.DomainInventory,
 }
 
 func (s *Server) Start(port int) error {
@@ -178,74 +181,93 @@ func (s *Server) Start(port int) error {
 	return s.router.Run(addr)
 }
 
-func (s *Server) startDownstreamScheduler() {
+// nextScheduledRunTime returns the next start-to-start run time (runStart + interval),
+// or now if the run itself took longer than interval.
+func nextScheduledRunTime(runStart, now time.Time, interval time.Duration) time.Time {
+	next := runStart.Add(interval)
+	if next.Before(now) {
+		return now
+	}
+	return next
+}
+
+func (s *Server) runPeriodicScheduler(defaultIntervalSec int, getInterval func(*config.AgentConfig) int, isActive func() bool, run func(interval int)) {
+	var nextRunAt time.Time
 	for {
 		cfg := config.Get()
-		if !cfg.OnboardingCompleted || !s.isDownstreamAutoActive() {
+		if !cfg.OnboardingCompleted || !isActive() {
+			nextRunAt = time.Time{}
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		interval := cfg.DownstreamIntervalSec
-		if interval <= 0 {
-			interval = 300
+		intervalSec := getInterval(cfg)
+		if intervalSec <= 0 {
+			intervalSec = defaultIntervalSec
+		}
+		interval := time.Duration(intervalSec) * time.Second
+		if nextRunAt.IsZero() {
+			nextRunAt = time.Now().Add(interval)
 		}
 
-		// Wait one interval after manual activation (or previous scheduled run) before next auto-run
-		for elapsed := 0; elapsed < interval; elapsed += 2 {
-			time.Sleep(2 * time.Second)
-			if !config.Get().OnboardingCompleted || !s.isDownstreamAutoActive() {
+		for time.Now().Before(nextRunAt) {
+			remaining := time.Until(nextRunAt)
+			if remaining > 2*time.Second {
+				remaining = 2 * time.Second
+			}
+			time.Sleep(remaining)
+			if !config.Get().OnboardingCompleted || !isActive() {
+				nextRunAt = time.Time{}
 				break
 			}
 		}
 
 		cfg = config.Get()
-		if !cfg.OnboardingCompleted || !s.isDownstreamAutoActive() {
+		if !cfg.OnboardingCompleted || !isActive() || nextRunAt.IsZero() {
 			continue
 		}
 
+		runStart := time.Now()
 		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
+			run(intervalSec)
+		}
+
+		intervalSec = getInterval(config.Get())
+		if intervalSec <= 0 {
+			intervalSec = defaultIntervalSec
+		}
+		nextRunAt = nextScheduledRunTime(runStart, time.Now(), time.Duration(intervalSec)*time.Second)
+	}
+}
+
+func (s *Server) startDownstreamScheduler() {
+	s.runPeriodicScheduler(
+		300,
+		func(c *config.AgentConfig) int { return c.DownstreamIntervalSec },
+		s.isDownstreamAutoActive,
+		func(interval int) {
 			log.Printf("[SAP-AGENT] Running scheduled downstream master data sync (interval: %ds)...", interval)
 			if stats, err := s.runDownstreamSync(context.Background(), DownstreamMasterDomains); err != nil {
 				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
 			} else if stats != nil {
-				log.Printf("[SAP-AGENT] Scheduled downstream sync completed: %d products, %d barcodes, %d prices in %v",
-					stats.Products, stats.Barcodes, stats.Prices, stats.Duration)
+				log.Printf("[SAP-AGENT] Scheduled downstream sync completed: %d uoms, %d products, %d barcodes, %d prices in %v",
+					stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Duration)
 			}
-		}
-	}
+		},
+	)
 }
 
 func (s *Server) startUpstreamScheduler() {
-	for {
-		cfg := config.Get()
-		if !cfg.OnboardingCompleted || !s.isUpstreamAutoActive() {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		interval := cfg.UpstreamIntervalSec
-		if interval <= 0 {
-			interval = 60
-		}
-
-		// Wait one interval after manual activation (or previous scheduled run) before next auto-run
-		for elapsed := 0; elapsed < interval; elapsed += 2 {
-			time.Sleep(2 * time.Second)
-			if !config.Get().OnboardingCompleted || !s.isUpstreamAutoActive() {
-				break
+	s.runPeriodicScheduler(
+		60,
+		func(c *config.AgentConfig) int { return c.UpstreamIntervalSec },
+		s.isUpstreamAutoActive,
+		func(_ int) {
+			if _, err := s.runUpstreamSync(context.Background()); err != nil {
+				log.Printf("[SAP-AGENT] Scheduled upstream sync notice: %v", err)
 			}
-		}
-
-		cfg = config.Get()
-		if !cfg.OnboardingCompleted || !s.isUpstreamAutoActive() {
-			continue
-		}
-
-		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
-			_, _ = s.runUpstreamSync(context.Background())
-		}
-	}
+		},
+	)
 }
 
 // Handlers
@@ -302,6 +324,12 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
 	}
+	if req.NembusStoreID > 0 {
+		current.NembusStoreID = req.NembusStoreID
+	}
+	if req.DefaultStoreCode != "" {
+		current.DefaultStoreCode = req.DefaultStoreCode
+	}
 	if req.OnboardingCompleted != nil {
 		current.OnboardingCompleted = *req.OnboardingCompleted
 		if !current.OnboardingCompleted {
@@ -323,6 +351,9 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if s.cloudClient != nil {
 		s.cloudClient.UpdateConfig(current.Cloud)
 	}
+	s.upstreamMu.Lock()
+	s.upstreamSync = nil
+	s.upstreamMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "config": current})
 }
@@ -552,6 +583,7 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		UpstreamIntervalSec       int                `json:"upstream_interval_sec"`
 		ReconciliationIntervalSec int                `json:"reconciliation_interval_sec"`
 		ReconciliationAutoRun     bool               `json:"reconciliation_auto_run"`
+		NembusStoreID             int                `json:"nembus_store_id"`
 		DefaultStoreCode          string             `json:"default_store_code"`
 		BatchSize                 int                `json:"batch_size"`
 	}
@@ -600,6 +632,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		current.ReconciliationIntervalSec = req.ReconciliationIntervalSec
 	}
 	current.ReconciliationAutoRun = req.ReconciliationAutoRun
+	if req.NembusStoreID > 0 {
+		current.NembusStoreID = req.NembusStoreID
+	}
 	if req.DefaultStoreCode != "" {
 		current.DefaultStoreCode = req.DefaultStoreCode
 	}
@@ -705,12 +740,14 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 	syncedBarcodes := 0
 	syncedCategories := 0
 	syncedUOMs := 0
+	syncedInventory := 0
 	if s.lastDownstreamStats != nil {
 		syncedProducts = s.lastDownstreamStats.Products
 		syncedPrices = s.lastDownstreamStats.Prices
 		syncedBarcodes = s.lastDownstreamStats.Barcodes
 		syncedCategories = s.lastDownstreamStats.Categories
 		syncedUOMs = s.lastDownstreamStats.UOMs
+		syncedInventory = s.lastDownstreamStats.Inventory
 	}
 
 	// Compute sync state
@@ -724,6 +761,7 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 			"synced_barcodes":   syncedBarcodes,
 			"synced_categories": syncedCategories,
 			"synced_uoms":       syncedUOMs,
+			"synced_inventory":  syncedInventory,
 			"errors_count":      downstreamErrors,
 			"next_sync_seconds": cfg.DownstreamIntervalSec,
 		},
@@ -775,8 +813,8 @@ func (s *Server) handleRunDownstreamSync(c *gin.Context) {
 		return
 	}
 
-	summaryMsg := fmt.Sprintf("Downstream sync completed: %d products, %d barcodes, %d prices, %d categories in %v",
-		stats.Products, stats.Barcodes, stats.Prices, stats.Categories, stats.Duration.Round(time.Millisecond))
+	summaryMsg := fmt.Sprintf("Downstream sync completed: %d uoms, %d products, %d barcodes, %d prices, %d stock items, %d categories in %v",
+		stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Inventory, stats.Categories, stats.Duration.Round(time.Millisecond))
 	if len(domains) == 1 {
 		summaryMsg = fmt.Sprintf("Downstream sync for %s completed in %v", domains[0], stats.Duration.Round(time.Millisecond))
 	}
@@ -878,6 +916,18 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		}
 	}
 
+	storeID := int32(cfg.NembusStoreID)
+	if storeID <= 0 {
+		if envStore := os.Getenv("NEMBUS_STORE_ID"); envStore != "" {
+			if id, err := strconv.Atoi(envStore); err == nil && id > 0 {
+				storeID = int32(id)
+			}
+		}
+	}
+	if storeID <= 0 {
+		storeID = 1
+	}
+
 	return &legacyconfig.Config{
 		SAPServiceLayerURL:     slURL,
 		SAPCompanyDB:           companyDB,
@@ -891,7 +941,7 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		SAPMSSQLUser:           cfg.MSSQL.User,
 		SAPMSSQLPassword:       cfg.MSSQL.Password,
 		NembusOrganizationID:   int32(cfg.Cloud.OrganizationID),
-		NembusStoreID:          1,
+		NembusStoreID:          storeID,
 		NembusPriceListID:      priceListID,
 		NembusTaxCategoryID:    taxCatID,
 		NembusDefaultCustomer:  "C000001",
@@ -982,7 +1032,7 @@ func (s *Server) runUpstreamSync(ctx context.Context) (*pipeline.UpstreamStats, 
 		syncEngine := pipeline.NewUpstreamSync(pipeCfg, sapClient, nembusClient, s.sqlite)
 		syncEngine.SetLogger(func(domain, level, msg string) {
 			if s.sqlite != nil {
-				s.sqlite.Log(ctx, "upstream", domain, level, msg)
+				s.sqlite.Log(context.Background(), "upstream", domain, level, msg)
 			}
 			if s.engine != nil {
 				s.engine.BroadcastEvent(etl.ProgressEvent{

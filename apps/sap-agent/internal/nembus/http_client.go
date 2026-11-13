@@ -3,10 +3,12 @@ package nembus
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -138,12 +140,42 @@ func (c *HTTPClient) resolveToken(ctx context.Context, preferServiceAccount bool
 	return "", fmt.Errorf("unable to obtain Nembus Cloud auth token for upstream sync")
 }
 
-func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body any, preferServiceAccount bool) ([]byte, int, error) {
-	token, err := c.resolveToken(ctx, preferServiceAccount)
-	if err != nil {
-		return nil, 0, err
+func (c *HTTPClient) organizationID() int32 {
+	if agentCfg := agentconfig.Get(); agentCfg != nil && agentCfg.Cloud.OrganizationID > 0 {
+		return int32(agentCfg.Cloud.OrganizationID)
 	}
+	if c.cfg != nil && c.cfg.NembusOrganizationID > 0 {
+		return c.cfg.NembusOrganizationID
+	}
+	return 1
+}
 
+func (c *HTTPClient) jwtOrgAndUser(token string) (int32, int32) {
+	orgID := c.organizationID()
+	var userID int32 = 1
+
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return orgID, userID
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return orgID, userID
+	}
+	var claims map[string]any
+	if json.Unmarshal(raw, &claims) != nil {
+		return orgID, userID
+	}
+	if v := int32(parseFlexInt64(claims["organization_id"])); v > 0 {
+		orgID = v
+	}
+	if v := int32(parseFlexInt64(claims["user_id"])); v > 0 {
+		userID = v
+	}
+	return orgID, userID
+}
+
+func (c *HTTPClient) doJSONRequest(ctx context.Context, token, method, path string, body any) ([]byte, int, error) {
 	var reqReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -162,7 +194,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body any, 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("x-tenant-id", c.tenantHeader())
-	req.Header.Set("x-organization-id", fmt.Sprintf("%d", c.cfg.NembusOrganizationID))
+	req.Header.Set("x-organization-id", fmt.Sprintf("%d", c.organizationID()))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -171,6 +203,14 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body any, 
 	defer resp.Body.Close()
 	respBytes, err := io.ReadAll(resp.Body)
 	return respBytes, resp.StatusCode, err
+}
+
+func (c *HTTPClient) doJSON(ctx context.Context, method, path string, body any, preferServiceAccount bool) ([]byte, int, error) {
+	token, err := c.resolveToken(ctx, preferServiceAccount)
+	if err != nil {
+		return nil, 0, err
+	}
+	return c.doJSONRequest(ctx, token, method, path, body)
 }
 
 func parseFlexFloat(v any) float64 {
@@ -243,18 +283,23 @@ func (c *HTTPClient) approvedEntityNumbers(ctx context.Context, entityType strin
 	if err != nil || status != http.StatusOK {
 		return approved
 	}
-	var env struct {
-		Data []struct {
-			EntityType string          `json:"entity_type"`
-			EntityID   string          `json:"entity_id"`
-			Status     string          `json:"status"`
-			Payload    json.RawMessage `json:"payload"`
-		} `json:"data"`
+	type approvalItem struct {
+		EntityType string          `json:"entity_type"`
+		EntityID   string          `json:"entity_id"`
+		Status     string          `json:"status"`
+		Payload    json.RawMessage `json:"payload"`
 	}
-	if err := json.Unmarshal(bodyBytes, &env); err != nil {
-		return approved
+	var items []approvalItem
+	if err := json.Unmarshal(bodyBytes, &items); err != nil {
+		var env struct {
+			Data []approvalItem `json:"data"`
+		}
+		if err := json.Unmarshal(bodyBytes, &env); err != nil {
+			return approved
+		}
+		items = env.Data
 	}
-	for _, item := range env.Data {
+	for _, item := range items {
 		if item.EntityType != entityType || item.Status != "approved" {
 			continue
 		}
@@ -358,7 +403,7 @@ func (c *HTTPClient) FetchUnpostedPOSTransactions(ctx context.Context, limit int
 	var list []POSTransaction
 	for _, tx := range all {
 		st := dispatched[tx.TransactionNumber]
-		if st == "posted" || st == "held" {
+		if st == "posted" || st == "held" || st == "skipped" {
 			continue
 		}
 		list = append(list, tx)
@@ -482,39 +527,70 @@ func (c *HTTPClient) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID 
 	return 0, nil
 }
 
-func (c *HTTPClient) ensureStockHoldPolicy(ctx context.Context) {
-	payload := map[string]any{
-		"domain":              "sap_invoice",
-		"action":              "stock_hold",
-		"is_enabled":          true,
-		"requires_approval":   true,
-		"required_permission": "sap:invoice:override",
-		"rules":               map[string]any{},
+// GetApprovalPolicyRules retrieves the JSON rules for an enabled approval policy.
+func (c *HTTPClient) GetApprovalPolicyRules(ctx context.Context, domain, action string) (map[string]any, bool, error) {
+	path := fmt.Sprintf("/api/approvals/policies/%s?action=%s", url.PathEscape(domain), url.QueryEscape(action))
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil {
+		return nil, false, err
 	}
-	_, _, _ = c.doJSON(ctx, http.MethodPut, "/api/approvals/policy", payload, false)
+	if status == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if status != http.StatusOK {
+		return nil, false, fmt.Errorf("approval policy lookup returned status %d", status)
+	}
+	var policyResp struct {
+		IsEnabled        bool           `json:"is_enabled"`
+		RequiresApproval bool           `json:"requires_approval"`
+		Rules            map[string]any `json:"rules"`
+	}
+	if err := json.Unmarshal(bodyBytes, &policyResp); err != nil {
+		return nil, false, err
+	}
+	if !policyResp.IsEnabled || !policyResp.RequiresApproval {
+		return nil, false, nil
+	}
+	return policyResp.Rules, true, nil
+}
+
+func (c *HTTPClient) submitStockHoldApproval(ctx context.Context, entityType, entityID, summary string, payload map[string]any) error {
+	token, err := c.resolveToken(ctx, true)
+	if err != nil {
+		return err
+	}
+	orgID, userID := c.jwtOrgAndUser(token)
+	reqBody := map[string]any{
+		"organization_id": orgID,
+		"domain":          "sap_invoice",
+		"action":          "stock_hold",
+		"entity_type":     entityType,
+		"entity_id":       entityID,
+		"requested_by":    userID,
+		"summary":         summary,
+		"payload":         payload,
+	}
+	respBytes, status, err := c.doJSONRequest(ctx, token, http.MethodPost, "/api/approvals/submit", reqBody)
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("submit stock hold approval failed (status %d): %s", status, strings.TrimSpace(string(respBytes)))
+	}
+	return nil
 }
 
 func (c *HTTPClient) HoldTransactionForStockReview(ctx context.Context, txID int64, txNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
-	c.ensureStockHoldPolicy(ctx)
-	reqBody := map[string]any{
-		"domain":              "sap_invoice",
-		"action":              "stock_hold",
-		"entity_type":         "pos_transaction",
-		"entity_id":           fmt.Sprintf("%d", txID),
-		"required_permission": "sap:invoice:override",
-		"summary":             summary,
-		"payload": map[string]any{
-			"transaction_id":     txID,
-			"transaction_number": txNum,
-			"store_id":           storeID,
-			"warehouse_code":     whCode,
-			"total_amount":       totalAmount,
-			"shortage_items":     shortageItems,
-			"reason":             summary,
-		},
+	payload := map[string]any{
+		"transaction_id":     txID,
+		"transaction_number": txNum,
+		"store_id":           storeID,
+		"warehouse_code":     whCode,
+		"total_amount":       totalAmount,
+		"shortage_items":     shortageItems,
+		"reason":             summary,
 	}
-	_, _, err := c.doJSON(ctx, http.MethodPost, "/api/approvals/submit", reqBody, true)
-	return err
+	return c.submitStockHoldApproval(ctx, "pos_transaction", fmt.Sprintf("%d", txID), summary, payload)
 }
 
 func (c *HTTPClient) fetchSalesOrdersRaw(ctx context.Context) ([]SalesOrderV2, error) {
@@ -615,7 +691,7 @@ func (c *HTTPClient) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) 
 	var list []SalesOrderV2
 	for _, o := range all {
 		st := dispatched[o.OrderNumber]
-		if st == "posted" || st == "held" {
+		if st == "posted" || st == "held" || st == "skipped" {
 			continue
 		}
 		list = append(list, o)
@@ -667,27 +743,20 @@ func (c *HTTPClient) MarkSalesOrderPostedToSAP(ctx context.Context, orderID uuid
 }
 
 func (c *HTTPClient) HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.UUID, orderNum string, storeID int32, whCode string, totalAmount float64, shortageItems []ShortageItem, summary string) error {
-	c.ensureStockHoldPolicy(ctx)
+	payload := map[string]any{
+		"sales_order_id": orderID.String(),
+		"order_number":   orderNum,
+		"store_id":       storeID,
+		"warehouse_code": whCode,
+		"total_amount":   totalAmount,
+		"shortage_items": shortageItems,
+		"reason":         summary,
+	}
+	if err := c.submitStockHoldApproval(ctx, "sales_order_v2", orderID.String(), summary, payload); err != nil {
+		return err
+	}
 	if c.sqlite != nil {
 		_ = c.sqlite.RecordUpstreamDispatch(ctx, orderNum, time.Now(), totalAmount, nil, nil, "held", summary)
 	}
-	reqBody := map[string]any{
-		"domain":              "sap_invoice",
-		"action":              "stock_hold",
-		"entity_type":         "sales_order_v2",
-		"entity_id":           orderID.String(),
-		"required_permission": "sap:invoice:override",
-		"summary":             summary,
-		"payload": map[string]any{
-			"sales_order_id": orderID.String(),
-			"order_number":   orderNum,
-			"store_id":       storeID,
-			"warehouse_code": whCode,
-			"total_amount":   totalAmount,
-			"shortage_items": shortageItems,
-			"reason":         summary,
-		},
-	}
-	_, _, err := c.doJSON(ctx, http.MethodPost, "/api/approvals/submit", reqBody, true)
-	return err
+	return nil
 }

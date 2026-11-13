@@ -28,11 +28,13 @@ const (
 )
 
 type cloudCatalogProduct struct {
-	ProductID int32               `json:"product_id"`
-	SKU       string              `json:"sku"`
-	Metadata  map[string]any      `json:"metadata"`
-	RawPrices json.RawMessage     `json:"prices"`
-	Prices    []cloudCatalogPrice `json:"-"`
+	ProductID  int32               `json:"product_id"`
+	SKU        string              `json:"sku"`
+	CostPrice  float64             `json:"-"`
+	CostLoaded bool                `json:"-"`
+	Metadata   map[string]any      `json:"metadata"`
+	RawPrices  json.RawMessage     `json:"prices"`
+	Prices     []cloudCatalogPrice `json:"-"`
 }
 
 type cloudCatalogPrice struct {
@@ -261,48 +263,26 @@ func (c *CloudClient) acquireCloudJWT(ctx context.Context) (string, string, int,
 	return "", tenantID, orgID, fmt.Errorf("cloud login failed (status %d): %s", statusCode, respBody)
 }
 
-func (c *CloudClient) fetchOrSeedCatalogPricePolicy(ctx context.Context, baseURL, jwt, tenantID string) (bool, coreusecase.CatalogPriceRules, error) {
+func (c *CloudClient) fetchCatalogPricePolicy(ctx context.Context, baseURL, jwt, tenantID string) (bool, coreusecase.CatalogPriceRules, error) {
 	policyURL := fmt.Sprintf("%s/api/approvals/policies/catalog?action=price_change", baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, policyURL, nil)
 	if err != nil {
-		return true, coreusecase.DefaultCatalogPriceRules(), err
+		return false, coreusecase.CatalogPriceRules{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	req.Header.Set("x-tenant-id", tenantID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return true, coreusecase.DefaultCatalogPriceRules(), err
+		return false, coreusecase.CatalogPriceRules{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		// Seed the default catalog.price_change policy on the cloud server
-		seedBody, _ := json.Marshal(map[string]any{
-			"action":              "price_change",
-			"is_enabled":          true,
-			"requires_approval":   true,
-			"required_permission": "catalog:pricing:approve",
-			"rules": map[string]any{
-				"price_drop_requires_approval": true,
-				"cost_increase_threshold_pct":  10.0,
-				"below_cost_requires_approval": true,
-			},
-		})
-		putURL := fmt.Sprintf("%s/api/approvals/policies/catalog", baseURL)
-		if putReq, pErr := http.NewRequestWithContext(ctx, http.MethodPut, putURL, bytes.NewReader(seedBody)); pErr == nil {
-			putReq.Header.Set("Content-Type", "application/json")
-			putReq.Header.Set("Authorization", "Bearer "+jwt)
-			putReq.Header.Set("x-tenant-id", tenantID)
-			if putResp, doErr := c.httpClient.Do(putReq); doErr == nil {
-				putResp.Body.Close()
-			}
-		}
-		return true, coreusecase.DefaultCatalogPriceRules(), nil
+		return false, coreusecase.CatalogPriceRules{}, nil
 	}
-
 	if resp.StatusCode != http.StatusOK {
-		return true, coreusecase.DefaultCatalogPriceRules(), nil
+		return false, coreusecase.CatalogPriceRules{}, fmt.Errorf("approval policy lookup returned status %d", resp.StatusCode)
 	}
 
 	var policyResp struct {
@@ -311,12 +291,40 @@ func (c *CloudClient) fetchOrSeedCatalogPricePolicy(ctx context.Context, baseURL
 		Rules            map[string]any `json:"rules"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&policyResp); err != nil {
-		return true, coreusecase.DefaultCatalogPriceRules(), nil
+		return false, coreusecase.CatalogPriceRules{}, err
 	}
 	if !policyResp.IsEnabled || !policyResp.RequiresApproval {
-		return false, coreusecase.DefaultCatalogPriceRules(), nil
+		return false, coreusecase.CatalogPriceRules{}, nil
 	}
 	return true, coreusecase.ParseCatalogPriceRules(policyResp.Rules), nil
+}
+
+func (c *CloudClient) fetchProductCostPrice(ctx context.Context, baseURL, jwt, tenantID string, productID int32) float64 {
+	costURL := fmt.Sprintf("%s/api/product-prices/product/%d/with-pricing", baseURL, productID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, costURL, nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("x-tenant-id", tenantID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	var envelope struct {
+		Data struct {
+			CostPrice any `json:"cost_price"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return 0
+	}
+	return parseFlexibleFloat(envelope.Data.CostPrice)
 }
 
 func (c *CloudClient) lookupCloudProductBySKU(ctx context.Context, baseURL, jwt, tenantID string, orgID int, sku string) (*cloudCatalogProduct, error) {
@@ -441,7 +449,7 @@ func (c *CloudClient) FilterDownstreamPriceItems(ctx context.Context, items []ma
 		baseURL = strings.TrimRight(config.Get().Cloud.BaseURL, "/")
 	}
 
-	requiresApproval, rules, err := c.fetchOrSeedCatalogPricePolicy(ctx, baseURL, jwt, tenantID)
+	requiresApproval, rules, err := c.fetchCatalogPricePolicy(ctx, baseURL, jwt, tenantID)
 	if err != nil || !requiresApproval {
 		return items, nil
 	}
@@ -507,7 +515,16 @@ func (c *CloudClient) FilterDownstreamPriceItems(ctx context.Context, items []ma
 			continue
 		}
 
-		hold, reason := coreusecase.EvaluateSellPriceChange(requiresApproval, rules, oldPrice, item.Price, 0, true)
+		var costPrice float64
+		if rules.BelowCostRequiresApproval {
+			if !prod.CostLoaded {
+				prod.CostPrice = c.fetchProductCostPrice(ctx, baseURL, jwt, tenantID, prod.ProductID)
+				prod.CostLoaded = true
+			}
+			costPrice = prod.CostPrice
+		}
+
+		hold, reason := coreusecase.EvaluateSellPriceChange(requiresApproval, rules, oldPrice, item.Price, costPrice, true)
 		if !hold {
 			directItems = append(directItems, item)
 			continue
@@ -515,6 +532,11 @@ func (c *CloudClient) FilterDownstreamPriceItems(ctx context.Context, items []ma
 
 		oldP := oldPrice
 		newP := item.Price
+		var oldCostPtr *float64
+		if costPrice > 0 {
+			cVal := costPrice
+			oldCostPtr = &cVal
+		}
 		entityID := fmt.Sprintf("%d:pl:%d", prod.ProductID, matchedPrice.PriceListID)
 		if matchedPrice.UoMID != nil {
 			entityID = fmt.Sprintf("%d:pl:%d:uom:%d", prod.ProductID, matchedPrice.PriceListID, *matchedPrice.UoMID)
@@ -522,13 +544,14 @@ func (c *CloudClient) FilterDownstreamPriceItems(ctx context.Context, items []ma
 		summary := fmt.Sprintf("Price revision for SKU %s (%s): %s", item.ProductSKU, item.PriceListCode, reason)
 
 		err := c.submitCatalogApprovalRequest(ctx, baseURL, jwt, tenantID, orgID, entityID, summary, coreusecase.CatalogPriceChangePayload{
-			ProductID:   prod.ProductID,
-			ProductSKU:  item.ProductSKU,
-			PriceListID: matchedPrice.PriceListID,
-			UoMID:       matchedPrice.UoMID,
-			OldPrice:    &oldP,
-			NewPrice:    &newP,
-			Reason:      reason,
+			ProductID:    prod.ProductID,
+			ProductSKU:   item.ProductSKU,
+			PriceListID:  matchedPrice.PriceListID,
+			UoMID:        matchedPrice.UoMID,
+			OldPrice:     &oldP,
+			NewPrice:     &newP,
+			OldCostPrice: oldCostPtr,
+			Reason:       reason,
 		})
 		if err != nil {
 			// If approval submission failed, still hold back direct overwrite and log the error

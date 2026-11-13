@@ -161,6 +161,12 @@ func (s *SQLiteStore) initSchema() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_upstream_created_at ON upstream_dispatches(id DESC);
 
+	CREATE TABLE IF NOT EXISTS upstream_watermarks (
+		domain TEXT PRIMARY KEY,
+		last_sync_time TEXT NOT NULL,
+		records_synced INTEGER DEFAULT 0
+	);
+
 	CREATE TABLE IF NOT EXISTS downstream_watermarks (
 		domain TEXT PRIMARY KEY,
 		last_sync_time TEXT NOT NULL,
@@ -616,13 +622,87 @@ func (s *SQLiteStore) ClearLogs(ctx context.Context) error {
 	return err
 }
 
-// GetDownstreamWatermark retrieves the last successful downstream sync timestamp for a domain.
-func (s *SQLiteStore) GetDownstreamWatermark(ctx context.Context, domain string) (*time.Time, error) {
+// GetLastCompletedFullMigrationEndTime returns the finished_at timestamp of the
+// most recent completed (or partial_success) full migration run in which domain succeeded.
+func (s *SQLiteStore) GetLastCompletedFullMigrationEndTime(ctx context.Context, domain contracts.DomainType) (*time.Time, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `
+	SELECT mr.finished_at
+	FROM migration_runs mr
+	JOIN migration_steps ms ON ms.run_id = mr.id
+	WHERE mr.mode = ?
+	  AND mr.status IN (?, ?)
+	  AND mr.finished_at IS NOT NULL
+	  AND ms.domain = ?
+	  AND ms.status = ?
+	ORDER BY mr.finished_at DESC, mr.rowid DESC
+	LIMIT 1;
+	`
+	var finishedAt sql.NullTime
+	err := s.db.QueryRowContext(
+		ctx,
+		query,
+		string(contracts.MigrationModeFull),
+		string(contracts.StatusCompleted),
+		string(contracts.StatusPartialSuccess),
+		string(domain),
+		string(contracts.StatusCompleted),
+	).Scan(&finishedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !finishedAt.Valid {
+		return nil, nil
+	}
+	t := finishedAt.Time
+	return &t, nil
+}
+
+// GetLatestCompletedFullMigrationEndTime returns the finished_at timestamp of the
+// most recent completed (or partial_success) full migration run.
+func (s *SQLiteStore) GetLatestCompletedFullMigrationEndTime(ctx context.Context) (*time.Time, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `
+	SELECT finished_at
+	FROM migration_runs
+	WHERE mode = ?
+	  AND status IN (?, ?)
+	  AND finished_at IS NOT NULL
+	ORDER BY finished_at DESC, rowid DESC
+	LIMIT 1;
+	`
+	var finishedAt sql.NullTime
+	err := s.db.QueryRowContext(
+		ctx,
+		query,
+		string(contracts.MigrationModeFull),
+		string(contracts.StatusCompleted),
+		string(contracts.StatusPartialSuccess),
+	).Scan(&finishedAt)
+	if err == sql.ErrNoRows || !finishedAt.Valid {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	t := finishedAt.Time
+	return &t, nil
+}
+
+func (s *SQLiteStore) getWatermark(ctx context.Context, table, domain string) (*time.Time, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var raw string
-	err := s.db.QueryRowContext(ctx, "SELECT last_sync_time FROM downstream_watermarks WHERE domain = ?;", domain).Scan(&raw)
+	query := fmt.Sprintf("SELECT last_sync_time FROM %s WHERE domain = ?;", table)
+	err := s.db.QueryRowContext(ctx, query, domain).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -638,21 +718,40 @@ func (s *SQLiteStore) GetDownstreamWatermark(ctx context.Context, domain string)
 	return nil, fmt.Errorf("unrecognized watermark timestamp format %q", raw)
 }
 
-// SetDownstreamWatermark records the last successful sync timestamp and records count for a domain.
-func (s *SQLiteStore) SetDownstreamWatermark(ctx context.Context, domain string, t time.Time, count int) error {
+func (s *SQLiteStore) setWatermark(ctx context.Context, table, domain string, t time.Time, count int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	formatted := t.UTC().Format(time.RFC3339)
-	query := `
-	INSERT INTO downstream_watermarks (domain, last_sync_time, records_synced)
+	query := fmt.Sprintf(`
+	INSERT INTO %s (domain, last_sync_time, records_synced)
 	VALUES (?, ?, ?)
 	ON CONFLICT(domain) DO UPDATE SET
 		last_sync_time = excluded.last_sync_time,
 		records_synced = excluded.records_synced;
-	`
+	`, table)
 	_, err := s.db.ExecContext(ctx, query, domain, formatted, count)
 	return err
+}
+
+// GetDownstreamWatermark retrieves the last successful downstream sync timestamp for a domain.
+func (s *SQLiteStore) GetDownstreamWatermark(ctx context.Context, domain string) (*time.Time, error) {
+	return s.getWatermark(ctx, "downstream_watermarks", domain)
+}
+
+// SetDownstreamWatermark records the last successful sync timestamp and records count for a domain.
+func (s *SQLiteStore) SetDownstreamWatermark(ctx context.Context, domain string, t time.Time, count int) error {
+	return s.setWatermark(ctx, "downstream_watermarks", domain, t, count)
+}
+
+// GetUpstreamWatermark retrieves the last successful upstream sync timestamp for a key.
+func (s *SQLiteStore) GetUpstreamWatermark(ctx context.Context, domain string) (*time.Time, error) {
+	return s.getWatermark(ctx, "upstream_watermarks", domain)
+}
+
+// SetUpstreamWatermark records the last successful upstream sync timestamp and posted count.
+func (s *SQLiteStore) SetUpstreamWatermark(ctx context.Context, domain string, t time.Time, count int) error {
+	return s.setWatermark(ctx, "upstream_watermarks", domain, t, count)
 }
 
 func (s *SQLiteStore) Close() error {
