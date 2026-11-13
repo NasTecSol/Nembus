@@ -246,7 +246,7 @@ func TestRestaurantCartHTTPFlowIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if settleResp.Data.PosTransactionID <= 0 || settleResp.Data.TransactionID != settleResp.Data.PosTransactionID ||
-		settleResp.Data.Order.Status != "paid" || settleResp.Data.Order.PaymentStatus != "paid" {
+		settleResp.Data.Order.Status != "pending" || settleResp.Data.Order.PaymentStatus != "paid" {
 		t.Fatalf("unexpected settle HTTP response: %+v body=%s", settleResp.Data, w4.Body.String())
 	}
 

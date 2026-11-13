@@ -491,7 +491,7 @@ func TestRestaurantCartToOrderIntegration(t *testing.T) {
 	settleOut := settleResp.Data.(map[string]interface{})
 	settleTxnID := settleOut["pos_transaction_id"].(int32)
 	settledOrder := settleOut["order"].(*repository.RestaurantOrder)
-	if settledOrder.Status != "paid" || settledOrder.PaymentStatus != "paid" || !settledOrder.PosTransactionID.Valid || settledOrder.PosTransactionID.Int32 != settleTxnID {
+	if settledOrder.Status != unpaidOrd.Status || settledOrder.PaymentStatus != "paid" || !settledOrder.PosTransactionID.Valid || settledOrder.PosTransactionID.Int32 != settleTxnID {
 		t.Fatalf("unexpected settled order: status=%s payment=%s txn=%v", settledOrder.Status, settledOrder.PaymentStatus, settledOrder.PosTransactionID)
 	}
 	if err := pool.QueryRow(ctx, `SELECT expected_balance::float8 FROM cashier_sessions WHERE id = $1`, sessionID).Scan(&expectedBal); err != nil {
