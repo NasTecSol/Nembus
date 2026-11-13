@@ -317,6 +317,53 @@ FROM OITM
 ORDER BY ItemCode;
 `
 
+const QueryProductsDelta = `
+SELECT 
+    ItemCode,
+    ISNULL(ItemName, '') AS ItemName,
+    ISNULL(UserText, '') AS UserText,
+    ISNULL(ItmsGrpCod, 0) AS ItmsGrpCod,
+    ISNULL(FirmCode, 0) AS FirmCode,
+    ISNULL(InvntItem, 'Y') AS InvntItem,
+    ISNULL(SellItem, 'Y') AS SellItem,
+    ISNULL(PrchseItem, 'Y') AS PrchseItem,
+    ISNULL(validFor, 'Y') AS validFor,
+    ISNULL(CodeBars, '') AS CodeBars,
+    ISNULL(BuyUnitMsr, 'UNIT') AS BuyUnitMsr,
+    ISNULL(SalUnitMsr, 'UNIT') AS SalUnitMsr,
+    ISNULL(InvntryUom, 'UNIT') AS InvntryUom,
+    ISNULL(NumInSale, 1.0) AS NumInSale,
+    ISNULL(NumInBuy, 1.0) AS NumInBuy,
+    ISNULL(UgpEntry, -1) AS UgpEntry,
+    ISNULL(IUoMEntry, -1) AS IUoMEntry,
+    ISNULL(SUoMEntry, -1) AS SUoMEntry,
+    ISNULL(PUoMEntry, -1) AS PUoMEntry,
+    ISNULL(ManSerNum, 'N') AS ManSerNum,
+    ISNULL(ManBtchNum, 'N') AS ManBtchNum,
+    ISNULL(VatGourpSa, '') AS VatGourpSa,
+    ISNULL(AssetItem, 'N') AS AssetItem,
+    ISNULL(ItemType, 'I') AS ItemType,
+    ISNULL(AvgPrice, 0.0) AS AvgPrice
+FROM OITM
+WHERE (
+    UpdateDate >= CAST(@SinceDateTime AS DATETIME)
+    OR (UpdateDate = @SinceDate AND (
+        CASE WHEN ISNULL(UpdateTS, 0) > 0 AND ISNULL(UpdateTS, 0) < 10000
+             THEN ISNULL(UpdateTS, 0) * 100
+             ELSE ISNULL(UpdateTS, 235959)
+        END
+    ) >= @SinceTime)
+    OR CreateDate >= CAST(@SinceDateTime AS DATETIME)
+    OR (CreateDate = @SinceDate AND (
+        CASE WHEN ISNULL(CreateTS, 0) > 0 AND ISNULL(CreateTS, 0) < 10000
+             THEN ISNULL(CreateTS, 0) * 100
+             ELSE ISNULL(CreateTS, 235959)
+        END
+    ) >= @SinceTime)
+)
+ORDER BY ItemCode;
+`
+
 const QueryProductBarcodes = `
 SELECT 
     b.BcdEntry,
@@ -326,6 +373,35 @@ SELECT
     ISNULL(u.UomCode, '') AS UomCode
 FROM OBCD b
 LEFT JOIN OUOM u ON b.UomEntry = u.UomEntry
+ORDER BY b.BcdEntry;
+`
+
+const QueryProductBarcodesDelta = `
+SELECT 
+    b.BcdEntry,
+    b.BcdCode,
+    b.ItemCode,
+    ISNULL(b.UomEntry, -1) AS UomEntry,
+    ISNULL(u.UomCode, '') AS UomCode
+FROM OBCD b
+LEFT JOIN OUOM u ON b.UomEntry = u.UomEntry
+INNER JOIN OITM m ON b.ItemCode = m.ItemCode
+WHERE (
+    m.UpdateDate >= CAST(@SinceDateTime AS DATETIME)
+    OR (m.UpdateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
+             THEN ISNULL(m.UpdateTS, 0) * 100
+             ELSE ISNULL(m.UpdateTS, 235959)
+        END
+    ) >= @SinceTime)
+    OR m.CreateDate >= CAST(@SinceDateTime AS DATETIME)
+    OR (m.CreateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
+             THEN ISNULL(m.CreateTS, 0) * 100
+             ELSE ISNULL(m.CreateTS, 235959)
+        END
+    ) >= @SinceTime)
+)
 ORDER BY b.BcdEntry;
 `
 
@@ -341,6 +417,86 @@ SELECT
 FROM OITW
 WHERE OnHand <> 0 OR IsCommited <> 0 OR OnOrder <> 0
 ORDER BY ItemCode, WhsCode;
+`
+
+// QueryInventoryStockDelta selects OITW rows whose stock balances or warehouse
+// min/max levels changed since @SinceDate/@SinceTime using indexed OITM and OINM
+// DocDate lookups joined back to OITW via UNION (including rows where OnHand = 0).
+const QueryInventoryStockDelta = `
+;WITH changed_keys AS (
+    SELECT w.ItemCode, w.WhsCode
+    FROM OITW w WITH (NOLOCK)
+    INNER JOIN OITM m WITH (NOLOCK) ON m.ItemCode = w.ItemCode
+    WHERE (w.OnHand <> 0 OR w.IsCommited <> 0 OR w.OnOrder <> 0 OR w.MinStock <> 0 OR w.MaxStock <> 0)
+      AND (
+          m.UpdateDate >= CAST(@SinceDateTime AS DATETIME)
+          OR (m.UpdateDate = @SinceDate AND (
+              CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
+                   THEN ISNULL(m.UpdateTS, 0) * 100
+                   ELSE ISNULL(m.UpdateTS, 235959)
+              END
+          ) >= @SinceTime)
+          OR m.CreateDate >= CAST(@SinceDateTime AS DATETIME)
+          OR (m.CreateDate = @SinceDate AND (
+              CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
+                   THEN ISNULL(m.CreateTS, 0) * 100
+                   ELSE ISNULL(m.CreateTS, 235959)
+              END
+          ) >= @SinceTime)
+      )
+    UNION
+    SELECT DISTINCT l.ItemCode, l.Warehouse AS WhsCode
+    FROM OINM l WITH (NOLOCK)
+    WHERE l.DocDate >= @SinceDate
+      AND (
+          l.CreateDate >= CAST(@SinceDateTime AS DATETIME)
+          OR l.CreateDate IS NULL
+          OR (l.CreateDate = @SinceDate AND (
+              CASE WHEN l.DocTime IS NULL THEN 235959
+                   WHEN l.DocTime < 10000 THEN l.DocTime * 100
+                   ELSE l.DocTime
+              END
+          ) >= ((@SinceTime / 100) * 100))
+      )
+)
+SELECT
+    w.ItemCode,
+    w.WhsCode,
+    ISNULL(w.OnHand, 0.0) AS OnHand,
+    ISNULL(w.IsCommited, 0.0) AS IsCommited,
+    ISNULL(w.OnOrder, 0.0) AS OnOrder,
+    ISNULL(w.MinStock, 0.0) AS MinStock,
+    ISNULL(w.MaxStock, 0.0) AS MaxStock
+FROM changed_keys ck
+INNER JOIN OITW w WITH (NOLOCK)
+    ON w.ItemCode = ck.ItemCode AND w.WhsCode = ck.WhsCode
+ORDER BY w.ItemCode, w.WhsCode;
+`
+
+const QueryInventoryStockDeltaFallback = `
+;WITH changed_keys AS (
+    SELECT w.ItemCode, w.WhsCode
+    FROM OITW w WITH (NOLOCK)
+    INNER JOIN OITM m WITH (NOLOCK) ON m.ItemCode = w.ItemCode
+    WHERE (w.OnHand <> 0 OR w.IsCommited <> 0 OR w.OnOrder <> 0 OR w.MinStock <> 0 OR w.MaxStock <> 0)
+      AND (m.UpdateDate >= @SinceDate OR m.CreateDate >= @SinceDate)
+    UNION
+    SELECT DISTINCT l.ItemCode, l.Warehouse AS WhsCode
+    FROM OINM l WITH (NOLOCK)
+    WHERE l.DocDate >= @SinceDate
+)
+SELECT
+    w.ItemCode,
+    w.WhsCode,
+    ISNULL(w.OnHand, 0.0) AS OnHand,
+    ISNULL(w.IsCommited, 0.0) AS IsCommited,
+    ISNULL(w.OnOrder, 0.0) AS OnOrder,
+    ISNULL(w.MinStock, 0.0) AS MinStock,
+    ISNULL(w.MaxStock, 0.0) AS MaxStock
+FROM changed_keys ck
+INNER JOIN OITW w WITH (NOLOCK)
+    ON w.ItemCode = ck.ItemCode AND w.WhsCode = ck.WhsCode
+ORDER BY w.ItemCode, w.WhsCode;
 `
 
 // A19: CreditLine is the real SAP B1 OCRD column for the credit limit and
@@ -535,6 +691,36 @@ SELECT
 FROM ITM1 i
 LEFT JOIN OUOM u ON i.UomEntry = u.UomEntry
 WHERE i.Price > 0
+ORDER BY i.ItemCode, i.PriceList;
+`
+
+const QueryPriceListItemsDelta = `
+SELECT
+    i.ItemCode,
+    i.PriceList,
+    ISNULL(i.Price, 0.0) AS Price,
+    ISNULL(i.Currency, '') AS Currency,
+    ISNULL(i.UomEntry, -1) AS UomEntry,
+    ISNULL(u.UomCode, '') AS UomCode
+FROM ITM1 i
+LEFT JOIN OUOM u ON i.UomEntry = u.UomEntry
+INNER JOIN OITM m ON i.ItemCode = m.ItemCode
+WHERE i.Price > 0 AND (
+    m.UpdateDate >= CAST(@SinceDateTime AS DATETIME)
+    OR (m.UpdateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.UpdateTS, 0) > 0 AND ISNULL(m.UpdateTS, 0) < 10000
+             THEN ISNULL(m.UpdateTS, 0) * 100
+             ELSE ISNULL(m.UpdateTS, 235959)
+        END
+    ) >= @SinceTime)
+    OR m.CreateDate >= CAST(@SinceDateTime AS DATETIME)
+    OR (m.CreateDate = @SinceDate AND (
+        CASE WHEN ISNULL(m.CreateTS, 0) > 0 AND ISNULL(m.CreateTS, 0) < 10000
+             THEN ISNULL(m.CreateTS, 0) * 100
+             ELSE ISNULL(m.CreateTS, 235959)
+        END
+    ) >= @SinceTime)
+)
 ORDER BY i.ItemCode, i.PriceList;
 `
 

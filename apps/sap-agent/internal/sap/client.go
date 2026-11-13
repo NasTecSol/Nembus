@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -59,17 +60,21 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	}
 
 	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   4 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: cfg.SAPInsecureSkipSSL,
 		},
-		MaxIdleConns:        10,
-		IdleConnTimeout:     30 * time.Second,
-		DisableCompression:  false,
+		MaxIdleConns:       10,
+		IdleConnTimeout:    30 * time.Second,
+		DisableCompression: false,
 	}
 
 	httpClient := &http.Client{
 		Jar:       jar,
-		Timeout:   60 * time.Second,
+		Timeout:   15 * time.Second,
 		Transport: transport,
 	}
 

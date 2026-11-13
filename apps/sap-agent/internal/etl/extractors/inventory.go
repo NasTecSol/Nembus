@@ -2,7 +2,11 @@ package extractors
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/NasTecSol/nembus-sap/mappings"
 	"github.com/NasTecSol/nembus-sap/schema"
@@ -17,17 +21,7 @@ func NewInventoryExtractor(mssql *db.MSSQLClient) *InventoryExtractor {
 	return &InventoryExtractor{mssql: mssql}
 }
 
-func (e *InventoryExtractor) ExtractInventory(ctx context.Context) ([]mappings.CanonicalInventoryStock, error) {
-	if e.mssql == nil || e.mssql.DB == nil {
-		return nil, fmt.Errorf("mssql database is not connected")
-	}
-
-	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryInventoryStock)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query OITW: %w", err)
-	}
-	defer rows.Close()
-
+func scanInventoryStockRows(rows *sql.Rows) ([]mappings.CanonicalInventoryStock, error) {
 	var stockList []mappings.CanonicalInventoryStock
 	for rows.Next() {
 		var inv mappings.SAPInventoryStock
@@ -42,9 +36,57 @@ func (e *InventoryExtractor) ExtractInventory(ctx context.Context) ([]mappings.C
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan OITW row: %w", err)
 		}
-
 		stockList = append(stockList, inv.ToCanonical())
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating OITW rows: %w", err)
+	}
 	return stockList, nil
+}
+
+func (e *InventoryExtractor) ExtractInventory(ctx context.Context) ([]mappings.CanonicalInventoryStock, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+
+	rows, err := e.mssql.DB.QueryContext(ctx, schema.QueryInventoryStock)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OITW: %w", err)
+	}
+	defer rows.Close()
+
+	return scanInventoryStockRows(rows)
+}
+
+// ExtractInventoryDelta extracts warehouse stock balances touched in SAP B1 since the given watermark.
+func (e *InventoryExtractor) ExtractInventoryDelta(ctx context.Context, since time.Time) ([]mappings.CanonicalInventoryStock, error) {
+	if e.mssql == nil || e.mssql.DB == nil {
+		return nil, fmt.Errorf("mssql database is not connected")
+	}
+	sinceDate, sinceTime, sinceDateTime := sapDeltaParams(since)
+
+	queryCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+
+	rows, err := e.mssql.DB.QueryContext(queryCtx, schema.QueryInventoryStockDelta,
+		sql.Named("SinceDate", sinceDate),
+		sql.Named("SinceTime", sinceTime),
+		sql.Named("SinceDateTime", sinceDateTime),
+	)
+	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") {
+			return nil, fmt.Errorf("failed to query OITW delta: %w", err)
+		}
+		fbCtx, fbCancel := context.WithTimeout(ctx, 25*time.Second)
+		defer fbCancel()
+		rows, err = e.mssql.DB.QueryContext(fbCtx, schema.QueryInventoryStockDeltaFallback,
+			sql.Named("SinceDate", sinceDate),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query OITW delta: %w", err)
+		}
+	}
+	defer rows.Close()
+
+	return scanInventoryStockRows(rows)
 }

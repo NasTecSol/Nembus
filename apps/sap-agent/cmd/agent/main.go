@@ -137,17 +137,20 @@ func main() {
 		cfg.Cloud.AppUpdateClientKey = AppUpdateKey
 	}
 
+	// Always start in pre-onboarding mode so no migration, downstream, or upstream
+	// sync runs automatically on startup before onboarding is completed.
+	cfg.OnboardingCompleted = false
+	_ = config.SaveConfig(cfg)
+	log.Println("[SAP-AGENT] Startup complete: waiting for onboarding completion before starting Downstream and Upstream syncs.")
+
 	// 2. Initialize Local SQLite Checkpoint Storage
 	sqliteStore, err := db.NewSQLiteStore(cfg.SQLitePath)
 	if err != nil {
 		log.Fatalf("[SAP-AGENT] Failed to initialize SQLite storage at %s: %v", cfg.SQLitePath, err)
 	}
 
-	// 3. Optional SQL Server client init
-	mssqlClient, err := db.NewMSSQLClient(cfg.MSSQL)
-	if err != nil {
-		log.Printf("[SAP-AGENT] Info: SQL Server connection not yet established (%v). Will configure via GUI.", err)
-	}
+	// 3. SQL Server client will be established upon onboarding completion
+	var mssqlClient *db.MSSQLClient
 
 	// 4. Initialize Cloud Transport and ETL Engine
 	cloudClient := transport.NewCloudClient(cfg.Cloud)
