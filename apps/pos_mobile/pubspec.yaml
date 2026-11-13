@@ -76,6 +76,7 @@ flutter:
     - migrations/pos_extensions.sql
     - images/
     - assets/fonts/
+    - assets/timer.mp3
 
   fonts:
     - family: Cairo
