@@ -1,4 +1,4 @@
-.PHONY: sync-core generate-core generate-client build-server build-client build-agent build-biometric-agent dev-server dev-client dev-agent dev-biometric-agent tidy swagger db-diff db-migrate db-status db-hash db-lint sqlc verify test
+.PHONY: sync-core generate-core generate-client build-server build-client build-agent build-agent-cli build-agent-all build-biometric-agent dev-server dev-client dev-agent dev-agent-cli dev-biometric-agent tidy swagger db-diff db-migrate db-status db-hash db-lint sqlc verify test
 
 # Database / Atlas Commands
 db-diff:
@@ -43,7 +43,7 @@ build-client:
 
 build-agent:
 	@echo "==> Building SAP agent..."
-	@cd apps/sap-agent && go build -o bin/sap-agent cmd/main.go
+	@powershell -ExecutionPolicy Bypass -File scripts/build_sap_agent.ps1 -Target agent
 
 build-biometric-agent:
 	@echo "==> Building Biometric agent..."
@@ -56,6 +56,9 @@ dev-client:
 	@cd apps/pos-client && wails dev
 
 dev-agent:
+	@cd apps/sap-agent && go run cmd/agent/main.go
+
+dev-agent-cli:
 	@cd apps/sap-agent && go run cmd/main.go daemon
 
 dev-biometric-agent:

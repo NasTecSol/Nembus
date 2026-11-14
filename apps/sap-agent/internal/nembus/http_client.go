@@ -20,11 +20,6 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 )
 
-const (
-	upstreamServiceUsername = "sap_migrator"
-	upstreamServicePassword = "SapAgent@2026"
-)
-
 // HTTPClient implements pipeline.NembusClient using the Nembus Cloud REST API
 // and local SQLite outbox state when a direct PostgreSQL connection is not configured.
 type HTTPClient struct {
@@ -113,13 +108,8 @@ func (c *HTTPClient) login(ctx context.Context, userLogin, password string) (str
 	return "", fmt.Errorf("login status %d", resp.StatusCode)
 }
 
-func (c *HTTPClient) resolveToken(ctx context.Context, preferServiceAccount bool) (string, error) {
+func (c *HTTPClient) resolveToken(ctx context.Context, _ bool) (string, error) {
 	agentCfg := agentconfig.Get()
-	if preferServiceAccount {
-		if tok, err := c.login(ctx, upstreamServiceUsername, upstreamServicePassword); err == nil && tok != "" {
-			return tok, nil
-		}
-	}
 	if agentCfg != nil {
 		if agentCfg.MigratorUser != "" && agentCfg.MigratorPassword != "" {
 			if tok, err := c.login(ctx, agentCfg.MigratorUser, agentCfg.MigratorPassword); err == nil && tok != "" {
@@ -134,10 +124,7 @@ func (c *HTTPClient) resolveToken(ctx context.Context, preferServiceAccount bool
 			return tok, nil
 		}
 	}
-	if tok, err := c.login(ctx, upstreamServiceUsername, upstreamServicePassword); err == nil && tok != "" {
-		return tok, nil
-	}
-	return "", fmt.Errorf("unable to obtain Nembus Cloud auth token for upstream sync")
+	return "", fmt.Errorf("unable to obtain Nembus Cloud auth token for upstream sync (configure Migrator credentials or Cloud APIKey)")
 }
 
 func (c *HTTPClient) organizationID() int32 {

@@ -1,0 +1,5 @@
+*.exe
+*.rar
+*.db
+bin/
+agent_config.json

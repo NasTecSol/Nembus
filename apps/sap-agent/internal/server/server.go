@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/NasTecSol/nembus-sap/contracts"
 	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
@@ -28,6 +27,7 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
+	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/kardianos/service"
 )
 
@@ -46,8 +46,10 @@ type Server struct {
 	lastDownstreamStats  *etl.DownstreamStats
 	lastDownstreamTime   *time.Time
 	lastDownstreamErr    string
+	lastReconcileReport  *contracts.ReconciliationReport
 	pgPool               *pgxpool.Pool
 	router               *gin.Engine
+	httpServer           *http.Server
 	uiFS                 embed.FS
 }
 
@@ -81,13 +83,15 @@ func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteSto
 	r.Use(gin.Recovery())
 
 	s := &Server{
-		cfg:         cfg,
-		engine:      engine,
-		sqlite:      sqlite,
-		mssql:       mssql,
-		cloudClient: cloudClient,
-		router:      r,
-		uiFS:        uiFS,
+		cfg:                  cfg,
+		engine:               engine,
+		sqlite:               sqlite,
+		mssql:                mssql,
+		cloudClient:          cloudClient,
+		downstreamAutoActive: cfg != nil && cfg.OnboardingCompleted && cfg.DownstreamAutoActive,
+		upstreamAutoActive:   cfg != nil && cfg.OnboardingCompleted && cfg.UpstreamAutoActive,
+		router:               r,
+		uiFS:                 uiFS,
 	}
 
 	s.setupRoutes()
@@ -112,7 +116,6 @@ func (s *Server) setupRoutes() {
 		data, _ := s.uiFS.ReadFile("app.js")
 		c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
 	})
-
 
 	// 2. WebSocket Route
 	s.router.GET("/ws", s.handleWebSocket)
@@ -178,7 +181,25 @@ func (s *Server) Start(port int) error {
 	go s.startDownstreamScheduler()
 	go s.startUpstreamScheduler()
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	return s.router.Run(addr)
+	s.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
+	err := s.httpServer.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+// Shutdown gracefully closes the HTTP listener (used prior to self-update restart).
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s.httpServer == nil {
+		return nil
+	}
+	shutdownCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return s.httpServer.Shutdown(shutdownCtx)
 }
 
 // nextScheduledRunTime returns the next start-to-start run time (runStart + interval),
@@ -290,6 +311,26 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.MSSQL.Host != "" {
 		current.MSSQL = req.MSSQL
 	}
+	if req.ServiceLayer.URL != "" || req.ServiceLayer.Username != "" || req.ServiceLayer.Password != "" || req.ServiceLayer.CompanyDB != "" {
+		if req.ServiceLayer.URL != "" {
+			current.ServiceLayer.URL = req.ServiceLayer.URL
+		}
+		if req.ServiceLayer.CompanyDB != "" {
+			current.ServiceLayer.CompanyDB = req.ServiceLayer.CompanyDB
+		}
+		if req.ServiceLayer.Username != "" {
+			current.ServiceLayer.Username = req.ServiceLayer.Username
+		}
+		if req.ServiceLayer.Password != "" {
+			current.ServiceLayer.Password = req.ServiceLayer.Password
+		}
+		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
+	}
+	if req.SAPCompanyDB != "" {
+		current.SAPCompanyDB = req.SAPCompanyDB
+	} else if req.MSSQL.Database != "" {
+		current.SAPCompanyDB = req.MSSQL.Database
+	}
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -335,6 +376,8 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 		if !current.OnboardingCompleted {
 			s.setDownstreamAutoActive(false)
 			s.setUpstreamAutoActive(false)
+			current.DownstreamAutoActive = false
+			current.UpstreamAutoActive = false
 		}
 	}
 
@@ -415,36 +458,28 @@ func (s *Server) handleOnboardingTenants(c *gin.Context) {
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 
 	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, url, nil)
-	if err == nil {
-		resp, err := httpClient.Do(httpReq)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			defer resp.Body.Close()
-			var data interface{}
-			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
-				c.JSON(http.StatusOK, gin.H{"success": true, "tenants": data})
-				return
-			}
-		}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": fmt.Sprintf("invalid cloud URL: %v", err)})
+		return
+	}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": fmt.Sprintf("failed to reach cloud server (%s): %v", url, err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": fmt.Sprintf("cloud server returned HTTP %d from %s", resp.StatusCode, url)})
+		return
 	}
 
-	// Fallback tenant list if cloud server is initializing or unreachable
-	fallbackTenants := []gin.H{
-		{
-			"id":          "tenant-001",
-			"slug":        "demo-retail",
-			"tenant_name": "Demo Retail Org (Al-Qadsiya)",
-			"is_active":   true,
-			"created_at":  time.Now().Add(-24 * time.Hour),
-		},
-		{
-			"id":          "tenant-002",
-			"slug":        "nastecsol-main",
-			"tenant_name": "NasTecSol Enterprise",
-			"is_active":   true,
-			"created_at":  time.Now().Add(-48 * time.Hour),
-		},
+	var data interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": fmt.Sprintf("failed to decode cloud tenant response: %v", err)})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "tenants": fallbackTenants, "source": "local_catalog"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "tenants": data})
 }
 
 func (s *Server) handleOnboardingLogin(c *gin.Context) {
@@ -484,49 +519,56 @@ func (s *Server) handleOnboardingLogin(c *gin.Context) {
 	})
 
 	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, loginURL, bytes.NewBuffer(loginPayload))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": fmt.Sprintf("invalid cloud login URL: %v", err)})
+		return
+	}
 	httpClient := &http.Client{Timeout: 6 * time.Second}
+	httpReq.Header.Set("Content-Type", "application/json")
+	tenantID := req.TenantSlug
+	if tenantID == "" {
+		tenantID = fmt.Sprintf("%d", req.OrganizationID)
+	}
+	httpReq.Header.Set("x-tenant-id", tenantID)
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": fmt.Sprintf("cloud authentication unreachable (%s): %v", loginURL, err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": fmt.Sprintf("cloud authentication rejected with HTTP %d", resp.StatusCode)})
+		return
+	}
+
 	var token string
-
-	if err == nil {
-		httpReq.Header.Set("Content-Type", "application/json")
-		tenantID := req.TenantSlug
-		if tenantID == "" {
-			tenantID = fmt.Sprintf("%d", req.OrganizationID)
-		}
-		httpReq.Header.Set("x-tenant-id", tenantID)
-
-		resp, err := httpClient.Do(httpReq)
-		if err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				var authResp struct {
-					Data  json.RawMessage `json:"data"`
-					Token string          `json:"token"`
+	var authResp struct {
+		Data  json.RawMessage `json:"data"`
+		Token string          `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&authResp); err == nil {
+		if authResp.Token != "" {
+			token = authResp.Token
+		} else if len(authResp.Data) > 0 {
+			var tokStr string
+			if err := json.Unmarshal(authResp.Data, &tokStr); err == nil && tokStr != "" {
+				token = tokStr
+			} else {
+				var tokObj struct {
+					Token string `json:"token"`
 				}
-				if err := json.NewDecoder(resp.Body).Decode(&authResp); err == nil {
-					if authResp.Token != "" {
-						token = authResp.Token
-					} else if len(authResp.Data) > 0 {
-						var tokStr string
-						if err := json.Unmarshal(authResp.Data, &tokStr); err == nil && tokStr != "" {
-							token = tokStr
-						} else {
-							var tokObj struct {
-								Token string `json:"token"`
-							}
-							if err := json.Unmarshal(authResp.Data, &tokObj); err == nil && tokObj.Token != "" {
-								token = tokObj.Token
-							}
-						}
-					}
+				if err := json.Unmarshal(authResp.Data, &tokObj); err == nil && tokObj.Token != "" {
+					token = tokObj.Token
 				}
 			}
 		}
 	}
 
-	// If cloud auth returned a token, use it; otherwise generate/derive an agent Migrator token
 	if token == "" {
-		token = fmt.Sprintf("migrator_sys_token_%s_%d", req.TenantSlug, time.Now().Unix())
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "cloud authentication succeeded but returned no access token"})
+		return
 	}
 
 	// Update in-memory and persisted config
@@ -570,10 +612,12 @@ func (s *Server) handleOnboardingLogin(c *gin.Context) {
 
 func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	var req struct {
-		MSSQL                     config.MSSQLConfig `json:"mssql"`
-		Cloud                     config.CloudConfig `json:"cloud"`
+		MSSQL                     config.MSSQLConfig        `json:"mssql"`
+		ServiceLayer              config.ServiceLayerConfig `json:"service_layer"`
+		Cloud                     config.CloudConfig        `json:"cloud"`
 		TenantSlug                string             `json:"tenant_slug"`
 		TenantName                string             `json:"tenant_name"`
+		SAPCompanyDB              string             `json:"sap_company_db"`
 		MigratorUser              string             `json:"migrator_user"`
 		MigratorPassword          string             `json:"migrator_password"`
 		MigratorRole              string             `json:"migrator_role"`
@@ -596,6 +640,26 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	current := config.Get()
 	if req.MSSQL.Host != "" {
 		current.MSSQL = req.MSSQL
+	}
+	if req.ServiceLayer.URL != "" || req.ServiceLayer.Username != "" || req.ServiceLayer.Password != "" || req.ServiceLayer.CompanyDB != "" {
+		if req.ServiceLayer.URL != "" {
+			current.ServiceLayer.URL = req.ServiceLayer.URL
+		}
+		if req.ServiceLayer.CompanyDB != "" {
+			current.ServiceLayer.CompanyDB = req.ServiceLayer.CompanyDB
+		}
+		if req.ServiceLayer.Username != "" {
+			current.ServiceLayer.Username = req.ServiceLayer.Username
+		}
+		if req.ServiceLayer.Password != "" {
+			current.ServiceLayer.Password = req.ServiceLayer.Password
+		}
+		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
+	}
+	if req.SAPCompanyDB != "" {
+		current.SAPCompanyDB = req.SAPCompanyDB
+	} else if req.MSSQL.Database != "" {
+		current.SAPCompanyDB = req.MSSQL.Database
 	}
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
@@ -665,6 +729,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	// operator clicks Run Downstream / Run Upstream, and then continues automatically.
 	s.setDownstreamAutoActive(false)
 	s.setUpstreamAutoActive(false)
+	current.DownstreamAutoActive = false
+	current.UpstreamAutoActive = false
+	_ = config.SaveConfig(current)
 
 	log.Printf("[SAP-AGENT] Onboarding completed for tenant '%s'. Waiting for manual 'Run Downstream' / 'Run Upstream' to activate auto-sync.", current.TenantSlug)
 
@@ -710,9 +777,10 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 	cfg := config.Get()
 
 	posted, held, errors, lastFlush, _ := s.sqlite.GetUpstreamStats(c.Request.Context())
-	lastFlushStr := time.Now().Add(-1 * time.Minute).Format(time.RFC3339)
+	var lastFlushStr *string
 	if lastFlush != nil {
-		lastFlushStr = lastFlush.Format(time.RFC3339)
+		formatted := lastFlush.Format(time.RFC3339)
+		lastFlushStr = &formatted
 	}
 
 	downstreamStatus := "standby"
@@ -730,9 +798,10 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 		upstreamStatus = "active"
 	}
 
-	lastDownstreamTimeStr := time.Now().Add(-3 * time.Minute).Format(time.RFC3339)
+	var lastDownstreamTimeStr *string
 	if s.lastDownstreamTime != nil {
-		lastDownstreamTimeStr = s.lastDownstreamTime.Format(time.RFC3339)
+		formatted := s.lastDownstreamTime.Format(time.RFC3339)
+		lastDownstreamTimeStr = &formatted
 	}
 
 	syncedProducts := 0
@@ -748,6 +817,23 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 		syncedCategories = s.lastDownstreamStats.Categories
 		syncedUOMs = s.lastDownstreamStats.UOMs
 		syncedInventory = s.lastDownstreamStats.Inventory
+	}
+
+	reconcileStatus := "not_run"
+	var reconcileScore *string
+	var reconcileTime *string
+	if s.lastReconcileReport != nil {
+		if s.lastReconcileReport.FailedDomains == 0 {
+			reconcileStatus = "matched"
+		} else {
+			reconcileStatus = "mismatch"
+		}
+		if s.lastReconcileReport.TotalDomains > 0 {
+			pct := fmt.Sprintf("%.1f%%", float64(s.lastReconcileReport.PassedDomains)*100.0/float64(s.lastReconcileReport.TotalDomains))
+			reconcileScore = &pct
+		}
+		ts := s.lastReconcileReport.GeneratedAt.Format(time.RFC3339)
+		reconcileTime = &ts
 	}
 
 	// Compute sync state
@@ -773,14 +859,14 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 			"posted_payments":   posted,
 			"pending_outbox":    held,
 			"errors_count":      errors,
-			"next_sync_seconds": 15,
+			"next_sync_seconds": cfg.UpstreamIntervalSec,
 		},
 		"reconciliation": gin.H{
 			"auto_run":          cfg.ReconciliationAutoRun,
 			"interval_seconds":  cfg.ReconciliationIntervalSec,
-			"last_audit_score":  "99.8%",
-			"last_audit_status": "matched",
-			"last_audit_time":   time.Now().Add(-40 * time.Minute).Format(time.RFC3339),
+			"last_audit_score":  reconcileScore,
+			"last_audit_status": reconcileStatus,
+			"last_audit_time":   reconcileTime,
 		},
 	})
 }
@@ -798,8 +884,10 @@ func (s *Server) handleRunDownstreamSync(c *gin.Context) {
 		domains = DownstreamMasterDomains
 	}
 
-	if config.Get().OnboardingCompleted && !s.isDownstreamAutoActive() {
+	if cfg := config.Get(); cfg.OnboardingCompleted && !s.isDownstreamAutoActive() {
 		s.setDownstreamAutoActive(true)
+		cfg.DownstreamAutoActive = true
+		_ = config.SaveConfig(cfg)
 		log.Println("[SAP-AGENT] Downstream automatic scheduler enabled after manual trigger.")
 	}
 
@@ -842,8 +930,10 @@ func (s *Server) handleGetUpstreamOutbox(c *gin.Context) {
 
 func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 	log.Println("[SAP-AGENT] Manual Upstream Outbox Sync triggered")
-	if config.Get().OnboardingCompleted && !s.isUpstreamAutoActive() {
+	if cfg := config.Get(); cfg.OnboardingCompleted && !s.isUpstreamAutoActive() {
 		s.setUpstreamAutoActive(true)
+		cfg.UpstreamAutoActive = true
+		_ = config.SaveConfig(cfg)
 		log.Println("[SAP-AGENT] Upstream automatic scheduler enabled after manual trigger.")
 	}
 	stats, err := s.runUpstreamSync(c.Request.Context())
@@ -865,7 +955,10 @@ func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 
 func (s *Server) buildPipeConfig() *legacyconfig.Config {
 	cfg := config.Get()
-	slURL := fmt.Sprintf("https://%s:50000/b1s/v1", cfg.MSSQL.Host)
+	slURL := cfg.ServiceLayer.URL
+	if slURL == "" && cfg.MSSQL.Host != "" {
+		slURL = fmt.Sprintf("https://%s:50000/b1s/v1", cfg.MSSQL.Host)
+	}
 	if envSL := os.Getenv("SAP_SL_URL"); envSL != "" {
 		slURL = envSL
 	}
@@ -879,22 +972,36 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		}
 	}
 
-	companyDB := cfg.SAPCompanyDB
+	companyDB := cfg.ServiceLayer.CompanyDB
 	if companyDB == "" {
+		companyDB = cfg.SAPCompanyDB
+	}
+	if companyDB == "" || (companyDB == "Qadsiya" && cfg.MSSQL.Database != "" && cfg.MSSQL.Database != "Qadsiya") {
 		companyDB = cfg.MSSQL.Database
 	}
 	if envDB := os.Getenv("SAP_COMPANY_DB"); envDB != "" {
 		companyDB = envDB
 	}
 
-	username := cfg.SAPUserMapping
+	username := cfg.ServiceLayer.Username
+	if username == "" {
+		username = cfg.SAPUserMapping
+	}
 	if envUser := os.Getenv("SAP_USERNAME"); envUser != "" {
 		username = envUser
 	}
 
-	password := cfg.MSSQL.Password
+	password := cfg.ServiceLayer.Password
+	if password == "" {
+		password = cfg.MSSQL.Password
+	}
 	if envPass := os.Getenv("SAP_PASSWORD"); envPass != "" {
 		password = envPass
+	}
+
+	insecureSSL := cfg.ServiceLayer.InsecureSkipSSL
+	if cfg.ServiceLayer.URL == "" {
+		insecureSSL = true
 	}
 
 	batchSize := cfg.BatchSize
@@ -928,12 +1035,17 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		storeID = 1
 	}
 
+	defaultCustomer := "C000001"
+	if envCust := os.Getenv("NEMBUS_DEFAULT_CUSTOMER_CODE"); envCust != "" {
+		defaultCustomer = envCust
+	}
+
 	return &legacyconfig.Config{
 		SAPServiceLayerURL:     slURL,
 		SAPCompanyDB:           companyDB,
 		SAPUsername:            username,
 		SAPPassword:            password,
-		SAPInsecureSkipSSL:     true,
+		SAPInsecureSkipSSL:     insecureSSL,
 		SAPMSSQLEnabled:        true,
 		SAPMSSQLHost:           cfg.MSSQL.Host,
 		SAPMSSQLPort:           cfg.MSSQL.Port,
@@ -944,7 +1056,7 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		NembusStoreID:          storeID,
 		NembusPriceListID:      priceListID,
 		NembusTaxCategoryID:    taxCatID,
-		NembusDefaultCustomer:  "C000001",
+		NembusDefaultCustomer:  defaultCustomer,
 		NembusDefaultWarehouse: whCode,
 		BatchSize:              batchSize,
 	}
@@ -1006,6 +1118,11 @@ func (s *Server) runDownstreamSync(ctx context.Context, domains []contracts.Doma
 	return stats, nil
 }
 
+// RunUpstreamOnce executes a single upstream outbox cycle (used by the unified CLI runner).
+func (s *Server) RunUpstreamOnce(ctx context.Context) (*pipeline.UpstreamStats, error) {
+	return s.runUpstreamSync(ctx)
+}
+
 func (s *Server) runUpstreamSync(ctx context.Context) (*pipeline.UpstreamStats, error) {
 	if !config.Get().OnboardingCompleted {
 		return nil, fmt.Errorf("onboarding is not completed yet; complete onboarding to start upstream sync")
@@ -1048,7 +1165,6 @@ func (s *Server) runUpstreamSync(ctx context.Context) (*pipeline.UpstreamStats, 
 
 	return s.upstreamSync.ProcessOutbox(ctx)
 }
-
 
 func (s *Server) handleTestMSSQL(c *gin.Context) {
 	cfg := config.Get().MSSQL
@@ -1111,7 +1227,6 @@ func (s *Server) handleTestCloud(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": ok, "message": msg})
 }
-
 
 func (s *Server) handleDiscovery(c *gin.Context) {
 	cfg := config.Get().MSSQL
@@ -1229,6 +1344,7 @@ func (s *Server) handleReconciliation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.lastReconcileReport = report
 
 	c.JSON(http.StatusOK, report)
 }
@@ -1305,24 +1421,53 @@ func (s *Server) handleCheckUpdates(c *gin.Context) {
 }
 
 func (s *Server) handleApplyUpdate(c *gin.Context) {
+	if s.engine != nil && s.engine.IsRunning() {
+		c.JSON(http.StatusConflict, gin.H{"error": "cannot apply update while a migration run is in progress"})
+		return
+	}
+
 	var req struct {
 		DownloadURL    string `json:"downloadUrl"`
 		ChecksumSHA256 string `json:"checksumSha256"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil || req.DownloadURL == "" || req.ChecksumSHA256 == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "downloadUrl and checksumSha256 required"})
+		return
+	}
+
+	cfg := config.Get()
+	currVer := cfg.Version
+	if currVer == "" {
+		currVer = "v1.0.0"
+	}
+	info, err := updater.CheckForUpdate(currVer, cfg.Cloud.BaseURL, cfg.Cloud.AppUpdateClientKey)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to verify update metadata with cloud server: %v", err)})
+		return
+	}
+	if info == nil || !info.HasUpdate || info.DownloadURL != req.DownloadURL || info.ChecksumSHA256 == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "requested update does not match an active verified release"})
 		return
 	}
 
 	// Trigger async update sequence so HTTP response is returned to client before process restart
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		err := updater.ApplyUpdate(
-			req.DownloadURL,
-			req.ChecksumSHA256,
-			s.cfg.Cloud.AppUpdateClientKey,
+		err := updater.ApplyUpdateWithHook(
+			info.DownloadURL,
+			info.ChecksumSHA256,
+			cfg.Cloud.AppUpdateClientKey,
 			!service.Interactive(),
 			"NembusSAPMigrationAgent",
+			func() {
+				_ = s.Shutdown(context.Background())
+				if s.sqlite != nil {
+					_ = s.sqlite.Close()
+				}
+				if s.mssql != nil {
+					_ = s.mssql.Close()
+				}
+			},
 		)
 		if err != nil {
 			log.Printf("[SAP-UPDATER] Failed to apply update: %v", err)
@@ -1334,4 +1479,3 @@ func (s *Server) handleApplyUpdate(c *gin.Context) {
 		"message": "Update initiated. SAP Agent is downloading binary, verifying checksum, and restarting.",
 	})
 }
-

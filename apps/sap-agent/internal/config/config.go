@@ -19,6 +19,14 @@ type MSSQLConfig struct {
 	ConnectionTimeout      int    `json:"connection_timeout_seconds"`
 }
 
+type ServiceLayerConfig struct {
+	URL             string `json:"url"`
+	CompanyDB       string `json:"company_db"`
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	InsecureSkipSSL bool   `json:"insecure_skip_ssl"`
+}
+
 type CloudConfig struct {
 	BaseURL            string `json:"base_url"`
 	APIKey             string `json:"api_key"`
@@ -67,11 +75,14 @@ type AgentConfig struct {
 	// Pipeline Scheduling & Automation
 	DownstreamIntervalSec     int  `json:"downstream_interval_sec"`     // Default 300s (5m)
 	UpstreamIntervalSec       int  `json:"upstream_interval_sec"`       // Default 60s (1m)
+	DownstreamAutoActive      bool `json:"downstream_auto_active"`      // Persisted auto-sync toggle
+	UpstreamAutoActive        bool `json:"upstream_auto_active"`        // Persisted auto-sync toggle
 	ReconciliationIntervalSec int  `json:"reconciliation_interval_sec"` // Default 3600s (1h)
 	ReconciliationAutoRun     bool `json:"reconciliation_auto_run"`
 
-	MSSQL MSSQLConfig `json:"mssql"`
-	Cloud CloudConfig `json:"cloud"`
+	MSSQL        MSSQLConfig        `json:"mssql"`
+	ServiceLayer ServiceLayerConfig `json:"service_layer"`
+	Cloud        CloudConfig        `json:"cloud"`
 }
 
 var (
@@ -113,6 +124,9 @@ func DefaultConfig() *AgentConfig {
 			Encrypt:                false,
 			TrustServerCertificate: true,
 			ConnectionTimeout:      15,
+		},
+		ServiceLayer: ServiceLayerConfig{
+			InsecureSkipSSL: true,
 		},
 		Cloud: CloudConfig{
 			BaseURL:            "http://127.0.0.1:8080",

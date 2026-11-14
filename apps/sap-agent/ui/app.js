@@ -77,7 +77,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ onboarding_completed: false })
                 });
-            } catch (_) {}
+            } catch (_) { }
             switchTab('tab-onboarding');
             goToWizardStep(1);
             await loadConfigAndStatus();
@@ -177,6 +177,11 @@
             setVal('ob-mssql-password', cfg.mssql.password);
             setVal('ob-mssql-database', cfg.mssql.database);
             setVal('ob-mapped-company', cfg.mssql.database);
+        }
+        if (cfg.service_layer) {
+            setVal('ob-sl-url', cfg.service_layer.url || '');
+            setVal('ob-sl-user', cfg.service_layer.username || '');
+            setVal('ob-sl-password', cfg.service_layer.password || '');
         }
         if (cfg.cloud) {
             setVal('ob-cloud-url', cfg.cloud.base_url);
@@ -503,6 +508,13 @@
                 encrypt: document.getElementById('ob-mssql-encrypt')?.checked,
                 connection_timeout_seconds: 15
             },
+            service_layer: {
+                url: getVal('ob-sl-url'),
+                company_db: getVal('ob-mssql-database'),
+                username: getVal('ob-sl-user') || getVal('ob-sap-operator') || 'manager',
+                password: getVal('ob-sl-password'),
+                insecure_skip_ssl: true
+            },
             cloud: {
                 base_url: getVal('ob-cloud-url'),
                 organization_id: parseInt(getVal('ob-target-orgid')) || 1,
@@ -511,6 +523,7 @@
             },
             tenant_slug: state.onboarding.selectedTenant,
             tenant_name: state.onboarding.selectedTenant,
+            sap_company_db: getVal('ob-mssql-database'),
             migrator_user: getVal('ob-migrator-user') || 'Migrator',
             migrator_password: getVal('ob-migrator-password') || 'Migrator',
             migrator_role: 'auto-user',
@@ -894,7 +907,7 @@
                     const statusData = await statusRes.json();
                     state.syncStatus = statusData;
                     updateDashboardSyncCards(statusData);
-                } catch (_) {}
+                } catch (_) { }
             } else {
                 showToast(data.message, 'warning');
                 appendLog('WARN', `[Downstream] ${data.message}`);
@@ -989,7 +1002,7 @@
                     const statusData = await statusRes.json();
                     state.syncStatus = statusData;
                     updateDashboardSyncCards(statusData);
-                } catch (_) {}
+                } catch (_) { }
             } else {
                 showToast(data.message, 'warning');
                 appendLog('WARN', `[Downstream] ${data.message}`);
@@ -1119,6 +1132,7 @@
                     api_key: getVal('cfg-api-key')
                 },
                 tenant_slug: getVal('cfg-tenant-slug'),
+                sap_company_db: getVal('cfg-mssql-db'),
                 migrator_user: getVal('cfg-migrator-user'),
                 migrator_role: getVal('cfg-migrator-role'),
                 migrator_token: getVal('cfg-api-key')
