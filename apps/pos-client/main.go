@@ -231,6 +231,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		// [NEW] Template-based ESC/POS receipt printing
 		printHandler := handler.NewPrintHandler(printUC)
 		router.RegisterPrintRoutes(api, printHandler)
+		router.RegisterReceiptTemplateRoutes(api, handler.NewReceiptTemplateHandler())
 
 		// [NEW] Purchase Orders
 		purchaseOrdersHandler := handler.NewPurchaseOrdersHandler(purchaseOrdersUC)
