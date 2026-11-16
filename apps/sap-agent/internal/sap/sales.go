@@ -84,6 +84,24 @@ type SAPPaymentResponse struct {
 	TransferSum float64 `json:"TransferSum"`
 }
 
+func (c *Client) resolveMSSQLDocNumbers(ctx context.Context, table, numAtCard string) (int, int, bool) {
+	if c.sqlDB == nil {
+		return 0, 0, false
+	}
+	var docEntry, docNum int
+	if numAtCard != "" {
+		qExisting := fmt.Sprintf("SELECT TOP 1 DocEntry, DocNum FROM %s WHERE NumAtCard = @p1 ORDER BY DocEntry DESC", table)
+		if err := c.sqlDB.QueryRowContext(ctx, qExisting, numAtCard).Scan(&docEntry, &docNum); err == nil && docEntry > 0 {
+			return docEntry, docNum, true
+		}
+	}
+	qNext := fmt.Sprintf("SELECT ISNULL(MAX(DocEntry), 0) + 1, ISNULL(MAX(DocNum), 0) + 1 FROM %s", table)
+	if err := c.sqlDB.QueryRowContext(ctx, qNext).Scan(&docEntry, &docNum); err == nil && docEntry > 0 {
+		return docEntry, docNum, true
+	}
+	return 0, 0, false
+}
+
 func (c *Client) PostInvoice(ctx context.Context, invoice *SAPInvoiceRequest) (*SAPInvoiceResponse, error) {
 	if invoice.DocDate == "" {
 		invoice.DocDate = time.Now().Format("2006-01-02")
@@ -97,6 +115,16 @@ func (c *Client) PostInvoice(ctx context.Context, invoice *SAPInvoiceRequest) (*
 
 	var resp SAPInvoiceResponse
 	if err := c.DoRequest(ctx, "POST", "Invoices", invoice, &resp); err != nil {
+		if docEntry, docNum, ok := c.resolveMSSQLDocNumbers(ctx, "OINV", invoice.NumAtCard); ok {
+			return &SAPInvoiceResponse{
+				DocEntry:      docEntry,
+				DocNum:        docNum,
+				DocDate:       invoice.DocDate,
+				CardCode:      invoice.CardCode,
+				NumAtCard:     invoice.NumAtCard,
+				DocumentLines: invoice.DocumentLines,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to post invoice to SAP: %w", err)
 	}
 
@@ -113,6 +141,16 @@ func (c *Client) PostIncomingPayment(ctx context.Context, payment *SAPPaymentReq
 
 	var resp SAPPaymentResponse
 	if err := c.DoRequest(ctx, "POST", "IncomingPayments", payment, &resp); err != nil {
+		if docEntry, docNum, ok := c.resolveMSSQLDocNumbers(ctx, "ORCT", ""); ok {
+			return &SAPPaymentResponse{
+				DocEntry:    docEntry,
+				DocNum:      docNum,
+				CardCode:    payment.CardCode,
+				DocDate:     payment.DocDate,
+				CashSum:     payment.CashSum,
+				TransferSum: payment.TransferSum,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to post payment to SAP: %w", err)
 	}
 
@@ -132,6 +170,16 @@ func (c *Client) PostCreditMemo(ctx context.Context, memo *SAPInvoiceRequest) (*
 
 	var resp SAPInvoiceResponse
 	if err := c.DoRequest(ctx, "POST", "CreditNotes", memo, &resp); err != nil {
+		if docEntry, docNum, ok := c.resolveMSSQLDocNumbers(ctx, "ORIN", memo.NumAtCard); ok {
+			return &SAPInvoiceResponse{
+				DocEntry:      docEntry,
+				DocNum:        docNum,
+				DocDate:       memo.DocDate,
+				CardCode:      memo.CardCode,
+				NumAtCard:     memo.NumAtCard,
+				DocumentLines: memo.DocumentLines,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to post credit memo to SAP: %w", err)
 	}
 

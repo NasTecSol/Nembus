@@ -33,7 +33,7 @@ CREATE TABLE pos_transactions (
 CREATE TABLE pos_transaction_lines (
     id SERIAL PRIMARY KEY,
     transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
     product_variant_id INTEGER REFERENCES product_variants(id) ON DELETE SET NULL,
     quantity DECIMAL(15,3) NOT NULL,
     uom_id INTEGER REFERENCES units_of_measure(id) ON DELETE SET NULL,

@@ -122,6 +122,14 @@ func Divider() []byte {
 	return []byte(strings.Repeat("-", COLS) + "\n")
 }
 
+// DividerWidth returns a separator for the selected printer column width.
+func DividerWidth(width int) []byte {
+	if width <= 0 || width > 96 {
+		width = COLS
+	}
+	return []byte(strings.Repeat("-", width) + "\n")
+}
+
 // PadRight pads s with spaces on the right to width w.
 func PadRight(s string, w int) string {
 	if len(s) >= w {

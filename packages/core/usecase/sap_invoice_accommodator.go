@@ -65,6 +65,15 @@ func (a *SAPInvoiceStockAccommodator) Accommodate(ctx context.Context, repo *rep
 		return fmt.Errorf("invalid sap invoice stock payload: %w", err)
 	}
 
+	for _, item := range payload.ShortageItems {
+		if item.SAPOnHand < item.Quantity {
+			return fmt.Errorf(
+				"cannot approve: SKU %s still has low stock in SAP (on hand: %.2f, required: %.2f); restock in SAP first",
+				item.ProductSKU, item.SAPOnHand, item.Quantity,
+			)
+		}
+	}
+
 	if payload.SalesOrderID != "" {
 		return a.accommodateSalesOrder(ctx, repo, payload, reviewerID)
 	}
@@ -122,6 +131,23 @@ func (a *SAPInvoiceStockAccommodator) accommodateSalesOrder(ctx context.Context,
 	})
 }
 
+func (a *SAPInvoiceStockAccommodator) allowAdjustmentForce(ctx context.Context, repo *repository.Queries, orgID int32) bool {
+	policy, err := repo.GetApprovalPolicy(ctx, repository.GetApprovalPolicyParams{
+		OrganizationID: orgID,
+		Domain:         "sap_invoice",
+		Action:         "stock_hold",
+	})
+	if err != nil || !policy.IsEnabled {
+		return false
+	}
+	var rules map[string]any
+	if len(policy.Rules) == 0 || json.Unmarshal(policy.Rules, &rules) != nil {
+		return false
+	}
+	v, _ := ruleBool(rules, "allow_adjustment_force")
+	return v
+}
+
 func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *repository.Queries, req repository.ApprovalRequest, notes string) error {
 	if repo == nil {
 		return errors.New("repository is not configured")
@@ -131,13 +157,19 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 		return fmt.Errorf("invalid sap invoice stock payload: %w", err)
 	}
 
+	allowForce := a.allowAdjustmentForce(ctx, repo, req.OrganizationID)
+
 	if payload.SalesOrderID != "" {
 		orderID, err := uuid.Parse(payload.SalesOrderID)
 		if err != nil {
 			return fmt.Errorf("invalid sales_order_id: %w", err)
 		}
+		syncState := "rejected"
+		if allowForce {
+			syncState = "adjustment_created_pending_force"
+		}
 		meta := map[string]any{
-			"sap_sync_state": "adjustment_created_pending_force",
+			"sap_sync_state": syncState,
 			"rejected_notes": notes,
 			"rejected_at":    time.Now().Format(time.RFC3339),
 		}
@@ -150,6 +182,20 @@ func (a *SAPInvoiceStockAccommodator) Reject(ctx context.Context, repo *reposito
 
 	if payload.TransactionID <= 0 {
 		return errors.New("transaction_id is required in payload")
+	}
+
+	if !allowForce {
+		meta := map[string]any{
+			"sap_sync_state": "rejected",
+			"rejected_notes": notes,
+			"rejected_at":    time.Now().Format(time.RFC3339),
+		}
+		rawMeta, _ := json.Marshal(meta)
+		_ = repo.PatchPosTransactionMetadata(ctx, repository.PatchPosTransactionMetadataParams{
+			ID:      int32(payload.TransactionID),
+			Column2: rawMeta,
+		})
+		return nil
 	}
 
 	for _, item := range payload.ShortageItems {

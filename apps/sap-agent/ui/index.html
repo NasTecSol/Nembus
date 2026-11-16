@@ -266,10 +266,6 @@
                                         <input type="text" id="ob-cloud-url" placeholder="https://your-cloud-domain.com or http://127.0.0.1:8080">
                                     </div>
                                     <div class="form-group">
-                                        <label>Direct Target Postgres Database URL (Optional Audit Parity)</label>
-                                        <input type="text" id="ob-cloud-dburl" placeholder="postgres://user:pass@localhost:5432/nembus?sslmode=disable">
-                                    </div>
-                                    <div class="form-group">
                                         <label>Connection Timeout (Seconds)</label>
                                         <input type="number" id="ob-cloud-timeout" value="60">
                                     </div>
@@ -333,6 +329,10 @@
                                     <div class="form-group">
                                         <label>Target Organization ID</label>
                                         <input type="number" id="ob-target-orgid" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Target Nembus Store ID</label>
+                                        <input type="number" id="ob-target-storeid" value="1" min="1">
                                     </div>
                                     <div class="form-group">
                                         <label>Default Retail Store Code Mapping</label>
@@ -734,7 +734,7 @@
                         <div class="sync-header-controls">
                             <button class="btn btn-primary" id="btn-manual-downstream">
                                 <span class="btn-spinner"></span>
-                                <span>&#9654; Run Full Downstream Sync</span>
+                                <span>&#9654; Run Downstream Sync</span>
                             </button>
                         </div>
                     </div>

@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
+	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/nembus"
 	"github.com/NasTecSol/nembus-sap-agent/internal/pipeline"
 	"github.com/NasTecSol/nembus-sap-agent/internal/sap"
+	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/google/uuid"
 )
 
@@ -81,10 +83,15 @@ type MockNembusClient struct {
 	markedReturns         map[int64]markedSAPDoc
 	originalSAPDocEntries map[int32]int
 
-	stockBySKU            map[string]float64
+	stockBySKU              map[string]float64
 	fetchUnpostedReturnsErr error
 	fetchReturnLinesErr     error
 	markReturnPostedErr     error
+
+	stockHoldPolicyLoaded   bool
+	stockHoldPolicyRequired bool
+	stockHoldPolicyRules    map[string]any
+	stockHoldPolicyErr      error
 }
 
 type markedSAPDoc struct {
@@ -192,6 +199,13 @@ func (m *MockNembusClient) HoldSalesOrderForStockReview(ctx context.Context, ord
 	}
 	m.heldSalesOrders[orderID] = summary
 	return nil
+}
+
+func (m *MockNembusClient) GetApprovalPolicyRules(ctx context.Context, domain, action string) (map[string]any, bool, error) {
+	if !m.stockHoldPolicyLoaded {
+		return map[string]any{"hold_on_zero_stock": true}, true, nil
+	}
+	return m.stockHoldPolicyRules, m.stockHoldPolicyRequired, m.stockHoldPolicyErr
 }
 
 func TestSalesOrderUpstream_StockShortageHold(t *testing.T) {
@@ -765,4 +779,308 @@ func TestProcessOutbox_StockShortageHold(t *testing.T) {
 		t.Errorf("expected shortage summary, got: %s", summary)
 	}
 }
+
+func TestProcessOutbox_StockHoldPolicyDisabled_DoesNotHold(t *testing.T) {
+	mockSAP := &stockShortageSAPClient{
+		MockSAPClient: MockSAPClient{
+			postInvoiceFunc: func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+				return nil, errors.New("SAP error code -10: item quantity would fall below zero")
+			},
+		},
+		onHandStock: 0.0,
+	}
+	mockNembus := newMockNembusClient()
+	mockNembus.stockHoldPolicyLoaded = true
+	mockNembus.stockHoldPolicyRequired = false
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                89,
+			TransactionNumber: "TX-NO-HOLD-001",
+			TransactionDate:   time.Now(),
+			TotalAmount:       120.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[89] = []nembus.POSTransactionLine{
+		{ID: 891, TransactionID: 89, ProductSKU: "SKU-ZERO", Quantity: 2.0, UnitPrice: 60.0, LineTotal: 120.0},
+	}
+
+	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
+	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+
+	stats, err := sync.ProcessOutbox(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected ProcessOutbox error: %v", err)
+	}
+	if stats.TransactionsHeld != 0 {
+		t.Errorf("expected 0 held transactions when policy disabled, got %d", stats.TransactionsHeld)
+	}
+	if stats.Errors != 1 {
+		t.Errorf("expected 1 SAP posting error without reactive hold, got %d", stats.Errors)
+	}
+	if len(mockNembus.heldTransactions) != 0 {
+		t.Errorf("expected HoldTransactionForStockReview not to be called, got %+v", mockNembus.heldTransactions)
+	}
+}
+
+func TestProcessOutbox_HoldOnZeroStockDisabled(t *testing.T) {
+	t.Run("zero stock bypasses preflight hold", func(t *testing.T) {
+		mockSAP := &stockShortageSAPClient{onHandStock: 0.0}
+		mockNembus := newMockNembusClient()
+		mockNembus.stockHoldPolicyLoaded = true
+		mockNembus.stockHoldPolicyRequired = true
+		mockNembus.stockHoldPolicyRules = map[string]any{"hold_on_zero_stock": false}
+		mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+			{
+				ID:                90,
+				TransactionNumber: "TX-ZERO-ALLOW",
+				TransactionDate:   time.Now(),
+				TotalAmount:       60.0,
+				Status:            "completed",
+			},
+		}
+		mockNembus.txLines[90] = []nembus.POSTransactionLine{
+			{ID: 901, TransactionID: 90, ProductSKU: "SKU-ZERO", Quantity: 2.0, UnitPrice: 30.0, LineTotal: 60.0},
+		}
+
+		cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
+		sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+
+		stats, err := sync.ProcessOutbox(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected ProcessOutbox error: %v", err)
+		}
+		if stats.TransactionsHeld != 0 || len(mockNembus.heldTransactions) != 0 {
+			t.Errorf("expected 0 held transactions when hold_on_zero_stock=false, got stats.Held=%d held=%+v", stats.TransactionsHeld, mockNembus.heldTransactions)
+		}
+		if stats.TransactionsPosted != 1 {
+			t.Errorf("expected 1 transaction posted when zero-stock hold disabled, got %d", stats.TransactionsPosted)
+		}
+	})
+
+	t.Run("partial shortage still holds", func(t *testing.T) {
+		mockSAP := &stockShortageSAPClient{onHandStock: 2.0}
+		mockNembus := newMockNembusClient()
+		mockNembus.stockHoldPolicyLoaded = true
+		mockNembus.stockHoldPolicyRequired = true
+		mockNembus.stockHoldPolicyRules = map[string]any{"hold_on_zero_stock": false}
+		mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+			{
+				ID:                91,
+				TransactionNumber: "TX-PARTIAL-HOLD",
+				TransactionDate:   time.Now(),
+				TotalAmount:       150.0,
+				Status:            "completed",
+			},
+		}
+		mockNembus.txLines[91] = []nembus.POSTransactionLine{
+			{ID: 911, TransactionID: 91, ProductSKU: "SKU-LOW", Quantity: 5.0, UnitPrice: 30.0, LineTotal: 150.0},
+		}
+
+		cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "W01"}
+		sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus)
+
+		stats, err := sync.ProcessOutbox(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected ProcessOutbox error: %v", err)
+		}
+		if stats.TransactionsHeld != 1 {
+			t.Errorf("expected 1 held transaction for partial shortage, got %d", stats.TransactionsHeld)
+		}
+		if _, held := mockNembus.heldTransactions[91]; !held {
+			t.Errorf("expected transaction 91 to be held")
+		}
+	})
+}
+
+func TestProcessOutbox_WatermarkFiltering(t *testing.T) {
+	store, err := db.NewSQLiteStore(filepath.Join(t.TempDir(), "upstream_wm.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	run, err := store.CreateRun(ctx, 1, contracts.MigrationModeFull, 1)
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := store.UpdateRunStatus(ctx, run.ID, contracts.StatusCompleted, ""); err != nil {
+		t.Fatalf("UpdateRunStatus: %v", err)
+	}
+	migEnd, err := store.GetLatestCompletedFullMigrationEndTime(ctx)
+	if err != nil || migEnd == nil {
+		t.Fatalf("expected migration end time, got %v (err: %v)", migEnd, err)
+	}
+
+	mockSAP := &MockSAPClient{stockBySKU: map[string]float64{"*": 999}}
+	mockNembus := newMockNembusClient()
+	preMigOrderID := uuid.New()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                1001,
+			TransactionNumber: "TX-PRE-MIG",
+			TransactionDate:   migEnd.Add(-10 * time.Minute),
+			TotalAmount:       50,
+			Status:            "completed",
+		},
+		{
+			ID:                1002,
+			TransactionNumber: "TX-POST-MIG",
+			TransactionDate:   migEnd.Add(2 * time.Second),
+			TotalAmount:       75,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[1001] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, LineTotal: 50}}
+	mockNembus.txLines[1002] = []nembus.POSTransactionLine{{ID: 2, ProductSKU: "SKU-1", Quantity: 1, LineTotal: 75}}
+	mockNembus.unpostedSalesOrders = []nembus.SalesOrderV2{
+		{
+			ID:          preMigOrderID,
+			OrderNumber: "SO-PRE-MIG",
+			OrderDate:   migEnd.Add(-5 * time.Minute),
+			TotalAmount: 90,
+		},
+	}
+	mockNembus.salesOrderLines[preMigOrderID] = []nembus.SalesOrderLineV2{{ProductSKU: "SKU-1", Quantity: 1, LineTotal: 90}}
+
+	cfg := &config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}
+	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus, store)
+
+	// 1. First run skips pre-migration TX/Order and posts only post-migration TX.
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox run 1: %v", err)
+	}
+	if stats.TransactionsPosted != 1 || stats.OrdersPosted != 0 {
+		t.Fatalf("expected 1 TX and 0 orders posted, got %+v", stats)
+	}
+	if _, ok := mockNembus.markedTransactions[1001]; ok {
+		t.Fatalf("pre-migration transaction 1001 should have been skipped")
+	}
+	if _, ok := mockNembus.markedTransactions[1002]; !ok {
+		t.Fatalf("post-migration transaction 1002 should have been posted")
+	}
+
+	wm1, err := store.GetUpstreamWatermark(ctx, "upstream")
+	if err != nil || wm1 == nil {
+		t.Fatalf("expected upstream watermark after run 1, got %v (err: %v)", wm1, err)
+	}
+
+	// 2. Subsequent scheduled run advances watermark and ignores items before wm1, while errors block advance.
+	time.Sleep(1100 * time.Millisecond)
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                1003,
+			TransactionNumber: "TX-FAIL-AFTER",
+			TransactionDate:   wm1.Add(1 * time.Second),
+			TotalAmount:       25,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[1003] = []nembus.POSTransactionLine{{ID: 3, ProductSKU: "SKU-1", Quantity: 1, LineTotal: 25}}
+	mockSAP.postInvoiceFunc = func(ctx context.Context, inv *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+		return nil, errors.New("sap temporary failure")
+	}
+	stats2, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox run 2: %v", err)
+	}
+	if stats2.Errors != 1 {
+		t.Fatalf("expected 1 error, got %+v", stats2)
+	}
+	wm2, err := store.GetUpstreamWatermark(ctx, "upstream")
+	if err != nil || wm2 == nil || !wm2.Equal(*wm1) {
+		t.Fatalf("watermark must not advance on error: got %v, want %v", wm2, wm1)
+	}
+}
+
+func TestProcessOutbox_SkipsZeroLineRecordsAndAdvancesWatermark(t *testing.T) {
+	ctx := context.Background()
+	store, err := db.NewSQLiteStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	runStartedAt := time.Now().UTC().Add(-time.Second)
+	base := time.Now().UTC().Add(-10 * time.Minute)
+	emptyTxTime := base.Add(1 * time.Minute)
+	emptyOrderTime := base.Add(2 * time.Minute)
+	validTxTime := base.Add(3 * time.Minute)
+
+	emptyOrderID := uuid.New()
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                101,
+			TransactionNumber: "TXN-ORD-EMPTY",
+			StoreID:           1,
+			TransactionDate:   emptyTxTime,
+			TotalAmount:       25,
+		},
+		{
+			ID:                102,
+			TransactionNumber: "INV-VALID",
+			StoreID:           1,
+			TransactionDate:   validTxTime,
+			TotalAmount:       50,
+		},
+	}
+	mockNembus.txLines[102] = []nembus.POSTransactionLine{{
+		ProductID: 1, ProductSKU: "SKU-1", ProductName: "Item 1", Quantity: 1, UnitPrice: 50, LineTotal: 50,
+	}}
+	mockNembus.unpostedSalesOrders = []nembus.SalesOrderV2{{
+		ID:          emptyOrderID,
+		OrderNumber: "SO-EMPTY",
+		StoreID:     1,
+		OrderDate:   emptyOrderTime,
+		TotalAmount: 30,
+	}}
+
+	mockSAP := &MockSAPClient{stockBySKU: map[string]float64{"*": 100}}
+	cfg := &config.Config{NembusDefaultWarehouse: "WH1", BatchSize: 10, NembusStoreID: 1}
+	sync := pipeline.NewUpstreamSync(cfg, mockSAP, mockNembus, store)
+
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if stats.Errors != 0 || stats.TransactionsPosted != 1 {
+		t.Fatalf("unexpected stats: got %+v, want Errors=0 TransactionsPosted=1", stats)
+	}
+
+	dispatches, err := store.GetUpstreamDispatches(ctx, 10)
+	if err != nil {
+		t.Fatalf("GetUpstreamDispatches: %v", err)
+	}
+	statuses := make(map[string]db.UpstreamDispatch)
+	for _, d := range dispatches {
+		statuses[d.TransactionNumber] = d
+	}
+	for _, docNum := range []string{"TXN-ORD-EMPTY", "SO-EMPTY"} {
+		d, ok := statuses[docNum]
+		if !ok {
+			t.Fatalf("expected dispatch record for %s", docNum)
+		}
+		if d.Status != "skipped" {
+			t.Fatalf("expected %s status skipped, got %q", docNum, d.Status)
+		}
+		if d.ErrorMessage != "no line items" {
+			t.Fatalf("expected %s error message 'no line items', got %q", docNum, d.ErrorMessage)
+		}
+	}
+	if d, ok := statuses["INV-VALID"]; !ok || d.Status != "posted" {
+		t.Fatalf("expected INV-VALID posted, got %+v (ok=%v)", d, ok)
+	}
+
+	wm, err := store.GetUpstreamWatermark(ctx, "upstream")
+	if err != nil || wm == nil {
+		t.Fatalf("expected upstream watermark to be set, got %v (err=%v)", wm, err)
+	}
+	if wm.Before(runStartedAt) {
+		t.Fatalf("expected upstream watermark >= %v, got %v", runStartedAt, *wm)
+	}
+}
+
 

@@ -472,6 +472,7 @@ WHERE cart_id = $1
   AND COALESCE(combo_components_snapshot, '[]'::jsonb) = COALESCE($4::jsonb, '[]'::jsonb)
   AND COALESCE(notes, '') = COALESCE($5::text, '')
   AND unit_price = $6
+  AND COALESCE(customization_details, '{}'::jsonb) = COALESCE($7::jsonb, '{}'::jsonb)
 LIMIT 1
 `
 
@@ -482,6 +483,7 @@ type FindMatchingRestaurantCartItemParams struct {
 	Column4    json.RawMessage `json:"column_4"`
 	Column5    string          `json:"column_5"`
 	UnitPrice  pgtype.Numeric  `json:"unit_price"`
+	Column7    json.RawMessage `json:"column_7"`
 }
 
 func (q *Queries) FindMatchingRestaurantCartItem(ctx context.Context, arg FindMatchingRestaurantCartItemParams) (RestaurantCartItem, error) {
@@ -492,6 +494,7 @@ func (q *Queries) FindMatchingRestaurantCartItem(ctx context.Context, arg FindMa
 		arg.Column4,
 		arg.Column5,
 		arg.UnitPrice,
+		arg.Column7,
 	)
 	var i RestaurantCartItem
 	err := row.Scan(

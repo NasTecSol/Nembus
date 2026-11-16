@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -103,6 +104,13 @@ func TestSAPInvoiceStockAccommodator_Poster(t *testing.T) {
 	if err == nil || err.Error() != "repository is not configured" {
 		t.Fatalf("expected 'repository is not configured', got %v", err)
 	}
+
+	// Accommodate blocks approval when SAPOnHand < Quantity
+	var dummyRepo repository.Queries
+	err = acc.Accommodate(context.Background(), &dummyRepo, req, 5)
+	if err == nil || !strings.Contains(err.Error(), "still has low stock in SAP") {
+		t.Fatalf("expected low stock error, got %v", err)
+	}
 }
 
 func TestApprovalsUseCase_AccommodatorRegistration(t *testing.T) {
@@ -115,5 +123,33 @@ func TestApprovalsUseCase_AccommodatorRegistration(t *testing.T) {
 
 	if len(uc.accommodators) != 2 {
 		t.Fatalf("expected 2 registered accommodators, got %d", len(uc.accommodators))
+	}
+}
+
+func TestUpdateStockHoldPayloadOnHand(t *testing.T) {
+	raw, _ := json.Marshal(SAPInvoiceStockPayload{
+		TransactionID: 653872,
+		StoreID:       3,
+		ShortageItems: []ShortageItemInfo{
+			{ProductID: 27512, ProductSKU: "INV10473", Quantity: 1, SAPOnHand: 0},
+		},
+	})
+
+	// Unchanged on-hand returns false
+	if _, changed := updateStockHoldPayloadOnHand(raw, 27512, "INV10473", 0); changed {
+		t.Fatal("expected changed=false when sap_on_hand is already 0")
+	}
+
+	// Restocked to 5 updates sap_on_hand
+	updated, changed := updateStockHoldPayloadOnHand(raw, 27512, "INV10473", 5)
+	if !changed {
+		t.Fatal("expected changed=true when sap_on_hand increases to 5")
+	}
+	var out SAPInvoiceStockPayload
+	if err := json.Unmarshal(updated, &out); err != nil {
+		t.Fatalf("Unmarshal updated payload: %v", err)
+	}
+	if out.ShortageItems[0].SAPOnHand != 5 {
+		t.Fatalf("expected sap_on_hand=5, got %v", out.ShortageItems[0].SAPOnHand)
 	}
 }

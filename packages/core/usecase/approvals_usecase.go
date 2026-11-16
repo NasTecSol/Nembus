@@ -144,46 +144,6 @@ func (uc *ApprovalsUseCase) SubmitOrUpdatePending(ctx context.Context, in Approv
 	return uc.Submit(ctx, in)
 }
 
-func (uc *ApprovalsUseCase) EnsureDefaultPolicies(ctx context.Context, orgID int32) error {
-	if uc.repo == nil {
-		return errors.New("repository is not configured")
-	}
-	defaultPolicies := []struct {
-		domain     string
-		action     string
-		permission string
-		rules      string
-	}{
-		{
-			domain:     "catalog",
-			action:     "price_change",
-			permission: "catalog:pricing:approve",
-			rules:      `{"price_drop_requires_approval": true, "cost_increase_threshold_pct": 10.0, "below_cost_requires_approval": true}`,
-		},
-		{
-			domain:     "sap_invoice",
-			action:     "stock_hold",
-			permission: "sap:invoice:override",
-			rules:      `{"hold_on_zero_stock": true, "allow_manual_reverify": true, "allow_adjustment_force": true}`,
-		},
-	}
-	for _, p := range defaultPolicies {
-		_, err := uc.repo.UpsertApprovalPolicy(ctx, repository.UpsertApprovalPolicyParams{
-			OrganizationID:     orgID,
-			Domain:             p.domain,
-			Action:             p.action,
-			IsEnabled:          true,
-			RequiresApproval:   true,
-			RequiredPermission: p.permission,
-			Rules:              json.RawMessage(p.rules),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to ensure approval policy %s.%s: %w", p.domain, p.action, err)
-		}
-	}
-	return nil
-}
-
 
 func (uc *ApprovalsUseCase) List(ctx context.Context, orgID int32, domain, status *string, page, limit int32) ([]repository.ApprovalRequest, error) {
 	if uc.repo == nil {

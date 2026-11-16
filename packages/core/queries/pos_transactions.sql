@@ -33,6 +33,18 @@ INSERT INTO pos_transaction_lines (
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 RETURNING *;
 
+-- name: CreateRestaurantPosTransactionLine :one
+INSERT INTO pos_transaction_lines (
+    transaction_id, line_number, product_id, product_variant_id,
+    serial_number, batch_number, quantity, uom_id,
+    unit_price, discount_amount, tax_amount, subtotal, line_total, cost_price, metadata
+) VALUES (
+    $1, $2, sqlc.narg('product_id')::int, sqlc.narg('product_variant_id')::int,
+    $3, $4, $5, $6,
+    $7, $8, $9, $10, $11, $12, $13
+)
+RETURNING *;
+
 
 -- name: GetPosTransactionFull :many
 SELECT 
@@ -50,8 +62,8 @@ SELECT
     tl.unit_price,
     tl.discount_amount,
     tl.line_total,
-    p.sku,
-    p.name AS product_name,
+    COALESCE(p.sku, tl.metadata->>'sku', '') AS sku,
+    COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', '') AS product_name,
     COALESCE(pb.barcode, '') AS scanned_barcode,
     COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
 FROM pos_transactions t
@@ -133,8 +145,8 @@ SELECT
                 'line_total', tl.line_total,
                 'cost_price', tl.cost_price,
                 'metadata', tl.metadata,
-                'product_sku', p.sku,
-                'product_name', p.name,
+                'product_sku', COALESCE(p.sku, tl.metadata->>'sku', ''),
+                'product_name', COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', ''),
                 'scanned_barcode', COALESCE(pb.barcode, '')
             ) ORDER BY tl.line_number
         ) FILTER (WHERE tl.id IS NOT NULL),
@@ -280,8 +292,8 @@ SELECT
                 'line_total', tl.line_total,
                 'cost_price', tl.cost_price,
                 'metadata', tl.metadata,
-                'product_sku', p.sku,
-                'product_name', p.name,
+                'product_sku', COALESCE(p.sku, tl.metadata->>'sku', ''),
+                'product_name', COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', ''),
                 'scanned_barcode', COALESCE(pb.barcode, '')
             ) ORDER BY tl.line_number
         ) FILTER (WHERE tl.id IS NOT NULL),
@@ -390,8 +402,8 @@ SELECT
                 'line_total', tl.line_total,
                 'cost_price', tl.cost_price,
                 'metadata', tl.metadata,
-                'product_sku', p.sku,
-                'product_name', p.name,
+                'product_sku', COALESCE(p.sku, tl.metadata->>'sku', ''),
+                'product_name', COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', ''),
                 'scanned_barcode', COALESCE(pb.barcode, '')
             ) ORDER BY tl.line_number
         ) FILTER (WHERE tl.id IS NOT NULL),

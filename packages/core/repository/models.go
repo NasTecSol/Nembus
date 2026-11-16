@@ -1561,7 +1561,7 @@ type PosTransaction struct {
 type PosTransactionLine struct {
 	ID               int32            `json:"id"`
 	TransactionID    int32            `json:"transaction_id"`
-	ProductID        int32            `json:"product_id"`
+	ProductID        pgtype.Int4      `json:"product_id"`
 	ProductVariantID pgtype.Int4      `json:"product_variant_id"`
 	Quantity         pgtype.Numeric   `json:"quantity"`
 	UomID            pgtype.Int4      `json:"uom_id"`
@@ -1592,6 +1592,20 @@ type PriceList struct {
 	Metadata      json.RawMessage  `json:"metadata"`
 	CreatedAt     pgtype.Timestamp `json:"created_at"`
 	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
+}
+
+type PrintingTemplate struct {
+	ID             int64           `json:"id"`
+	OrganizationID int32           `json:"organization_id"`
+	Name           string          `json:"name"`
+	Type           string          `json:"type"`
+	Language       string          `json:"language"`
+	Config         json.RawMessage `json:"config"`
+	IsActive       bool            `json:"is_active"`
+	IsDefault      bool            `json:"is_default"`
+	Version        int32           `json:"version"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 type Product struct {
@@ -2829,6 +2843,16 @@ type Store struct {
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
 }
 
+type StoreReceiptSetting struct {
+	ID                int64       `json:"id"`
+	StoreID           int32       `json:"store_id"`
+	OrganizationID    int32       `json:"organization_id"`
+	Type              string      `json:"type"`
+	Language          string      `json:"language"`
+	DefaultTemplateID pgtype.Int8 `json:"default_template_id"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+}
+
 type Submenu struct {
 	ID              int32            `json:"id"`
 	MenuID          int32            `json:"menu_id"`
@@ -3294,7 +3318,7 @@ type VwPosProductCatalog struct {
 }
 
 type VwProfitMarginAnalysis struct {
-	ProductID        int32       `json:"product_id"`
+	ProductID        pgtype.Int4 `json:"product_id"`
 	ProductVariantID pgtype.Int4 `json:"product_variant_id"`
 	Sku              string      `json:"sku"`
 	ProductName      string      `json:"product_name"`

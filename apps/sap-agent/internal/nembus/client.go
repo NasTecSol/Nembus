@@ -498,6 +498,11 @@ func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, 
 		"reason":             summary,
 	})
 
+	perm, err := c.getApprovalPolicyPermission(ctx, "sap_invoice", "stock_hold")
+	if err != nil {
+		return err
+	}
+
 	entityID := fmt.Sprintf("%d", txID)
 	query := `
 		INSERT INTO approval_requests (
@@ -505,11 +510,11 @@ func (c *Client) HoldTransactionForStockReview(ctx context.Context, txID int64, 
 			status, required_permission, summary, payload, metadata
 		) VALUES (
 			$1, 'sap_invoice', 'stock_hold', 'pos_transaction', $2,
-			'pending', 'sap:invoice:override', $3, $4, '{}'::jsonb
+			'pending', $3, $4, $5, '{}'::jsonb
 		)
 		ON CONFLICT DO NOTHING
 	`
-	_, err = c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	_, err = c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, perm, summary, payload)
 	return err
 }
 
@@ -556,6 +561,20 @@ func (c *Client) GetProductCostPriceBySKU(ctx context.Context, sku string) (floa
 		return 0, nil
 	}
 	return cost, err
+}
+
+// getApprovalPolicyPermission reads required_permission for a configured policy.
+func (c *Client) getApprovalPolicyPermission(ctx context.Context, domain, action string) (string, error) {
+	var perm string
+	err := c.pool.QueryRow(ctx, `
+		SELECT required_permission FROM approval_policies
+		WHERE organization_id = $1 AND domain = $2 AND action = $3 AND is_enabled = true
+		LIMIT 1
+	`, c.cfg.NembusOrganizationID, domain, action).Scan(&perm)
+	if err != nil {
+		return "", fmt.Errorf("approval policy %s.%s not configured or disabled: %w", domain, action, err)
+	}
+	return perm, nil
 }
 
 // GetApprovalPolicyRules retrieves the JSON rules for a specific domain & action policy.
@@ -618,15 +637,20 @@ func (c *Client) SubmitPriceApprovalRequest(ctx context.Context, productID int32
 		return err
 	}
 
+	perm, err := c.getApprovalPolicyPermission(ctx, "catalog", "price_change")
+	if err != nil {
+		return err
+	}
+
 	_, err = c.pool.Exec(ctx, `
 		INSERT INTO approval_requests (
 			organization_id, domain, action, entity_type, entity_id,
 			status, required_permission, summary, payload, metadata
 		) VALUES (
 			$1, 'catalog', 'price_change', 'product', $2,
-			'pending', 'catalog:pricing:approve', $3, $4, '{}'::jsonb
+			'pending', $3, $4, $5, '{}'::jsonb
 		)
-	`, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	`, c.cfg.NembusOrganizationID, entityID, perm, summary, payload)
 	return err
 }
 
@@ -811,6 +835,11 @@ func (c *Client) HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.
 		"reason":         summary,
 	})
 
+	perm, err := c.getApprovalPolicyPermission(ctx, "sap_invoice", "stock_hold")
+	if err != nil {
+		return err
+	}
+
 	entityID := orderID.String()
 	query := `
 		INSERT INTO approval_requests (
@@ -818,10 +847,10 @@ func (c *Client) HoldSalesOrderForStockReview(ctx context.Context, orderID uuid.
 			status, required_permission, summary, payload, metadata
 		) VALUES (
 			$1, 'sap_invoice', 'stock_hold', 'sales_order_v2', $2,
-			'pending', 'sap:invoice:override', $3, $4, '{}'::jsonb
+			'pending', $3, $4, $5, '{}'::jsonb
 		)
 	`
-	_, err = c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, summary, payload)
+	_, err = c.pool.Exec(ctx, query, c.cfg.NembusOrganizationID, entityID, perm, summary, payload)
 	return err
 }
 

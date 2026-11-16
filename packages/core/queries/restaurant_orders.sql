@@ -152,10 +152,10 @@ SET
     updated_at = CURRENT_TIMESTAMP
 FROM (
     SELECT
-        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal) - COALESCE(tax_amount, 0)), 0)::numeric(15,2) AS subtotal,
+        COALESCE(SUM(COALESCE(NULLIF(line_total, 0) - COALESCE(tax_amount, 0), subtotal)), 0)::numeric(15,2) AS subtotal,
         COALESCE(SUM(discount_amount), 0)::numeric(15,2) AS total_discount,
         COALESCE(SUM(tax_amount), 0)::numeric(15,2) AS total_tax,
-        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal)), 0)::numeric(15,2) AS total_amount
+        COALESCE(SUM(COALESCE(NULLIF(line_total, 0), subtotal + COALESCE(tax_amount, 0))), 0)::numeric(15,2) AS total_amount
     FROM restaurant_order_items
     WHERE order_id = $1
 ) AS totals
@@ -333,7 +333,7 @@ WHERE id = (
     WHERE ist.store_id = sqlc.arg(store_id)
       AND ist.product_id = sqlc.arg(product_id)
       AND ist.product_variant_id IS NOT DISTINCT FROM sqlc.narg(product_variant_id)::int
-    ORDER BY ist.storage_location_id NULLS FIRST, ist.id ASC
+    ORDER BY (ist.storage_location_id IS NOT DISTINCT FROM sqlc.narg(storage_location_id)::int) DESC, ist.storage_location_id NULLS FIRST, ist.id ASC
     LIMIT 1
 )
 RETURNING *;
@@ -346,13 +346,15 @@ INSERT INTO stock_movements (
     product_id,
     product_variant_id,
     from_store_id,
+    from_location_id,
+    to_location_id,
     quantity,
     uom_id,
     posted_by,
     status,
     metadata
 ) VALUES (
-    $1, 'restaurant_order', $2, $3, $4, $5, $6, $7, $8, 'completed', COALESCE(sqlc.arg(metadata)::jsonb, '{}'::jsonb)
+    $1, 'restaurant_order', $2, $3, $4, $5, sqlc.narg(from_location_id)::int, sqlc.narg(to_location_id)::int, $6, $7, $8, 'completed', COALESCE(sqlc.arg(metadata)::jsonb, '{}'::jsonb)
 ) RETURNING *;
 
 -- name: ListRestaurantOrderRecipeMovements :many
@@ -363,15 +365,20 @@ WHERE reference_type = 'restaurant_order'
 ORDER BY id ASC;
 
 -- name: ResolveIngredientBaseQuantity :one
-SELECT COALESCE(
-    CASE
-        WHEN sqlc.narg(uom_id)::int IS NOT NULL THEN
-            fn_convert_uom_quantity(
-                sqlc.arg(product_id)::int,
-                (SELECT code FROM units_of_measure WHERE id = sqlc.narg(uom_id)::int LIMIT 1),
-                sqlc.arg(quantity)::numeric
-            )
-        ELSE sqlc.arg(quantity)::numeric
-    END,
-    sqlc.arg(quantity)::numeric
-)::numeric(15,3) AS base_quantity;
+SELECT
+    COALESCE(
+        CASE
+            WHEN sqlc.narg(uom_id)::int IS NOT NULL THEN
+                fn_convert_uom_quantity(
+                    sqlc.arg(product_id)::int,
+                    (SELECT code FROM units_of_measure WHERE id = sqlc.narg(uom_id)::int LIMIT 1),
+                    sqlc.arg(quantity)::numeric
+                )
+            ELSE sqlc.arg(quantity)::numeric
+        END,
+        sqlc.arg(quantity)::numeric
+    )::numeric(15,3) AS base_quantity,
+    COALESCE(
+        (SELECT p.base_uom_id FROM products p WHERE p.id = sqlc.arg(product_id)::int LIMIT 1),
+        sqlc.narg(uom_id)::int
+    )::int4 AS base_uom_id;
