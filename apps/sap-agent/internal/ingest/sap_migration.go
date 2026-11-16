@@ -244,11 +244,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				q := `
 				INSERT INTO organizations (id, code, name, is_active, metadata)
 				VALUES ($1, $2, $3, $4, $5)
-				ON CONFLICT(id) DO UPDATE SET
-					code = excluded.code,
-					name = excluded.name,
-					is_active = excluded.is_active,
-					metadata = excluded.metadata;
+				ON CONFLICT(id) DO NOTHING;
 				`
 				err = execWithSavepoint(ctx, tx, q, o.ID, o.Code, o.Name, o.IsActive, metaBytes)
 				if err == nil {
@@ -258,10 +254,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				q := `
 				INSERT INTO organizations (code, name, is_active, metadata)
 				VALUES ($1, $2, $3, $4)
-				ON CONFLICT(code) DO UPDATE SET
-					name = excluded.name,
-					is_active = excluded.is_active,
-					metadata = excluded.metadata;
+				ON CONFLICT(code) DO NOTHING;
 				`
 				err = execWithSavepoint(ctx, tx, q, o.Code, o.Name, o.IsActive, metaBytes)
 			}
