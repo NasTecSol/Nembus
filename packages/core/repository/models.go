@@ -1594,6 +1594,20 @@ type PriceList struct {
 	UpdatedAt     pgtype.Timestamp `json:"updated_at"`
 }
 
+type PrintingTemplate struct {
+	ID             int64           `json:"id"`
+	OrganizationID int32           `json:"organization_id"`
+	Name           string          `json:"name"`
+	Type           string          `json:"type"`
+	Language       string          `json:"language"`
+	Config         json.RawMessage `json:"config"`
+	IsActive       bool            `json:"is_active"`
+	IsDefault      bool            `json:"is_default"`
+	Version        int32           `json:"version"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
 type Product struct {
 	ID                   int32            `json:"id"`
 	OrganizationID       int32            `json:"organization_id"`
@@ -2827,6 +2841,16 @@ type Store struct {
 	Metadata       json.RawMessage  `json:"metadata"`
 	CreatedAt      pgtype.Timestamp `json:"created_at"`
 	UpdatedAt      pgtype.Timestamp `json:"updated_at"`
+}
+
+type StoreReceiptSetting struct {
+	ID                int64       `json:"id"`
+	StoreID           int32       `json:"store_id"`
+	OrganizationID    int32       `json:"organization_id"`
+	Type              string      `json:"type"`
+	Language          string      `json:"language"`
+	DefaultTemplateID pgtype.Int8 `json:"default_template_id"`
+	UpdatedAt         time.Time   `json:"updated_at"`
 }
 
 type Submenu struct {
