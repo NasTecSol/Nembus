@@ -4,8 +4,8 @@ import "testing"
 
 func TestPullEntityRankAndLeafDeleteAllowlist(t *testing.T) {
 	entities := PullEntityTypes()
-	if len(entities) != 30 {
-		t.Fatalf("expected 30 PullEntityTypes, got %d", len(entities))
+	if len(entities) != 32 {
+		t.Fatalf("expected 32 PullEntityTypes, got %d", len(entities))
 	}
 	for idx, entity := range entities {
 		if got := PullEntityRank(entity); got != idx {
@@ -22,6 +22,8 @@ func TestPullEntityRankAndLeafDeleteAllowlist(t *testing.T) {
 		{"permissions", "role_permissions"},
 		{"users", "user_roles"},
 		{"roles", "user_roles"},
+		{"organizations", "printing_templates"},
+		{"printing_templates", "store_receipt_settings"},
 		{"business_partners", "partner_addresses"},
 		{"users", "user_biometric_templates"},
 		{"products", "product_variants"},
@@ -50,7 +52,7 @@ func TestPullEntityRankAndLeafDeleteAllowlist(t *testing.T) {
 			t.Errorf("leaf delete entity %s must also be in PullEntityTypes", leaf)
 		}
 	}
-	for _, master := range []string{"products", "users", "customers", "organizations", "price_lists"} {
+	for _, master := range []string{"products", "users", "customers", "organizations", "price_lists", "printing_templates", "store_receipt_settings"} {
 		if IsLeafDeleteEntity(master) {
 			t.Errorf("master table %s must not allow hard DELETE tombstones", master)
 		}
