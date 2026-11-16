@@ -293,6 +293,23 @@ func applySAPCompanyDB(current *config.AgentConfig, sapDB, mssqlDB string) {
 func (s *Server) ensureOnboardingOrganization(ctx context.Context, cfg *config.AgentConfig, requestedName string) error {
 	orgID := max(cfg.Cloud.OrganizationID, 1)
 	orgName := strings.TrimSpace(requestedName)
+	if orgName == "" && cfg.MSSQL.Host != "" {
+		if mssqlClient, err := db.NewMSSQLClient(cfg.MSSQL); err == nil {
+			qCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+			orgs := querySAPOrganizations(qCtx, mssqlClient.DB, "")
+			cancel()
+			mssqlClient.Close()
+			for _, o := range orgs {
+				if o.ID == orgID && o.Name != "" {
+					orgName = o.Name
+					break
+				}
+			}
+			if orgName == "" && len(orgs) > 0 && orgs[0].Name != "" {
+				orgName = orgs[0].Name
+			}
+		}
+	}
 	if orgName == "" {
 		orgName = strings.TrimSpace(cfg.SAPCompanyDB)
 	}
