@@ -15,6 +15,7 @@ import (
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	router "github.com/NasTecSol/nembus-core/routing"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-core/usecase"
 
 	_ "github.com/NasTecSol/nembus-client/docs/swagger" // Swagger generated docs
@@ -60,10 +61,17 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 		log.Fatal("MASTER_DB_URL is not set")
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.MasterDBURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.MasterDBURL)
 	if err != nil {
 		return nil, nil, err
 	}
+	telemetry.AttachPoolTracer(poolCfg, "pos-local")
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	telemetry.RegisterPoolMetrics(pool, "pos-local")
 
 	// Ensure legacy DB triggers that double-count cashier session balances are dropped
 	_, _ = pool.Exec(ctx, "DROP TRIGGER IF EXISTS trg_update_cashier_session_balance ON pos_transactions;")
@@ -96,8 +104,8 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method, traceparent, tracestate")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, X-Trace-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
@@ -107,7 +115,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		c.Next()
 	})
 
-	r.Use(middleware.LoggerMiddleware())
+	r.Use(middleware.OTelGinMiddleware("nembus-pos-client"))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/health", healthCheck)
 
@@ -270,9 +278,11 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 
 // Application Version & Update configuration (populated via -ldflags at build time)
 var (
-	Version      = "v1.0.0"
-	AppUpdateKey = ""
-	CloudURL     = ""
+	Version         = "v1.0.0"
+	AppUpdateKey    = ""
+	CloudURL        = ""
+	OTelEndpoint    = ""
+	OTelIngestToken = ""
 )
 
 func healthCheck(c *gin.Context) {
@@ -333,7 +343,7 @@ func main() {
 	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
 log.Printf("hello")
 	// Wails Setup
-	app := NewApp(Version, AppUpdateKey, CloudURL)
+	app := NewApp(Version, AppUpdateKey, CloudURL, OTelEndpoint, OTelIngestToken)
 
 	err := wails.Run(&options.App{
 		Title:  "NEMBUS",

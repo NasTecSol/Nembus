@@ -7,6 +7,7 @@ import (
 
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -58,6 +59,7 @@ func TenantMiddleware(tm *manager.Manager) gin.HandlerFunc {
 		ctx := context.WithValue(c.Request.Context(), RepoKey, repo)
 		ctx = context.WithValue(ctx, TenantSlugKey, tenantID)
 		ctx = context.WithValue(ctx, PoolKey, pool)
+		ctx = telemetry.WithTenantSlug(ctx, tenantID)
 		c.Request = c.Request.WithContext(ctx)
 
 		c.Next()

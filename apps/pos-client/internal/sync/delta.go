@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -32,6 +33,9 @@ var errStreamChangesUnimplemented = errors.New("StreamChanges RPC is not impleme
 // fetchChangesGRPC pulls monotonic change_log events via StreamChanges (Phase 3),
 // falling back to legacy fetchDeltaGRPC only if the cloud server returns codes.Unimplemented.
 func (s *SyncService) fetchChangesGRPC() {
+	pullStart := time.Now()
+	telemetryCtx := telemetry.WithTenantSlug(s.ctx, s.tenantSlug)
+
 	configCtx, cancelConfig := context.WithTimeout(s.ctx, 15*time.Second)
 	storeID, deviceID, syncToken, err := ReadLocalDeviceCredentials(configCtx, s.masterPool)
 	cancelConfig()
@@ -42,6 +46,7 @@ func (s *SyncService) fetchChangesGRPC() {
 
 	conn, err := s.getOrCreateConn()
 	if err != nil {
+		telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "error", 0, float64(time.Since(pullStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] Change-log connection error: %v", err)
 		return
 	}
@@ -51,11 +56,13 @@ func (s *SyncService) fetchChangesGRPC() {
 		if errors.Is(err, errStreamChangesUnimplemented) {
 			log.Printf("[gRPC SYNC] Cloud server does not implement StreamChanges yet; falling back to StreamPull")
 			s.fetchDeltaGRPC()
+			telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "legacy_delta", "ok", 1, float64(time.Since(pullStart).Microseconds())/1000.0)
 			return
 		}
 		if s.ctx.Err() != nil {
 			return
 		}
+		telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "error", 0, float64(time.Since(pullStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] Change-log pull failed: %v", err)
 		metaBytes, _ := json.Marshal(map[string]any{
 			"direction":       "pull",
@@ -71,7 +78,9 @@ func (s *SyncService) fetchChangesGRPC() {
 			SET metadata = COALESCE(sync_watermarks.metadata, '{}'::jsonb) || EXCLUDED.metadata
 		`, ChangeLogWatermarkKey, storeID, string(metaBytes))
 		cancelRecord()
+		return
 	}
+	telemetry.RecordSyncBatch(telemetryCtx, "pull", s.tenantSlug, "change_log", "ok", 1, float64(time.Since(pullStart).Microseconds())/1000.0)
 }
 
 func (s *SyncService) pullChangeLog(client syncpb.SyncServiceClient, storeID int32, deviceID, syncToken string) error {

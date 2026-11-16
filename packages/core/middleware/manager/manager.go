@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/telemetry"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -39,11 +40,19 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 		return nil, fmt.Errorf("tenant '%s' is not active (is_active = false or NULL)", slug)
 	}
 
-	// Create connection pool for tenant database
-	pool, err := pgxpool.New(ctx, tenant.DbConnStr)
+	// Create connection pool for tenant database with OpenTelemetry PGX tracing
+	poolCfg, err := pgxpool.ParseConfig(tenant.DbConnStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tenant database DSN for '%s': %w", slug, err)
+	}
+	poolRole := "tenant:" + slug
+	telemetry.AttachPoolTracer(poolCfg, poolRole)
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to tenant database for '%s' using connection string: %w", slug, err)
 	}
+	telemetry.RegisterPoolMetrics(pool, poolRole)
 
 	// Ensure required columns / schema patches exist
 	if err := PatchDatabase(ctx, pool); err != nil {

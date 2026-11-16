@@ -5,12 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/kardianos/service"
 
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
@@ -22,18 +25,21 @@ import (
 
 // Application Version & Update configuration (injected via -ldflags at build time)
 var (
-	Version      = "v1.0.0"
-	AppUpdateKey = ""
-	CloudURL     = ""
+	Version         = "v1.0.0"
+	AppUpdateKey    = ""
+	CloudURL        = ""
+	OTelEndpoint    = ""
+	OTelIngestToken = ""
 )
 
 type program struct {
-	srv    *server.Server
-	engine *etl.Engine
-	port   int
-	sqlite *db.SQLiteStore
-	mssql  *db.MSSQLClient
-	cfg    *config.AgentConfig
+	srv          *server.Server
+	engine       *etl.Engine
+	port         int
+	sqlite       *db.SQLiteStore
+	mssql        *db.MSSQLClient
+	cfg          *config.AgentConfig
+	otelShutdown func(context.Context) error
 }
 
 func (p *program) Start(s service.Service) error {
@@ -105,6 +111,11 @@ func (p *program) Stop(s service.Service) error {
 	if p.mssql != nil {
 		_ = p.mssql.Close()
 	}
+	if p.otelShutdown != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = p.otelShutdown(shutCtx)
+		cancel()
+	}
 	return nil
 }
 
@@ -149,6 +160,19 @@ func main() {
 		cfg.Cloud.AppUpdateClientKey = AppUpdateKey
 	}
 
+	otelShutdown, otelErr := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:    "nembus-sap-agent",
+		ServiceVersion: cfg.Version,
+		TenantSlug:     cfg.TenantSlug,
+		OTLPEndpoint:   OTelEndpoint,
+		IngestToken:    OTelIngestToken,
+		SpoolDir:       filepath.Join(os.TempDir(), "nembus-otel-sap"),
+		MaxSpoolBytes:  50 * 1024 * 1024,
+	})
+	if otelErr != nil {
+		log.Printf("[Telemetry] Warning: OpenTelemetry init failed: %v", otelErr)
+	}
+
 	if cfg.OnboardingCompleted {
 		log.Printf("[SAP-AGENT] Resuming persisted configuration for tenant %q (downstream_auto=%v, upstream_auto=%v).",
 			cfg.TenantSlug, cfg.DownstreamAutoActive, cfg.UpstreamAutoActive)
@@ -174,17 +198,25 @@ func main() {
 
 	// Handle one-shot CLI subcommands if provided (unified entrypoint)
 	if args := flag.Args(); len(args) > 0 {
+		defer func() {
+			if otelShutdown != nil {
+				shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = otelShutdown(shutCtx)
+				cancel()
+			}
+		}()
 		runCLICommand(args[0], cfg, engine, srv, sqliteStore, cloudClient)
 		return
 	}
 
 	prg := &program{
-		srv:    srv,
-		engine: engine,
-		port:   cfg.Port,
-		sqlite: sqliteStore,
-		mssql:  mssqlClient,
-		cfg:    cfg,
+		srv:          srv,
+		engine:       engine,
+		port:         cfg.Port,
+		sqlite:       sqliteStore,
+		mssql:        mssqlClient,
+		cfg:          cfg,
+		otelShutdown: otelShutdown,
 	}
 
 	svcConfig := &service.Config{

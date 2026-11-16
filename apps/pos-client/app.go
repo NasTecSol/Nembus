@@ -28,6 +28,7 @@ import (
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-core/usecase"
 	corezatca "github.com/NasTecSol/nembus-core/zatca"
 
@@ -55,16 +56,21 @@ type App struct {
 	version         string
 	appKey          string
 	cloudURL        string
+	otelEndpoint    string
+	otelToken       string
+	otelShutdown    func(context.Context) error
 }
 
 // NewApp creates a new App application struct
-func NewApp(version, appKey, cloudURL string) *App {
+func NewApp(version, appKey, cloudURL, otelEndpoint, otelToken string) *App {
 	cfg := config.LoadConfig("development")
 	return &App{
-		version:  version,
-		appKey:   appKey,
-		cloudURL: cloudURL,
-		cfg:      cfg,
+		version:      version,
+		appKey:       appKey,
+		cloudURL:     cloudURL,
+		otelEndpoint: otelEndpoint,
+		otelToken:    otelToken,
+		cfg:          cfg,
 	}
 }
 
@@ -82,6 +88,32 @@ func (a *App) getCloudURL() string {
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	otelEndpoint := a.otelEndpoint
+	if otelEndpoint == "" && a.cfg != nil {
+		otelEndpoint = a.cfg.OTelEndpoint
+	}
+	otelToken := a.otelToken
+	if otelToken == "" && a.cfg != nil {
+		otelToken = a.cfg.OTelIngestToken
+	}
+	env := "development"
+	if a.cfg != nil && a.cfg.Env != "" {
+		env = a.cfg.Env
+	}
+	if shut, err := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:    "nembus-pos-client",
+		ServiceVersion: a.version,
+		Environment:    env,
+		OTLPEndpoint:   otelEndpoint,
+		IngestToken:    otelToken,
+		SpoolDir:       filepath.Join(os.TempDir(), "nembus-otel-pos"),
+		MaxSpoolBytes:  50 * 1024 * 1024,
+	}); err != nil {
+		log.Printf("[Telemetry] Warning: OpenTelemetry init failed: %v", err)
+	} else {
+		a.otelShutdown = shut
+	}
 
 	// Initialize embedded DigitalPersona runtime and start in-process local bridge on 127.0.0.1:5050
 	if err := biometrics.InitRuntime(); err != nil {
@@ -182,6 +214,12 @@ func (a *App) shutdown(ctx context.Context) {
 		_ = a.biometricBridge.Stop(ctx)
 	}
 	a.stopEmbeddedServices()
+	if a.otelShutdown != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = a.otelShutdown(shutCtx)
+		cancel()
+		a.otelShutdown = nil
+	}
 }
 
 func (a *App) stopEmbeddedServices() {
@@ -557,6 +595,7 @@ func (a *App) CloneTenant(slug string) string {
 
 // StartSyncService starts the background synchronization worker
 func (a *App) StartSyncService(slug string) {
+	telemetry.SetDynamicTenantSlug(slug)
 	if a.syncService != nil {
 		a.syncService.Stop()
 	}

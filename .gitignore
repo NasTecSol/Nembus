@@ -13,6 +13,7 @@ dist/
 # Environment Overrides & Local Files
 .env.local
 .env.*.local
+deploy/alloy/.env
 *.log
 startup.log
 startup_utf8.log

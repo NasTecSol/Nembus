@@ -74,12 +74,16 @@ jobs:
       - name: Build Biometric Agent Executable
         env:
           VERSION: ${{ steps.versioning.outputs.VERSION }}
+          OTEL_ENDPOINT: ${{ secrets.OTEL_ENDPOINT || 'https://otel.nashrms.com' }}
+          OTEL_INGEST_TOKEN: ${{ secrets.OTEL_INGEST_TOKEN }}
           GOPRIVATE: github.com/NasTecSol/*
           GONOSUMCHECK: github.com/NasTecSol/*
         run: |
           cd apps/biometric-agent
           $version = "${{ steps.versioning.outputs.VERSION }}"
-          $ldflags = "-X main.Version=$version"
+          $otelEndpoint = "$env:OTEL_ENDPOINT"
+          $otelToken = "$env:OTEL_INGEST_TOKEN"
+          $ldflags = "-X main.Version=$version -X main.OTelEndpoint=$otelEndpoint -X main.OTelIngestToken=$otelToken"
           if (-not (Test-Path "bin")) {
               New-Item -ItemType Directory -Path "bin" -Force | Out-Null
           }

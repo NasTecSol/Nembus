@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NasTecSol/nembus-core/telemetry"
 )
 
 // LocalBridgeServer provides the local hardware HTTP API on http://127.0.0.1:5050/api/v1
@@ -43,7 +45,7 @@ func NewLocalBridgeServer(addr string) *LocalBridgeServer {
 
 	b.httpServer = &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           telemetry.WrapHTTPHandler(mux, "nembus-biometric-agent"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	return b
@@ -95,7 +97,8 @@ func (b *LocalBridgeServer) withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Authorization-Token")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Authorization-Token, traceparent, tracestate")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Trace-ID")
 		if r.Header.Get("Access-Control-Request-Private-Network") == "true" {
 			w.Header().Set("Access-Control-Allow-Private-Network", "true")
 		}
@@ -114,6 +117,7 @@ func (b *LocalBridgeServer) handleDevice(w http.ResponseWriter, r *http.Request)
 	}
 	devices, err := QueryDevices()
 	if err != nil || len(devices) == 0 {
+		telemetry.RecordBiometricCapture(r.Context(), "", 0, 0)
 		writeBridgeJSON(w, http.StatusOK, map[string]any{
 			"success":   false,
 			"connected": false,
@@ -122,6 +126,7 @@ func (b *LocalBridgeServer) handleDevice(w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
+	telemetry.RecordBiometricCapture(r.Context(), "", 0, int64(len(devices)))
 	writeBridgeJSON(w, http.StatusOK, map[string]any{
 		"success":   true,
 		"connected": true,
@@ -168,6 +173,14 @@ func (b *LocalBridgeServer) handleCapture(w http.ResponseWriter, r *http.Request
 		})
 		return
 	case http.MethodPost:
+		captureStart := time.Now()
+		captureStatus := ""
+		defer func() {
+			if captureStatus != "" {
+				telemetry.RecordBiometricCapture(r.Context(), captureStatus, float64(time.Since(captureStart).Microseconds())/1000.0, -1)
+			}
+		}()
+
 		var req struct {
 			TimeoutMs int `json:"timeout"`
 		}
@@ -204,12 +217,14 @@ func (b *LocalBridgeServer) handleCapture(w http.ResponseWriter, r *http.Request
 		select {
 		case out := <-ch:
 			if out.err != nil {
+				captureStatus = "error"
 				writeBridgeJSON(w, bridgeCaptureHTTPStatus(out.err), map[string]any{
 					"success": false,
 					"message": CaptureUserMessage(out.err),
 				})
 				return
 			}
+			captureStatus = "ok"
 			res := out.res
 			writeBridgeJSON(w, http.StatusOK, map[string]any{
 				"success":       true,
@@ -225,6 +240,7 @@ func (b *LocalBridgeServer) handleCapture(w http.ResponseWriter, r *http.Request
 				"height":        res.Height,
 			})
 		case <-timer.C:
+			captureStatus = "timeout"
 			log.Printf("[BiometricBridge] Capture watchdog fired after %dms — canceling hardware capture", watchdogMs)
 			_ = CancelActiveCapture()
 			writeBridgeJSON(w, http.StatusRequestTimeout, map[string]any{
@@ -232,6 +248,7 @@ func (b *LocalBridgeServer) handleCapture(w http.ResponseWriter, r *http.Request
 				"message": "Capture timed out waiting for a good fingerprint scan. Press the sensor firmly until the light stays on, then retry. If this repeats, run Install / Repair Drivers (Biometric class) and replug USB.",
 			})
 		case <-r.Context().Done():
+			captureStatus = "canceled"
 			_ = CancelActiveCapture()
 			writeBridgeJSON(w, http.StatusRequestTimeout, map[string]any{
 				"success": false,

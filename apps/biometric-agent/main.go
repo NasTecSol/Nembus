@@ -8,17 +8,23 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/biometrics/installer"
 	"github.com/NasTecSol/nembus-core/biometrics/setup"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-biometric-agent/tray"
 	"github.com/NasTecSol/nembus-core/biometrics"
 )
 
 // Version is injected at release build time (-ldflags "-X main.Version=...").
-var Version = "dev"
+var (
+	Version         = "dev"
+	OTelEndpoint    = ""
+	OTelIngestToken = ""
+)
 
 func main() {
 	flagSetup := flag.Bool("setup", false, "Start bridge and immediately open Setup & Diagnostics dashboard in browser")
@@ -104,6 +110,18 @@ func main() {
 		os.Exit(0)
 	}
 
+	otelShutdown, otelErr := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:    "nembus-biometric-agent",
+		ServiceVersion: Version,
+		OTLPEndpoint:   OTelEndpoint,
+		IngestToken:    OTelIngestToken,
+		SpoolDir:       filepath.Join(os.TempDir(), "nembus-otel-biometric"),
+		MaxSpoolBytes:  50 * 1024 * 1024,
+	})
+	if otelErr != nil {
+		log.Printf("[Telemetry] Warning: OpenTelemetry init failed: %v", otelErr)
+	}
+
 	if err := biometrics.InitRuntime(); err != nil {
 		log.Fatalf("[BiometricAgent] Failed to initialize DigitalPersona runtime: %v", err)
 	}
@@ -139,6 +157,11 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = bridge.Stop(ctx)
+		if otelShutdown != nil {
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = otelShutdown(shutCtx)
+			shutCancel()
+		}
 	}
 
 	// 5. Run Mode: Tray vs Headless

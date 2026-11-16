@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
+	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/discovery"
@@ -81,6 +82,7 @@ func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteSto
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.OTelGinMiddleware("nembus-sap-agent"))
 
 	s := &Server{
 		cfg:                  cfg,

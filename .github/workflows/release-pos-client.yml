@@ -103,6 +103,8 @@ jobs:
           VERSION: ${{ steps.versioning.outputs.VERSION }}
           CLOUD_URL: ${{ secrets.CLOUD_URL || 'https://nembus.nashrms.com' }}
           APP_UPDATE_KEY: ${{ secrets.APP_UPDATE_CLIENT_KEY || 'nembus-pos-update-client-key-default' }}
+          OTEL_ENDPOINT: ${{ secrets.OTEL_ENDPOINT || 'https://otel.nashrms.com' }}
+          OTEL_INGEST_TOKEN: ${{ secrets.OTEL_INGEST_TOKEN }}
           GOPRIVATE: github.com/NasTecSol/*
           GONOSUMCHECK: github.com/NasTecSol/*
         run: |
@@ -110,7 +112,9 @@ jobs:
           $version = "${{ steps.versioning.outputs.VERSION }}"
           $cloudUrl = "$env:CLOUD_URL"
           $appKey = "$env:APP_UPDATE_KEY"
-          $ldflags = "-X main.Version=$version -X main.AppUpdateKey=$appKey -X main.CloudURL=$cloudUrl"
+          $otelEndpoint = "$env:OTEL_ENDPOINT"
+          $otelToken = "$env:OTEL_INGEST_TOKEN"
+          $ldflags = "-X main.Version=$version -X main.AppUpdateKey=$appKey -X main.CloudURL=$cloudUrl -X main.OTelEndpoint=$otelEndpoint -X main.OTelIngestToken=$otelToken"
           wails build -platform windows/amd64 -ldflags "$ldflags" -o nembus-client.exe
 
       - name: Calculate Binary Checksum
