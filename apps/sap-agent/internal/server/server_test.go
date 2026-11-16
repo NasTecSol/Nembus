@@ -1,6 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -8,6 +12,7 @@ import (
 
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/gin-gonic/gin"
 )
 
 func TestDownstreamMasterDomainsIncludesInventory(t *testing.T) {
@@ -65,5 +70,41 @@ func TestNextScheduledRunTime(t *testing.T) {
 	overrun := runStart.Add(6 * time.Minute)
 	if got := nextScheduledRunTime(runStart, overrun, interval); !got.Equal(overrun) {
 		t.Fatalf("expected %v on overrun, got %v", overrun, got)
+	}
+}
+
+func TestHandleOnboardingSAPEntities_MissingHost(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.MSSQL.Host = ""
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	s := &Server{cfg: cfg}
+	r.POST("/api/v1/onboarding/sap-entities", s.handleOnboardingSAPEntities)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/sap-entities", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	var resp struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Success || resp.Error == "" {
+		t.Fatalf("expected failure with error message, got %+v", resp)
 	}
 }

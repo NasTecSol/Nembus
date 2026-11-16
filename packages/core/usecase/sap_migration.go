@@ -46,9 +46,6 @@ func ensureMigrationSchema(pool *pgxpool.Pool) {
 		defer cancel()
 
 		stmts := []string{
-			`INSERT INTO organizations (id, name, code, legal_name, tax_id, currency_code, fiscal_year_variant, is_active, metadata)
-			VALUES (1, 'Qitaf Group', 'ORG001', 'Qitaf Group LLC', '300000000000003', 'SAR', 'CALENDAR', true, '{}')
-			ON CONFLICT (id) DO NOTHING;`,
 			`CREATE SCHEMA IF NOT EXISTS staging;`,
 			`CREATE TABLE IF NOT EXISTS staging.sap_migration_batches (
 				id SERIAL PRIMARY KEY,
@@ -394,6 +391,43 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 
 	// 2. Route Domain Ingestion & Canonical Upsert
 	switch payload.Domain {
+	case contracts.DomainOrganizations:
+		for _, o := range payload.Organizations {
+			metaBytes, _ := json.Marshal(o.Metadata)
+			var err error
+			if o.ID > 0 {
+				q := `
+				INSERT INTO organizations (id, code, name, is_active, metadata)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT(id) DO UPDATE SET
+					code = excluded.code,
+					name = excluded.name,
+					is_active = excluded.is_active,
+					metadata = excluded.metadata;
+				`
+				err = execWithSavepoint(ctx, tx, q, o.ID, o.Code, o.Name, o.IsActive, metaBytes)
+				if err == nil {
+					_, _ = tx.Exec(ctx, `SELECT setval(pg_get_serial_sequence('organizations', 'id'), COALESCE((SELECT MAX(id) FROM organizations), 1))`)
+				}
+			} else {
+				q := `
+				INSERT INTO organizations (code, name, is_active, metadata)
+				VALUES ($1, $2, $3, $4)
+				ON CONFLICT(code) DO UPDATE SET
+					name = excluded.name,
+					is_active = excluded.is_active,
+					metadata = excluded.metadata;
+				`
+				err = execWithSavepoint(ctx, tx, q, o.Code, o.Name, o.IsActive, metaBytes)
+			}
+			if err != nil {
+				failed++
+				errs = append(errs, fmt.Sprintf("organization %s error: %v", o.Code, err))
+			} else {
+				staged++
+			}
+		}
+
 	case contracts.DomainStores:
 		for _, s := range payload.Stores {
 			metaBytes, _ := json.Marshal(s.Metadata)
