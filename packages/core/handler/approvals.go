@@ -80,7 +80,7 @@ func (h *ApprovalsHandler) Submit(c *gin.Context) {
 		return
 	}
 	in.RequestedBy = user
-	req, err := h.uc.Submit(c.Request.Context(), in)
+	req, err := h.uc.SubmitOrUpdatePending(c.Request.Context(), in)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

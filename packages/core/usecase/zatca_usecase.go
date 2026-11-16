@@ -2,10 +2,12 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
@@ -211,9 +213,21 @@ func (uc *ZatcaUseCase) SignPosTransaction(ctx context.Context, txn *repository.
 		if line.LineNumber.Valid {
 			lineNum = int(line.LineNumber.Int32)
 		}
+		prodName := fmt.Sprintf("Line #%d", lineNum)
+		if line.ProductID.Valid && line.ProductID.Int32 > 0 {
+			prodName = fmt.Sprintf("Product #%d", line.ProductID.Int32)
+		}
+		var meta map[string]interface{}
+		if len(line.Metadata) > 0 && json.Unmarshal(line.Metadata, &meta) == nil {
+			if name, ok := meta["product_name"].(string); ok && strings.TrimSpace(name) != "" {
+				prodName = strings.TrimSpace(name)
+			} else if name, ok := meta["menu_item_name"].(string); ok && strings.TrimSpace(name) != "" {
+				prodName = strings.TrimSpace(name)
+			}
+		}
 		xmlLines = append(xmlLines, InvoiceLineInput{
 			LineNumber:  lineNum,
-			ProductName: fmt.Sprintf("Product #%d", line.ProductID),
+			ProductName: prodName,
 			Quantity:    numericToString(line.Quantity),
 			UnitCode:    "PCE",
 			UnitPrice:   numericToString(line.UnitPrice),

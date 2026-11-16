@@ -96,6 +96,7 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 
 	// 2. Build ReceiptTemplate from org record
 	tmpl := printing.ReceiptTemplate{
+		Config: printing.DefaultReceiptTemplateConfig(),
 		Header: printing.OrgHeader{
 			Name:  org.Name,
 			TaxID: org.TaxID.String,
@@ -104,6 +105,22 @@ func (uc *PrintUseCase) PrintReceipt(tx context.Context, input PrintReceiptInput
 			ThankYou:   "Thank you for your visit!",
 			ReturnNote: "Please keep this receipt for any exchange or return.",
 		},
+	}
+	templateType := printing.ReceiptTemplateType(input.Receipt.Type)
+	language := strings.TrimSpace(input.Receipt.Language)
+	if language == "" {
+		language = "en"
+	}
+	if input.Receipt.StoreID > 0 {
+		if record, _, resolveErr := uc.repo.ResolveReceiptTemplate(tx, input.OrgID, int64(input.Receipt.StoreID), templateType, language); resolveErr == nil {
+			if config, parseErr := printing.ParseReceiptTemplateConfig(record.Config); parseErr == nil {
+				tmpl.Config = config
+			}
+		}
+	} else if record, _, resolveErr := uc.repo.ResolveReceiptTemplate(tx, input.OrgID, 0, templateType, language); resolveErr == nil {
+		if config, parseErr := printing.ParseReceiptTemplateConfig(record.Config); parseErr == nil {
+			tmpl.Config = config
+		}
 	}
 
 	// Populate optional header fields from LegalName / metadata

@@ -14,6 +14,7 @@
             completed: false,
             tenants: [],
             selectedTenant: 'demo-retail',
+            selectedTenantName: '',
             migratorToken: null,
             testedMSSQL: false,
             testedCloud: false
@@ -71,6 +72,13 @@
         });
 
         document.getElementById('btn-re-run-wizard')?.addEventListener('click', async () => {
+            try {
+                await fetch('/api/v1/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ onboarding_completed: false })
+                });
+            } catch (_) {}
             switchTab('tab-onboarding');
             goToWizardStep(1);
             await loadConfigAndStatus();
@@ -173,16 +181,17 @@
         }
         if (cfg.cloud) {
             setVal('ob-cloud-url', cfg.cloud.base_url);
-            setVal('ob-cloud-dburl', cfg.cloud.database_url || '');
             setVal('ob-target-orgid', cfg.cloud.organization_id || 1);
         }
         setVal('ob-migrator-user', cfg.migrator_user || 'Migrator');
         setVal('ob-migrator-password', cfg.migrator_password || 'Migrator');
         setVal('ob-migrator-role', cfg.migrator_role || 'auto-user');
         setVal('ob-sap-operator', cfg.sap_user_mapping || 'manager');
+        setVal('ob-sap-password', cfg.sap_password || '');
         setVal('ob-downstream-interval', cfg.downstream_interval_sec || 300);
         setVal('ob-upstream-interval', cfg.upstream_interval_sec || 60);
         setVal('ob-recon-interval', cfg.reconciliation_interval_sec || 3600);
+        setVal('ob-target-storeid', cfg.nembus_store_id || 1);
         setVal('ob-default-store', cfg.default_store_code || '01');
     }
 
@@ -263,7 +272,6 @@
 
             const payload = {
                 base_url: getVal('ob-cloud-url'),
-                database_url: getVal('ob-cloud-dburl'),
                 timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
             };
 
@@ -312,9 +320,9 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
+                            onboarding_completed: false,
                             cloud: {
                                 base_url: cloudUrl,
-                                database_url: getVal('ob-cloud-dburl'),
                                 timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
                             },
                             mssql: {
@@ -336,11 +344,30 @@
             setVal('ob-mapped-company', getVal('ob-mssql-database'));
             goToWizardStep(2);
             fetchDiscoveredTenants();
+            fetchSAPEntities();
         });
 
-        // STEP 2: Tenants
+        // STEP 2: Tenants & SAP Mapping
         document.getElementById('btn-step2-back')?.addEventListener('click', () => goToWizardStep(1));
         document.getElementById('btn-refresh-tenants')?.addEventListener('click', fetchDiscoveredTenants);
+        document.getElementById('btn-refresh-sap-entities')?.addEventListener('click', fetchSAPEntities);
+        document.getElementById('ob-target-orgid')?.addEventListener('change', updateOrgPreview);
+        document.getElementById('ob-default-store')?.addEventListener('change', (e) => {
+            const storeSelect = document.getElementById('ob-target-storeid');
+            const selectedOpt = e.target.selectedOptions?.[0];
+            const storeId = selectedOpt?.dataset?.storeId;
+            if (storeSelect && storeId) {
+                storeSelect.value = storeId;
+            }
+        });
+        document.getElementById('ob-target-storeid')?.addEventListener('change', (e) => {
+            const codeSelect = document.getElementById('ob-default-store');
+            const selectedOpt = e.target.selectedOptions?.[0];
+            const code = selectedOpt?.dataset?.storeCode;
+            if (codeSelect && code) {
+                codeSelect.value = code;
+            }
+        });
         document.getElementById('btn-step2-next')?.addEventListener('click', () => goToWizardStep(3));
 
         // STEP 3: Security Principal (Migrator)
@@ -438,18 +465,22 @@
             const tenants = Array.isArray(raw) ? raw : [];
             state.onboarding.tenants = tenants;
 
+            const hasSaved = tenants.some(t => (t.slug || t.id) === state.onboarding.selectedTenant);
             listContainer.innerHTML = '';
             tenants.forEach((t, idx) => {
                 const slug = t.slug || t.id;
-                const isChecked = idx === 0;
-                if (isChecked) state.onboarding.selectedTenant = slug;
+                const displayName = t.tenant_name || t.name || slug;
+                const isChecked = hasSaved ? slug === state.onboarding.selectedTenant : idx === 0;
+                if (isChecked) {
+                    selectOnboardingTenant(slug, displayName);
+                }
 
                 const item = document.createElement('div');
                 item.className = `tenant-radio-item ${isChecked ? 'selected' : ''}`;
                 item.innerHTML = `
                     <input type="radio" name="tenant_choice" value="${slug}" ${isChecked ? 'checked' : ''}>
                     <div class="t-info">
-                        <div class="t-title">${t.tenant_name || t.name || slug}</div>
+                        <div class="t-title">${displayName}</div>
                         <div class="t-slug">Slug: <code>${slug}</code> &bull; Status: ${t.is_active ? 'Active' : 'Standby'}</div>
                     </div>
                     <span class="badge ${t.is_active ? 'badge-success' : 'badge-outline'}">${t.is_active ? 'Active' : 'Ready'}</span>
@@ -459,8 +490,7 @@
                     listContainer.querySelectorAll('.tenant-radio-item').forEach(el => el.classList.remove('selected'));
                     item.classList.add('selected');
                     item.querySelector('input').checked = true;
-                    state.onboarding.selectedTenant = slug;
-                    document.getElementById('preview-slug').textContent = slug;
+                    selectOnboardingTenant(slug, displayName);
                 });
 
                 listContainer.appendChild(item);
@@ -470,10 +500,111 @@
         }
     }
 
+    function selectOnboardingTenant(slug, displayName) {
+        state.onboarding.selectedTenant = slug;
+        state.onboarding.selectedTenantName = displayName || slug;
+        if (elements.headerTenantName) {
+            elements.headerTenantName.textContent = displayName || slug;
+        }
+        const previewSlug = document.getElementById('preview-slug');
+        if (previewSlug) previewSlug.textContent = slug;
+    }
+
+    function updateOrgPreview() {
+        const orgEl = document.getElementById('ob-target-orgid');
+        const previewOrg = document.getElementById('preview-org');
+        if (orgEl && previewOrg) {
+            const label = orgEl.selectedOptions?.[0]?.textContent || orgEl.value || '1';
+            previewOrg.textContent = label;
+        }
+    }
+
+    async function fetchSAPEntities() {
+        const orgSelect = document.getElementById('ob-target-orgid');
+        const storeIdSelect = document.getElementById('ob-target-storeid');
+        const storeCodeSelect = document.getElementById('ob-default-store');
+        if (!orgSelect || !storeIdSelect || !storeCodeSelect) return;
+
+        const payload = {
+            host: getVal('ob-mssql-host'),
+            port: parseInt(getVal('ob-mssql-port')) || 1433,
+            user: getVal('ob-mssql-user'),
+            password: getVal('ob-mssql-password'),
+            database: getVal('ob-mssql-database'),
+            trust_server_certificate: document.getElementById('ob-mssql-trust')?.checked,
+            encrypt: document.getElementById('ob-mssql-encrypt')?.checked
+        };
+
+        try {
+            const res = await fetch('/api/v1/onboarding/sap-entities', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to query SAP entities');
+            }
+
+            const orgs = Array.isArray(data.organizations) ? data.organizations : [];
+            const savedOrg = String(state.config?.cloud?.organization_id || orgSelect.value || '');
+            orgSelect.innerHTML = '';
+            orgs.forEach(org => {
+                const opt = document.createElement('option');
+                opt.value = String(org.id);
+                opt.textContent = `${org.name} (ID: ${org.id})`;
+                orgSelect.appendChild(opt);
+            });
+            if (savedOrg && orgs.some(o => String(o.id) === savedOrg)) {
+                orgSelect.value = savedOrg;
+            }
+            updateOrgPreview();
+
+            const stores = Array.isArray(data.stores) ? data.stores : [];
+            const savedStoreId = String(state.config?.nembus_store_id || storeIdSelect.value || '');
+            const savedStoreCode = String(state.config?.default_store_code || storeCodeSelect.value || '');
+            storeIdSelect.innerHTML = '';
+            storeCodeSelect.innerHTML = '';
+
+            stores.forEach((st, idx) => {
+                const parsed = parseInt(st.code, 10);
+                const numericId = !isNaN(parsed) && String(parsed) === st.code.replace(/^0+/, '') ? parsed : (idx + 1);
+                const label = `${st.name || st.code} (${st.code})`;
+
+                const idOpt = document.createElement('option');
+                idOpt.value = String(numericId);
+                idOpt.dataset.storeCode = st.code;
+                idOpt.textContent = `${st.name || st.code} (ID: ${numericId})`;
+                storeIdSelect.appendChild(idOpt);
+
+                const codeOpt = document.createElement('option');
+                codeOpt.value = st.code;
+                codeOpt.dataset.storeId = String(numericId);
+                codeOpt.textContent = label;
+                storeCodeSelect.appendChild(codeOpt);
+            });
+
+            if (savedStoreCode && stores.some(s => s.code === savedStoreCode)) {
+                storeCodeSelect.value = savedStoreCode;
+            }
+            if (savedStoreId && Array.from(storeIdSelect.options).some(o => o.value === savedStoreId)) {
+                storeIdSelect.value = savedStoreId;
+            }
+        } catch (err) {
+            appendLog('WARN', `Could not fetch SAP organizations/stores: ${err.message}`);
+            orgSelect.innerHTML = `<option value="${state.config?.cloud?.organization_id || 1}">Default Org (ID: ${state.config?.cloud?.organization_id || 1})</option>`;
+            storeIdSelect.innerHTML = `<option value="${state.config?.nembus_store_id || 1}">Default Store (ID: ${state.config?.nembus_store_id || 1})</option>`;
+            storeCodeSelect.innerHTML = `<option value="${state.config?.default_store_code || '01'}">Default (${state.config?.default_store_code || '01'})</option>`;
+            updateOrgPreview();
+        }
+    }
+
     function updateReviewSummary() {
         setTxt('sum-mssql', `${getVal('ob-mssql-host')}:${getVal('ob-mssql-port')} [${getVal('ob-mssql-database')}]`);
         setTxt('sum-cloud', getVal('ob-cloud-url'));
-        setTxt('sum-tenant', `${state.onboarding.selectedTenant} (Org #${getVal('ob-target-orgid')})`);
+        const orgEl = document.getElementById('ob-target-orgid');
+        const orgLabel = orgEl?.selectedOptions?.[0]?.textContent || `Org #${getVal('ob-target-orgid')}`;
+        setTxt('sum-tenant', `${state.onboarding.selectedTenantName || state.onboarding.selectedTenant} (${orgLabel})`);
         setTxt('sum-user', getVal('ob-migrator-user') || 'Migrator');
         setTxt('sum-role', getVal('ob-migrator-role') || 'auto-user');
         setTxt('sum-sap-op', getVal('ob-sap-operator') || 'manager');
@@ -499,22 +630,23 @@
             },
             cloud: {
                 base_url: getVal('ob-cloud-url'),
-                database_url: getVal('ob-cloud-dburl'),
                 organization_id: parseInt(getVal('ob-target-orgid')) || 1,
                 api_key: state.onboarding.migratorToken || getVal('ob-derived-token') || '',
                 timeout_seconds: parseInt(getVal('ob-cloud-timeout')) || 60
             },
             tenant_slug: state.onboarding.selectedTenant,
-            tenant_name: state.onboarding.selectedTenant,
+            tenant_name: state.onboarding.selectedTenantName || state.onboarding.selectedTenant,
             migrator_user: getVal('ob-migrator-user') || 'Migrator',
             migrator_password: getVal('ob-migrator-password') || 'Migrator',
             migrator_role: 'auto-user',
             migrator_token: state.onboarding.migratorToken || getVal('ob-derived-token') || '',
             sap_user_mapping: getVal('ob-sap-operator') || 'manager',
+            sap_password: getVal('ob-sap-password'),
             downstream_interval_sec: parseInt(getVal('ob-downstream-interval')) || 300,
             upstream_interval_sec: parseInt(getVal('ob-upstream-interval')) || 60,
             reconciliation_interval_sec: parseInt(getVal('ob-recon-interval')) || 3600,
             reconciliation_auto_run: document.getElementById('ob-recon-autorun')?.checked,
+            nembus_store_id: parseInt(getVal('ob-target-storeid')) || 1,
             default_store_code: getVal('ob-default-store') || '01',
             batch_size: parseInt(getVal('ob-batch-size')) || 500
         };
@@ -612,11 +744,15 @@
                 <div class="domain-desc">${d.description}</div>
                 <div class="domain-tile-footer">
                     <span class="text-success">&#10003; Synced</span>
-                    <button class="btn btn-xs btn-outline btn-sync-single" data-domain="${d.code}">Sync</button>
+                    <button class="btn btn-xs btn-outline btn-sync-single" data-domain="${d.code}">
+                        <span class="btn-spinner"></span>
+                        <span>Sync</span>
+                    </button>
                 </div>
             `;
-            tile.querySelector('.btn-sync-single').addEventListener('click', () => {
-                triggerSingleDomainSync(d.name);
+            const syncBtn = tile.querySelector('.btn-sync-single');
+            syncBtn.addEventListener('click', () => {
+                triggerSingleDomainSync(d.code, d.name, syncBtn);
             });
             container.appendChild(tile);
         });
@@ -770,6 +906,11 @@
     function handleProgressEvent(ev) {
         if (!ev) return;
 
+        if (ev.type === 'downstream_step' || ev.type === 'upstream_step') {
+            appendLog('INFO', ev.message);
+            return;
+        }
+
         if (ev.domain) setTxt('prog-domain-name', ev.domain);
 
         const overall = ev.total_domains > 0 ? (ev.completed_steps / ev.total_domains) * 100 : 0;
@@ -859,20 +1000,34 @@
         });
     }
 
-    async function triggerDownstreamSync() {
-        const btn = document.getElementById('btn-manual-downstream') || document.getElementById('btn-quick-sync');
+    async function triggerDownstreamSync(e) {
+        const btn = (e && e.currentTarget) || document.getElementById('btn-manual-downstream') || document.getElementById('btn-quick-sync');
         setButtonLoading(btn, true);
+        showToast('Syncing latest SAP changes to Nembus...', 'info');
+        appendLog('INFO', '[Downstream] Checking SAP for changed master data...');
         try {
-            const res = await fetch('/api/v1/sync/downstream/run', { method: 'POST' });
+            const res = await fetch('/api/v1/sync/downstream/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
             const data = await res.json();
             if (data.success) {
                 showToast(data.message, 'success');
-                appendLog('INFO', data.message);
+                appendLog('INFO', `[Downstream] ${data.message}`);
+                try {
+                    const statusRes = await fetch('/api/v1/sync/status');
+                    const statusData = await statusRes.json();
+                    state.syncStatus = statusData;
+                    updateDashboardSyncCards(statusData);
+                } catch (_) {}
             } else {
                 showToast(data.message, 'warning');
+                appendLog('WARN', `[Downstream] ${data.message}`);
             }
         } catch (err) {
             showToast(`Sync trigger failed: ${err.message}`, 'error');
+            appendLog('ERROR', `[Downstream] ${err.message}`);
         } finally {
             setButtonLoading(btn, false);
         }
@@ -917,6 +1072,8 @@
                 } else if (d.status === 'failed' || d.status === 'error') {
                     errors++;
                     badge = `<span class="badge badge-danger" title="${escapeHtml(d.error_message || '')}">Failed</span>`;
+                } else if (d.status === 'skipped') {
+                    badge = `<span class="badge badge-secondary" title="${escapeHtml(d.error_message || '')}">Skipped</span>`;
                 } else {
                     synced++;
                 }
@@ -941,9 +1098,36 @@
         }
     }
 
-    function triggerSingleDomainSync(domainName) {
-        showToast(`Sync queued for: ${domainName}`, 'success');
-        appendLog('INFO', `Manual sync requested for domain ${domainName}`);
+    async function triggerSingleDomainSync(domainCode, domainName, btn) {
+        if (btn) setButtonLoading(btn, true);
+        showToast(`Syncing ${domainName}...`, 'info');
+        appendLog('INFO', `[Downstream] Manual sync started for ${domainName} (${domainCode})`);
+        try {
+            const res = await fetch('/api/v1/sync/downstream/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domains: [domainCode] })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                appendLog('INFO', `[Downstream] ${data.message}`);
+                try {
+                    const statusRes = await fetch('/api/v1/sync/status');
+                    const statusData = await statusRes.json();
+                    state.syncStatus = statusData;
+                    updateDashboardSyncCards(statusData);
+                } catch (_) {}
+            } else {
+                showToast(data.message, 'warning');
+                appendLog('WARN', `[Downstream] ${data.message}`);
+            }
+        } catch (err) {
+            showToast(`Sync failed: ${err.message}`, 'error');
+            appendLog('ERROR', `[Downstream] ${err.message}`);
+        } finally {
+            if (btn) setButtonLoading(btn, false);
+        }
     }
 
     async function runReconciliation() {

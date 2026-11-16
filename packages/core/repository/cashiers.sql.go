@@ -41,7 +41,7 @@ func (q *Queries) ActivateCashier(ctx context.Context, id int32) (Cashier, error
 
 type BulkCreatePosTransactionLinesParams struct {
 	TransactionID    int32           `json:"transaction_id"`
-	ProductID        int32           `json:"product_id"`
+	ProductID        pgtype.Int4     `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
 	Quantity         pgtype.Numeric  `json:"quantity"`
 	UomID            pgtype.Int4     `json:"uom_id"`

@@ -49,6 +49,8 @@ func PullEntityTypes() []string {
 		"inventory_stock",
 		"stock_movements",
 		"organizations",
+		"printing_templates",
+		"store_receipt_settings",
 	}
 }
 

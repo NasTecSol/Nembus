@@ -3,12 +3,15 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +19,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap/mappings"
+	"github.com/NasTecSol/nembus-sap/schema"
 	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
@@ -31,16 +36,47 @@ import (
 )
 
 type Server struct {
-	cfg          *config.AgentConfig
-	engine       *etl.Engine
-	sqlite       *db.SQLiteStore
-	mssql        *db.MSSQLClient
-	cloudClient  *transport.CloudClient
-	upstreamSync *pipeline.UpstreamSync
-	upstreamMu   sync.Mutex
-	pgPool       *pgxpool.Pool
-	router       *gin.Engine
-	uiFS         embed.FS
+	cfg                  *config.AgentConfig
+	engine               *etl.Engine
+	sqlite               *db.SQLiteStore
+	mssql                *db.MSSQLClient
+	cloudClient          *transport.CloudClient
+	upstreamSync         *pipeline.UpstreamSync
+	upstreamMu           sync.Mutex
+	downstreamMu         sync.Mutex
+	autoStateMu          sync.RWMutex
+	downstreamAutoActive bool
+	upstreamAutoActive   bool
+	lastDownstreamStats  *etl.DownstreamStats
+	lastDownstreamTime   *time.Time
+	lastDownstreamErr    string
+	pgPool               *pgxpool.Pool
+	router               *gin.Engine
+	uiFS                 embed.FS
+}
+
+func (s *Server) isDownstreamAutoActive() bool {
+	s.autoStateMu.RLock()
+	defer s.autoStateMu.RUnlock()
+	return s.downstreamAutoActive
+}
+
+func (s *Server) setDownstreamAutoActive(active bool) {
+	s.autoStateMu.Lock()
+	defer s.autoStateMu.Unlock()
+	s.downstreamAutoActive = active
+}
+
+func (s *Server) isUpstreamAutoActive() bool {
+	s.autoStateMu.RLock()
+	defer s.autoStateMu.RUnlock()
+	return s.upstreamAutoActive
+}
+
+func (s *Server) setUpstreamAutoActive(active bool) {
+	s.autoStateMu.Lock()
+	defer s.autoStateMu.Unlock()
+	s.upstreamAutoActive = active
 }
 
 func NewServer(cfg *config.AgentConfig, engine *etl.Engine, sqlite *db.SQLiteStore, mssql *db.MSSQLClient, cloudClient *transport.CloudClient, uiFS embed.FS) *Server {
@@ -95,6 +131,7 @@ func (s *Server) setupRoutes() {
 		// Onboarding Wizard & Security Layer
 		api.GET("/onboarding/status", s.handleGetOnboardingStatus)
 		api.POST("/onboarding/tenants", s.handleOnboardingTenants)
+		api.POST("/onboarding/sap-entities", s.handleOnboardingSAPEntities)
 		api.POST("/onboarding/login", s.handleOnboardingLogin)
 		api.POST("/onboarding/complete", s.handleOnboardingComplete)
 
@@ -128,7 +165,9 @@ func (s *Server) setupRoutes() {
 	}
 }
 
-// DownstreamMasterDomains defines the core master data domains synchronized from SAP to Nembus
+// DownstreamMasterDomains defines the core master catalog domains synchronized from SAP to Nembus.
+// Note: Opening Inventory is a foundational setup domain migrated once in Migration Studio
+// and does not run on the continuous master data loop.
 var DownstreamMasterDomains = []contracts.DomainType{
 	contracts.DomainUOM,
 	contracts.DomainUOMGroups,
@@ -147,41 +186,93 @@ func (s *Server) Start(port int) error {
 	return s.router.Run(addr)
 }
 
-func (s *Server) startDownstreamScheduler() {
-	time.Sleep(15 * time.Second)
+// nextScheduledRunTime returns the next start-to-start run time (runStart + interval),
+// or now if the run itself took longer than interval.
+func nextScheduledRunTime(runStart, now time.Time, interval time.Duration) time.Time {
+	next := runStart.Add(interval)
+	if next.Before(now) {
+		return now
+	}
+	return next
+}
+
+func (s *Server) runPeriodicScheduler(defaultIntervalSec int, getInterval func(*config.AgentConfig) int, isActive func() bool, run func(interval int)) {
+	var nextRunAt time.Time
 	for {
 		cfg := config.Get()
-		interval := cfg.DownstreamIntervalSec
-		if interval <= 0 {
-			interval = 300
+		if !cfg.OnboardingCompleted || !isActive() {
+			nextRunAt = time.Time{}
+			time.Sleep(2 * time.Second)
+			continue
 		}
 
-		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
-			log.Printf("[SAP-AGENT] Running scheduled downstream sync (interval: %ds)...", interval)
-			if _, err := s.engine.StartMigration(context.Background(), contracts.MigrationModeIncremental, DownstreamMasterDomains); err != nil {
-				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
+		intervalSec := getInterval(cfg)
+		if intervalSec <= 0 {
+			intervalSec = defaultIntervalSec
+		}
+		interval := time.Duration(intervalSec) * time.Second
+		if nextRunAt.IsZero() {
+			nextRunAt = time.Now().Add(interval)
+		}
+
+		for time.Now().Before(nextRunAt) {
+			remaining := time.Until(nextRunAt)
+			if remaining > 2*time.Second {
+				remaining = 2 * time.Second
+			}
+			time.Sleep(remaining)
+			if !config.Get().OnboardingCompleted || !isActive() {
+				nextRunAt = time.Time{}
+				break
 			}
 		}
 
-		time.Sleep(time.Duration(interval) * time.Second)
+		cfg = config.Get()
+		if !cfg.OnboardingCompleted || !isActive() || nextRunAt.IsZero() {
+			continue
+		}
+
+		runStart := time.Now()
+		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
+			run(intervalSec)
+		}
+
+		intervalSec = getInterval(config.Get())
+		if intervalSec <= 0 {
+			intervalSec = defaultIntervalSec
+		}
+		nextRunAt = nextScheduledRunTime(runStart, time.Now(), time.Duration(intervalSec)*time.Second)
 	}
 }
 
+func (s *Server) startDownstreamScheduler() {
+	s.runPeriodicScheduler(
+		300,
+		func(c *config.AgentConfig) int { return c.DownstreamIntervalSec },
+		s.isDownstreamAutoActive,
+		func(interval int) {
+			log.Printf("[SAP-AGENT] Running scheduled downstream master data sync (interval: %ds)...", interval)
+			if stats, err := s.runDownstreamSync(context.Background(), DownstreamMasterDomains); err != nil {
+				log.Printf("[SAP-AGENT] Scheduled downstream sync notice: %v", err)
+			} else if stats != nil {
+				log.Printf("[SAP-AGENT] Scheduled downstream sync completed: %d uoms, %d products, %d barcodes, %d prices in %v",
+					stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Duration)
+			}
+		},
+	)
+}
+
 func (s *Server) startUpstreamScheduler() {
-	time.Sleep(25 * time.Second)
-	for {
-		cfg := config.Get()
-		interval := cfg.UpstreamIntervalSec
-		if interval <= 0 {
-			interval = 60
-		}
-
-		if cfg.MSSQL.Host != "" && cfg.Cloud.BaseURL != "" {
-			_, _ = s.runUpstreamSync(context.Background())
-		}
-
-		time.Sleep(time.Duration(interval) * time.Second)
-	}
+	s.runPeriodicScheduler(
+		60,
+		func(c *config.AgentConfig) int { return c.UpstreamIntervalSec },
+		s.isUpstreamAutoActive,
+		func(_ int) {
+			if _, err := s.runUpstreamSync(context.Background()); err != nil {
+				log.Printf("[SAP-AGENT] Scheduled upstream sync notice: %v", err)
+			}
+		},
+	)
 }
 
 // Handlers
@@ -190,8 +281,61 @@ func (s *Server) handleGetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, config.Get())
 }
 
+// applySAPCompanyDB keeps SAPCompanyDB synced with an explicit value or the configured MSSQL database.
+func applySAPCompanyDB(current *config.AgentConfig, sapDB, mssqlDB string) {
+	if sapDB != "" {
+		current.SAPCompanyDB = sapDB
+	} else if mssqlDB != "" {
+		current.SAPCompanyDB = mssqlDB
+	}
+}
+
+func (s *Server) ensureOnboardingOrganization(ctx context.Context, cfg *config.AgentConfig, requestedName string) error {
+	orgID := max(cfg.Cloud.OrganizationID, 1)
+	orgName := strings.TrimSpace(requestedName)
+	if orgName == "" {
+		orgName = strings.TrimSpace(cfg.SAPCompanyDB)
+	}
+	if orgName == "" {
+		orgName = strings.TrimSpace(cfg.MSSQL.Database)
+	}
+	if orgName == "" {
+		orgName = "SAP Company"
+	}
+
+	client := s.cloudClient
+	if client == nil {
+		client = transport.NewCloudClient(cfg.Cloud)
+	} else {
+		client.UpdateConfig(cfg.Cloud)
+	}
+
+	payload := &contracts.MigrationBatchPayload{
+		BatchID:        fmt.Sprintf("onboard-org-%d", time.Now().UnixNano()),
+		RunID:          fmt.Sprintf("onboard-%d", time.Now().Unix()),
+		OrganizationID: orgID,
+		Domain:         contracts.DomainOrganizations,
+		SequenceNumber: 1,
+		IsLastBatch:    true,
+		Timestamp:      time.Now().UTC(),
+		Organizations: []mappings.CanonicalOrganization{
+			{
+				ID:       orgID,
+				Code:     fmt.Sprintf("SAP-%d", orgID),
+				Name:     orgName,
+				IsActive: true,
+			},
+		},
+	}
+	_, err := client.SendBatch(ctx, payload)
+	return err
+}
+
 func (s *Server) handleSaveConfig(c *gin.Context) {
-	var req config.AgentConfig
+	var req struct {
+		config.AgentConfig
+		OnboardingCompleted *bool `json:"onboarding_completed"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -201,6 +345,7 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.MSSQL.Host != "" {
 		current.MSSQL = req.MSSQL
 	}
+	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -235,7 +380,22 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
 	}
-	current.OnboardingCompleted = req.OnboardingCompleted
+	if req.SAPPassword != "" {
+		current.SAPPassword = req.SAPPassword
+	}
+	if req.NembusStoreID > 0 {
+		current.NembusStoreID = req.NembusStoreID
+	}
+	if req.DefaultStoreCode != "" {
+		current.DefaultStoreCode = req.DefaultStoreCode
+	}
+	if req.OnboardingCompleted != nil {
+		current.OnboardingCompleted = *req.OnboardingCompleted
+		if !current.OnboardingCompleted {
+			s.setDownstreamAutoActive(false)
+			s.setUpstreamAutoActive(false)
+		}
+	}
 
 	if err := config.SaveConfig(current); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -245,10 +405,14 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	s.cfg = current
 	if s.engine != nil {
 		s.engine.UpdateCloudConfig(current.Cloud)
+		s.engine.UpdateMSSQLConfig(current.MSSQL)
 	}
 	if s.cloudClient != nil {
 		s.cloudClient.UpdateConfig(current.Cloud)
 	}
+	s.upstreamMu.Lock()
+	s.upstreamSync = nil
+	s.upstreamMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "config": current})
 }
@@ -342,6 +506,109 @@ func (s *Server) handleOnboardingTenants(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "tenants": fallbackTenants, "source": "local_catalog"})
 }
 
+type sapOrgOption struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type sapStoreOption struct {
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Locked string `json:"locked"`
+}
+
+func (s *Server) handleOnboardingSAPEntities(c *gin.Context) {
+	cfg := config.Get().MSSQL
+	var req config.MSSQLConfig
+	if err := c.ShouldBindJSON(&req); err == nil && req.Host != "" {
+		cfg = req
+	}
+	if cfg.Host == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": "MSSQL host is not configured"})
+		return
+	}
+
+	client, err := db.NewMSSQLClient(cfg)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 6*time.Second)
+	defer cancel()
+
+	orgs := querySAPOrganizations(ctx, client.DB, cfg.Database)
+	stores, err := querySAPStores(ctx, client.DB)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"organizations": orgs,
+		"stores":        stores,
+	})
+}
+
+func querySAPOrganizations(ctx context.Context, mssqlDB *sql.DB, fallbackName string) []sapOrgOption {
+	var orgs []sapOrgOption
+	if rows, err := mssqlDB.QueryContext(ctx, schema.QueryBranches); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id int
+			var name, disabled string
+			if err := rows.Scan(&id, &name, &disabled); err == nil && disabled != "Y" {
+				if name == "" {
+					name = fmt.Sprintf("Branch %d", id)
+				}
+				orgs = append(orgs, sapOrgOption{ID: id, Name: name})
+			}
+		}
+	}
+	if len(orgs) > 0 {
+		return orgs
+	}
+
+	var compName string
+	_ = mssqlDB.QueryRowContext(ctx, schema.QueryCompanyInfo).Scan(&compName)
+	if compName == "" {
+		compName = fallbackName
+	}
+	if compName == "" {
+		compName = "SAP Company"
+	}
+	return []sapOrgOption{{ID: 1, Name: compName}}
+}
+
+func querySAPStores(ctx context.Context, mssqlDB *sql.DB) ([]sapStoreOption, error) {
+	rows, err := mssqlDB.QueryContext(ctx, schema.QueryStores)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OWHS: %w", err)
+	}
+	defer rows.Close()
+
+	var stores []sapStoreOption
+	for rows.Next() {
+		var code string
+		var whsName, locked, street, city, country, zip sql.NullString
+		if err := rows.Scan(&code, &whsName, &locked, &street, &city, &country, &zip); err != nil {
+			return nil, fmt.Errorf("failed to scan OWHS: %w", err)
+		}
+		name := whsName.String
+		if name == "" {
+			name = code
+		}
+		stores = append(stores, sapStoreOption{
+			Code:   code,
+			Name:   name,
+			Locked: locked.String,
+		})
+	}
+	return stores, nil
+}
+
 func (s *Server) handleOnboardingLogin(c *gin.Context) {
 	var req struct {
 		BaseURL        string `json:"base_url"`
@@ -395,16 +662,24 @@ func (s *Server) handleOnboardingLogin(c *gin.Context) {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				var authResp struct {
-					Data struct {
-						Token string `json:"token"`
-					} `json:"data"`
-					Token string `json:"token"`
+					Data  json.RawMessage `json:"data"`
+					Token string          `json:"token"`
 				}
 				if err := json.NewDecoder(resp.Body).Decode(&authResp); err == nil {
 					if authResp.Token != "" {
 						token = authResp.Token
-					} else if authResp.Data.Token != "" {
-						token = authResp.Data.Token
+					} else if len(authResp.Data) > 0 {
+						var tokStr string
+						if err := json.Unmarshal(authResp.Data, &tokStr); err == nil && tokStr != "" {
+							token = tokStr
+						} else {
+							var tokObj struct {
+								Token string `json:"token"`
+							}
+							if err := json.Unmarshal(authResp.Data, &tokObj); err == nil && tokObj.Token != "" {
+								token = tokObj.Token
+							}
+						}
 					}
 				}
 			}
@@ -461,15 +736,19 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		Cloud                     config.CloudConfig `json:"cloud"`
 		TenantSlug                string             `json:"tenant_slug"`
 		TenantName                string             `json:"tenant_name"`
+		OrganizationName          string             `json:"organization_name"`
+		SAPCompanyDB              string             `json:"sap_company_db"`
 		MigratorUser              string             `json:"migrator_user"`
 		MigratorPassword          string             `json:"migrator_password"`
 		MigratorRole              string             `json:"migrator_role"`
 		MigratorToken             string             `json:"migrator_token"`
 		SAPUserMapping            string             `json:"sap_user_mapping"`
+		SAPPassword               string             `json:"sap_password"`
 		DownstreamIntervalSec     int                `json:"downstream_interval_sec"`
 		UpstreamIntervalSec       int                `json:"upstream_interval_sec"`
 		ReconciliationIntervalSec int                `json:"reconciliation_interval_sec"`
 		ReconciliationAutoRun     bool               `json:"reconciliation_auto_run"`
+		NembusStoreID             int                `json:"nembus_store_id"`
 		DefaultStoreCode          string             `json:"default_store_code"`
 		BatchSize                 int                `json:"batch_size"`
 	}
@@ -483,6 +762,7 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	if req.MSSQL.Host != "" {
 		current.MSSQL = req.MSSQL
 	}
+	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -508,6 +788,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
 	}
+	if req.SAPPassword != "" {
+		current.SAPPassword = req.SAPPassword
+	}
 	if req.DownstreamIntervalSec > 0 {
 		current.DownstreamIntervalSec = req.DownstreamIntervalSec
 	}
@@ -518,6 +801,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		current.ReconciliationIntervalSec = req.ReconciliationIntervalSec
 	}
 	current.ReconciliationAutoRun = req.ReconciliationAutoRun
+	if req.NembusStoreID > 0 {
+		current.NembusStoreID = req.NembusStoreID
+	}
 	if req.DefaultStoreCode != "" {
 		current.DefaultStoreCode = req.DefaultStoreCode
 	}
@@ -535,14 +821,29 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	s.cfg = current
 	if s.engine != nil {
 		s.engine.UpdateCloudConfig(current.Cloud)
+		s.engine.UpdateMSSQLConfig(current.MSSQL)
 	}
 	if s.cloudClient != nil {
 		s.cloudClient.UpdateConfig(current.Cloud)
 	}
+	s.upstreamMu.Lock()
+	s.upstreamSync = nil
+	s.upstreamMu.Unlock()
+
+	// Do not auto-start Downstream or Upstream after onboarding; each starts when the
+	// operator clicks Run Downstream / Run Upstream, and then continues automatically.
+	s.setDownstreamAutoActive(false)
+	s.setUpstreamAutoActive(false)
+
+	if err := s.ensureOnboardingOrganization(c.Request.Context(), current, req.OrganizationName); err != nil {
+		log.Printf("[SAP-AGENT] Warning: failed to migrate organization via /api/v1/migration/batch: %v", err)
+	}
+
+	log.Printf("[SAP-AGENT] Onboarding completed for tenant '%s'. Waiting for manual 'Run Downstream' / 'Run Upstream' to activate auto-sync.", current.TenantSlug)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "Onboarding finalized successfully! System pipelines and security layer activated.",
+		"message": "Onboarding finalized successfully! Click Run Downstream or Run Upstream to start automatic synchronization.",
 		"config":  current,
 	})
 }
@@ -587,22 +888,58 @@ func (s *Server) handleGetSyncStatus(c *gin.Context) {
 		lastFlushStr = lastFlush.Format(time.RFC3339)
 	}
 
+	downstreamStatus := "standby"
+	downstreamErrors := 0
+	if s.isDownstreamAutoActive() {
+		downstreamStatus = "active"
+		if s.lastDownstreamErr != "" {
+			downstreamStatus = "warning"
+			downstreamErrors = 1
+		}
+	}
+
+	upstreamStatus := "standby"
+	if s.isUpstreamAutoActive() {
+		upstreamStatus = "active"
+	}
+
+	lastDownstreamTimeStr := time.Now().Add(-3 * time.Minute).Format(time.RFC3339)
+	if s.lastDownstreamTime != nil {
+		lastDownstreamTimeStr = s.lastDownstreamTime.Format(time.RFC3339)
+	}
+
+	syncedProducts := 0
+	syncedPrices := 0
+	syncedBarcodes := 0
+	syncedCategories := 0
+	syncedUOMs := 0
+	syncedInventory := 0
+	if s.lastDownstreamStats != nil {
+		syncedProducts = s.lastDownstreamStats.Products
+		syncedPrices = s.lastDownstreamStats.Prices
+		syncedBarcodes = s.lastDownstreamStats.Barcodes
+		syncedCategories = s.lastDownstreamStats.Categories
+		syncedUOMs = s.lastDownstreamStats.UOMs
+		syncedInventory = s.lastDownstreamStats.Inventory
+	}
+
 	// Compute sync state
 	c.JSON(http.StatusOK, gin.H{
 		"downstream": gin.H{
-			"status":            "active",
+			"status":            downstreamStatus,
 			"interval_seconds":  cfg.DownstreamIntervalSec,
-			"last_sync_time":    time.Now().Add(-3 * time.Minute).Format(time.RFC3339),
-			"synced_products":   18420,
-			"synced_prices":     18420,
-			"synced_barcodes":   24650,
-			"synced_categories": 68,
-			"synced_uoms":       14,
-			"errors_count":      0,
-			"next_sync_seconds": 120,
+			"last_sync_time":    lastDownstreamTimeStr,
+			"synced_products":   syncedProducts,
+			"synced_prices":     syncedPrices,
+			"synced_barcodes":   syncedBarcodes,
+			"synced_categories": syncedCategories,
+			"synced_uoms":       syncedUOMs,
+			"synced_inventory":  syncedInventory,
+			"errors_count":      downstreamErrors,
+			"next_sync_seconds": cfg.DownstreamIntervalSec,
 		},
 		"upstream": gin.H{
-			"status":            "active",
+			"status":            upstreamStatus,
 			"interval_seconds":  cfg.UpstreamIntervalSec,
 			"last_sync_time":    lastFlushStr,
 			"posted_invoices":   posted,
@@ -634,19 +971,31 @@ func (s *Server) handleRunDownstreamSync(c *gin.Context) {
 		domains = DownstreamMasterDomains
 	}
 
-	run, err := s.engine.StartMigration(c.Request.Context(), contracts.MigrationModeIncremental, domains)
+	if config.Get().OnboardingCompleted && !s.isDownstreamAutoActive() {
+		s.setDownstreamAutoActive(true)
+		log.Println("[SAP-AGENT] Downstream automatic scheduler enabled after manual trigger.")
+	}
+
+	stats, err := s.runDownstreamSync(c.Request.Context(), domains)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": fmt.Sprintf("Failed to start downstream sync: %v", err),
+			"message": fmt.Sprintf("Downstream sync notice: %v", err),
+			"stats":   stats,
 		})
 		return
 	}
 
+	summaryMsg := fmt.Sprintf("Downstream sync completed: %d uoms, %d products, %d barcodes, %d prices, %d stock items, %d categories in %v",
+		stats.UOMs, stats.Products, stats.Barcodes, stats.Prices, stats.Inventory, stats.Categories, stats.Duration.Round(time.Millisecond))
+	if len(domains) == 1 {
+		summaryMsg = fmt.Sprintf("Downstream sync for %s completed in %v", domains[0], stats.Duration.Round(time.Millisecond))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
-		"message":   fmt.Sprintf("Downstream sync started (Run ID: %s)", run.ID),
-		"run_id":    run.ID,
+		"message":   summaryMsg,
+		"stats":     stats,
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
@@ -666,6 +1015,10 @@ func (s *Server) handleGetUpstreamOutbox(c *gin.Context) {
 
 func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 	log.Println("[SAP-AGENT] Manual Upstream Outbox Sync triggered")
+	if config.Get().OnboardingCompleted && !s.isUpstreamAutoActive() {
+		s.setUpstreamAutoActive(true)
+		log.Println("[SAP-AGENT] Upstream automatic scheduler enabled after manual trigger.")
+	}
 	stats, err := s.runUpstreamSync(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -683,57 +1036,190 @@ func (s *Server) handleRunUpstreamSync(c *gin.Context) {
 	})
 }
 
+func (s *Server) buildPipeConfig() *legacyconfig.Config {
+	cfg := config.Get()
+	slURL := fmt.Sprintf("https://%s:50000/b1s/v1", cfg.MSSQL.Host)
+	if envSL := os.Getenv("SAP_SL_URL"); envSL != "" {
+		slURL = envSL
+	}
+
+	whCode := cfg.DefaultStoreCode
+	if whCode == "" {
+		if envWH := os.Getenv("NEMBUS_DEFAULT_WAREHOUSE_CODE"); envWH != "" {
+			whCode = envWH
+		} else {
+			whCode = "01"
+		}
+	}
+
+	companyDB := cfg.SAPCompanyDB
+	if companyDB == "" {
+		companyDB = cfg.MSSQL.Database
+	}
+	if envDB := os.Getenv("SAP_COMPANY_DB"); envDB != "" {
+		companyDB = envDB
+	}
+
+	username := cfg.SAPUserMapping
+	if envUser := os.Getenv("SAP_USERNAME"); envUser != "" {
+		username = envUser
+	}
+
+	password := cfg.SAPPassword
+	if password == "" {
+		password = cfg.MSSQL.Password
+	}
+	if envPass := os.Getenv("SAP_PASSWORD"); envPass != "" {
+		password = envPass
+	}
+
+	batchSize := cfg.BatchSize
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+
+	priceListID := int32(1)
+	if envPL := os.Getenv("NEMBUS_PRICE_LIST_ID"); envPL != "" {
+		if pl, err := strconv.Atoi(envPL); err == nil && pl > 0 {
+			priceListID = int32(pl)
+		}
+	}
+
+	taxCatID := int32(1)
+	if envTC := os.Getenv("NEMBUS_TAX_CATEGORY_ID"); envTC != "" {
+		if tc, err := strconv.Atoi(envTC); err == nil && tc > 0 {
+			taxCatID = int32(tc)
+		}
+	}
+
+	storeID := int32(cfg.NembusStoreID)
+	if storeID <= 0 {
+		if envStore := os.Getenv("NEMBUS_STORE_ID"); envStore != "" {
+			if id, err := strconv.Atoi(envStore); err == nil && id > 0 {
+				storeID = int32(id)
+			}
+		}
+	}
+	if storeID <= 0 {
+		storeID = 1
+	}
+
+	return &legacyconfig.Config{
+		SAPServiceLayerURL:     slURL,
+		SAPCompanyDB:           companyDB,
+		SAPUsername:            username,
+		SAPPassword:            password,
+		SAPInsecureSkipSSL:     true,
+		SAPMSSQLEnabled:        true,
+		SAPMSSQLHost:           cfg.MSSQL.Host,
+		SAPMSSQLPort:           cfg.MSSQL.Port,
+		SAPMSSQLDatabase:       cfg.MSSQL.Database,
+		SAPMSSQLUser:           cfg.MSSQL.User,
+		SAPMSSQLPassword:       cfg.MSSQL.Password,
+		NembusOrganizationID:   int32(cfg.Cloud.OrganizationID),
+		NembusStoreID:          storeID,
+		NembusPriceListID:      priceListID,
+		NembusTaxCategoryID:    taxCatID,
+		NembusDefaultCustomer:  "C000001",
+		NembusDefaultWarehouse: whCode,
+		BatchSize:              batchSize,
+	}
+}
+
+func (s *Server) getPgPool(ctx context.Context) (*pgxpool.Pool, error) {
+	if s.pgPool != nil {
+		return s.pgPool, nil
+	}
+	cfg := config.Get()
+	dbURL := cfg.Cloud.DatabaseURL
+	if dbURL == "" {
+		dbURL = os.Getenv("NEMBUS_DB_URL")
+	}
+	if dbURL == "" {
+		return nil, fmt.Errorf("nembus database connection string not configured (cloud.database_url or NEMBUS_DB_URL)")
+	}
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to nembus postgres database: %w", err)
+	}
+	s.pgPool = pool
+	return s.pgPool, nil
+}
+
+func (s *Server) runDownstreamSync(ctx context.Context, domains []contracts.DomainType) (*etl.DownstreamStats, error) {
+	cfg := config.Get()
+	if !cfg.OnboardingCompleted {
+		return nil, fmt.Errorf("onboarding is not completed yet; complete onboarding to start downstream sync")
+	}
+
+	if !s.downstreamMu.TryLock() {
+		return nil, fmt.Errorf("a downstream sync is currently in progress")
+	}
+	defer s.downstreamMu.Unlock()
+
+	if cfg.Cloud.BaseURL == "" {
+		err := fmt.Errorf("cloud.base_url is not configured")
+		s.lastDownstreamErr = err.Error()
+		return nil, err
+	}
+
+	if s.engine == nil {
+		err := fmt.Errorf("ETL engine is not initialized")
+		s.lastDownstreamErr = err.Error()
+		return nil, err
+	}
+
+	stats, err := s.engine.ExecuteDownstreamSync(ctx, domains)
+	now := time.Now()
+	s.lastDownstreamTime = &now
+	if err != nil {
+		s.lastDownstreamErr = err.Error()
+		return stats, err
+	}
+
+	s.lastDownstreamStats = stats
+	s.lastDownstreamErr = ""
+	return stats, nil
+}
+
 func (s *Server) runUpstreamSync(ctx context.Context) (*pipeline.UpstreamStats, error) {
+	if !config.Get().OnboardingCompleted {
+		return nil, fmt.Errorf("onboarding is not completed yet; complete onboarding to start upstream sync")
+	}
+
 	s.upstreamMu.Lock()
 	defer s.upstreamMu.Unlock()
 
-	cfg := config.Get()
 	if s.upstreamSync == nil {
-		pipeCfg := &legacyconfig.Config{
-			SAPServiceLayerURL:     fmt.Sprintf("https://%s:50000/b1s/v1", cfg.MSSQL.Host),
-			SAPCompanyDB:           cfg.SAPCompanyDB,
-			SAPUsername:            cfg.SAPUserMapping,
-			SAPInsecureSkipSSL:     true,
-			SAPMSSQLEnabled:        true,
-			SAPMSSQLHost:           cfg.MSSQL.Host,
-			SAPMSSQLPort:           cfg.MSSQL.Port,
-			SAPMSSQLDatabase:       cfg.MSSQL.Database,
-			SAPMSSQLUser:           cfg.MSSQL.User,
-			SAPMSSQLPassword:       cfg.MSSQL.Password,
-			NembusOrganizationID:   int32(cfg.Cloud.OrganizationID),
-			NembusStoreID:          1,
-			NembusDefaultCustomer:  "C000001",
-			NembusDefaultWarehouse: cfg.DefaultStoreCode,
-			BatchSize:              cfg.BatchSize,
-		}
-		if pipeCfg.NembusDefaultWarehouse == "" {
-			pipeCfg.NembusDefaultWarehouse = "01"
-		}
-		if pipeCfg.SAPCompanyDB == "" {
-			pipeCfg.SAPCompanyDB = cfg.MSSQL.Database
-		}
-
+		pipeCfg := s.buildPipeConfig()
 		sapClient, err := sap.NewClient(pipeCfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize SAP client for upstream: %w", err)
 		}
 
 		var nembusClient pipeline.NembusClient
-		if s.pgPool != nil {
-			nembusClient = nembus.NewClientWithPool(pipeCfg, s.pgPool)
-		} else if cfg.Cloud.DatabaseURL != "" {
-			pool, err := pgxpool.New(ctx, cfg.Cloud.DatabaseURL)
-			if err == nil {
-				s.pgPool = pool
-				nembusClient = nembus.NewClientWithPool(pipeCfg, pool)
+		if pool, err := s.getPgPool(ctx); err == nil && pool != nil {
+			nembusClient = nembus.NewClientWithPool(pipeCfg, pool)
+		} else {
+			// Use Nembus Cloud REST API + local SQLite outbox (just like Downstream Sync)
+			nembusClient = nembus.NewHTTPClient(pipeCfg, s.sqlite)
+		}
+
+		syncEngine := pipeline.NewUpstreamSync(pipeCfg, sapClient, nembusClient, s.sqlite)
+		syncEngine.SetLogger(func(domain, level, msg string) {
+			if s.sqlite != nil {
+				s.sqlite.Log(context.Background(), "upstream", domain, level, msg)
 			}
-		}
-
-		if nembusClient == nil {
-			return &pipeline.UpstreamStats{}, nil
-		}
-
-		s.upstreamSync = pipeline.NewUpstreamSync(pipeCfg, sapClient, nembusClient, s.sqlite)
+			if s.engine != nil {
+				s.engine.BroadcastEvent(etl.ProgressEvent{
+					Type:      "upstream_step",
+					Domain:    contracts.DomainType(domain),
+					Message:   msg,
+					Timestamp: time.Now(),
+				})
+			}
+		})
+		s.upstreamSync = syncEngine
 	}
 
 	return s.upstreamSync.ProcessOutbox(ctx)
@@ -826,6 +1312,11 @@ func (s *Server) handleDiscovery(c *gin.Context) {
 }
 
 func (s *Server) handleStartMigration(c *gin.Context) {
+	if !config.Get().OnboardingCompleted {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Please complete the Onboarding Wizard before starting a migration."})
+		return
+	}
+
 	var req struct {
 		Mode     contracts.MigrationMode `json:"mode"`
 		Domains  []contracts.DomainType  `json:"domains"`
@@ -878,9 +1369,16 @@ func (s *Server) handleGetMigrationStatus(c *gin.Context) {
 		return
 	}
 
+	isRunning := s.engine != nil && s.engine.IsRunning()
+	if run.Status == contracts.StatusRunning && !isRunning {
+		// Clean up stale 'running' state left over from a previous agent session
+		_ = s.sqlite.UpdateRunStatus(c.Request.Context(), run.ID, contracts.StatusCancelled, "Interrupted by agent restart")
+		run.Status = contracts.StatusCancelled
+	}
+
 	steps, _ := s.sqlite.GetSteps(c.Request.Context(), run.ID)
 	c.JSON(http.StatusOK, gin.H{
-		"active": run.Status == contracts.StatusRunning,
+		"active": isRunning && run.Status == contracts.StatusRunning,
 		"run":    run,
 		"steps":  steps,
 	})
@@ -956,13 +1454,6 @@ func (s *Server) handleGetHistory(c *gin.Context) {
 
 func (s *Server) handleGetLogs(c *gin.Context) {
 	runID := c.Query("run_id")
-	if runID == "" {
-		latest, err := s.sqlite.GetLatestRun(c.Request.Context())
-		if err == nil && latest != nil {
-			runID = latest.ID
-		}
-	}
-
 	logs, err := s.sqlite.GetRecentLogs(c.Request.Context(), runID, 100)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"logs": []interface{}{}})

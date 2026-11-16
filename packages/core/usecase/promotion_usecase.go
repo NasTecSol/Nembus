@@ -867,15 +867,14 @@ func (uc *PromotionUseCase) applyProductSetDiscount(
 func isHappyHourActive(schedule happyHourSchedule) bool {
 	now := time.Now()
 	currentDay := now.Weekday().String() // e.g. "Monday"
+	prevDay := now.AddDate(0, 0, -1).Weekday().String()
 
-	dayMatches := false
-	for _, d := range schedule.Days {
-		if strings.EqualFold(d, currentDay) {
-			dayMatches = true
-			break
+	hasDay := func(day string) bool {
+		for _, d := range schedule.Days {
+			if strings.EqualFold(d, day) {
+				return true
+			}
 		}
-	}
-	if !dayMatches {
 		return false
 	}
 
@@ -900,7 +899,13 @@ func isHappyHourActive(schedule happyHourSchedule) bool {
 		return false // invalid schedule; fail safe (don't apply)
 	}
 
-	return !now.Before(start) && now.Before(end)
+	if end.Before(start) {
+		// Overnight window (e.g. 20:00 - 02:00): active after start on scheduled day,
+		// or before end on the following day.
+		return (hasDay(currentDay) && !now.Before(start)) || (hasDay(prevDay) && now.Before(end))
+	}
+
+	return hasDay(currentDay) && !now.Before(start) && now.Before(end)
 }
 
 // numericToFloat decodes a pgtype.Numeric to float64. Returns 0 on NULL/error.
