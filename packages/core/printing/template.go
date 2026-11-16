@@ -29,6 +29,7 @@ type OrgFooter struct {
 type ReceiptTemplate struct {
 	Header OrgHeader
 	Footer OrgFooter
+	Config ReceiptTemplateConfig
 }
 
 // ─── Receipt data (provided by caller / frontend) ─────────────────────────────
@@ -45,6 +46,8 @@ type ReceiptData struct {
 	Type          string     `json:"type"` // e.g. "Z-REPORT" or standard sales transaction
 	ReceiptNumber string     `json:"receipt_number"`
 	SalesOrderID  string     `json:"sales_order_id"` // Persisted order used to load the reported ZATCA QR
+	StoreID       int32      `json:"store_id"`       // Used for store-scoped template resolution when no sale can be inferred
+	Language      string     `json:"language"`       // Language-specific printing template; defaults to English
 	Cashier       string     `json:"cashier"`
 	Terminal      string     `json:"terminal"`
 	Customer      string     `json:"customer"`
@@ -80,6 +83,7 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	if strings.EqualFold(data.Type, "Z-REPORT") || strings.Contains(strings.ToUpper(data.Type), "SUMMARY") {
 		return BuildSummaryReceipt(tmpl, data)
 	}
+	config := effectiveReceiptTemplateConfig(tmpl.Config)
 
 	var buf bytes.Buffer
 	w := func(b []byte) { buf.Write(b) }
@@ -87,6 +91,10 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	nl := func() { buf.WriteByte(LF) }
 
 	currency := data.Currency
+	if currency == "" {
+		currency = "SAR"
+	}
+	width := config.Columns()
 
 	now := time.Now()
 
@@ -94,111 +102,105 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	w(CmdInit())
 
 	// ── HEADER ─────────────────────────────────────────────────────────
-	w(CmdAlign("center"))
-	w(CmdDoubleSize(true))
-	w(CmdBold(true))
-	p(tmpl.Header.Name + "\n")
-	w(CmdDoubleSize(false))
-	w(CmdBold(false))
-
-	if tmpl.Header.Address != "" {
-		p(tmpl.Header.Address + "\n")
-	}
-	if tmpl.Header.Phone != "" {
-		p("Tel: " + tmpl.Header.Phone + "\n")
-	}
-	if tmpl.Header.TaxID != "" {
-		p("TIN: " + tmpl.Header.TaxID + "\n")
-	}
-	w(Divider())
+	writeReceiptHeader(w, p, tmpl, config)
+	w(DividerWidth(width))
 
 	// ── RECEIPT INFO ────────────────────────────────────────────────────
 	w(CmdAlign("left"))
-	w(Col2("Receipt #: "+data.ReceiptNumber, now.Format("02-Jan-06 15:04"), COLS))
-
-	if data.Cashier != "" {
-		w(Col2("Cashier  : "+data.Cashier, "Terminal: "+data.Terminal, COLS))
+	if config.ShowReceiptNumber && config.ShowDate {
+		w(Col2("Receipt #: "+data.ReceiptNumber, now.Format("02-Jan-06 15:04"), width))
+	} else if config.ShowReceiptNumber && data.ReceiptNumber != "" {
+		p("Receipt #: " + data.ReceiptNumber + "\n")
+	} else if config.ShowDate {
+		p(now.Format("02-Jan-06 15:04") + "\n")
 	}
-	if data.Customer != "" {
+	if config.ShowCashier && data.Cashier != "" && config.ShowTerminal && data.Terminal != "" {
+		w(Col2("Cashier: "+data.Cashier, "Terminal: "+data.Terminal, width))
+	} else if config.ShowCashier && data.Cashier != "" {
+		p("Cashier: " + data.Cashier + "\n")
+	} else if config.ShowTerminal && data.Terminal != "" {
+		p("Terminal: " + data.Terminal + "\n")
+	}
+	if config.ShowCustomer && data.Customer != "" {
 		p("Customer : " + data.Customer + "\n")
 	}
-	w(Divider())
+	w(DividerWidth(width))
 
 	// ── COLUMN HEADERS ──────────────────────────────────────────────────
-	w(CmdBold(true))
-	header := PadRight("Item", 24) +
-		PadLeft("Qty", 6) +
-		PadLeft("Price", 9) +
-		PadLeft("Total", 9) + "\n"
-	p(header)
-	w(CmdBold(false))
-	w(Divider())
+	itemWidth, qtyWidth, priceWidth, totalWidth := receiptColumnWidths(config.PaperWidthMM)
+	if config.ShowItems {
+		w(CmdBold(true))
+		p(PadRight("Item", itemWidth) + PadLeft("Qty", qtyWidth) + PadLeft("Price", priceWidth) + PadLeft("Total", totalWidth) + "\n")
+		w(CmdBold(false))
+		w(DividerWidth(width))
+	}
 
 	// ── LINE ITEMS ──────────────────────────────────────────────────────
 	subtotal := 0.0
 	for _, it := range data.Items {
+		if !config.ShowItems {
+			break
+		}
 		total := it.Qty * it.Price
 		subtotal += total
-		name := PadRight(it.Name, 24)
-		qty := PadLeft(fmt.Sprintf("%.0f", it.Qty), 6)
-		price := PadLeft(fmt.Sprintf("%.2f", it.Price), 9)
-		tot := PadLeft(fmt.Sprintf("%.2f", total), 9)
+		name := PadRight(it.Name, itemWidth)
+		qty := PadLeft(fmt.Sprintf("%.0f", it.Qty), qtyWidth)
+		price := PadLeft(fmt.Sprintf("%.2f", it.Price), priceWidth)
+		tot := PadLeft(fmt.Sprintf("%.2f", total), totalWidth)
 		p(name + qty + price + tot + "\n")
+	}
+	if !config.ShowItems {
+		for _, it := range data.Items {
+			subtotal += it.Qty * it.Price
+		}
 	}
 
 	// ── TOTALS ──────────────────────────────────────────────────────────
-	w(Divider())
+	w(DividerWidth(width))
 	netAfterDisc := subtotal - data.Discount
 	tax := netAfterDisc * data.TaxRate
 	grandTotal := netAfterDisc + tax
 	change := data.Paid - grandTotal
 
 	w(CmdAlign("right"))
-	p(fmt.Sprintf("Subtotal         : %s %9.2f\n", currency, subtotal))
-	if data.Discount > 0 {
+	if config.ShowSubtotal {
+		p(fmt.Sprintf("Subtotal         : %s %9.2f\n", currency, subtotal))
+	}
+	if config.ShowDiscount && data.Discount > 0 {
 		discPct := 0.0
 		if subtotal > 0 {
 			discPct = (data.Discount / subtotal) * 100
 		}
 		p(fmt.Sprintf("Discount (%.0f%%)    : %s -%8.2f\n", discPct, currency, data.Discount))
 	}
-	if data.TaxRate > 0 {
+	if config.ShowTax && data.TaxRate > 0 {
 		p(fmt.Sprintf("Tax (%.0f%%)          : %s %9.2f\n", data.TaxRate*100, currency, tax))
 	}
 
-	w(CmdBold(true))
-	w(CmdDoubleHeight(true))
-	p(fmt.Sprintf("TOTAL            : %s %9.2f\n", currency, grandTotal))
-	w(CmdDoubleHeight(false))
-	w(CmdBold(false))
+	if config.ShowTotal {
+		w(CmdBold(true))
+		w(CmdDoubleHeight(true))
+		p(fmt.Sprintf("TOTAL            : %s %9.2f\n", currency, grandTotal))
+		w(CmdDoubleHeight(false))
+		w(CmdBold(false))
+	}
 
-	w(Divider())
-	p(fmt.Sprintf("Cash Paid        : %s %9.2f\n", currency, data.Paid))
-	p(fmt.Sprintf("Change           : %s %9.2f\n", currency, change))
-	w(Divider())
+	if config.ShowPaidChange {
+		w(DividerWidth(width))
+		p(fmt.Sprintf("Cash Paid        : %s %9.2f\n", currency, data.Paid))
+		p(fmt.Sprintf("Change           : %s %9.2f\n", currency, change))
+	}
+	w(DividerWidth(width))
 
 	// ── PAYMENT METHOD ──────────────────────────────────────────────────
 	w(CmdAlign("left"))
-	if data.PaymentMethod != "" {
+	if config.ShowPaymentMethod && data.PaymentMethod != "" {
 		p("Payment : " + data.PaymentMethod + "\n")
 	}
 	nl()
 
 	// ── FOOTER ──────────────────────────────────────────────────────────
-	w(CmdAlign("center"))
-	w(Divider())
-	if tmpl.Footer.ThankYou != "" {
-		w(CmdBold(true))
-		p("** " + tmpl.Footer.ThankYou + " **\n")
-		w(CmdBold(false))
-	}
-	if tmpl.Footer.ReturnNote != "" {
-		p(tmpl.Footer.ReturnNote + "\n")
-	}
-	if tmpl.Footer.Website != "" {
-		p(tmpl.Footer.Website + "\n")
-	}
-	w(Divider())
+	writeReceiptFooter(w, p, tmpl, config, width)
 
 	if data.QRCodeBase64 != "" {
 		nl()
@@ -214,7 +216,7 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 		barcodeValue = data.ReceiptNumber
 	}
 
-	if barcodeValue != "" {
+	if config.ShowBarcode && barcodeValue != "" {
 		nl()
 		nl()
 		w(CmdAlign("center"))
@@ -233,13 +235,75 @@ func BuildReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	return buf.Bytes()
 }
 
+func effectiveReceiptTemplateConfig(config ReceiptTemplateConfig) ReceiptTemplateConfig {
+	if config.Version == 0 {
+		return DefaultReceiptTemplateConfig()
+	}
+	return config
+}
+
+func receiptColumnWidths(paperWidthMM int) (item, qty, price, total int) {
+	if paperWidthMM == 58 {
+		return 14, 4, 7, 7
+	}
+	return 24, 6, 9, 9
+}
+
+func writeReceiptHeader(w func([]byte), p func(string), tmpl ReceiptTemplate, config ReceiptTemplateConfig) {
+	w(CmdAlign("center"))
+	if config.ShowOrganizationName && tmpl.Header.Name != "" {
+		w(CmdDoubleSize(true))
+		w(CmdBold(true))
+		p(tmpl.Header.Name + "\n")
+		w(CmdDoubleSize(false))
+		w(CmdBold(false))
+	}
+	if config.ShowLegalName && tmpl.Header.Address != "" {
+		p(tmpl.Header.Address + "\n")
+	}
+	for _, line := range config.HeaderLines {
+		p(line + "\n")
+	}
+	if config.ShowTaxID && tmpl.Header.TaxID != "" {
+		p("TIN: " + tmpl.Header.TaxID + "\n")
+	}
+	if tmpl.Header.Phone != "" {
+		p("Tel: " + tmpl.Header.Phone + "\n")
+	}
+	if tmpl.Header.Website != "" {
+		p(tmpl.Header.Website + "\n")
+	}
+}
+
+func writeReceiptFooter(w func([]byte), p func(string), tmpl ReceiptTemplate, config ReceiptTemplateConfig, width int) {
+	w(CmdAlign("center"))
+	w(DividerWidth(width))
+	if len(config.FooterLines) > 0 {
+		for i, line := range config.FooterLines {
+			if i == 0 {
+				w(CmdBold(true))
+			}
+			p(line + "\n")
+			if i == 0 {
+				w(CmdBold(false))
+			}
+		}
+	}
+	w(DividerWidth(width))
+}
+
 // BuildSummaryReceipt composes the ESC/POS byte stream for a Z-Report / Session Summary report.
 func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
+	config := effectiveReceiptTemplateConfig(tmpl.Config)
+	width := config.Columns()
 	var buf bytes.Buffer
 	w := func(b []byte) { buf.Write(b) }
 	p := func(s string) { buf.WriteString(s) }
 
 	currency := data.Currency
+	if currency == "" {
+		currency = "SAR"
+	}
 
 	now := time.Now()
 
@@ -247,23 +311,8 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	w(CmdInit())
 
 	// ── HEADER ─────────────────────────────────────────────────────────
-	w(CmdAlign("center"))
-	w(CmdDoubleSize(true))
-	w(CmdBold(true))
-	p(tmpl.Header.Name + "\n")
-	w(CmdDoubleSize(false))
-	w(CmdBold(false))
-
-	if tmpl.Header.Address != "" {
-		p(tmpl.Header.Address + "\n")
-	}
-	if tmpl.Header.Phone != "" {
-		p("Tel: " + tmpl.Header.Phone + "\n")
-	}
-	if tmpl.Header.TaxID != "" {
-		p("TIN: " + tmpl.Header.TaxID + "\n")
-	}
-	w(Divider())
+	writeReceiptHeader(w, p, tmpl, config)
+	w(DividerWidth(width))
 
 	// ── REPORT TITLE ───────────────────────────────────────────────────
 	w(CmdAlign("center"))
@@ -275,7 +324,7 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 		p(data.ReceiptNumber + "\n")
 	}
 	w(CmdBold(false))
-	w(Divider())
+	w(DividerWidth(width))
 
 	// ── SESSION METADATA ───────────────────────────────────────────────
 	w(CmdAlign("left"))
@@ -291,7 +340,7 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	if data.ClosedAt != "" {
 		p("Closed   : " + data.ClosedAt + "\n")
 	}
-	w(Divider())
+	w(DividerWidth(width))
 
 	// ── FINANCIAL SUMMARY ──────────────────────────────────────────────
 	w(CmdAlign("center"))
@@ -300,14 +349,14 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	w(CmdBold(false))
 	w(CmdAlign("left"))
 
-	w(Col2("Opening Balance:", fmt.Sprintf("%s %.2f", currency, data.OpeningBalance), COLS))
-	w(Col2("Total Sales:", fmt.Sprintf("%s %.2f", currency, data.TotalSales), COLS))
-	w(Col2("Expected Balance:", fmt.Sprintf("%s %.2f", currency, data.ExpectedBalance), COLS))
-	w(Col2("Actual Closing:", fmt.Sprintf("%s %.2f", currency, data.ClosingBalance), COLS))
+	w(Col2("Opening Balance:", fmt.Sprintf("%s %.2f", currency, data.OpeningBalance), width))
+	w(Col2("Total Sales:", fmt.Sprintf("%s %.2f", currency, data.TotalSales), width))
+	w(Col2("Expected Balance:", fmt.Sprintf("%s %.2f", currency, data.ExpectedBalance), width))
+	w(Col2("Actual Closing:", fmt.Sprintf("%s %.2f", currency, data.ClosingBalance), width))
 	w(CmdBold(true))
-	w(Col2("Variance:", fmt.Sprintf("%s %.2f", currency, data.Variance), COLS))
+	w(Col2("Variance:", fmt.Sprintf("%s %.2f", currency, data.Variance), width))
 	w(CmdBold(false))
-	w(Divider())
+	w(DividerWidth(width))
 
 	// ── SALES BREAKDOWN ────────────────────────────────────────────────
 	w(CmdAlign("center"))
@@ -316,11 +365,11 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 	w(CmdBold(false))
 	w(CmdAlign("left"))
 
-	w(Col2("Total Transactions:", fmt.Sprintf("%d", data.TotalTransactions), COLS))
-	w(Col2("Cash Sales:", fmt.Sprintf("%s %.2f", currency, data.CashSales), COLS))
-	w(Col2("Card Sales:", fmt.Sprintf("%s %.2f", currency, data.CardSales), COLS))
-	w(Col2("Other Sales:", fmt.Sprintf("%s %.2f", currency, data.OtherSales), COLS))
-	w(Divider())
+	w(Col2("Total Transactions:", fmt.Sprintf("%d", data.TotalTransactions), width))
+	w(Col2("Cash Sales:", fmt.Sprintf("%s %.2f", currency, data.CashSales), width))
+	w(Col2("Card Sales:", fmt.Sprintf("%s %.2f", currency, data.CardSales), width))
+	w(Col2("Other Sales:", fmt.Sprintf("%s %.2f", currency, data.OtherSales), width))
+	w(DividerWidth(width))
 
 	if data.ClosingNote != "" {
 		w(CmdAlign("left"))
@@ -328,13 +377,14 @@ func BuildSummaryReceipt(tmpl ReceiptTemplate, data ReceiptData) []byte {
 		p("CLOSING NOTE:\n")
 		w(CmdBold(false))
 		p(data.ClosingNote + "\n")
-		w(Divider())
+		w(DividerWidth(width))
 	}
 
 	// ── FOOTER ──────────────────────────────────────────────────────────
+	writeReceiptFooter(w, p, tmpl, config, width)
 	w(CmdAlign("center"))
 	p(fmt.Sprintf("Printed on %s\n", now.Format("02-Jan-06 15:04:05")))
-	w(Divider())
+	w(DividerWidth(width))
 
 	// ── Feed & Cut ───────────────────────────────────────────────────────
 	w(CmdFeedLines(2))

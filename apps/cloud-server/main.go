@@ -242,6 +242,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		// [NEW] Product Catalog module (admin: products + embedded variants)
 		productCatalogHandler := handler.NewProductCatalogHandler(productCatalogUC)
 		router.RegisterProductCatalogRoutes(api, productCatalogHandler)
+		router.RegisterReceiptTemplateRoutes(api, handler.NewReceiptTemplateHandler())
 
 		productCategoryHandler := handler.NewProductCategoryHandler(productCategoryUC)
 		router.RegisterProductCategoryRoutes(api, productCategoryHandler)
