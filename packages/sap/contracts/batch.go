@@ -10,6 +10,7 @@ import (
 type DomainType string
 
 const (
+	DomainOrganizations    DomainType = "organizations"
 	DomainStores           DomainType = "stores"
 	DomainUsers            DomainType = "users"
 	DomainUOM              DomainType = "uom"
@@ -82,6 +83,7 @@ type MigrationBatchPayload struct {
 	WatermarkTo    string     `json:"watermark_to,omitempty"`
 
 	// Typed Payload collections (Domain-specific)
+	Organizations    []mappings.CanonicalOrganization     `json:"organizations,omitempty"`
 	Stores           []mappings.CanonicalStore            `json:"stores,omitempty"`
 	Locations        []mappings.CanonicalStorageLocation  `json:"locations,omitempty"`
 	Users            []mappings.CanonicalUser             `json:"users,omitempty"`
@@ -111,6 +113,8 @@ type MigrationBatchPayload struct {
 
 func (p *MigrationBatchPayload) RecordCount() int {
 	switch p.Domain {
+	case DomainOrganizations:
+		return len(p.Organizations)
 	case DomainStores:
 		return len(p.Stores) + len(p.Locations)
 	case DomainUsers:

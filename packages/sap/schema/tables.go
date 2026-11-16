@@ -130,6 +130,21 @@ FROM OWHS
 ORDER BY WhsCode;
 `
 
+const QueryBranches = `
+SELECT 
+    BPLId,
+    ISNULL(BPLName, '') AS BPLName,
+    ISNULL(Disabled, 'N') AS Disabled
+FROM OBPL
+ORDER BY BPLId;
+`
+
+const QueryCompanyInfo = `
+SELECT TOP 1
+    ISNULL(CompnyName, '') AS CompnyName
+FROM OADM;
+`
+
 const QueryStorageLocations = `
 SELECT 
     AbsEntry,
