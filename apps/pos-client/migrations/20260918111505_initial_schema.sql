@@ -8321,6 +8321,7 @@ CREATE TABLE "public"."store_receipt_settings" (
 
 -- Seed a standard default for organizations that do not already have one.
 -- Give organizations created after schema installation a standard default template.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION "public"."seed_default_printing_template_for_organization"()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -8342,6 +8343,7 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+-- +goose StatementEnd
 
 DROP TRIGGER IF EXISTS "trg_organizations_seed_printing_template" ON "public"."organizations";
 CREATE TRIGGER "trg_organizations_seed_printing_template"

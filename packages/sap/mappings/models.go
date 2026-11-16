@@ -45,6 +45,14 @@ type SAPStore struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
+type CanonicalOrganization struct {
+	ID       int                    `json:"id,omitempty"`
+	Code     string                 `json:"code"`
+	Name     string                 `json:"name"`
+	IsActive bool                   `json:"is_active"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
 type CanonicalStore struct {
 	Code         string                 `json:"code"`
 	Name         string                 `json:"name"`
