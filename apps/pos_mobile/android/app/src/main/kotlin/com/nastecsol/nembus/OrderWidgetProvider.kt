@@ -1,4 +1,4 @@
-package com.example.pos_mobile
+package com.nastecsol.nembus
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager

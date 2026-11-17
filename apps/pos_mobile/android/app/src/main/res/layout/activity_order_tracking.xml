@@ -274,5 +274,17 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- Pin Home Screen Widget Button -->
+        <Button
+            android:id="@+id/btn_pin_widget"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="#1E2838"
+            android:text="📌 Add Tracking Widget to Home Screen"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
     </LinearLayout>
 </ScrollView>

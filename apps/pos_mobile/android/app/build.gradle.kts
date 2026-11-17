@@ -1,8 +1,16 @@
 import java.io.File
+import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 val buildGoLibrary = tasks.register<Exec>("buildGoLibrary") {
@@ -16,7 +24,7 @@ tasks.named("preBuild") {
 }
 
 android {
-    namespace = "com.example.pos_mobile"
+    namespace = "com.nastecsol.nembus"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -27,7 +35,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.pos_mobile"
+        applicationId = "com.nastecsol.nembus"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -39,10 +47,16 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = "nembus"
-            keyPassword = "nembus123"
-            storeFile = file("nembus.keystore")
-            storePassword = "nembus123"
+            keyAlias = keystoreProperties.getProperty("keyAlias") ?: "nembus"
+            keyPassword = keystoreProperties.getProperty("keyPassword") ?: "nembus123"
+            val storeFilePath = keystoreProperties.getProperty("storeFile") ?: "nembus.keystore"
+            storeFile = when {
+                file(storeFilePath).exists() -> file(storeFilePath)
+                rootProject.file(storeFilePath).exists() -> rootProject.file(storeFilePath)
+                rootProject.file("app/$storeFilePath").exists() -> rootProject.file("app/$storeFilePath")
+                else -> file("nembus.keystore")
+            }
+            storePassword = keystoreProperties.getProperty("storePassword") ?: "nembus123"
         }
     }
 

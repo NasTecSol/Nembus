@@ -1,4 +1,4 @@
-package com.example.pos_mobile
+package com.nastecsol.nembus
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -24,10 +24,12 @@ object OrderNotificationManager {
             val trackingChannel = NotificationChannel(
                 TRACKING_CHANNEL_ID,
                 "Live Order Tracking",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Shows live cooking countdown and status on Lock Screen"
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setSound(null, null) // Silent countdown ticks
+                enableVibration(false)
                 setShowBadge(false)
             }
 
@@ -88,11 +90,17 @@ object OrderNotificationManager {
             .setOngoing(true) // Pinned to lock screen like Live Activity
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setSilent(true)
             .setOnlyAlertOnce(true)
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, builder.build())
+        try {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, builder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     fun showOrderCookedNotification(context: Context, orderNumber: String, shopName: String) {
@@ -120,7 +128,11 @@ object OrderNotificationManager {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, builder.build())
+        try {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, builder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

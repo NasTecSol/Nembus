@@ -1,9 +1,13 @@
-package com.example.pos_mobile
+package com.nastecsol.nembus
 
 import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.view.View
@@ -14,6 +18,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -53,7 +58,23 @@ class OrderTrackingActivity : Activity() {
 
         initViews()
         setupListeners()
+        requestNotificationPermissionIfNeeded()
         handleIncomingIntent()
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            updateTimerUI()
+        }
     }
 
     private fun initViews() {
@@ -97,13 +118,79 @@ class OrderTrackingActivity : Activity() {
         findViewById<Button>(R.id.btn_replay_alarm).setOnClickListener {
             playTimerAlarmSound()
         }
+
+        findViewById<Button>(R.id.btn_pin_widget)?.setOnClickListener {
+            pinWidgetToHomeScreen()
+        }
+    }
+
+    private fun pinWidgetToHomeScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val appWidgetManager = AppWidgetManager.getInstance(this)
+            val myProvider = ComponentName(this, OrderWidgetProvider::class.java)
+            if (appWidgetManager.isRequestPinAppWidgetSupported) {
+                appWidgetManager.requestPinAppWidget(myProvider, null, null)
+                Toast.makeText(this, "Order Widget added to Home Screen!", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Please add widget from your Home Screen launcher menu", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(this, "Please add widget from your Home Screen launcher menu", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun handleIncomingIntent() {
+        // 1. Direct Intent Extras (from Flutter or local launcher)
+        val extraJson = intent?.getStringExtra("order_json")
+        if (!extraJson.isNullOrEmpty()) {
+            try {
+                parseOrderJson(JSONObject(extraJson), "A-1")
+                return
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
         val data: Uri? = intent?.data
         if (data != null) {
             val urlString = data.toString()
-            // Check direct JSON in URL
+
+            // 2. Query param ?data= or ?json=
+            val queryData = data.getQueryParameter("data") ?: data.getQueryParameter("json")
+            if (!queryData.isNullOrEmpty()) {
+                try {
+                    parseOrderJson(JSONObject(queryData), "A-1")
+                    return
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            // 3. Query params: ?orderNumber=...&shopName=...&etaMinutes=...
+            if (data.getQueryParameter("orderNumber") != null || data.getQueryParameter("order_number") != null) {
+                val qOrderNum = data.getQueryParameter("orderNumber") ?: data.getQueryParameter("order_number") ?: "A-1"
+                val qShopName = data.getQueryParameter("shopName") ?: data.getQueryParameter("shop_name") ?: "Demo Coffee"
+                val qEta = data.getQueryParameter("etaMinutes")?.toIntOrNull() ?: data.getQueryParameter("eta_minutes")?.toIntOrNull() ?: 25
+                val qStatus = data.getQueryParameter("status") ?: "preparing"
+
+                val json = JSONObject().apply {
+                    put("orderNumber", qOrderNum)
+                    put("shopName", qShopName)
+                    put("etaMinutes", qEta)
+                    put("status", qStatus)
+                }
+                parseOrderJson(json, qOrderNum)
+                return
+            }
+
+            // 4. Extract order ID from URL path (e.g. /v1/orders/:orderId, /orders/:orderId, /o/:orderId)
+            val extractedId = extractOrderId(data)
+            if (!extractedId.isNullOrEmpty()) {
+                fetchOrderDetails(extractedId)
+                return
+            }
+
+            // 5. Raw JSON substring in URL fallback
             if (urlString.contains("{") && urlString.contains("}")) {
                 try {
                     val jsonStart = urlString.indexOf('{')
@@ -115,29 +202,57 @@ class OrderTrackingActivity : Activity() {
                     e.printStackTrace()
                 }
             }
-
-            // Path: /o/:orderId
-            val pathSegments = data.pathSegments
-            val oIndex = pathSegments.indexOf("o")
-            if (oIndex != -1 && oIndex + 1 < pathSegments.size) {
-                val orderId = pathSegments[oIndex + 1]
-                fetchOrderDetails(orderId)
-                return
-            }
         }
 
         // Default demo order
         startTimer(etaMinutes * 60)
     }
 
+    private fun extractOrderId(uri: Uri): String? {
+        // Query param check
+        uri.getQueryParameter("orderId")?.let { if (it.isNotBlank()) return it }
+        uri.getQueryParameter("order_id")?.let { if (it.isNotBlank()) return it }
+        uri.getQueryParameter("orderNumber")?.let { if (it.isNotBlank()) return it }
+        uri.getQueryParameter("id")?.let { if (it.isNotBlank()) return it }
+
+        // Path segments check
+        val segments = uri.pathSegments
+        if (segments.isNullOrEmpty()) return null
+
+        // Pattern matching: /v1/orders/:id, /orders/:id, /order/:id, /o/:id
+        for (i in segments.indices) {
+            val seg = segments[i].lowercase()
+            if ((seg == "orders" || seg == "order" || seg == "o") && i + 1 < segments.size) {
+                return segments[i + 1]
+            }
+        }
+
+        // Return last segment if not a known prefix
+        val last = segments.last()
+        if (last.lowercase() !in listOf("o", "order", "orders", "v1", "api")) {
+            return last
+        }
+
+        return null
+    }
+
     private fun fetchOrderDetails(orderId: String) {
+        orderNumber = orderId
+        tvOrderNumber.text = "Order $orderNumber"
+        tvReadyOrderNum.text = "Order #$orderNumber"
+        tvItemsSummary.text = "Fetching order details..."
+
+        // Start immediate lock screen & widget status while fetching
+        startTimer(etaMinutes * 60)
+
         thread {
             try {
                 val url = URL("$apiBaseUrl/v1/orders/$orderId")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
+                conn.setRequestProperty("Accept", "application/json")
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
 
                 if (conn.responseCode in 200..299) {
                     val reader = BufferedReader(InputStreamReader(conn.inputStream))
@@ -145,17 +260,24 @@ class OrderTrackingActivity : Activity() {
                     reader.close()
 
                     val rawJson = JSONObject(response)
-                    val orderJson = if (rawJson.has("order")) rawJson.getJSONObject("order") else rawJson
+                    val orderJson = when {
+                        rawJson.has("data") -> rawJson.getJSONObject("data")
+                        rawJson.has("order") -> rawJson.getJSONObject("order")
+                        else -> rawJson
+                    }
 
                     runOnUiThread {
                         parseOrderJson(orderJson, orderId)
+                    }
+                } else {
+                    runOnUiThread {
+                        tvItemsSummary.text = "Order #$orderId in preparation"
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 runOnUiThread {
-                    // Fallback to initial demo
-                    startTimer(25 * 60)
+                    tvItemsSummary.text = "Tracking active for #$orderId"
                 }
             }
         }

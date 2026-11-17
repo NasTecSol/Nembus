@@ -4,7 +4,9 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/NasTecSol/nembus-core/config"
 	"github.com/NasTecSol/nembus-core/grpc/backuppb"
@@ -99,6 +101,38 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 	r.Use(middleware.LoggerMiddleware())
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/health", healthCheck)
+
+	// Digital Asset Links for Android App Links & Google Play Instant
+	r.GET("/.well-known/assetlinks.json", func(c *gin.Context) {
+		c.Header("Content-Type", "application/json")
+		c.String(http.StatusOK, `[{"relation":["delegate_permission/common.handle_all_urls","delegate_permission/common.get_login_creds"],"target":{"namespace":"android_app","package_name":"com.nastecsol.nembus","sha256_cert_fingerprints":["04:B0:22:CD:0F:94:51:38:41:EB:EB:E4:DB:BC:52:0A:51:7B:7E:D8:35:95:25:8D:71:D0:B3:77:48:43:5E:79"]}}]`)
+	})
+
+	// Apple App Site Association for iOS Universal Links & App Clip
+	r.GET("/.well-known/apple-app-site-association", func(c *gin.Context) {
+		c.Header("Content-Type", "application/json")
+		c.String(http.StatusOK, `{"applinks":{"apps":[],"details":[{"appIDs":["com.nastecsol.nembus"],"components":[{"/":"/o/*"}]}]},"appclips":{"apps":["com.nastecsol.nembus.Clip"]}}`)
+	})
+
+	// Public Order Status API for App Clips, Instant Apps & Order Tracking
+	r.GET("/v1/orders/:orderId", func(c *gin.Context) {
+		orderId := c.Param("orderId")
+		c.Header("Content-Type", "application/json")
+		c.JSON(http.StatusOK, gin.H{
+			"orderNumber": orderId,
+			"shopName":    "Demo Coffee",
+			"status":      "preparing",
+			"etaMinutes":  25,
+			"updatedAt":   time.Now().UnixMilli(),
+		})
+	})
+
+	// Fallback Order Tracking Web Redirect
+	r.GET("/o/:orderId", func(c *gin.Context) {
+		orderId := c.Param("orderId")
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusOK, `<!DOCTYPE html><html><head><title>Nembus Order Tracking</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><script>window.location.href="nembus://order?orderId=`+orderId+`";</script></head><body style="background:#141924;color:white;font-family:sans-serif;text-align:center;padding:50px 20px;"><h2>Demo Coffee</h2><p>Order #`+orderId+`</p><a href="nembus://order?orderId=`+orderId+`" style="background:#FF8A00;color:white;padding:12px 24px;border-radius:24px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:20px;">Open in Nembus App</a></body></html>`)
+	})
 
 	devHandler := handler.NewDevHandler()
 	r.GET("/api/dev/token", devHandler.GetDevToken)

@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="pos_mobile"
+        android:label="Nembus"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
@@ -32,7 +32,42 @@
                 <data
                     android:scheme="https"
                     android:host="nac-production.up.railway.app"
-                    android:pathPrefix="/o/" />
+                    android:pathPrefix="/v1/orders" />
+                <data
+                    android:scheme="https"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/orders" />
+                <data
+                    android:scheme="https"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/order" />
+                <data
+                    android:scheme="https"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/o" />
+            </intent-filter>
+
+            <!-- HTTP fallback & explicit deep link filter -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="http"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/v1/orders" />
+                <data
+                    android:scheme="http"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/orders" />
+                <data
+                    android:scheme="http"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/order" />
+                <data
+                    android:scheme="http"
+                    android:host="nac-production.up.railway.app"
+                    android:pathPrefix="/o" />
             </intent-filter>
 
             <!-- Custom App Scheme -->
