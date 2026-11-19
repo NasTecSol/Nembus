@@ -254,6 +254,22 @@ func (uc *PermissionUseCase) ListPermissions(ctx context.Context, limit, offset 
 	return utils.NewResponse(utils.CodeOK, "permissions fetched successfully", out)
 }
 
+// SearchPermissions returns all permissions matching a case-insensitive query.
+func (uc *PermissionUseCase) SearchPermissions(ctx context.Context, query string) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	perms, err := uc.repo.SearchPermissions(ctx, query)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	out := make([]PermissionOutput, len(perms))
+	for i := range perms {
+		out[i] = permissionToOutput(perms[i])
+	}
+	return utils.NewResponse(utils.CodeOK, "permissions searched successfully", out)
+}
+
 // UpdatePermission updates an existing permission
 func (uc *PermissionUseCase) UpdatePermission(ctx context.Context, id int32, name, description *string, metadata []byte) *repository.Response {
 	if uc.repo == nil {

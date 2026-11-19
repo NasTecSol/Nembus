@@ -12,6 +12,7 @@ func RegisterPermissionRoutes(r *gin.RouterGroup, h *handler.PermissionHandler) 
 		// CRUD - POST and GET list first
 		permissions.POST("", h.CreatePermission)
 		permissions.GET("", h.ListPermissions)
+		permissions.GET("/search", h.SearchPermissions)
 
 		// Entity-specific routes (must be before /:id to avoid "role", "module" etc. matching as id)
 		permissions.GET("/role/:role_id", h.GetRolePermissionsWithScope)
