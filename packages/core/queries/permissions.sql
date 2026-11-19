@@ -20,6 +20,13 @@ SELECT * FROM permissions
 ORDER BY name
 LIMIT $1 OFFSET $2;
 
+-- name: SearchPermissions :many
+SELECT * FROM permissions
+WHERE name ILIKE '%' || sqlc.arg('search')::text || '%'
+   OR code ILIKE '%' || sqlc.arg('search')::text || '%'
+   OR COALESCE(description, '') ILIKE '%' || sqlc.arg('search')::text || '%'
+ORDER BY name;
+
 -- name: UpdatePermission :one
 UPDATE permissions
 SET 
