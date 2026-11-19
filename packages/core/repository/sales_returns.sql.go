@@ -268,6 +268,96 @@ func (q *Queries) ListSalesReturnLinesByReturnID(ctx context.Context, returnID i
 	return items, nil
 }
 
+const listSalesReturnLinesDetailedForSAP = `-- name: ListSalesReturnLinesDetailedForSAP :many
+SELECT l.id, l.return_id, l.product_id, l.product_variant_id, l.original_line_id, l.quantity, l.unit_price, l.refund_amount, l.return_to_stock, l.serial_number, l.batch_number, l.condition, l.line_number, l.metadata, l.created_at, l.updated_at,
+    p.sku AS product_sku,
+    p.name AS product_name,
+    COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+    COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+    COALESCE(puc.conversion_factor, 1)::numeric AS uom_conversion_factor,
+    (ptl.uom_id IS NULL OR ptl.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+    COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
+FROM sales_return_lines l
+JOIN products p ON p.id = l.product_id
+LEFT JOIN pos_transaction_lines ptl ON ptl.id = l.original_line_id
+LEFT JOIN units_of_measure u ON u.id = ptl.uom_id
+LEFT JOIN units_of_measure bu ON bu.id = p.base_uom_id
+LEFT JOIN product_uom_conversions puc ON puc.product_id = l.product_id AND puc.from_uom_id = ptl.uom_id AND puc.to_uom_id = p.base_uom_id
+LEFT JOIN tax_categories tc ON tc.id = p.tax_category_id
+WHERE l.return_id = $1
+ORDER BY l.id ASC
+`
+
+type ListSalesReturnLinesDetailedForSAPRow struct {
+	ID                  int32            `json:"id"`
+	ReturnID            int32            `json:"return_id"`
+	ProductID           int32            `json:"product_id"`
+	ProductVariantID    pgtype.Int4      `json:"product_variant_id"`
+	OriginalLineID      pgtype.Int4      `json:"original_line_id"`
+	Quantity            pgtype.Numeric   `json:"quantity"`
+	UnitPrice           pgtype.Numeric   `json:"unit_price"`
+	RefundAmount        pgtype.Numeric   `json:"refund_amount"`
+	ReturnToStock       pgtype.Bool      `json:"return_to_stock"`
+	SerialNumber        pgtype.Text      `json:"serial_number"`
+	BatchNumber         pgtype.Text      `json:"batch_number"`
+	Condition           pgtype.Text      `json:"condition"`
+	LineNumber          pgtype.Int4      `json:"line_number"`
+	Metadata            json.RawMessage  `json:"metadata"`
+	CreatedAt           pgtype.Timestamp `json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `json:"updated_at"`
+	ProductSku          string           `json:"product_sku"`
+	ProductName         string           `json:"product_name"`
+	SapUomEntry         string           `json:"sap_uom_entry"`
+	SapUgpEntry         string           `json:"sap_ugp_entry"`
+	UomConversionFactor pgtype.Numeric   `json:"uom_conversion_factor"`
+	IsBaseUom           bool             `json:"is_base_uom"`
+	SapTaxCode          string           `json:"sap_tax_code"`
+}
+
+func (q *Queries) ListSalesReturnLinesDetailedForSAP(ctx context.Context, returnID int32) ([]ListSalesReturnLinesDetailedForSAPRow, error) {
+	rows, err := q.db.Query(ctx, listSalesReturnLinesDetailedForSAP, returnID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSalesReturnLinesDetailedForSAPRow
+	for rows.Next() {
+		var i ListSalesReturnLinesDetailedForSAPRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReturnID,
+			&i.ProductID,
+			&i.ProductVariantID,
+			&i.OriginalLineID,
+			&i.Quantity,
+			&i.UnitPrice,
+			&i.RefundAmount,
+			&i.ReturnToStock,
+			&i.SerialNumber,
+			&i.BatchNumber,
+			&i.Condition,
+			&i.LineNumber,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProductSku,
+			&i.ProductName,
+			&i.SapUomEntry,
+			&i.SapUgpEntry,
+			&i.UomConversionFactor,
+			&i.IsBaseUom,
+			&i.SapTaxCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSalesReturnsByTransaction = `-- name: ListSalesReturnsByTransaction :many
 SELECT id, return_number, store_id, cashier_id, cashier_session_id, customer_id, original_transaction_id, return_date, return_reason, status, subtotal, tax_amount, total_refund_amount, refund_method, refund_reference, approved_by, notes, metadata, created_at, updated_at FROM sales_returns
 WHERE original_transaction_id = $1
@@ -312,6 +402,119 @@ func (q *Queries) ListSalesReturnsByTransaction(ctx context.Context, originalTra
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUnpostedSalesReturnsForSAP = `-- name: ListUnpostedSalesReturnsForSAP :many
+SELECT sr.id, sr.return_number, sr.store_id, sr.cashier_id, sr.cashier_session_id, sr.customer_id, sr.original_transaction_id, sr.return_date, sr.return_reason, sr.status, sr.subtotal, sr.tax_amount, sr.total_refund_amount, sr.refund_method, sr.refund_reference, sr.approved_by, sr.notes, sr.metadata, sr.created_at, sr.updated_at,
+    COALESCE(NULLIF(c.customer_code, ''), NULLIF(c.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
+    COALESCE(NULLIF(pt.metadata->>'sap_doc_entry', ''), '0')::int AS original_sap_doc_entry
+FROM sales_returns sr
+LEFT JOIN customers c ON c.id = sr.customer_id
+LEFT JOIN pos_transactions pt ON pt.id = sr.original_transaction_id
+WHERE sr.store_id = $1
+  AND sr.status = 'completed'
+  AND (sr.metadata->>'sap_doc_num' IS NULL OR sr.metadata->>'sap_doc_num' = '')
+ORDER BY sr.id ASC
+LIMIT $2
+`
+
+type ListUnpostedSalesReturnsForSAPParams struct {
+	StoreID int32 `json:"store_id"`
+	Limit   int32 `json:"limit"`
+}
+
+type ListUnpostedSalesReturnsForSAPRow struct {
+	ID                    int32            `json:"id"`
+	ReturnNumber          string           `json:"return_number"`
+	StoreID               int32            `json:"store_id"`
+	CashierID             pgtype.Int4      `json:"cashier_id"`
+	CashierSessionID      pgtype.Int4      `json:"cashier_session_id"`
+	CustomerID            pgtype.Int4      `json:"customer_id"`
+	OriginalTransactionID pgtype.Int4      `json:"original_transaction_id"`
+	ReturnDate            pgtype.Timestamp `json:"return_date"`
+	ReturnReason          pgtype.Text      `json:"return_reason"`
+	Status                pgtype.Text      `json:"status"`
+	Subtotal              pgtype.Numeric   `json:"subtotal"`
+	TaxAmount             pgtype.Numeric   `json:"tax_amount"`
+	TotalRefundAmount     pgtype.Numeric   `json:"total_refund_amount"`
+	RefundMethod          pgtype.Text      `json:"refund_method"`
+	RefundReference       pgtype.Text      `json:"refund_reference"`
+	ApprovedBy            pgtype.Int4      `json:"approved_by"`
+	Notes                 pgtype.Text      `json:"notes"`
+	Metadata              json.RawMessage  `json:"metadata"`
+	CreatedAt             pgtype.Timestamp `json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `json:"updated_at"`
+	CustomerSapCode       string           `json:"customer_sap_code"`
+	OriginalSapDocEntry   int32            `json:"original_sap_doc_entry"`
+}
+
+func (q *Queries) ListUnpostedSalesReturnsForSAP(ctx context.Context, arg ListUnpostedSalesReturnsForSAPParams) ([]ListUnpostedSalesReturnsForSAPRow, error) {
+	rows, err := q.db.Query(ctx, listUnpostedSalesReturnsForSAP, arg.StoreID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnpostedSalesReturnsForSAPRow
+	for rows.Next() {
+		var i ListUnpostedSalesReturnsForSAPRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReturnNumber,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.OriginalTransactionID,
+			&i.ReturnDate,
+			&i.ReturnReason,
+			&i.Status,
+			&i.Subtotal,
+			&i.TaxAmount,
+			&i.TotalRefundAmount,
+			&i.RefundMethod,
+			&i.RefundReference,
+			&i.ApprovedBy,
+			&i.Notes,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CustomerSapCode,
+			&i.OriginalSapDocEntry,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markSalesReturnSAPSynced = `-- name: MarkSalesReturnSAPSynced :one
+UPDATE sales_returns
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, return_number, metadata
+`
+
+type MarkSalesReturnSAPSyncedParams struct {
+	ID      int32           `json:"id"`
+	Column2 json.RawMessage `json:"column_2"`
+}
+
+type MarkSalesReturnSAPSyncedRow struct {
+	ID           int32           `json:"id"`
+	ReturnNumber string          `json:"return_number"`
+	Metadata     json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) MarkSalesReturnSAPSynced(ctx context.Context, arg MarkSalesReturnSAPSyncedParams) (MarkSalesReturnSAPSyncedRow, error) {
+	row := q.db.QueryRow(ctx, markSalesReturnSAPSynced, arg.ID, arg.Column2)
+	var i MarkSalesReturnSAPSyncedRow
+	err := row.Scan(&i.ID, &i.ReturnNumber, &i.Metadata)
+	return i, err
 }
 
 const updatePOSTransactionStatus = `-- name: UpdatePOSTransactionStatus :exec

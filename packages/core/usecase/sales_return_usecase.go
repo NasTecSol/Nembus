@@ -390,3 +390,54 @@ type ProcessSalesReturnOutput struct {
 }
 
 type SalesReturnResult = ProcessSalesReturnOutput
+
+// ListUnpostedSalesReturnsForSAP returns completed sales returns awaiting SAP Credit Note creation.
+func (uc *SalesReturnUseCase) ListUnpostedSalesReturnsForSAP(ctx context.Context, storeID int32, limit int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := uc.repo.ListUnpostedSalesReturnsForSAP(ctx, repository.ListUnpostedSalesReturnsForSAPParams{
+		StoreID: storeID,
+		Limit:   limit,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "unposted sales returns fetched", rows)
+}
+
+// ListSalesReturnLinesDetailedForSAP returns sales return lines enriched with SKU, UoM, and SAP tax metadata.
+func (uc *SalesReturnUseCase) ListSalesReturnLinesDetailedForSAP(ctx context.Context, returnID int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	rows, err := uc.repo.ListSalesReturnLinesDetailedForSAP(ctx, returnID)
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "sales return lines fetched", rows)
+}
+
+// MarkSalesReturnSAPSynced records SAP DocEntry/DocNum metadata on a sales return.
+func (uc *SalesReturnUseCase) MarkSalesReturnSAPSynced(ctx context.Context, returnID int32, sapDocEntry, sapDocNum int) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	patch, _ := json.Marshal(map[string]any{
+		"sap_doc_entry":  sapDocEntry,
+		"sap_doc_num":    sapDocNum,
+		"sap_posted_at":  time.Now().UTC().Format(time.RFC3339),
+		"sap_sync_state": "synced",
+	})
+	row, err := uc.repo.MarkSalesReturnSAPSynced(ctx, repository.MarkSalesReturnSAPSyncedParams{
+		ID:      returnID,
+		Column2: patch,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "sales return marked synced to SAP", row)
+}

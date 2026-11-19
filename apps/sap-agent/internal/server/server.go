@@ -406,6 +406,9 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.DefaultStoreCode != "" {
 		current.DefaultStoreCode = req.DefaultStoreCode
 	}
+	if strings.TrimSpace(req.DefaultCustomerCode) != "" {
+		current.DefaultCustomerCode = strings.TrimSpace(req.DefaultCustomerCode)
+	}
 	if req.OnboardingCompleted != nil {
 		current.OnboardingCompleted = *req.OnboardingCompleted
 		if !current.OnboardingCompleted {
@@ -767,6 +770,7 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		ReconciliationAutoRun     bool               `json:"reconciliation_auto_run"`
 		NembusStoreID             int                `json:"nembus_store_id"`
 		DefaultStoreCode          string             `json:"default_store_code"`
+		DefaultCustomerCode       string             `json:"default_customer_code"`
 		BatchSize                 int                `json:"batch_size"`
 	}
 
@@ -823,6 +827,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	}
 	if req.DefaultStoreCode != "" {
 		current.DefaultStoreCode = req.DefaultStoreCode
+	}
+	if strings.TrimSpace(req.DefaultCustomerCode) != "" {
+		current.DefaultCustomerCode = strings.TrimSpace(req.DefaultCustomerCode)
 	}
 	if req.BatchSize > 0 {
 		current.BatchSize = req.BatchSize
@@ -1121,6 +1128,15 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		storeID = 1
 	}
 
+	defaultCustomer := strings.TrimSpace(cfg.DefaultCustomerCode)
+	if defaultCustomer == "" {
+		if envCust := strings.TrimSpace(os.Getenv("NEMBUS_DEFAULT_CUSTOMER_CODE")); envCust != "" {
+			defaultCustomer = envCust
+		} else {
+			defaultCustomer = "C000001"
+		}
+	}
+
 	return &legacyconfig.Config{
 		SAPServiceLayerURL:     slURL,
 		SAPCompanyDB:           companyDB,
@@ -1137,7 +1153,7 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		NembusStoreID:          storeID,
 		NembusPriceListID:      priceListID,
 		NembusTaxCategoryID:    taxCatID,
-		NembusDefaultCustomer:  "C000001",
+		NembusDefaultCustomer:  defaultCustomer,
 		NembusDefaultWarehouse: whCode,
 		BatchSize:              batchSize,
 	}

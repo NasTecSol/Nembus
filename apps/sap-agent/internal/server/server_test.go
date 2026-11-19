@@ -55,6 +55,32 @@ func TestBuildPipeConfigUsesConfiguredStoreID(t *testing.T) {
 	}
 }
 
+func TestBuildPipeConfigUsesConfiguredDefaultCustomer(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	s := &Server{}
+	cfg.DefaultCustomerCode = "C-WALKIN-99"
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if got := s.buildPipeConfig().NembusDefaultCustomer; got != "C-WALKIN-99" {
+		t.Fatalf("configured DefaultCustomerCode: got %q want C-WALKIN-99", got)
+	}
+
+	cfg.DefaultCustomerCode = ""
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	t.Setenv("NEMBUS_DEFAULT_CUSTOMER_CODE", "C-ENV-02")
+	if got := s.buildPipeConfig().NembusDefaultCustomer; got != "C-ENV-02" {
+		t.Fatalf("env fallback NembusDefaultCustomer: got %q want C-ENV-02", got)
+	}
+}
+
 func TestNextScheduledRunTime(t *testing.T) {
 	runStart := time.Date(2026, 11, 13, 7, 0, 0, 0, time.UTC)
 	interval := 5 * time.Minute

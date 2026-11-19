@@ -193,6 +193,7 @@
         setVal('ob-recon-interval', cfg.reconciliation_interval_sec || 3600);
         setVal('ob-target-storeid', cfg.nembus_store_id || 1);
         setVal('ob-default-store', cfg.default_store_code || '01');
+        setVal('ob-default-customer', cfg.default_customer_code || 'C000001');
     }
 
     function populateSettingsForm(cfg) {
@@ -648,6 +649,7 @@
             reconciliation_auto_run: document.getElementById('ob-recon-autorun')?.checked,
             nembus_store_id: parseInt(getVal('ob-target-storeid')) || 1,
             default_store_code: getVal('ob-default-store') || '01',
+            default_customer_code: getVal('ob-default-customer') || 'C000001',
             batch_size: parseInt(getVal('ob-batch-size')) || 500
         };
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1080,6 +1081,268 @@ func TestProcessOutbox_SkipsZeroLineRecordsAndAdvancesWatermark(t *testing.T) {
 	}
 	if wm.Before(runStartedAt) {
 		t.Fatalf("expected upstream watermark >= %v, got %v", runStartedAt, *wm)
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
+func TestPostTransactionToSAP_UoMEntryAndManualUseBaseUnits(t *testing.T) {
+	ctx := context.Background()
+	var capturedInv *sap.SAPInvoiceRequest
+	mockSAP := &MockSAPClient{
+		stockBySKU: map[string]float64{"*": 100},
+		postInvoiceFunc: func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			capturedInv = invoice
+			return &sap.SAPInvoiceResponse{DocEntry: 201, DocNum: 26001, DocTotal: 597.0}, nil
+		},
+	}
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                501,
+			StoreID:           1,
+			CustomerSAPCode:   "C-REAL-474",
+			TransactionNumber: "TXN-UOM-1",
+			TransactionDate:   time.Now().UTC(),
+			TotalAmount:       597.0,
+			AmountPaid:        597.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[501] = []nembus.POSTransactionLine{
+		{
+			ID:                  1,
+			TransactionID:       501,
+			ProductSKU:          "ITEM-UGP",
+			ProductName:         "UoM Group Item",
+			Quantity:            1.0,
+			UnitPrice:           345.0,
+			TaxAmount:           45.0,
+			LineTotal:           345.0,
+			SAPUoMEntry:         intPtr(12),
+			SAPUgpEntry:         intPtr(5),
+			UoMConversionFactor: 1.0,
+			IsBaseUoM:           true,
+			SAPTaxCode:          "O15",
+		},
+		{
+			ID:                  2,
+			TransactionID:       501,
+			ProductSKU:          "ITEM-MANUAL",
+			ProductName:         "Manual Carton Item",
+			Quantity:            1.0,
+			UnitPrice:           252.0,
+			TaxAmount:           0.0,
+			LineTotal:           252.0,
+			SAPUoMEntry:         nil,
+			SAPUgpEntry:         intPtr(-1),
+			UoMConversionFactor: 12.0,
+			IsBaseUoM:           false,
+			SAPTaxCode:          "O0",
+		},
+	}
+
+	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if stats.TransactionsPosted != 1 || stats.Errors != 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+	if capturedInv == nil || len(capturedInv.DocumentLines) != 2 {
+		t.Fatalf("expected 2 invoice lines, got %+v", capturedInv)
+	}
+	if capturedInv.CardCode != "C-REAL-474" {
+		t.Fatalf("expected CardCode C-REAL-474, got %s", capturedInv.CardCode)
+	}
+
+	line0 := capturedInv.DocumentLines[0]
+	if line0.UoMEntry == nil || *line0.UoMEntry != 12 {
+		t.Fatalf("expected UoMEntry=12 for UoM group item, got %v", line0.UoMEntry)
+	}
+	if line0.UseBaseUnits != "" {
+		t.Fatalf("expected empty UseBaseUnits for UoM group item, got %q", line0.UseBaseUnits)
+	}
+	if line0.TaxCode != "O15" {
+		t.Fatalf("expected TaxCode O15, got %q", line0.TaxCode)
+	}
+	if math.Abs(line0.UnitPrice-300.0) > 0.001 {
+		t.Fatalf("expected net UnitPrice 300.0, got %f", line0.UnitPrice)
+	}
+
+	line1 := capturedInv.DocumentLines[1]
+	if line1.UoMEntry != nil {
+		t.Fatalf("expected nil UoMEntry for manual UoM item, got %v", *line1.UoMEntry)
+	}
+	if line1.UseBaseUnits != "tYES" {
+		t.Fatalf("expected UseBaseUnits=tYES for manual UoM item, got %q", line1.UseBaseUnits)
+	}
+	if math.Abs(line1.Quantity-12.0) > 0.001 || math.Abs(line1.UnitPrice-21.0) > 0.001 || math.Abs(line1.PriceAfterVAT-21.0) > 0.001 {
+		t.Fatalf("expected converted base qty=12 and price=21, got qty=%f unitPrice=%f afterVAT=%f", line1.Quantity, line1.UnitPrice, line1.PriceAfterVAT)
+	}
+	if line1.TaxCode != "O0" {
+		t.Fatalf("expected TaxCode O0, got %q", line1.TaxCode)
+	}
+}
+
+func TestPostTransactionToSAP_PaymentTotalMismatchLogsWarning(t *testing.T) {
+	ctx := context.Background()
+	var postedPayments []*sap.SAPPaymentRequest
+	mockSAP := &MockSAPClient{
+		stockBySKU: map[string]float64{"*": 100},
+		postInvoiceFunc: func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			return &sap.SAPInvoiceResponse{DocEntry: 301, DocNum: 36001, DocTotal: 345.0, VatSum: 45.0}, nil
+		},
+		postIncomingPaymentFunc: func(ctx context.Context, payment *sap.SAPPaymentRequest) (*sap.SAPPaymentResponse, error) {
+			postedPayments = append(postedPayments, payment)
+			return &sap.SAPPaymentResponse{DocEntry: 401, DocNum: 46001}, nil
+		},
+	}
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                601,
+			StoreID:           1,
+			TransactionNumber: "TXN-PAY-WARN",
+			TransactionDate:   time.Now().UTC(),
+			TotalAmount:       300.0,
+			AmountPaid:        0, // Also tests TotalAmount > 0 fallback
+			Status:            "completed",
+		},
+		{
+			ID:                602,
+			StoreID:           1,
+			TransactionNumber: "TXN-PAY-CAP",
+			TransactionDate:   time.Now().UTC(),
+			TotalAmount:       345.0,
+			AmountPaid:        400.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[601] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 300, LineTotal: 300}}
+	mockNembus.txLines[602] = []nembus.POSTransactionLine{{ID: 2, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 300, LineTotal: 345, TaxAmount: 45}}
+	mockNembus.txPayments[601] = []nembus.POSPayment{{ID: 1, TransactionID: 601, PaymentMethod: "cash", Amount: 300.0}}
+	mockNembus.txPayments[602] = []nembus.POSPayment{{ID: 2, TransactionID: 602, PaymentMethod: "cash", Amount: 400.0}}
+
+	var logs []string
+	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)
+	sync.SetLogger(func(domain, level, msg string) {
+		logs = append(logs, level+":"+msg)
+	})
+
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if stats.TransactionsPosted != 2 {
+		t.Fatalf("expected 2 posted, got %+v", stats)
+	}
+	if len(postedPayments) != 2 {
+		t.Fatalf("expected 2 incoming payments, got %d", len(postedPayments))
+	}
+	if math.Abs(postedPayments[1].CashSum-345.0) > 0.001 || math.Abs(postedPayments[1].PaymentInvoices[0].SumApplied-345.0) > 0.001 {
+		t.Fatalf("expected capped overpayment 345.0, got cashSum=%f sumApplied=%f", postedPayments[1].CashSum, postedPayments[1].PaymentInvoices[0].SumApplied)
+	}
+	foundWarn := false
+	for _, entry := range logs {
+		if strings.Contains(entry, "WARN:") && strings.Contains(entry, "TXN-PAY-WARN") && strings.Contains(entry, "differs from payments sum") {
+			foundWarn = true
+			break
+		}
+	}
+	if !foundWarn {
+		t.Fatalf("expected WARN log for payment mismatch, got logs: %v", logs)
+	}
+}
+
+func TestProcessOutbox_OfflineTransactionNotDroppedAfterIdlePoll(t *testing.T) {
+	ctx := context.Background()
+	store, err := db.NewSQLiteStore(filepath.Join(t.TempDir(), "offline_cutoff.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	mockSAP := &MockSAPClient{stockBySKU: map[string]float64{"*": 100}}
+	mockNembus := newMockNembusClient()
+	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus, store)
+
+	// Run 1: idle poll advances 'upstream' watermark to now, initializes 'upstream_cutoff' to midnight UTC today.
+	stats1, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox idle: %v", err)
+	}
+	if stats1.TransactionsPosted != 0 {
+		t.Fatalf("expected 0 posted on idle run, got %+v", stats1)
+	}
+
+	// Simulate an offline POS transaction created 30 seconds after UTC midnight (earlier than the idle poll!).
+	offlineDate := time.Now().UTC().Truncate(24*time.Hour).Add(30 * time.Second)
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                701,
+			StoreID:           1,
+			TransactionNumber: "TXN-OFFLINE-1",
+			TransactionDate:   offlineDate,
+			TotalAmount:       100.0,
+			AmountPaid:        100.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[701] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 100, LineTotal: 100}}
+
+	stats2, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox run 2: %v", err)
+	}
+	if stats2.TransactionsPosted != 1 {
+		t.Fatalf("expected offline transaction after cutoff to post, got %+v", stats2)
+	}
+}
+
+func TestProcessOutbox_ErrorLoggingNotUpToDate(t *testing.T) {
+	ctx := context.Background()
+	mockSAP := &MockSAPClient{
+		stockBySKU: map[string]float64{"*": 100},
+		postInvoiceFunc: func(ctx context.Context, invoice *sap.SAPInvoiceRequest) (*sap.SAPInvoiceResponse, error) {
+			return nil, errors.New("Invalid BP code")
+		},
+	}
+	mockNembus := newMockNembusClient()
+	mockNembus.unpostedPOSTransactions = []nembus.POSTransaction{
+		{
+			ID:                801,
+			StoreID:           1,
+			TransactionNumber: "TXN-ERR-1",
+			TransactionDate:   time.Now().UTC(),
+			TotalAmount:       50.0,
+			Status:            "completed",
+		},
+	}
+	mockNembus.txLines[801] = []nembus.POSTransactionLine{{ID: 1, ProductSKU: "SKU-1", Quantity: 1, UnitPrice: 50, LineTotal: 50}}
+
+	var logs []string
+	sync := pipeline.NewUpstreamSync(&config.Config{BatchSize: 10, NembusDefaultWarehouse: "01"}, mockSAP, mockNembus)
+	sync.SetLogger(func(domain, level, msg string) {
+		logs = append(logs, level+":"+msg)
+	})
+
+	stats, err := sync.ProcessOutbox(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOutbox: %v", err)
+	}
+	if stats.Errors != 1 {
+		t.Fatalf("expected 1 error, got %+v", stats)
+	}
+	for _, entry := range logs {
+		if strings.Contains(entry, "pos_transactions: up to date") {
+			t.Fatalf("must not log 'pos_transactions: up to date' when errors occurred: %v", logs)
+		}
+	}
+	joined := strings.Join(logs, "\n")
+	if !strings.Contains(joined, "1 failed") || !strings.Contains(joined, "1 errors") {
+		t.Fatalf("expected failure counts in logs, got:\n%s", joined)
 	}
 }
 

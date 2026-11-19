@@ -37,6 +37,9 @@ type AgentConfig struct {
 	// DefaultStoreCode is assigned to imported cashiers when SAP has no store mapping.
 	// Defaults to "01" if empty.
 	DefaultStoreCode     string      `json:"default_store_code"`
+	// DefaultCustomerCode is the fallback SAP CardCode used for walk-in or unmapped customers.
+	// Defaults to "C000001" if empty.
+	DefaultCustomerCode  string      `json:"default_customer_code"`
 	// NembusStoreID identifies the Nembus retail store polled for POS upstream transactions.
 	// Defaults to 1 if unset.
 	NembusStoreID        int         `json:"nembus_store_id"`
@@ -88,6 +91,7 @@ func DefaultConfig() *AgentConfig {
 		BatchSize:            500,
 		MaxConcurrency:       4,
 		DefaultStoreCode:     "01",
+		DefaultCustomerCode:  "C000001",
 		NembusStoreID:        1,
 		CashierDrawerLimit:   5000,
 		CashierDiscountLimit: 20,

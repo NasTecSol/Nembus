@@ -2,12 +2,15 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
 	"github.com/NasTecSol/nembus-core/utils"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type OrderUseCase struct {
@@ -474,12 +477,19 @@ func (uc *OrderUseCase) ListOrders(ctx context.Context, orgID int32, status stri
 
 	arg := repository.ListSalesOrdersV2Params{
 		OrganizationID: orgID,
+		StoreID:        pgtype.Int4{Valid: false},
+		OrderStatus:    repository.NullOrderStatusV2{Valid: false},
+		FromDate:       pgtype.Timestamp{Valid: false},
+		ToDate:         pgtype.Timestamp{Valid: false},
 		Limit:          50,
 		Offset:         0,
 	}
 
 	if status != "" {
-		arg.Column3 = repository.OrderStatusV2(status)
+		arg.OrderStatus = repository.NullOrderStatusV2{
+			OrderStatusV2: repository.OrderStatusV2(status),
+			Valid:         true,
+		}
 	}
 
 	orders, err := uc.repo.ListSalesOrdersV2(ctx, arg)
@@ -488,4 +498,43 @@ func (uc *OrderUseCase) ListOrders(ctx context.Context, orgID int32, status stri
 	}
 
 	return utils.NewResponse(utils.CodeOK, "orders listed successfully", orders)
+}
+
+// ListUnpostedSalesOrdersForSAP returns non-POS fulfilled/confirmed sales orders awaiting SAP posting.
+func (uc *OrderUseCase) ListUnpostedSalesOrdersForSAP(ctx context.Context, orgID int32, limit int32) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	orders, err := uc.repo.ListUnpostedSalesOrdersV2ForSAP(ctx, repository.ListUnpostedSalesOrdersV2ForSAPParams{
+		OrganizationID: orgID,
+		Limit:          limit,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to list unposted sales orders", err.Error())
+	}
+	return utils.NewResponse(utils.CodeOK, "unposted sales orders listed", orders)
+}
+
+// MarkSalesOrderSAPSynced records SAP DocEntry/DocNum metadata on a sales order.
+func (uc *OrderUseCase) MarkSalesOrderSAPSynced(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) *repository.Response {
+	if resp := uc.repoOrErr(); resp != nil {
+		return resp
+	}
+	patch, _ := json.Marshal(map[string]any{
+		"sap_doc_entry":  sapDocEntry,
+		"sap_doc_num":    sapDocNum,
+		"sap_posted_at":  time.Now().UTC().Format(time.RFC3339),
+		"sap_sync_state": "synced",
+	})
+	row, err := uc.repo.MarkSalesOrderV2SAPSynced(ctx, repository.MarkSalesOrderV2SAPSyncedParams{
+		ID:      orderID,
+		Column2: patch,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, "failed to mark sales order synced to SAP", err.Error())
+	}
+	return utils.NewResponse(utils.CodeOK, "sales order marked synced to SAP", row)
 }

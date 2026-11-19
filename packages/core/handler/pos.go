@@ -610,6 +610,48 @@ func (h *PosHandler) ListTodayTransactions(c *gin.Context) {
 	c.JSON(resp.StatusCode, resp)
 }
 
+// ListUnpostedTransactionsForSAP handles GET /api/pos/stores/:store_id/transactions/unposted
+func (h *PosHandler) ListUnpostedTransactionsForSAP(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	storeID, err := strconv.ParseInt(c.Param("store_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+		return
+	}
+	approvedOnly := c.Query("approved_only") == "true" || c.Query("approved_only") == "1"
+	limit, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
+	resp := h.useCase.ListUnpostedTransactionsForSAP(c.Request.Context(), int32(storeID), approvedOnly, int32(limit))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// MarkTransactionSAPSynced handles POST /api/pos/transactions/:id/sap-sync
+func (h *PosHandler) MarkTransactionSAPSynced(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid transaction id", nil))
+		return
+	}
+	var req struct {
+		SAPDocEntry int `json:"sap_doc_entry"`
+		SAPDocNum   int `json:"sap_doc_num"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	resp := h.useCase.MarkTransactionSAPSynced(c.Request.Context(), int32(id), req.SAPDocEntry, req.SAPDocNum)
+	c.JSON(resp.StatusCode, resp)
+}
+
 func coalesceEmpty(s, fallback string) string {
 	if s == "" {
 		return fallback
