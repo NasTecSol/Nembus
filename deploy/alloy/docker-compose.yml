@@ -3,6 +3,7 @@ services:
     image: grafana/alloy:v1.5.1
     container_name: nembus-alloy
     restart: unless-stopped
+    mem_limit: 200m
     ports:
       - "127.0.0.1:4317:4317"
       - "127.0.0.1:4318:4318"

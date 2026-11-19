@@ -297,3 +297,49 @@ func TestHandleOnboardingSAPEntities_MissingHost(t *testing.T) {
 		t.Fatalf("expected failure with error message, got %+v", resp)
 	}
 }
+
+func TestBuildPipeConfigCredentialPrecedence(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.MSSQL.Host = "10.0.0.10"
+	cfg.MSSQL.Password = "mssql-secret"
+	cfg.SAPUserMapping = "legacy-user"
+	cfg.SAPPassword = "legacy-password"
+	cfg.ServiceLayer = config.ServiceLayerConfig{
+		URL:       "https://sap-sl.internal:50000/b1s/v1",
+		CompanyDB: "PROD_SAP",
+		Username:  "sl-user",
+		Password:  "sl-password",
+	}
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	s := &Server{}
+	got := s.buildPipeConfig()
+	if got.SAPUsername != "sl-user" || got.SAPPassword != "sl-password" {
+		t.Fatalf("ServiceLayer precedence: got user=%q pass=%q, want sl-user / sl-password", got.SAPUsername, got.SAPPassword)
+	}
+
+	// Empty ServiceLayer credentials fall back consistently to legacy SAPUserMapping / SAPPassword.
+	cfg.ServiceLayer.Username = ""
+	cfg.ServiceLayer.Password = ""
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got = s.buildPipeConfig()
+	if got.SAPUsername != "legacy-user" || got.SAPPassword != "legacy-password" {
+		t.Fatalf("legacy fallback: got user=%q pass=%q, want legacy-user / legacy-password", got.SAPUsername, got.SAPPassword)
+	}
+
+	// Environment variables override both config sources.
+	t.Setenv("SAP_USERNAME", "env-user")
+	t.Setenv("SAP_PASSWORD", "env-password")
+	got = s.buildPipeConfig()
+	if got.SAPUsername != "env-user" || got.SAPPassword != "env-password" {
+		t.Fatalf("env override: got user=%q pass=%q, want env-user / env-password", got.SAPUsername, got.SAPPassword)
+	}
+}

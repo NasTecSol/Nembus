@@ -1,0 +1,152 @@
+name: Monorepo CI Verification
+
+on:
+  pull_request:
+    branches:
+      - 'sprint-*'
+      - 'beta-*'
+      - development
+      - main
+      - junction
+  push:
+    branches:
+      - 'sprint-*'
+      - 'beta-*'
+      - development
+      - main
+      - junction
+  workflow_dispatch:
+
+concurrency:
+  group: ci-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrations-and-sqlc:
+    name: Atlas Migrations, LF Line Endings & sqlc
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Install Atlas CLI
+        uses: ariga/setup-atlas@v0
+        with:
+          version: v1.3.0
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+
+      - name: Verify Unix LF line endings on migration SQL files
+        run: |
+          if grep -rnF $'\r' packages/core/db/migrations/*.sql apps/cloud-server/migrations/*.sql apps/pos-client/migrations/*.sql; then
+            echo "ERROR: CRLF line endings detected in SQL migrations. Run scripts/sync_migrations.ps1."
+            exit 1
+          fi
+
+      - name: Validate Atlas migration checksums
+        run: |
+          atlas migrate validate --dir "file://packages/core/db/migrations"
+          atlas migrate validate --dir "file://apps/cloud-server/migrations"
+          atlas migrate validate --dir "file://apps/pos-client/migrations"
+
+      - name: Verify sqlc vet & generated repository freshness
+        run: |
+          cd packages/core
+          sqlc vet
+          sqlc generate
+          git diff --exit-code repository/
+
+  go-build-and-test:
+    name: Go Build, Vet & Unit Tests
+    runs-on: ubuntu-latest
+
+    env:
+      GOPRIVATE: github.com/NasTecSol/*
+      GONOSUMCHECK: github.com/NasTecSol/*
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Vet & Test packages/sap
+        run: |
+          cd packages/sap
+          go vet ./...
+          go test ./...
+
+      - name: Build & Test packages/core (non-DB packages)
+        run: |
+          cd packages/core
+          go build ./...
+          go test ./usecase/... ./zatca/... ./grpc/... ./middleware/... ./printing/... ./telemetry/... ./routing/...
+
+      - name: Build, Vet & Test apps/cloud-server
+        run: |
+          cd apps/cloud-server
+          go vet ./...
+          go build ./...
+          go test ./...
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/migrate-tenants ./cmd/migrate-tenants
+
+      - name: Vet & Test apps/sap-agent
+        run: |
+          cd apps/sap-agent
+          go vet ./...
+          go test ./...
+
+      - name: Vet & Test apps/pos-client (internal & client)
+        run: |
+          cd apps/pos-client
+          go vet ./internal/... ./client/...
+          go test ./internal/... ./client/...
+
+  windows-agent-tests:
+    name: Windows Agent Vet & Tests
+    runs-on: windows-latest
+
+    env:
+      GOPRIVATE: github.com/NasTecSol/*
+      GONOSUMCHECK: github.com/NasTecSol/*
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Vet & Test apps/biometric-agent
+        shell: powershell
+        run: |
+          cd apps/biometric-agent
+          go vet ./...
+          go test ./...
+
+      - name: Vet Windows-specific code in apps/pos-client
+        shell: powershell
+        run: |
+          cd apps/pos-client
+          go vet ./internal/... ./client/...

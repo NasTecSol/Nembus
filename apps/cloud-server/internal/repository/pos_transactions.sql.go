@@ -199,7 +199,7 @@ RETURNING id, transaction_id, product_id, product_variant_id, quantity, uom_id, 
 type CreatePosTransactionLineParams struct {
 	TransactionID    int32           `json:"transaction_id"`
 	LineNumber       pgtype.Int4     `json:"line_number"`
-	ProductID        int32           `json:"product_id"`
+	ProductID        pgtype.Int4     `json:"product_id"`
 	ProductVariantID pgtype.Int4     `json:"product_variant_id"`
 	SerialNumber     pgtype.Text     `json:"serial_number"`
 	BatchNumber      pgtype.Text     `json:"batch_number"`
@@ -352,7 +352,7 @@ type GetPosTransactionFullRow struct {
 	CustomerName      pgtype.Text      `json:"customer_name"`
 	LineID            int32            `json:"line_id"`
 	LineNumber        pgtype.Int4      `json:"line_number"`
-	ProductID         int32            `json:"product_id"`
+	ProductID         pgtype.Int4      `json:"product_id"`
 	Quantity          pgtype.Numeric   `json:"quantity"`
 	UnitPrice         pgtype.Numeric   `json:"unit_price"`
 	DiscountAmount_2  pgtype.Numeric   `json:"discount_amount_2"`

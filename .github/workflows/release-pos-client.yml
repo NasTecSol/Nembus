@@ -63,7 +63,7 @@ jobs:
           if ($manualVersion) {
               $newTag = $manualVersion
           } else {
-              $tags = git tag --sort=-v:refname
+              $tags = git tag --sort=-v:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
               $latestTag = $tags | Select-Object -First 1
               if (-not $latestTag) {
                   $newTag = "v1.0.0"
@@ -97,6 +97,16 @@ jobs:
           go install github.com/swaggo/swag/cmd/swag@latest
           cd apps/pos-client
           swag init -o docs/swagger --parseDependency --parseInternal
+
+      - name: Run POS Client Tests
+        shell: powershell
+        env:
+          GOPRIVATE: github.com/NasTecSol/*
+          GONOSUMCHECK: github.com/NasTecSol/*
+        run: |
+          cd apps/pos-client
+          go vet ./internal/... ./client/...
+          go test ./internal/... ./client/...
 
       - name: Build POS Client Application
         env:

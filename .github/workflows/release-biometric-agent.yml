@@ -46,7 +46,8 @@ jobs:
         run: |
           $manualVersion = "${{ inputs.version }}"
           if ($manualVersion) {
-              $newTag = $manualVersion
+              $cleanVer = $manualVersion.TrimStart("bio-").TrimStart("v")
+              $newTag = "bio-v$cleanVer"
           } else {
               $tags = git tag --sort=-v:refname | Where-Object { $_ -like "bio-v*" }
               $latestTag = $tags | Select-Object -First 1
@@ -70,6 +71,16 @@ jobs:
           Write-Host "Canonical Version: $cleanVersion"
           echo "GIT_TAG=$newTag" >> $env:GITHUB_OUTPUT
           echo "VERSION=$cleanVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Run Biometric Agent Vet & Tests
+        shell: powershell
+        env:
+          GOPRIVATE: github.com/NasTecSol/*
+          GONOSUMCHECK: github.com/NasTecSol/*
+        run: |
+          cd apps/biometric-agent
+          go vet ./...
+          go test ./...
 
       - name: Build Biometric Agent Executable
         env:

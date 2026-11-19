@@ -27,8 +27,8 @@ otelcol.receiver.otlp "nembus" {
 
 otelcol.processor.memory_limiter "nembus" {
   check_interval = "1s"
-  limit          = "256MiB"
-  spike_limit    = "64MiB"
+  limit          = "128MiB"
+  spike_limit    = "32MiB"
 
   output {
     metrics = [otelcol.processor.batch.nembus.input]

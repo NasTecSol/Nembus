@@ -181,8 +181,11 @@
         }
         if (cfg.service_layer) {
             setVal('ob-sl-url', cfg.service_layer.url || '');
-            setVal('ob-sl-user', cfg.service_layer.username || '');
-            setVal('ob-sl-password', cfg.service_layer.password || '');
+            setVal('ob-sl-user', cfg.service_layer.username || cfg.sap_user_mapping || 'manager');
+            setVal('ob-sl-password', cfg.service_layer.password || cfg.sap_password || '');
+        } else {
+            setVal('ob-sl-user', cfg.sap_user_mapping || 'manager');
+            setVal('ob-sl-password', cfg.sap_password || '');
         }
         if (cfg.cloud) {
             setVal('ob-cloud-url', cfg.cloud.base_url);
@@ -191,8 +194,6 @@
         setVal('ob-migrator-user', cfg.migrator_user || 'Migrator');
         setVal('ob-migrator-password', cfg.migrator_password || 'Migrator');
         setVal('ob-migrator-role', cfg.migrator_role || 'auto-user');
-        setVal('ob-sap-operator', cfg.sap_user_mapping || 'manager');
-        setVal('ob-sap-password', cfg.sap_password || '');
         setVal('ob-downstream-interval', cfg.downstream_interval_sec || 300);
         setVal('ob-upstream-interval', cfg.upstream_interval_sec || 60);
         setVal('ob-recon-interval', cfg.reconciliation_interval_sec || 3600);
@@ -210,6 +211,9 @@
             setVal('cfg-mssql-password', cfg.mssql.password);
             setVal('cfg-mssql-db', cfg.mssql.database);
         }
+        setVal('cfg-sl-url', cfg.service_layer?.url || '');
+        setVal('cfg-sl-user', cfg.service_layer?.username || cfg.sap_user_mapping || 'manager');
+        setVal('cfg-sl-password', cfg.service_layer?.password || cfg.sap_password || '');
         if (cfg.cloud) {
             setVal('cfg-cloud-url', cfg.cloud.base_url);
             setVal('cfg-org-id', cfg.cloud.organization_id);
@@ -613,7 +617,7 @@
         setTxt('sum-tenant', `${state.onboarding.selectedTenantName || state.onboarding.selectedTenant} (${orgLabel})`);
         setTxt('sum-user', getVal('ob-migrator-user') || 'Migrator');
         setTxt('sum-role', getVal('ob-migrator-role') || 'auto-user');
-        setTxt('sum-sap-op', getVal('ob-sap-operator') || 'manager');
+        setTxt('sum-sap-op', getVal('ob-sl-user') || 'manager');
         setTxt('sum-downstream', `Every ${getVal('ob-downstream-interval')}s`);
         setTxt('sum-upstream', `Every ${getVal('ob-upstream-interval')}s`);
         setTxt('sum-audit', `Every ${getVal('ob-recon-interval')}s`);
@@ -622,6 +626,12 @@
     async function completeOnboarding() {
         const btn = document.getElementById('btn-finalize-onboarding');
         setButtonLoading(btn, true);
+
+        const sapUser = getVal('ob-sl-user') || 'manager';
+        const sapPass = getVal('ob-sl-password');
+        const orgEl = document.getElementById('ob-target-orgid');
+        const selectedOrgText = (orgEl?.selectedOptions?.[0]?.textContent || '').replace(/\s*\(ID:\s*\d+\)\s*$/, '').trim();
+        const orgName = selectedOrgText && selectedOrgText !== 'Default Org' ? selectedOrgText : '';
 
         const payload = {
             mssql: {
@@ -637,8 +647,8 @@
             service_layer: {
                 url: getVal('ob-sl-url'),
                 company_db: getVal('ob-mssql-database'),
-                username: getVal('ob-sl-user') || getVal('ob-sap-operator') || 'manager',
-                password: getVal('ob-sl-password'),
+                username: sapUser,
+                password: sapPass,
                 insecure_skip_ssl: true
             },
             cloud: {
@@ -654,8 +664,8 @@
             migrator_password: getVal('ob-migrator-password') || 'Migrator',
             migrator_role: 'auto-user',
             migrator_token: state.onboarding.migratorToken || getVal('ob-derived-token') || '',
-            sap_user_mapping: getVal('ob-sap-operator') || 'manager',
-            sap_password: getVal('ob-sap-password'),
+            sap_user_mapping: sapUser,
+            sap_password: sapPass,
             downstream_interval_sec: parseInt(getVal('ob-downstream-interval')) || 300,
             upstream_interval_sec: parseInt(getVal('ob-upstream-interval')) || 60,
             reconciliation_interval_sec: parseInt(getVal('ob-recon-interval')) || 3600,
@@ -665,6 +675,9 @@
             default_customer_code: getVal('ob-default-customer') || 'C000001',
             batch_size: parseInt(getVal('ob-batch-size')) || 500
         };
+        if (orgName) {
+            payload.organization_name = orgName;
+        }
 
         try {
             const res = await fetch('/api/v1/onboarding/complete', {
@@ -1247,6 +1260,8 @@
     // -------------------------------------------------------------
     function setupSettingsListeners() {
         document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
+            const sapUser = getVal('cfg-sl-user') || 'manager';
+            const sapPass = getVal('cfg-sl-password');
             const payload = {
                 mssql: {
                     host: getVal('cfg-mssql-host'),
@@ -1256,6 +1271,13 @@
                     database: getVal('cfg-mssql-db'),
                     connection_timeout_seconds: 15
                 },
+                service_layer: {
+                    url: getVal('cfg-sl-url'),
+                    company_db: getVal('cfg-mssql-db'),
+                    username: sapUser,
+                    password: sapPass,
+                    insecure_skip_ssl: true
+                },
                 cloud: {
                     base_url: getVal('cfg-cloud-url'),
                     organization_id: parseInt(getVal('cfg-org-id')) || 1,
@@ -1263,6 +1285,8 @@
                 },
                 tenant_slug: getVal('cfg-tenant-slug'),
                 sap_company_db: getVal('cfg-mssql-db'),
+                sap_user_mapping: sapUser,
+                sap_password: sapPass,
                 migrator_user: getVal('cfg-migrator-user'),
                 migrator_role: getVal('cfg-migrator-role'),
                 migrator_token: getVal('cfg-api-key')

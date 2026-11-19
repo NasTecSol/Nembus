@@ -18,10 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/NasTecSol/nembus-sap/mappings"
-	"github.com/NasTecSol/nembus-sap/schema"
-	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-core/middleware"
+	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/discovery"
@@ -33,6 +31,8 @@ import (
 	"github.com/NasTecSol/nembus-sap-agent/internal/transport"
 	"github.com/NasTecSol/nembus-sap-agent/internal/updater"
 	"github.com/NasTecSol/nembus-sap/contracts"
+	"github.com/NasTecSol/nembus-sap/mappings"
+	"github.com/NasTecSol/nembus-sap/schema"
 	"github.com/kardianos/service"
 )
 
@@ -394,13 +394,22 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 		}
 		if req.ServiceLayer.Username != "" {
 			current.ServiceLayer.Username = req.ServiceLayer.Username
+			if req.SAPUserMapping == "" {
+				current.SAPUserMapping = req.ServiceLayer.Username
+			}
 		}
 		if req.ServiceLayer.Password != "" {
 			current.ServiceLayer.Password = req.ServiceLayer.Password
+			if req.SAPPassword == "" {
+				current.SAPPassword = req.ServiceLayer.Password
+			}
 		}
 		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
 	}
 	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
+	if req.ServiceLayer.CompanyDB == "" && (current.ServiceLayer.CompanyDB == "" || current.ServiceLayer.CompanyDB == "Qadsiya") && current.SAPCompanyDB != "" {
+		current.ServiceLayer.CompanyDB = current.SAPCompanyDB
+	}
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -434,9 +443,15 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	}
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
+		if current.ServiceLayer.Username == "" {
+			current.ServiceLayer.Username = req.SAPUserMapping
+		}
 	}
 	if req.SAPPassword != "" {
 		current.SAPPassword = req.SAPPassword
+		if current.ServiceLayer.Password == "" {
+			current.ServiceLayer.Password = req.SAPPassword
+		}
 	}
 	if req.NembusStoreID > 0 {
 		current.NembusStoreID = req.NembusStoreID
@@ -794,24 +809,24 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		MSSQL                     config.MSSQLConfig        `json:"mssql"`
 		ServiceLayer              config.ServiceLayerConfig `json:"service_layer"`
 		Cloud                     config.CloudConfig        `json:"cloud"`
-		TenantSlug                string             `json:"tenant_slug"`
-		TenantName                string             `json:"tenant_name"`
-		OrganizationName          string             `json:"organization_name"`
-		SAPCompanyDB              string             `json:"sap_company_db"`
-		MigratorUser              string             `json:"migrator_user"`
-		MigratorPassword          string             `json:"migrator_password"`
-		MigratorRole              string             `json:"migrator_role"`
-		MigratorToken             string             `json:"migrator_token"`
-		SAPUserMapping            string             `json:"sap_user_mapping"`
-		SAPPassword               string             `json:"sap_password"`
-		DownstreamIntervalSec     int                `json:"downstream_interval_sec"`
-		UpstreamIntervalSec       int                `json:"upstream_interval_sec"`
-		ReconciliationIntervalSec int                `json:"reconciliation_interval_sec"`
-		ReconciliationAutoRun     bool               `json:"reconciliation_auto_run"`
-		NembusStoreID             int                `json:"nembus_store_id"`
-		DefaultStoreCode          string             `json:"default_store_code"`
-		DefaultCustomerCode       string             `json:"default_customer_code"`
-		BatchSize                 int                `json:"batch_size"`
+		TenantSlug                string                    `json:"tenant_slug"`
+		TenantName                string                    `json:"tenant_name"`
+		OrganizationName          string                    `json:"organization_name"`
+		SAPCompanyDB              string                    `json:"sap_company_db"`
+		MigratorUser              string                    `json:"migrator_user"`
+		MigratorPassword          string                    `json:"migrator_password"`
+		MigratorRole              string                    `json:"migrator_role"`
+		MigratorToken             string                    `json:"migrator_token"`
+		SAPUserMapping            string                    `json:"sap_user_mapping"`
+		SAPPassword               string                    `json:"sap_password"`
+		DownstreamIntervalSec     int                       `json:"downstream_interval_sec"`
+		UpstreamIntervalSec       int                       `json:"upstream_interval_sec"`
+		ReconciliationIntervalSec int                       `json:"reconciliation_interval_sec"`
+		ReconciliationAutoRun     bool                      `json:"reconciliation_auto_run"`
+		NembusStoreID             int                       `json:"nembus_store_id"`
+		DefaultStoreCode          string                    `json:"default_store_code"`
+		DefaultCustomerCode       string                    `json:"default_customer_code"`
+		BatchSize                 int                       `json:"batch_size"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -832,13 +847,22 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		}
 		if req.ServiceLayer.Username != "" {
 			current.ServiceLayer.Username = req.ServiceLayer.Username
+			if req.SAPUserMapping == "" {
+				current.SAPUserMapping = req.ServiceLayer.Username
+			}
 		}
 		if req.ServiceLayer.Password != "" {
 			current.ServiceLayer.Password = req.ServiceLayer.Password
+			if req.SAPPassword == "" {
+				current.SAPPassword = req.ServiceLayer.Password
+			}
 		}
 		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
 	}
 	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
+	if req.ServiceLayer.CompanyDB == "" && (current.ServiceLayer.CompanyDB == "" || current.ServiceLayer.CompanyDB == "Qadsiya") && current.SAPCompanyDB != "" {
+		current.ServiceLayer.CompanyDB = current.SAPCompanyDB
+	}
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -863,9 +887,15 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	}
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
+		if current.ServiceLayer.Username == "" {
+			current.ServiceLayer.Username = req.SAPUserMapping
+		}
 	}
 	if req.SAPPassword != "" {
 		current.SAPPassword = req.SAPPassword
+		if current.ServiceLayer.Password == "" {
+			current.ServiceLayer.Password = req.SAPPassword
+		}
 	}
 	if req.DownstreamIntervalSec > 0 {
 		current.DownstreamIntervalSec = req.DownstreamIntervalSec
@@ -1179,9 +1209,9 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		username = envUser
 	}
 
-	password := cfg.SAPPassword
+	password := cfg.ServiceLayer.Password
 	if password == "" {
-		password = cfg.ServiceLayer.Password
+		password = cfg.SAPPassword
 	}
 	if password == "" {
 		password = cfg.MSSQL.Password

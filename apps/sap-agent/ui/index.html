@@ -248,21 +248,11 @@
                                     <div class="form-group-row">
                                         <div class="form-group flex-1">
                                             <label>SAP B1 User</label>
-                                            <input type="text" id="ob-sl-user" placeholder="manager">
+                                            <input type="text" id="ob-sl-user" value="manager" placeholder="manager">
                                         </div>
                                         <div class="form-group flex-1">
                                             <label>SAP B1 Password</label>
-                                            <input type="password" id="ob-sl-password" placeholder="SAP B1 password">
-                                        </div>
-                                    </div>
-                                    <div class="form-group-row">
-                                        <div class="form-group flex-1">
-                                            <label>Mapped SAP Operator</label>
-                                            <input type="text" id="ob-sap-operator" value="manager">
-                                        </div>
-                                        <div class="form-group flex-1">
-                                            <label>SAP Operator Password</label>
-                                            <input type="password" id="ob-sap-password" placeholder="Same as DB password if blank">
+                                            <input type="password" id="ob-sl-password" placeholder="SAP B1 password (same as DB password if blank)">
                                         </div>
                                     </div>
                                     <div class="form-group-row">
@@ -1032,6 +1022,20 @@
                             <div class="form-group">
                                 <label>Company Database</label>
                                 <input type="text" id="cfg-mssql-db">
+                            </div>
+                            <div class="form-group">
+                                <label>SAP Service Layer URL (Upstream Posting)</label>
+                                <input type="text" id="cfg-sl-url" placeholder="https://192.168.18.77:50000/b1s/v1">
+                            </div>
+                            <div class="form-group-row">
+                                <div class="form-group flex-1">
+                                    <label>SAP B1 User</label>
+                                    <input type="text" id="cfg-sl-user" placeholder="manager">
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label>SAP B1 Password</label>
+                                    <input type="password" id="cfg-sl-password" placeholder="Leave blank to keep existing">
+                                </div>
                             </div>
                         </div>
 
