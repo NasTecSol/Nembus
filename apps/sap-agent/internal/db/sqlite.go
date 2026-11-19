@@ -531,18 +531,50 @@ func (s *SQLiteStore) RecordUpstreamDispatch(ctx context.Context, txNum string, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	query := `
-	INSERT INTO upstream_dispatches (transaction_number, transaction_date, amount, sap_doc_entry, sap_doc_num, status, error_message, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	ON CONFLICT(transaction_number) DO UPDATE SET
-		sap_doc_entry = excluded.sap_doc_entry,
-		sap_doc_num = excluded.sap_doc_num,
-		status = excluded.status,
-		error_message = excluded.error_message,
-		created_at = CURRENT_TIMESTAMP;
-	`
-	_, err := s.db.ExecContext(ctx, query, txNum, txDate, amount, docEntry, docNum, status, errMsg)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE upstream_dispatches
+		SET transaction_date = ?,
+		    amount = ?,
+		    sap_doc_entry = ?,
+		    sap_doc_num = ?,
+		    status = ?,
+		    error_message = ?,
+		    created_at = CURRENT_TIMESTAMP
+		WHERE transaction_number = ?;
+	`, txDate, amount, docEntry, docNum, status, errMsg, txNum)
+	if err != nil {
+		return err
+	}
+	if rows, rErr := res.RowsAffected(); rErr == nil && rows > 0 {
+		return nil
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO upstream_dispatches (transaction_number, transaction_date, amount, sap_doc_entry, sap_doc_num, status, error_message, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+	`, txNum, txDate, amount, docEntry, docNum, status, errMsg)
 	return err
+}
+
+func (s *SQLiteStore) GetUpstreamDispatchStatusMap(ctx context.Context) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.QueryContext(ctx, `SELECT transaction_number, status FROM upstream_dispatches;`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[string]string)
+	for rows.Next() {
+		var txNum, status string
+		if err := rows.Scan(&txNum, &status); err != nil {
+			return nil, err
+		}
+		res[txNum] = status
+	}
+	return res, rows.Err()
 }
 
 func (s *SQLiteStore) GetUpstreamDispatches(ctx context.Context, limit int) ([]UpstreamDispatch, error) {
@@ -728,8 +760,8 @@ func (s *SQLiteStore) setWatermark(ctx context.Context, table, domain string, t 
 	VALUES (?, ?, ?)
 	ON CONFLICT(domain) DO UPDATE SET
 		last_sync_time = excluded.last_sync_time,
-		records_synced = excluded.records_synced;
-	`, table)
+		records_synced = %s.records_synced + excluded.records_synced;
+	`, table, table)
 	_, err := s.db.ExecContext(ctx, query, domain, formatted, count)
 	return err
 }

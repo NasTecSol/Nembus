@@ -2,13 +2,14 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
+	"sync"
 	"time"
-
-	"encoding/json"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
@@ -75,12 +76,19 @@ func shouldHoldShortage(policy stockHoldPolicy, onHand, qty float64) bool {
 	return true
 }
 
+type retryEntry struct {
+	attempts  int
+	nextRetry time.Time
+}
+
 type UpstreamSync struct {
-	cfg          *config.Config
-	sapClient    SAPClient
-	nembusClient NembusClient
-	sqlite       *db.SQLiteStore
-	logFunc      func(domain, level, msg string)
+	cfg           *config.Config
+	sapClient     SAPClient
+	nembusClient  NembusClient
+	sqlite        *db.SQLiteStore
+	logFunc       func(domain, level, msg string)
+	retryMu       sync.Mutex
+	failedRetries map[string]retryEntry
 }
 
 func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient NembusClient, sqliteStore ...*db.SQLiteStore) *UpstreamSync {
@@ -89,10 +97,59 @@ func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient Nembu
 		store = sqliteStore[0]
 	}
 	return &UpstreamSync{
-		cfg:          cfg,
-		sapClient:    sapClient,
-		nembusClient: nembusClient,
-		sqlite:       store,
+		cfg:           cfg,
+		sapClient:     sapClient,
+		nembusClient:  nembusClient,
+		sqlite:        store,
+		failedRetries: make(map[string]retryEntry),
+	}
+}
+
+func (s *UpstreamSync) shouldBackoff(key string, now time.Time) (bool, time.Time) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if s.failedRetries == nil {
+		return false, time.Time{}
+	}
+	entry, ok := s.failedRetries[key]
+	if !ok || entry.attempts == 0 {
+		return false, time.Time{}
+	}
+	if now.Before(entry.nextRetry) {
+		return true, entry.nextRetry
+	}
+	return false, time.Time{}
+}
+
+func (s *UpstreamSync) recordRetryFailure(key string, now time.Time) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if s.failedRetries == nil {
+		s.failedRetries = make(map[string]retryEntry)
+	}
+	entry := s.failedRetries[key]
+	entry.attempts++
+	if entry.attempts == 1 {
+		entry.nextRetry = now
+	} else {
+		exp := entry.attempts - 1
+		if exp > 4 {
+			exp = 4
+		}
+		delay := time.Minute << exp
+		if delay > 15*time.Minute {
+			delay = 15 * time.Minute
+		}
+		entry.nextRetry = now.Add(delay)
+	}
+	s.failedRetries[key] = entry
+}
+
+func (s *UpstreamSync) clearRetry(key string) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if s.failedRetries != nil {
+		delete(s.failedRetries, key)
 	}
 }
 
@@ -149,30 +206,46 @@ func beforeWatermark(ts, since time.Time) bool {
 	return !since.IsZero() && !ts.IsZero() && ts.Before(since)
 }
 
-func (s *UpstreamSync) resolveUpstreamSince(ctx context.Context, now time.Time) time.Time {
+func (s *UpstreamSync) resolveUpstreamCutoff(ctx context.Context, now time.Time) time.Time {
 	if s.sqlite == nil {
 		return time.Time{}
 	}
-	var since time.Time
-	if wm, err := s.sqlite.GetUpstreamWatermark(ctx, "upstream"); err == nil && wm != nil {
-		since = *wm
-	}
 	if migEnd, err := s.sqlite.GetLatestCompletedFullMigrationEndTime(ctx); err == nil && migEnd != nil {
-		if since.IsZero() || migEnd.Truncate(time.Second).After(since.Truncate(time.Second)) {
-			return *migEnd
+		return *migEnd
+	}
+	if cutoff, err := s.sqlite.GetUpstreamWatermark(ctx, "upstream_cutoff"); err == nil && cutoff != nil {
+		return *cutoff
+	}
+	cutoff := now.UTC().Truncate(24 * time.Hour)
+	_ = s.sqlite.SetUpstreamWatermark(ctx, "upstream_cutoff", cutoff, 0)
+	return cutoff
+}
+
+func applySAPUoM(docLine *sap.SAPDocumentLine, sapUoMEntry, sapUgpEntry *int, convFactor float64, isBaseUoM bool) {
+	if sapUgpEntry != nil && *sapUgpEntry > 0 {
+		if sapUoMEntry != nil && *sapUoMEntry > 0 {
+			docLine.UoMEntry = sapUoMEntry
 		}
+		return
 	}
-	if since.IsZero() {
-		since = now.Truncate(24 * time.Hour)
-		_ = s.sqlite.SetUpstreamWatermark(ctx, "upstream", since, 0)
+	if sapUgpEntry != nil && *sapUgpEntry <= 0 {
+		docLine.UseBaseUnits = "tYES"
+		if !isBaseUoM && convFactor > 0 && convFactor != 1 {
+			docLine.Quantity = docLine.Quantity * convFactor
+			docLine.UnitPrice = docLine.UnitPrice / convFactor
+			docLine.PriceAfterVAT = docLine.PriceAfterVAT / convFactor
+		}
+		return
 	}
-	return since
+	if sapUoMEntry != nil && *sapUoMEntry > 0 {
+		docLine.UoMEntry = sapUoMEntry
+	}
 }
 
 func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error) {
 	start := time.Now()
 	stats := &UpstreamStats{}
-	since := s.resolveUpstreamSince(ctx, start)
+	since := s.resolveUpstreamCutoff(ctx, start)
 
 	s.emitLog("pipeline", "INFO", "[Upstream] Checking Nembus Cloud for unposted POS transactions, sales orders, and returns...")
 
@@ -181,17 +254,31 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 		limit = 50
 	}
 
+	var txErrors, orderErrors, returnErrors int
+
 	approvedPOS, err := s.nembusClient.FetchApprovedPendingPOSTransactions(ctx, limit)
 	if err != nil {
 		return stats, fmt.Errorf("failed to fetch approved pending POS transactions: %w", err)
 	}
 	for _, tx := range approvedPOS {
+		retryKey := "tx:" + tx.TransactionNumber
+		if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
+			s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+			txErrors++
+			stats.Errors++
+			continue
+		}
 		if err := s.postTransactionToSAP(ctx, &tx, stockHoldPolicy{}); err != nil {
+			s.recordRetryFailure(retryKey, start)
 			log.Printf("❌ Failed to post approved transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
 			s.emitLog("pos_transactions", "ERROR", fmt.Sprintf("[Upstream] pos_transactions: failed to post approved %s: %v", tx.TransactionNumber, err))
+			txErrors++
 			stats.Errors++
-		} else if !s.cfg.DryRun {
-			stats.TransactionsPosted++
+		} else {
+			s.clearRetry(retryKey)
+			if !s.cfg.DryRun {
+				stats.TransactionsPosted++
+			}
 		}
 	}
 
@@ -200,12 +287,24 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 		return stats, fmt.Errorf("failed to fetch approved pending sales orders: %w", err)
 	}
 	for _, order := range approvedOrders {
+		retryKey := "order:" + order.OrderNumber
+		if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
+			s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+			orderErrors++
+			stats.Errors++
+			continue
+		}
 		if err := s.postSalesOrderToSAP(ctx, &order, stockHoldPolicy{}); err != nil {
+			s.recordRetryFailure(retryKey, start)
 			log.Printf("❌ Failed to post approved sales order %s to SAP: %v", order.OrderNumber, err)
 			s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to post approved %s: %v", order.OrderNumber, err))
+			orderErrors++
 			stats.Errors++
-		} else if !s.cfg.DryRun {
-			stats.OrdersPosted++
+		} else {
+			s.clearRetry(retryKey)
+			if !s.cfg.DryRun {
+				stats.OrdersPosted++
+			}
 		}
 	}
 
@@ -229,25 +328,41 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 			if beforeWatermark(tx.TransactionDate, since) {
 				continue
 			}
+			retryKey := "tx:" + tx.TransactionNumber
+			if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
+				s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+				txErrors++
+				stats.Errors++
+				continue
+			}
 			if err := s.postTransactionToSAP(ctx, &tx, policy); err != nil {
 				if errors.Is(err, ErrTransactionHeldForReview) {
+					s.clearRetry(retryKey)
 					stats.TransactionsHeld++
 					continue
 				}
 				if errors.Is(err, errNoLineItems) {
+					s.clearRetry(retryKey)
 					s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: skipped %s (no line items)", tx.TransactionNumber))
 					continue
 				}
+				s.recordRetryFailure(retryKey, start)
 				log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
 				s.emitLog("pos_transactions", "ERROR", fmt.Sprintf("[Upstream] pos_transactions: failed to post %s: %v", tx.TransactionNumber, err))
+				txErrors++
 				stats.Errors++
-			} else if !s.cfg.DryRun {
-				stats.TransactionsPosted++
+			} else {
+				s.clearRetry(retryKey)
+				if !s.cfg.DryRun {
+					stats.TransactionsPosted++
+				}
 			}
 		}
 	}
-	if stats.TransactionsPosted == 0 && stats.TransactionsHeld == 0 {
+	if stats.TransactionsPosted == 0 && stats.TransactionsHeld == 0 && txErrors == 0 {
 		s.emitLog("pos_transactions", "INFO", "[Upstream] pos_transactions: up to date (0 unposted transactions)")
+	} else if txErrors > 0 {
+		s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: %d posted, %d held, %d failed", stats.TransactionsPosted, stats.TransactionsHeld, txErrors))
 	} else {
 		s.emitLog("pos_transactions", "INFO", fmt.Sprintf("[Upstream] pos_transactions: %d posted, %d held", stats.TransactionsPosted, stats.TransactionsHeld))
 	}
@@ -255,6 +370,8 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	salesOrders, oErr := s.nembusClient.FetchUnpostedSalesOrdersV2(ctx, limit)
 	if oErr != nil {
 		log.Printf("⚠️ Failed to fetch unposted sales orders: %v", oErr)
+		s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to fetch unposted orders: %v", oErr))
+		orderErrors++
 		stats.Errors++
 	} else if len(salesOrders) > 0 {
 		policy := getStockPolicy()
@@ -262,25 +379,41 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 			if beforeWatermark(order.OrderDate, since) {
 				continue
 			}
+			retryKey := "order:" + order.OrderNumber
+			if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
+				s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+				orderErrors++
+				stats.Errors++
+				continue
+			}
 			if err := s.postSalesOrderToSAP(ctx, &order, policy); err != nil {
 				if errors.Is(err, ErrOrderHeldForReview) {
+					s.clearRetry(retryKey)
 					stats.OrdersHeld++
 					continue
 				}
 				if errors.Is(err, errNoLineItems) {
+					s.clearRetry(retryKey)
 					s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: skipped %s (no line items)", order.OrderNumber))
 					continue
 				}
+				s.recordRetryFailure(retryKey, start)
 				log.Printf("❌ Failed to post sales order %s to SAP: %v", order.OrderNumber, err)
 				s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to post %s: %v", order.OrderNumber, err))
+				orderErrors++
 				stats.Errors++
-			} else if !s.cfg.DryRun {
-				stats.OrdersPosted++
+			} else {
+				s.clearRetry(retryKey)
+				if !s.cfg.DryRun {
+					stats.OrdersPosted++
+				}
 			}
 		}
 	}
-	if stats.OrdersPosted == 0 && stats.OrdersHeld == 0 {
+	if stats.OrdersPosted == 0 && stats.OrdersHeld == 0 && orderErrors == 0 {
 		s.emitLog("sales_orders", "INFO", "[Upstream] sales_orders: up to date (0 unposted orders)")
+	} else if orderErrors > 0 {
+		s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: %d posted, %d held, %d failed", stats.OrdersPosted, stats.OrdersHeld, orderErrors))
 	} else {
 		s.emitLog("sales_orders", "INFO", fmt.Sprintf("[Upstream] sales_orders: %d posted, %d held", stats.OrdersPosted, stats.OrdersHeld))
 	}
@@ -289,28 +422,45 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	returns, rErr := s.nembusClient.FetchUnpostedSalesReturns(ctx, limit)
 	if rErr != nil {
 		log.Printf("⚠️ Failed to fetch unposted sales returns: %v", rErr)
+		s.emitLog("sales_returns", "ERROR", fmt.Sprintf("[Upstream] sales_returns: failed to fetch unposted returns: %v", rErr))
+		returnErrors++
 		stats.Errors++
 	} else if len(returns) > 0 {
 		for _, ret := range returns {
 			if beforeWatermark(ret.ReturnDate, since) {
 				continue
 			}
+			retryKey := "ret:" + ret.ReturnNumber
+			if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
+				s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: backing off %s until %s", ret.ReturnNumber, nextAt.Format(time.RFC3339)))
+				returnErrors++
+				stats.Errors++
+				continue
+			}
 			if err := s.postSalesReturnToSAP(ctx, &ret); err != nil {
 				if errors.Is(err, errNoLineItems) {
+					s.clearRetry(retryKey)
 					log.Printf("⚠️ Skipping sales return %s (ID: %d): %v", ret.ReturnNumber, ret.ID, err)
 					s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: skipped %s: %v", ret.ReturnNumber, err))
 					continue
 				}
+				s.recordRetryFailure(retryKey, start)
 				log.Printf("❌ Failed to post sales return %s (ID: %d) to SAP: %v", ret.ReturnNumber, ret.ID, err)
 				s.emitLog("sales_returns", "ERROR", fmt.Sprintf("[Upstream] sales_returns: failed to post %s: %v", ret.ReturnNumber, err))
+				returnErrors++
 				stats.Errors++
-			} else if !s.cfg.DryRun {
-				stats.ReturnsPosted++
+			} else {
+				s.clearRetry(retryKey)
+				if !s.cfg.DryRun {
+					stats.ReturnsPosted++
+				}
 			}
 		}
 	}
-	if stats.ReturnsPosted == 0 {
+	if stats.ReturnsPosted == 0 && returnErrors == 0 {
 		s.emitLog("sales_returns", "INFO", "[Upstream] sales_returns: up to date (0 unposted returns)")
+	} else if returnErrors > 0 {
+		s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: %d posted, %d failed", stats.ReturnsPosted, returnErrors))
 	} else {
 		s.emitLog("sales_returns", "INFO", fmt.Sprintf("[Upstream] sales_returns: %d posted", stats.ReturnsPosted))
 	}
@@ -320,8 +470,12 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	}
 
 	stats.Duration = time.Since(start)
-	s.emitLog("pipeline", "INFO", fmt.Sprintf("Upstream sync complete in %v: %d transactions posted, %d orders posted, %d returns posted, %d held",
-		stats.Duration.Round(time.Millisecond), stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld))
+	summaryLevel := "INFO"
+	if stats.Errors > 0 {
+		summaryLevel = "WARN"
+	}
+	s.emitLog("pipeline", summaryLevel, fmt.Sprintf("Upstream sync complete in %v: %d transactions posted, %d orders posted, %d returns posted, %d held, %d errors",
+		stats.Duration.Round(time.Millisecond), stats.TransactionsPosted, stats.OrdersPosted, stats.ReturnsPosted, stats.TransactionsHeld+stats.OrdersHeld, stats.Errors))
 	return stats, nil
 }
 
@@ -343,8 +497,15 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 		// Calculate unit price net of tax if not already net
 		unitPriceNet := line.UnitPrice
 		if line.TaxAmount > 0 && line.Quantity > 0 {
-			// Subtotal is net before tax
-			unitPriceNet = line.Subtotal / line.Quantity
+			netAfterDiscount := line.LineTotal - line.TaxAmount
+			if line.DiscountAmount > 0 {
+				unitPriceNet = (netAfterDiscount + line.DiscountAmount) / line.Quantity
+			} else {
+				unitPriceNet = netAfterDiscount / line.Quantity
+			}
+			if unitPriceNet <= 0 {
+				unitPriceNet = line.UnitPrice
+			}
 		}
 
 		// Calculate discount percent from discount amount
@@ -354,21 +515,29 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 			discountPct = (line.DiscountAmount / gross) * 100.0
 		}
 
+		priceAfterVAT := 0.0
+		if line.Quantity > 0 {
+			priceAfterVAT = line.LineTotal / line.Quantity
+		}
+
 		lineNum := idx
-		docLines = append(docLines, sap.SAPDocumentLine{
+		docLine := sap.SAPDocumentLine{
 			LineNum:         &lineNum,
 			ItemCode:        line.ProductSKU,
 			ItemDescription: line.ProductName,
 			Quantity:        line.Quantity,
 			UnitPrice:       unitPriceNet,
-			PriceAfterVAT:   line.LineTotal / line.Quantity,
+			PriceAfterVAT:   priceAfterVAT,
 			DiscountPercent: discountPct,
+			TaxCode:         strings.TrimSpace(line.SAPTaxCode),
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
-		})
+		}
+		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
+		docLines = append(docLines, docLine)
 	}
 
 	// 3. Prepare Invoice Header
-	cardCode := s.resolveCardCode(ctx, tx.CustomerID)
+	cardCode := s.resolveDocumentCardCode(ctx, tx.CustomerSAPCode, tx.CustomerID)
 
 	invDate := tx.TransactionDate.Format("2006-01-02")
 	invReq := &sap.SAPInvoiceRequest{
@@ -445,11 +614,30 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 	log.Printf(" Invoice created in SAP B1! DocEntry: %d, DocNum: %d (Ref: %s)",
 		sapInv.DocEntry, sapInv.DocNum, tx.TransactionNumber)
 
+	// Record local dispatch immediately after SAP PostInvoice succeeds to prevent duplicate posting
+	// if incoming payment or cloud write-back encounters a transient failure.
+	if s.sqlite != nil {
+		_ = s.sqlite.RecordUpstreamDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, &sapInv.DocEntry, &sapInv.DocNum, "posted", "")
+	}
+
 	// 5. Post matching payment in SAP if paid
-	if tx.AmountPaid > 0 {
+	if tx.AmountPaid > 0 || tx.TotalAmount > 0 {
 		payments, err := s.nembusClient.FetchTransactionPayments(ctx, tx.ID)
 		if err == nil && len(payments) > 0 {
+			var totalPaid float64
+			remaining := sapInv.DocTotal
 			for _, p := range payments {
+				totalPaid += p.Amount
+				sumApplied := p.Amount
+				if sapInv.DocTotal > 0 {
+					if remaining <= 0.001 {
+						continue
+					}
+					if sumApplied > remaining {
+						sumApplied = remaining
+					}
+					remaining -= sumApplied
+				}
 				payReq := &sap.SAPPaymentRequest{
 					CardCode: cardCode,
 					DocDate:  invDate,
@@ -458,7 +646,7 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 						{
 							LineNum:     0,
 							DocEntry:    sapInv.DocEntry,
-							SumApplied:  p.Amount,
+							SumApplied:  sumApplied,
 							InvoiceType: "it_Invoice",
 						},
 					},
@@ -466,30 +654,38 @@ func (s *UpstreamSync) postTransactionToSAP(ctx context.Context, tx *nembus.POST
 				}
 
 				if p.PaymentMethod == "cash" || p.PaymentMethod == "CASH" {
-					payReq.CashSum = p.Amount
+					payReq.CashSum = sumApplied
 				} else {
-					payReq.TransferSum = p.Amount
+					payReq.TransferSum = sumApplied
 					if p.Reference != nil {
 						payReq.TransferReference = *p.Reference
 					}
 				}
 
-				if payResp, err := s.sapClient.PostIncomingPayment(ctx, payReq); err == nil {
+				if payResp, payErr := s.sapClient.PostIncomingPayment(ctx, payReq); payErr == nil {
 					log.Printf("  Incoming Payment created in SAP! DocEntry: %d, Sum: %.2f",
-						payResp.DocEntry, p.Amount)
+						payResp.DocEntry, sumApplied)
 				} else {
-					log.Printf("⚠️ Warning: Failed to post payment for DocEntry %d: %v", sapInv.DocEntry, err)
+					log.Printf("⚠️ Warning: Failed to post payment for DocEntry %d: %v", sapInv.DocEntry, payErr)
+					s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: failed to post incoming payment for %s (DocEntry %d): %v", tx.TransactionNumber, sapInv.DocEntry, payErr))
 				}
+			}
+			if sapInv.DocTotal > 0 && math.Abs(sapInv.DocTotal-totalPaid) > 0.01 {
+				s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: %s SAP DocTotal (%.2f, VatSum %.2f) differs from payments sum (%.2f)",
+					tx.TransactionNumber, sapInv.DocTotal, sapInv.VatSum, totalPaid))
 			}
 		}
 	}
 
 	// 6. Mark transaction as synced in Nembus
-	err = s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
-	if err == nil && s.sqlite != nil {
-		_ = s.sqlite.RecordUpstreamDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, &sapInv.DocEntry, &sapInv.DocNum, "posted", "")
+	return s.nembusClient.MarkTransactionPostedToSAP(ctx, tx.ID, sapInv.DocEntry, sapInv.DocNum)
+}
+
+func (s *UpstreamSync) resolveDocumentCardCode(ctx context.Context, customerSAPCode string, customerID *int32) string {
+	if trimmed := strings.TrimSpace(customerSAPCode); trimmed != "" {
+		return trimmed
 	}
-	return err
+	return s.resolveCardCode(ctx, customerID)
 }
 
 func (s *UpstreamSync) resolveCardCode(ctx context.Context, customerID *int32) string {
@@ -521,7 +717,10 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 
 	// Lookup original invoice DocEntry in SAP if linked
 	var baseDocEntry *int
-	if ret.OriginalTransactionID != nil && *ret.OriginalTransactionID > 0 {
+	if ret.OriginalSAPDocEntry > 0 {
+		entry := ret.OriginalSAPDocEntry
+		baseDocEntry = &entry
+	} else if ret.OriginalTransactionID != nil && *ret.OriginalTransactionID > 0 {
 		if entry, err := s.nembusClient.FetchOriginalSAPDocEntry(ctx, *ret.OriginalTransactionID); err == nil && entry > 0 {
 			baseDocEntry = &entry
 		} else {
@@ -546,6 +745,7 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 			Quantity:        line.Quantity,
 			UnitPrice:       line.UnitPrice,
 			PriceAfterVAT:   priceAfterVAT,
+			TaxCode:         strings.TrimSpace(line.SAPTaxCode),
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
 		}
 		if baseDocEntry != nil {
@@ -553,10 +753,11 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 			docLine.BaseEntry = baseDocEntry
 			docLine.BaseType = &baseType
 		}
+		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
 		docLines = append(docLines, docLine)
 	}
 
-	cardCode := s.resolveCardCode(ctx, ret.CustomerID)
+	cardCode := s.resolveDocumentCardCode(ctx, ret.CustomerSAPCode, ret.CustomerID)
 	retDate := ret.ReturnDate.Format("2006-01-02")
 	comments := fmt.Sprintf("Nembus POS Return: %s", ret.ReturnNumber)
 	if ret.ReturnReason != nil && *ret.ReturnReason != "" {
@@ -590,11 +791,11 @@ func (s *UpstreamSync) postSalesReturnToSAP(ctx context.Context, ret *nembus.Sal
 	log.Printf(" Credit Note created in SAP B1! DocEntry: %d, DocNum: %d (Ref: %s)",
 		sapMemo.DocEntry, sapMemo.DocNum, ret.ReturnNumber)
 
-	err = s.nembusClient.MarkSalesReturnPostedToSAP(ctx, ret.ID, sapMemo.DocEntry, sapMemo.DocNum)
-	if err == nil && s.sqlite != nil {
+	if s.sqlite != nil {
 		_ = s.sqlite.RecordUpstreamDispatch(ctx, ret.ReturnNumber, ret.ReturnDate, ret.TotalRefundAmount, &sapMemo.DocEntry, &sapMemo.DocNum, "posted", "")
 	}
-	return err
+
+	return s.nembusClient.MarkSalesReturnPostedToSAP(ctx, ret.ID, sapMemo.DocEntry, sapMemo.DocNum)
 }
 
 func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.SalesOrderV2, policy stockHoldPolicy) error {
@@ -621,21 +822,24 @@ func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.Sa
 		}
 		lineNum := idx
 		priceAfterVAT := line.LineTotal / line.Quantity
-		docLines = append(docLines, sap.SAPDocumentLine{
+		docLine := sap.SAPDocumentLine{
 			LineNum:         &lineNum,
 			ItemCode:        line.ProductSKU,
 			ItemDescription: line.ProductName,
 			Quantity:        line.Quantity,
 			UnitPrice:       unitPriceNet,
 			PriceAfterVAT:   priceAfterVAT,
+			TaxCode:         strings.TrimSpace(line.SAPTaxCode),
 			WarehouseCode:   s.cfg.NembusDefaultWarehouse,
-		})
+		}
+		applySAPUoM(&docLine, line.SAPUoMEntry, line.SAPUgpEntry, line.UoMConversionFactor, line.IsBaseUoM)
+		docLines = append(docLines, docLine)
 	}
 	if len(docLines) == 0 {
 		return fmt.Errorf("sales order %s has no billable lines", order.OrderNumber)
 	}
 
-	cardCode := s.resolveCardCode(ctx, order.CustomerID)
+	cardCode := s.resolveDocumentCardCode(ctx, order.CustomerSAPCode, order.CustomerID)
 	invDate := order.OrderDate.Format("2006-01-02")
 	invReq := &sap.SAPInvoiceRequest{
 		CardCode:      cardCode,
@@ -704,6 +908,10 @@ func (s *UpstreamSync) postSalesOrderToSAP(ctx context.Context, order *nembus.Sa
 
 	log.Printf(" Invoice created in SAP B1 from sales order! DocEntry: %d, DocNum: %d (Ref: %s)",
 		sapInv.DocEntry, sapInv.DocNum, order.OrderNumber)
+
+	if s.sqlite != nil {
+		_ = s.sqlite.RecordUpstreamDispatch(ctx, order.OrderNumber, order.OrderDate, order.TotalAmount, &sapInv.DocEntry, &sapInv.DocNum, "posted", "")
+	}
 
 	return s.nembusClient.MarkSalesOrderPostedToSAP(ctx, order.ID, sapInv.DocEntry, sapInv.DocNum)
 }

@@ -256,6 +256,16 @@
                                         </div>
                                     </div>
                                     <div class="form-group-row">
+                                        <div class="form-group flex-1">
+                                            <label>Mapped SAP Operator</label>
+                                            <input type="text" id="ob-sap-operator" value="manager">
+                                        </div>
+                                        <div class="form-group flex-1">
+                                            <label>SAP Operator Password</label>
+                                            <input type="password" id="ob-sap-password" placeholder="Same as DB password if blank">
+                                        </div>
+                                    </div>
+                                    <div class="form-group-row">
                                         <label class="checkbox-label">
                                             <input type="checkbox" id="ob-mssql-trust" checked> Trust Server Certificate
                                         </label>
@@ -341,17 +351,24 @@
                                         <input type="text" id="ob-mapped-company" value="Qadsiya" readonly class="input-readonly">
                                     </div>
                                     <div class="form-group">
-                                        <label>Target Organization ID</label>
-                                        <input type="number" id="ob-target-orgid" value="1">
+                                        <label>Target Organization (from SAP)</label>
+                                        <select id="ob-target-orgid">
+                                            <option value="">Loading SAP organizations...</option>
+                                        </select>
                                     </div>
                                     <div class="form-group">
-                                        <label>Target Nembus Store ID</label>
-                                        <input type="number" id="ob-target-storeid" value="1" min="1">
+                                        <label>Target Nembus Store (from SAP)</label>
+                                        <select id="ob-target-storeid">
+                                            <option value="">Loading SAP stores...</option>
+                                        </select>
                                     </div>
                                     <div class="form-group">
                                         <label>Default Retail Store Code Mapping</label>
-                                        <input type="text" id="ob-default-store" value="01" placeholder="e.g. 01 (Main Branch)">
+                                        <select id="ob-default-store">
+                                            <option value="">Loading SAP stores...</option>
+                                        </select>
                                     </div>
+                                    <button type="button" class="btn btn-sm btn-outline" id="btn-refresh-sap-entities">&#x21bb; Refresh SAP Orgs &amp; Stores</button>
                                     <div class="mapping-preview-card">
                                         <div class="preview-title">Partition Route:</div>
                                         <div class="preview-route"><span id="preview-slug">demo-retail</span> / Org #<span id="preview-org">1</span> &larr; SAP [Qadsiya]</div>
@@ -394,15 +411,9 @@
                                                 <input type="password" id="ob-migrator-password" value="Migrator" required>
                                             </div>
                                         </div>
-                                        <div class="form-group-row">
-                                            <div class="form-group flex-1">
-                                                <label>Role Type Security Scope</label>
-                                                <input type="text" id="ob-migrator-role" value="auto-user" readonly class="input-readonly">
-                                            </div>
-                                            <div class="form-group flex-1">
-                                                <label>Mapped SAP Operator</label>
-                                                <input type="text" id="ob-sap-operator" value="manager">
-                                            </div>
+                                        <div class="form-group">
+                                            <label>Role Type Security Scope</label>
+                                            <input type="text" id="ob-migrator-role" value="auto-user" readonly class="input-readonly">
                                         </div>
                                         <button class="btn btn-success btn-full" id="btn-auth-migrator">
                                             <span class="btn-spinner"></span>

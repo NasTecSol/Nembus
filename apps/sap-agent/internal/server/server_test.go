@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -52,6 +53,32 @@ func TestBuildPipeConfigUsesConfiguredStoreID(t *testing.T) {
 	t.Setenv("NEMBUS_STORE_ID", "7")
 	if got := s.buildPipeConfig().NembusStoreID; got != 7 {
 		t.Fatalf("env fallback NembusStoreID: got %d want 7", got)
+	}
+}
+
+func TestBuildPipeConfigUsesConfiguredDefaultCustomer(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	s := &Server{}
+	cfg.DefaultCustomerCode = "C-WALKIN-99"
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if got := s.buildPipeConfig().NembusDefaultCustomer; got != "C-WALKIN-99" {
+		t.Fatalf("configured DefaultCustomerCode: got %q want C-WALKIN-99", got)
+	}
+
+	cfg.DefaultCustomerCode = ""
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	t.Setenv("NEMBUS_DEFAULT_CUSTOMER_CODE", "C-ENV-02")
+	if got := s.buildPipeConfig().NembusDefaultCustomer; got != "C-ENV-02" {
+		t.Fatalf("env fallback NembusDefaultCustomer: got %q want C-ENV-02", got)
 	}
 }
 
@@ -232,5 +259,41 @@ func TestOnboardingFailsExplicitlyWhenCloudUnreachable(t *testing.T) {
 	r.ServeHTTP(w2, req2)
 	if w2.Code == http.StatusOK {
 		t.Fatalf("expected non-200 when cloud unreachable for login, got 200: %s", w2.Body.String())
+	}
+}
+
+func TestHandleOnboardingSAPEntities_MissingHost(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "agent_config.json")
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.MSSQL.Host = ""
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	s := &Server{cfg: cfg}
+	r.POST("/api/v1/onboarding/sap-entities", s.handleOnboardingSAPEntities)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/sap-entities", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	var resp struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Success || resp.Error == "" {
+		t.Fatalf("expected failure with error message, got %+v", resp)
 	}
 }

@@ -29,6 +29,7 @@ func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 			products.GET("/category/:category_id", h.GetProductsByCategory)
 		}
 		stores.GET("/transactions", h.ListTodayTransactions)
+		stores.GET("/transactions/unposted", h.ListUnpostedTransactionsForSAP)
 	}
 
 	transactions := pos.Group("/transactions")
@@ -42,6 +43,7 @@ func RegisterPosRoutes(r *gin.RouterGroup, h *handler.PosHandler) {
 		transactions.GET("/:id/payments", h.GetTransactionPayments)
 		transactions.GET("/:id/payment-summary", h.GetTransactionPaymentSummary)
 		transactions.POST("/:id/void", h.VoidTransaction)
+		transactions.POST("/:id/sap-sync", h.MarkTransactionSAPSynced)
 	}
 
 	pos.GET("/terminals/:id/transactions", h.ListTransactionsByTerminal)

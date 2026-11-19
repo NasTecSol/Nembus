@@ -44,9 +44,6 @@ Thumbs.db
 *.log
 *.tmp
 
-# Swagger generated docs
-docs/swagger/
-
 # NEMBUS executable (dev build artifact)
 NEMBUS.exe
 

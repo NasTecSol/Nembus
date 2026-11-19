@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -10,12 +11,15 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NasTecSol/nembus-sap/mappings"
+	"github.com/NasTecSol/nembus-sap/schema"
 	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
@@ -132,6 +136,7 @@ func (s *Server) setupRoutes() {
 		// Onboarding Wizard & Security Layer
 		api.GET("/onboarding/status", s.handleGetOnboardingStatus)
 		api.POST("/onboarding/tenants", s.handleOnboardingTenants)
+		api.POST("/onboarding/sap-entities", s.handleOnboardingSAPEntities)
 		api.POST("/onboarding/login", s.handleOnboardingLogin)
 		api.POST("/onboarding/complete", s.handleOnboardingComplete)
 
@@ -299,6 +304,73 @@ func (s *Server) handleGetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, config.Get())
 }
 
+// applySAPCompanyDB keeps SAPCompanyDB synced with an explicit value or the configured MSSQL database.
+func applySAPCompanyDB(current *config.AgentConfig, sapDB, mssqlDB string) {
+	if sapDB != "" {
+		current.SAPCompanyDB = sapDB
+	} else if mssqlDB != "" {
+		current.SAPCompanyDB = mssqlDB
+	}
+}
+
+func (s *Server) ensureOnboardingOrganization(ctx context.Context, cfg *config.AgentConfig, requestedName string) error {
+	orgID := max(cfg.Cloud.OrganizationID, 1)
+	orgName := strings.TrimSpace(requestedName)
+	if orgName == "" && cfg.MSSQL.Host != "" {
+		if mssqlClient, err := db.NewMSSQLClient(cfg.MSSQL); err == nil {
+			qCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+			orgs := querySAPOrganizations(qCtx, mssqlClient.DB, "")
+			cancel()
+			mssqlClient.Close()
+			for _, o := range orgs {
+				if o.ID == orgID && o.Name != "" {
+					orgName = o.Name
+					break
+				}
+			}
+			if orgName == "" && len(orgs) > 0 && orgs[0].Name != "" {
+				orgName = orgs[0].Name
+			}
+		}
+	}
+	if orgName == "" {
+		orgName = strings.TrimSpace(cfg.SAPCompanyDB)
+	}
+	if orgName == "" {
+		orgName = strings.TrimSpace(cfg.MSSQL.Database)
+	}
+	if orgName == "" {
+		orgName = "SAP Company"
+	}
+
+	client := s.cloudClient
+	if client == nil {
+		client = transport.NewCloudClient(cfg.Cloud)
+	} else {
+		client.UpdateConfig(cfg.Cloud)
+	}
+
+	payload := &contracts.MigrationBatchPayload{
+		BatchID:        fmt.Sprintf("onboard-org-%d", time.Now().UnixNano()),
+		RunID:          fmt.Sprintf("onboard-%d", time.Now().Unix()),
+		OrganizationID: orgID,
+		Domain:         contracts.DomainOrganizations,
+		SequenceNumber: 1,
+		IsLastBatch:    true,
+		Timestamp:      time.Now().UTC(),
+		Organizations: []mappings.CanonicalOrganization{
+			{
+				ID:       orgID,
+				Code:     fmt.Sprintf("SAP-%d", orgID),
+				Name:     orgName,
+				IsActive: true,
+			},
+		},
+	}
+	_, err := client.SendBatch(ctx, payload)
+	return err
+}
+
 func (s *Server) handleSaveConfig(c *gin.Context) {
 	var req struct {
 		config.AgentConfig
@@ -328,11 +400,7 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 		}
 		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
 	}
-	if req.SAPCompanyDB != "" {
-		current.SAPCompanyDB = req.SAPCompanyDB
-	} else if req.MSSQL.Database != "" {
-		current.SAPCompanyDB = req.MSSQL.Database
-	}
+	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -367,11 +435,17 @@ func (s *Server) handleSaveConfig(c *gin.Context) {
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
 	}
+	if req.SAPPassword != "" {
+		current.SAPPassword = req.SAPPassword
+	}
 	if req.NembusStoreID > 0 {
 		current.NembusStoreID = req.NembusStoreID
 	}
 	if req.DefaultStoreCode != "" {
 		current.DefaultStoreCode = req.DefaultStoreCode
+	}
+	if strings.TrimSpace(req.DefaultCustomerCode) != "" {
+		current.DefaultCustomerCode = strings.TrimSpace(req.DefaultCustomerCode)
 	}
 	if req.OnboardingCompleted != nil {
 		current.OnboardingCompleted = *req.OnboardingCompleted
@@ -482,6 +556,109 @@ func (s *Server) handleOnboardingTenants(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "tenants": data})
+}
+
+type sapOrgOption struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type sapStoreOption struct {
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Locked string `json:"locked"`
+}
+
+func (s *Server) handleOnboardingSAPEntities(c *gin.Context) {
+	cfg := config.Get().MSSQL
+	var req config.MSSQLConfig
+	if err := c.ShouldBindJSON(&req); err == nil && req.Host != "" {
+		cfg = req
+	}
+	if cfg.Host == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": "MSSQL host is not configured"})
+		return
+	}
+
+	client, err := db.NewMSSQLClient(cfg)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 6*time.Second)
+	defer cancel()
+
+	orgs := querySAPOrganizations(ctx, client.DB, cfg.Database)
+	stores, err := querySAPStores(ctx, client.DB)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"organizations": orgs,
+		"stores":        stores,
+	})
+}
+
+func querySAPOrganizations(ctx context.Context, mssqlDB *sql.DB, fallbackName string) []sapOrgOption {
+	var orgs []sapOrgOption
+	if rows, err := mssqlDB.QueryContext(ctx, schema.QueryBranches); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id int
+			var name, disabled string
+			if err := rows.Scan(&id, &name, &disabled); err == nil && disabled != "Y" {
+				if name == "" {
+					name = fmt.Sprintf("Branch %d", id)
+				}
+				orgs = append(orgs, sapOrgOption{ID: id, Name: name})
+			}
+		}
+	}
+	if len(orgs) > 0 {
+		return orgs
+	}
+
+	var compName string
+	_ = mssqlDB.QueryRowContext(ctx, schema.QueryCompanyInfo).Scan(&compName)
+	if compName == "" {
+		compName = fallbackName
+	}
+	if compName == "" {
+		compName = "SAP Company"
+	}
+	return []sapOrgOption{{ID: 1, Name: compName}}
+}
+
+func querySAPStores(ctx context.Context, mssqlDB *sql.DB) ([]sapStoreOption, error) {
+	rows, err := mssqlDB.QueryContext(ctx, schema.QueryStores)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query OWHS: %w", err)
+	}
+	defer rows.Close()
+
+	var stores []sapStoreOption
+	for rows.Next() {
+		var code string
+		var whsName, locked, street, city, country, zip sql.NullString
+		if err := rows.Scan(&code, &whsName, &locked, &street, &city, &country, &zip); err != nil {
+			return nil, fmt.Errorf("failed to scan OWHS: %w", err)
+		}
+		name := whsName.String
+		if name == "" {
+			name = code
+		}
+		stores = append(stores, sapStoreOption{
+			Code:   code,
+			Name:   name,
+			Locked: locked.String,
+		})
+	}
+	return stores, nil
 }
 
 func (s *Server) handleOnboardingLogin(c *gin.Context) {
@@ -619,18 +796,21 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		Cloud                     config.CloudConfig        `json:"cloud"`
 		TenantSlug                string             `json:"tenant_slug"`
 		TenantName                string             `json:"tenant_name"`
+		OrganizationName          string             `json:"organization_name"`
 		SAPCompanyDB              string             `json:"sap_company_db"`
 		MigratorUser              string             `json:"migrator_user"`
 		MigratorPassword          string             `json:"migrator_password"`
 		MigratorRole              string             `json:"migrator_role"`
 		MigratorToken             string             `json:"migrator_token"`
 		SAPUserMapping            string             `json:"sap_user_mapping"`
+		SAPPassword               string             `json:"sap_password"`
 		DownstreamIntervalSec     int                `json:"downstream_interval_sec"`
 		UpstreamIntervalSec       int                `json:"upstream_interval_sec"`
 		ReconciliationIntervalSec int                `json:"reconciliation_interval_sec"`
 		ReconciliationAutoRun     bool               `json:"reconciliation_auto_run"`
 		NembusStoreID             int                `json:"nembus_store_id"`
 		DefaultStoreCode          string             `json:"default_store_code"`
+		DefaultCustomerCode       string             `json:"default_customer_code"`
 		BatchSize                 int                `json:"batch_size"`
 	}
 
@@ -658,11 +838,7 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 		}
 		current.ServiceLayer.InsecureSkipSSL = req.ServiceLayer.InsecureSkipSSL
 	}
-	if req.SAPCompanyDB != "" {
-		current.SAPCompanyDB = req.SAPCompanyDB
-	} else if req.MSSQL.Database != "" {
-		current.SAPCompanyDB = req.MSSQL.Database
-	}
+	applySAPCompanyDB(current, req.SAPCompanyDB, req.MSSQL.Database)
 	if req.Cloud.BaseURL != "" {
 		current.Cloud = req.Cloud
 	}
@@ -688,6 +864,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	if req.SAPUserMapping != "" {
 		current.SAPUserMapping = req.SAPUserMapping
 	}
+	if req.SAPPassword != "" {
+		current.SAPPassword = req.SAPPassword
+	}
 	if req.DownstreamIntervalSec > 0 {
 		current.DownstreamIntervalSec = req.DownstreamIntervalSec
 	}
@@ -703,6 +882,9 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	}
 	if req.DefaultStoreCode != "" {
 		current.DefaultStoreCode = req.DefaultStoreCode
+	}
+	if strings.TrimSpace(req.DefaultCustomerCode) != "" {
+		current.DefaultCustomerCode = strings.TrimSpace(req.DefaultCustomerCode)
 	}
 	if req.BatchSize > 0 {
 		current.BatchSize = req.BatchSize
@@ -734,6 +916,10 @@ func (s *Server) handleOnboardingComplete(c *gin.Context) {
 	current.DownstreamAutoActive = false
 	current.UpstreamAutoActive = false
 	_ = config.SaveConfig(current)
+
+	if err := s.ensureOnboardingOrganization(c.Request.Context(), current, req.OrganizationName); err != nil {
+		log.Printf("[SAP-AGENT] Warning: failed to migrate organization via /api/v1/migration/batch: %v", err)
+	}
 
 	log.Printf("[SAP-AGENT] Onboarding completed for tenant '%s'. Waiting for manual 'Run Downstream' / 'Run Upstream' to activate auto-sync.", current.TenantSlug)
 
@@ -993,7 +1179,10 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		username = envUser
 	}
 
-	password := cfg.ServiceLayer.Password
+	password := cfg.SAPPassword
+	if password == "" {
+		password = cfg.ServiceLayer.Password
+	}
 	if password == "" {
 		password = cfg.MSSQL.Password
 	}
@@ -1037,9 +1226,13 @@ func (s *Server) buildPipeConfig() *legacyconfig.Config {
 		storeID = 1
 	}
 
-	defaultCustomer := "C000001"
-	if envCust := os.Getenv("NEMBUS_DEFAULT_CUSTOMER_CODE"); envCust != "" {
-		defaultCustomer = envCust
+	defaultCustomer := strings.TrimSpace(cfg.DefaultCustomerCode)
+	if defaultCustomer == "" {
+		if envCust := strings.TrimSpace(os.Getenv("NEMBUS_DEFAULT_CUSTOMER_CODE")); envCust != "" {
+			defaultCustomer = envCust
+		} else {
+			defaultCustomer = "C000001"
+		}
 	}
 
 	return &legacyconfig.Config{

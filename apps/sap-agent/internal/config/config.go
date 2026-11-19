@@ -45,6 +45,9 @@ type AgentConfig struct {
 	// DefaultStoreCode is assigned to imported cashiers when SAP has no store mapping.
 	// Defaults to "01" if empty.
 	DefaultStoreCode     string      `json:"default_store_code"`
+	// DefaultCustomerCode is the fallback SAP CardCode used for walk-in or unmapped customers.
+	// Defaults to "C000001" if empty.
+	DefaultCustomerCode  string      `json:"default_customer_code"`
 	// NembusStoreID identifies the Nembus retail store polled for POS upstream transactions.
 	// Defaults to 1 if unset.
 	NembusStoreID        int         `json:"nembus_store_id"`
@@ -70,7 +73,8 @@ type AgentConfig struct {
 	MigratorPassword string `json:"migrator_password"` // Default: "Migrator"
 	MigratorRole     string `json:"migrator_role"`     // Default: "auto-user"
 	MigratorToken    string `json:"migrator_token"`    // JWT or API Key token
-	SAPUserMapping   string `json:"sap_user_mapping"`  // SAP Operator mapped to Migrator
+	SAPUserMapping   string `json:"sap_user_mapping"`       // SAP Operator mapped to Migrator
+	SAPPassword      string `json:"sap_password,omitempty"` // SAP Service Layer password (falls back to MSSQL password if empty)
 
 	// Pipeline Scheduling & Automation
 	DownstreamIntervalSec     int  `json:"downstream_interval_sec"`     // Default 300s (5m)
@@ -98,6 +102,7 @@ func DefaultConfig() *AgentConfig {
 		BatchSize:            500,
 		MaxConcurrency:       4,
 		DefaultStoreCode:     "01",
+		DefaultCustomerCode:  "C000001",
 		NembusStoreID:        1,
 		CashierDrawerLimit:   5000,
 		CashierDiscountLimit: 20,
@@ -105,7 +110,7 @@ func DefaultConfig() *AgentConfig {
 		OnboardingCompleted:  false,
 		TenantSlug:          "default",
 		TenantName:          "Default Tenant",
-		SAPCompanyDB:        "Qadsiya",
+		SAPCompanyDB:        "",
 		MigratorUser:        "Migrator",
 		MigratorPassword:    "Migrator",
 		MigratorRole:        "auto-user",

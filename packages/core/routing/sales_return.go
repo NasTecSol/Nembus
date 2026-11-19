@@ -13,6 +13,9 @@ import (
 func RegisterSalesReturnRoutes(r *gin.RouterGroup, h *handler.SalesReturnHandler) {
 	returns := r.Group("/pos/returns")
 	{
+		returns.GET("/unposted", h.ListUnpostedSalesReturnsForSAP)
+		returns.GET("/:id/lines", h.ListSalesReturnLinesForSAP)
+		returns.POST("/:id/sap-sync", h.MarkSalesReturnSAPSynced)
 		returns.POST("",
 			middleware.RequireAuthorizationToken("sale:refund_order"),
 			h.ProcessReturn,

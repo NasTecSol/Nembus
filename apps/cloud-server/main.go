@@ -254,6 +254,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		// [NEW] Product Catalog module (admin: products + embedded variants)
 		productCatalogHandler := handler.NewProductCatalogHandler(productCatalogUC)
 		router.RegisterProductCatalogRoutes(api, productCatalogHandler)
+		router.RegisterReceiptTemplateRoutes(api, handler.NewReceiptTemplateHandler())
 
 		productCategoryHandler := handler.NewProductCategoryHandler(productCategoryUC)
 		router.RegisterProductCategoryRoutes(api, productCategoryHandler)
@@ -340,35 +341,6 @@ func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
 }
 
-// Keep diagnostics on the same database session that failed installation. Never
-// log the tenant connection string: it contains database credentials.
-func installTenantOrderAutomation(ctx context.Context, pool *pgxpool.Pool, slug string) error {
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Release()
-	if _, err := conn.Exec(ctx, cloudzatca.OrderAutomationDDL); err != nil {
-		var database, role, sessionRole, server, searchPath, table, owner string
-		var canReference, canTrigger bool
-		diagnosticErr := conn.QueryRow(ctx, `SELECT current_database(), current_user::text, session_user::text,
- COALESCE(inet_server_addr()::text,'local-socket'), current_setting('search_path'),
- COALESCE(to_regclass('sales_orders_v2')::text,'missing'),
- COALESCE((SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid=to_regclass('sales_orders_v2')),'missing'),
- COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'REFERENCES'),false),
- COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'TRIGGER'),false)`).Scan(
-			&database, &role, &sessionRole, &server, &searchPath, &table, &owner, &canReference, &canTrigger)
-		if diagnosticErr != nil {
-			log.Printf("[ZATCA ORDER] Connection diagnostic for %s failed: %v", slug, diagnosticErr)
-		} else {
-			log.Printf("[ZATCA ORDER] Connection diagnostic tenant=%q host=%q database=%q role=%q session_role=%q server=%q search_path=%q table=%q owner=%q references=%t trigger=%t",
-				slug, pool.Config().ConnConfig.Host, database, role, sessionRole, server, searchPath, table, owner, canReference, canTrigger)
-		}
-		return err
-	}
-	return nil
-}
-
 func main() {
 	env := "development"
 	if len(os.Args) > 1 {
@@ -435,7 +407,6 @@ func main() {
 	// Orders and lines can arrive through separate sync events. Persist a job on
 	// each committed change and submit once the complete order validates.
 	go func() {
-		ready := make(map[string]bool)
 		submit := cloudzatca.NewService(masterRepo, &usecase.ZatcaConfig{
 			Env: cfg.ZatcaEnv, BaseURL: cfg.ZatcaBaseURL, OrgVATID: cfg.ZatcaOrgVATID,
 		})
@@ -452,13 +423,6 @@ func main() {
 				if err != nil {
 					log.Printf("[ZATCA ORDER] Open tenant %s failed: %v", tenant.Slug, err)
 					continue
-				}
-				if !ready[tenant.Slug] {
-					if err := installTenantOrderAutomation(cycleCtx, pool, tenant.Slug); err != nil {
-						log.Printf("[ZATCA ORDER] Install jobs for %s failed: %v", tenant.Slug, err)
-						continue
-					}
-					ready[tenant.Slug] = true
 				}
 				zatcaStart := time.Now()
 				zatcaCtx := telemetry.WithTenantSlug(cycleCtx, tenant.Slug)
