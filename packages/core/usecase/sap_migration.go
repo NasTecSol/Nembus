@@ -711,9 +711,17 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				}
 			}
 
+			sapVatGroup := ""
+			if p.Metadata != nil {
+				if v, ok := p.Metadata["sap_vat_group"].(string); ok {
+					sapVatGroup = strings.TrimSpace(v)
+				}
+			}
+			taxCategoryID := resolveProductTaxCategoryID(ctx, tx, sapVatGroup)
+
 			q := `
 			INSERT INTO products (
-				organization_id, sku, name, description, category_id, brand_id, base_uom_id, product_type,
+				organization_id, sku, name, description, category_id, brand_id, base_uom_id, tax_category_id, product_type,
 				is_serialized, is_batch_managed, is_active, is_sellable, is_purchasable, track_inventory, cost_price, metadata
 			)
 			VALUES (
@@ -721,7 +729,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				(SELECT id FROM product_categories WHERE code = $5),
 				(SELECT id FROM brands WHERE code = $6),
 				(SELECT id FROM units_of_measure WHERE code = $7 LIMIT 1),
-				$8, $9, $10, $11, $12, $13, $14, $15, $16
+				$8, $9, $10, $11, $12, $13, $14, $15, $16, $17
 			)
 			ON CONFLICT(organization_id, sku) DO UPDATE SET
 				name = excluded.name,
@@ -729,6 +737,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				category_id = excluded.category_id,
 				brand_id = excluded.brand_id,
 				base_uom_id = excluded.base_uom_id,
+				tax_category_id = COALESCE(products.tax_category_id, excluded.tax_category_id),
 				product_type = excluded.product_type,
 				is_active = excluded.is_active,
 				is_sellable = excluded.is_sellable,
@@ -736,7 +745,7 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 				cost_price = excluded.cost_price,
 				metadata = excluded.metadata;
 			`
-			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, costToApply, metaBytes); err != nil {
+			if err := execWithSavepoint(ctx, tx, q, payload.OrganizationID, p.SKU, p.Name, p.Description, p.CategoryCode, p.BrandCode, p.BaseUOMCode, taxCategoryID, p.ProductType, p.IsSerialized, p.IsBatchManaged, p.IsActive, p.IsSellable, p.IsPurchasable, p.TrackInventory, costToApply, metaBytes); err != nil {
 				failed++
 				errs = append(errs, fmt.Sprintf("product %s error: %v", p.SKU, err))
 			} else {
@@ -2044,4 +2053,39 @@ func (uc *SAPMigrationUseCase) IngestBatch(ctx context.Context, orgID int, paylo
 		RecordsSkipped: skipped,
 		Errors:         errs,
 	}, nil
+}
+
+func isZeroOrExemptSAPVatGroup(vatGroup string) bool {
+	code := strings.ToUpper(strings.TrimSpace(vatGroup))
+	switch code {
+	case "O0", "S0", "X0", "OUT0", "ZERO", "EXEMPT", "E", "EX":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveProductTaxCategoryID(ctx context.Context, tx pgx.Tx, sapVatGroup string) *int32 {
+	var id int32
+	if sapVatGroup = strings.TrimSpace(sapVatGroup); sapVatGroup != "" {
+		if err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+			return r.Scan(&id)
+		}, `SELECT id FROM tax_categories WHERE is_active = true AND (LOWER(code) = LOWER($1) OR LOWER(COALESCE(metadata->>'sap_vat_group', '')) = LOWER($1)) ORDER BY id ASC LIMIT 1`, sapVatGroup); err == nil && id > 0 {
+			return &id
+		}
+	}
+	if isZeroOrExemptSAPVatGroup(sapVatGroup) {
+		if err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+			return r.Scan(&id)
+		}, `SELECT id FROM tax_categories WHERE is_active = true AND tax_rate = 0 ORDER BY id ASC LIMIT 1`); err == nil && id > 0 {
+			return &id
+		}
+		return nil
+	}
+	if err := queryRowWithSavepoint(ctx, tx, func(r pgx.Row) error {
+		return r.Scan(&id)
+	}, `SELECT id FROM tax_categories WHERE is_active = true AND tax_rate > 0 ORDER BY (tax_rate = 15.00) DESC, id ASC LIMIT 1`); err == nil && id > 0 {
+		return &id
+	}
+	return nil
 }

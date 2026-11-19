@@ -99,12 +99,13 @@ if (Get-Command atlas -ErrorAction SilentlyContinue) {
     Write-Host "Recalculating Atlas migration hash sums..." -ForegroundColor Yellow
     Push-Location "$CoreDir"
     atlas migrate hash --env local | Out-Null
+    atlas migrate hash --env pos | Out-Null
     Pop-Location
 } else {
     Write-Host "atlas command not found in PATH, skipping atlas migrate hash execution." -ForegroundColor Gray
 }
 
-# Ensure atlas.sum is normalized to Unix LF and copied to apps/cloud-server/migrations
+# Ensure atlas.sum files are normalized to Unix LF and synced
 if (Test-Path "$CoreMigrations\atlas.sum") {
     $sumContent = [System.IO.File]::ReadAllText("$CoreMigrations\atlas.sum")
     if ($sumContent.Contains("`r")) {
@@ -112,6 +113,13 @@ if (Test-Path "$CoreMigrations\atlas.sum") {
         [System.IO.File]::WriteAllText("$CoreMigrations\atlas.sum", $sumContent, $Utf8NoBom)
     }
     Copy-Item -Path "$CoreMigrations\atlas.sum" -Destination "$ServerMigrations\atlas.sum" -Force
+}
+if (Test-Path "$ClientMigrations\atlas.sum") {
+    $posSumContent = [System.IO.File]::ReadAllText("$ClientMigrations\atlas.sum")
+    if ($posSumContent.Contains("`r")) {
+        $posSumContent = $posSumContent -replace "`r`n", "`n" -replace "`r", "`n"
+        [System.IO.File]::WriteAllText("$ClientMigrations\atlas.sum", $posSumContent, $Utf8NoBom)
+    }
 }
 
 # 5. Run sqlc generate in packages/core and apps/cloud-server if sqlc is installed

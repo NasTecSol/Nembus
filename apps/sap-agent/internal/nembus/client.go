@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NasTecSol/nembus-sap-agent/config"
@@ -25,6 +27,7 @@ type POSTransaction struct {
 	CashierID         int32           `json:"cashier_id"`
 	CashierSessionID  int32           `json:"cashier_session_id"`
 	CustomerID        *int32          `json:"customer_id"`
+	CustomerSAPCode   string          `json:"customer_sap_code,omitempty"`
 	TransactionNumber string          `json:"transaction_number"`
 	TransactionDate   time.Time       `json:"transaction_date"`
 	Subtotal          float64         `json:"subtotal"`
@@ -37,19 +40,24 @@ type POSTransaction struct {
 }
 
 type POSTransactionLine struct {
-	ID             int64   `json:"id"`
-	TransactionID  int64   `json:"transaction_id"`
-	ProductID      int32   `json:"product_id"`
-	ProductSKU     string  `json:"product_sku"`
-	ProductName    string  `json:"product_name"`
-	Quantity       float64 `json:"quantity"`
-	UoMID          *int32  `json:"uom_id"`
-	UnitPrice      float64 `json:"unit_price"`
-	DiscountAmount float64 `json:"discount_amount"`
-	TaxAmount      float64 `json:"tax_amount"`
-	Subtotal       float64 `json:"subtotal"`
-	LineTotal      float64 `json:"line_total"`
-	LineNumber     int     `json:"line_number"`
+	ID                  int64   `json:"id"`
+	TransactionID       int64   `json:"transaction_id"`
+	ProductID           int32   `json:"product_id"`
+	ProductSKU          string  `json:"product_sku"`
+	ProductName         string  `json:"product_name"`
+	Quantity            float64 `json:"quantity"`
+	UoMID               *int32  `json:"uom_id"`
+	UnitPrice           float64 `json:"unit_price"`
+	DiscountAmount      float64 `json:"discount_amount"`
+	TaxAmount           float64 `json:"tax_amount"`
+	Subtotal            float64 `json:"subtotal"`
+	LineTotal           float64 `json:"line_total"`
+	LineNumber          int     `json:"line_number"`
+	SAPUoMEntry         *int    `json:"sap_uom_entry,omitempty"`
+	SAPUgpEntry         *int    `json:"sap_ugp_entry,omitempty"`
+	UoMConversionFactor float64 `json:"uom_conversion_factor,omitempty"`
+	IsBaseUoM           bool    `json:"is_base_uom,omitempty"`
+	SAPTaxCode          string  `json:"sap_tax_code,omitempty"`
 }
 
 type POSPayment struct {
@@ -67,7 +75,9 @@ type SalesReturn struct {
 	StoreID               int32           `json:"store_id"`
 	CashierID             *int32          `json:"cashier_id"`
 	CustomerID            *int32          `json:"customer_id"`
+	CustomerSAPCode       string          `json:"customer_sap_code,omitempty"`
 	OriginalTransactionID *int32          `json:"original_transaction_id"`
+	OriginalSAPDocEntry   int             `json:"original_sap_doc_entry,omitempty"`
 	ReturnDate            time.Time       `json:"return_date"`
 	ReturnReason          *string         `json:"return_reason"`
 	Status                string          `json:"status"`
@@ -78,17 +88,22 @@ type SalesReturn struct {
 }
 
 type SalesReturnLine struct {
-	ID             int64   `json:"id"`
-	ReturnID       int64   `json:"return_id"`
-	ProductID      int32   `json:"product_id"`
-	ProductSKU     string  `json:"product_sku"`
-	ProductName    string  `json:"product_name"`
-	OriginalLineID *int32  `json:"original_line_id"`
-	Quantity       float64 `json:"quantity"`
-	UnitPrice      float64 `json:"unit_price"`
-	RefundAmount   float64 `json:"refund_amount"`
-	ReturnToStock  bool    `json:"return_to_stock"`
-	LineNumber     int     `json:"line_number"`
+	ID                  int64   `json:"id"`
+	ReturnID            int64   `json:"return_id"`
+	ProductID           int32   `json:"product_id"`
+	ProductSKU          string  `json:"product_sku"`
+	ProductName         string  `json:"product_name"`
+	OriginalLineID      *int32  `json:"original_line_id"`
+	Quantity            float64 `json:"quantity"`
+	UnitPrice           float64 `json:"unit_price"`
+	RefundAmount        float64 `json:"refund_amount"`
+	ReturnToStock       bool    `json:"return_to_stock"`
+	LineNumber          int     `json:"line_number"`
+	SAPUoMEntry         *int    `json:"sap_uom_entry,omitempty"`
+	SAPUgpEntry         *int    `json:"sap_ugp_entry,omitempty"`
+	UoMConversionFactor float64 `json:"uom_conversion_factor,omitempty"`
+	IsBaseUoM           bool    `json:"is_base_uom,omitempty"`
+	SAPTaxCode          string  `json:"sap_tax_code,omitempty"`
 }
 
 type ShortageItem struct {
@@ -100,25 +115,32 @@ type ShortageItem struct {
 }
 
 type SalesOrderV2 struct {
-	ID            uuid.UUID
-	OrderNumber   string
-	StoreID       int32
-	CustomerID    *int32
-	OrderDate     time.Time
-	TotalAmount   float64
-	PaymentStatus string
-	Metadata      json.RawMessage
+	ID              uuid.UUID
+	OrderNumber     string
+	StoreID         int32
+	CustomerID      *int32
+	CustomerSAPCode string
+	OrderDate       time.Time
+	TotalAmount     float64
+	PaymentStatus   string
+	Metadata        json.RawMessage
 }
 
 type SalesOrderLineV2 struct {
-	ProductID   int32
-	ProductSKU  string
-	ProductName string
-	Quantity    float64
-	UnitPrice   float64
-	TaxAmount   float64
-	LineTotal   float64
-	LineNumber  int
+	ProductID           int32
+	ProductSKU          string
+	ProductName         string
+	Quantity            float64
+	UoMID               *int32
+	UnitPrice           float64
+	TaxAmount           float64
+	LineTotal           float64
+	LineNumber          int
+	SAPUoMEntry         *int
+	SAPUgpEntry         *int
+	UoMConversionFactor float64
+	IsBaseUoM           bool
+	SAPTaxCode          string
 }
 
 func NewClient(ctx context.Context, cfg *config.Config) (*Client, error) {
@@ -265,48 +287,54 @@ func (c *Client) UpsertProductPrice(ctx context.Context, productID, priceListID 
 	return err
 }
 
+func parseOptionalIntString(raw string) *int {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
 // Transaction Query & Posting State
 
 func (c *Client) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]POSTransaction, error) {
 	query := `
-		SELECT id, store_id, cashier_id, cashier_session_id, customer_id,
-		       transaction_number, transaction_date, subtotal, discount_amount,
-		       tax_amount, total_amount, amount_paid, status, metadata
-		FROM pos_transactions
-		WHERE status = 'completed'
-		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
-		  AND (metadata->>'sap_sync_state' IS NULL OR metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload'))
-		ORDER BY id ASC
+		SELECT t.id, t.store_id, t.cashier_id, t.cashier_session_id, t.customer_id,
+		       COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
+		       t.transaction_number, t.transaction_date, t.subtotal, t.discount_amount,
+		       t.tax_amount, t.total_amount, t.amount_paid, t.status, t.metadata
+		FROM pos_transactions t
+		LEFT JOIN customers cust ON cust.id = t.customer_id
+		WHERE t.status = 'completed'
+		  AND t.transaction_number NOT LIKE 'SIM-POS-%'
+		  AND (t.metadata->>'sap_doc_num' IS NULL OR t.metadata->>'sap_doc_num' = '')
+		  AND (t.metadata->>'sap_sync_state' IS NULL OR t.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload', 'synced'))
+		ORDER BY t.id ASC
 		LIMIT $1
 	`
-	rows, err := c.pool.Query(ctx, query, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var list []POSTransaction
-	for rows.Next() {
-		var t POSTransaction
-		if err := rows.Scan(
-			&t.ID, &t.StoreID, &t.CashierID, &t.CashierSessionID, &t.CustomerID,
-			&t.TransactionNumber, &t.TransactionDate, &t.Subtotal, &t.DiscountAmount,
-			&t.TaxAmount, &t.TotalAmount, &t.AmountPaid, &t.Status, &t.Metadata,
-		); err != nil {
-			return nil, err
-		}
-		list = append(list, t)
-	}
-	return list, rows.Err()
+	return c.scanPOSTransactions(ctx, query, limit)
 }
 
 func (c *Client) FetchTransactionLines(ctx context.Context, transactionID int64) ([]POSTransactionLine, error) {
 	query := `
 		SELECT l.id, l.transaction_id, l.product_id, p.sku, p.name,
 		       l.quantity, l.uom_id, l.unit_price, l.discount_amount,
-		       l.tax_amount, l.subtotal, l.line_total, COALESCE(l.line_number, 0)
+		       l.tax_amount, l.subtotal, l.line_total, COALESCE(l.line_number, 0),
+		       COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+		       COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+		       COALESCE(puc.conversion_factor, 1)::float8 AS uom_conversion_factor,
+		       (l.uom_id IS NULL OR l.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+		       COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
 		FROM pos_transaction_lines l
 		JOIN products p ON p.id = l.product_id
+		LEFT JOIN units_of_measure u ON u.id = l.uom_id
+		LEFT JOIN units_of_measure bu ON bu.id = p.base_uom_id
+		LEFT JOIN product_uom_conversions puc ON puc.product_id = l.product_id AND puc.from_uom_id = l.uom_id AND puc.to_uom_id = p.base_uom_id
+		LEFT JOIN tax_categories tc ON tc.id = p.tax_category_id
 		WHERE l.transaction_id = $1
 		ORDER BY l.id ASC
 	`
@@ -319,13 +347,17 @@ func (c *Client) FetchTransactionLines(ctx context.Context, transactionID int64)
 	var lines []POSTransactionLine
 	for rows.Next() {
 		var l POSTransactionLine
+		var sapUoMEntryStr, sapUgpEntryStr string
 		if err := rows.Scan(
 			&l.ID, &l.TransactionID, &l.ProductID, &l.ProductSKU, &l.ProductName,
 			&l.Quantity, &l.UoMID, &l.UnitPrice, &l.DiscountAmount,
 			&l.TaxAmount, &l.Subtotal, &l.LineTotal, &l.LineNumber,
+			&sapUoMEntryStr, &sapUgpEntryStr, &l.UoMConversionFactor, &l.IsBaseUoM, &l.SAPTaxCode,
 		); err != nil {
 			return nil, err
 		}
+		l.SAPUoMEntry = parseOptionalIntString(sapUoMEntryStr)
+		l.SAPUgpEntry = parseOptionalIntString(sapUgpEntryStr)
 		lines = append(lines, l)
 	}
 	return lines, rows.Err()
@@ -373,13 +405,17 @@ func (c *Client) MarkTransactionPostedToSAP(ctx context.Context, transactionID i
 
 func (c *Client) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]SalesReturn, error) {
 	query := `
-		SELECT id, return_number, store_id, cashier_id, customer_id,
-		       original_transaction_id, return_date, return_reason, status,
-		       subtotal, tax_amount, total_refund_amount, metadata
-		FROM sales_returns
-		WHERE status = 'completed'
-		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
-		ORDER BY id ASC
+		SELECT sr.id, sr.return_number, sr.store_id, sr.cashier_id, sr.customer_id,
+		       COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
+		       sr.original_transaction_id, COALESCE(NULLIF(pt.metadata->>'sap_doc_entry', ''), '0')::int AS original_sap_doc_entry,
+		       sr.return_date, sr.return_reason, sr.status,
+		       sr.subtotal, sr.tax_amount, sr.total_refund_amount, sr.metadata
+		FROM sales_returns sr
+		LEFT JOIN customers cust ON cust.id = sr.customer_id
+		LEFT JOIN pos_transactions pt ON pt.id = sr.original_transaction_id
+		WHERE sr.status = 'completed'
+		  AND (sr.metadata->>'sap_doc_num' IS NULL OR sr.metadata->>'sap_doc_num' = '')
+		ORDER BY sr.id ASC
 		LIMIT $1
 	`
 	rows, err := c.pool.Query(ctx, query, limit)
@@ -393,7 +429,8 @@ func (c *Client) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]Sa
 		var r SalesReturn
 		if err := rows.Scan(
 			&r.ID, &r.ReturnNumber, &r.StoreID, &r.CashierID, &r.CustomerID,
-			&r.OriginalTransactionID, &r.ReturnDate, &r.ReturnReason, &r.Status,
+			&r.CustomerSAPCode, &r.OriginalTransactionID, &r.OriginalSAPDocEntry,
+			&r.ReturnDate, &r.ReturnReason, &r.Status,
 			&r.Subtotal, &r.TaxAmount, &r.TotalRefundAmount, &r.Metadata,
 		); err != nil {
 			return nil, err
@@ -407,9 +444,19 @@ func (c *Client) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]S
 	query := `
 		SELECT l.id, l.return_id, l.product_id, p.sku, p.name,
 		       l.original_line_id, l.quantity, l.unit_price, l.refund_amount,
-		       l.return_to_stock, COALESCE(l.line_number, 0)
+		       l.return_to_stock, COALESCE(l.line_number, 0),
+		       COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+		       COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+		       COALESCE(puc.conversion_factor, 1)::float8 AS uom_conversion_factor,
+		       (ptl.uom_id IS NULL OR ptl.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+		       COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
 		FROM sales_return_lines l
 		JOIN products p ON p.id = l.product_id
+		LEFT JOIN pos_transaction_lines ptl ON ptl.id = l.original_line_id
+		LEFT JOIN units_of_measure u ON u.id = ptl.uom_id
+		LEFT JOIN units_of_measure bu ON bu.id = p.base_uom_id
+		LEFT JOIN product_uom_conversions puc ON puc.product_id = l.product_id AND puc.from_uom_id = ptl.uom_id AND puc.to_uom_id = p.base_uom_id
+		LEFT JOIN tax_categories tc ON tc.id = p.tax_category_id
 		WHERE l.return_id = $1
 		ORDER BY l.id ASC
 	`
@@ -422,13 +469,17 @@ func (c *Client) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]S
 	var lines []SalesReturnLine
 	for rows.Next() {
 		var l SalesReturnLine
+		var sapUoMEntryStr, sapUgpEntryStr string
 		if err := rows.Scan(
 			&l.ID, &l.ReturnID, &l.ProductID, &l.ProductSKU, &l.ProductName,
 			&l.OriginalLineID, &l.Quantity, &l.UnitPrice, &l.RefundAmount,
 			&l.ReturnToStock, &l.LineNumber,
+			&sapUoMEntryStr, &sapUgpEntryStr, &l.UoMConversionFactor, &l.IsBaseUoM, &l.SAPTaxCode,
 		); err != nil {
 			return nil, err
 		}
+		l.SAPUoMEntry = parseOptionalIntString(sapUoMEntryStr)
+		l.SAPUgpEntry = parseOptionalIntString(sapUgpEntryStr)
 		lines = append(lines, l)
 	}
 	return lines, rows.Err()
@@ -656,14 +707,16 @@ func (c *Client) SubmitPriceApprovalRequest(ctx context.Context, productID int32
 
 func (c *Client) FetchApprovedPendingPOSTransactions(ctx context.Context, limit int) ([]POSTransaction, error) {
 	query := `
-		SELECT id, store_id, cashier_id, cashier_session_id, customer_id,
-		       transaction_number, transaction_date, subtotal, discount_amount,
-		       tax_amount, total_amount, amount_paid, status, metadata
-		FROM pos_transactions
-		WHERE status = 'completed'
-		  AND metadata->>'sap_sync_state' = 'approved_pending_upload'
-		  AND (metadata->>'sap_doc_num' IS NULL OR metadata->>'sap_doc_num' = '')
-		ORDER BY id ASC
+		SELECT t.id, t.store_id, t.cashier_id, t.cashier_session_id, t.customer_id,
+		       COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
+		       t.transaction_number, t.transaction_date, t.subtotal, t.discount_amount,
+		       t.tax_amount, t.total_amount, t.amount_paid, t.status, t.metadata
+		FROM pos_transactions t
+		LEFT JOIN customers cust ON cust.id = t.customer_id
+		WHERE t.status = 'completed'
+		  AND t.metadata->>'sap_sync_state' = 'approved_pending_upload'
+		  AND (t.metadata->>'sap_doc_num' IS NULL OR t.metadata->>'sap_doc_num' = '')
+		ORDER BY t.id ASC
 		LIMIT $1
 	`
 	return c.scanPOSTransactions(ctx, query, limit)
@@ -680,7 +733,7 @@ func (c *Client) scanPOSTransactions(ctx context.Context, query string, limit in
 	for rows.Next() {
 		var t POSTransaction
 		if err := rows.Scan(
-			&t.ID, &t.StoreID, &t.CashierID, &t.CashierSessionID, &t.CustomerID,
+			&t.ID, &t.StoreID, &t.CashierID, &t.CashierSessionID, &t.CustomerID, &t.CustomerSAPCode,
 			&t.TransactionNumber, &t.TransactionDate, &t.Subtotal, &t.DiscountAmount,
 			&t.TaxAmount, &t.TotalAmount, &t.AmountPaid, &t.Status, &t.Metadata,
 		); err != nil {
@@ -694,12 +747,16 @@ func (c *Client) scanPOSTransactions(ctx context.Context, query string, limit in
 func (c *Client) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]SalesOrderV2, error) {
 	query := `
 		SELECT o.id, o.order_number, COALESCE(o.store_id, 0), o.customer_id,
+		       COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
 		       o.order_date, COALESCE(o.total_amount, 0), COALESCE(o.payment_status::text, ''),
 		       COALESCE(o.metadata, '{}'::jsonb)
 		FROM sales_orders_v2 o
+		LEFT JOIN customers cust ON cust.id = o.customer_id
 		WHERE o.organization_id = $1
+		  AND o.order_number NOT LIKE 'SO-SAP-%'
+		  AND LOWER(COALESCE(o.sales_channel, '')) <> 'pos'
 		  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
-		  AND (o.metadata->>'sap_sync_state' IS NULL OR o.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload'))
+		  AND (o.metadata->>'sap_sync_state' IS NULL OR o.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload', 'synced'))
 		  AND (
 		    o.fulfillment_status = 'fulfilled'
 		    OR o.order_status IN ('confirmed', 'fulfilled')
@@ -720,7 +777,7 @@ func (c *Client) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]S
 	for rows.Next() {
 		var o SalesOrderV2
 		var customerID *int32
-		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
+		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.CustomerSAPCode, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
 			return nil, err
 		}
 		o.CustomerID = customerID
@@ -732,9 +789,11 @@ func (c *Client) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]S
 func (c *Client) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit int) ([]SalesOrderV2, error) {
 	query := `
 		SELECT o.id, o.order_number, COALESCE(o.store_id, 0), o.customer_id,
+		       COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
 		       o.order_date, COALESCE(o.total_amount, 0), COALESCE(o.payment_status::text, ''),
 		       COALESCE(o.metadata, '{}'::jsonb)
 		FROM sales_orders_v2 o
+		LEFT JOIN customers cust ON cust.id = o.customer_id
 		WHERE o.organization_id = $1
 		  AND o.metadata->>'sap_sync_state' = 'approved_pending_upload'
 		  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
@@ -754,7 +813,7 @@ func (c *Client) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit in
 	for rows.Next() {
 		var o SalesOrderV2
 		var customerID *int32
-		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
+		if err := rows.Scan(&o.ID, &o.OrderNumber, &o.StoreID, &customerID, &o.CustomerSAPCode, &o.OrderDate, &o.TotalAmount, &o.PaymentStatus, &o.Metadata); err != nil {
 			return nil, err
 		}
 		o.CustomerID = customerID
@@ -766,10 +825,19 @@ func (c *Client) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limit in
 func (c *Client) FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UUID) ([]SalesOrderLineV2, error) {
 	query := `
 		SELECT l.product_id, COALESCE(p.sku, l.product_sku, ''), COALESCE(p.name, l.product_name, ''),
-		       l.quantity_ordered, l.unit_price, COALESCE(l.tax_amount, 0), COALESCE(l.line_total, 0),
-		       COALESCE(l.line_number, 0)
+		       l.quantity_ordered, l.uom_id, l.unit_price, COALESCE(l.tax_amount, 0), COALESCE(l.line_total, 0),
+		       COALESCE(l.line_number, 0),
+		       COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+		       COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+		       COALESCE(puc.conversion_factor, 1)::float8 AS uom_conversion_factor,
+		       (l.uom_id IS NULL OR l.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+		       COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
 		FROM sales_order_lines_v2 l
 		LEFT JOIN products p ON p.id = l.product_id
+		LEFT JOIN units_of_measure u ON u.id = l.uom_id
+		LEFT JOIN units_of_measure bu ON bu.id = p.base_uom_id
+		LEFT JOIN product_uom_conversions puc ON puc.product_id = l.product_id AND puc.from_uom_id = l.uom_id AND puc.to_uom_id = p.base_uom_id
+		LEFT JOIN tax_categories tc ON tc.id = COALESCE(l.tax_category_id, p.tax_category_id)
 		WHERE l.sales_order_id = $1
 		ORDER BY l.line_number, l.id
 	`
@@ -782,12 +850,16 @@ func (c *Client) FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UUID) 
 	var lines []SalesOrderLineV2
 	for rows.Next() {
 		var l SalesOrderLineV2
+		var sapUoMEntryStr, sapUgpEntryStr string
 		if err := rows.Scan(
 			&l.ProductID, &l.ProductSKU, &l.ProductName,
-			&l.Quantity, &l.UnitPrice, &l.TaxAmount, &l.LineTotal, &l.LineNumber,
+			&l.Quantity, &l.UoMID, &l.UnitPrice, &l.TaxAmount, &l.LineTotal, &l.LineNumber,
+			&sapUoMEntryStr, &sapUgpEntryStr, &l.UoMConversionFactor, &l.IsBaseUoM, &l.SAPTaxCode,
 		); err != nil {
 			return nil, err
 		}
+		l.SAPUoMEntry = parseOptionalIntString(sapUoMEntryStr)
+		l.SAPUgpEntry = parseOptionalIntString(sapUgpEntryStr)
 		lines = append(lines, l)
 	}
 	return lines, rows.Err()

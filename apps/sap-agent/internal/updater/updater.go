@@ -15,8 +15,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+var applyUpdateMu sync.Mutex
 
 // UpdateInfo contains update status and release details for SAP Agent
 type UpdateInfo struct {
@@ -78,14 +81,33 @@ func CheckForUpdate(currentVersion, cloudURL, clientKey string) (*UpdateInfo, er
 		info.DownloadURL = baseURL + info.DownloadURL
 	}
 
+	// Defense-in-depth: never report an older or equal version as an available update.
+	if info.HasUpdate && info.LatestVersion != "" && !IsVersionNewer(currentVersion, info.LatestVersion) {
+		info.HasUpdate = false
+	}
+
 	return &info, nil
 }
 
 // ApplyUpdate downloads the new release binary, validates SHA-256 strictly,
 // replaces the executable on disk, and handles process/service restart.
 func ApplyUpdate(downloadURL, expectedChecksum, clientKey string, isWindowsService bool, serviceName string) error {
+	return ApplyUpdateWithHook(downloadURL, expectedChecksum, clientKey, isWindowsService, serviceName, nil)
+}
+
+// ApplyUpdateWithHook downloads the new release binary, enforces SHA-256 verification,
+// swaps the executable, invokes onBeforeRestart (e.g. to close DB/HTTP listeners), and restarts.
+func ApplyUpdateWithHook(downloadURL, expectedChecksum, clientKey string, isWindowsService bool, serviceName string, onBeforeRestart func()) error {
+	if !applyUpdateMu.TryLock() {
+		return fmt.Errorf("an update is already in progress")
+	}
+	defer applyUpdateMu.Unlock()
+
 	if downloadURL == "" {
 		return fmt.Errorf("no valid download URL provided")
+	}
+	if strings.TrimSpace(expectedChecksum) == "" {
+		return fmt.Errorf("binary integrity violation: expected SHA-256 checksum is required")
 	}
 
 	req, err := http.NewRequest("GET", downloadURL, nil)
@@ -145,7 +167,7 @@ func ApplyUpdate(downloadURL, expectedChecksum, clientKey string, isWindowsServi
 
 	// STRICT SHA-256 CRYPTOGRAPHIC INTEGRITY CHECK
 	computedChecksum := hex.EncodeToString(hasher.Sum(nil))
-	if expectedChecksum != "" && !strings.EqualFold(expectedChecksum, computedChecksum) {
+	if !strings.EqualFold(strings.TrimSpace(expectedChecksum), computedChecksum) {
 		_ = os.Remove(newExePath)
 		return fmt.Errorf("binary integrity violation: SHA-256 mismatch (expected: %s, got: %s)", expectedChecksum, computedChecksum)
 	}
@@ -167,16 +189,23 @@ func ApplyUpdate(downloadURL, expectedChecksum, clientKey string, isWindowsServi
 
 	log.Println("[SAP-UPDATER] Update applied and checksum verified successfully!")
 
+	if onBeforeRestart != nil {
+		onBeforeRestart()
+	}
+
 	// Restart sequence based on execution environment
 	if isWindowsService && runtime.GOOS == "windows" {
 		if serviceName == "" {
 			serviceName = "NembusSAPMigrationAgent"
 		}
-		log.Printf("[SAP-UPDATER] Restarting Windows Service '%s'...", serviceName)
-		// Spawn detached helper to restart the Windows Service
-		restartCmd := exec.Command("cmd.exe", "/C", fmt.Sprintf("net stop %s && net start %s", serviceName, serviceName))
-		_ = restartCmd.Start()
-		time.Sleep(300 * time.Millisecond)
+		log.Printf("[SAP-UPDATER] Scheduling Windows Service '%s' restart after PID %d exits...", serviceName, os.Getpid())
+		psScript := fmt.Sprintf("Wait-Process -Id %d -Timeout 30 -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Start-Service -Name '%s'", os.Getpid(), strings.ReplaceAll(serviceName, "'", "''"))
+		restartCmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
+		if err := restartCmd.Start(); err != nil {
+			_ = os.Rename(oldExePath, exePath)
+			return fmt.Errorf("failed to schedule Windows Service restart: %w", err)
+		}
+		time.Sleep(250 * time.Millisecond)
 		os.Exit(0)
 		return nil
 	}

@@ -9,11 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy workspace configuration and module dependencies.
 COPY go.work go.work.sum* ./
 COPY packages/core/go.mod packages/core/go.sum* ./packages/core/
+COPY packages/sap/go.mod packages/sap/go.sum* ./packages/sap/
 COPY apps/cloud-server/go.mod apps/cloud-server/go.sum* ./apps/cloud-server/
 COPY apps/pos-client/go.mod apps/pos-client/go.sum* ./apps/pos-client/
+COPY apps/sap-agent/go.mod apps/sap-agent/go.sum* ./apps/sap-agent/
+COPY apps/biometric-agent/go.mod apps/biometric-agent/go.sum* ./apps/biometric-agent/
 
 # Download dependencies.
 RUN cd packages/core && go mod download || true
+RUN cd packages/sap && go mod download || true
 RUN cd apps/cloud-server && go mod download || true
 
 # Copy the full monorepo.

@@ -13,8 +13,10 @@ func RegisterOrderRoutes(r *gin.RouterGroup, h *handler.OrderHandler) {
 		// Order header operations
 		orders.GET("", h.ListOrders)
 		orders.POST("", h.CreateOrder)
+		orders.GET("/unposted-sap", h.ListUnpostedSalesOrdersForSAP)
 		orders.GET("/by-number/:order_number", h.GetOrderByNumber)
 		orders.GET("/:id", h.GetOrder)
+		orders.POST("/:id/sap-sync", h.MarkSalesOrderSAPSynced)
 		orders.PUT("/:id", h.UpdateOrder)
 		orders.PUT("/:id/status", h.UpdateOrderStatus)
 		orders.PUT("/:id/payment-status", h.UpdateOrderPaymentStatus)

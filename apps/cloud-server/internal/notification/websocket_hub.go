@@ -1,12 +1,14 @@
 package notification
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -58,6 +60,7 @@ func (h *WebSocketHub) Run(stopCh <-chan struct{}) {
 			h.clients = make(map[*Client]bool)
 			h.orgClients = make(map[int32]map[*Client]bool)
 			h.mu.Unlock()
+			telemetry.RecordWSClients(context.Background(), 0)
 			return
 
 		case client := <-h.register:
@@ -67,7 +70,9 @@ func (h *WebSocketHub) Run(stopCh <-chan struct{}) {
 				h.orgClients[client.OrgID] = make(map[*Client]bool)
 			}
 			h.orgClients[client.OrgID][client] = true
+			clientCount := int64(len(h.clients))
 			h.mu.Unlock()
+			telemetry.RecordWSClients(context.Background(), clientCount)
 			log.Printf("[WebSocketHub] Client registered: OrgID=%d UserID=%d", client.OrgID, client.UserID)
 
 		case client := <-h.unregister:
@@ -83,7 +88,9 @@ func (h *WebSocketHub) Run(stopCh <-chan struct{}) {
 				close(client.Send)
 				_ = client.Conn.Close()
 			}
+			clientCount := int64(len(h.clients))
 			h.mu.Unlock()
+			telemetry.RecordWSClients(context.Background(), clientCount)
 			log.Printf("[WebSocketHub] Client disconnected: OrgID=%d UserID=%d", client.OrgID, client.UserID)
 
 		case message := <-h.broadcast:

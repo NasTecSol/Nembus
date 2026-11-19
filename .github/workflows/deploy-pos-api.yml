@@ -48,6 +48,20 @@ jobs:
             ghcr.io/${{ env.OWNER_LC }}/pos-api:dev
             ghcr.io/${{ env.OWNER_LC }}/pos-api:dev-${{ github.sha }}
 
+      - name: Sync Grafana Alloy configs to EC2
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_ec2
+          chmod 600 ~/.ssh/id_ec2
+          tar -czf - -C deploy/alloy . | ssh -i ~/.ssh/id_ec2 -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \
+            "sudo mkdir -p /opt/apps/alloy && sudo chown -R \$(id -un):\$(id -gn) /opt/apps/alloy && tar -xzf - -C /opt/apps/alloy"
+          rm -f ~/.ssh/id_ec2
+
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -57,11 +71,24 @@ jobs:
           port: 22
           script: |
             set -e
+
+            if [ -f /opt/apps/alloy/docker-compose.yml ] && [ -f /opt/apps/alloy/.env ]; then
+              cd /opt/apps/alloy
+              docker compose pull || true
+              docker compose up -d
+            else
+              echo "[WARN] Skipping Alloy startup: /opt/apps/alloy/.env is not configured yet"
+              docker network create nembus-observability-net || true
+            fi
+
             cd /opt/apps/pos
+            export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}"
+            export OTEL_SERVICE_NAME="nembus-cloud-server"
 
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
 
             docker compose pull postgres pos-api
             docker compose up -d postgres
             docker compose up -d --no-deps pos-api
+            docker network connect nembus-observability-net "$(docker compose ps -q pos-api)" 2>/dev/null || true
             docker image prune -f

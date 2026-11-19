@@ -372,6 +372,7 @@ SELECT
     t.id, t.transaction_number, t.transaction_date, t.status,
     t.subtotal, t.tax_amount, t.discount_amount, t.total_amount,
     t.total_cost,
+    t.customer_id,
     cashier.first_name || ' ' || cashier.last_name AS cashier_name,
     term.terminal_name,
     sess.session_number,
@@ -379,14 +380,22 @@ SELECT
     tl.id AS line_id,
     tl.line_number,
     tl.product_id,
+    tl.uom_id,
     tl.quantity,
     tl.unit_price,
     tl.discount_amount,
+    COALESCE(tl.tax_amount, 0)::numeric AS line_tax_amount,
+    COALESCE(tl.subtotal, 0)::numeric AS line_subtotal,
     tl.line_total,
     COALESCE(p.sku, tl.metadata->>'sku', '') AS sku,
     COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', '') AS product_name,
     COALESCE(pb.barcode, '') AS scanned_barcode,
-    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
+    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity,
+    COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+    COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+    COALESCE(puc.conversion_factor, 1)::numeric AS uom_conversion_factor,
+    (tl.uom_id IS NULL OR tl.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+    COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
 FROM pos_transactions t
 JOIN cashiers          cshr  ON t.cashier_id         = cshr.id
 JOIN users             cashier ON cshr.user_id        = cashier.id
@@ -395,6 +404,10 @@ JOIN cashier_sessions  sess  ON t.cashier_session_id  = sess.id
 LEFT JOIN customers    cust  ON t.customer_id         = cust.id
 LEFT JOIN pos_transaction_lines tl   ON tl.transaction_id = t.id
 LEFT JOIN products          p     ON tl.product_id         = p.id
+LEFT JOIN units_of_measure  u     ON u.id = tl.uom_id
+LEFT JOIN units_of_measure  bu    ON bu.id = p.base_uom_id
+LEFT JOIN product_uom_conversions puc ON puc.product_id = tl.product_id AND puc.from_uom_id = tl.uom_id AND puc.to_uom_id = p.base_uom_id
+LEFT JOIN tax_categories    tc    ON tc.id = p.tax_category_id
 LEFT JOIN product_barcodes pb 
     ON pb.product_id = p.id 
    AND pb.is_primary = true
@@ -410,30 +423,39 @@ ORDER BY tl.line_number
 `
 
 type GetPosTransactionFullRow struct {
-	ID                int32            `json:"id"`
-	TransactionNumber string           `json:"transaction_number"`
-	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
-	Status            pgtype.Text      `json:"status"`
-	Subtotal          pgtype.Numeric   `json:"subtotal"`
-	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
-	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
-	TotalAmount       pgtype.Numeric   `json:"total_amount"`
-	TotalCost         pgtype.Numeric   `json:"total_cost"`
-	CashierName       interface{}      `json:"cashier_name"`
-	TerminalName      pgtype.Text      `json:"terminal_name"`
-	SessionNumber     string           `json:"session_number"`
-	CustomerName      pgtype.Text      `json:"customer_name"`
-	LineID            pgtype.Int4      `json:"line_id"`
-	LineNumber        pgtype.Int4      `json:"line_number"`
-	ProductID         pgtype.Int4      `json:"product_id"`
-	Quantity          pgtype.Numeric   `json:"quantity"`
-	UnitPrice         pgtype.Numeric   `json:"unit_price"`
-	DiscountAmount_2  pgtype.Numeric   `json:"discount_amount_2"`
-	LineTotal         pgtype.Numeric   `json:"line_total"`
-	Sku               string           `json:"sku"`
-	ProductName       string           `json:"product_name"`
-	ScannedBarcode    string           `json:"scanned_barcode"`
-	ReturnedQuantity  pgtype.Numeric   `json:"returned_quantity"`
+	ID                  int32            `json:"id"`
+	TransactionNumber   string           `json:"transaction_number"`
+	TransactionDate     pgtype.Timestamp `json:"transaction_date"`
+	Status              pgtype.Text      `json:"status"`
+	Subtotal            pgtype.Numeric   `json:"subtotal"`
+	TaxAmount           pgtype.Numeric   `json:"tax_amount"`
+	DiscountAmount      pgtype.Numeric   `json:"discount_amount"`
+	TotalAmount         pgtype.Numeric   `json:"total_amount"`
+	TotalCost           pgtype.Numeric   `json:"total_cost"`
+	CustomerID          pgtype.Int4      `json:"customer_id"`
+	CashierName         interface{}      `json:"cashier_name"`
+	TerminalName        pgtype.Text      `json:"terminal_name"`
+	SessionNumber       string           `json:"session_number"`
+	CustomerName        pgtype.Text      `json:"customer_name"`
+	LineID              pgtype.Int4      `json:"line_id"`
+	LineNumber          pgtype.Int4      `json:"line_number"`
+	ProductID           pgtype.Int4      `json:"product_id"`
+	UomID               pgtype.Int4      `json:"uom_id"`
+	Quantity            pgtype.Numeric   `json:"quantity"`
+	UnitPrice           pgtype.Numeric   `json:"unit_price"`
+	DiscountAmount_2    pgtype.Numeric   `json:"discount_amount_2"`
+	LineTaxAmount       pgtype.Numeric   `json:"line_tax_amount"`
+	LineSubtotal        pgtype.Numeric   `json:"line_subtotal"`
+	LineTotal           pgtype.Numeric   `json:"line_total"`
+	Sku                 string           `json:"sku"`
+	ProductName         string           `json:"product_name"`
+	ScannedBarcode      string           `json:"scanned_barcode"`
+	ReturnedQuantity    pgtype.Numeric   `json:"returned_quantity"`
+	SapUomEntry         string           `json:"sap_uom_entry"`
+	SapUgpEntry         string           `json:"sap_ugp_entry"`
+	UomConversionFactor pgtype.Numeric   `json:"uom_conversion_factor"`
+	IsBaseUom           bool             `json:"is_base_uom"`
+	SapTaxCode          string           `json:"sap_tax_code"`
 }
 
 func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPosTransactionFullRow, error) {
@@ -455,6 +477,7 @@ func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPos
 			&i.DiscountAmount,
 			&i.TotalAmount,
 			&i.TotalCost,
+			&i.CustomerID,
 			&i.CashierName,
 			&i.TerminalName,
 			&i.SessionNumber,
@@ -462,14 +485,97 @@ func (q *Queries) GetPosTransactionFull(ctx context.Context, id int32) ([]GetPos
 			&i.LineID,
 			&i.LineNumber,
 			&i.ProductID,
+			&i.UomID,
 			&i.Quantity,
 			&i.UnitPrice,
 			&i.DiscountAmount_2,
+			&i.LineTaxAmount,
+			&i.LineSubtotal,
 			&i.LineTotal,
 			&i.Sku,
 			&i.ProductName,
 			&i.ScannedBarcode,
 			&i.ReturnedQuantity,
+			&i.SapUomEntry,
+			&i.SapUgpEntry,
+			&i.UomConversionFactor,
+			&i.IsBaseUom,
+			&i.SapTaxCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listApprovedPendingPosTransactionsForSAP = `-- name: ListApprovedPendingPosTransactionsForSAP :many
+SELECT 
+    t.id, t.store_id, t.cashier_id, t.cashier_session_id, t.customer_id,
+    t.transaction_number, t.transaction_date, t.subtotal, t.discount_amount,
+    t.tax_amount, t.total_amount, t.amount_paid, t.status, t.metadata,
+    COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM pos_transactions t
+LEFT JOIN customers cust ON t.customer_id = cust.id
+WHERE t.store_id = $1
+  AND t.status = 'completed'
+  AND t.metadata->>'sap_sync_state' = 'approved_pending_upload'
+  AND (t.metadata->>'sap_doc_num' IS NULL OR t.metadata->>'sap_doc_num' = '')
+ORDER BY t.id ASC
+LIMIT $2
+`
+
+type ListApprovedPendingPosTransactionsForSAPParams struct {
+	StoreID int32 `json:"store_id"`
+	Limit   int32 `json:"limit"`
+}
+
+type ListApprovedPendingPosTransactionsForSAPRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	Status            pgtype.Text      `json:"status"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CustomerSapCode   string           `json:"customer_sap_code"`
+}
+
+func (q *Queries) ListApprovedPendingPosTransactionsForSAP(ctx context.Context, arg ListApprovedPendingPosTransactionsForSAPParams) ([]ListApprovedPendingPosTransactionsForSAPRow, error) {
+	rows, err := q.db.Query(ctx, listApprovedPendingPosTransactionsForSAP, arg.StoreID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListApprovedPendingPosTransactionsForSAPRow
+	for rows.Next() {
+		var i ListApprovedPendingPosTransactionsForSAPRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.AmountPaid,
+			&i.Status,
+			&i.Metadata,
+			&i.CustomerSapCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1083,10 +1189,21 @@ func (q *Queries) ListPosTransactionsByTerminalID(ctx context.Context, arg ListP
 const listTodaysPosTransactions = `-- name: ListTodaysPosTransactions :many
 SELECT 
     t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    COALESCE(cust.name, COALESCE(t.metadata->>'customer_name', ''))::text AS customer_name,
+    COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
     t.transaction_number,
     t.transaction_date,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
     t.total_amount,
+    t.amount_paid,
     t.status,
+    t.metadata,
     COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
     COALESCE(term.terminal_name, '') AS terminal_name,
     COALESCE(COUNT(tl.id), 0) AS items_count,
@@ -1095,9 +1212,10 @@ FROM pos_transactions t
 LEFT JOIN cashiers cshr ON t.cashier_id = cshr.id
 LEFT JOIN users cashier ON cshr.user_id = cashier.id
 LEFT JOIN pos_terminals term ON t.pos_terminal_id = term.id
+LEFT JOIN customers cust ON t.customer_id = cust.id
 LEFT JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
 WHERE t.store_id = $1
-GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name
+GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name, cust.name, cust.customer_code, cust.metadata
 ORDER BY t.transaction_date DESC, t.id DESC
 LIMIT $2 OFFSET $3
 `
@@ -1110,10 +1228,21 @@ type ListTodaysPosTransactionsParams struct {
 
 type ListTodaysPosTransactionsRow struct {
 	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	CustomerName      string           `json:"customer_name"`
+	CustomerSapCode   string           `json:"customer_sap_code"`
 	TransactionNumber string           `json:"transaction_number"`
 	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
 	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
 	Status            pgtype.Text      `json:"status"`
+	Metadata          json.RawMessage  `json:"metadata"`
 	CashierName       interface{}      `json:"cashier_name"`
 	TerminalName      string           `json:"terminal_name"`
 	ItemsCount        interface{}      `json:"items_count"`
@@ -1131,10 +1260,21 @@ func (q *Queries) ListTodaysPosTransactions(ctx context.Context, arg ListTodaysP
 		var i ListTodaysPosTransactionsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.CustomerSapCode,
 			&i.TransactionNumber,
 			&i.TransactionDate,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
 			&i.TotalAmount,
+			&i.AmountPaid,
 			&i.Status,
+			&i.Metadata,
 			&i.CashierName,
 			&i.TerminalName,
 			&i.ItemsCount,
@@ -1148,6 +1288,108 @@ func (q *Queries) ListTodaysPosTransactions(ctx context.Context, arg ListTodaysP
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUnpostedPosTransactionsForSAP = `-- name: ListUnpostedPosTransactionsForSAP :many
+SELECT 
+    t.id, t.store_id, t.cashier_id, t.cashier_session_id, t.customer_id,
+    t.transaction_number, t.transaction_date, t.subtotal, t.discount_amount,
+    t.tax_amount, t.total_amount, t.amount_paid, t.status, t.metadata,
+    COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM pos_transactions t
+LEFT JOIN customers cust ON t.customer_id = cust.id
+WHERE t.store_id = $1
+  AND t.status = 'completed'
+  AND (t.metadata->>'sap_doc_num' IS NULL OR t.metadata->>'sap_doc_num' = '')
+  AND (t.metadata->>'sap_sync_state' IS NULL OR t.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload', 'synced'))
+  AND t.transaction_number NOT LIKE 'SIM-POS-%'
+ORDER BY t.id ASC
+LIMIT $2
+`
+
+type ListUnpostedPosTransactionsForSAPParams struct {
+	StoreID int32 `json:"store_id"`
+	Limit   int32 `json:"limit"`
+}
+
+type ListUnpostedPosTransactionsForSAPRow struct {
+	ID                int32            `json:"id"`
+	StoreID           int32            `json:"store_id"`
+	CashierID         int32            `json:"cashier_id"`
+	CashierSessionID  int32            `json:"cashier_session_id"`
+	CustomerID        pgtype.Int4      `json:"customer_id"`
+	TransactionNumber string           `json:"transaction_number"`
+	TransactionDate   pgtype.Timestamp `json:"transaction_date"`
+	Subtotal          pgtype.Numeric   `json:"subtotal"`
+	DiscountAmount    pgtype.Numeric   `json:"discount_amount"`
+	TaxAmount         pgtype.Numeric   `json:"tax_amount"`
+	TotalAmount       pgtype.Numeric   `json:"total_amount"`
+	AmountPaid        pgtype.Numeric   `json:"amount_paid"`
+	Status            pgtype.Text      `json:"status"`
+	Metadata          json.RawMessage  `json:"metadata"`
+	CustomerSapCode   string           `json:"customer_sap_code"`
+}
+
+func (q *Queries) ListUnpostedPosTransactionsForSAP(ctx context.Context, arg ListUnpostedPosTransactionsForSAPParams) ([]ListUnpostedPosTransactionsForSAPRow, error) {
+	rows, err := q.db.Query(ctx, listUnpostedPosTransactionsForSAP, arg.StoreID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnpostedPosTransactionsForSAPRow
+	for rows.Next() {
+		var i ListUnpostedPosTransactionsForSAPRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoreID,
+			&i.CashierID,
+			&i.CashierSessionID,
+			&i.CustomerID,
+			&i.TransactionNumber,
+			&i.TransactionDate,
+			&i.Subtotal,
+			&i.DiscountAmount,
+			&i.TaxAmount,
+			&i.TotalAmount,
+			&i.AmountPaid,
+			&i.Status,
+			&i.Metadata,
+			&i.CustomerSapCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markPosTransactionSAPSynced = `-- name: MarkPosTransactionSAPSynced :one
+UPDATE pos_transactions
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, transaction_number, metadata
+`
+
+type MarkPosTransactionSAPSyncedParams struct {
+	ID      int32           `json:"id"`
+	Column2 json.RawMessage `json:"column_2"`
+}
+
+type MarkPosTransactionSAPSyncedRow struct {
+	ID                int32           `json:"id"`
+	TransactionNumber string          `json:"transaction_number"`
+	Metadata          json.RawMessage `json:"metadata"`
+}
+
+func (q *Queries) MarkPosTransactionSAPSynced(ctx context.Context, arg MarkPosTransactionSAPSyncedParams) (MarkPosTransactionSAPSyncedRow, error) {
+	row := q.db.QueryRow(ctx, markPosTransactionSAPSynced, arg.ID, arg.Column2)
+	var i MarkPosTransactionSAPSyncedRow
+	err := row.Scan(&i.ID, &i.TransactionNumber, &i.Metadata)
+	return i, err
 }
 
 const voidPosTransaction = `-- name: VoidPosTransaction :execrows

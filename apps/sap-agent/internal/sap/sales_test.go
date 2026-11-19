@@ -36,7 +36,7 @@ func setupMockSAPServer(t *testing.T, creditNotesHandler func(w http.ResponseWri
 	server := httptest.NewServer(mux)
 
 	cfg := &config.Config{
-		SAPServiceLayerURL: server.URL,
+		SAPServiceLayerURL: server.URL + "/b1s/v1",
 		SAPCompanyDB:       "TEST_DB",
 		SAPUsername:        "manager",
 		SAPPassword:        "password",

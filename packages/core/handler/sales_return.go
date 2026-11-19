@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -95,5 +96,69 @@ func (h *SalesReturnHandler) ProcessReturn(c *gin.Context) {
 	}
 
 	resp := h.useCase.ProcessSalesReturn(c.Request.Context(), in)
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListUnpostedSalesReturnsForSAP handles GET /api/pos/returns/unposted
+func (h *SalesReturnHandler) ListUnpostedSalesReturnsForSAP(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	storeID := int64(1)
+	if storeIDStr := c.Query("store_id"); storeIDStr != "" {
+		parsed, err := strconv.ParseInt(storeIDStr, 10, 32)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid store_id", nil))
+			return
+		}
+		storeID = parsed
+	}
+	limit, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
+	resp := h.useCase.ListUnpostedSalesReturnsForSAP(c.Request.Context(), int32(storeID), int32(limit))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// ListSalesReturnLinesForSAP handles GET /api/pos/returns/:id/lines
+func (h *SalesReturnHandler) ListSalesReturnLinesForSAP(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	returnID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid return id", nil))
+		return
+	}
+	resp := h.useCase.ListSalesReturnLinesDetailedForSAP(c.Request.Context(), int32(returnID))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// MarkSalesReturnSAPSynced handles POST /api/pos/returns/:id/sap-sync
+func (h *SalesReturnHandler) MarkSalesReturnSAPSynced(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	returnID, err := strconv.ParseInt(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid return id", nil))
+		return
+	}
+	var req struct {
+		SAPDocEntry int `json:"sap_doc_entry"`
+		SAPDocNum   int `json:"sap_doc_num"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	resp := h.useCase.MarkSalesReturnSAPSynced(c.Request.Context(), int32(returnID), req.SAPDocEntry, req.SAPDocNum)
 	c.JSON(resp.StatusCode, resp)
 }

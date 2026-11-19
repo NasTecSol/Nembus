@@ -2,6 +2,8 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -178,5 +180,81 @@ func TestGetLastCompletedFullMigrationEndTime(t *testing.T) {
 	}
 	if wm, err := store.GetUpstreamWatermark(ctx, "upstream"); err != nil || wm == nil || !wm.Equal(ts) {
 		t.Fatalf("expected upstream watermark %v, got %v (err: %v)", ts, wm, err)
+	}
+}
+
+func TestUpstreamDispatchRetryAndWatermarkAccumulation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_dispatch.db")
+	store, err := db.NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// 1. Retrying the same transaction_number must update in place without inflating AUTOINCREMENT IDs.
+	for i := 0; i < 5; i++ {
+		if err := store.RecordUpstreamDispatch(ctx, "TXN-RETRY-1", now, 100.0, nil, nil, "failed", "bp err"); err != nil {
+			t.Fatalf("RecordUpstreamDispatch failed #%d: %v", i, err)
+		}
+	}
+	docEntry, docNum := 20001, 2600001
+	if err := store.RecordUpstreamDispatch(ctx, "TXN-RETRY-1", now, 100.0, &docEntry, &docNum, "posted", ""); err != nil {
+		t.Fatalf("RecordUpstreamDispatch posted: %v", err)
+	}
+	if err := store.RecordUpstreamDispatch(ctx, "TXN-SECOND-2", now, 50.0, nil, nil, "held", "shortage"); err != nil {
+		t.Fatalf("RecordUpstreamDispatch second: %v", err)
+	}
+
+	dispatches, err := store.GetUpstreamDispatches(ctx, 10)
+	if err != nil || len(dispatches) != 2 {
+		t.Fatalf("expected 2 dispatches, got %d (err: %v)", len(dispatches), err)
+	}
+	if dispatches[0].TransactionNumber != "TXN-SECOND-2" || dispatches[0].ID != 2 {
+		t.Fatalf("expected second dispatch to have sequential ID=2 (no bloat), got %+v", dispatches[0])
+	}
+	if dispatches[1].TransactionNumber != "TXN-RETRY-1" || dispatches[1].ID != 1 || dispatches[1].Status != "posted" {
+		t.Fatalf("expected first dispatch ID=1 status=posted, got %+v", dispatches[1])
+	}
+
+	// 2. GetUpstreamDispatchStatusMap must return all rows without a 500-row cap.
+	for i := 3; i <= 510; i++ {
+		if err := store.RecordUpstreamDispatch(ctx, fmt.Sprintf("TXN-BULK-%d", i), now, 10, nil, nil, "posted", ""); err != nil {
+			t.Fatalf("bulk RecordUpstreamDispatch %d: %v", i, err)
+		}
+	}
+	statusMap, err := store.GetUpstreamDispatchStatusMap(ctx)
+	if err != nil {
+		t.Fatalf("GetUpstreamDispatchStatusMap: %v", err)
+	}
+	if len(statusMap) != 510 || statusMap["TXN-RETRY-1"] != "posted" || statusMap["TXN-SECOND-2"] != "held" {
+		t.Fatalf("unexpected dispatch status map size=%d", len(statusMap))
+	}
+
+	// 3. SetUpstreamWatermark must accumulate records_synced across idle (0) and active cycles.
+	if err := store.SetUpstreamWatermark(ctx, "upstream", now, 5); err != nil {
+		t.Fatalf("SetUpstreamWatermark 5: %v", err)
+	}
+	if err := store.SetUpstreamWatermark(ctx, "upstream", now.Add(time.Minute), 0); err != nil {
+		t.Fatalf("SetUpstreamWatermark 0: %v", err)
+	}
+	if err := store.SetUpstreamWatermark(ctx, "upstream", now.Add(2*time.Minute), 3); err != nil {
+		t.Fatalf("SetUpstreamWatermark 3: %v", err)
+	}
+
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer rawDB.Close()
+
+	var synced int
+	if err := rawDB.QueryRow(`SELECT records_synced FROM upstream_watermarks WHERE domain = 'upstream';`).Scan(&synced); err != nil {
+		t.Fatalf("query records_synced: %v", err)
+	}
+	if synced != 8 {
+		t.Fatalf("expected accumulated records_synced=8, got %d", synced)
 	}
 }
