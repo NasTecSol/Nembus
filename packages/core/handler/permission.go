@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/repository"
@@ -191,6 +192,38 @@ func (h *PermissionHandler) ListPermissions(c *gin.Context) {
 	offset, _ := strconv.ParseInt(c.DefaultQuery("offset", "0"), 10, 32)
 
 	resp := h.useCase.ListPermissions(c.Request.Context(), int32(limit), int32(offset))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// SearchPermissions handles GET /api/permissions/search?q=...
+// @Summary      Search permissions
+// @Description  Search permissions by name, code, or description. Returns all matching permissions without pagination.
+// @Tags         permissions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        x-tenant-id     header    string  true  "Tenant identifier"
+// @Param        Authorization   header    string  true  "Bearer token"
+// @Param        q               query     string  true  "Search term"
+// @Success      200  {object}  SuccessResponse
+// @Failure      400  {object}  ErrorResponse
+// @Failure      401  {object}  ErrorResponse
+// @Failure      500  {object}  ErrorResponse
+// @Router       /api/permissions/search [get]
+func (h *PermissionHandler) SearchPermissions(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	query := c.Query("q")
+	if strings.TrimSpace(query) == "" {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "search query is required", nil))
+		return
+	}
+
+	resp := h.useCase.SearchPermissions(c.Request.Context(), query)
 	c.JSON(resp.StatusCode, resp)
 }
 
