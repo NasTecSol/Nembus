@@ -58,7 +58,8 @@ jobs:
         run: |
           $manualVersion = "${{ inputs.version }}"
           if ($manualVersion) {
-              $newTag = $manualVersion
+              $cleanVer = $manualVersion.TrimStart("sap-").TrimStart("v")
+              $newTag = "sap-v$cleanVer"
           } else {
               $tags = git tag --sort=-v:refname | Where-Object { $_ -like "sap-v*" }
               $latestTag = $tags | Select-Object -First 1
@@ -84,11 +85,27 @@ jobs:
           echo "GIT_TAG=$newTag" >> $env:GITHUB_OUTPUT
           echo "VERSION=$cleanVersion" >> $env:GITHUB_OUTPUT
 
+      - name: Run SAP Agent Tests
+        shell: powershell
+        env:
+          GOPRIVATE: github.com/NasTecSol/*
+          GONOSUMCHECK: github.com/NasTecSol/*
+        run: |
+          Push-Location packages/sap
+          go vet ./...
+          go test ./...
+          Pop-Location
+          cd apps/sap-agent
+          go vet ./...
+          go test ./...
+
       - name: Build SAP Agent Executable
         env:
           VERSION: ${{ steps.versioning.outputs.VERSION }}
           CLOUD_URL: ${{ secrets.CLOUD_URL || 'https://nembus.nashrms.com' }}
           APP_UPDATE_KEY: ${{ secrets.APP_UPDATE_CLIENT_KEY || 'nembus-pos-update-client-key-default' }}
+          OTEL_ENDPOINT: ${{ secrets.OTEL_ENDPOINT || 'https://otel.nashrms.com' }}
+          OTEL_INGEST_TOKEN: ${{ secrets.OTEL_INGEST_TOKEN }}
           GOPRIVATE: github.com/NasTecSol/*
           GONOSUMCHECK: github.com/NasTecSol/*
         run: |
@@ -96,7 +113,9 @@ jobs:
           $version = "${{ steps.versioning.outputs.VERSION }}"
           $cloudUrl = "$env:CLOUD_URL"
           $appKey = "$env:APP_UPDATE_KEY"
-          $ldflags = "-X main.Version=$version -X main.AppUpdateKey=$appKey -X main.CloudURL=$cloudUrl"
+          $otelEndpoint = "$env:OTEL_ENDPOINT"
+          $otelToken = "$env:OTEL_INGEST_TOKEN"
+          $ldflags = "-s -w -X main.Version=$version -X main.AppUpdateKey=$appKey -X main.CloudURL=$cloudUrl -X main.OTelEndpoint=$otelEndpoint -X main.OTelIngestToken=$otelToken"
           
           if (-not (Test-Path "bin")) {
               New-Item -ItemType Directory -Path "bin" -Force | Out-Null
@@ -122,7 +141,7 @@ jobs:
           RELEASE_SECRET: ${{ secrets.RELEASE_API_SECRET }}
           VERSION: ${{ steps.versioning.outputs.VERSION }}
           SHA256: ${{ steps.checksum.outputs.SHA256 }}
-          MANDATORY: ${{ inputs.is_mandatory == true }}
+          MANDATORY: ${{ inputs.is_mandatory && 'true' || 'false' }}
           NOTES: ${{ inputs.release_notes || 'Automated release build triggered by release-sap branch' }}
         run: |
           $uploadUrl = "$env:CLOUD_URL/api/v1/releases/upload"

@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/telemetry"
+	orderautomationschema "github.com/NasTecSol/nembus-core/zatca/schema"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -13,6 +15,7 @@ import (
 type Manager struct {
 	masterRepo *repository.Queries
 	pools      sync.Map
+	poolMu     sync.Mutex
 }
 
 func NewManager(repo *repository.Queries) *Manager {
@@ -20,6 +23,11 @@ func NewManager(repo *repository.Queries) *Manager {
 }
 
 func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, error) {
+	// Tenant pool setup changes shared database objects. Serialize creation so
+	// concurrent first requests cannot install the same triggers at once.
+	m.poolMu.Lock()
+	defer m.poolMu.Unlock()
+
 	// Check if pool is already cached
 	if val, ok := m.pools.Load(slug); ok {
 		return val.(*pgxpool.Pool), nil
@@ -39,11 +47,19 @@ func (m *Manager) GetPool(ctx context.Context, slug string) (*pgxpool.Pool, erro
 		return nil, fmt.Errorf("tenant '%s' is not active (is_active = false or NULL)", slug)
 	}
 
-	// Create connection pool for tenant database
-	pool, err := pgxpool.New(ctx, tenant.DbConnStr)
+	// Create connection pool for tenant database with OpenTelemetry PGX tracing
+	poolCfg, err := pgxpool.ParseConfig(tenant.DbConnStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tenant database DSN for '%s': %w", slug, err)
+	}
+	poolRole := "tenant:" + slug
+	telemetry.AttachPoolTracer(poolCfg, poolRole)
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to tenant database for '%s' using connection string: %w", slug, err)
 	}
+	telemetry.RegisterPoolMetrics(pool, poolRole)
 
 	// Ensure required columns / schema patches exist
 	if err := PatchDatabase(ctx, pool); err != nil {
@@ -137,6 +153,19 @@ func PatchDatabase(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, q := range queries {
 		_, _ = pool.Exec(ctx, q)
 	}
+	// The shared patch also runs against the master database, which has no
+	// order tables. Install order automation only for databases that contain
+	// both order tables, before exposing their pool to API handlers.
+	var hasOrderTables bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('public.sales_orders_v2') IS NOT NULL
+		AND to_regclass('public.sales_order_lines_v2') IS NOT NULL`).Scan(&hasOrderTables); err != nil {
+		return fmt.Errorf("check tenant order tables before installing order automation: %w", err)
+	}
+	if hasOrderTables {
+		if _, err := pool.Exec(ctx, orderautomationschema.DDL); err != nil {
+			return fmt.Errorf("install automatic ZATCA order jobs: %w", err)
+		}
+	}
 	return RepairNullTaxOrderTotals(ctx, pool)
 }
 
@@ -156,6 +185,8 @@ func (m *Manager) GetTenantDSN(ctx context.Context, slug string) (string, error)
 
 // EvictPool removes and closes a cached connection pool for a tenant slug.
 func (m *Manager) EvictPool(slug string) {
+	m.poolMu.Lock()
+	defer m.poolMu.Unlock()
 	if val, ok := m.pools.LoadAndDelete(slug); ok {
 		if pool, ok := val.(*pgxpool.Pool); ok && pool != nil {
 			pool.Close()

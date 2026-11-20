@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	corezatca "github.com/NasTecSol/nembus-core/zatca"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -327,6 +328,7 @@ func (s *SyncService) getOrCreateConn() (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(
 		s.grpcAddr,
 		grpc.WithTransportCredentials(creds),
+		grpc.WithStatsHandler(telemetry.GRPCClientStatsHandler()),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
 			Timeout:             10 * time.Second,
@@ -493,8 +495,10 @@ func (s *SyncService) performSync() {
 			}
 		}
 		if s.orderAutomationReady.Load() {
-			orderCtx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+			orderCtx, cancel := context.WithTimeout(telemetry.WithTenantSlug(s.ctx, s.tenantSlug), 60*time.Second)
+			zatcaStart := time.Now()
 			if err := corezatca.ProcessOrderAutomationBatch(orderCtx, s.masterPool, s.orderSubmitter); err != nil && orderCtx.Err() == nil {
+				telemetry.RecordZatcaSubmission(orderCtx, "nembus-pos-client", s.tenantSlug, "error", float64(time.Since(zatcaStart).Microseconds())/1000.0)
 				log.Printf("[ZATCA ORDER] Automatic submission failed: %v", err)
 			}
 			cancel()
@@ -528,6 +532,33 @@ func (s *SyncService) performSync() {
 
 	// 2. gRPC Pull Strategy (Cloud change_log -> Local Watermarks with StreamPull fallback)
 	s.fetchChangesGRPC()
+
+	// 3. Record local outbox queue depth and sync lag gauges
+	s.recordOutboxMetrics()
+}
+
+func (s *SyncService) recordOutboxMetrics() {
+	if s.masterPool == nil || s.ctx.Err() != nil {
+		return
+	}
+	metricsCtx, cancel := context.WithTimeout(telemetry.WithTenantSlug(s.ctx, s.tenantSlug), 5*time.Second)
+	defer cancel()
+
+	qStatus, err := s.GetQueueStatus(metricsCtx)
+	if err != nil {
+		return
+	}
+	var lagSeconds float64
+	_ = s.masterPool.QueryRow(metricsCtx, `
+		SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))), 0)::double precision
+		FROM sync_queue
+		WHERE status = 'pending'
+		  AND entity_type NOT IN ('zatca_device_configs', 'zatca_document_chain')
+	`).Scan(&lagSeconds)
+	if lagSeconds < 0 {
+		lagSeconds = 0
+	}
+	telemetry.RecordPOSOutboxGauge(metricsCtx, s.tenantSlug, int64(qStatus.PendingCount), int64(qStatus.QuarantinedCount), lagSeconds)
 }
 
 // drainOutboxGRPC streams pending sync_queue items to Cloud via gRPC StreamPush with SHA-256 checksums.
@@ -606,21 +637,24 @@ func (s *SyncService) drainOutboxGRPC() {
 		return
 	}
 
+	pushStart := time.Now()
 	log.Printf("[gRPC SYNC] Pushing %d pending outbox entries across %d correlation batch(es)", len(items), len(batches))
 
 	storeID, deviceID, syncToken, _ := ReadLocalDeviceCredentials(ctx, s.masterPool)
 
 	conn, err := s.getOrCreateConn()
 	if err != nil {
+		telemetry.RecordSyncBatch(telemetry.WithTenantSlug(ctx, s.tenantSlug), "push", s.tenantSlug, "outbox_batch", "error", 0, float64(time.Since(pushStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] Connection failed to %s: %v", s.grpcAddr, err)
 		s.recordOutboxFailureErr(items, err)
 		return
 	}
 
 	client := syncpb.NewSyncServiceClient(conn)
-	pushCtx := s.withSyncMetadata(ctx, storeID, deviceID, syncToken)
+	pushCtx := telemetry.WithTenantSlug(s.withSyncMetadata(ctx, storeID, deviceID, syncToken), s.tenantSlug)
 	stream, err := client.StreamPush(pushCtx)
 	if err != nil {
+		telemetry.RecordSyncBatch(pushCtx, "push", s.tenantSlug, "outbox_batch", "error", 0, float64(time.Since(pushStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] StreamPush initialization error: %v", err)
 		s.recordOutboxFailureErr(items, err)
 		return
@@ -628,6 +662,13 @@ func (s *SyncService) drainOutboxGRPC() {
 
 	syncedCount := s.pushCorrelationBatchesWindowed(pushCtx, stream, batches, storeID, deviceID)
 	_ = stream.CloseSend()
+
+	pushDurMs := float64(time.Since(pushStart).Microseconds()) / 1000.0
+	pushStatus := "ok"
+	if syncedCount == 0 {
+		pushStatus = "error"
+	}
+	telemetry.RecordSyncBatch(pushCtx, "push", s.tenantSlug, "outbox_batch", pushStatus, int64(syncedCount), pushDurMs)
 
 	if syncedCount > 0 {
 		log.Printf("[gRPC SYNC] Pushed %d outbox items upstream to Cloud via gRPC stream", syncedCount)

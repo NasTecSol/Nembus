@@ -211,7 +211,7 @@ func TestFilterDownstreamPriceItems_BelowCostRuleWithCostLookup(t *testing.T) {
 		t.Fatalf("expected 1 submitted approval, got %d", len(submittedBodies))
 	}
 	payload, _ := submittedBodies[0]["payload"].(map[string]any)
-	if payload == nil || payload["sku"] != "SKU-BELOW-COST" {
+	if payload == nil || payload["product_sku"] != "SKU-BELOW-COST" {
 		t.Fatalf("expected held SKU-BELOW-COST payload, got %+v", submittedBodies[0])
 	}
 	if payload["old_cost_price"] != 60.0 {

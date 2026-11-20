@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,11 +19,6 @@ import (
 	legacyconfig "github.com/NasTecSol/nembus-sap-agent/config"
 	agentconfig "github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
-)
-
-const (
-	upstreamServiceUsername = "sap_migrator"
-	upstreamServicePassword = "SapAgent@2026"
 )
 
 // HTTPClient implements pipeline.NembusClient using the Nembus Cloud REST API
@@ -113,13 +109,8 @@ func (c *HTTPClient) login(ctx context.Context, userLogin, password string) (str
 	return "", fmt.Errorf("login status %d", resp.StatusCode)
 }
 
-func (c *HTTPClient) resolveToken(ctx context.Context, preferServiceAccount bool) (string, error) {
+func (c *HTTPClient) resolveToken(ctx context.Context, _ bool) (string, error) {
 	agentCfg := agentconfig.Get()
-	if preferServiceAccount {
-		if tok, err := c.login(ctx, upstreamServiceUsername, upstreamServicePassword); err == nil && tok != "" {
-			return tok, nil
-		}
-	}
 	if agentCfg != nil {
 		if agentCfg.MigratorUser != "" && agentCfg.MigratorPassword != "" {
 			if tok, err := c.login(ctx, agentCfg.MigratorUser, agentCfg.MigratorPassword); err == nil && tok != "" {
@@ -134,10 +125,7 @@ func (c *HTTPClient) resolveToken(ctx context.Context, preferServiceAccount bool
 			return tok, nil
 		}
 	}
-	if tok, err := c.login(ctx, upstreamServiceUsername, upstreamServicePassword); err == nil && tok != "" {
-		return tok, nil
-	}
-	return "", fmt.Errorf("unable to obtain Nembus Cloud auth token for upstream sync")
+	return "", fmt.Errorf("unable to obtain Nembus Cloud auth token for upstream sync (configure Migrator credentials or Cloud APIKey)")
 }
 
 func (c *HTTPClient) organizationID() int32 {
@@ -253,7 +241,7 @@ func parseFlexTime(v any) time.Time {
 		return time.Now()
 	}
 	s = strings.TrimSpace(s)
-	for _, layout := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
+	for _, layout := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02T15:04:05", "2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02"} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t
 		}
@@ -261,19 +249,110 @@ func parseFlexTime(v any) time.Time {
 	return time.Now()
 }
 
+func parseOptionalInt(v any) *int {
+	if v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case float64:
+		n := int(t)
+		return &n
+	case float32:
+		n := int(t)
+		return &n
+	case int:
+		n := t
+		return &n
+	case int64:
+		n := int(t)
+		return &n
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return nil
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil
+		}
+		return &n
+	default:
+		return nil
+	}
+}
+
+func parseOptionalInt32(v any) *int32 {
+	p := parseOptionalInt(v)
+	if p == nil || *p <= 0 {
+		return nil
+	}
+	n := int32(*p)
+	return &n
+}
+
+func parseFlexBool(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "true") || strings.TrimSpace(t) == "1"
+	case float64:
+		return t != 0
+	case int:
+		return t != 0
+	default:
+		return false
+	}
+}
+
+func parseMetadataRaw(v any) json.RawMessage {
+	if v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case string:
+		s := strings.TrimSpace(t)
+		if s != "" && json.Valid([]byte(s)) {
+			return json.RawMessage(s)
+		}
+	case map[string]any:
+		if b, err := json.Marshal(t); err == nil {
+			return b
+		}
+	default:
+		if b, err := json.Marshal(t); err == nil && string(b) != "null" {
+			return b
+		}
+	}
+	return nil
+}
+
+func metadataSyncState(meta json.RawMessage) (hasDocNum bool, syncState string) {
+	if len(meta) == 0 {
+		return false, ""
+	}
+	var m map[string]any
+	if json.Unmarshal(meta, &m) != nil || m == nil {
+		return false, ""
+	}
+	if docNum, ok := m["sap_doc_num"].(string); ok && strings.TrimSpace(docNum) != "" {
+		hasDocNum = true
+	} else if parseFlexFloat(m["sap_doc_num"]) > 0 {
+		hasDocNum = true
+	}
+	syncState, _ = m["sap_sync_state"].(string)
+	return hasDocNum, syncState
+}
+
 func (c *HTTPClient) dispatchStatusByNumber(ctx context.Context) map[string]string {
-	res := make(map[string]string)
 	if c.sqlite == nil {
-		return res
+		return make(map[string]string)
 	}
-	dispatches, err := c.sqlite.GetUpstreamDispatches(ctx, 500)
+	statusMap, err := c.sqlite.GetUpstreamDispatchStatusMap(ctx)
 	if err != nil {
-		return res
+		return make(map[string]string)
 	}
-	for _, d := range dispatches {
-		res[d.TransactionNumber] = d.Status
-	}
-	return res
+	return statusMap
 }
 
 func (c *HTTPClient) approvedEntityNumbers(ctx context.Context, entityType string) map[string]bool {
@@ -317,6 +396,56 @@ func (c *HTTPClient) approvedEntityNumbers(ctx context.Context, entityType strin
 	return approved
 }
 
+func (c *HTTPClient) parseTransactionRow(row map[string]any, fallbackStoreID int32) (POSTransaction, bool) {
+	txNum, _ := row["transaction_number"].(string)
+	if txNum == "" || strings.HasPrefix(txNum, "SIM-POS-") {
+		return POSTransaction{}, false
+	}
+	st, _ := row["status"].(string)
+	if st != "" && st != "completed" {
+		return POSTransaction{}, false
+	}
+	metaRaw := parseMetadataRaw(row["metadata"])
+	hasDocNum, _ := metadataSyncState(metaRaw)
+	if hasDocNum {
+		return POSTransaction{}, false
+	}
+
+	storeID := int32(parseFlexInt64(row["store_id"]))
+	if storeID <= 0 {
+		storeID = fallbackStoreID
+	}
+	cashierID := int32(parseFlexInt64(row["cashier_id"]))
+	if cashierID <= 0 {
+		cashierID = 1
+	}
+	sessionID := int32(parseFlexInt64(row["cashier_session_id"]))
+	if sessionID <= 0 {
+		sessionID = 1
+	}
+	custSAPCode, _ := row["customer_sap_code"].(string)
+	total := parseFlexFloat(row["total_amount"])
+	amountPaid := parseFlexFloat(row["amount_paid"])
+
+	return POSTransaction{
+		ID:                parseFlexInt64(row["id"]),
+		StoreID:           storeID,
+		CashierID:         cashierID,
+		CashierSessionID:  sessionID,
+		CustomerID:        parseOptionalInt32(row["customer_id"]),
+		CustomerSAPCode:   strings.TrimSpace(custSAPCode),
+		TransactionNumber: txNum,
+		TransactionDate:   parseFlexTime(row["transaction_date"]),
+		Subtotal:          parseFlexFloat(row["subtotal"]),
+		DiscountAmount:    parseFlexFloat(row["discount_amount"]),
+		TaxAmount:         parseFlexFloat(row["tax_amount"]),
+		TotalAmount:       total,
+		AmountPaid:        amountPaid,
+		Status:            "completed",
+		Metadata:          metaRaw,
+	}, true
+}
+
 func (c *HTTPClient) fetchStoreTransactionsRaw(ctx context.Context, limit int) ([]POSTransaction, error) {
 	if limit <= 0 {
 		limit = 50
@@ -331,7 +460,7 @@ func (c *HTTPClient) fetchStoreTransactionsRaw(ctx context.Context, limit int) (
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, nil
+		return nil, fmt.Errorf("fetch store %d transactions failed (status %d)", storeID, status)
 	}
 
 	var env struct {
@@ -340,43 +469,81 @@ func (c *HTTPClient) fetchStoreTransactionsRaw(ctx context.Context, limit int) (
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(bodyBytes, &env); err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	var out []POSTransaction
 	for _, row := range env.Data.Data {
-		txNum, _ := row["transaction_number"].(string)
-		if txNum == "" || strings.HasPrefix(txNum, "SIM-POS-") {
-			// Skip historical SAP invoices migrated into Nembus POS
+		tx, ok := c.parseTransactionRow(row, storeID)
+		if !ok {
 			continue
-		}
-		st, _ := row["status"].(string)
-		if st != "" && st != "completed" {
-			continue
-		}
-		total := parseFlexFloat(row["total_amount"])
-		tx := POSTransaction{
-			ID:                parseFlexInt64(row["id"]),
-			StoreID:           storeID,
-			CashierID:         1,
-			CashierSessionID:  1,
-			TransactionNumber: txNum,
-			TransactionDate:   parseFlexTime(row["transaction_date"]),
-			TotalAmount:       total,
-			AmountPaid:        total,
-			Status:            "completed",
 		}
 		out = append(out, tx)
 	}
 	return out, nil
 }
 
+func (c *HTTPClient) fetchUnpostedTransactionsEndpoint(ctx context.Context, limit int, approvedOnly bool) ([]POSTransaction, bool, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	storeID := c.cfg.NembusStoreID
+	if storeID <= 0 {
+		storeID = 1
+	}
+	path := fmt.Sprintf("/api/pos/stores/%d/transactions/unposted?limit=%d", storeID, limit)
+	if approvedOnly {
+		path += "&approved_only=true"
+	}
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil {
+		return nil, false, err
+	}
+	if status == http.StatusNotFound {
+		return nil, true, nil
+	}
+	if status != http.StatusOK {
+		return nil, false, fmt.Errorf("fetch unposted transactions failed (status %d)", status)
+	}
+	var env struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &env); err != nil {
+		return nil, false, err
+	}
+	var out []POSTransaction
+	for _, row := range env.Data {
+		tx, ok := c.parseTransactionRow(row, storeID)
+		if !ok {
+			continue
+		}
+		out = append(out, tx)
+	}
+	return out, false, nil
+}
+
 func (c *HTTPClient) FetchApprovedPendingPOSTransactions(ctx context.Context, limit int) ([]POSTransaction, error) {
+	rows, notFound, err := c.fetchUnpostedTransactionsEndpoint(ctx, limit, true)
+	if err != nil {
+		return nil, err
+	}
+	dispatched := c.dispatchStatusByNumber(ctx)
+	if !notFound {
+		var list []POSTransaction
+		for _, tx := range rows {
+			if dispatched[tx.TransactionNumber] == "posted" {
+				continue
+			}
+			tx.Metadata = json.RawMessage(`{"sap_sync_state":"approved_pending_upload"}`)
+			list = append(list, tx)
+		}
+		return list, nil
+	}
+
 	all, err := c.fetchStoreTransactionsRaw(ctx, limit)
 	if err != nil || len(all) == 0 {
 		return nil, err
 	}
-	dispatched := c.dispatchStatusByNumber(ctx)
 	approved := c.approvedEntityNumbers(ctx, "pos_transaction")
 
 	var list []POSTransaction
@@ -394,16 +561,38 @@ func (c *HTTPClient) FetchApprovedPendingPOSTransactions(ctx context.Context, li
 }
 
 func (c *HTTPClient) FetchUnpostedPOSTransactions(ctx context.Context, limit int) ([]POSTransaction, error) {
+	rows, notFound, err := c.fetchUnpostedTransactionsEndpoint(ctx, limit, false)
+	if err != nil {
+		return nil, err
+	}
+	dispatched := c.dispatchStatusByNumber(ctx)
+
+	if !notFound {
+		var list []POSTransaction
+		for _, tx := range rows {
+			st := dispatched[tx.TransactionNumber]
+			if st == "posted" || st == "held" || st == "skipped" {
+				continue
+			}
+			list = append(list, tx)
+		}
+		return list, nil
+	}
+
 	all, err := c.fetchStoreTransactionsRaw(ctx, limit)
 	if err != nil || len(all) == 0 {
 		return nil, err
 	}
-	dispatched := c.dispatchStatusByNumber(ctx)
 
 	var list []POSTransaction
 	for _, tx := range all {
 		st := dispatched[tx.TransactionNumber]
 		if st == "posted" || st == "held" || st == "skipped" {
+			continue
+		}
+		_, syncState := metadataSyncState(tx.Metadata)
+		switch syncState {
+		case "held_stock", "adjustment_created_pending_force", "approved_pending_upload", "synced":
 			continue
 		}
 		list = append(list, tx)
@@ -431,26 +620,57 @@ func (c *HTTPClient) FetchTransactionLines(ctx context.Context, transactionID in
 		if sku == "" {
 			sku, _ = row["product_sku"].(string)
 		}
-		name, _ := row["product_name"].(string)
+		lineID := parseFlexInt64(row["line_id"])
+		productID := parseFlexInt64(row["product_id"])
 		qty := parseFlexFloat(row["quantity"])
+		if lineID == 0 && productID == 0 && sku == "" && qty == 0 {
+			continue
+		}
+		name, _ := row["product_name"].(string)
 		unitPrice := parseFlexFloat(row["unit_price"])
 		disc := parseFlexFloat(row["discount_amount_2"])
 		lineTotal := parseFlexFloat(row["line_total"])
 		if lineTotal <= 0 {
 			lineTotal = (qty * unitPrice) - disc
 		}
+		lineTax := parseFlexFloat(row["line_tax_amount"])
+		lineSubtotal := parseFlexFloat(row["line_subtotal"])
+		if lineSubtotal <= 0 {
+			if lineTax > 0 && lineTotal > lineTax {
+				lineSubtotal = lineTotal - lineTax
+			} else {
+				lineSubtotal = lineTotal
+			}
+		}
+		convFactor := parseFlexFloat(row["uom_conversion_factor"])
+		if convFactor <= 0 {
+			convFactor = 1.0
+		}
+		isBaseUoM := true
+		if _, hasIsBase := row["is_base_uom"]; hasIsBase {
+			isBaseUoM = parseFlexBool(row["is_base_uom"])
+		}
+		sapTaxCode, _ := row["sap_tax_code"].(string)
+
 		lines = append(lines, POSTransactionLine{
-			ID:             parseFlexInt64(row["line_id"]),
-			TransactionID:  transactionID,
-			ProductID:      int32(parseFlexInt64(row["product_id"])),
-			ProductSKU:     sku,
-			ProductName:    name,
-			Quantity:       qty,
-			UnitPrice:      unitPrice,
-			DiscountAmount: disc,
-			Subtotal:       lineTotal,
-			LineTotal:      lineTotal,
-			LineNumber:     idx + 1,
+			ID:                  lineID,
+			TransactionID:       transactionID,
+			ProductID:           int32(productID),
+			ProductSKU:          sku,
+			ProductName:         name,
+			Quantity:            qty,
+			UoMID:               parseOptionalInt32(row["uom_id"]),
+			UnitPrice:           unitPrice,
+			DiscountAmount:      disc,
+			TaxAmount:           lineTax,
+			Subtotal:            lineSubtotal,
+			LineTotal:           lineTotal,
+			LineNumber:          idx + 1,
+			SAPUoMEntry:         parseOptionalInt(row["sap_uom_entry"]),
+			SAPUgpEntry:         parseOptionalInt(row["sap_ugp_entry"]),
+			UoMConversionFactor: convFactor,
+			IsBaseUoM:           isBaseUoM,
+			SAPTaxCode:          strings.TrimSpace(sapTaxCode),
 		})
 	}
 	return lines, nil
@@ -490,8 +710,27 @@ func (c *HTTPClient) FetchTransactionPayments(ctx context.Context, transactionID
 	return payments, nil
 }
 
-func (c *HTTPClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error {
+func (c *HTTPClient) markEntitySyncedToSAP(ctx context.Context, path string, sapDocEntry, sapDocNum int) error {
+	body := map[string]int{
+		"sap_doc_entry": sapDocEntry,
+		"sap_doc_num":   sapDocNum,
+	}
+	respBytes, status, err := c.doJSON(ctx, http.MethodPost, path, body, false)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusNotFound {
+		log.Printf("⚠️ Cloud SAP sync endpoint %s returned 404 (cloud server may need update)", path)
+		return nil
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("mark synced %s failed (status %d): %s", path, status, strings.TrimSpace(string(respBytes)))
+	}
 	return nil
+}
+
+func (c *HTTPClient) MarkTransactionPostedToSAP(ctx context.Context, transactionID int64, sapDocEntry, sapDocNum int) error {
+	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/pos/transactions/%d/sap-sync", transactionID), sapDocEntry, sapDocNum)
 }
 
 func (c *HTTPClient) FetchCustomerSAPCode(ctx context.Context, customerID int32) (string, error) {
@@ -507,23 +746,157 @@ func (c *HTTPClient) FetchCustomerSAPCode(ctx context.Context, customerID int32)
 		if code, ok := env.Data["customer_code"].(string); ok && strings.TrimSpace(code) != "" {
 			return strings.TrimSpace(code), nil
 		}
+		if meta, ok := env.Data["metadata"].(map[string]any); ok {
+			if code, ok := meta["sap_card_code"].(string); ok && strings.TrimSpace(code) != "" {
+				return strings.TrimSpace(code), nil
+			}
+		}
 	}
 	return c.cfg.NembusDefaultCustomer, nil
 }
 
 func (c *HTTPClient) FetchUnpostedSalesReturns(ctx context.Context, limit int) ([]SalesReturn, error) {
-	return nil, nil
+	if limit <= 0 {
+		limit = 50
+	}
+	storeID := c.cfg.NembusStoreID
+	if storeID <= 0 {
+		storeID = 1
+	}
+	path := fmt.Sprintf("/api/pos/returns/unposted?store_id=%d&limit=%d", storeID, limit)
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound {
+		return nil, nil
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("fetch unposted sales returns failed (status %d)", status)
+	}
+	var env struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &env); err != nil {
+		return nil, err
+	}
+
+	dispatched := c.dispatchStatusByNumber(ctx)
+	var list []SalesReturn
+	for _, row := range env.Data {
+		retNum, _ := row["return_number"].(string)
+		if retNum == "" {
+			continue
+		}
+		if st := dispatched[retNum]; st == "posted" || st == "skipped" {
+			continue
+		}
+		metaRaw := parseMetadataRaw(row["metadata"])
+		hasDocNum, _ := metadataSyncState(metaRaw)
+		if hasDocNum {
+			continue
+		}
+		custSAPCode, _ := row["customer_sap_code"].(string)
+		var reasonPtr *string
+		if reason, ok := row["return_reason"].(string); ok && strings.TrimSpace(reason) != "" {
+			reasonPtr = &reason
+		}
+		list = append(list, SalesReturn{
+			ID:                    parseFlexInt64(row["id"]),
+			ReturnNumber:          retNum,
+			StoreID:               int32(parseFlexInt64(row["store_id"])),
+			CashierID:             parseOptionalInt32(row["cashier_id"]),
+			CustomerID:            parseOptionalInt32(row["customer_id"]),
+			CustomerSAPCode:       strings.TrimSpace(custSAPCode),
+			OriginalTransactionID: parseOptionalInt32(row["original_transaction_id"]),
+			OriginalSAPDocEntry:   int(parseFlexInt64(row["original_sap_doc_entry"])),
+			ReturnDate:            parseFlexTime(row["return_date"]),
+			ReturnReason:          reasonPtr,
+			Status:                "completed",
+			Subtotal:              parseFlexFloat(row["subtotal"]),
+			TaxAmount:             parseFlexFloat(row["tax_amount"]),
+			TotalRefundAmount:     parseFlexFloat(row["total_refund_amount"]),
+			Metadata:              metaRaw,
+		})
+	}
+	return list, nil
 }
 
 func (c *HTTPClient) FetchSalesReturnLines(ctx context.Context, returnID int64) ([]SalesReturnLine, error) {
-	return nil, nil
+	path := fmt.Sprintf("/api/pos/returns/%d/lines", returnID)
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil || status != http.StatusOK {
+		return nil, fmt.Errorf("fetch sales return %d lines failed (status %d)", returnID, status)
+	}
+	var env struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &env); err != nil {
+		return nil, err
+	}
+	var lines []SalesReturnLine
+	for idx, row := range env.Data {
+		sku, _ := row["product_sku"].(string)
+		name, _ := row["product_name"].(string)
+		convFactor := parseFlexFloat(row["uom_conversion_factor"])
+		if convFactor <= 0 {
+			convFactor = 1.0
+		}
+		isBaseUoM := true
+		if _, hasIsBase := row["is_base_uom"]; hasIsBase {
+			isBaseUoM = parseFlexBool(row["is_base_uom"])
+		}
+		sapTaxCode, _ := row["sap_tax_code"].(string)
+		lineNum := int(parseFlexInt64(row["line_number"]))
+		if lineNum <= 0 {
+			lineNum = idx + 1
+		}
+		lines = append(lines, SalesReturnLine{
+			ID:                  parseFlexInt64(row["id"]),
+			ReturnID:            returnID,
+			ProductID:           int32(parseFlexInt64(row["product_id"])),
+			ProductSKU:          sku,
+			ProductName:         name,
+			OriginalLineID:      parseOptionalInt32(row["original_line_id"]),
+			Quantity:            parseFlexFloat(row["quantity"]),
+			UnitPrice:           parseFlexFloat(row["unit_price"]),
+			RefundAmount:        parseFlexFloat(row["refund_amount"]),
+			ReturnToStock:       parseFlexBool(row["return_to_stock"]),
+			LineNumber:          lineNum,
+			SAPUoMEntry:         parseOptionalInt(row["sap_uom_entry"]),
+			SAPUgpEntry:         parseOptionalInt(row["sap_ugp_entry"]),
+			UoMConversionFactor: convFactor,
+			IsBaseUoM:           isBaseUoM,
+			SAPTaxCode:          strings.TrimSpace(sapTaxCode),
+		})
+	}
+	return lines, nil
 }
 
 func (c *HTTPClient) MarkSalesReturnPostedToSAP(ctx context.Context, returnID int64, sapDocEntry, sapDocNum int) error {
-	return nil
+	return c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/pos/returns/%d/sap-sync", returnID), sapDocEntry, sapDocNum)
 }
 
 func (c *HTTPClient) FetchOriginalSAPDocEntry(ctx context.Context, originalTxID int32) (int, error) {
+	path := fmt.Sprintf("/api/pos/transactions/%d", originalTxID)
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil || status != http.StatusOK {
+		return 0, nil
+	}
+	var env struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &env); err != nil || env.Data == nil {
+		return 0, nil
+	}
+	metaRaw := parseMetadataRaw(env.Data["metadata"])
+	if len(metaRaw) == 0 {
+		return 0, nil
+	}
+	var m map[string]any
+	if json.Unmarshal(metaRaw, &m) == nil {
+		return int(parseFlexInt64(m["sap_doc_entry"])), nil
+	}
 	return 0, nil
 }
 
@@ -593,68 +966,69 @@ func (c *HTTPClient) HoldTransactionForStockReview(ctx context.Context, txID int
 	return c.submitStockHoldApproval(ctx, "pos_transaction", fmt.Sprintf("%d", txID), summary, payload)
 }
 
+func parseSalesOrderRow(row map[string]any) (SalesOrderV2, bool) {
+	idStr, _ := row["id"].(string)
+	orderID, err := uuid.Parse(idStr)
+	if err != nil {
+		return SalesOrderV2{}, false
+	}
+	orderNum, _ := row["order_number"].(string)
+	if orderNum == "" || strings.HasPrefix(orderNum, "SO-SAP-") {
+		return SalesOrderV2{}, false
+	}
+	salesChannel, _ := row["sales_channel"].(string)
+	if strings.EqualFold(strings.TrimSpace(salesChannel), "pos") {
+		return SalesOrderV2{}, false
+	}
+	orderStatus, _ := row["order_status"].(string)
+	fulfillStatus, _ := row["fulfillment_status"].(string)
+	if orderStatus != "confirmed" && orderStatus != "fulfilled" && fulfillStatus != "fulfilled" {
+		return SalesOrderV2{}, false
+	}
+
+	metaRaw := parseMetadataRaw(row["metadata"])
+	hasDocNum, _ := metadataSyncState(metaRaw)
+	if hasDocNum {
+		return SalesOrderV2{}, false
+	}
+
+	custSAPCode, _ := row["customer_sap_code"].(string)
+	payStatus, _ := row["payment_status"].(string)
+
+	return SalesOrderV2{
+		ID:              orderID,
+		OrderNumber:     orderNum,
+		StoreID:         int32(parseFlexInt64(row["store_id"])),
+		CustomerID:      parseOptionalInt32(row["customer_id"]),
+		CustomerSAPCode: strings.TrimSpace(custSAPCode),
+		OrderDate:       parseFlexTime(row["order_date"]),
+		TotalAmount:     parseFlexFloat(row["total_amount"]),
+		PaymentStatus:   payStatus,
+		Metadata:        metaRaw,
+	}, true
+}
+
 func (c *HTTPClient) fetchSalesOrdersRaw(ctx context.Context) ([]SalesOrderV2, error) {
 	path := fmt.Sprintf("/api/orders?organization_id=%d", c.cfg.NembusOrganizationID)
 	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
-	if err != nil || status != http.StatusOK {
-		return nil, nil
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("fetch orders failed (status %d)", status)
 	}
 	var env struct {
 		Data []map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(bodyBytes, &env); err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	var list []SalesOrderV2
 	for _, row := range env.Data {
-		idStr, _ := row["id"].(string)
-		orderID, err := uuid.Parse(idStr)
-		if err != nil {
-			continue
+		if order, ok := parseSalesOrderRow(row); ok {
+			list = append(list, order)
 		}
-		orderNum, _ := row["order_number"].(string)
-		if orderNum == "" || strings.HasPrefix(orderNum, "SO-SAP-") {
-			continue
-		}
-		orderStatus, _ := row["order_status"].(string)
-		fulfillStatus, _ := row["fulfillment_status"].(string)
-		if orderStatus != "confirmed" && orderStatus != "fulfilled" && fulfillStatus != "fulfilled" {
-			continue
-		}
-
-		var metaRaw json.RawMessage
-		if m, ok := row["metadata"]; ok && m != nil {
-			if b, err := json.Marshal(m); err == nil {
-				metaRaw = b
-				var mMap map[string]any
-				if json.Unmarshal(b, &mMap) == nil {
-					if docNum, _ := mMap["sap_doc_num"].(string); docNum != "" {
-						continue
-					}
-					if docNumFloat := parseFlexFloat(mMap["sap_doc_num"]); docNumFloat > 0 {
-						continue
-					}
-				}
-			}
-		}
-
-		var custPtr *int32
-		if cid := int32(parseFlexInt64(row["customer_id"])); cid > 0 {
-			custPtr = &cid
-		}
-		payStatus, _ := row["payment_status"].(string)
-
-		list = append(list, SalesOrderV2{
-			ID:            orderID,
-			OrderNumber:   orderNum,
-			StoreID:       int32(parseFlexInt64(row["store_id"])),
-			CustomerID:    custPtr,
-			OrderDate:     parseFlexTime(row["order_date"]),
-			TotalAmount:   parseFlexFloat(row["total_amount"]),
-			PaymentStatus: payStatus,
-			Metadata:      metaRaw,
-		})
 	}
 	return list, nil
 }
@@ -682,16 +1056,48 @@ func (c *HTTPClient) FetchApprovedPendingSalesOrdersV2(ctx context.Context, limi
 }
 
 func (c *HTTPClient) FetchUnpostedSalesOrdersV2(ctx context.Context, limit int) ([]SalesOrderV2, error) {
-	all, err := c.fetchSalesOrdersRaw(ctx)
-	if err != nil || len(all) == 0 {
+	if limit <= 0 {
+		limit = 50
+	}
+	path := fmt.Sprintf("/api/orders/unposted-sap?organization_id=%d&limit=%d", c.cfg.NembusOrganizationID, limit)
+	bodyBytes, status, err := c.doJSON(ctx, http.MethodGet, path, nil, false)
+	if err != nil {
 		return nil, err
 	}
+
+	var all []SalesOrderV2
+	if status == http.StatusNotFound {
+		all, err = c.fetchSalesOrdersRaw(ctx)
+		if err != nil || len(all) == 0 {
+			return nil, err
+		}
+	} else if status != http.StatusOK {
+		return nil, fmt.Errorf("fetch unposted sales orders failed (status %d)", status)
+	} else {
+		var env struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(bodyBytes, &env); err != nil {
+			return nil, err
+		}
+		for _, row := range env.Data {
+			if order, ok := parseSalesOrderRow(row); ok {
+				all = append(all, order)
+			}
+		}
+	}
+
 	dispatched := c.dispatchStatusByNumber(ctx)
 
 	var list []SalesOrderV2
 	for _, o := range all {
 		st := dispatched[o.OrderNumber]
 		if st == "posted" || st == "held" || st == "skipped" {
+			continue
+		}
+		_, syncState := metadataSyncState(o.Metadata)
+		switch syncState {
+		case "held_stock", "adjustment_created_pending_force", "approved_pending_upload", "synced":
 			continue
 		}
 		list = append(list, o)
@@ -714,22 +1120,47 @@ func (c *HTTPClient) FetchSalesOrderLinesV2(ctx context.Context, orderID uuid.UU
 	var lines []SalesOrderLineV2
 	for idx, row := range env.Data {
 		sku, _ := row["product_sku"].(string)
+		if sku == "" {
+			sku, _ = row["product_sku_current"].(string)
+		}
 		name, _ := row["product_name"].(string)
+		if name == "" {
+			name, _ = row["product_name_current"].(string)
+		}
+		convFactor := parseFlexFloat(row["uom_conversion_factor"])
+		if convFactor <= 0 {
+			convFactor = 1.0
+		}
+		isBaseUoM := true
+		if _, hasIsBase := row["is_base_uom"]; hasIsBase {
+			isBaseUoM = parseFlexBool(row["is_base_uom"])
+		}
+		sapTaxCode, _ := row["sap_tax_code"].(string)
+
 		lines = append(lines, SalesOrderLineV2{
-			ProductID:   int32(parseFlexInt64(row["product_id"])),
-			ProductSKU:  sku,
-			ProductName: name,
-			Quantity:    parseFlexFloat(row["quantity_ordered"]),
-			UnitPrice:   parseFlexFloat(row["unit_price"]),
-			TaxAmount:   parseFlexFloat(row["tax_amount"]),
-			LineTotal:   parseFlexFloat(row["line_total"]),
-			LineNumber:  idx + 1,
+			ProductID:           int32(parseFlexInt64(row["product_id"])),
+			ProductSKU:          sku,
+			ProductName:         name,
+			Quantity:            parseFlexFloat(row["quantity_ordered"]),
+			UoMID:               parseOptionalInt32(row["uom_id"]),
+			UnitPrice:           parseFlexFloat(row["unit_price"]),
+			TaxAmount:           parseFlexFloat(row["tax_amount"]),
+			LineTotal:           parseFlexFloat(row["line_total"]),
+			LineNumber:          idx + 1,
+			SAPUoMEntry:         parseOptionalInt(row["sap_uom_entry"]),
+			SAPUgpEntry:         parseOptionalInt(row["sap_ugp_entry"]),
+			UoMConversionFactor: convFactor,
+			IsBaseUoM:           isBaseUoM,
+			SAPTaxCode:          strings.TrimSpace(sapTaxCode),
 		})
 	}
 	return lines, nil
 }
 
 func (c *HTTPClient) MarkSalesOrderPostedToSAP(ctx context.Context, orderID uuid.UUID, sapDocEntry, sapDocNum int) error {
+	if err := c.markEntitySyncedToSAP(ctx, fmt.Sprintf("/api/orders/%s/sap-sync", orderID.String()), sapDocEntry, sapDocNum); err != nil {
+		return err
+	}
 	if c.sqlite != nil {
 		orders, _ := c.fetchSalesOrdersRaw(ctx)
 		for _, o := range orders {

@@ -1837,3 +1837,50 @@ func (h *OrderHandler) DeleteOrderFulfillmentItem(c *gin.Context) {
 	resp := h.useCase.DeleteOrderFulfillmentItem(c.Request.Context(), itemID)
 	c.JSON(resp.StatusCode, resp)
 }
+
+// ListUnpostedSalesOrdersForSAP handles GET /api/orders/unposted-sap
+func (h *OrderHandler) ListUnpostedSalesOrdersForSAP(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	orgID := int64(1)
+	if orgIDStr := c.Query("organization_id"); orgIDStr != "" {
+		parsed, err := strconv.ParseInt(orgIDStr, 10, 32)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid organization_id", nil))
+			return
+		}
+		orgID = parsed
+	}
+	limit, _ := strconv.ParseInt(c.DefaultQuery("limit", "50"), 10, 32)
+	resp := h.useCase.ListUnpostedSalesOrdersForSAP(c.Request.Context(), int32(orgID), int32(limit))
+	c.JSON(resp.StatusCode, resp)
+}
+
+// MarkSalesOrderSAPSynced handles POST /api/orders/:id/sap-sync
+func (h *OrderHandler) MarkSalesOrderSAPSynced(c *gin.Context) {
+	repo := h.getRepositoryFromContext(c)
+	if repo == nil {
+		return
+	}
+	h.useCase.SetRepository(repo)
+
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, "invalid order_id", nil))
+		return
+	}
+	var req struct {
+		SAPDocEntry int `json:"sap_doc_entry"`
+		SAPDocNum   int `json:"sap_doc_num"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, utils.NewResponse(utils.CodeBadReq, err.Error(), nil))
+		return
+	}
+	resp := h.useCase.MarkSalesOrderSAPSynced(c.Request.Context(), orderID, req.SAPDocEntry, req.SAPDocNum)
+	c.JSON(resp.StatusCode, resp)
+}

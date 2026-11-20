@@ -4830,3 +4830,40 @@ CREATE TRIGGER trg_change_log_menu_item_availability_schedules AFTER INSERT OR U
 
 DROP TRIGGER IF EXISTS trg_change_log_product_prices ON product_prices;
 CREATE TRIGGER trg_change_log_product_prices AFTER INSERT OR UPDATE OR DELETE ON product_prices FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('product_prices');
+
+CREATE OR REPLACE FUNCTION seed_default_printing_template_for_organization()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM printing_templates
+        WHERE organization_id=NEW.id AND type='receipt' AND language='en' AND is_default
+    ) THEN
+        INSERT INTO printing_templates (organization_id, name, type, language, config, is_default)
+        VALUES (
+            NEW.id,
+            'Standard receipt',
+            'receipt',
+            'en',
+            '{"version":1,"paper_width_mm":80,"header_lines":[],"show_organization_name":true,"show_legal_name":true,"show_tax_id":true,"show_receipt_number":true,"show_date":true,"show_cashier":true,"show_terminal":true,"show_customer":true,"show_items":true,"show_subtotal":true,"show_discount":true,"show_tax":true,"show_total":true,"show_payment_method":true,"show_paid_change":true,"show_barcode":true,"footer_lines":["Thank you for your visit!","Please keep this receipt for any exchange or return."]}'::jsonb,
+            true
+        )
+        ON CONFLICT DO NOTHING;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_organizations_seed_printing_template ON organizations;
+CREATE TRIGGER trg_organizations_seed_printing_template
+    AFTER INSERT ON organizations
+    FOR EACH ROW EXECUTE FUNCTION seed_default_printing_template_for_organization();
+
+DROP TRIGGER IF EXISTS trg_change_log_printing_templates ON printing_templates;
+CREATE TRIGGER trg_change_log_printing_templates
+    AFTER INSERT OR UPDATE ON printing_templates
+    FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('printing_templates');
+
+DROP TRIGGER IF EXISTS trg_change_log_store_receipt_settings ON store_receipt_settings;
+CREATE TRIGGER trg_change_log_store_receipt_settings
+    AFTER INSERT OR UPDATE ON store_receipt_settings
+    FOR EACH ROW EXECUTE FUNCTION trg_record_change_log('store_receipt_settings');

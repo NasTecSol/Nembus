@@ -3,8 +3,12 @@ package updater
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,5 +63,35 @@ func TestBinaryHashVerification(t *testing.T) {
 
 	if computedHash != expectedHash {
 		t.Errorf("Hash calculation error: got %s, want %s", computedHash, expectedHash)
+	}
+}
+
+func TestCheckForUpdate_RejectsDowngradeOrEqual(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(UpdateInfo{
+			HasUpdate:      true,
+			CurrentVersion: "v1.2.0",
+			LatestVersion:  "v1.2.0",
+			DownloadURL:    "/api/v1/updates/sap-agent/download/1",
+		})
+	}))
+	defer srv.Close()
+
+	info, err := CheckForUpdate("v1.2.0", srv.URL, "test-key")
+	if err != nil {
+		t.Fatalf("CheckForUpdate failed: %v", err)
+	}
+	if info.HasUpdate {
+		t.Fatalf("expected HasUpdate=false when latestVersion <= currentVersion")
+	}
+	if !strings.HasPrefix(info.DownloadURL, srv.URL) {
+		t.Fatalf("expected relative DownloadURL resolved against server URL, got %q", info.DownloadURL)
+	}
+}
+
+func TestApplyUpdate_RequiresChecksum(t *testing.T) {
+	err := ApplyUpdate("https://example.com/sap-agent.exe", "", "key", false, "")
+	if err == nil || !strings.Contains(err.Error(), "checksum is required") {
+		t.Fatalf("expected checksum required error, got %v", err)
 	}
 }

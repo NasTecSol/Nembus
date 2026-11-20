@@ -664,6 +664,41 @@ func (q *Queries) RevokePermissionFromSubmenu(ctx context.Context, arg RevokePer
 	return err
 }
 
+const searchPermissions = `-- name: SearchPermissions :many
+SELECT id, name, code, description, metadata, created_at FROM permissions
+WHERE name ILIKE '%' || $1::text || '%'
+   OR code ILIKE '%' || $1::text || '%'
+   OR COALESCE(description, '') ILIKE '%' || $1::text || '%'
+ORDER BY name
+`
+
+func (q *Queries) SearchPermissions(ctx context.Context, search string) ([]Permission, error) {
+	rows, err := q.db.Query(ctx, searchPermissions, search)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Permission
+	for rows.Next() {
+		var i Permission
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Code,
+			&i.Description,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updatePermission = `-- name: UpdatePermission :one
 UPDATE permissions
 SET 

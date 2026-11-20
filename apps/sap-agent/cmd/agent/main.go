@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/kardianos/service"
 
-
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 	"github.com/NasTecSol/nembus-sap-agent/internal/db"
 	"github.com/NasTecSol/nembus-sap-agent/internal/etl"
@@ -22,17 +25,21 @@ import (
 
 // Application Version & Update configuration (injected via -ldflags at build time)
 var (
-	Version      = "v1.0.0"
-	AppUpdateKey = ""
-	CloudURL     = ""
+	Version         = "v1.0.0"
+	AppUpdateKey    = ""
+	CloudURL        = ""
+	OTelEndpoint    = ""
+	OTelIngestToken = ""
 )
 
 type program struct {
-	srv    *server.Server
-	port   int
-	sqlite *db.SQLiteStore
-	mssql  *db.MSSQLClient
-	cfg    *config.AgentConfig
+	srv          *server.Server
+	engine       *etl.Engine
+	port         int
+	sqlite       *db.SQLiteStore
+	mssql        *db.MSSQLClient
+	cfg          *config.AgentConfig
+	otelShutdown func(context.Context) error
 }
 
 func (p *program) Start(s service.Service) error {
@@ -58,22 +65,30 @@ func (p *program) run() {
 		ticker := time.NewTicker(2 * time.Hour)
 		defer ticker.Stop()
 		for {
-			currVer := p.cfg.Version
+			currCfg := config.Get()
+			currVer := currCfg.Version
 			if currVer == "" {
 				currVer = "v1.0.0"
 			}
-			info, err := updater.CheckForUpdate(currVer, p.cfg.Cloud.BaseURL, p.cfg.Cloud.AppUpdateClientKey)
+			info, err := updater.CheckForUpdate(currVer, currCfg.Cloud.BaseURL, currCfg.Cloud.AppUpdateClientKey)
 			if err == nil && info != nil && info.HasUpdate {
 				log.Printf("[SAP-UPDATER] 🚀 New update available: %s (Current: %s)", info.LatestVersion, currVer)
 				if info.IsMandatory {
-					log.Println("[SAP-UPDATER] Mandatory update detected. Applying automatically...")
-					_ = updater.ApplyUpdate(
-						info.DownloadURL,
-						info.ChecksumSHA256,
-						p.cfg.Cloud.AppUpdateClientKey,
-						!service.Interactive(),
-						"NembusSAPMigrationAgent",
-					)
+					if p.engine != nil && p.engine.IsRunning() {
+						log.Println("[SAP-UPDATER] Mandatory update detected, but a migration run is active. Deferring until next check.")
+					} else {
+						log.Println("[SAP-UPDATER] Mandatory update detected. Applying automatically...")
+						if applyErr := updater.ApplyUpdateWithHook(
+							info.DownloadURL,
+							info.ChecksumSHA256,
+							currCfg.Cloud.AppUpdateClientKey,
+							!service.Interactive(),
+							"NembusSAPMigrationAgent",
+							func() { _ = p.Stop(nil) },
+						); applyErr != nil {
+							log.Printf("[SAP-UPDATER] Mandatory auto-update failed: %v", applyErr)
+						}
+					}
 				}
 			}
 			<-ticker.C
@@ -87,11 +102,19 @@ func (p *program) run() {
 
 func (p *program) Stop(s service.Service) error {
 	log.Println("[SAP-AGENT] Stopping agent service...")
+	if p.srv != nil {
+		_ = p.srv.Shutdown(context.Background())
+	}
 	if p.sqlite != nil {
 		_ = p.sqlite.Close()
 	}
 	if p.mssql != nil {
 		_ = p.mssql.Close()
+	}
+	if p.otelShutdown != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = p.otelShutdown(shutCtx)
+		cancel()
 	}
 	return nil
 }
@@ -128,20 +151,34 @@ func main() {
 		cfg.Port = *portFlag
 	}
 
-	// Apply build-time or environment variables
+	// Apply build-time defaults without overwriting user-persisted onboarding URLs/keys
 	cfg.Version = Version
-	if CloudURL != "" {
+	if CloudURL != "" && (cfg.Cloud.BaseURL == "" || (!cfg.OnboardingCompleted && cfg.Cloud.BaseURL == config.DefaultConfig().Cloud.BaseURL)) {
 		cfg.Cloud.BaseURL = CloudURL
 	}
-	if AppUpdateKey != "" {
+	if AppUpdateKey != "" && cfg.Cloud.AppUpdateClientKey == "" {
 		cfg.Cloud.AppUpdateClientKey = AppUpdateKey
 	}
 
-	// Always start in pre-onboarding mode so no migration, downstream, or upstream
-	// sync runs automatically on startup before onboarding is completed.
-	cfg.OnboardingCompleted = false
-	_ = config.SaveConfig(cfg)
-	log.Println("[SAP-AGENT] Startup complete: waiting for onboarding completion before starting Downstream and Upstream syncs.")
+	otelShutdown, otelErr := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:    "nembus-sap-agent",
+		ServiceVersion: cfg.Version,
+		TenantSlug:     cfg.TenantSlug,
+		OTLPEndpoint:   OTelEndpoint,
+		IngestToken:    OTelIngestToken,
+		SpoolDir:       filepath.Join(os.TempDir(), "nembus-otel-sap"),
+		MaxSpoolBytes:  50 * 1024 * 1024,
+	})
+	if otelErr != nil {
+		log.Printf("[Telemetry] Warning: OpenTelemetry init failed: %v", otelErr)
+	}
+
+	if cfg.OnboardingCompleted {
+		log.Printf("[SAP-AGENT] Resuming persisted configuration for tenant %q (downstream_auto=%v, upstream_auto=%v).",
+			cfg.TenantSlug, cfg.DownstreamAutoActive, cfg.UpstreamAutoActive)
+	} else {
+		log.Println("[SAP-AGENT] Startup complete: waiting for onboarding completion before starting Downstream and Upstream syncs.")
+	}
 
 	// 2. Initialize Local SQLite Checkpoint Storage
 	sqliteStore, err := db.NewSQLiteStore(cfg.SQLitePath)
@@ -149,7 +186,7 @@ func main() {
 		log.Fatalf("[SAP-AGENT] Failed to initialize SQLite storage at %s: %v", cfg.SQLitePath, err)
 	}
 
-	// 3. SQL Server client will be established upon onboarding completion
+	// 3. SQL Server client will be established upon onboarding completion or on demand
 	var mssqlClient *db.MSSQLClient
 
 	// 4. Initialize Cloud Transport and ETL Engine
@@ -159,12 +196,27 @@ func main() {
 	// 5. Initialize Embedded Server with Web UI
 	srv := server.NewServer(cfg, engine, sqliteStore, mssqlClient, cloudClient, ui.FS)
 
+	// Handle one-shot CLI subcommands if provided (unified entrypoint)
+	if args := flag.Args(); len(args) > 0 {
+		defer func() {
+			if otelShutdown != nil {
+				shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = otelShutdown(shutCtx)
+				cancel()
+			}
+		}()
+		runCLICommand(args[0], cfg, engine, srv, sqliteStore, cloudClient)
+		return
+	}
+
 	prg := &program{
-		srv:    srv,
-		port:   cfg.Port,
-		sqlite: sqliteStore,
-		mssql:  mssqlClient,
-		cfg:    cfg,
+		srv:          srv,
+		engine:       engine,
+		port:         cfg.Port,
+		sqlite:       sqliteStore,
+		mssql:        mssqlClient,
+		cfg:          cfg,
+		otelShutdown: otelShutdown,
 	}
 
 	svcConfig := &service.Config{
@@ -189,5 +241,48 @@ func main() {
 
 	if err := s.Run(); err != nil {
 		log.Fatalf("[SAP-AGENT] Service run error: %v", err)
+	}
+}
+
+func runCLICommand(cmd string, cfg *config.AgentConfig, engine *etl.Engine, srv *server.Server, sqliteStore *db.SQLiteStore, cloudClient *transport.CloudClient) {
+	defer sqliteStore.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	switch cmd {
+	case "version":
+		fmt.Printf("Nembus SAP Agent %s\n", cfg.Version)
+	case "test-connection", "test":
+		mssql, err := db.NewMSSQLClient(cfg.MSSQL)
+		if err != nil {
+			log.Printf("[SAP-AGENT] MSSQL connect failed: %v", err)
+		} else {
+			defer mssql.Close()
+			if err := mssql.Ping(ctx); err != nil {
+				log.Printf("[SAP-AGENT] MSSQL ping failed: %v", err)
+			} else {
+				log.Println("[SAP-AGENT] MSSQL connection: OK")
+			}
+		}
+		ok, msg, err := cloudClient.PingCloud(ctx)
+		if err != nil || !ok {
+			log.Printf("[SAP-AGENT] Cloud connection failed: ok=%v msg=%s err=%v", ok, msg, err)
+		} else {
+			log.Printf("[SAP-AGENT] Cloud connection: OK (%s)", msg)
+		}
+	case "sync-downstream", "downstream":
+		stats, err := engine.ExecuteDownstreamSync(ctx, server.DownstreamMasterDomains)
+		if err != nil {
+			log.Fatalf("[SAP-AGENT] Downstream sync failed: %v", err)
+		}
+		log.Printf("[SAP-AGENT] Downstream sync complete: %+v", stats)
+	case "sync-upstream", "upstream":
+		stats, err := srv.RunUpstreamOnce(ctx)
+		if err != nil {
+			log.Fatalf("[SAP-AGENT] Upstream sync failed: %v", err)
+		}
+		log.Printf("[SAP-AGENT] Upstream sync complete: %+v", stats)
+	default:
+		log.Fatalf("[SAP-AGENT] Unknown command %q. Valid commands: version, test-connection, sync-downstream, sync-upstream", cmd)
 	}
 }

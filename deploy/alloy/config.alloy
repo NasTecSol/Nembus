@@ -1,0 +1,70 @@
+// Grafana Alloy OTLP gateway → Grafana Cloud.
+// Credentials supplied via environment variables (see .env.example).
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+otelcol.receiver.otlp "nembus" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+    cors {
+      allowed_origins = ["*"]
+      allowed_headers = ["*"]
+    }
+  }
+
+  output {
+    metrics = [otelcol.processor.memory_limiter.nembus.input]
+    logs    = [otelcol.processor.memory_limiter.nembus.input]
+    traces  = [otelcol.processor.memory_limiter.nembus.input]
+  }
+}
+
+otelcol.processor.memory_limiter "nembus" {
+  check_interval = "1s"
+  limit          = "128MiB"
+  spike_limit    = "32MiB"
+
+  output {
+    metrics = [otelcol.processor.batch.nembus.input]
+    logs    = [otelcol.processor.batch.nembus.input]
+    traces  = [otelcol.processor.batch.nembus.input]
+  }
+}
+
+otelcol.processor.batch "nembus" {
+  timeout         = "5s"
+  send_batch_size = 1024
+
+  output {
+    metrics = [otelcol.exporter.otlphttp.grafana_cloud.input]
+    logs    = [otelcol.exporter.otlphttp.grafana_cloud.input]
+    traces  = [otelcol.exporter.otlphttp.grafana_cloud.input]
+  }
+}
+
+otelcol.exporter.otlphttp "grafana_cloud" {
+  client {
+    endpoint    = sys.env("GRAFANA_CLOUD_OTLP_ENDPOINT")
+    auth        = otelcol.auth.basic.grafana_cloud.handler
+    compression = "gzip"
+  }
+
+  retry_on_failure {
+    enabled = true
+  }
+
+  sending_queue {
+    enabled = true
+  }
+}
+
+otelcol.auth.basic "grafana_cloud" {
+  username = sys.env("GRAFANA_CLOUD_INSTANCE_ID")
+  password = sys.env("GRAFANA_CLOUD_API_KEY")
+}

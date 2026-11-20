@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/NasTecSol/nembus-core/biometrics"
@@ -16,6 +17,7 @@ import (
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
 	router "github.com/NasTecSol/nembus-core/routing"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-core/usecase"
 	cloudzatca "github.com/NasTecSol/nembus-core/zatca"
 	grpcbackup "github.com/NasTecSol/nembus-server/internal/grpc"
@@ -27,6 +29,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
@@ -58,10 +63,17 @@ func setupDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, *rep
 		log.Fatal("MASTER_DB_URL is not set")
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.MasterDBURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.MasterDBURL)
 	if err != nil {
 		return nil, nil, err
 	}
+	telemetry.AttachPoolTracer(poolCfg, "master")
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	telemetry.RegisterPoolMetrics(pool, "master")
 
 	// Ensure required columns / schema patches exist
 	if err := manager.PatchDatabase(ctx, pool); err != nil {
@@ -91,8 +103,8 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, x-tenant-id, x-m2m-key, x-authorization-token, X-Authorization-Token, ngrok-skip-browser-warning, Accept, X-Requested-With, Cache-Control, Pragma, Access-Control-Request-Headers, Access-Control-Request-Method, traceparent, tracestate")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, X-Trace-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
@@ -102,7 +114,7 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		c.Next()
 	})
 
-	r.Use(middleware.LoggerMiddleware())
+	r.Use(middleware.OTelGinMiddleware("nembus-cloud-server"))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/health", healthCheck)
 
@@ -288,6 +300,12 @@ func setupRouter(tenantManager *manager.Manager, masterPool *pgxpool.Pool, maste
 		zatcaHandler.SetOnboarder(zatcaService.GetOnboardingService())
 		zatcaHandler.SetSubmitter(zatcaService)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+		// This endpoint only returns static capability flags. Authenticate its
+		// JWT but avoid tenant pool setup so recovery checks cannot hang on a DB
+		// migration or schema patch.
+		capabilityAPI := r.Group("/api")
+		capabilityAPI.Use(middleware.JWTAuthMiddleware())
+		router.RegisterZatcaSyncStatusRoute(capabilityAPI, zatcaHandler)
 
 		// Notification Center & Outbox Routes
 		notifUC := usecase.NewNotificationUseCase(masterRepo)
@@ -329,35 +347,6 @@ func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "OK"})
 }
 
-// Keep diagnostics on the same database session that failed installation. Never
-// log the tenant connection string: it contains database credentials.
-func installTenantOrderAutomation(ctx context.Context, pool *pgxpool.Pool, slug string) error {
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Release()
-	if _, err := conn.Exec(ctx, cloudzatca.OrderAutomationDDL); err != nil {
-		var database, role, sessionRole, server, searchPath, table, owner string
-		var canReference, canTrigger bool
-		diagnosticErr := conn.QueryRow(ctx, `SELECT current_database(), current_user::text, session_user::text,
- COALESCE(inet_server_addr()::text,'local-socket'), current_setting('search_path'),
- COALESCE(to_regclass('sales_orders_v2')::text,'missing'),
- COALESCE((SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid=to_regclass('sales_orders_v2')),'missing'),
- COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'REFERENCES'),false),
- COALESCE(has_table_privilege(current_user,to_regclass('sales_orders_v2'),'TRIGGER'),false)`).Scan(
-			&database, &role, &sessionRole, &server, &searchPath, &table, &owner, &canReference, &canTrigger)
-		if diagnosticErr != nil {
-			log.Printf("[ZATCA ORDER] Connection diagnostic for %s failed: %v", slug, diagnosticErr)
-		} else {
-			log.Printf("[ZATCA ORDER] Connection diagnostic tenant=%q host=%q database=%q role=%q session_role=%q server=%q search_path=%q table=%q owner=%q references=%t trigger=%t",
-				slug, pool.Config().ConnConfig.Host, database, role, sessionRole, server, searchPath, table, owner, canReference, canTrigger)
-		}
-		return err
-	}
-	return nil
-}
-
 func main() {
 	env := "development"
 	if len(os.Args) > 1 {
@@ -375,6 +364,31 @@ func main() {
 	}
 
 	cfg := config.LoadConfig(env)
+
+	appVersion := os.Getenv("APP_VERSION")
+	if appVersion == "" {
+		appVersion = "1.0.0"
+	}
+	otelShutdown, otelErr := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:    "nembus-cloud-server",
+		ServiceVersion: appVersion,
+		Environment:    cfg.Env,
+		OTLPEndpoint:   cfg.OTelEndpoint,
+		IngestToken:    cfg.OTelIngestToken,
+		SpoolDir:       filepath.Join(os.TempDir(), "nembus-otel-cloud"),
+		MaxSpoolBytes:  50 * 1024 * 1024,
+	})
+	if otelErr != nil {
+		log.Printf("[Telemetry] Warning: OpenTelemetry init failed: %v", otelErr)
+	}
+	defer func() {
+		if otelShutdown != nil {
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = otelShutdown(shutCtx)
+			shutCancel()
+		}
+	}()
+
 	log.Printf("Starting NEMBUS in %s mode on port %s", cfg.Env, cfg.Port)
 
 	if err := biometrics.InitRuntime(); err != nil {
@@ -399,7 +413,6 @@ func main() {
 	// Orders and lines can arrive through separate sync events. Persist a job on
 	// each committed change and submit once the complete order validates.
 	go func() {
-		ready := make(map[string]bool)
 		submit := cloudzatca.NewService(masterRepo, &usecase.ZatcaConfig{
 			Env: cfg.ZatcaEnv, BaseURL: cfg.ZatcaBaseURL, OrgVATID: cfg.ZatcaOrgVATID,
 		})
@@ -417,16 +430,24 @@ func main() {
 					log.Printf("[ZATCA ORDER] Open tenant %s failed: %v", tenant.Slug, err)
 					continue
 				}
-				if !ready[tenant.Slug] {
-					if err := installTenantOrderAutomation(cycleCtx, pool, tenant.Slug); err != nil {
-						log.Printf("[ZATCA ORDER] Install jobs for %s failed: %v", tenant.Slug, err)
-						continue
-					}
-					ready[tenant.Slug] = true
-				}
-				if err := cloudzatca.ProcessOrderAutomationBatch(cycleCtx, pool, submit); err != nil && cycleCtx.Err() == nil {
+				zatcaStart := time.Now()
+				zatcaCtx := telemetry.WithTenantSlug(cycleCtx, tenant.Slug)
+				zatcaCtx, zatcaSpan := telemetry.Tracer("nembus/zatca-order").Start(
+					zatcaCtx,
+					"zatca.order_automation",
+					trace.WithAttributes(attribute.String("nembus.tenant.slug", tenant.Slug)),
+				)
+				err = cloudzatca.ProcessOrderAutomationBatch(zatcaCtx, pool, submit)
+				zatcaDurMs := float64(time.Since(zatcaStart).Microseconds()) / 1000.0
+				if err != nil && cycleCtx.Err() == nil {
+					zatcaSpan.RecordError(err)
+					zatcaSpan.SetStatus(codes.Error, err.Error())
+					telemetry.RecordZatcaSubmission(zatcaCtx, "nembus-cloud-server", tenant.Slug, "error", zatcaDurMs)
 					log.Printf("[ZATCA ORDER] Tenant %s: %v", tenant.Slug, err)
+				} else if err == nil {
+					telemetry.RecordZatcaSubmission(zatcaCtx, "nembus-cloud-server", tenant.Slug, "batch_ok", zatcaDurMs)
 				}
+				zatcaSpan.End()
 			}
 		}
 		run()
@@ -525,7 +546,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("gRPC: failed to listen on %s: %v", grpcAddr, err)
 		}
-		var serverOpts []grpc.ServerOption
+		serverOpts := []grpc.ServerOption{
+			grpc.StatsHandler(telemetry.GRPCServerStatsHandler()),
+		}
 		certFile := os.Getenv("GRPC_TLS_CERT_FILE")
 		keyFile := os.Getenv("GRPC_TLS_KEY_FILE")
 		if certFile != "" && keyFile != "" {
