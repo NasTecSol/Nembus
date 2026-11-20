@@ -139,6 +139,7 @@ type SyncService struct {
 	zatcaSchemaReady     atomic.Bool
 	zatcaBackfilled      atomic.Bool
 	orderAutomationReady atomic.Bool
+	missingStoreLogged   atomic.Bool
 	lastAppliedSeq       atomic.Int64
 	orderSubmitter       corezatca.OrderSubmitter
 	syncMu               sync.Mutex
@@ -523,18 +524,20 @@ func (s *SyncService) performSync() {
 			}
 		}
 	}
-	log.Printf("[gRPC SYNC] Starting cycle for tenant %s (target %s)", s.tenantSlug, s.grpcAddr)
-	defer func() { log.Printf("[gRPC SYNC] Cycle finished in %s", time.Since(started).Round(time.Millisecond)) }()
-
 	// 1. gRPC Push Strategy (Local Outbox -> Cloud)
-	s.drainOutboxGRPC()
+	pushed, pushErr := s.drainOutboxGRPC()
 	s.drainZatcaOutbox()
 
 	// 2. gRPC Pull Strategy (Cloud change_log -> Local Watermarks with StreamPull fallback)
-	s.fetchChangesGRPC()
+	pulled, pullErr := s.fetchChangesGRPC()
 
 	// 3. Record local outbox queue depth and sync lag gauges
 	s.recordOutboxMetrics()
+
+	elapsed := time.Since(started).Round(time.Millisecond)
+	if pushed > 0 || pulled > 0 || pushErr || pullErr || elapsed >= 2*time.Second {
+		log.Printf("[gRPC SYNC] Cycle finished in %s (tenant=%s pushed=%d pulled=%d)", elapsed, s.tenantSlug, pushed, pulled)
+	}
 }
 
 func (s *SyncService) recordOutboxMetrics() {
@@ -596,7 +599,7 @@ const pendingOutboxSQL = `
 	LIMIT 100;
 `
 
-func (s *SyncService) drainOutboxGRPC() {
+func (s *SyncService) drainOutboxGRPC() (int, bool) {
 	ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
 	defer cancel()
 	s.ensureOutboxSchema(ctx)
@@ -604,7 +607,7 @@ func (s *SyncService) drainOutboxGRPC() {
 	rows, err := s.masterPool.Query(ctx, pendingOutboxSQL)
 	if err != nil {
 		log.Printf("[gRPC SYNC] Failed to query local sync_queue: %v", err)
-		return
+		return 0, true
 	}
 	defer rows.Close()
 
@@ -621,12 +624,12 @@ func (s *SyncService) drainOutboxGRPC() {
 	}
 	if err := rows.Err(); err != nil {
 		log.Printf("[gRPC SYNC] Failed to read local sync_queue: %v", err)
-		return
+		return 0, true
 	}
 	rows.Close()
 
 	if len(items) == 0 {
-		return
+		return 0, false
 	}
 
 	batches, skippedItems := s.groupOutboxItemsIntoBatches(ctx, items)
@@ -634,7 +637,7 @@ func (s *SyncService) drainOutboxGRPC() {
 		s.recordOutboxFailureErr([]OutboxItem{skipped.item}, skipped.err)
 	}
 	if len(batches) == 0 {
-		return
+		return 0, len(skippedItems) > 0
 	}
 
 	pushStart := time.Now()
@@ -647,7 +650,7 @@ func (s *SyncService) drainOutboxGRPC() {
 		telemetry.RecordSyncBatch(telemetry.WithTenantSlug(ctx, s.tenantSlug), "push", s.tenantSlug, "outbox_batch", "error", 0, float64(time.Since(pushStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] Connection failed to %s: %v", s.grpcAddr, err)
 		s.recordOutboxFailureErr(items, err)
-		return
+		return 0, true
 	}
 
 	client := syncpb.NewSyncServiceClient(conn)
@@ -657,7 +660,7 @@ func (s *SyncService) drainOutboxGRPC() {
 		telemetry.RecordSyncBatch(pushCtx, "push", s.tenantSlug, "outbox_batch", "error", 0, float64(time.Since(pushStart).Microseconds())/1000.0)
 		log.Printf("[gRPC SYNC] StreamPush initialization error: %v", err)
 		s.recordOutboxFailureErr(items, err)
-		return
+		return 0, true
 	}
 
 	syncedCount := s.pushCorrelationBatchesWindowed(pushCtx, stream, batches, storeID, deviceID)
@@ -673,6 +676,7 @@ func (s *SyncService) drainOutboxGRPC() {
 	if syncedCount > 0 {
 		log.Printf("[gRPC SYNC] Pushed %d outbox items upstream to Cloud via gRPC stream", syncedCount)
 	}
+	return syncedCount, syncedCount == 0
 }
 
 type skippedOutboxItem struct {
