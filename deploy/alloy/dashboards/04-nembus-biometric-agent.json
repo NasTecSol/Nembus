@@ -269,7 +269,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "round(sum(increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\", status=\"error\"}[1h])) or vector(0))",
+          "expr": "round(sum(increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\", status=~\"error|timeout\"}[1h])) or vector(0))",
           "instant": true
         }
       ]

@@ -180,7 +180,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])) or vector(0)",
+          "expr": "sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])) or vector(0)",
           "instant": true
         }
       ]
@@ -239,7 +239,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=\"500\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])), 0.0001)) or vector(0)",
+          "expr": "(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=\"500\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])), 0.0001)) or vector(0)",
           "instant": true
         }
       ]
@@ -297,7 +297,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "round(sum(increase(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=\"400\"}[1h])) or vector(0))",
+          "expr": "round(sum(increase(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=\"400\"}[1h])) or vector(0))",
           "instant": true
         }
       ]
@@ -467,7 +467,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (service_name) (rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval]))",
+          "expr": "sum by (service_name) (rate(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval]))",
           "legendFormat": "{{service_name}}"
         }
       ]
@@ -517,7 +517,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_ms_milliseconds_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_ms_milliseconds_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\"}[$__rate_interval])))",
           "legendFormat": "{{service_name}} P95"
         }
       ]
@@ -571,7 +571,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (service_name, status_class) (increase(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=~\"400|500\"}[$__rate_interval]))",
+          "expr": "sum by (service_name, status_class) (increase(http_server_requests_total{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!~\"/health|/swagger.*|/metrics|/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check|/api/notifications/unread-count\", status_class=~\"400|500\"}[$__rate_interval]))",
           "legendFormat": "{{service_name}} {{status_class}}xx"
         }
       ]

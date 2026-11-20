@@ -129,6 +129,16 @@ func (e *Engine) setDownstreamPayloadHash(domain contracts.DomainType, hash stri
 	e.lastDownstreamHash[domain] = hash
 }
 
+func (e *Engine) clearDownstreamPayloadHashes() {
+	e.lastDownstreamHashMu.Lock()
+	defer e.lastDownstreamHashMu.Unlock()
+	e.lastDownstreamHash = make(map[contracts.DomainType]string)
+}
+
+func isBatchFullySucceeded(resp *contracts.MigrationBatchResponse) bool {
+	return resp != nil && resp.Success && resp.RecordsFailed == 0
+}
+
 func (e *Engine) getMSSQLClient() (*db.MSSQLClient, error) {
 	if e.mssql != nil && e.mssql.DB != nil {
 		if err := e.mssql.DB.Ping(); err == nil {
@@ -156,6 +166,7 @@ func (e *Engine) UpdateCloudConfig(cfg config.CloudConfig) {
 	} else {
 		e.cloudClient = transport.NewCloudClient(cfg)
 	}
+	e.clearDownstreamPayloadHashes()
 }
 
 // UpdateMSSQLConfig resets the cached MSSQL client so subsequent operations connect using the new config.
@@ -476,7 +487,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if err != nil {
 			return 0, err
 		}
-		e.setDownstreamPayloadHash(domain, payloadHash)
+		if isBatchFullySucceeded(resp) {
+			e.setDownstreamPayloadHash(domain, payloadHash)
+		}
 		return int64(resp.RecordsStaged), nil
 
 	case contracts.DomainUOMGroups:
@@ -493,6 +506,7 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			return 0, nil
 		}
 		var totalStaged int64
+		allSucceeded := true
 		for i := 0; i < len(groups); i += batchSize {
 			end := i + batchSize
 			if end > len(groups) {
@@ -513,9 +527,14 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			if err != nil {
 				return totalStaged, err
 			}
+			if !isBatchFullySucceeded(resp) {
+				allSucceeded = false
+			}
 			totalStaged += int64(resp.RecordsStaged)
 		}
-		e.setDownstreamPayloadHash(domain, payloadHash)
+		if allSucceeded {
+			e.setDownstreamPayloadHash(domain, payloadHash)
+		}
 		return totalStaged, nil
 
 	case contracts.DomainCategories:

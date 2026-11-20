@@ -334,7 +334,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "round(sum(increase(http_server_requests_total{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[1h])) or vector(0))",
+          "expr": "round(sum(increase(http_server_requests_total{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[1h])) or vector(0))",
           "instant": true
         }
       ]
@@ -546,12 +546,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_route) (increase(http_server_requests_total{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval]))",
+          "expr": "sum by (http_route) (increase(http_server_requests_total{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval]))",
           "legendFormat": "Calls {{http_route}}"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_ms_milliseconds_bucket{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_ms_milliseconds_bucket{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route!~\"/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval])))",
           "legendFormat": "Action P95 (ms)"
         }
       ]
@@ -601,7 +601,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_route) (rate(http_server_requests_total{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route=~\"/|/app\\.js|/style\\.css|/favicon\\.ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval]))",
+          "expr": "sum by (http_route) (rate(http_server_requests_total{service_name=\"nembus-sap-agent\", deployment_environment=~\"$environment\", http_route=~\"/|/app[.]js|/style[.]css|/favicon[.]ico|/api/v1/sync/status|/api/v1/migration/status|/api/v1/logs|/api/v1/onboarding/status|/api/v1/updates/check\"}[$__rate_interval]))",
           "legendFormat": "{{http_route}}"
         }
       ]

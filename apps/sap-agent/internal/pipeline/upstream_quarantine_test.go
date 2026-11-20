@@ -64,3 +64,44 @@ func TestUpstreamTransientErrorDoesNotQuarantine(t *testing.T) {
 		t.Fatalf("transient error unexpected backoff: skip=%v nextAt=%v quarantined=%v", skip, nextAt, quarantined)
 	}
 }
+
+func TestUpstreamTransientErrorsDoNotConsumePermanentQuota(t *testing.T) {
+	u := &UpstreamSync{failedRetries: make(map[string]retryEntry)}
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	transientErr := errors.New("dial tcp: connection refused")
+	permErr := &sap.APIError{
+		StatusCode: http.StatusBadRequest,
+		Code:       -10,
+		Message:    "Fully allocate item INV00028",
+	}
+
+	// Two transient failures should not count toward permanent quarantine threshold.
+	if q := u.recordRetryFailure("tx:3", now, transientErr); q {
+		t.Fatalf("transient attempt 1 should not quarantine")
+	}
+	if q := u.recordRetryFailure("tx:3", now.Add(time.Minute), transientErr); q {
+		t.Fatalf("transient attempt 2 should not quarantine")
+	}
+
+	// Permanent attempt 1 -> 1m backoff, not quarantined
+	t3 := now.Add(3 * time.Minute)
+	if q := u.recordRetryFailure("tx:3", t3, permErr); q {
+		t.Fatalf("first permanent error after transient errors should not quarantine")
+	}
+	skip, nextAt, quarantined := u.shouldBackoff("tx:3", t3.Add(30*time.Second))
+	if !skip || quarantined || !nextAt.Equal(t3.Add(time.Minute)) {
+		t.Fatalf("permanent attempt 1 unexpected backoff: skip=%v nextAt=%v quarantined=%v", skip, nextAt, quarantined)
+	}
+
+	// Permanent attempt 2 -> 5m backoff, not quarantined
+	t4 := t3.Add(time.Minute)
+	if q := u.recordRetryFailure("tx:3", t4, permErr); q {
+		t.Fatalf("second permanent error should not quarantine")
+	}
+
+	// Permanent attempt 3 -> quarantined for 6 hours
+	t5 := t4.Add(5 * time.Minute)
+	if q := u.recordRetryFailure("tx:3", t5, permErr); !q {
+		t.Fatalf("third permanent error should quarantine")
+	}
+}

@@ -82,9 +82,10 @@ const (
 )
 
 type retryEntry struct {
-	attempts    int
-	nextRetry   time.Time
-	quarantined bool
+	attempts          int
+	permanentAttempts int
+	nextRetry         time.Time
+	quarantined       bool
 }
 
 type UpstreamSync struct {
@@ -137,13 +138,14 @@ func (s *UpstreamSync) recordRetryFailure(key string, now time.Time, err error) 
 	entry.attempts++
 
 	if sap.IsPermanentBusinessError(err) {
-		if entry.attempts >= maxPermanentRetryAttempts {
+		entry.permanentAttempts++
+		if entry.permanentAttempts >= maxPermanentRetryAttempts {
 			entry.quarantined = true
 			entry.nextRetry = now.Add(permanentQuarantineDelay)
 			s.failedRetries[key] = entry
 			return true
 		}
-		if entry.attempts == 1 {
+		if entry.permanentAttempts == 1 {
 			entry.nextRetry = now.Add(time.Minute)
 		} else {
 			entry.nextRetry = now.Add(5 * time.Minute)
