@@ -16,7 +16,6 @@ func RegisterZatcaRoutes(rg *gin.RouterGroup, h *handler.ZatcaHandler) {
 		zatca.GET("/configs", h.GetConfigsDelta)    // Delta-Fetch (Pull: Cloud -> POS)
 		zatca.POST("/sync/push", h.ReceivePushSync) // Outbox (Push: POS -> Cloud)
 		zatca.GET("/sync/restore", h.GetZatcaSyncRestore)
-		zatca.GET("/sync/status", h.GetZatcaSyncCapabilities)
 		zatca.POST("/onboard", h.OnboardDevice) // Device Onboarding (FATOORA CSID)
 		zatca.POST("/devices/:id/complete-onboarding", h.CompleteDeviceOnboarding)
 		zatca.POST("/transactions/:id/submit", h.SubmitPosTransaction)
@@ -27,4 +26,10 @@ func RegisterZatcaRoutes(rg *gin.RouterGroup, h *handler.ZatcaHandler) {
 		zatca.POST("/orders/:id/submit", h.SubmitSalesOrder)
 		zatca.GET("/terminals/:id", h.GetTerminalZatcaConfig) // Terminal ZATCA status
 	}
+}
+
+// RegisterZatcaSyncStatusRoute registers the static capability check separately
+// so cloud callers can authenticate without opening and patching a tenant DB.
+func RegisterZatcaSyncStatusRoute(rg *gin.RouterGroup, h *handler.ZatcaHandler) {
+	rg.GET("/zatca/sync/status", h.GetZatcaSyncCapabilities)
 }
