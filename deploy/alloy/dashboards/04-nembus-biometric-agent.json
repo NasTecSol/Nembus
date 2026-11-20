@@ -4,14 +4,12 @@
   "tags": [
     "nembus",
     "biometric-agent",
-    "hardware",
-    "edge"
+    "hardware"
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
-  "editable": true,
   "time": {
     "from": "now-1h",
     "to": "now"
@@ -31,6 +29,7 @@
         "label": "Loki",
         "type": "datasource",
         "query": "loki",
+        "regex": "/-logs$/",
         "refresh": 1,
         "hide": 0
       },
@@ -59,24 +58,6 @@
           "text": "All",
           "value": "$__all"
         }
-      },
-      {
-        "name": "tenant_slug",
-        "label": "Tenant",
-        "type": "query",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${ds_prometheus}"
-        },
-        "query": "label_values(http_server_requests_total{service_name=\"nembus-biometric-agent\"}, nembus_tenant_slug)",
-        "includeAll": true,
-        "allValue": ".*",
-        "multi": true,
-        "refresh": 2,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        }
       }
     ]
   },
@@ -84,101 +65,176 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Online Biometric Bridges (3m)",
+      "title": "Online Biometric Agents (5m)",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "count(last_over_time(target_info{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\"}[3m])) or vector(0)"
+          "expr": "count(count by (service_instance_id) (last_over_time(target_info{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\"}[5m]))) or vector(0)",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
+      ]
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Connected Scanners Reported",
+      "title": "Connected USB Readers",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 6,
-        "y": 0
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(nembus_biometric_devices_connected{deployment_environment=~\"$environment\"}) or vector(0)"
+          "expr": "sum(nembus_biometric_devices_connected{deployment_environment=~\"$environment\"}) or vector(0)",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
+      ]
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Successful Captures (1h)",
+      "title": "Captures (1h)",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 12,
-        "y": 0
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\", status=\"ok\"}[1h])) or vector(0)"
+          "expr": "round(sum(increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\"}[1h])) or vector(0))",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
+      ]
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "Capture Errors / Timeouts (1h)",
+      "title": "Capture Failures (1h)",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 18,
-        "y": 0
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\", status=~\"error|timeout\"}[1h])) or vector(0)"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -190,113 +246,242 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 1
-              },
-              {
                 "color": "red",
-                "value": 5
+                "value": 1
               }
             ]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum(increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\", status=\"error\"}[1h])) or vector(0))",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 5,
-      "type": "timeseries",
-      "title": "Fingerprint Captures by Outcome",
+      "type": "table",
+      "title": "Connected Biometric Agents (Last 10m)",
+      "description": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 4
+        "y": 4,
+        "w": 24,
+        "h": 5
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "service_instance_id": "Host / Instance",
+              "service_version": "Version",
+              "deployment_environment": "Environment"
+            }
+          }
+        }
+      ],
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "{{status}}",
-          "expr": "sum by (status) (rate(nembus_biometric_captures_total{deployment_environment=~\"$environment\"}[5m]))"
+          "expr": "count by (service_instance_id, service_version, deployment_environment) (last_over_time(target_info{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\"}[10m]))",
+          "instant": true,
+          "format": "table"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        }
-      }
+      ]
     },
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Capture & Bridge HTTP P95 Latency (ms)",
+      "title": "Biometric Captures by Status (Counts)",
+      "description": "",
       "gridPos": {
-        "h": 8,
+        "x": 0,
+        "y": 9,
         "w": 12,
-        "x": 12,
-        "y": 4
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "Capture P95 ms",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(nembus_biometric_capture_duration_ms_bucket{deployment_environment=~\"$environment\"}[5m])))"
-        },
-        {
-          "refId": "B",
-          "legendFormat": "Bridge HTTP P95 ms",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_ms_bucket{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\"}[5m])))"
+          "expr": "sum by (status) (increase(nembus_biometric_captures_total{deployment_environment=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{status}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        }
-      }
+      ]
     },
     {
       "id": 7,
-      "type": "logs",
-      "title": "Biometric Agent Logs",
+      "type": "timeseries",
+      "title": "Biometric Capture & Bridge API P95 Latency (ms)",
+      "description": "",
       "gridPos": {
-        "h": 9,
+        "x": 12,
+        "y": 9,
         "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nembus_biometric_capture_duration_ms_milliseconds_bucket{deployment_environment=~\"$environment\"}[$__rate_interval]) or rate(nembus_biometric_capture_duration_ms_bucket{deployment_environment=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "Capture P95 (ms)"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_ms_milliseconds_bucket{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\", http_route!=\"/health\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\", http_route!=\"/health\"}[$__rate_interval])))",
+          "legendFormat": "Bridge HTTP P95 (ms)"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Biometric Agent Logs (Loki)",
+      "description": "",
+      "gridPos": {
         "x": 0,
-        "y": 12
+        "y": 17,
+        "w": 12,
+        "h": 10
       },
       "datasource": {
         "type": "loki",
         "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
       },
       "targets": [
         {
           "refId": "A",
           "expr": "{service_name=\"nembus-biometric-agent\", deployment_environment=~\"$environment\"}"
         }
-      ],
-      "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "dedupStrategy": "none"
-      }
+      ]
     },
     {
-      "id": 8,
+      "id": 9,
       "type": "table",
-      "title": "Biometric Bridge Traces",
+      "title": "Biometric Agent Distributed Traces",
+      "description": "",
       "gridPos": {
-        "h": 9,
-        "w": 12,
         "x": 12,
-        "y": 12
+        "y": 17,
+        "w": 12,
+        "h": 10
       },
       "datasource": {
         "type": "tempo",
@@ -305,8 +490,8 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "traceql",
-          "query": "{ resource.service.name = \"nembus-biometric-agent\" }",
+          "queryType": "traceqlSearch",
+          "query": "{ resource.service.name = \"nembus-biometric-agent\" && name != \"GET /health\" }",
           "limit": 25
         }
       ]

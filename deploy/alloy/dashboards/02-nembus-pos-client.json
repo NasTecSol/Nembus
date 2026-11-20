@@ -4,14 +4,13 @@
   "tags": [
     "nembus",
     "pos-client",
-    "edge",
+    "outbox",
     "sync"
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
-  "editable": true,
   "time": {
     "from": "now-1h",
     "to": "now"
@@ -31,6 +30,7 @@
         "label": "Loki",
         "type": "datasource",
         "query": "loki",
+        "regex": "/-logs$/",
         "refresh": 1,
         "hide": 0
       },
@@ -68,7 +68,7 @@
           "type": "prometheus",
           "uid": "${ds_prometheus}"
         },
-        "query": "label_values(nembus_pos_outbox_pending_rows, nembus_tenant_slug)",
+        "query": "label_values(http_server_requests_total{service_name=\"nembus-pos-client\"}, nembus_tenant_slug)",
         "includeAll": true,
         "allValue": ".*",
         "multi": true,
@@ -84,49 +84,72 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Online POS Terminals (3m)",
+      "title": "Online POS Terminals (5m)",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "count(last_over_time(target_info{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\"}[3m])) or vector(0)"
+          "expr": "count(count by (service_instance_id) (last_over_time(target_info{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\"}[5m]))) or vector(0)",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
+      ]
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Pending Outbox Rows",
+      "title": "Outbox Pending Rows",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(nembus_pos_outbox_pending_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -139,37 +162,52 @@
               },
               {
                 "color": "yellow",
-                "value": 50
+                "value": 25
               },
               {
                 "color": "red",
-                "value": 250
+                "value": 100
               }
             ]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(nembus_pos_outbox_pending_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Quarantined Outbox Rows",
+      "title": "Outbox Quarantined Rows",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
+        "x": 10,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(nembus_pos_outbox_quarantined_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -186,33 +224,47 @@
               }
             ]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(nembus_pos_outbox_quarantined_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "Max POS Sync Lag",
+      "title": "Max Sync Lag (s)",
+      "description": "",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
+        "x": 15,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "max(nembus_pos_sync_lag_seconds{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -222,161 +274,410 @@
               },
               {
                 "color": "yellow",
-                "value": 120
+                "value": 60
               },
               {
                 "color": "red",
-                "value": 600
+                "value": 300
               }
             ]
-          }
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(nembus_pos_sync_lag_seconds_seconds{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or max(nembus_pos_sync_lag_seconds{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}) or vector(0)",
+          "instant": true
         }
-      }
+      ]
     },
     {
       "id": 5,
-      "type": "timeseries",
-      "title": "Outbox Queue Depth by Tenant & Terminal",
+      "type": "stat",
+      "title": "ZATCA Errors (1h)",
+      "description": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 4
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "Pending {{nembus_tenant_slug}} ({{service_instance_id}})",
-          "expr": "nembus_pos_outbox_pending_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}"
-        },
-        {
-          "refId": "B",
-          "legendFormat": "Quarantined {{nembus_tenant_slug}} ({{service_instance_id}})",
-          "expr": "nembus_pos_outbox_quarantined_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}"
+          "expr": "round(sum(increase(nembus_zatca_submissions_total{app=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", status=\"error\"}[1h])) or vector(0))",
+          "instant": true
         }
       ]
     },
     {
       "id": 6,
-      "type": "timeseries",
-      "title": "POS Push / Pull gRPC Sync Events",
+      "type": "table",
+      "title": "Connected POS Terminals (Last 10m)",
+      "description": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 4
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 5
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Value",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "service_instance_id": "Terminal / Host",
+              "service_version": "Version",
+              "deployment_environment": "Environment"
+            }
+          }
+        }
+      ],
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "{{direction}} {{status}} ({{nembus_tenant_slug}})",
-          "expr": "sum by (direction, status, nembus_tenant_slug) (rate(nembus_sync_events_total{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m]))"
+          "expr": "count by (service_instance_id, service_version, deployment_environment) (last_over_time(target_info{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\"}[10m]))",
+          "instant": true,
+          "format": "table"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        }
-      }
+      ]
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Local Wails API Request Rate & P95 Latency",
+      "title": "Outbox Queue Depth (Pending vs Quarantined)",
+      "description": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 12
+        "y": 9,
+        "w": 12,
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "RPS",
-          "expr": "sum(rate(http_server_requests_total{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m]))"
+          "expr": "nembus_pos_outbox_pending_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}",
+          "legendFormat": "Pending ({{nembus_tenant_slug}})"
         },
         {
           "refId": "B",
-          "legendFormat": "P95 ms",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_ms_bucket{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m])))"
+          "expr": "nembus_pos_outbox_quarantined_rows{deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}",
+          "legendFormat": "Quarantined ({{nembus_tenant_slug}})"
         }
       ]
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Local PostgreSQL Query P95 & ZATCA Errors",
+      "title": "POS Sync Push & Pull Records (Counts)",
+      "description": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 12
+        "y": 9,
+        "w": 12,
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prometheus}"
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 70,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "SQL P95 ms",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_client_operation_duration_ms_bucket{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[5m])))"
-        },
-        {
-          "refId": "B",
-          "legendFormat": "ZATCA errors/15m",
-          "expr": "sum(increase(nembus_zatca_submissions_total{app=\"nembus-pos-client\", status=\"error\"}[15m])) or vector(0)"
+          "expr": "sum by (direction, status, nembus_tenant_slug) (increase(nembus_sync_events_total{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[$__rate_interval]))",
+          "legendFormat": "{{direction}} {{status}} ({{nembus_tenant_slug}})"
         }
       ]
     },
     {
       "id": 9,
-      "type": "logs",
-      "title": "POS Client Logs",
+      "type": "timeseries",
+      "title": "Local POS API RPS & P95 Latency (ms)",
+      "description": "",
       "gridPos": {
-        "h": 9,
-        "w": 12,
         "x": 0,
-        "y": 20
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_total{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!=\"/health\"}[$__rate_interval]))",
+          "legendFormat": "API RPS"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_ms_milliseconds_bucket{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!=\"/health\"}[$__rate_interval]) or rate(http_server_request_duration_ms_bucket{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\", http_route!=\"/health\"}[$__rate_interval])))",
+          "legendFormat": "P95 Latency (ms)"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Local PostgreSQL P95 Latency (ms) & ZATCA Submissions",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_client_operation_duration_ms_milliseconds_bucket{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[$__rate_interval]) or rate(db_client_operation_duration_ms_bucket{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[$__rate_interval])))",
+          "legendFormat": "Local DB P95 (ms)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (status) (increase(nembus_zatca_submissions_total{app=\"nembus-pos-client\", deployment_environment=~\"$environment\", nembus_tenant_slug=~\"$tenant_slug\"}[$__rate_interval]))",
+          "legendFormat": "ZATCA {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "POS Client Logs (Loki)",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 10
       },
       "datasource": {
         "type": "loki",
         "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
       },
       "targets": [
         {
           "refId": "A",
           "expr": "{service_name=\"nembus-pos-client\", deployment_environment=~\"$environment\"}"
         }
-      ],
-      "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "dedupStrategy": "none"
-      }
+      ]
     },
     {
-      "id": 10,
+      "id": 12,
       "type": "table",
-      "title": "POS Client Distributed Traces (including Edge -> Cloud gRPC)",
+      "title": "POS Client Distributed Traces",
+      "description": "",
       "gridPos": {
-        "h": 9,
-        "w": 12,
         "x": 12,
-        "y": 20
+        "y": 25,
+        "w": 12,
+        "h": 10
       },
       "datasource": {
         "type": "tempo",
@@ -385,8 +686,8 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "traceql",
-          "query": "{ resource.service.name = \"nembus-pos-client\" }",
+          "queryType": "traceqlSearch",
+          "query": "{ resource.service.name = \"nembus-pos-client\" && name != \"GET /health\" }",
           "limit": 25
         }
       ]

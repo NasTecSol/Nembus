@@ -111,9 +111,9 @@ func (w *otlpStdLogWriter) Write(p []byte) (int, error) {
 func classifyLogSeverity(msg string) (otellog.Severity, string) {
 	lower := strings.ToLower(msg)
 	switch {
-	case strings.Contains(lower, "fatal") || strings.Contains(lower, "[error]") || strings.Contains(lower, "error:") || strings.Contains(lower, "failed"):
+	case strings.Contains(msg, "❌") || strings.Contains(lower, "fatal") || strings.Contains(lower, "[error]") || strings.Contains(lower, "error:") || strings.Contains(lower, "failed"):
 		return otellog.SeverityError, "ERROR"
-	case strings.Contains(lower, "warning") || strings.Contains(lower, "[warn]"):
+	case strings.Contains(msg, "⚠️") || strings.Contains(lower, "warning") || strings.Contains(lower, "[warn]"):
 		return otellog.SeverityWarn, "WARN"
 	default:
 		return otellog.SeverityInfo, "INFO"

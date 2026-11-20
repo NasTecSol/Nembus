@@ -2,6 +2,9 @@ package etl
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -77,16 +80,53 @@ type Engine struct {
 	activeRunCancel context.CancelFunc
 	activeRunMu     sync.Mutex
 	currentRunID    string
+
+	lastDownstreamHashMu sync.Mutex
+	lastDownstreamHash   map[contracts.DomainType]string
 }
 
 func NewEngine(cfg *config.AgentConfig, mssql *db.MSSQLClient, sqlite *db.SQLiteStore, cloudClient *transport.CloudClient) *Engine {
 	return &Engine{
-		cfg:         cfg,
-		mssql:       mssql,
-		sqlite:      sqlite,
-		cloudClient: cloudClient,
-		listeners:   make(map[chan ProgressEvent]struct{}),
+		cfg:                cfg,
+		mssql:              mssql,
+		sqlite:             sqlite,
+		cloudClient:        cloudClient,
+		listeners:          make(map[chan ProgressEvent]struct{}),
+		lastDownstreamHash: make(map[contracts.DomainType]string),
 	}
+}
+
+func computePayloadHash(v any) (string, bool) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), true
+}
+
+func (e *Engine) isDownstreamPayloadUnchanged(domain contracts.DomainType, hash string) bool {
+	if hash == "" {
+		return false
+	}
+	e.lastDownstreamHashMu.Lock()
+	defer e.lastDownstreamHashMu.Unlock()
+	if e.lastDownstreamHash == nil {
+		return false
+	}
+	return e.lastDownstreamHash[domain] == hash
+}
+
+func (e *Engine) setDownstreamPayloadHash(domain contracts.DomainType, hash string) {
+	if hash == "" {
+		return
+	}
+	e.lastDownstreamHashMu.Lock()
+	defer e.lastDownstreamHashMu.Unlock()
+	if e.lastDownstreamHash == nil {
+		e.lastDownstreamHash = make(map[contracts.DomainType]string)
+	}
+	e.lastDownstreamHash[domain] = hash
 }
 
 func (e *Engine) getMSSQLClient() (*db.MSSQLClient, error) {
@@ -419,6 +459,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if len(uoms) == 0 {
 			return 0, nil
 		}
+		payloadHash, _ := computePayloadHash(uoms)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
+			return 0, nil
+		}
 		payload := &contracts.MigrationBatchPayload{
 			BatchID:        uuid.New().String(),
 			RunID:          runID,
@@ -432,6 +476,7 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		if err != nil {
 			return 0, err
 		}
+		e.setDownstreamPayloadHash(domain, payloadHash)
 		return int64(resp.RecordsStaged), nil
 
 	case contracts.DomainUOMGroups:
@@ -441,6 +486,10 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			return 0, err
 		}
 		if len(groups) == 0 {
+			return 0, nil
+		}
+		payloadHash, _ := computePayloadHash(groups)
+		if e.isDownstreamPayloadUnchanged(domain, payloadHash) {
 			return 0, nil
 		}
 		var totalStaged int64
@@ -466,6 +515,7 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			}
 			totalStaged += int64(resp.RecordsStaged)
 		}
+		e.setDownstreamPayloadHash(domain, payloadHash)
 		return totalStaged, nil
 
 	case contracts.DomainCategories:

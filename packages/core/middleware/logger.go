@@ -111,8 +111,27 @@ func OTelGinMiddleware(serviceName string) gin.HandlerFunc {
 				logAttrs = append(logAttrs, slog.String("error", errorMessage))
 			}
 			telemetry.LogError(reqCtx, "http request failed", nil, logAttrs...)
-		} else {
+		} else if !isQuietHealthOrPollRoute(route) || statusCode >= 400 || latency >= time.Second {
 			telemetry.LogInfo(reqCtx, "http request completed", logAttrs...)
 		}
+	}
+}
+
+// isQuietHealthOrPollRoute returns true for high-frequency health-check and UI
+// status-polling routes whose routine 2xx/3xx responses should still emit OTel
+// metrics and traces but should not flood structured INFO log streams.
+func isQuietHealthOrPollRoute(route string) bool {
+	switch route {
+	case "/health",
+		"/ready",
+		"/metrics",
+		"/api/notifications/unread-count",
+		"/api/v1/logs",
+		"/api/v1/migration/status",
+		"/api/v1/sync/status",
+		"/api/v1/updates/check":
+		return true
+	default:
+		return false
 	}
 }

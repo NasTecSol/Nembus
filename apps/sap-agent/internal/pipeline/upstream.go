@@ -76,9 +76,15 @@ func shouldHoldShortage(policy stockHoldPolicy, onHand, qty float64) bool {
 	return true
 }
 
+const (
+	maxPermanentRetryAttempts = 3
+	permanentQuarantineDelay  = 6 * time.Hour
+)
+
 type retryEntry struct {
-	attempts  int
-	nextRetry time.Time
+	attempts    int
+	nextRetry   time.Time
+	quarantined bool
 }
 
 type UpstreamSync struct {
@@ -105,23 +111,23 @@ func NewUpstreamSync(cfg *config.Config, sapClient SAPClient, nembusClient Nembu
 	}
 }
 
-func (s *UpstreamSync) shouldBackoff(key string, now time.Time) (bool, time.Time) {
+func (s *UpstreamSync) shouldBackoff(key string, now time.Time) (bool, time.Time, bool) {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
 	if s.failedRetries == nil {
-		return false, time.Time{}
+		return false, time.Time{}, false
 	}
 	entry, ok := s.failedRetries[key]
 	if !ok || entry.attempts == 0 {
-		return false, time.Time{}
+		return false, time.Time{}, false
 	}
 	if now.Before(entry.nextRetry) {
-		return true, entry.nextRetry
+		return true, entry.nextRetry, entry.quarantined
 	}
-	return false, time.Time{}
+	return false, time.Time{}, false
 }
 
-func (s *UpstreamSync) recordRetryFailure(key string, now time.Time) {
+func (s *UpstreamSync) recordRetryFailure(key string, now time.Time, err error) bool {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
 	if s.failedRetries == nil {
@@ -129,6 +135,24 @@ func (s *UpstreamSync) recordRetryFailure(key string, now time.Time) {
 	}
 	entry := s.failedRetries[key]
 	entry.attempts++
+
+	if sap.IsPermanentBusinessError(err) {
+		if entry.attempts >= maxPermanentRetryAttempts {
+			entry.quarantined = true
+			entry.nextRetry = now.Add(permanentQuarantineDelay)
+			s.failedRetries[key] = entry
+			return true
+		}
+		if entry.attempts == 1 {
+			entry.nextRetry = now.Add(time.Minute)
+		} else {
+			entry.nextRetry = now.Add(5 * time.Minute)
+		}
+		s.failedRetries[key] = entry
+		return false
+	}
+
+	entry.quarantined = false
 	if entry.attempts == 1 {
 		entry.nextRetry = now
 	} else {
@@ -143,6 +167,13 @@ func (s *UpstreamSync) recordRetryFailure(key string, now time.Time) {
 		entry.nextRetry = now.Add(delay)
 	}
 	s.failedRetries[key] = entry
+	return false
+}
+
+func (s *UpstreamSync) recordFailedDispatch(ctx context.Context, docNum string, docDate time.Time, amount float64, reason string) {
+	if s.sqlite != nil {
+		_ = s.sqlite.RecordUpstreamDispatch(ctx, docNum, docDate, amount, nil, nil, "failed", reason)
+	}
 }
 
 func (s *UpstreamSync) clearRetry(key string) {
@@ -262,15 +293,22 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	}
 	for _, tx := range approvedPOS {
 		retryKey := "tx:" + tx.TransactionNumber
-		if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
-			s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+		if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
+			if !quarantined {
+				s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+			}
 			txErrors++
 			stats.Errors++
 			continue
 		}
 		if err := s.postTransactionToSAP(ctx, &tx, stockHoldPolicy{}); err != nil {
-			s.recordRetryFailure(retryKey, start)
-			log.Printf("❌ Failed to post approved transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+			quarantinedNow := s.recordRetryFailure(retryKey, start, err)
+			if quarantinedNow {
+				s.recordFailedDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, err.Error())
+				log.Printf("❌ Quarantined approved transaction %s (ID: %d) for %v after %d permanent SAP failures: %v", tx.TransactionNumber, tx.ID, permanentQuarantineDelay, maxPermanentRetryAttempts, err)
+			} else {
+				log.Printf("❌ Failed to post approved transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+			}
 			s.emitLog("pos_transactions", "ERROR", fmt.Sprintf("[Upstream] pos_transactions: failed to post approved %s: %v", tx.TransactionNumber, err))
 			txErrors++
 			stats.Errors++
@@ -288,15 +326,22 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 	}
 	for _, order := range approvedOrders {
 		retryKey := "order:" + order.OrderNumber
-		if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
-			s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+		if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
+			if !quarantined {
+				s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+			}
 			orderErrors++
 			stats.Errors++
 			continue
 		}
 		if err := s.postSalesOrderToSAP(ctx, &order, stockHoldPolicy{}); err != nil {
-			s.recordRetryFailure(retryKey, start)
-			log.Printf("❌ Failed to post approved sales order %s to SAP: %v", order.OrderNumber, err)
+			quarantinedNow := s.recordRetryFailure(retryKey, start, err)
+			if quarantinedNow {
+				s.recordFailedDispatch(ctx, order.OrderNumber, order.OrderDate, order.TotalAmount, err.Error())
+				log.Printf("❌ Quarantined approved sales order %s for %v after %d permanent SAP failures: %v", order.OrderNumber, permanentQuarantineDelay, maxPermanentRetryAttempts, err)
+			} else {
+				log.Printf("❌ Failed to post approved sales order %s to SAP: %v", order.OrderNumber, err)
+			}
 			s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to post approved %s: %v", order.OrderNumber, err))
 			orderErrors++
 			stats.Errors++
@@ -329,8 +374,10 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 				continue
 			}
 			retryKey := "tx:" + tx.TransactionNumber
-			if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
-				s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+			if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
+				if !quarantined {
+					s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: backing off %s until %s", tx.TransactionNumber, nextAt.Format(time.RFC3339)))
+				}
 				txErrors++
 				stats.Errors++
 				continue
@@ -346,8 +393,13 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 					s.emitLog("pos_transactions", "WARN", fmt.Sprintf("[Upstream] pos_transactions: skipped %s (no line items)", tx.TransactionNumber))
 					continue
 				}
-				s.recordRetryFailure(retryKey, start)
-				log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+				quarantinedNow := s.recordRetryFailure(retryKey, start, err)
+				if quarantinedNow {
+					s.recordFailedDispatch(ctx, tx.TransactionNumber, tx.TransactionDate, tx.TotalAmount, err.Error())
+					log.Printf("❌ Quarantined transaction %s (ID: %d) for %v after %d permanent SAP failures: %v", tx.TransactionNumber, tx.ID, permanentQuarantineDelay, maxPermanentRetryAttempts, err)
+				} else {
+					log.Printf("❌ Failed to post transaction %s (ID: %d) to SAP: %v", tx.TransactionNumber, tx.ID, err)
+				}
 				s.emitLog("pos_transactions", "ERROR", fmt.Sprintf("[Upstream] pos_transactions: failed to post %s: %v", tx.TransactionNumber, err))
 				txErrors++
 				stats.Errors++
@@ -380,8 +432,10 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 				continue
 			}
 			retryKey := "order:" + order.OrderNumber
-			if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
-				s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+			if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
+				if !quarantined {
+					s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: backing off %s until %s", order.OrderNumber, nextAt.Format(time.RFC3339)))
+				}
 				orderErrors++
 				stats.Errors++
 				continue
@@ -397,8 +451,13 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 					s.emitLog("sales_orders", "WARN", fmt.Sprintf("[Upstream] sales_orders: skipped %s (no line items)", order.OrderNumber))
 					continue
 				}
-				s.recordRetryFailure(retryKey, start)
-				log.Printf("❌ Failed to post sales order %s to SAP: %v", order.OrderNumber, err)
+				quarantinedNow := s.recordRetryFailure(retryKey, start, err)
+				if quarantinedNow {
+					s.recordFailedDispatch(ctx, order.OrderNumber, order.OrderDate, order.TotalAmount, err.Error())
+					log.Printf("❌ Quarantined sales order %s for %v after %d permanent SAP failures: %v", order.OrderNumber, permanentQuarantineDelay, maxPermanentRetryAttempts, err)
+				} else {
+					log.Printf("❌ Failed to post sales order %s to SAP: %v", order.OrderNumber, err)
+				}
 				s.emitLog("sales_orders", "ERROR", fmt.Sprintf("[Upstream] sales_orders: failed to post %s: %v", order.OrderNumber, err))
 				orderErrors++
 				stats.Errors++
@@ -431,8 +490,10 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 				continue
 			}
 			retryKey := "ret:" + ret.ReturnNumber
-			if skip, nextAt := s.shouldBackoff(retryKey, start); skip {
-				s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: backing off %s until %s", ret.ReturnNumber, nextAt.Format(time.RFC3339)))
+			if skip, nextAt, quarantined := s.shouldBackoff(retryKey, start); skip {
+				if !quarantined {
+					s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: backing off %s until %s", ret.ReturnNumber, nextAt.Format(time.RFC3339)))
+				}
 				returnErrors++
 				stats.Errors++
 				continue
@@ -444,8 +505,13 @@ func (s *UpstreamSync) ProcessOutbox(ctx context.Context) (*UpstreamStats, error
 					s.emitLog("sales_returns", "WARN", fmt.Sprintf("[Upstream] sales_returns: skipped %s: %v", ret.ReturnNumber, err))
 					continue
 				}
-				s.recordRetryFailure(retryKey, start)
-				log.Printf("❌ Failed to post sales return %s (ID: %d) to SAP: %v", ret.ReturnNumber, ret.ID, err)
+				quarantinedNow := s.recordRetryFailure(retryKey, start, err)
+				if quarantinedNow {
+					s.recordFailedDispatch(ctx, ret.ReturnNumber, ret.ReturnDate, ret.TotalRefundAmount, err.Error())
+					log.Printf("❌ Quarantined sales return %s (ID: %d) for %v after %d permanent SAP failures: %v", ret.ReturnNumber, ret.ID, permanentQuarantineDelay, maxPermanentRetryAttempts, err)
+				} else {
+					log.Printf("❌ Failed to post sales return %s (ID: %d) to SAP: %v", ret.ReturnNumber, ret.ID, err)
+				}
 				s.emitLog("sales_returns", "ERROR", fmt.Sprintf("[Upstream] sales_returns: failed to post %s: %v", ret.ReturnNumber, err))
 				returnErrors++
 				stats.Errors++

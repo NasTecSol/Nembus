@@ -208,9 +208,16 @@ func (c *Client) DoRequest(ctx context.Context, method, endpoint string, body an
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(respBytes, &errResp); err == nil && errResp.Error.Message.Value != "" {
-			return fmt.Errorf("SAP API error (%d): %s [code %d]", resp.StatusCode, errResp.Error.Message.Value, errResp.Error.Code)
+			return &APIError{
+				StatusCode: resp.StatusCode,
+				Code:       errResp.Error.Code,
+				Message:    errResp.Error.Message.Value,
+			}
 		}
-		return fmt.Errorf("SAP request returned HTTP %d: %s", resp.StatusCode, string(respBytes))
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    string(respBytes),
+		}
 	}
 
 	if result != nil && len(respBytes) > 0 {
