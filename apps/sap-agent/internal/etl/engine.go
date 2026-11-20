@@ -296,12 +296,14 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 	})
 
 	syncStartTime := time.Now()
+	var domainErrors []string
 
 	for _, domain := range domains {
 		since := e.resolveDownstreamSince(ctx, domain, syncStartTime)
 
 		processed, err := e.executeDownstreamDomainStep(ctx, domain, since)
 		if err != nil {
+			domainErrors = append(domainErrors, fmt.Sprintf("%s: %v", domain, err))
 			if e.sqlite != nil {
 				e.sqlite.Log(ctx, runID, string(domain), "WARN", fmt.Sprintf("Downstream sync partial failure on %s: %v", domain, err))
 			}
@@ -364,6 +366,9 @@ func (e *Engine) ExecuteDownstreamSync(ctx context.Context, domains []contracts.
 		Timestamp: time.Now(),
 	})
 
+	if len(domainErrors) > 0 {
+		return stats, fmt.Errorf("downstream sync partial failure: %s", strings.Join(domainErrors, "; "))
+	}
 	return stats, nil
 }
 
@@ -405,6 +410,64 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 	runID := "downstream"
 
 	switch domain {
+	case contracts.DomainUOM:
+		ext := extractors.NewUOMExtractor(mssqlClient)
+		uoms, err := ext.ExtractUOMs(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if len(uoms) == 0 {
+			return 0, nil
+		}
+		payload := &contracts.MigrationBatchPayload{
+			BatchID:        uuid.New().String(),
+			RunID:          runID,
+			OrganizationID: cloudCfg.OrganizationID,
+			Domain:         domain,
+			UOMs:           uoms,
+			IsLastBatch:    true,
+			Timestamp:      time.Now(),
+		}
+		resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+		if err != nil {
+			return 0, err
+		}
+		return int64(resp.RecordsStaged), nil
+
+	case contracts.DomainUOMGroups:
+		ext := extractors.NewUOMExtractor(mssqlClient)
+		groups, err := ext.ExtractUOMGroups(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if len(groups) == 0 {
+			return 0, nil
+		}
+		var totalStaged int64
+		for i := 0; i < len(groups); i += batchSize {
+			end := i + batchSize
+			if end > len(groups) {
+				end = len(groups)
+			}
+			chunk := groups[i:end]
+			payload := &contracts.MigrationBatchPayload{
+				BatchID:        uuid.New().String(),
+				RunID:          runID,
+				OrganizationID: cloudCfg.OrganizationID,
+				Domain:         domain,
+				SequenceNumber: i / batchSize,
+				UOMGroups:      chunk,
+				IsLastBatch:    end == len(groups),
+				Timestamp:      time.Now(),
+			}
+			resp, err := cloudClient.SendBatchWithRetry(ctx, payload)
+			if err != nil {
+				return totalStaged, err
+			}
+			totalStaged += int64(resp.RecordsStaged)
+		}
+		return totalStaged, nil
+
 	case contracts.DomainCategories:
 		ext := extractors.NewCatalogExtractor(mssqlClient)
 		cats, err := ext.ExtractCategories(ctx)
@@ -545,9 +608,9 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 			})
 		}
 
-		var totalStaged int64 = int64(len(heldNotices))
+		var totalStaged int64
 		if len(directItems) == 0 {
-			return totalStaged, nil
+			return 0, nil
 		}
 
 		for i := 0; i < len(directItems); i += batchSize {
@@ -609,9 +672,7 @@ func (e *Engine) executeDownstreamDomainStep(ctx context.Context, domain contrac
 		return totalStaged, nil
 
 	default:
-		// Fallback for any other domains (e.g. uom, uom_groups)
-		p, _, _, err := e.executeDomainStep(ctx, runID, domain)
-		return p, err
+		return 0, fmt.Errorf("domain %s is not supported in incremental downstream sync", domain)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/google/uuid"
 
@@ -182,8 +183,16 @@ func (s *SyncServer) StreamPush(stream syncpb.SyncService_StreamPushServer) erro
 }
 
 func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.SyncEvent) *syncpb.SyncAck {
+	started := time.Now()
+	ctx = telemetry.WithTenantSlug(ctx, event.TenantSlug)
+	syncStatus := "ok"
+	defer func() {
+		telemetry.RecordSyncBatch(ctx, "push", event.TenantSlug, event.EntityType, syncStatus, 1, float64(time.Since(started).Microseconds())/1000.0)
+	}()
+
 	calculatedSha := computePayloadSHA256(event.PayloadJson)
 	if event.Sha256 != "" && event.Sha256 != calculatedSha {
+		syncStatus = "error"
 		log.Printf("[gRPC SyncServer] SHA-256 mismatch for item %d (entity: %s): expected %s, got %s",
 			event.Id, event.EntityType, event.Sha256, calculatedSha)
 		return &syncpb.SyncAck{
@@ -199,6 +208,7 @@ func (s *SyncServer) handleSinglePushEvent(ctx context.Context, event *syncpb.Sy
 	}
 
 	if err := s.ingestSyncEvent(ctx, event); err != nil {
+		syncStatus = "error"
 		log.Printf("[gRPC SyncServer] Failed to ingest item %d (%s): %v", event.Id, event.EntityType, err)
 		return &syncpb.SyncAck{
 			Id:           event.Id,
@@ -234,10 +244,17 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 			ProcessedAt:  timestamppb.Now(),
 		}
 	}
+	started := time.Now()
 	first := events[0]
 	last := events[len(events)-1]
 	batchID := first.BatchId
 	lastSha := computePayloadSHA256(last.PayloadJson)
+
+	ctx = telemetry.WithTenantSlug(ctx, first.TenantSlug)
+	batchStatus := "error"
+	defer func() {
+		telemetry.RecordSyncBatch(ctx, "push", first.TenantSlug, first.EntityType, batchStatus, int64(len(events)), float64(time.Since(started).Microseconds())/1000.0)
+	}()
 
 	// 1. Validate batch sequencing and SHA-256 checksums upfront before opening DB transaction
 	for idx, ev := range events {
@@ -441,6 +458,7 @@ func (s *SyncServer) processPushBatch(ctx context.Context, events []*syncpb.Sync
 		}
 	}
 	s.recordPushWatermark(ctx, pool, last)
+	batchStatus = "ok"
 
 	return &syncpb.SyncAck{
 		Id:          last.Id,
@@ -857,7 +875,7 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 		return status.Error(codes.InvalidArgument, "tenant_slug is required")
 	}
 
-	ctx := stream.Context()
+	ctx := telemetry.WithTenantSlug(stream.Context(), req.TenantSlug)
 	if err := s.verifyStreamAuth(ctx, req.TenantSlug, "", req.StoreId); err != nil {
 		return err
 	}
@@ -910,10 +928,15 @@ func (s *SyncServer) StreamPull(req *syncpb.PullRequest, stream syncpb.SyncServi
 		default:
 		}
 
-		if err := s.streamEntityDeltas(ctx, pool, req, entityType, sinceTime, limit, stream); err != nil {
+		entityStart := time.Now()
+		err := s.streamEntityDeltas(ctx, pool, req, entityType, sinceTime, limit, stream)
+		durMs := float64(time.Since(entityStart).Microseconds()) / 1000.0
+		if err != nil {
+			telemetry.RecordSyncBatch(ctx, "pull", req.TenantSlug, entityType, "error", 1, durMs)
 			log.Printf("[gRPC SyncServer] Error streaming deltas for %s: %v", entityType, err)
 			return status.Errorf(codes.Internal, "stream %s: %v", entityType, err)
 		}
+		telemetry.RecordSyncBatch(ctx, "pull", req.TenantSlug, entityType, "ok", 1, durMs)
 	}
 
 	return nil

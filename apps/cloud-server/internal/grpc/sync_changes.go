@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/grpc/syncpb"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
@@ -60,7 +61,7 @@ func buildPullEntityRankCaseSQL() string {
 // Writers acquire pg_advisory_xact_lock(hashtext('nembus.change_log_seq')) before allocating
 // seq values; StreamChanges acquires pg_advisory_xact_lock_shared inside a READ ONLY transaction
 // so no in-flight writer can commit a lower seq after the reader's snapshot opens.
-func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream syncpb.SyncService_StreamChangesServer) error {
+func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream syncpb.SyncService_StreamChangesServer) (retErr error) {
 	if req.TenantSlug == "" {
 		return status.Error(codes.InvalidArgument, "tenant_slug is required")
 	}
@@ -68,7 +69,17 @@ func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream sync
 		return status.Error(codes.InvalidArgument, "from_seq must be non-negative")
 	}
 
-	ctx := stream.Context()
+	started := time.Now()
+	ctx := telemetry.WithTenantSlug(stream.Context(), req.TenantSlug)
+	var sentEvents int64
+	defer func() {
+		syncStatus := "ok"
+		if retErr != nil {
+			syncStatus = "error"
+		}
+		telemetry.RecordSyncBatch(ctx, "pull_changes", req.TenantSlug, "change_log", syncStatus, sentEvents, float64(time.Since(started).Microseconds())/1000.0)
+	}()
+
 	if err := s.verifyStreamAuth(ctx, req.TenantSlug, req.DeviceId, req.StoreId); err != nil {
 		return err
 	}
@@ -190,6 +201,7 @@ func (s *SyncServer) StreamChanges(req *syncpb.StreamChangesRequest, stream sync
 		if err := stream.Send(ev); err != nil {
 			return err
 		}
+		sentEvents++
 	}
 
 	if err := rows.Err(); err != nil {

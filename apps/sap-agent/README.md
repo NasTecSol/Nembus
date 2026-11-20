@@ -4,6 +4,18 @@ The **SAP Sync Agent** is a bidirectional synchronization service between **SAP 
 
 ---
 
+## Architecture & Entry Points
+
+1. **Agent Service (`cmd/agent/main.go`)**:
+   - Primary production daemon with embedded Web UI (Gin + HTML/JS/CSS).
+   - Runs interactively (opens browser dashboard on port `17890`) or as a native **Windows Service** (`-service install|start|stop|uninstall`).
+   - SQLite checkpoint store for watermarks, MSSQL extractor client, cloud governance transport, and auto-updater.
+
+2. **CLI Runner (`cmd/main.go`)**:
+   - Command-line utility for one-off master data syncs, transaction posting, connectivity diagnostics, and headless pipeline execution.
+
+---
+
 ## Capabilities
 
 1. **Downstream Pipeline (SAP B1 $\rightarrow$ Nembus Master Data)**
@@ -42,19 +54,73 @@ Key environment variables:
 
 ---
 
-## Quick Commands
+## Building the Agent
+
+### 1. PowerShell Build Script (Recommended on Windows)
+
+From the monorepo root:
+
+```powershell
+# Build both the Agent Service and CLI Runner (outputs to build/bin/ and apps/sap-agent/bin/)
+powershell -ExecutionPolicy Bypass -File scripts/build_sap_agent.ps1
+
+# Build only the primary Agent Service
+powershell -ExecutionPolicy Bypass -File scripts/build_sap_agent.ps1 -Target agent
+
+# Build with custom version and Cloud URL
+powershell -ExecutionPolicy Bypass -File scripts/build_sap_agent.ps1 -Version "v1.1.0" -CloudURL "https://nembus.nashrms.com"
+```
+
+### 2. Make Targets
 
 From the monorepo root:
 
 ```bash
-# Build the binary
+# Build primary Agent Service
 make build-agent
 
-# Run in background daemon mode
-make dev-agent
+# Build CLI Runner
+make build-agent-cli
+
+# Build both binaries
+make build-agent-all
 ```
 
-Direct CLI commands (inside `apps/sap-agent`):
+Or from inside `apps/sap-agent`:
+
+```bash
+make build       # Builds bin/sap-agent.exe
+make build-cli   # Builds bin/sap-agent-cli.exe
+make build-all   # Builds both
+```
+
+---
+
+## Running the Agent
+
+### Interactive Web UI Mode (Default)
+
+```powershell
+# Launches embedded UI dashboard at http://127.0.0.1:17890
+& 'build/bin/sap-agent.exe'
+```
+
+### Windows Service Management
+
+```powershell
+# Install as a Windows Service
+& 'build/bin/sap-agent.exe' -service install
+
+# Start the Windows Service
+& 'build/bin/sap-agent.exe' -service start
+
+# Check Status / Stop / Uninstall
+& 'build/bin/sap-agent.exe' -service status
+& 'build/bin/sap-agent.exe' -service stop
+& 'build/bin/sap-agent.exe' -service uninstall
+```
+
+### Direct CLI Commands
 
 ```bash
 # Test connectivity to SAP and Nembus

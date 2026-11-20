@@ -444,12 +444,12 @@ WHERE order_number = $1;
 -- name: ListSalesOrdersV2 :many
 SELECT * FROM sales_orders_v2
 WHERE organization_id = $1
-  AND ($2::int IS NULL OR store_id = $2)
-  AND ($3::order_status_v2 IS NULL OR order_status = $3)
-  AND ($4::timestamp IS NULL OR order_date >= $4)
-  AND ($5::timestamp IS NULL OR order_date <= $5)
+  AND (sqlc.narg('store_id')::int IS NULL OR store_id = sqlc.narg('store_id'))
+  AND (sqlc.narg('order_status')::order_status_v2 IS NULL OR order_status = sqlc.narg('order_status'))
+  AND (sqlc.narg('from_date')::timestamp IS NULL OR order_date >= sqlc.narg('from_date'))
+  AND (sqlc.narg('to_date')::timestamp IS NULL OR order_date <= sqlc.narg('to_date'))
 ORDER BY order_date DESC, created_at DESC
-LIMIT $6 OFFSET $7;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: ListCustomerOrders :many
 SELECT * FROM sales_orders_v2
@@ -635,9 +635,18 @@ SELECT * FROM sales_order_lines_v2
 WHERE id = $1;
 
 -- name: ListSalesOrderLinesV2 :many
-SELECT sol.*, p.name as product_name_current, p.sku as product_sku_current
+SELECT sol.*, p.name as product_name_current, p.sku as product_sku_current,
+    COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+    COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+    COALESCE(puc.conversion_factor, 1)::numeric AS uom_conversion_factor,
+    (sol.uom_id IS NULL OR sol.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+    COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
 FROM sales_order_lines_v2 sol
 LEFT JOIN products p ON sol.product_id = p.id
+LEFT JOIN units_of_measure u ON u.id = sol.uom_id
+LEFT JOIN units_of_measure bu ON bu.id = p.base_uom_id
+LEFT JOIN product_uom_conversions puc ON puc.product_id = sol.product_id AND puc.from_uom_id = sol.uom_id AND puc.to_uom_id = p.base_uom_id
+LEFT JOIN tax_categories tc ON tc.id = COALESCE(sol.tax_category_id, p.tax_category_id)
 WHERE sol.sales_order_id = $1
 ORDER BY sol.line_number;
 
@@ -1679,3 +1688,25 @@ SET discount_amount = $2,
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
+
+-- name: ListUnpostedSalesOrdersV2ForSAP :many
+SELECT o.*,
+    COALESCE(NULLIF(c.customer_code, ''), NULLIF(c.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM sales_orders_v2 o
+LEFT JOIN customers c ON c.id = o.customer_id
+WHERE o.organization_id = $1
+  AND o.order_number NOT LIKE 'SO-SAP-%'
+  AND LOWER(COALESCE(o.sales_channel, '')) <> 'pos'
+  AND (o.metadata->>'sap_doc_num' IS NULL OR o.metadata->>'sap_doc_num' = '')
+  AND (o.metadata->>'sap_sync_state' IS NULL OR o.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload', 'synced'))
+  AND (o.fulfillment_status = 'fulfilled' OR o.order_status IN ('confirmed', 'fulfilled'))
+  AND NOT EXISTS (SELECT 1 FROM pos_transactions pt WHERE pt.sales_order_id = o.id)
+ORDER BY o.order_date ASC
+LIMIT $2;
+
+-- name: MarkSalesOrderV2SAPSynced :one
+UPDATE sales_orders_v2
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, order_number, metadata;

@@ -61,7 +61,7 @@ func (h *ReleaseHandler) UploadRelease(c *gin.Context) {
 	channel := c.DefaultPostForm("channel", "stable")
 	releaseNotes := c.PostForm("release_notes")
 	checksum := c.PostForm("checksum_sha256")
-	isMandatory := c.DefaultPostForm("is_mandatory", "true") == "true"
+	isMandatory := strings.EqualFold(strings.TrimSpace(c.DefaultPostForm("is_mandatory", "true")), "true")
 	minSupportedVer := c.PostForm("min_supported_version")
 
 	file, err := c.FormFile("file")

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NasTecSol/nembus-core/repository"
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-core/usecase"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -128,6 +129,7 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 			"message":    msg,
 			"created_at": time.Now(),
 		})
+		telemetry.RecordNotificationDispatched(ctx, "websocket", "sent")
 
 	case "grn.posted":
 		grnNum := fmt.Sprintf("%v", payload["grn_number"])
@@ -141,6 +143,7 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 			"message":    msg,
 			"created_at": time.Now(),
 		})
+		telemetry.RecordNotificationDispatched(ctx, "websocket", "sent")
 
 	case "inventory.low_stock":
 		prodName := fmt.Sprintf("%v", payload["product_name"])
@@ -157,6 +160,7 @@ func (d *Dispatcher) dispatchDefault(ctx context.Context, event repository.Notif
 			"message":    msg,
 			"created_at": time.Now(),
 		})
+		telemetry.RecordNotificationDispatched(ctx, "websocket", "sent")
 
 	case "customer.created":
 		custName, _ := payload["customer_name"].(string)
@@ -193,6 +197,7 @@ func (d *Dispatcher) dispatchByRule(ctx context.Context, event repository.Notifi
 							"message":    msg,
 							"created_at": time.Now(),
 						})
+						telemetry.RecordNotificationDispatched(ctx, "websocket", "sent")
 					}
 				}
 			} else {
@@ -201,6 +206,7 @@ func (d *Dispatcher) dispatchByRule(ctx context.Context, event repository.Notifi
 					"event_id": event.ID,
 					"payload":  payload,
 				})
+				telemetry.RecordNotificationDispatched(ctx, "websocket", "sent")
 			}
 
 		case "whatsapp_cloud":
@@ -259,6 +265,8 @@ func (d *Dispatcher) sendWhatsAppMessage(ctx context.Context, orgID int32, event
 		providerID = &resp.Messages[0].ID
 	}
 
+	telemetry.RecordNotificationDispatched(ctx, "whatsapp_cloud", status)
+
 	_, _ = d.notifUC.RecordDelivery(ctx, usecase.RecordDeliveryInput{
 		EventID:           event.ID,
 		ChannelType:       "whatsapp_cloud",
@@ -304,6 +312,8 @@ func (d *Dispatcher) sendEmailMessage(ctx context.Context, orgID int32, event re
 	} else {
 		providerID = &msgID
 	}
+
+	telemetry.RecordNotificationDispatched(ctx, "email_ses", status)
 
 	_, _ = d.notifUC.RecordDelivery(ctx, usecase.RecordDeliveryInput{
 		EventID:           event.ID,

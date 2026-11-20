@@ -70,4 +70,43 @@ WHERE id = $1;
 -- name: UpdateSalesReturnMetadata :exec
 UPDATE sales_returns SET metadata = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1;
 
+-- name: ListUnpostedSalesReturnsForSAP :many
+SELECT sr.*,
+    COALESCE(NULLIF(c.customer_code, ''), NULLIF(c.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
+    COALESCE(NULLIF(pt.metadata->>'sap_doc_entry', ''), '0')::int AS original_sap_doc_entry
+FROM sales_returns sr
+LEFT JOIN customers c ON c.id = sr.customer_id
+LEFT JOIN pos_transactions pt ON pt.id = sr.original_transaction_id
+WHERE sr.store_id = $1
+  AND sr.status = 'completed'
+  AND (sr.metadata->>'sap_doc_num' IS NULL OR sr.metadata->>'sap_doc_num' = '')
+ORDER BY sr.id ASC
+LIMIT $2;
+
+-- name: ListSalesReturnLinesDetailedForSAP :many
+SELECT l.*,
+    p.sku AS product_sku,
+    p.name AS product_name,
+    COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+    COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+    COALESCE(puc.conversion_factor, 1)::numeric AS uom_conversion_factor,
+    (ptl.uom_id IS NULL OR ptl.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+    COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
+FROM sales_return_lines l
+JOIN products p ON p.id = l.product_id
+LEFT JOIN pos_transaction_lines ptl ON ptl.id = l.original_line_id
+LEFT JOIN units_of_measure u ON u.id = ptl.uom_id
+LEFT JOIN units_of_measure bu ON bu.id = p.base_uom_id
+LEFT JOIN product_uom_conversions puc ON puc.product_id = l.product_id AND puc.from_uom_id = ptl.uom_id AND puc.to_uom_id = p.base_uom_id
+LEFT JOIN tax_categories tc ON tc.id = p.tax_category_id
+WHERE l.return_id = $1
+ORDER BY l.id ASC;
+
+-- name: MarkSalesReturnSAPSynced :one
+UPDATE sales_returns
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, return_number, metadata;
+
 

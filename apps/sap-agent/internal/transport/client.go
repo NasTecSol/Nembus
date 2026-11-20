@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/NasTecSol/nembus-core/telemetry"
 	"github.com/NasTecSol/nembus-sap/contracts"
 	"github.com/NasTecSol/nembus-sap-agent/internal/config"
 )
@@ -38,9 +39,9 @@ func NewCloudClient(cfg config.CloudConfig) *CloudClient {
 
 	return &CloudClient{
 		cfg: cfg,
-		httpClient: &http.Client{
+		httpClient: telemetry.WrapHTTPClient(&http.Client{
 			Timeout: timeout,
-		},
+		}),
 	}
 }
 
@@ -124,6 +125,22 @@ func (c *CloudClient) sendOnce(ctx context.Context, payload *contracts.Migration
 // sendOnceClassified performs a single HTTP POST attempt.
 // Returns (response, isRetryable, error).
 func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts.MigrationBatchPayload, requestID string) (*contracts.MigrationBatchResponse, bool, error) {
+	started := time.Now()
+	tenantSlug := strings.TrimSpace(config.Get().TenantSlug)
+	telemetry.SetDynamicTenantSlug(tenantSlug)
+	ctx = telemetry.WithTenantSlug(ctx, tenantSlug)
+
+	var entityName string
+	var rowCount int64
+	if payload != nil {
+		entityName = string(payload.Domain)
+		rowCount = int64(payload.RecordCount())
+	}
+	etlStatus := "error"
+	defer func() {
+		telemetry.RecordSAPETLBatch(ctx, tenantSlug, "upstream", entityName, etlStatus, rowCount, float64(time.Since(started).Microseconds())/1000.0)
+	}()
+
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to marshal batch payload: %w", err)
@@ -158,7 +175,6 @@ func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("X-Request-ID", requestID)
 
-	tenantSlug := strings.TrimSpace(config.Get().TenantSlug)
 	if tenantSlug != "" {
 		req.Header.Set("x-tenant-slug", tenantSlug)
 		req.Header.Set("x-tenant-id", tenantSlug)
@@ -194,6 +210,7 @@ func (c *CloudClient) sendOnceClassified(ctx context.Context, payload *contracts
 		return nil, false, fmt.Errorf("failed to decode cloud response JSON: %w (raw: %s)", err, string(bodyBytes))
 	}
 
+	etlStatus = "ok"
 	return &batchResp, false, nil
 }
 

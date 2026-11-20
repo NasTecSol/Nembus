@@ -1091,6 +1091,55 @@ func (uc *PosUseCase) ListTodaysTransactions(ctx context.Context, storeID int32,
 	})
 }
 
+// ListUnpostedTransactionsForSAP returns completed POS transactions awaiting SAP posting (or approved pending upload).
+func (uc *PosUseCase) ListUnpostedTransactionsForSAP(ctx context.Context, storeID int32, approvedOnly bool, limit int32) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if approvedOnly {
+		rows, err := uc.repo.ListApprovedPendingPosTransactionsForSAP(ctx, repository.ListApprovedPendingPosTransactionsForSAPParams{
+			StoreID: storeID,
+			Limit:   limit,
+		})
+		if err != nil {
+			return utils.NewResponse(utils.CodeError, err.Error(), nil)
+		}
+		return utils.NewResponse(utils.CodeOK, "approved pending transactions fetched", rows)
+	}
+	rows, err := uc.repo.ListUnpostedPosTransactionsForSAP(ctx, repository.ListUnpostedPosTransactionsForSAPParams{
+		StoreID: storeID,
+		Limit:   limit,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "unposted transactions fetched", rows)
+}
+
+// MarkTransactionSAPSynced records SAP DocEntry/DocNum metadata on a POS transaction.
+func (uc *PosUseCase) MarkTransactionSAPSynced(ctx context.Context, txID int32, sapDocEntry, sapDocNum int) *repository.Response {
+	if uc.repo == nil {
+		return utils.NewResponse(utils.CodeError, "repository not set", nil)
+	}
+	patch, _ := json.Marshal(map[string]any{
+		"sap_doc_entry":  sapDocEntry,
+		"sap_doc_num":    sapDocNum,
+		"sap_posted_at":  time.Now().UTC().Format(time.RFC3339),
+		"sap_sync_state": "synced",
+	})
+	row, err := uc.repo.MarkPosTransactionSAPSynced(ctx, repository.MarkPosTransactionSAPSyncedParams{
+		ID:      txID,
+		Column2: patch,
+	})
+	if err != nil {
+		return utils.NewResponse(utils.CodeError, err.Error(), nil)
+	}
+	return utils.NewResponse(utils.CodeOK, "transaction marked synced to SAP", row)
+}
+
 // ListTransactionsByCashierSession returns POS transactions for a cashier and session (optional date range) with pagination.
 func (uc *PosUseCase) ListTransactionsByCashierSession(
 	ctx context.Context,

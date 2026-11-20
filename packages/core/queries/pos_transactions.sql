@@ -51,6 +51,7 @@ SELECT
     t.id, t.transaction_number, t.transaction_date, t.status,
     t.subtotal, t.tax_amount, t.discount_amount, t.total_amount,
     t.total_cost,
+    t.customer_id,
     cashier.first_name || ' ' || cashier.last_name AS cashier_name,
     term.terminal_name,
     sess.session_number,
@@ -58,14 +59,22 @@ SELECT
     tl.id AS line_id,
     tl.line_number,
     tl.product_id,
+    tl.uom_id,
     tl.quantity,
     tl.unit_price,
     tl.discount_amount,
+    COALESCE(tl.tax_amount, 0)::numeric AS line_tax_amount,
+    COALESCE(tl.subtotal, 0)::numeric AS line_subtotal,
     tl.line_total,
     COALESCE(p.sku, tl.metadata->>'sku', '') AS sku,
     COALESCE(p.name, tl.metadata->>'menu_item_name', tl.metadata->>'product_name', '') AS product_name,
     COALESCE(pb.barcode, '') AS scanned_barcode,
-    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity
+    COALESCE(srl.returned_quantity, 0)::numeric AS returned_quantity,
+    COALESCE(NULLIF(u.metadata->>'sap_uom_entry', ''), NULLIF(bu.metadata->>'sap_uom_entry', ''), NULLIF(p.metadata->>'sap_i_uom_entry', ''), '')::text AS sap_uom_entry,
+    COALESCE(NULLIF(p.metadata->>'sap_ugp_entry', ''), '')::text AS sap_ugp_entry,
+    COALESCE(puc.conversion_factor, 1)::numeric AS uom_conversion_factor,
+    (tl.uom_id IS NULL OR tl.uom_id = p.base_uom_id)::boolean AS is_base_uom,
+    COALESCE(NULLIF(p.metadata->>'sap_vat_group', ''), tc.code, '')::text AS sap_tax_code
 FROM pos_transactions t
 JOIN cashiers          cshr  ON t.cashier_id         = cshr.id
 JOIN users             cashier ON cshr.user_id        = cashier.id
@@ -74,6 +83,10 @@ JOIN cashier_sessions  sess  ON t.cashier_session_id  = sess.id
 LEFT JOIN customers    cust  ON t.customer_id         = cust.id
 LEFT JOIN pos_transaction_lines tl   ON tl.transaction_id = t.id
 LEFT JOIN products          p     ON tl.product_id         = p.id
+LEFT JOIN units_of_measure  u     ON u.id = tl.uom_id
+LEFT JOIN units_of_measure  bu    ON bu.id = p.base_uom_id
+LEFT JOIN product_uom_conversions puc ON puc.product_id = tl.product_id AND puc.from_uom_id = tl.uom_id AND puc.to_uom_id = p.base_uom_id
+LEFT JOIN tax_categories    tc    ON tc.id = p.tax_category_id
 LEFT JOIN product_barcodes pb 
     ON pb.product_id = p.id 
    AND pb.is_primary = true
@@ -209,10 +222,21 @@ WHERE t.store_id = $1;
 -- name: ListTodaysPosTransactions :many
 SELECT 
     t.id,
+    t.store_id,
+    t.cashier_id,
+    t.cashier_session_id,
+    t.customer_id,
+    COALESCE(cust.name, COALESCE(t.metadata->>'customer_name', ''))::text AS customer_name,
+    COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code,
     t.transaction_number,
     t.transaction_date,
+    t.subtotal,
+    t.discount_amount,
+    t.tax_amount,
     t.total_amount,
+    t.amount_paid,
     t.status,
+    t.metadata,
     COALESCE(cashier.first_name || ' ' || cashier.last_name, '') AS cashier_name,
     COALESCE(term.terminal_name, '') AS terminal_name,
     COALESCE(COUNT(tl.id), 0) AS items_count,
@@ -221,9 +245,10 @@ FROM pos_transactions t
 LEFT JOIN cashiers cshr ON t.cashier_id = cshr.id
 LEFT JOIN users cashier ON cshr.user_id = cashier.id
 LEFT JOIN pos_terminals term ON t.pos_terminal_id = term.id
+LEFT JOIN customers cust ON t.customer_id = cust.id
 LEFT JOIN pos_transaction_lines tl ON tl.transaction_id = t.id
 WHERE t.store_id = $1
-GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name
+GROUP BY t.id, cashier.first_name, cashier.last_name, term.terminal_name, cust.name, cust.customer_code, cust.metadata
 ORDER BY t.transaction_date DESC, t.id DESC
 LIMIT $2 OFFSET $3;
 
@@ -457,3 +482,41 @@ GROUP BY
     cust.name
 ORDER BY t.transaction_date DESC, t.id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListUnpostedPosTransactionsForSAP :many
+SELECT 
+    t.id, t.store_id, t.cashier_id, t.cashier_session_id, t.customer_id,
+    t.transaction_number, t.transaction_date, t.subtotal, t.discount_amount,
+    t.tax_amount, t.total_amount, t.amount_paid, t.status, t.metadata,
+    COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM pos_transactions t
+LEFT JOIN customers cust ON t.customer_id = cust.id
+WHERE t.store_id = $1
+  AND t.status = 'completed'
+  AND (t.metadata->>'sap_doc_num' IS NULL OR t.metadata->>'sap_doc_num' = '')
+  AND (t.metadata->>'sap_sync_state' IS NULL OR t.metadata->>'sap_sync_state' NOT IN ('held_stock', 'adjustment_created_pending_force', 'approved_pending_upload', 'synced'))
+  AND t.transaction_number NOT LIKE 'SIM-POS-%'
+ORDER BY t.id ASC
+LIMIT $2;
+
+-- name: ListApprovedPendingPosTransactionsForSAP :many
+SELECT 
+    t.id, t.store_id, t.cashier_id, t.cashier_session_id, t.customer_id,
+    t.transaction_number, t.transaction_date, t.subtotal, t.discount_amount,
+    t.tax_amount, t.total_amount, t.amount_paid, t.status, t.metadata,
+    COALESCE(NULLIF(cust.customer_code, ''), NULLIF(cust.metadata->>'sap_card_code', ''), '')::text AS customer_sap_code
+FROM pos_transactions t
+LEFT JOIN customers cust ON t.customer_id = cust.id
+WHERE t.store_id = $1
+  AND t.status = 'completed'
+  AND t.metadata->>'sap_sync_state' = 'approved_pending_upload'
+  AND (t.metadata->>'sap_doc_num' IS NULL OR t.metadata->>'sap_doc_num' = '')
+ORDER BY t.id ASC
+LIMIT $2;
+
+-- name: MarkPosTransactionSAPSynced :one
+UPDATE pos_transactions
+SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, transaction_number, metadata;

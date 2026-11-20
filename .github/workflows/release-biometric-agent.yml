@@ -46,7 +46,8 @@ jobs:
         run: |
           $manualVersion = "${{ inputs.version }}"
           if ($manualVersion) {
-              $newTag = $manualVersion
+              $cleanVer = $manualVersion.TrimStart("bio-").TrimStart("v")
+              $newTag = "bio-v$cleanVer"
           } else {
               $tags = git tag --sort=-v:refname | Where-Object { $_ -like "bio-v*" }
               $latestTag = $tags | Select-Object -First 1
@@ -71,15 +72,29 @@ jobs:
           echo "GIT_TAG=$newTag" >> $env:GITHUB_OUTPUT
           echo "VERSION=$cleanVersion" >> $env:GITHUB_OUTPUT
 
+      - name: Run Biometric Agent Vet & Tests
+        shell: powershell
+        env:
+          GOPRIVATE: github.com/NasTecSol/*
+          GONOSUMCHECK: github.com/NasTecSol/*
+        run: |
+          cd apps/biometric-agent
+          go vet ./...
+          go test ./...
+
       - name: Build Biometric Agent Executable
         env:
           VERSION: ${{ steps.versioning.outputs.VERSION }}
+          OTEL_ENDPOINT: ${{ secrets.OTEL_ENDPOINT || 'https://otel.nashrms.com' }}
+          OTEL_INGEST_TOKEN: ${{ secrets.OTEL_INGEST_TOKEN }}
           GOPRIVATE: github.com/NasTecSol/*
           GONOSUMCHECK: github.com/NasTecSol/*
         run: |
           cd apps/biometric-agent
           $version = "${{ steps.versioning.outputs.VERSION }}"
-          $ldflags = "-X main.Version=$version"
+          $otelEndpoint = "$env:OTEL_ENDPOINT"
+          $otelToken = "$env:OTEL_INGEST_TOKEN"
+          $ldflags = "-X main.Version=$version -X main.OTelEndpoint=$otelEndpoint -X main.OTelIngestToken=$otelToken"
           if (-not (Test-Path "bin")) {
               New-Item -ItemType Directory -Path "bin" -Force | Out-Null
           }

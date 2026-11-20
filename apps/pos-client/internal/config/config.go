@@ -31,6 +31,10 @@ type Config struct {
 	ZatcaEnv      string // ZATCA_ENV — "sandbox" or "production"
 	ZatcaBaseURL  string // Derived from ZatcaEnv
 	ZatcaOrgVATID string // ZATCA_ORG_VAT_ID — 15-digit VAT registration number
+
+	// OpenTelemetry Observability Configuration
+	OTelEndpoint    string // OTEL_EXPORTER_OTLP_ENDPOINT
+	OTelIngestToken string // OTEL_INGEST_TOKEN
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -102,6 +106,8 @@ func LoadConfig(env string) *Config {
 		ZatcaEnv:           zatcaEnv,
 		ZatcaBaseURL:       zatcaBaseURL,
 		ZatcaOrgVATID:      getEnv("ZATCA_ORG_VAT_ID", ""),
+		OTelEndpoint:       getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		OTelIngestToken:    getEnv("OTEL_INGEST_TOKEN", ""),
 	}
 
 	// Propagate resolved secrets back into the OS environment so that any

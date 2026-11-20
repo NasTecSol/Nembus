@@ -28,6 +28,10 @@ type Config struct {
 	ReleaseAPISecret   string // Secret token for CI/CD or admin to upload new builds
 	AppUpdateClientKey string // Secret token embedded in POS to check/download updates
 	UpdatesStorageDir  string // Local filesystem directory where update binaries are stored
+
+	// OpenTelemetry Observability Configuration
+	OTelEndpoint    string // OTEL_EXPORTER_OTLP_ENDPOINT (e.g. http://otel-collector:4318 or https://otel.nashrms.com)
+	OTelIngestToken string // OTEL_INGEST_TOKEN shared bearer/header secret for OTLP ingestion
 }
 
 // LoadConfig loads configuration from environment file based on environment
@@ -88,6 +92,8 @@ func LoadConfig(env string) *Config {
 		ReleaseAPISecret:   getEnv("RELEASE_API_SECRET", "nembus-release-secret-change-in-prod"),
 		AppUpdateClientKey: getEnv("APP_UPDATE_CLIENT_KEY", "nembus-pos-update-client-key-default"),
 		UpdatesStorageDir:  getEnv("UPDATES_STORAGE_DIR", "uploads/releases"),
+		OTelEndpoint:       getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		OTelIngestToken:    getEnv("OTEL_INGEST_TOKEN", ""),
 	}
 }
 
