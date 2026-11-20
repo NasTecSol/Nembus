@@ -8,8 +8,8 @@ import (
 
 	"github.com/NasTecSol/nembus-client/internal/config"
 	"github.com/NasTecSol/nembus-client/internal/updater"
-	"github.com/NasTecSol/nembus-core/biometrics/installer"
 	"github.com/NasTecSol/nembus-client/internal/zatca"
+	"github.com/NasTecSol/nembus-core/biometrics/installer"
 	"github.com/NasTecSol/nembus-core/handler"
 	"github.com/NasTecSol/nembus-core/middleware"
 	"github.com/NasTecSol/nembus-core/middleware/manager"
@@ -259,6 +259,7 @@ func setupRouter(tenantManager *manager.Manager, masterRepo *repository.Queries,
 		orderHandler.SetZatcaReporter(zatcaReporter)
 		zatcaHandler.SetOrderReporter(zatcaReporter)
 		router.RegisterZatcaRoutes(api, zatcaHandler)
+		router.RegisterZatcaSyncStatusRoute(api, zatcaHandler)
 
 		// Notification Center Routes (In-App Bell & Notifications)
 		notifUC := usecase.NewNotificationUseCase(masterRepo)
@@ -332,7 +333,7 @@ func main() {
 	}
 
 	log.Printf("Starting NEMBUS POS Client %s in %s mode on port %s", Version, cfg.Env, cfg.Port)
-log.Printf("hello")
+	log.Printf("hello")
 	// Wails Setup
 	app := NewApp(Version, AppUpdateKey, CloudURL)
 
